@@ -741,9 +741,10 @@ impl Interpreter {
                     if tap_cbs.is_empty() {
                         continue;
                     }
+                    let line_modes = get_supply_tap_line_modes(sid);
                     let mut quit_cbs = get_supply_quit_taps(sid).into_iter();
                     let mut done_cbs = get_supply_done_taps(sid).into_iter();
-                    for cb in tap_cbs {
+                    for (cb, line_mode) in tap_cbs.into_iter().zip(line_modes) {
                         let Some(rx) = take_supply_channel(sid) else {
                             continue;
                         };
@@ -760,6 +761,8 @@ impl Interpreter {
                                 done_cb,
                                 quit_cb,
                                 close: Some((close_id, close_flag)),
+                                is_lines: line_mode.is_some(),
+                                line_chomp: line_mode.unwrap_or(true),
                                 ..crate::runtime::native_methods::ActLoop::new(thread_interp, cb)
                             }
                             .start(rx, None),

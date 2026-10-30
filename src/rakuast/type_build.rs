@@ -3,7 +3,8 @@
 use super::bareword::simple_type_node;
 use super::convert::{is_pseudo_type, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
-use crate::value::{RuntimeError, Value};
+use crate::ast::{Expr, Stmt};
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) const MAX_TYPE_DEPTH: usize = 128;
 
@@ -40,8 +41,8 @@ pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeErro
     if let Some(value) = crate::parser::numeric_literal_value(t) {
         return super::convert::convert_literal(&value);
     }
-    if let Some(text) = plain_string_literal(t) {
-        return Ok(super::convert::quoted_string(Value::str(text.to_string())));
+    if let Some(text) = string_literal_value(t) {
+        return Ok(super::convert::quoted_string(Value::str(text)));
     }
     build_type_node(t)
 }
@@ -56,6 +57,30 @@ pub(super) fn plain_string_literal(t: &str) -> Option<&str> {
         return None;
     }
     Some(inner)
+}
+
+/// The value of a return-value string literal: a plain one
+/// ([`plain_string_literal`]), or any other `'…'` / `"…"` the parser reads as
+/// one constant string (escapes such as `'[\\'` or `"\{\n"`, no interpolation).
+// Cost: O(n), n = constraint spelling length.
+pub(super) fn string_literal_value(t: &str) -> Option<String> {
+    if let Some(text) = plain_string_literal(t) {
+        return Some(text.to_string());
+    }
+    if !t.starts_with(['\'', '"']) {
+        return None;
+    }
+    let (stmts, _) = crate::parser::parse_fragment(t).ok()?;
+    let stmts: Vec<&Stmt> = stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt, Stmt::SetLine(..)))
+        .collect();
+    match stmts.as_slice() {
+        [Stmt::Expr(Expr::Literal(value))] if matches!(value.view(), ValueView::Str(_)) => {
+            Some(value.to_string_value())
+        }
+        _ => None,
+    }
 }
 
 /// `t` without a trailing smiley (`:D`, `:U`, `:_`). A name that ends in the

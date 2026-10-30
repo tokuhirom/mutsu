@@ -167,7 +167,9 @@ impl Interpreter {
                             // into `"1 2 3"`.
                             for row in rows {
                                 let mut it = row.into_iter();
-                                let k = it.next().unwrap_or(Value::NIL);
+                                // A Proxy key is FETCHed, as `MakePair` does.
+                                let k =
+                                    self.pair_key_fetching_proxy(it.next().unwrap_or(Value::NIL))?;
                                 results.push(Value::value_pair(k, it.next().unwrap_or(Value::NIL)));
                             }
                         } else {

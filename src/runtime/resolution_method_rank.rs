@@ -170,7 +170,7 @@ impl Interpreter {
     /// wider than the augmented `Any`): no user candidate can win a call,
     /// whatever its arguments (#12751).
     // Cost: O(m * c), m = MRO depth, c = candidates per level.
-        pub(crate) fn user_candidates_all_outranked_by_builtin(
+    pub(crate) fn user_candidates_all_outranked_by_builtin_uncached(
         &mut self,
         class_name: &str,
         method_name: &str,

@@ -185,6 +185,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         self_capture_decl_locals,
         captures_own_declaration,
         unscoped_amp_reads,
+        bound_amp_reads,
         needs_cell_free_vars,
         has_calls,
         has_once,

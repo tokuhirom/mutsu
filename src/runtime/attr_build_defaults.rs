@@ -412,14 +412,13 @@ impl Interpreter {
         // its default resolves bare names through THAT package's import
         // aliases and file-scope lexicals (#8842).
         let decl_package = declaring_package.unwrap_or(class_key);
-        let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
+        let mut saved_attr_env: Vec<(Symbol, Option<Value>)> = Vec::with_capacity(attrs.len() * 2);
         for (a_name, a_val) in attrs {
-            let bang = format!("!{}", a_name);
-            let dot = format!(".{}", a_name);
-            saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
-            saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
-            self.env.insert(bang, a_val.clone());
-            self.env.insert(dot, a_val.clone());
+            let (bang, dot) = super::attr_env_keys::attr_env_keys(*a_name);
+            saved_attr_env.push((bang, self.env.get_sym(bang).cloned()));
+            saved_attr_env.push((dot, self.env.get_sym(dot).cloned()));
+            self.env.insert_sym(bang, a_val.clone());
+            self.env.insert_sym(dot, a_val.clone());
         }
         // Temporarily switch to the class package so that class-scoped subs
         // (e.g. `sub inner`) are found when evaluating the initializer.
@@ -475,9 +474,9 @@ impl Interpreter {
         self.set_current_package(saved_package);
         for (key, old_val) in saved_attr_env {
             if let Some(v) = old_val {
-                self.env.insert(key, v);
+                self.env.insert_sym(key, v);
             } else {
-                self.env.remove(&key);
+                self.env.remove_sym(key);
             }
         }
         // An attribute initializer is an ASSIGNMENT, so the attribute gets a

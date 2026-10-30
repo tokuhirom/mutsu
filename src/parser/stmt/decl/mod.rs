@@ -4,12 +4,9 @@ mod enum_decl;
 pub(crate) use enum_decl::{enum_value_names, enum_variants_from_body};
 mod enum_decl_traits;
 mod handles;
-mod has_compound_assign;
 mod has_decl;
 mod has_trait_argument;
-pub(crate) use has_compound_assign::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use has_decl::attribute_type_seed;
-pub(crate) use my_decl_helpers::build_sigilless_bind_stmt;
 mod helpers;
 mod my_decl;
 mod my_decl_assign;
@@ -63,35 +60,11 @@ fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
     Some((rest, type_name))
 }
 
-/// Wrap a statement with one or more `will <phaser> { ... }` phasers.
-/// For each phaser, the body is wrapped in a `given <topic>` block so that
-/// `$_` is correctly set to the variable value for the duration of the block,
-/// and restored to the outer `$_` when the block exits.
-///
-/// For compile-time phasers (Begin, Check, Init), `$_` is bound to the
-/// variable's initial expression rather than the variable reference.
-/// This ensures the correct type is available even before runtime
-/// initialization (e.g. `@a` has type `Array`, not `Nil`, at BEGIN time).
-/// The statement for a declaration with `will` traits: a plain `VarDecl` is
-/// kept as a [`crate::ast::parsed::ParsedStmt::WillDecl`] (lowered where it is
-/// built, or kept for a `.AST` parse); any other statement is wrapped
-/// directly.
+/// The statement for a declaration with `will` traits: kept as a
+/// [`crate::ast::parsed::ParsedStmt::WillDecl`] (lowered where it is built, or
+/// kept for a `.AST` parse).
 // Cost: O(n), n = size of the declaration and the phaser bodies.
 pub(crate) fn will_decl(
-    stmt: Stmt,
-    var_name: &str,
-    will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,
-) -> Stmt {
-    if will_phasers.is_empty() || !matches!(stmt, Stmt::VarDecl { .. }) {
-        return wrap_with_will_phasers(stmt, var_name, will_phasers);
-    }
-    super::control::parsed_block::finish_total(crate::ast::parsed::ParsedStmt::WillDecl {
-        decl: Box::new(stmt),
-        phasers: will_phasers,
-    })
-}
-
-pub(crate) fn wrap_with_will_phasers(
     stmt: Stmt,
     var_name: &str,
     will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,
@@ -99,43 +72,11 @@ pub(crate) fn wrap_with_will_phasers(
     if will_phasers.is_empty() {
         return stmt;
     }
-    // Extract the initialization expression from the VarDecl (if any) so
-    // compile-time phasers (BEGIN/CHECK/INIT) can bind $_ to the container.
-    let init_expr = if let Stmt::VarDecl { expr, .. } = &stmt {
-        Some(expr.clone())
-    } else {
-        None
-    };
-    let mut stmts = vec![stmt];
-    for (kind, body) in will_phasers {
-        // For compile-time phasers, bind $_ to the initial value/container so
-        // it has the correct type (e.g. Array for @a, Hash for %h).
-        // For runtime phasers, bind $_ to the variable itself so the body
-        // sees the current runtime value.
-        let topic_expr = match &kind {
-            PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init => init_expr
-                .clone()
-                .unwrap_or_else(|| Expr::Var(var_name.to_string())),
-            _ => Expr::Var(var_name.to_string()),
-        };
-        // Wrap the user-supplied body in `given <topic> { <body> }` so that
-        // $_ is properly scoped (saved and restored when the block exits).
-        let phaser_body = vec![Stmt::Given {
-            topic: topic_expr,
-            body,
-            is_statement_modifier: false,
-            with_kind: None,
-        }];
-        stmts.push(Stmt::Phaser {
-            spans: Default::default(),
-            kind,
-            body: phaser_body,
-            condition: None,
-            end_index: None,
-            bare: false,
-        });
-    }
-    Stmt::SyntheticBlock(stmts)
+    super::control::parsed_block::finish_total(crate::ast::parsed::ParsedStmt::WillDecl {
+        decl: Box::new(stmt),
+        name: var_name.to_string(),
+        phasers: will_phasers,
+    })
 }
 
 pub(super) fn strip_type_smiley_suffix(type_name: &str) -> &str {
@@ -169,7 +110,7 @@ pub(crate) fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
-pub(in crate::parser::stmt) fn default_decl_expr(
+pub(crate) fn default_decl_expr(
     is_array: bool,
     is_hash: bool,
     shape_dims: Option<&[Expr]>,
@@ -267,16 +208,13 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     // ending in it returns `(6 3)` (Math::Handy's `infix:</%>`). The trailing
     // items are therefore emitted as ONE list headed by the declared scalar,
     // after the declaration so evaluation order is unchanged.
-    let decl_name = crate::parser::stmt::simple_expr_stmt::lvalue::decl_target_var_name(&first)
-        .filter(|n| !n.starts_with(['$', '@', '%', '&']));
-    let mut stmts = match first {
-        Stmt::SyntheticBlock(v) => v,
-        other => vec![other],
-    };
+    let decl_name =
+        crate::ast::decl_target_var_name(&first).filter(|n| !n.starts_with(['$', '@', '%', '&']));
+    let mut stmts = vec![first];
     let mut r_inner = after_ws;
     if r_inner.starts_with(';') || r_inner.is_empty() || r_inner.starts_with('}') {
         // Trailing comma only, no expressions
-        return Ok((r_inner, Stmt::SyntheticBlock(stmts)));
+        return Ok((r_inner, comma_list(stmts)));
     }
     let (r2, sink_expr) = expression(r_inner)?;
     check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
@@ -330,7 +268,16 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
         }
         None => stmts.extend(sinks.into_iter().map(Stmt::Expr)),
     }
-    Ok((r_inner, Stmt::SyntheticBlock(stmts)))
+    Ok((r_inner, comma_list(stmts)))
+}
+
+/// A declaration followed by sunk list items, as one comma application
+/// (`ParsedStmt::CommaDecls`; its lowering is the one place that expands it).
+// Cost: O(n), n = size of the statements.
+fn comma_list(stmts: Vec<Stmt>) -> Stmt {
+    crate::parser::stmt::control::parsed_block::finish_total(
+        crate::ast::parsed::ParsedStmt::CommaDecls(stmts),
+    )
 }
 
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {

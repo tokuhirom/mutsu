@@ -34,8 +34,5 @@ is run-top('use ImportBodiedProto; print ibp-answer(4)'), 'IBP answer 4',
     'a top-level use of a unit module makes the proto callable';
 is run-top('use ImportBodiedProtoBare; print ibpb-answer(5)'), 'IBPB answer 5',
     'so does a top-level use of a bare-file module';
-# TODO: a bare-file module's proto lives only under GLOBAL, which the BEGIN-time
-# preload scope rolls back, so a block-scoped `use` finds nothing to import.
-todo 'a block-scoped use of a bare-file module loses its candidate-less proto';
 my &bare = do { use ImportBodiedProtoBare; -> $x { ibpb-answer($x) } };
 is (try bare(6)), 'IBPB answer 6', 'a closure keeps a bare-file module\'s proto';

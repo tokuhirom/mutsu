@@ -48,3 +48,28 @@ impl Interpreter {
         })
     }
 }
+
+impl Interpreter {
+    /// Whether a sunk statement call to the code variable `&name` hands back
+    /// the container of its last statement, so the value inside it (a stored
+    /// `Failure`, an unsuccessful `Proc`) is not sunk: `my &c = { $z = f() };
+    /// c();` throws nothing, where `sub s { $z = f() }; s()` does.
+    // Cost: O(k) in the callee's trailing marker statements, plus one code
+    // variable lookup by name.
+    pub(crate) fn sunk_call_result_is_block_container(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> bool {
+        let name = code.constants[name_idx as usize].to_string_value();
+        let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) else {
+            return false;
+        };
+        let ValueView::Sub(data) = callable.view() else {
+            return false;
+        };
+        data.compiled_routine.is_none()
+            && crate::runtime::utils::value_type_name(&callable) == "Block"
+            && crate::ast::result_decont::block_result_is_container(&data.body)
+    }
+}

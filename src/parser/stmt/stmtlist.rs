@@ -396,17 +396,9 @@ pub(crate) fn stmt_list_with_mode(
         // the compiler keeps their package context for the rest of the scope.)
         if allow_mainline_capture && starts_unit_class_role_grammar(r) {
             let (after_decl, decl0) = class::unit_module_stmt(r)?;
-            // `unit class Foo:ver(...)` comes back as a non-lexical
-            // `SyntheticBlock` of `:ver`/`:auth`/`:api` metadata setters with the
-            // declaration itself last. Work on the declaration and re-emit the
-            // setters ahead of it.
-            // A parse that keeps spellings gets the typed header node around the
-            // declaration instead; it is put back around the finished one.
+            // `unit class Foo:ver(...)` comes back with the typed header node
+            // around the declaration; it is put back around the finished one.
             let (mut meta_stmts, mut decl, header) = match decl0 {
-                Stmt::SyntheticBlock(mut inner) => {
-                    let decl = inner.pop().expect("declaration is the last element");
-                    (inner, decl, None)
-                }
                 Stmt::Ast(node)
                     if matches!(*node, crate::ast::parsed::ParsedStmt::PackageHeader { .. }) =>
                 {

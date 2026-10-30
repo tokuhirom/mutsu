@@ -258,12 +258,20 @@ impl Interpreter {
         &self,
         modules: impl IntoIterator<Item = &'a str>,
     ) -> crate::parser::CanonicalScans {
-        crate::parser::canonical_export_scans(modules.into_iter().map(|module| {
+        // The scans parse each module's own `use`/`need` lines, which resolve
+        // against the parser's search paths. Outside a parse those are empty, so
+        // a module whose export hook re-exports a `need`ed module's operators
+        // would be scanned without them and cached that way for later parses.
+        let saved_paths = crate::parser::parser_lib_paths_for_slang();
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        let scans = crate::parser::canonical_export_scans(modules.into_iter().map(|module| {
             let path = self
                 .resolve_module_path(module)
                 .map(|(path, _)| path.to_string_lossy().into_owned());
             (module.to_string(), path)
-        }))
+        }));
+        crate::parser::set_parser_lib_paths(saved_paths);
+        scans
     }
 
     /// The modules the `use`s anywhere in `stmts` name: a block's `use`

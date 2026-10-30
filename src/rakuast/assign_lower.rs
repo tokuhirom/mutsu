@@ -37,6 +37,8 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
         | Expr::CallOn { .. }
         | Expr::DynamicMethodCall { .. }
         | Expr::ArrayLiteral(_) => true,
+        // `@a[0]:v = 1`: the adverbs make the read a value, which refuses.
+        Expr::Ast(node) => matches!(node.as_ref(), ParsedExpr::SubscriptAdverbs(_)),
         _ => false,
     }
 }
@@ -65,7 +67,12 @@ pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
         Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
         // `($x = 5) = 6`, `(@a[0] = 5) = 7`: an assignment yields its
         // target's container.
-        Expr::Ast(node) => matches!(node.as_ref(), ParsedExpr::Assign(_)),
+        Expr::Ast(node) => match node.as_ref() {
+            ParsedExpr::Assign(_) => true,
+            // `@a[0;1]:!exists = 1` is an immutable `Bool`.
+            ParsedExpr::SubscriptAdverbs(adverbs) => adverbs.has_exists(),
+            _ => false,
+        },
         Expr::AssignExpr { is_bind, .. } => !is_bind,
         Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
         _ => false,

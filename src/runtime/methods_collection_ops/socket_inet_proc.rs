@@ -445,8 +445,25 @@ impl Interpreter {
             None => (fallback, None),
         };
         if !text.is_empty() {
-            for tap in value_taps {
-                let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())]);
+            // A tap on a `.lines` view gets the stream line by line.
+            let line_modes = sid
+                .map(super::super::native_methods::get_supply_tap_line_modes)
+                .filter(|modes| modes.len() == value_taps.len())
+                .unwrap_or_else(|| vec![None; value_taps.len()]);
+            for (tap, line_mode) in value_taps.iter().zip(line_modes) {
+                match line_mode {
+                    Some(chomp) => {
+                        for line in super::super::native_methods::split_supply_chunks_into_lines(
+                            &[Value::str(text.clone())],
+                            chomp,
+                        ) {
+                            let _ = self.call_sub_value(tap.clone(), vec![line]);
+                        }
+                    }
+                    None => {
+                        let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())]);
+                    }
+                }
             }
         }
         if let Some(sid) = sid {

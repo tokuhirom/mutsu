@@ -152,7 +152,15 @@ impl Interpreter {
                     let _serialize_guard =
                         crate::runtime::native_methods::supplier_serialize_group(sid)
                             .map(crate::runtime::native_methods::acquire_supply_serialize);
+                    // The handler of a live `react` runs with the emitter's
+                    // dynamic variables, as on rakudo (`emit_scope`).
+                    if crate::runtime::native_methods::state::supplier_has_listeners(sid) {
+                        crate::runtime::native_methods::emit_scope::stage(
+                            self.dynamic_scope_snapshot(),
+                        );
+                    }
                     let actions = supplier_emit_collect(sid, &value);
+                    crate::runtime::native_methods::emit_scope::unstage();
                     for action in actions {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {

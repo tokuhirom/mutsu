@@ -649,7 +649,27 @@ impl Compiler {
             }
             _ => return None,
         };
-        self.compile_expr(cur);
+        // A package stash root (`Foo::<%reg><x> = 5`): the stash itself is no
+        // container to store through, but its entry is, so the temp holds the
+        // entry (`Foo::<%reg>`, the shared `our %reg`) and the chain continues
+        // below it.
+        let stash_entry_root;
+        let root_expr: &Expr = match (cur, levels.pop()) {
+            (Expr::PseudoStash(_), Some((entry, is_positional))) => {
+                stash_entry_root = Expr::Index {
+                    target: Box::new(cur.clone()),
+                    index: Box::new(entry.clone()),
+                    is_positional,
+                    spelling: Default::default(),
+                };
+                &stash_entry_root
+            }
+            (_, popped) => {
+                levels.extend(popped);
+                cur
+            }
+        };
+        self.compile_expr(root_expr);
         let tmp = format!(
             "{}{}#{}",
             crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX,

@@ -2397,6 +2397,9 @@ pub(crate) enum Stmt {
     /// undeclared-routine guards (ADR-0134). An error raised before this
     /// point is a compile-time failure, which skips the END phasers (#10977).
     BeginPrologueEnd,
+    /// Runs the closures `$*CU.add-check-code` queued on the main unit, after
+    /// its CHECK phasers and before INIT.
+    RunCheckCode,
     Assign {
         name: String,
         expr: Expr,
@@ -3428,7 +3431,7 @@ mod tail;
 mod virtual_call;
 
 pub(crate) use body_local_names::{collect_all_my_decl_names, collect_routine_body_local_names};
-pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
+pub(crate) use lvalue::{LvaluePeel, LvalueRoot, decl_target_var_name};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,

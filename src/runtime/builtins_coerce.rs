@@ -2,7 +2,9 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
-    /// The container-type coercion calls `Array(...)` / `List(...)` / `Hash(...)`.
+    /// The container-type coercion calls `Array(...)` / `List(...)` / `Hash(...)` /
+    /// `Seq(...)` (several arguments are the elements of a `Seq`, one argument is
+    /// `x.Seq`).
     /// Each argument becomes one element (Raku does not deep-flatten these:
     /// `Array((1,2), 3).elems` is 2), so the args list is materialized directly.
     /// A lone argument instead coerces like the method form (`List(x)` is
@@ -25,6 +27,21 @@ impl Interpreter {
                 "{name}({})",
                 sym.resolve()
             ))));
+        }
+        // `Seq()` is the coercion type term `Seq(Any)`; a lone argument is its
+        // `.Seq`; several arguments are the elements of a fresh Seq.
+        if name == "Seq" {
+            return match args {
+                [] => Ok(Value::package(Symbol::intern("Seq(Any)"))),
+                [only] => {
+                    if self.type_matches_value("Seq", only.descalarize()) {
+                        Ok(only.descalarize().clone())
+                    } else {
+                        self.call_method_with_values(only.clone(), "Seq", vec![])
+                    }
+                }
+                _ => Ok(Value::seq(args.to_vec())),
+            };
         }
         // A lone argument follows the single-argument rule: `List(x)` and
         // `Array(x)` coerce it like the method form (`x.List` / `x.Array`), so

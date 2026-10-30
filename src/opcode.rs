@@ -4531,6 +4531,9 @@ pub(crate) enum OpCode {
     /// an error raised from here on is a run-time one, which runs the END
     /// phasers. Stack: `[] → []`.
     EndBeginPrologue,
+    /// Run the check code queued on the main unit (`Stmt::RunCheckCode`).
+    /// Stack: `[] → []`.
+    RunCheckCode,
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
@@ -7682,6 +7685,13 @@ pub(crate) struct CompiledCode {
     /// (`Compiler::lexical_scope_known`); empty otherwise, which keeps the
     /// by-name resolution. Read by `Interpreter::imported_amp_over_inherited`.
     pub(crate) unscoped_amp_reads: Vec<Symbol>,
+    /// The converse of `unscoped_amp_reads`: `&name` reads whose site the
+    /// compiler proved sits inside a lexical `&name` binding it can see (a
+    /// `for ... -> &name` parameter, a `my &name`), so the env `&name` entry
+    /// IS that binding even when the callable it holds was made in another
+    /// compunit. Recorded only when `Compiler::lexical_scope_known`. Read by
+    /// `Interpreter::imported_amp_over_inherited`.
+    pub(crate) bound_amp_reads: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -7772,7 +7782,7 @@ pub(crate) struct CompiledCode {
     pub(crate) may_observe_named_slurpy: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
-    /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
+    /// parameter (`__mutsu_supply_emitter_N`, see `rakuast::supply_lower`).
     ///
     /// Such a body is a scope of its own that the caller never re-enters, so the
     /// names it declares with `my` are private to it: they must not be written
@@ -8505,6 +8515,7 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             eval_scope_names: std::collections::HashSet::new(),
             unscoped_amp_reads: Vec::new(),
+            bound_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             upvalue_syms: Vec::new(),
@@ -8536,6 +8547,23 @@ impl CompiledCode {
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
+    }
+
+    /// Number of attribute inline-cache words of this chunk: one per local
+    /// slot (a `$!x` access by slot), then one per constant (an `@!x` / `%!x`
+    /// store by name, whose `SetGlobal` operand is that constant).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn attr_site_words(&self) -> usize {
+        self.locals.len() + self.constants.len()
+    }
+
+    /// The attribute inline-cache word of the `SetGlobal` whose name is
+    /// constant `name_idx` (see [`Self::attr_site_words`]).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn global_attr_site(&self, name_idx: u32) -> usize {
+        self.locals.len() + name_idx as usize
     }
 
     /// The attribute-cell key of local slot `idx`, or `None` when that slot is

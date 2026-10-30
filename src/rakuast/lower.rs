@@ -3134,9 +3134,9 @@ pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeErr
             return Err(unsupported(node));
         };
         let name = name.clone();
-        let _ = name;
         return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::WillDecl {
             decl: Box::new(declaration),
+            name,
             phasers,
         });
     }
@@ -4520,7 +4520,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     });
                 }
                 return Ok(Expr::Grouped(Box::new(
-                    crate::parser::lower_paren_sections(sections, Vec::new(), true),
+                    super::sections::lower_paren_sections(sections, Vec::new(), true),
                 )));
             }
             let inner = named_child_or_positional(semilist)?;
@@ -4597,7 +4597,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         other => vec![other],
                     });
                 }
-                return Ok(crate::parser::lower_array_sections(
+                return Ok(super::sections::lower_array_sections(
                     sections,
                     Vec::new(),
                     true,
@@ -5121,7 +5121,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             // `Assignment` node; the parser's own expansion handles a literal
             // list of lvalues.
             if infix.class == RakuAstClass::Assignment {
-                return Ok(crate::parser::hyper_assignment_expr(
+                return Ok(super::hyper_assign::lower_hyper_assignment(
                     *left, *right, dwim_left, dwim_right,
                 ));
             }
@@ -5409,14 +5409,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             return Err(unsupported(postfix));
                         }
                         if list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty()) {
-                            // The parser keeps the zen slice itself when
-                            // `:exists` directly follows the empty subscript.
-                            let subscript = if super::subscript_adverb::leads_with_exists(postfix) {
+                            // `@a[]:exists` is the zen slice itself.
+                            let subscript = if super::subscript_adverb::leads_with_exists(postfix)
+                                && is_positional
+                            {
                                 Expr::ZenSlice(Box::new(operand))
                             } else {
                                 Expr::Index {
                                     target: Box::new(operand),
-                                    index: Box::new(Expr::Literal(Value::WHATEVER)),
+                                    // `%h{}:exists` answers like `%h{*}:exists`.
+                                    index: Box::new(if is_positional {
+                                        Expr::Literal(Value::WHATEVER)
+                                    } else {
+                                        Expr::Whatever
+                                    }),
                                     is_positional,
                                     spelling: Default::default(),
                                 }

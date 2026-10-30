@@ -62,9 +62,11 @@ pub(crate) enum ParsedStmt {
     /// `my $x will begin { ... }`: the declaration (a `Stmt::VarDecl`) and the
     /// `will PHASE BLOCK` traits as written (kind and body). `rakuast::lower`
     /// expands each into a phaser after the declaration
-    /// (`parser::wrap_with_will_phasers`).
+    /// (`rakuast::will_decl`).
     WillDecl {
         decl: Box<Stmt>,
+        /// The declared variable the phasers' `$_` is bound to.
+        name: String,
         phasers: Vec<(super::PhaserKind, Vec<Stmt>)>,
     },
     /// A declaration or assignment with a loose tail, `my $x = 1 and 2`: the
@@ -86,7 +88,7 @@ pub(crate) enum ParsedStmt {
     },
     /// A sigilless declaration, `my \x = 5` / `my Int \x := $s` /
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
-    /// compiler needs (`parser::build_sigilless_bind_stmt`).
+    /// compiler needs (`rakuast::sigilless_lower::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
     /// `temp my $x`: the declaration (a `Stmt::VarDecl`) under a `temp` prefix.
     /// `rakuast::lower` follows it with the save of the fresh variable
@@ -146,17 +148,6 @@ pub(crate) enum ParsedStmt {
     /// `rakuast::lower` saves the variable and assigns inside the save
     /// (`ast::temporize::expand`).
     Temporize(Box<super::temporize::Temporized>),
-    /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
-    /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
-    /// postfix modifier. The modifier cannot gate the declaration (attributes
-    /// install when the class is composed), so `rakuast::lower` expands it
-    /// into the declaration and a runtime-only test of the condition
-    /// (`ast::attribute_modifier::expand`).
-    AttributeModifier {
-        decl: Box<Stmt>,
-        condition: Expr,
-        kind: super::decl_modifier::DeclarationModifier,
-    },
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration over
     /// the attribute declarations as written. `rakuast::lower` installs each
     /// listed attribute separately (a block of the declarations).
@@ -279,7 +270,7 @@ pub(crate) enum ParsedExpr {
     /// `supply { BODY }`: the body as written, before the expansion rewrites
     /// its `emit` / `done` onto the on-demand emitter
     /// (`StatementPrefix::Supply`). It lowers to that expansion
-    /// (`parser::supply_method_call`).
+    /// (`rakuast::supply_lower::supply_method_call`).
     Supply(Vec<Stmt>),
     /// The body of a `start { BODY }` whose placeholder Raku rejects, as
     /// written. It lowers to a do-block, so the compiler reports the
@@ -288,7 +279,7 @@ pub(crate) enum ParsedExpr {
     StartBody(Vec<Stmt>),
     /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
     /// over `Assignment` under a hyper meta-infix). It lowers to the
-    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    /// element-wise expansion (`rakuast::hyper_assign::lower_hyper_assignment`).
     HyperAssign(HyperAssign),
     /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
     /// declaration as written. It lowers to the declaration followed by a
@@ -302,6 +293,32 @@ pub(crate) enum ParsedExpr {
     /// variable named by its storage name. They lower to the reserved calls
     /// the runtime executes (`ast::atomic_op::lower_var`).
     AtomicVar(AtomicVar),
+    /// A subscript with the adverbs written after it, `@a[0]:exists`,
+    /// `%h<a>:delete:k`, `@a[1]:foo` (`Postcircumfix::*Index` with its
+    /// `colonpairs`). It lowers through the postcircumfix lowering
+    /// (`rakuast::subscript_adverb::lower`).
+    SubscriptAdverbs(SubscriptAdverbs),
+}
+
+/// A subscript and the colonpairs written after it, in source order.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubscriptAdverbs {
+    /// The subscript as written (`Index`, `MultiDimIndex`, or the `ZenSlice`
+    /// of `@a[]:exists`).
+    pub(crate) subscript: Expr,
+    /// Each adverb as the colonpair expression the source spells
+    /// (`Binary` over `=>`, with its [`super::BinaryForm`]).
+    pub(crate) pairs: Vec<Expr>,
+}
+
+impl SubscriptAdverbs {
+    /// Whether one of the adverbs is `:exists` (in any spelling).
+    // Cost: O(a), a = adverbs.
+    pub(crate) fn has_exists(&self) -> bool {
+        self.pairs
+            .iter()
+            .any(|pair| super::subscript_adverb::pair_key(pair).as_deref() == Some("exists"))
+    }
 }
 
 /// An atomic access of a variable by name.
@@ -630,8 +647,7 @@ impl ParsedStmt {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -664,8 +680,7 @@ impl ParsedStmt {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -698,7 +713,6 @@ impl ParsedStmt {
             ParsedStmt::InlineProtoUse { .. } => Vec::new(),
             ParsedStmt::CallAssignList { items, .. } => items.iter().collect(),
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
-            ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -736,7 +750,6 @@ impl ParsedStmt {
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::ImmediateCall { .. }
-            | ParsedStmt::AttributeModifier { .. }
             | ParsedStmt::AttributeGroup(_)
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)

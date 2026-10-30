@@ -9,6 +9,7 @@ const STATEMENT_FIELDS: &[(&str, Absent)] = &[("labels", Absent::EmptyList)];
 pub(super) fn local_names(class_name: &str) -> Option<Vec<&'static str>> {
     match class_name {
         "RakuAST::Node" => Some(vec![
+            "fileline",
             "visit-children",
             "visit",
             "visit-dfs",

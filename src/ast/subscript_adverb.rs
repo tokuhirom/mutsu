@@ -4,24 +4,17 @@
 //! The compiler executes a subscript adverb as one of a few internal shapes:
 //! an `Expr::Exists` node for `:exists`, a `DELETE-KEY` method call for
 //! `:delete`, and a `__mutsu_subscript_adverb` builtin call for the value
-//! adverbs `:k` / `:v` / `:kv` / `:p`. The builders of those shapes are here,
-//! and the parser calls them as it reads each adverb.
+//! adverbs `:k` / `:v` / `:kv` / `:p`. The builders of those shapes are here.
 //!
-//! [`expand`] composes the builders for a whole adverb list, the way RakuAST
-//! spells it (`Postcircumfix::*Index(colonpairs => …)`): `rakuast::lower` calls
-//! it (ADR-10723 Stage 1). [`adverbs`] goes the other way for the converter:
-//! it reads an expression back as a subscript and its adverbs, and accepts it
-//! only when [`expand`] rebuilds exactly that expression, so nothing is
-//! reverse-engineered from a shape some other desugaring happens to share.
+//! The parser keeps the written colonpairs (`ParsedExpr::SubscriptAdverbs`),
+//! and [`expand`] composes the builders for the whole adverb list, the way
+//! RakuAST spells it (`Postcircumfix::*Index(colonpairs => …)`):
+//! `rakuast::subscript_adverb::lower` calls it.
 //!
 //! An adverb is a `(key, value)` pair, `value` being `True` for `:key`,
 //! `False` for `:!key` and the argument expression for `:key(…)`.
 
-use std::hash::{Hash, Hasher};
-
-use super::{
-    BinaryForm, ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER,
-};
+use super::{ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -29,13 +22,23 @@ use crate::value::{Value, ValueView};
 pub(crate) const SUBSCRIPT_ADVERB_FN: &str = "__mutsu_subscript_adverb";
 pub(crate) const SUBSCRIPT_NAMED_ADVERBS_FN: &str = "__mutsu_subscript_named_adverbs";
 
-/// Retain the written colonpair beside a subscript's execution expansion.
-pub(crate) fn source_pair(key: &str, value: Expr, form: BinaryForm) -> Expr {
-    Expr::Binary {
-        left: Box::new(Expr::Literal(Value::str(key.to_string()))),
+/// The key of a colonpair expression (`:foo`, `:!foo`, `:foo(1)`, `:$foo`).
+// Cost: O(1).
+pub(crate) fn pair_key(pair: &Expr) -> Option<String> {
+    let Expr::Binary {
+        left,
         op: crate::token_kind::TokenKind::FatArrow,
-        right: Box::new(value),
-        form,
+        ..
+    } = pair
+    else {
+        return None;
+    };
+    match left.as_ref() {
+        Expr::Literal(key) => match key.view() {
+            ValueView::Str(key) => Some(key.to_string()),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -136,47 +139,6 @@ pub(crate) fn named_adverb_call(subscript: &Expr, pairs: Vec<Expr>) -> Option<Ex
 /// [`SUBSCRIPT_ADVERB_FN`] call.
 const ADVERB_COND_MARKER: &str = "__adverb_cond__";
 
-/// A value adverb with an explicitly written condition. The ordinary
-/// `adverbs` round-trip deliberately normalizes `:k(True)` to `:k`; this
-/// reader retains the written parentheses for RakuAST's ColonPair::Value.
-// Cost: O(1).
-pub(crate) fn explicit_value_condition(expr: &Expr) -> Option<(&Expr, &Expr, bool, &str, &Expr)> {
-    let Expr::Call { name, args, .. } = expr else {
-        return None;
-    };
-    if *name != Symbol::intern(SUBSCRIPT_ADVERB_FN) {
-        return None;
-    }
-    let [
-        target,
-        index,
-        Expr::Literal(mode),
-        _,
-        Expr::Literal(kind),
-        Expr::Literal(marker),
-        condition,
-    ] = args.as_slice()
-    else {
-        return None;
-    };
-    let ValueView::Str(mode) = mode.view() else {
-        return None;
-    };
-    let key = VALUE_ADVERBS
-        .iter()
-        .find(|(name, _, _)| *name == mode.as_str())?
-        .0;
-    let is_positional = match kind.view() {
-        ValueView::Str(kind) if kind.as_str() == SUBSCRIPT_POSITIONAL_MARKER => true,
-        ValueView::Str(kind) if kind.as_str() == SUBSCRIPT_ASSOCIATIVE_MARKER => false,
-        _ => return None,
-    };
-    if !matches!(marker.view(), ValueView::Str(text) if text.as_str() == ADVERB_COND_MARKER) {
-        return None;
-    }
-    Some((target, index, is_positional, key, condition))
-}
-
 /// The method a `:delete` adverb lowers to on a single-dimension subscript.
 const DELETE_KEY: &str = "DELETE-KEY";
 
@@ -231,9 +193,9 @@ pub(crate) fn delete_flag() -> Expr {
 
 /// The deleting form of a single-dimension subscript's read, `read` being
 /// the subscript itself, its `:exists` node or its value-adverb call.
-pub(crate) fn deleting(read: &Expr, delete_first: bool) -> Expr {
+pub(crate) fn deleting(read: &Expr) -> Expr {
     match read {
-        Expr::Exists { .. } => apply_delete_to_exists(read.clone(), delete_first),
+        Expr::Exists { .. } => apply_delete_to_exists(read.clone()),
         Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
             let mut args = args.clone();
             args.push(delete_flag());
@@ -309,7 +271,7 @@ pub(crate) fn multidim_target_var_name(target: &Expr) -> String {
 /// and only the by-name `_dyn` builtin can mutate the variable — so lower to
 /// that here, the same form the dynamic `:$delete` produces with a runtime-true
 /// flag. `:!exists:delete` has no candidate at all there and is an X::Adverb.
-pub(crate) fn apply_delete_to_exists(expr: Expr, delete_first: bool) -> Expr {
+pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
     let Expr::Exists {
         target,
         negated,
@@ -343,26 +305,7 @@ pub(crate) fn apply_delete_to_exists(expr: Expr, delete_first: bool) -> Expr {
             &["!exists".to_string(), "delete".to_string()],
             &[],
         );
-        return Expr::spelled(error, || {
-            let exists = source_pair(
-                "exists",
-                Expr::Literal(Value::FALSE),
-                BinaryForm::ColonPairFalse,
-            );
-            let delete = source_pair(
-                "delete",
-                Expr::Literal(Value::TRUE),
-                BinaryForm::ColonPairTrue,
-            );
-            super::spelled::Spelling::ConflictingSubscript {
-                subscript: target,
-                pairs: if delete_first {
-                    vec![delete, exists]
-                } else {
-                    vec![exists, delete]
-                },
-            }
-        });
+        return error;
     }
     let adverb_str = match adverb {
         ExistsAdverb::Kv => "kv",
@@ -549,39 +492,6 @@ fn exists_secondary(key: &str, value: &Expr) -> Option<ExistsAdverb> {
     })
 }
 
-/// The adverb list of a `:exists:ADVERB` combination; the inverse of
-/// [`exists_secondary`].
-fn exists_secondary_adverb(adverb: ExistsAdverb) -> Option<Adverb> {
-    let (key, on) = match adverb {
-        ExistsAdverb::None => return None,
-        ExistsAdverb::Kv => ("kv", true),
-        ExistsAdverb::NotKv => ("kv", false),
-        ExistsAdverb::P => ("p", true),
-        ExistsAdverb::NotP => ("p", false),
-        ExistsAdverb::InvalidV => ("v", true),
-        ExistsAdverb::NotV => ("v", false),
-        ExistsAdverb::InvalidK => ("k", true),
-        ExistsAdverb::InvalidNotK => ("k", false),
-    };
-    Some((key.to_string(), Expr::Literal(Value::truth(on))))
-}
-
-/// The multi-dimensional subscript a by-name builtin's variable name and
-/// dimensions spell: `@a` is the positional form, `%h` the associative one.
-// Cost: O(d), d = dimensions.
-fn multidim_from_var_name(var: &str, dimensions: &[Expr]) -> Option<Expr> {
-    let target = match var.chars().next()? {
-        '%' => Expr::HashVar(var[1..].to_string()),
-        '@' => Expr::ArrayVar(var[1..].to_string()),
-        _ => return None,
-    };
-    Some(Expr::MultiDimIndex {
-        is_positional: !matches!(target, Expr::HashVar(_)),
-        target: Box::new(target),
-        dimensions: dimensions.to_vec(),
-    })
-}
-
 /// The by-name builtin a multi-dimensional `:delete` lowers to.
 /// `six_e` is whether the source is `use v6.e` or later (see the parser's
 /// `multidim_delete_fn`, which supplies the language version).
@@ -596,7 +506,6 @@ pub(crate) fn multidim_delete_fn(is_positional: bool, ndims: usize, six_e: bool)
 
 const MULTIDIM_ADVERB_FN: &str = "__mutsu_multidim_subscript_adverb";
 const MULTIDIM_ADVERB_DYN_FN: &str = "__mutsu_multidim_subscript_adverb_dyn";
-const MULTIDIM_EXISTS_DYN_FN: &str = "__mutsu_multidim_exists_adverb_dyn";
 const MULTIDIM_DELETE: &str = "__mutsu_multidim_delete";
 const MULTIDIM_DELETE_ASSOC: &str = "__mutsu_multidim_delete_assoc";
 
@@ -699,348 +608,10 @@ pub(crate) fn expand(subscript: Expr, adverbs: &[Adverb], six_e: bool) -> Option
             conditional_delete(delete.clone(), call, read)
         });
     }
-    let delete_first = adverbs.iter().position(|(key, _)| key == "delete")
-        < adverbs.iter().position(|(key, _)| key == "exists");
-    let deleting = deleting(&read, delete_first);
+    let deleting = deleting(&read);
     Some(if is_bool_literal(delete, true) {
         deleting
     } else {
         conditional_delete(delete.clone(), deleting, read)
     })
-}
-
-/// The subscript and adverbs `expr` is the [`expand`]ed form of, or `None`
-/// when it is not one. Accepted only when [`expand`] rebuilds `expr` exactly.
-// Cost: O(n), n = AST nodes under `expr` (the expansion is rebuilt and hashed).
-pub(crate) fn adverbs(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
-    let (subscript, adverbs) = read_back(expr)?;
-    // The language version only decides a multi-dimensional `:delete`'s builtin.
-    [false, true]
-        .into_iter()
-        .any(|six_e| {
-            expand(subscript.clone(), &adverbs, six_e)
-                .is_some_and(|rebuilt| structural_hash(&rebuilt) == structural_hash(expr))
-        })
-        .then_some((subscript, adverbs))
-}
-
-/// A candidate reading of `expr` for [`adverbs`] to verify. A `:delete(COND)`
-/// is a ternary whose else-branch is the read the other adverbs build.
-fn read_back(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
-    let Expr::Ternary {
-        cond, else_expr, ..
-    } = expr
-    else {
-        return read_back_read(expr);
-    };
-    let (subscript, mut adverbs) = match else_expr.as_ref() {
-        index @ (Expr::Index { .. } | Expr::MultiDimIndex { .. }) => (index.clone(), Vec::new()),
-        read => read_back_read(read)?,
-    };
-    if adverbs.iter().any(|(key, _)| key == "delete") {
-        return None;
-    }
-    adverbs.push(("delete".to_string(), cond.as_ref().clone()));
-    Some((subscript, adverbs))
-}
-
-/// A candidate reading of a read that is not a `:delete(COND)` ternary.
-fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
-    let truth = |on: bool| Expr::Literal(Value::truth(on));
-    match expr {
-        Expr::Exists {
-            target,
-            negated,
-            delete,
-            arg,
-            adverb,
-        } => {
-            let exists = match (negated, arg) {
-                (false, None) => truth(true),
-                (true, None) => truth(false),
-                (false, Some(arg)) => arg.as_ref().clone(),
-                (true, Some(_)) => return None,
-            };
-            let mut adverbs = vec![("exists".to_string(), exists)];
-            adverbs.extend(exists_secondary_adverb(*adverb));
-            if *delete {
-                adverbs.push(("delete".to_string(), truth(true)));
-            }
-            Some((target.as_ref().clone(), adverbs))
-        }
-        Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
-            let [target, index, mode, _var_name, marker, extras @ ..] = args.as_slice() else {
-                return None;
-            };
-            let is_positional = match marker {
-                Expr::Literal(v) => match v.view() {
-                    ValueView::Str(s) if s.as_str() == SUBSCRIPT_POSITIONAL_MARKER => true,
-                    ValueView::Str(s) if s.as_str() == SUBSCRIPT_ASSOCIATIVE_MARKER => false,
-                    _ => return None,
-                },
-                _ => return None,
-            };
-            let Expr::Literal(mode) = mode else {
-                return None;
-            };
-            let ValueView::Str(mode) = mode.view() else {
-                return None;
-            };
-            let (cond, extras) = match extras {
-                [Expr::Literal(m), cond, rest @ ..] if matches!(m.view(), ValueView::Str(s) if s.as_str() == ADVERB_COND_MARKER) => {
-                    (Some(cond.clone()), rest)
-                }
-                _ => (None, extras),
-            };
-            let delete = match extras {
-                [] => false,
-                [_] => true,
-                _ => return None,
-            };
-            let (key, value) = decode_mode(mode.as_str(), cond.as_ref())?;
-            let mut adverbs = vec![(key.to_string(), value)];
-            if delete {
-                adverbs.push(("delete".to_string(), truth(true)));
-            }
-            let subscript = Expr::Index {
-                target: Box::new(target.clone()),
-                index: Box::new(index.clone()),
-                is_positional,
-                spelling: Default::default(),
-            };
-            Some((subscript, adverbs))
-        }
-        // `@a[0;1]:kv`: the by-name builtin over the target, the mode and the
-        // dimensions (`subscript_adverb_expr_with_cond`).
-        Expr::Call { name, args, .. }
-            if *name == Symbol::intern("__mutsu_multidim_subscript_adverb") =>
-        {
-            let [target, Expr::Literal(mode), rest @ ..] = args.as_slice() else {
-                return None;
-            };
-            let ValueView::Str(mode) = mode.view() else {
-                return None;
-            };
-            let cut = rest.iter().position(|e| {
-                matches!(e, Expr::Literal(m)
-                    if matches!(m.view(), ValueView::Str(s) if s.as_str() == ADVERB_COND_MARKER))
-            });
-            let (dimensions, cond) = match cut {
-                Some(at) => (&rest[..at], Some(rest.get(at + 1)?)),
-                None => (rest, None),
-            };
-            if dimensions.is_empty() {
-                return None;
-            }
-            let (key, value) = decode_mode(mode.as_str(), cond)?;
-            let subscript = Expr::MultiDimIndex {
-                target: Box::new(target.clone()),
-                dimensions: dimensions.to_vec(),
-                // The call keeps neither bracket; a hash target is the
-                // associative form.
-                is_positional: !matches!(target, Expr::HashVar(_)),
-            };
-            Some((subscript, vec![(key.to_string(), value)]))
-        }
-        // `@a[0;1]:delete`: the by-name delete builtin over the variable name
-        // and the dimensions. The name does not say which bracket was
-        // written, so the target is rebuilt the way the `:kv` call is.
-        Expr::Call { name, args, .. }
-            if *name == MULTIDIM_DELETE || *name == MULTIDIM_DELETE_ASSOC =>
-        {
-            let [Expr::Literal(var), dimensions @ ..] = args.as_slice() else {
-                return None;
-            };
-            let ValueView::Str(var) = var.view() else {
-                return None;
-            };
-            if dimensions.is_empty() {
-                return None;
-            }
-            let subscript = multidim_from_var_name(var.as_str(), dimensions)?;
-            Some((subscript, vec![("delete".to_string(), truth(true))]))
-        }
-        // `@a[I;J]:k:delete`: [var, mode, True, dims..., (marker, cond)].
-        Expr::Call { name, args, .. } if *name == Symbol::intern(MULTIDIM_ADVERB_DYN_FN) => {
-            let [
-                Expr::Literal(var),
-                Expr::Literal(mode),
-                Expr::Literal(flag),
-                rest @ ..,
-            ] = args.as_slice()
-            else {
-                return None;
-            };
-            let (ValueView::Str(var), ValueView::Str(mode), ValueView::Bool(true)) =
-                (var.view(), mode.view(), flag.view())
-            else {
-                return None;
-            };
-            let cut = rest.iter().position(|e| {
-                matches!(e, Expr::Literal(m)
-                    if matches!(m.view(), ValueView::Str(s) if s.as_str() == ADVERB_COND_MARKER))
-            });
-            let (dimensions, cond) = match cut {
-                Some(at) => (&rest[..at], Some(rest.get(at + 1)?)),
-                None => (rest, None),
-            };
-            if dimensions.is_empty() {
-                return None;
-            }
-            let (key, value) = decode_mode(mode.as_str(), cond)?;
-            let subscript = multidim_from_var_name(var.as_str(), dimensions)?;
-            Some((
-                subscript,
-                vec![
-                    (key.to_string(), value),
-                    ("delete".to_string(), truth(true)),
-                ],
-            ))
-        }
-        // `@a[I;J]:exists:delete`: [var, negated, True, secondary, dims...].
-        Expr::Call { name, args, .. } if *name == Symbol::intern(MULTIDIM_EXISTS_DYN_FN) => {
-            let [
-                Expr::Literal(var),
-                Expr::Literal(negated),
-                Expr::Literal(flag),
-                Expr::Literal(secondary),
-                dimensions @ ..,
-            ] = args.as_slice()
-            else {
-                return None;
-            };
-            let (
-                ValueView::Str(var),
-                ValueView::Bool(false),
-                ValueView::Bool(true),
-                ValueView::Str(secondary),
-            ) = (var.view(), negated.view(), flag.view(), secondary.view())
-            else {
-                return None;
-            };
-            if dimensions.is_empty() {
-                return None;
-            }
-            let mut adverbs = vec![("exists".to_string(), truth(true))];
-            adverbs.extend(match secondary.as_str() {
-                "none" => None,
-                key @ ("kv" | "p" | "k" | "v") => Some((key.to_string(), truth(true))),
-                _ => return None,
-            });
-            adverbs.push(("delete".to_string(), truth(true)));
-            Some((multidim_from_var_name(var.as_str(), dimensions)?, adverbs))
-        }
-        Expr::MethodCall {
-            target, name, args, ..
-        } if *name == DELETE_KEY && args.is_empty() && matches!(**target, Expr::Index { .. }) => {
-            Some((
-                target.as_ref().clone(),
-                vec![("delete".to_string(), truth(true))],
-            ))
-        }
-        _ => None,
-    }
-}
-
-/// The adverb a [`SUBSCRIPT_ADVERB_FN`]-style mode string spells, with its
-/// value: the inverse of [`value_adverb_mode`].
-fn decode_mode(mode: &str, cond: Option<&Expr>) -> Option<(&'static str, Expr)> {
-    VALUE_ADVERBS.iter().find_map(|&(name, negated, zero)| {
-        let truth = |on: bool| Expr::Literal(Value::truth(on));
-        if mode == name {
-            Some((name, cond.cloned().unwrap_or_else(|| truth(true))))
-        } else if mode == negated {
-            Some((name, truth(false)))
-        } else if mode == zero {
-            Some((name, Expr::Literal(Value::int(0))))
-        } else {
-            None
-        }
-    })
-}
-
-/// A structural identity of `expr` through the derived `Hash` impls.
-fn structural_hash(expr: &Expr) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    expr.hash(&mut hasher);
-    hasher.finish()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn index(positional: bool) -> Expr {
-        Expr::Index {
-            target: Box::new(if positional {
-                Expr::ArrayVar("a".to_string())
-            } else {
-                Expr::HashVar("h".to_string())
-            }),
-            index: Box::new(Expr::Literal(Value::int(0))),
-            is_positional: positional,
-            spelling: Default::default(),
-        }
-    }
-
-    fn adverb(key: &str, value: Expr) -> Adverb {
-        (key.to_string(), value)
-    }
-
-    fn on(b: bool) -> Expr {
-        Expr::Literal(Value::truth(b))
-    }
-
-    #[test]
-    fn every_expansion_reads_back_as_its_adverbs() {
-        let cond = Expr::Var("c".to_string());
-        let lists = vec![
-            vec![adverb("exists", on(true))],
-            vec![adverb("exists", on(false))],
-            vec![adverb("exists", cond.clone())],
-            vec![adverb("exists", on(true)), adverb("kv", on(true))],
-            vec![adverb("exists", on(true)), adverb("delete", on(true))],
-            vec![adverb("exists", on(true)), adverb("delete", cond.clone())],
-            vec![adverb("delete", on(true))],
-            vec![adverb("delete", cond.clone())],
-            vec![adverb("k", on(true))],
-            vec![adverb("kv", on(false))],
-            vec![adverb("p", Expr::Literal(Value::int(0)))],
-            vec![adverb("v", cond.clone())],
-            vec![adverb("v", on(true)), adverb("delete", on(true))],
-            vec![adverb("p", on(true)), adverb("delete", cond.clone())],
-        ];
-        for positional in [true, false] {
-            for list in &lists {
-                let expanded = expand(index(positional), list, false).expect("expands");
-                let (subscript, read) = adverbs(&expanded).expect("reads back");
-                assert_eq!(
-                    structural_hash(&subscript),
-                    structural_hash(&index(positional))
-                );
-                assert_eq!(read.len(), list.len(), "{list:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_conflict_or_a_foreign_shape_is_not_an_expansion() {
-        let two_values = [adverb("k", on(true)), adverb("v", on(true))];
-        assert!(expand(index(true), &two_values, false).is_none());
-        assert!(
-            expand(
-                Expr::ArrayVar("a".to_string()),
-                &[adverb("k", on(true))],
-                false
-            )
-            .is_none()
-        );
-        // A ternary over a subscript that is not a conditional delete.
-        let foreign = Expr::Ternary {
-            cond: Box::new(Expr::Var("c".to_string())),
-            then_expr: Box::new(Expr::Literal(Value::int(1))),
-            else_expr: Box::new(index(true)),
-        };
-        assert!(adverbs(&foreign).is_none());
-    }
 }

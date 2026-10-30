@@ -1007,7 +1007,9 @@ impl Interpreter {
                     || self.export_namespace_exists(name)
                     || Self::is_builtin_type(name)
                     || crate::core_type_names::contains(name)
-                    || crate::rakuast::is_registered_type_object(name)
+                    || crate::rakuast::is_registered_type_object(
+                        crate::runtime::types::strip_type_smiley(name).0,
+                    )
                 {
                     Value::package(Symbol::intern(name))
                 } else {
@@ -1075,8 +1077,13 @@ impl Interpreter {
             // above (types, enums, functions, an unqualified `our`-var) already
             // had first refusal.
             pkg_val
-        } else if let Some(global_val) =
-            Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name)
+        } else if name != "IterationEnd"
+            // The core sentinel is found in CORE before GLOBAL is consulted, so
+            // it never asks GLOBAL: that probe assembles the whole GLOBAL stash
+            // (every env key, routine and class), ~1 ms with Red loaded, and
+            // `IterationEnd` is read on every `pull-one`.
+            && let Some(global_val) =
+                Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name)
         {
             // `GLOBAL::<Name> := Name` published the symbol to every scope,
             // including code that never imported the module declaring it.

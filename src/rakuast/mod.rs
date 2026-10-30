@@ -33,13 +33,16 @@ mod decl_origins;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
+pub(crate) mod hyper_assign;
 mod if_branch;
+pub(crate) mod list_infix;
 mod loop_bind;
 pub(crate) mod nested_methods;
 mod package_trait_origins;
 mod parsed_view;
 pub(crate) mod pointy_bind;
 mod regex_origins;
+pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
@@ -48,6 +51,10 @@ mod convert;
 mod core_term_names;
 use crate::core_type_names;
 mod decl_compound_assign;
+mod decl_modifier_split;
+mod sigilless_lower;
+mod supply_lower;
+mod will_decl;
 pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
 mod decl_traits;
@@ -116,6 +123,7 @@ mod regex_quantifier;
 mod regex_sym;
 mod regex_variable_alias;
 mod render;
+mod resolve;
 mod role;
 mod role_header;
 mod routine_ctor;
@@ -180,7 +188,12 @@ pub struct RakuAstNode {
 /// equality: two trees that differ only in where they were written are the
 /// same tree.
 #[derive(Debug, Clone, Default)]
-pub struct NodeOrigin(pub Option<Value>, pub empty_fields::EmptyOrigins);
+pub struct NodeOrigin(
+    pub Option<Value>,
+    pub empty_fields::EmptyOrigins,
+    /// What `RakuAST::Lookup.resolution` answers (see [`resolve`]).
+    pub Option<Value>,
+);
 
 impl PartialEq for NodeOrigin {
     fn eq(&self, _other: &Self) -> bool {
@@ -1464,6 +1477,19 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = convert::statement_list(&stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
+    Ok(Value::rakuast(Box::new(node)))
+}
+
+/// The `RakuAST::CompUnit` of the unit being compiled, as `$*CU` answers it:
+/// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
+// Cost: O(n * d), n = nodes of the tree, d = scope depth.
+pub fn compile_time_compunit(source: &str) -> Result<Value, RuntimeError> {
+    let cu = str_dot_ast_compunit(source)?;
+    let ValueView::RakuAst(node) = cu.view() else {
+        return Ok(cu);
+    };
+    let mut node = RakuAstNode::clone(node);
+    resolve::annotate(&mut node);
     Ok(Value::rakuast(Box::new(node)))
 }
 
@@ -3297,6 +3323,33 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
     infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
 }
 
+/// The line `node`'s origin begins on, if it has one.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn origin_line_of(node: &RakuAstNode) -> Option<i64> {
+    origin::line_of(node)
+}
+
+/// The lookup classes [`resolve`] gives a resolution (`is-resolved` and
+/// `resolution` are theirs).
+// Cost: O(1).
+fn is_resolvable_lookup(class: RakuAstClass) -> bool {
+    matches!(
+        class,
+        RakuAstClass::VarLexical
+            | RakuAstClass::VarDynamic
+            | RakuAstClass::Infix
+            | RakuAstClass::Prefix
+            | RakuAstClass::Postfix
+            | RakuAstClass::PostcircumfixArrayIndex
+            | RakuAstClass::PostcircumfixHashIndex
+            | RakuAstClass::PostcircumfixLiteralHashIndex
+            | RakuAstClass::CallName
+            | RakuAstClass::CallNameWithoutParentheses
+            | RakuAstClass::TypeSimple
+            | RakuAstClass::TypeSetting
+    )
+}
+
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
@@ -3307,6 +3360,24 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // skips it.
     if method == "origin" {
         return Some(origin::origin_of(node).unwrap_or(Value::NIL));
+    }
+    // A lookup's resolution, added by [`resolve`] to the unit tree `$*CU`
+    // answers (and absent from a tree built any other way, which resolves
+    // nothing).
+    if method == "compile-time-value"
+        && matches!(
+            node.class,
+            RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar
+        )
+    {
+        return Some(resolve::declared_type(node));
+    }
+    if is_resolvable_lookup(node.class) {
+        match method {
+            "is-resolved" => return Some(Value::truth(node.origin.2.is_some())),
+            "resolution" => return Some(node.origin.2.clone().unwrap_or(Value::NIL)),
+            _ => {}
+        }
     }
     for f in &node.fields {
         if f.name == Some(method) && !is_unvisited_field(node, f) {
@@ -3323,11 +3394,16 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if node.class == RakuAstClass::Block && method == "may-have-signature" {
         return Some(Value::truth(false));
     }
+    // `code-statements` (undocumented in rakudo; `static::CLI`'s analysis
+    // reads it, #15608) answers the same statements as `statements` for every
+    // statement kind measured under `raku` (expressions, declarations, `use`,
+    // phasers, loops, `CATCH`, empty statements).
     if (method == "statements"
         && matches!(
             node.class,
             RakuAstClass::StatementList | RakuAstClass::StatementSequence | RakuAstClass::SemiList
         ))
+        || (method == "code-statements" && node.class == RakuAstClass::StatementList)
         || (method == "args" && node.class == RakuAstClass::ArgList)
     {
         let items = node
@@ -3437,6 +3513,13 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if let Some(names) = inherited_fields::local_names(class_name) {
         return Some(names);
     }
+    // The core declarations a resolved lookup answers (see [`resolve`]).
+    if matches!(
+        class_name,
+        "RakuAST::Declaration::External::Setting" | "RakuAST::Declaration::External::Constant"
+    ) {
+        return Some(vec!["compile-time-value"]);
+    }
     let class = class_from_name(class_name)?;
     let mut names = Vec::new();
 
@@ -3456,7 +3539,21 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     names.extend(accessor_names(class));
     names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
+        names.push("add-check-code");
         names.push("replace-statement-list");
+    }
+    if class == RakuAstClass::StatementList {
+        names.push("code-statements");
+    }
+    if matches!(
+        class,
+        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar
+    ) {
+        names.push("compile-time-value");
+    }
+    if is_resolvable_lookup(class) {
+        names.push("is-resolved");
+        names.push("resolution");
     }
     if class == RakuAstClass::StatementExpression {
         names.push("set-expression");

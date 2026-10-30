@@ -828,6 +828,15 @@ impl Interpreter {
                 // Unwrap the bind marker so neither BIND-KEY nor the ASSIGN
                 // fallback stores the internal wrapper pair as the value.
                 let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
+                if is_positional
+                    && method == assign_method
+                    && let Some(result) = self.assign_slice_through_assign_pos(&target, &idx, &val)
+                {
+                    let result = result?;
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 // Unwrap a single-element subscript list (`<baz>` parses as a
                 // one-element list) to the bare key/index.
                 let idx_arg = match idx.view() {
@@ -2693,11 +2702,14 @@ impl Interpreter {
                 // and mutsu's own `constant @A` behavior. Only fire for a plain
                 // Hash value; immutable Set/Bag/Mix containers keep their
                 // dedicated RO paths below.
+                // A constant bound to a real `Hash` (`constant %h = hash`,
+                // `= %(a => 1)`) keeps that mutable container, as in raku:
+                // only a Map (a list coerced by the declaration) is immutable.
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
                 if is_readonly_hash_var
                     && matches!(
                         self.place_env_get(place, &var_name).map(Value::view),
-                        Some(ValueView::Hash(_))
+                        Some(ValueView::Hash(h)) if h.declared_type.as_deref() == Some("Map")
                     )
                 {
                     let elem = match self.place_env_get(place, &var_name).map(Value::view) {
@@ -3406,7 +3418,7 @@ impl Interpreter {
         let val = if env_key.starts_with('@') {
             runtime::coerce_to_array(val)
         } else if env_key.starts_with('%') {
-            self.coerce_hash_var_value(None, &env_key, val)?
+            self.coerce_hash_var_value(None, &env_key, val, None)?
         } else {
             let stored =
                 Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val));
@@ -3527,7 +3539,7 @@ impl Interpreter {
             let mut val = if resolved_name.starts_with('@') {
                 runtime::coerce_to_array(val)
             } else if resolved_name.starts_with('%') {
-                self.coerce_hash_var_value(None, &resolved_name, val)?
+                self.coerce_hash_var_value(None, &resolved_name, val, None)?
             } else {
                 Self::itemize_scalar_store(
                     &resolved_name,
@@ -3903,7 +3915,18 @@ impl Interpreter {
         } else {
             inner_idx
         };
-        let inner_key = inner_idx.to_string_value();
+        // An object hash (`my %h{Any}`) files its entries under the key's
+        // `.WHICH`, never the key's string form, so the chained store
+        // `%h{$obj}[3] = v` must find the same entry `%h{$obj}` does.
+        let inner_object_key = (!inner_positional
+            && self
+                .place_env_get(place, &var_name)
+                .is_some_and(|root| self.is_object_hash(&root.deref_container())))
+        .then(|| inner_idx.clone());
+        let inner_key = match &inner_object_key {
+            Some(obj) => crate::runtime::utils::value_which_key(obj),
+            None => inner_idx.to_string_value(),
+        };
         // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
         // resolved against the inner container's current length before it becomes
         // a key — a freshly-vivified inner array is length 0, so `*-0` is 0.
@@ -4353,6 +4376,11 @@ impl Interpreter {
                     // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
                     // ADR-0040 slice 1: itemized at the store, same as the
                     // array-outer-container arm above.
+                    if let Some(obj) = &inner_object_key {
+                        oh.original_keys
+                            .get_or_insert_with(ValueMap::default)
+                            .insert(inner_key.clone(), obj.clone());
+                    }
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
                         // See the array-outer arm: a brand-new autovivified
                         // row tracks its gaps from birth.

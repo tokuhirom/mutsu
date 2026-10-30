@@ -46,6 +46,22 @@ macro_rules! node_row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `.DEPARSE(*@roles)`: rakudo's own `RakuAST::Deparse`, run as Raku code
+    // (ADR-14845); `run_prelude_deparse.rs` declares the routine called here.
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "DEPARSE",
+        arity: 0,
+        handler: Handler::Interp(deparse),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::SLURPY),
+        named: &[],
+    },
+    // `.fileline`: an undocumented rakudo method that `static::CLI`'s analysis
+    // reads (maintainer-approved, #15531): `"<file>:<line>"` of the node's
+    // origin, `Nil` for a node without one.
+    origin_row!("RakuAST::Node", "fileline", 0, fileline),
     MethodRow {
         owner: "RakuAST::Node",
         name: "visit-children",
@@ -65,6 +81,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("push", a[0].clone())),
     node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t
         .rakuast_set_field("replace-statement-list", a[0].clone())),
+    // `$*CU.add-check-code({ ... })`: an undocumented rakudo method that
+    // `static::CLI` calls (maintainer-approved, #15513); queues the closure
+    // for the unit's CHECK phase.
+    node_row!("RakuAST::CompUnit", "add-check-code", |t, a| {
+        crate::unit_source_text::add_check_code(t.clone(), a[0].clone());
+        Some(Ok(Value::NIL))
+    }),
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",
@@ -74,12 +97,68 @@ pub(super) static ROWS: &[MethodRow] = &[
     // refuses any other node.
     node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
         .rakuast_add_colonpair(a[0].clone())),
+    // `Declaration::External::*.compile-time-value`: what a core name
+    // resolves to, read from the interpreter on demand (#15610).
+    MethodRow {
+        owner: "RakuAST::Declaration::External::Setting",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(external_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Declaration::External::Constant",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(external_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    // `Origin.as-match`: an undocumented rakudo method that `static::CLI`'s
+    // analysis calls (maintainer-approved, #15597): the span as a match-like
+    // object carrying the file, line and offsets.
+    origin_row!("RakuAST::Origin", "as-match", 0, origin_as_match),
+    origin_row!("RakuAST::Origin::Match", "file", 0, match_file),
+    origin_row!("RakuAST::Origin::Match", "line", 0, match_line),
+    origin_row!("RakuAST::Origin::Match", "from", 0, origin_position),
+    origin_row!("RakuAST::Origin::Match", "to", 0, origin_end),
+    origin_row!("RakuAST::Origin::Match", "orig", 0, match_orig),
+    super::narrow_row!("RakuAST::Origin::Match", "Str", 0, match_str),
+    origin_row!("RakuAST::Origin::Match", "chars", 0, match_chars),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
 ];
+
+/// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
+/// itself starts on line 1; a node built by hand has no origin and answers
+/// `Nil`, as in rakudo.
+// Cost: O(f), f = fields of the node.
+fn fileline(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let base = match target.view() {
+        ValueView::RakuAst(_) => target.clone(),
+        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
+        _ => return None,
+    };
+    let ValueView::RakuAst(node) = base.view() else {
+        return None;
+    };
+    let line = if node.class == crate::rakuast::RakuAstClass::CompUnit {
+        Some(1)
+    } else {
+        crate::rakuast::origin_line_of(node)
+    };
+    let Some(line) = line else {
+        return Some(Ok(Value::NIL));
+    };
+    let file = crate::unit_source_file::current()
+        .map(|file| file.resolve().to_string())
+        .unwrap_or_default();
+    Some(Ok(Value::str(format!("{file}:{line}"))))
+}
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).
@@ -89,6 +168,122 @@ fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return None;
     };
     attributes.as_map().get("from").cloned().map(Ok)
+}
+
+/// `compile-time-value` of a core declaration stub: the core routine named by
+/// its `lexical-name` (`&say`), or the type object of a core type.
+// Cost: O(1) plus the interpreter's lookup of the name.
+fn external_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let name = attributes
+        .as_map()
+        .get("lexical-name")
+        .map(|n| n.to_string_value())?;
+    if let Some(routine) = name.strip_prefix('&') {
+        return Some(Ok(interp.resolve_code_var(routine)));
+    }
+    Some(Ok(Value::package(Symbol::intern(&name))))
+}
+
+/// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
+/// the line the span begins on, its character offsets and the unit's text.
+// Cost: O(1) plus a copy of the unit text handle.
+fn origin_as_match(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let origin = attributes.as_map();
+    let mut match_attrs = std::collections::HashMap::new();
+    for key in ["from", "to"] {
+        match_attrs.insert(key.to_string(), origin.get(key).cloned()?);
+    }
+    match_attrs.insert(
+        "line".to_string(),
+        origin
+            .get(crate::rakuast::unit_source::LINE_ATTR)
+            .cloned()
+            .unwrap_or_else(|| Value::int(1)),
+    );
+    let file = crate::unit_source_file::current()
+        .map(|file| file.resolve().to_string())
+        .unwrap_or_default();
+    match_attrs.insert("file".to_string(), Value::str(file));
+    if let Some(source) = origin.get("source")
+        && let ValueView::Instance { attributes, .. } = source.view()
+        && let Some(orig) = attributes
+            .as_map()
+            .get(crate::rakuast::unit_source::ORIG_ATTR)
+    {
+        match_attrs.insert("orig".to_string(), orig.clone());
+    }
+    Some(Ok(Value::make_instance(
+        Symbol::intern("RakuAST::Origin::Match"),
+        match_attrs,
+    )))
+}
+
+/// A `Match`-shaped origin's attribute, by name.
+// Cost: O(1).
+fn match_attr(target: &Value, name: &str) -> Option<Value> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes.as_map().get(name).cloned()
+}
+
+/// `Match.file`.
+// Cost: O(1).
+fn match_file(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "file").map(Ok)
+}
+
+/// `Match.line`: the 1-based line the span begins on.
+// Cost: O(1).
+fn match_line(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "line").map(Ok)
+}
+
+/// `Match.orig`: the whole unit text.
+// Cost: O(1).
+fn match_orig(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "orig").map(Ok)
+}
+
+/// `Match.Str`: the text of the span.
+// Cost: O(n), n = chars of the unit up to the span's end.
+fn match_str(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let (ValueView::Int(from), ValueView::Int(to)) = (
+        match_attr(target, "from")?.view(),
+        match_attr(target, "to")?.view(),
+    ) else {
+        return None;
+    };
+    let orig = match_attr(target, "orig")?.to_string_value();
+    let text: String = orig
+        .chars()
+        .skip(from.max(0) as usize)
+        .take((to - from).max(0) as usize)
+        .collect();
+    Some(Ok(Value::str(text)))
+}
+
+/// `Match.chars`: the length of the span.
+// Cost: O(1).
+fn match_chars(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let (ValueView::Int(from), ValueView::Int(to)) = (
+        match_attr(target, "from")?.view(),
+        match_attr(target, "to")?.view(),
+    ) else {
+        return None;
+    };
+    Some(Ok(Value::int((to - from).max(0))))
 }
 
 /// `Origin.to`.
@@ -391,4 +586,18 @@ fn visit_children(
         }
     }
     Some(Ok(Value::NIL))
+}
+
+/// `DEPARSE(*@roles)`: hand the node and the roles to the deparser routine.
+// Cost: O(1) plus the deparser's own cost, linear in the tree it prints.
+fn deparse(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let mut call_args = Vec::with_capacity(args.len() + 1);
+    call_args.push(target.clone());
+    call_args.extend(args.iter().cloned());
+    Some(interp.call_function("MUTSU_DEPARSE::run", call_args))
 }

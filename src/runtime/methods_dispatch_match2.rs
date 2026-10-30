@@ -491,7 +491,7 @@ impl Interpreter {
                 _ => value,
             });
         }
-        let mut call_args = vec![target];
+        let mut call_args = vec![self.quanthash_extremum_source(target)?];
         if let Some(first) = args.first() {
             if matches!(
                 first.view(),
@@ -507,6 +507,21 @@ impl Interpreter {
         } else {
             self.builtin_min(&call_args)
         }
+    }
+
+    /// What `min`/`max`/`minmax` order for `target`. A `Set`/`Bag`/`Mix` (and
+    /// their mutable twins) is a collection of `key => weight` pairs, so its
+    /// extremum is the largest / smallest `Pair` (`(bag <a b b>).max` is
+    /// `:b(2)`), not the collection itself; anything else orders as it is.
+    // Cost: O(n), n = elements of a QuantHash; O(1) otherwise.
+    fn quanthash_extremum_source(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        if matches!(
+            target.view(),
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+        ) {
+            return self.call_method_with_values(target, "pairs", Vec::new());
+        }
+        Ok(target)
     }
 
     /// Dispatch the "sort" method.
@@ -546,6 +561,7 @@ impl Interpreter {
             // Fall through for 0-arg Supply.minmax
             return None;
         }
+        let target = self.quanthash_extremum_source(target).ok()?;
         let mut call_args = vec![target];
         if let Some(first) = args.first() {
             if matches!(

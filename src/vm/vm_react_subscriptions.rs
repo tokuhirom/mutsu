@@ -27,6 +27,50 @@ use std::time::Duration;
 const REACT_IDLE_WAIT: Duration = Duration::from_millis(250);
 
 impl Interpreter {
+    /// Hand one emitted `value` to a `whenever` subscription (line-chunking a
+    /// `.lines` source, honoring `.head`). `Ok(true)`: a consumer raised
+    /// react `done`.
+    // Cost: O(l) for a `.lines` chunk of l lines, else one handler call.
+    fn dispatch_emit_event(
+        &mut self,
+        sub: &mut ReactSubscription,
+        value: Value,
+    ) -> Result<bool, RuntimeError> {
+        if let Some(limit) = sub.head_limit
+            && sub.emit_count >= limit
+        {
+            return Ok(false);
+        }
+        if sub.is_lines {
+            let chunk = value.to_string_value();
+            sub.line_buffer.push_str(&chunk);
+            while let Some(pos) = sub.line_buffer.find('\n') {
+                let line = sub.line_buffer[..pos].to_string();
+                sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
+                if self.run_react_consumer(sub, Value::str(line))? {
+                    return Ok(true);
+                }
+                if sub.done {
+                    break;
+                }
+                sub.emit_count += 1;
+                if self.head_limit_reached(sub)? {
+                    break;
+                }
+            }
+        } else {
+            if self.run_react_consumer(sub, value)? {
+                return Ok(true);
+            }
+            if !sub.done {
+                sub.emit_count += 1;
+                self.head_limit_reached(sub)?;
+            }
+        }
+
+        Ok(false)
+    }
+
     /// Deliver every event queued on the drive loop's waker to its
     /// subscription's consumer, in push order (== the order producers
     /// emitted, across suppliers: pushes happen under the one supplier
@@ -71,39 +115,16 @@ impl Interpreter {
                 }
                 match event {
                     SinkEvent::Emit(value) => {
-                        if let Some(limit) = react_subs[key].head_limit
-                            && react_subs[key].emit_count >= limit
-                        {
-                            continue;
+                        // The handler runs in the emitter's dynamic scope
+                        // (`emit_scope`).
+                        let saved_scope = crate::runtime::native_methods::emit_scope::lookup(seq)
+                            .map(|scope| self.enter_emitter_scope(&scope));
+                        let handled = self.dispatch_emit_event(&mut react_subs[key], value);
+                        if let Some(saved) = saved_scope {
+                            self.leave_emitter_scope(saved);
                         }
-                        if react_subs[key].is_lines {
-                            let chunk = value.to_string_value();
-                            react_subs[key].line_buffer.push_str(&chunk);
-                            while let Some(pos) = react_subs[key].line_buffer.find('\n') {
-                                let line = react_subs[key].line_buffer[..pos].to_string();
-                                react_subs[key].line_buffer =
-                                    react_subs[key].line_buffer[pos + 1..].to_string();
-                                if self
-                                    .run_react_consumer(&mut react_subs[key], Value::str(line))?
-                                {
-                                    return Ok(true);
-                                }
-                                if react_subs[key].done {
-                                    break;
-                                }
-                                react_subs[key].emit_count += 1;
-                                if self.head_limit_reached(&mut react_subs[key])? {
-                                    break;
-                                }
-                            }
-                        } else {
-                            if self.run_react_consumer(&mut react_subs[key], value)? {
-                                return Ok(true);
-                            }
-                            if !react_subs[key].done {
-                                react_subs[key].emit_count += 1;
-                                self.head_limit_reached(&mut react_subs[key])?;
-                            }
+                        if handled? {
+                            return Ok(true);
                         }
                     }
                     SinkEvent::Done => {

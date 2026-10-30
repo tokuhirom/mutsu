@@ -45,8 +45,8 @@ pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
 pub(crate) use l10n::{
-    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword, l10n_match_adverb,
-    l10n_match_infix, l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
+    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword, l10n_match_infix,
+    l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
 };
 pub(crate) use registry::{
     DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
@@ -115,12 +115,12 @@ pub(in crate::parser) use pragma_preseed::{
 /// sub-hoisting order (#8657).
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
 pub(crate) use pragma_preseed::{is_user_declared_sub, term_keywords_shadowable};
+pub(crate) use registry::lookup_custom_infix_precedence;
 pub(in crate::parser) use registry::{
-    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label,
-    lookup_custom_infix_precedence, lookup_op_prec, lookup_postfix_precedence,
-    lookup_prefix_precedence, lookup_user_infix_assoc, register_loop_label, register_op_prec,
-    register_op_precedence, register_user_infix_assoc, register_user_sub,
-    register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label, lookup_op_prec,
+    lookup_postfix_precedence, lookup_prefix_precedence, lookup_user_infix_assoc,
+    register_loop_label, register_op_prec, register_op_precedence, register_user_infix_assoc,
+    register_user_sub, register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
@@ -371,11 +371,9 @@ pub(crate) fn eval_preseed_active() -> bool {
         || EVAL_LANGUAGE_VERSION_PRESEED.with(|p| p.borrow().is_some())
 }
 
-pub(in crate::parser) use crate::rakuast::compound::TMP_INDEX_COUNTER;
-
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
-pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
+pub(crate) const PREC_SEQUENCE: i32 = 10;
 /// `||` `^^` `//` and `&&`: looser than structural/comparison, tighter than the
 /// list-infix level. A user operator declared `is equiv(&infix:<||>)` lands here.
 pub(in crate::parser) const PREC_OR_OR: i32 = 12;

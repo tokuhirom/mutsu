@@ -103,6 +103,7 @@ pub(in crate::runtime) fn dq_code_interp_atom(
             RegexAtom::CodeInterp {
                 code: code.into(),
                 list: false,
+                as_regex: false,
             },
             true,
         ));
@@ -116,6 +117,20 @@ pub(in crate::runtime) fn dq_code_interp_atom(
         ignore_mark: false,
         derived: Default::default(),
     })
+}
+
+/// The code and list-ness of an assertion `<$( code )>` / `<@( code )>`
+/// whose whole body `trimmed` is that interpolation, or `None`.
+// Cost: O(n), n = the assertion body's length.
+pub(in crate::runtime) fn assertion_code_interp(trimmed: &str) -> Option<(String, bool)> {
+    let list = match trimmed.as_bytes() {
+        [b'@', b'(', ..] => true,
+        [b'$', b'(', ..] => false,
+        _ => return None,
+    };
+    let chars: Vec<char> = trimmed.chars().collect();
+    (code_interp_close(&chars, 1)? == chars.len() - 1)
+        .then(|| (chars[2..chars.len() - 1].iter().collect(), list))
 }
 
 impl Interpreter {
@@ -172,13 +187,22 @@ impl Interpreter {
         &mut self,
         code: &str,
         list: bool,
+        as_regex: bool,
         caps: &RegexCaptures,
         chars: &[char],
         ignore_case: bool,
     ) -> Option<String> {
         let target: String = chars.iter().collect();
         let env = self.regex_code_interp_env(code, caps, &target);
-        let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
+        // The list form reads the code's value as a list: a lazy result
+        // (`.grep(...)`, `.map(...)`) whole, which a bare element walk of the
+        // value would see as the empty seed. `do { }` keeps a multi-statement
+        // `code` one value (`@( a; b )` would be the list of both).
+        let (stmts, id) = if list {
+            self.parse_regex_code_cached_with_id(&format!("(do {{ {code} }}).list"))?
+        } else {
+            self.parse_regex_code_cached_with_id(code)?
+        };
         let value = match self.run_regex_sub_eval(env, None, |interp| {
             interp.eval_block_value_cached(&stmts, id)
         }) {
@@ -195,11 +219,13 @@ impl Interpreter {
         };
         let mut pattern = String::from(if ignore_case { ":i " } else { "" });
         if list {
-            let alts = Self::regex_alternation_sources(&value);
+            let alts = Self::regex_alternation_sources(&value, as_regex);
             Self::push_regex_interpolated_alternation(&mut pattern, &alts);
         } else if let ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) = value.view() {
             // A `Regex` value is matched as a pattern, as `<$re>` does.
-            pattern.push_str(&Self::regex_alternation_sources(&value)[0]);
+            pattern.push_str(&Self::regex_alternation_sources(&value, as_regex)[0]);
+        } else if as_regex {
+            pattern.push_str(&value.to_string_value());
         } else {
             pattern.push_str(&Self::escape_regex_scalar_literal(&value.to_string_value()));
         }
@@ -208,13 +234,16 @@ impl Interpreter {
 
     /// The alternatives an interpolated list contributes to a regex: a
     /// `Regex` element as its own source, anything else as an escaped
-    /// literal. A non-list value is a one-element list.
+    /// literal (or, under `as_regex`, as its own text, which the assertion
+    /// forms `<@x>` / `<$x>` parse as regex source). A non-list value is a
+    /// one-element list.
     ///
     /// Cost: O(k + r), k = the elements, r = their rendered length.
-    pub(in crate::runtime) fn regex_alternation_sources(value: &Value) -> Vec<String> {
+    pub(in crate::runtime) fn regex_alternation_sources(value: &Value, as_regex: bool) -> Vec<String> {
         let render = |elt: &Value| match elt.view() {
             ValueView::Regex(pat) => pat.to_string(),
             ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+            _ if as_regex => elt.to_string_value(),
             _ => Self::escape_regex_scalar_literal(&elt.to_string_value()),
         };
         match value.view() {
@@ -237,12 +266,19 @@ impl Interpreter {
         &mut self,
         code: &str,
         list: bool,
+        as_regex: bool,
         chars: &[char],
         current_caps: &RegexCaptures,
         ignore_case: bool,
     ) -> Option<std::sync::Arc<RegexPattern>> {
-        let source =
-            self.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)?;
+        let source = self.regex_code_interp_pattern(
+            code,
+            list,
+            as_regex,
+            current_caps,
+            chars,
+            ignore_case,
+        )?;
         self.parse_regex(&source)
     }
 
@@ -280,15 +316,21 @@ impl Interpreter {
         &mut self,
         code: &str,
         list: bool,
+        as_regex: bool,
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
         pkg: Symbol,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
-        let Some(source) =
-            self.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)
-        else {
+        let Some(source) = self.regex_code_interp_pattern(
+            code,
+            list,
+            as_regex,
+            current_caps,
+            chars,
+            ignore_case,
+        ) else {
             return Vec::new();
         };
         let Some(parsed) = self.parse_regex(&source) else {

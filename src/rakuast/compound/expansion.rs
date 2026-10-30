@@ -533,7 +533,15 @@ pub(crate) fn build_compound_assign_expr(
                 Stmt::If { then_branch, else_branch, binding_var: None, .. }
                     if then_branch.len() == 1
                         && else_branch.is_empty()
-                        && matches!(then_branch[0], Stmt::Expr(_))
+                        && matches!(
+                            then_branch[0],
+                            Stmt::Expr(_)
+                                | Stmt::Assign {
+                                    op: crate::ast::AssignOp::Assign,
+                                    target_is_sigilless: false,
+                                    ..
+                                }
+                        )
             ) =>
         {
             let Stmt::If {
@@ -549,6 +557,13 @@ pub(crate) fn build_compound_assign_expr(
             let mut then_branch = then_branch;
             let inner = match then_branch.pop() {
                 Some(Stmt::Expr(e)) => e,
+                // The statement-level scalar assignment the parser keeps for
+                // `$s = v if $c` inside a larger expression is the same lvalue.
+                Some(Stmt::Assign { name, expr, .. }) => Expr::AssignExpr {
+                    name,
+                    expr: Box::new(expr),
+                    is_bind: false,
+                },
                 _ => unreachable!("guarded by the match arm"),
             };
             let inner_assign = build_compound_assign_expr(inner, op, rhs)?;
@@ -647,9 +662,8 @@ pub(crate) fn build_compound_assign_expr(
         // callable-lvalue helper the parenthesized `=` form uses: the declaration is
         // evaluated first (declaring the variable and yielding its container), the value
         // then reads it, and the helper assigns back into that container.
-        Expr::DoStmt(stmt) if crate::parser::decl_target_var_name(&stmt).is_some() => {
-            let name =
-                crate::parser::decl_target_var_name(&stmt).expect("guarded by the match arm");
+        Expr::DoStmt(stmt) if crate::ast::decl_target_var_name(&stmt).is_some() => {
+            let name = crate::ast::decl_target_var_name(&stmt).expect("guarded by the match arm");
             let read_back = match name.as_bytes().first() {
                 Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
                 Some(b'%') => Expr::HashVar(name[1..].to_string()),

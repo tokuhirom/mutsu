@@ -161,12 +161,17 @@ pub(super) fn parameterized_type_node_at(
         for source in sources {
             let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
                 super::convert::convert_literal(&value)?
-            } else if let Some(value) = super::type_build::plain_string_literal(source) {
-                super::convert::quoted_string(crate::value::Value::str(value.to_string()))
+            } else if let Some(value) = super::type_build::string_literal_value(source) {
+                super::convert::quoted_string(crate::value::Value::str(value))
             } else if source.starts_with(':') {
                 colonpair_argument(source)?
             } else {
-                build_type_node_at(source, depth + 1)?
+                match build_type_node_at(source, depth + 1) {
+                    Ok(node) => node,
+                    // Not a type spelling: a colonpair (`:coerce(&f)`) or other
+                    // term argument of the application.
+                    Err(err) => term_argument(source).ok_or(err)?,
+                }
             };
             fields.push(node_field(None, node));
         }
@@ -188,4 +193,18 @@ pub(super) fn parameterized_type_node_at(
         class: RakuAstClass::TypeParameterized,
         fields: node_fields,
     })
+}
+
+/// A non-type argument of a type application, parsed from its spelling as a
+/// single expression statement. `None` when it is not exactly one expression.
+// Cost: O(n), n = spelling length.
+fn term_argument(source: &str) -> Option<RakuAstNode> {
+    let (stmts, _) = crate::parser::parse_program_spelled(source).ok()?;
+    let mut exprs = stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
+    match (exprs.next(), exprs.next()) {
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr).ok(),
+        _ => None,
+    }
 }

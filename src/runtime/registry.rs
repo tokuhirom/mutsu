@@ -44,10 +44,6 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 /// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
 /// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
 pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
-/// [`Registry::proto_functions`]'s map.
-pub(crate) type ProtoFunctionMap = HashMap<Symbol, Arc<FunctionDef>>;
-/// The `proto sub` marker set behind [`Registry::proto_subs_snapshot`].
-pub(crate) type ProtoSubSet = HashSet<String>;
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
@@ -687,12 +683,6 @@ pub(crate) struct Registry {
     /// key of it was last found in (`reinstate_module_functions`, #9170).
     pub(crate) module_functions_present:
         Option<(std::sync::Arc<std::collections::HashSet<Symbol>>, u64)>,
-    /// How many times [`Registry::functions`] was written or replaced: every
-    /// `functions_mut` borrow, `install_function` and wholesale restore counts
-    /// one. Never decreases, so an import scope that logged its own writes can
-    /// tell at its pop whether anything else wrote the map meanwhile
-    /// (`ImportScopeSnapshot::logged_function_writes`, #9170).
-    pub(crate) function_writes: u64,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
@@ -761,6 +751,12 @@ pub(crate) struct Registry {
     /// dropped by [`RegistryWriteGuard`]'s `DerefMut`; see
     /// [`Registry::has_lexical_type_key_for`].
     lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashSet<Box<str>>>,
+    /// `short name -> class key` for every class whose key is qualified: the
+    /// part after the LAST `::` of the key, pointing at the smallest key with
+    /// that tail. Built on first query and dropped by
+    /// [`RegistryWriteGuard`]'s `DerefMut` together with
+    /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
+    class_short_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Box<str>>>,
     /// A process-unique stamp of this registry's content, replaced on every
     /// write through [`RegistryWriteGuard`]'s `DerefMut` (the only path to a
     /// `&mut Registry`), so a memo tagged with it cannot outlive a change to
@@ -821,11 +817,51 @@ impl Registry {
             .contains(unmangled)
     }
 
-    /// Drop the [`Self::has_lexical_type_key_for`] cache. Called from the
-    /// write guard's `DerefMut`, which is the only way to reach `&mut
-    /// Registry`.
+    /// The registry key of a class declared as `...::short` (a name `short`
+    /// that is not itself a key), or `None`. The fallback of a bare class-name
+    /// lookup: `Bot::Grammar` answers to `Grammar` when nothing else does.
+    ///
+    /// A miss used to be answered by walking every class key and splitting it
+    /// (`split_qualified` per entry, ~400 entries): every `.can`, `.^mro` or
+    /// parent walk on a BUILT-IN type name (`Int`, `Any`, `Mu`), which has no
+    /// registry entry, paid ~400 splits per step -- 400K instructions for one
+    /// `Int.can("x")`. Several keys can share a tail; the smallest wins, so the
+    /// answer no longer depends on the hash map's iteration order.
+    ///
+    /// Coherent by construction like [`Self::has_lexical_type_key_for`]: the
+    /// index is a `OnceLock` that the write guard's `DerefMut` drops.
+    // Cost: O(1) expected; the first query after a registry write builds the index in O(k), k = classes.
+    pub(crate) fn class_key_by_short_name(&self, short: &str) -> Option<&str> {
+        self.class_short_names
+            .get_or_init(|| {
+                let mut index: rustc_hash::FxHashMap<Box<str>, Box<str>> =
+                    rustc_hash::FxHashMap::default();
+                for key in self.classes.keys() {
+                    let Some((_, tail)) =
+                        crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+                    else {
+                        continue;
+                    };
+                    match index.get_mut(tail.as_str()) {
+                        Some(held) if **held <= **key => {}
+                        Some(held) => *held = key.as_str().into(),
+                        None => {
+                            index.insert(tail.as_str().into(), key.as_str().into());
+                        }
+                    }
+                }
+                index
+            })
+            .get(short)
+            .map(|key| &**key)
+    }
+
+    /// Drop the [`Self::has_lexical_type_key_for`] and
+    /// [`Self::class_key_by_short_name`] caches. Called from the write guard's
+    /// `DerefMut`, which is the only way to reach `&mut Registry`.
     fn invalidate_lexical_type_names(&mut self) {
         self.lexical_type_names.take();
+        self.class_short_names.take();
         static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -1881,7 +1917,6 @@ impl Registry {
     /// answerable without every mutating site having to say so (#8314).
     #[inline]
     pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
-        self.function_writes += 1;
         crate::runtime::cow_table_mut(&mut self.functions).map_mut()
     }
 
@@ -1901,7 +1936,6 @@ impl Registry {
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
         // `functions` and `fn_transitions` are disjoint fields; the split
         // borrow is what lets the memo drive the table (and its stamp).
-        self.function_writes += 1;
         let transitions = &mut self.fn_transitions;
         transitions.install(&mut self.functions, key, def);
     }
@@ -2294,6 +2328,28 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The short-name class index answers by the part after the LAST `::`,
+    /// picks the smallest key when two share a tail, ignores unqualified keys,
+    /// and is rebuilt after the invalidation the write guard performs.
+    #[test]
+    fn class_short_name_index_follows_the_class_table() {
+        let mut reg = Registry::default();
+        reg.classes
+            .insert("Zed::Thing".to_string(), ClassDef::default().into());
+        reg.classes
+            .insert("Plain".to_string(), ClassDef::default().into());
+        assert_eq!(reg.class_key_by_short_name("Thing"), Some("Zed::Thing"));
+        assert_eq!(reg.class_key_by_short_name("Plain"), None);
+        assert_eq!(reg.class_key_by_short_name("Other"), None);
+        reg.classes
+            .insert("Alpha::Beta::Thing".to_string(), ClassDef::default().into());
+        reg.invalidate_lexical_type_names();
+        assert_eq!(
+            reg.class_key_by_short_name("Thing"),
+            Some("Alpha::Beta::Thing")
+        );
+    }
 
     /// A thread clone shares its parent's `Arc<Registry>`, and its first write
     /// (an inner `my sub` re-installed on every call) copies the `Registry`.

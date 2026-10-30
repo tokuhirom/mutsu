@@ -2144,12 +2144,18 @@ impl Interpreter {
             if let Some(pd) = pd.filter(|pd| pd.named) {
                 // Simple named/attributive param (gate: `named_param_fast_eligible`).
                 let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
-                    args.iter()
-                        .rev()
-                        .find_map(|a| match a.unwrap_varref().view() {
+                    args.iter().rev().find_map(|a| {
+                        let a = a.unwrap_varref();
+                        // The tag test spares the positional arguments a
+                        // full `view()` decode.
+                        if !a.is_string_pair_value() {
+                            return None;
+                        }
+                        match a.view() {
                             ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
                             _ => None,
-                        })
+                        }
+                    })
                 });
                 let val = match bound {
                     // `@`-sigiled (attributive) named param: re-home a List
@@ -2852,16 +2858,27 @@ impl Interpreter {
 
         // Resolve a capture-valued `--> T` before the env teardown below (see
         // the slow path's note, #7984).
-        let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
-            // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
-            // value, never a type: resolving it first would turn the CORE term
-            // `Empty` into any loaded `Foo::Empty` class (#9530).
-            if self.is_definite_return_spec(spec) {
-                return spec.to_string();
-            }
-            let spec = loan_env!(self, resolved_type_capture_name(spec));
-            self.resolve_method_type_name(owner_class, &spec)
-        });
+        // A plain core return type (`--> Int`) that names itself for this
+        // owner is checked against the value directly, below; the spec is
+        // resolved only for a call that falls out of that lane.
+        let return_fast = method_def
+            .return_type
+            .as_deref()
+            .and_then(|spec| self.method_return_fast(owner_class, spec));
+        let effective_return_spec = method_def
+            .return_type
+            .as_deref()
+            .filter(|_| return_fast.is_none())
+            .map(|spec| {
+                // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
+                // value, never a type: resolving it first would turn the CORE term
+                // `Empty` into any loaded `Foo::Empty` class (#9530).
+                if self.is_definite_return_spec(spec) {
+                    return spec.to_string();
+                }
+                let spec = loan_env!(self, resolved_type_capture_name(spec));
+                self.resolve_method_type_name(owner_class, &spec)
+            });
 
         // Sync state variables
         for (slot, key) in &cc.state_locals {
@@ -3029,8 +3046,13 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        let final_result =
-            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref());
+        let final_result = self.finalize_method_result_fast(
+            cc,
+            final_result,
+            method_def.return_type.as_deref(),
+            effective_return_spec.as_deref(),
+            return_fast,
+        );
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure

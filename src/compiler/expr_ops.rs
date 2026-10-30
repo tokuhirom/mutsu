@@ -943,9 +943,10 @@ impl Compiler {
                 Self::is_closure_literal_arg(r),
             );
         }
-        // A binary operator an enclosing block's `use` may have imported
-        // (ADR-8751 stage 2).
-        if modifier.is_none() && right.len() == 1 {
+        // An operator an enclosing block's `use` may have imported
+        // (ADR-8751 stage 2); a list-associative chain (`1 op 2 op 3`) takes
+        // all its operands.
+        if modifier.is_none() {
             self.emit_lex_import_infix(name);
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));

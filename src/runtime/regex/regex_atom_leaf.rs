@@ -133,7 +133,7 @@ impl Interpreter {
             matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
         });
         let ref_text = match &val {
-            Some(v) if is_regex => Self::regex_alternation_sources(v).swap_remove(0),
+            Some(v) if is_regex => Self::regex_alternation_sources(v, false).swap_remove(0),
             Some(v) => match v.view() {
                 ValueView::Nil | ValueView::Package(_) => String::new(),
                 _ => v.to_string_value(),

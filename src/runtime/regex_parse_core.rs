@@ -2533,6 +2533,7 @@ impl Interpreter {
                         RegexAtom::CodeInterp {
                             code: code.into(),
                             list: c == '@',
+                            as_regex: false,
                         }
                     }
                     '\\' => {
@@ -3583,7 +3584,14 @@ impl Interpreter {
                                                 || rhs.starts_with(':')
                                                 || rhs.starts_with("-:")
                                                 || rhs.starts_with(":!")
-                                                || rhs.starts_with("!:");
+                                                || rhs.starts_with("!:")
+                                                // `<x=@w>`: an array-variable
+                                                // alternation under an alias
+                                                // (`@(…)` is code: it runs at
+                                                // match time, see
+                                                // `contextualizer_alias_code`).
+                                                || (rhs.starts_with('@')
+                                                    && !rhs.starts_with("@("));
                                             if lhs_is_ident && rhs_is_class_or_prop {
                                                 pending_named_capture = Some(lhs.to_string());
                                                 pending_named_capture_is_angle_alias = true;
@@ -3672,6 +3680,23 @@ impl Interpreter {
                                             atom
                                         } else {
                                             continue;
+                                        }
+                                    } else if let Some((code, list)) =
+                                        super::regex::regex_code_interp::assertion_code_interp(trimmed)
+                                    {
+                                        // `<$( code )>` / `<@( code )>`: the value of
+                                        // `code`, read when the atom is matched, as an
+                                        // indirect subrule (`<$x>` / `<@x>` semantics).
+                                        if mode == RegexParseMode::Validate {
+                                            RegexAtom::Named(name.clone().into())
+                                        } else {
+                                            runtime_value_atom = true;
+                                            super::regex::regex_helpers::note_regex_code_lowered();
+                                            RegexAtom::CodeInterp {
+                                                code: code.into(),
+                                                list,
+                                                as_regex: true,
+                                            }
                                         }
                                     } else if trimmed == "?" {
                                         // <?>  null assertion: matches zero-width at any position

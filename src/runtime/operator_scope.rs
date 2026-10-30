@@ -86,6 +86,15 @@ impl Interpreter {
     /// own compunit instead.
     // Cost: O(1).
     pub(crate) fn enclosing_unit_module_for_operators(&self) -> Option<String> {
+        self.declared_unit_module_here().cloned()
+    }
+
+    /// The `unit module` whose own body is running: the innermost declared
+    /// one of `unit_module_loading_stack`, unless the file loading right now
+    /// is a bare file nested in it. What a body exports or imports belongs to
+    /// its own compunit, never to the unit module that merely `use`d it.
+    // Cost: O(1).
+    pub(crate) fn declared_unit_module_here(&self) -> Option<&String> {
         let unit_mod = self.module.unit_module_loading_stack.last()?;
         let bare_body = self.module.module_load_stack.last().is_some_and(|loading| {
             !self
@@ -93,7 +102,7 @@ impl Interpreter {
                 .module_declared_unit_packages
                 .contains_key(&Symbol::intern(loading))
         });
-        (!bare_body).then(|| unit_mod.clone())
+        (!bare_body).then_some(unit_mod)
     }
 
     /// Record the importing unit in the name-level operator gate

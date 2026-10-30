@@ -164,6 +164,11 @@ impl Interpreter {
 
         // Second arg: length (can be Int, WhateverCode/Sub, Num/Inf, or absent)
         let end = if let Some(len_val) = args.get(1) {
+            // An itemized argument keeps its `Scalar` (see
+            // `substr_resolve_position`), and a parameter's container cell
+            // (`Int:D $l is copy` passed straight through) is read through.
+            let len_owned = len_val.deref_container();
+            let len_val = len_owned.descalarize();
             match len_val.view() {
                 ValueView::Int(i) => {
                     let len = i.max(0) as usize;
@@ -219,7 +224,8 @@ impl Interpreter {
         total_len: usize,
     ) -> Result<i64, RuntimeError> {
         // See `substr_extract_range`: an itemized argument keeps its `Scalar`.
-        let pos = pos.descalarize();
+        let pos_owned = pos.deref_container();
+        let pos = pos_owned.descalarize();
         match pos.view() {
             ValueView::Int(i) => Ok(i),
             ValueView::Num(f) => Ok(f as i64),

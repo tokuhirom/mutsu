@@ -97,28 +97,10 @@ pub(crate) enum Spelling {
     /// expression is the same prefix over the one-statement block
     /// `gather { say 1 }` makes; RakuAST keeps the statement itself.
     BareStatement,
-    /// A subscript whose colonpairs include an unknown adverb. The runtime
-    /// uses a CORE-candidate call, which loses the index's source spelling.
-    NamedSubscript {
-        subscript: Box<Expr>,
-        pairs: Vec<Expr>,
-    },
     /// `MY::(EXPR)`, `GLOBAL::('Int')`: a symbolic lookup qualified by a
     /// written package. The parser concatenates `"PKG::" ~ EXPR`; RakuAST
     /// keeps the package parts and the key expression apart.
     PackageIndirect { package: Box<str>, key: Box<Expr> },
-    /// Conflicting built-in subscript adverbs lower to an error call, which
-    /// otherwise loses both the index and the colonpair source forms.
-    ConflictingSubscript {
-        subscript: Box<Expr>,
-        pairs: Vec<Expr>,
-    },
-    /// `:delete(EXPR)` on a multidimensional subscript shares an execution
-    /// expansion with `:$delete`, but its RakuAST colonpair has a value.
-    ConditionalMultidimDelete {
-        source: Box<Expr>,
-        condition: Box<Expr>,
-    },
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),

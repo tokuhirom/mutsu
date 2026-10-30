@@ -8,7 +8,11 @@ impl Interpreter {
     /// suffix to the base key, then walk base, `__m1`, `__m2`, ... and insert
     /// at the first vacant slot. A slot already holding this exact `Arc`
     /// (same-module re-import) makes the call a no-op.
-    fn import_multi_candidate_merged(&mut self, target_key: &str, def: Arc<FunctionDef>) -> Symbol {
+    fn import_multi_candidate_merged(
+        &mut self,
+        target_key: &str,
+        def: Arc<FunctionDef>,
+    ) -> (Symbol, bool) {
         let base = match target_key.rfind("__m") {
             Some(pos)
                 if pos + 3 < target_key.len()
@@ -31,11 +35,11 @@ impl Interpreter {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     let key = *entry.key();
                     entry.insert(def);
-                    return key;
+                    return (key, true);
                 }
                 std::collections::hash_map::Entry::Occupied(entry) => {
                     if Arc::ptr_eq(entry.get(), &def) {
-                        return *entry.key();
+                        return (*entry.key(), false);
                     }
                 }
             }
@@ -195,7 +199,7 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone())
+                self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.registry_mut().functions_mut().insert(key, def.clone());
@@ -441,7 +445,7 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone())
+                self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.registry_mut()
@@ -516,107 +520,78 @@ impl Interpreter {
             && self.types.our_scoped_package_items.contains(fq_name)
     }
 
-    /// Hide the candidate family already visible at target_single before an
-    /// imported proto is installed. Raku treats the imported proto as a new
-    /// lexical family, while the flat registry otherwise merges its candidates
-    /// with an enclosing my sub and lets the older declaration win. Keep the
-    /// hidden definitions on the import-scope snapshot so the enclosing family
-    /// is restored when the block exits. Further imports in the same scope are
-    /// allowed to merge with the first imported family.
+    /// Hide the candidate family already visible at `target_single` before an
+    /// import that keeps the registry installs its own proto or only-sub of
+    /// that name: raku treats the import as a new lexical family, while the flat
+    /// registry otherwise merges its candidates with an enclosing `my sub` and
+    /// lets the older declaration win. Inside an import scope the hidden
+    /// entries go on the scope's write log, which puts them back at the pop;
+    /// further imports of the name in the scope merge with the first one.
     // Cost: O(k + c), k = interned names of the family (the family index), c =
     // its candidates removed.
     fn shadow_imported_proto_family(&mut self, target_single: &str) {
         if self.import_target_declares_family(target_single) {
             return;
         }
-        let should_shadow = match self.module.import_scope_stack.last_mut() {
-            Some(snapshot) => snapshot
-                .shadowed_proto_names
-                .insert(target_single.to_string()),
-            // A top-level import has no scope snapshot because its aliases are
-            // meant to persist. It still has to replace an already-visible
-            // family, for example a bare-file dependency preloaded a
-            // `GLOBAL::localtime` family before `Time::localtime` imported its
-            // own wrapper.
-            None => true,
-        };
-        if !should_shadow {
-            return;
-        }
-        // The family's keys, read through the family index of the table the
-        // scope opened on (or of the current one at the top level), not by a
-        // scan of every registered routine (#9170).
-        let target_sym = Symbol::intern(target_single);
-        let family_of = |table: &crate::runtime::function_table::FunctionTable| -> Vec<Symbol> {
-            let mut keys = table.family_keys(target_single);
-            if table.contains_key(&target_sym) {
-                keys.push(target_sym);
+        let importer = self.executing_unit_sym_for_module_load();
+        // (`None`: a top-level import hides everything visible.)
+        let visible_before = if let Some(scope) =
+            Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
+        {
+            if !scope.shadowed_proto_names.insert(target_single.to_string()) {
+                return;
             }
-            keys
+            Some(scope.decl_order_at_open)
+        } else {
+            None
         };
-        let visible_keys: Vec<Symbol> = match self.module.import_scope_stack.last() {
-            Some(snapshot) => family_of(&snapshot.functions),
-            None => family_of(&self.registry().functions),
-        };
-        let keys: Vec<Symbol> = {
-            let registry = self.registry();
-            visible_keys
-                .into_iter()
-                .filter(|key| registry.functions.contains_key(key))
-                .collect()
-        };
-        let mut shadowed_functions = HashMap::new();
+        let in_scope = visible_before.is_some();
+        let target_sym = Symbol::intern(target_single);
+        let mut keys = self.registry().functions.family_keys(target_single);
+        if self.registry().functions.contains_key(&target_sym) {
+            keys.push(target_sym);
+        }
+        let mut removed_keys: Vec<Symbol> = Vec::new();
+        // The block's own declarations are not the enclosing family.
+        keys.retain(|key| {
+            visible_before.is_none_or(|before| {
+                self.registry()
+                    .functions
+                    .get(key)
+                    .is_some_and(|def| def.decl_order < before)
+            })
+        });
         for key in keys {
             let removed = self.registry_mut().functions_mut().remove(&key);
-            self.log_import_scope_function_write(None);
             if let Some(def) = removed {
-                shadowed_functions.insert(key, def);
+                self.log_import_write(crate::runtime::ImportWrite::Function(key, Some(def)));
+                removed_keys.push(key);
             }
         }
-        let removed_keys: Vec<Symbol> = shadowed_functions.keys().copied().collect();
-        let proto_key = Symbol::intern(target_single);
-        let proto_was_visible = self
-            .module
-            .import_scope_stack
-            .last()
-            .is_some_and(|snapshot| snapshot.proto_functions.contains_key(&proto_key));
-        let shadowed_proto = self
-            .registry_mut()
-            .proto_functions_mut()
-            .remove(&proto_key)
-            .filter(|_| self.module.import_scope_stack.is_empty() || proto_was_visible);
-        if let Some(snapshot) = self.module.import_scope_stack.last_mut() {
-            snapshot.shadowed_functions.extend(shadowed_functions);
-            if let Some(def) = shadowed_proto {
-                snapshot.shadowed_proto_functions.insert(proto_key, def);
+        let proto = self.registry_mut().proto_functions_mut().remove(&target_sym);
+        if let Some(def) = proto {
+            self.log_import_write(crate::runtime::ImportWrite::Proto(target_sym, Some(def)));
+        }
+        if self.registry().proto_subs_contains(target_single) {
+            self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
+                target_single.to_string(),
+                true,
+            ));
+        }
+        // Replace the old proto marker along with its candidate family.
+        self.registry_mut()
+            .proto_subs_retain(|key| key != target_single);
+        if !in_scope && !removed_keys.is_empty() {
+            // A top-level import has no scope to restore: the family is gone
+            // for good. `module_registered_functions` is a flat set of registry
+            // keys protected because some loaded module's own body once
+            // installed them; it has no notion of a key being reassigned to a
+            // different owner, and a later import reusing the exact same
+            // `GLOBAL::` key must not inherit the stale protection (#8798).
+            let table = crate::runtime::cow_table_mut(&mut self.module.module_registered_functions);
+            for key in &removed_keys {
+                table.remove(key);
             }
-        } else {
-            // There is no enclosing registry snapshot to restore at top level:
-            // `shadowed_functions` (and `shadowed_proto`) are being thrown away
-            // for good, replaced by whatever this import installs instead.
-            //
-            // `module_registered_functions` is a flat, un-scoped set of
-            // registry keys "protected" from `pop_import_scope`'s cleanup
-            // because some loaded module's own body once installed them
-            // (`load_module_inner`'s `module_funcs` diff, keyed by symbol only
-            // — see its comment). It has no notion of a key being reassigned
-            // to a different owner. Once shadowed away here, the name no
-            // longer names that module's definition — a later, LEXICALLY
-            // SCOPED import that happens to reuse the exact same `GLOBAL::`
-            // key (e.g. a same-named proto/multi family re-imported inside an
-            // exported wrapper whose own name collided with it at load time)
-            // must not inherit this now-stale protection, or its call-scoped
-            // installs leak past `pop_import_scope` forever (#8798).
-            if !shadowed_functions.is_empty() {
-                let table =
-                    crate::runtime::cow_table_mut(&mut self.module.module_registered_functions);
-                for key in shadowed_functions.keys() {
-                    table.remove(key);
-                }
-            }
-            // Replace the old proto marker along with its candidate family.
-            self.registry_mut()
-                .proto_subs_retain(|key| key != target_single);
         }
         // Only the shadowed family's keys left the functions map (#9170).
         self.invalidate_fn_resolution_changing_keys(removed_keys);
@@ -672,7 +647,7 @@ impl Interpreter {
         // package is still GLOBAL. Mirror variable exports under the declared
         // module name, just as exported subs are mirrored above, so a tagged
         // `our &alias is export(:tag)` is visible to a later `use Module :tag`.
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
+        if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
             let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_vars)
                 .entry(unit_mod)
                 .or_default()
@@ -686,7 +661,7 @@ impl Interpreter {
         // declared `unit module` name differs from that path. This mirrors
         // the variable's export metadata to the namespace import_module
         // actually receives.
-        if self.module.unit_module_loading_stack.last().is_some()
+        if self.declared_unit_module_here().is_some()
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
             let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_vars)
@@ -1274,6 +1249,7 @@ impl Interpreter {
             // must not see it. A user operator that is no built-in one binds
             // the same way (stage 2, `lexically_bindable_operator`); a proto, a
             // candidate of a built-in operator and `postcircumfix` keep the alias.
+            let mut bound_plain_routine = false;
             if (!name.contains(":<") || Self::lexically_bindable_operator(&name))
                 && (!imported_proto || bodied_proto)
                 && !exported_method_candidates
@@ -1282,15 +1258,25 @@ impl Interpreter {
                 && self.bind_routine_lexically(&name, &def.clone())
             {
                 function_entries.clear();
+                bound_plain_routine = true;
             }
             // A multi family likewise binds as its dispatcher value (stage 2),
             // when its proto only dispatches. An operator family keeps the
             // alias, except user candidates of a built-in operator whose every
             // use in the block reads the set (`crate::lexical_builtin_op`).
-            let family_bound_lexically = ((!is_operator && !name.contains(":<"))
-                || crate::lexical_builtin_op::binds_lexically(&name))
-                && !exported_method_candidates
-                && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref());
+            // (A plain routine bound just above is the whole import: the
+            // `GLOBAL::name` proto a bare-file module's family left behind is
+            // another file's, not this export's.)
+            let family_bound_lexically = if bound_plain_routine {
+                // The routine is bound; the proto a bare-file module left under
+                // `GLOBAL::name` only keeps the family's own handling off.
+                proto_def.is_some()
+            } else {
+                ((!is_operator && !name.contains(":<"))
+                    || crate::lexical_builtin_op::binds_lexically(&name))
+                    && !exported_method_candidates
+                    && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref())
+            };
             if family_bound_lexically {
                 function_entries.clear();
             }
@@ -1332,12 +1318,15 @@ impl Interpreter {
                     // instead, and skip candidates already installed (a
                     // re-import of the same module must stay idempotent).
                     self.note_lexical_import_candidate(&name, &v);
-                    let key = self.import_multi_candidate_merged(&ks, v);
-                    self.log_import_scope_function_write(Some(key));
+                    let (key, inserted) = self.import_multi_candidate_merged(&ks, v);
+                    if inserted {
+                        self.log_import_write(crate::runtime::ImportWrite::Function(key, None));
+                    }
                     installed_keys.push(key);
                 } else {
+                    let prior = self.registry().functions.get(&k).cloned();
+                    self.log_import_write(crate::runtime::ImportWrite::Function(k, prior));
                     self.registry_mut().functions_mut().insert(k, v);
-                    self.log_import_scope_function_write(Some(k));
                     installed_keys.push(k);
                 }
             }
@@ -1359,6 +1348,8 @@ impl Interpreter {
                 .map(|v| (Symbol::intern(&target_single), v))
                 .collect();
             for (k, v) in proto_entries {
+                let prior = self.registry().proto_functions.get(&k).cloned();
+                self.log_import_write(crate::runtime::ImportWrite::Proto(k, prior));
                 self.registry_mut().proto_functions_mut().insert(k, v);
             }
             // `has_proto` consults the `proto_subs` name set, not just
@@ -1367,6 +1358,13 @@ impl Interpreter {
             // registered under their own package, a module's proto was already
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
             if imported_proto && !family_bound_lexically {
+                let was_present = self.registry().proto_subs_contains(&target_single);
+                if !was_present {
+                    self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
+                        target_single.clone(),
+                        false,
+                    ));
+                }
                 self.registry_mut().proto_subs_insert(target_single.clone());
                 self.record_imported_exported_proto(target_pkg, &name, symbol_tags.iter().cloned());
             }
@@ -1501,6 +1499,7 @@ impl Interpreter {
                     let routine_value = value.deref_container();
                     if self.bind_hook_routine_lexically(routine, &routine_value) {
                         self.note_lexical_import_routine(&current_pkg, routine);
+                        continue;
                     }
                     self.note_unit_hook_routine(routine, &routine_value);
                 }

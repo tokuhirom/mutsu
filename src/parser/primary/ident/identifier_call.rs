@@ -2481,8 +2481,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         {
             return Ok((r2, expr));
         }
+        // A type name followed by a bare anonymous sigil that ends at a
+        // closing delimiter (`[@ Int @]`, `(Int @)`) is not a call of the
+        // type with an anonymous variable: the sigil belongs to what follows
+        // (a user circumfix's closer).
+        let type_before_bare_sigil = is_type_like_name
+            && matches!(next, '$' | '@' | '%')
+            && r[next.len_utf8()..].chars().next().is_none_or(|c| {
+                c.is_whitespace() || matches!(c, ']' | ')' | '}' | '>' | ',' | ';')
+            });
         // Only trigger if next token starts a term (not an operator)
-        if (next == '$'
+        if !type_before_bare_sigil
+            && (next == '$'
             || next == '@'
             || next == '%'
             || next == '&'

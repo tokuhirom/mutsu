@@ -266,14 +266,10 @@ impl Interpreter {
         if crate::qualified::is_qualified_str(name) {
             return None;
         }
+        let key = reg.class_key_by_short_name(name)?;
         reg.classes
-            .iter()
-            .find(|(k, _)| {
-                crate::qualified::split_qualified(crate::qualified::known_symbol(k))
-                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
-                    .is_some_and(|(_, short)| short == name)
-            })
-            .map(|(k, cd)| (k.clone(), cd.parents.clone()))
+            .get(key)
+            .map(|cd| (key.to_string(), cd.parents.clone()))
     }
 
     pub(crate) fn is_container_subclass(&self, name: &str) -> bool {
