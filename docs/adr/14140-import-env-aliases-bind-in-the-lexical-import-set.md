@@ -150,6 +150,36 @@ declaration (option C, which is exact for a routine because its body is one
 code object). Open to the maintainer: whether the record or the closure should
 own the `Arc`.
 
+### Findings that qualify the recommendation (found while sizing the implementation)
+
+1. **Records are not uniform per frame.** `FrameFixtures` exist for method
+   frames and scoped helpers; a plain function frame has none, and a callee
+   without one reads its *caller's* top record (hence the `fixtures != 0`
+   guards). A grant stored there needs the same guards plus a record for every
+   frame that runs an `ImportScope` region, including the main program.
+2. **A routine called by name has no creation link.** `{ use M; sub f { M::Foo }
+   f() }` calls `f` through the registry by `FunctionDef`; there is no closure
+   value to capture a grant, so a frame-cut rule (`routine_depth`) hides the
+   grant from `f`, while today's env key reaches it through the block's static
+   link. Option A therefore needs a region handle on registry-declared routines
+   too, which `FunctionDef` (shared across executions of the block) cannot hold.
+3. **The env key already is the lexical pad binding.** Its static-link behavior
+   (visible to nested closures and routines, invisible to callees, kept by an
+   escaping closure) is what ADR-8751 asks for. What is wrong is only that the
+   binding lives in the *dynamic* env without a tier of its own, so it needs a
+   key list and a restore. The alternative to A is therefore an *import tier*
+   owned by the `ImportScope` region (an `Env` layer opened with the region and
+   dropped with it, never merged outward), which keeps the static-link behavior
+   and deletes `imported_env_keys` / `shadowed_env_values` / the restore. It is
+   unmeasured: `BlockScope` already opens a tier (`open_block_env_tier`) whose
+   exit merge propagates package-qualified names, package type objects and
+   uppercase names, and the region's tier would have to keep those rules for
+   non-import writes.
+
+Until a spike measures the import tier against the 13 tests listed above, option
+A is **not** the recommendation to implement; the choice between A (with region
+handles on routines) and the import tier is the open decision for the maintainer.
+
 ## 3. Consequences
 
 - A name an import binds is invisible after the block and in callees, as in
