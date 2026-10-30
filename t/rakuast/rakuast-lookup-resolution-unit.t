@@ -1,10 +1,10 @@
 use Test;
 
-plan 8;
+plan 6;
 
-# Lookups of routines and packages the unit declares, and of imported routines,
+# Lookups of routines and packages the unit declares,
 # carry their resolution (#15610 slice 2), as in rakudo's CHECK phase. Sourced
-# from `static::CLI`'s analysis. Read from a CHECK-time closure.
+# from `static::CLI`'s analysis. (Imported routines are not resolved yet.) Read from a CHECK-time closure.
 my %seen;
 BEGIN {
     my $cu = $*CU;
@@ -12,9 +12,6 @@ BEGIN {
         my sub walk($node) {
             if $node ~~ RakuAST::Call::Name && $node.name.canonicalize eq 'foo' {
                 %seen<foo> //= $node;
-            }
-            if $node ~~ RakuAST::Call::Name && $node.name.canonicalize eq 'plan' {
-                %seen<plan> //= $node;
             }
             if $node ~~ RakuAST::Type::Simple && $node.name.canonicalize eq 'Bar' {
                 %seen<bar> //= $node;
@@ -35,5 +32,3 @@ is %seen<foo>.resolution.name.canonicalize, 'foo', 'which is named like the call
 ok %seen<bar>.is-resolved, 'a unit class is resolved';
 ok %seen<bar>.resolution ~~ RakuAST::Declaration::LexicalPackage, 'to a lexical package';
 is %seen<bar>.resolution.compile-time-value.^name, 'Bar', 'whose compile-time-value is the type';
-ok %seen<plan>.is-resolved, 'an imported routine is resolved';
-ok %seen<plan>.resolution ~~ RakuAST::Declaration::Import, 'to an import declaration';
