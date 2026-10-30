@@ -2786,6 +2786,11 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: rustc_hash::FxHashSet<Symbol>,
+    /// The modules whose GLOBAL this scope's block merged into itself (`need`,
+    /// `use`): the block's grant of their packages. The `ModuleMerge` env marker
+    /// that makes it visible lives in the region's own env tier
+    /// (`exec_import_scope_op`) and dies with it, so it needs no restore.
+    pub(crate) merged_modules: rustc_hash::FxHashSet<Symbol>,
     /// The names the block declares itself for this scope's imports (its
     /// pad bindings of imported variables, constants and types, ADR-8751),
     /// with their term keys. The import writes no env key for them, but a

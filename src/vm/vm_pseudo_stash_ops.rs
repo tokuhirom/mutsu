@@ -417,9 +417,9 @@ impl Interpreter {
         let merged_modules: Vec<Symbol> = match own_imports {
             None => self.modules_merged_in_view(),
             Some(Some(scope)) => self.import_scopes()[scope]
-                .imported_env_keys
+                .merged_modules
                 .iter()
-                .filter_map(|key| Self::module_merge_key_module(*key))
+                .copied()
                 .collect(),
             Some(None) => Vec::new(),
         };

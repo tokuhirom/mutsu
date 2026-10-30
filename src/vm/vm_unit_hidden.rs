@@ -88,6 +88,7 @@ impl Interpreter {
                 if !self.module.import_scope_stack.iter().any(|scope| {
                     scope.scope_classes
                         && !(scope.imported_env_keys.is_empty()
+                            && scope.merged_modules.is_empty()
                             && scope.block_bound_keys.is_empty())
                 }) {
                     return;
@@ -117,7 +118,6 @@ impl Interpreter {
                     .filter(|key| {
                         key.with_str(|s| {
                             crate::env::is_user_variable_key(s)
-                                || s.starts_with(MetaNs::ModuleMerge.prefix())
                                 // An imported enum value's own key
                                 // namespace (#7914, #14214).
                                 || s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX)
@@ -125,6 +125,12 @@ impl Interpreter {
                     })
                     .copied()
                     .chain(scope.block_bound_keys.iter().copied())
+                    .chain(
+                        scope
+                            .merged_modules
+                            .iter()
+                            .map(|module| MetaNs::ModuleMerge.key(*module)),
+                    )
             })
             .collect();
         let hidden = if imported.is_empty() {

@@ -96,14 +96,11 @@ impl Interpreter {
     ) {
         for key in imported_env_keys {
             // A sigil carries no `:`, so the key's own classification answers.
-            // A block-level module merge (`MetaNs::ModuleMerge`) is spelled
-            // with `::` too, but it is the scope's own grant.
             let is_module_owned_qualified = crate::qualified::is_qualified(key)
                 && !key.with_str(|ks| {
                     ks.strip_prefix(['$', '@', '%', '&'])
                         .unwrap_or(ks)
                         .starts_with("GLOBAL::")
-                        || ks.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix())
                 });
             if is_module_owned_qualified {
                 continue;
