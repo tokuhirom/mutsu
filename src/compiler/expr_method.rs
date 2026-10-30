@@ -1037,6 +1037,26 @@ impl Compiler {
                 target.clone()
             });
             call_args.extend(args.iter().cloned());
+            // A plain unqualified name is the call `f($x, args)` itself, so it
+            // takes the direct-call path (the positional light call, a resolved
+            // multi cache) instead of resolving `&f` at run time and binding
+            // through the general binder, ~12x the instructions of `f($x)`.
+            // `Expr::Call` already sends a visible `my &f` / enclosing lexical
+            // sub to the code-variable form, so those keep their meaning.
+            if let Expr::CodeVar(name) = name_expr
+                && !name.contains("::")
+                // An identifier only: `.&?BLOCK`, `.&*f` (a dynamic variable)
+                // and the like name something other than a declared routine.
+                && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern(name),
+                    args: call_args,
+                    listop: false,
+                });
+                return;
+            }
             self.compile_expr(&Expr::CallOn {
                 target: Box::new(name_expr.clone()),
                 args: call_args,
