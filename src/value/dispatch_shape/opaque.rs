@@ -111,6 +111,7 @@ pub(super) const fn opaque(
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
         S::RakuAstOriginSource => ("RakuAST::Origin::Source", &["RakuAST::Origin::Source"]),
+        S::RakuAstOriginMatch => ("RakuAST::Origin::Match", &["RakuAST::Origin::Match"]),
         _ => return None,
     })
 }
