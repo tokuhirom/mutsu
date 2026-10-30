@@ -701,7 +701,12 @@ impl Interpreter {
             .module_declared_unit_packages
             .get(&crate::symbol::Symbol::intern(module))
             .map(|pkg| pkg.as_str().to_string());
-        [Some(module.to_string()), declared, Some("GLOBAL".to_string())]
+        let block = self
+            .module
+            .module_block_packages
+            .get(&crate::symbol::Symbol::intern(module))
+            .map(|pkg| pkg.as_str().to_string());
+        [Some(module.to_string()), declared, block, Some("GLOBAL".to_string())]
             .into_iter()
             .flatten()
             .find_map(|owner| table.get(owner.as_str()).and_then(|keys| keys.get(name)))

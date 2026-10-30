@@ -36,6 +36,9 @@ pub(crate) struct ModuleLoadFacts {
     /// The AST half of the undeclared-routine check.
     pub(crate) recorded_calls: Option<RecordedCalls>,
     pub(crate) unit_name: Option<String>,
+    /// The names of the top-level `package`/`module` blocks (not `unit`).
+    #[serde(default)]
+    pub(crate) block_package_names: Vec<String>,
     pub(crate) scope_name_candidates: Vec<ScopeNameCandidate>,
     /// Every statement is a `use` (before guards).
     pub(crate) use_only: bool,
@@ -79,6 +82,17 @@ impl ModuleLoadFacts {
             exported_operator_names: Interpreter::extract_module_exported_operator_names(stmts),
             recorded_calls: super::undeclared_routines::record_mainline_calls(stmts),
             unit_name: Interpreter::detect_unit_package_name(stmts),
+            block_package_names: stmts
+                .iter()
+                .filter_map(|s| match s {
+                    Stmt::Package {
+                        name,
+                        is_unit: false,
+                        ..
+                    } => Some(name.resolve()),
+                    _ => None,
+                })
+                .collect(),
             scope_name_candidates: Interpreter::module_scope_name_candidates(stmts),
             use_only: Interpreter::should_skip_runtime_for_use_only_module(stmts),
             top_level_uses: Interpreter::top_level_use_modules(stmts),

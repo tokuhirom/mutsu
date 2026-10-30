@@ -312,6 +312,11 @@ pub(crate) struct ModuleState {
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// The one top-level `package`/`module` block a module file declares under
+    /// a name other than the one it was loaded as (`package Cro::WebSocket::Message
+    /// { enum Opcode is export (...) }` in `Cro/WebSocket/Message/Opcode.rakumod`),
+    /// by requested module path. What the file exports lives under that package.
+    pub(crate) module_block_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
     pub(crate) exported_subs: std::sync::Arc<ExportTagTable>,
     /// Exported variable/constant symbols by package and export tag.
@@ -722,6 +727,7 @@ impl ModuleState {
             unit_module_packages: Default::default(),
             lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: Default::default(),
+            module_block_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
             exported_token_defs: Default::default(),
@@ -831,6 +837,7 @@ impl ModuleState {
             unit_module_packages: self.unit_module_packages.clone(),
             lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: self.module_declared_unit_packages.clone(),
+            module_block_packages: self.module_block_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             reexported_var_owners: self.reexported_var_owners.clone(),
