@@ -104,7 +104,9 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
 /// The typed node the parser builds for an object hash `:{ ... }`.
 // Cost: O(1).
 pub(crate) fn object_hash_expr(entries: Vec<Expr>) -> Expr {
-    Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::ObjectHash(entries)))
+    Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::ObjectHash(
+        entries,
+    )))
 }
 
 /// The `Circumfix::HashComposer(:object-hash)` of an object hash's entries.
