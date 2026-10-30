@@ -1196,6 +1196,18 @@ impl Interpreter {
                         crate::symbol::Symbol::intern(name),
                     );
             }
+            // A file with no `unit` declaration whose single top-level package
+            // block is named differently from the module: its exports live
+            // under that package.
+            if unit_name.is_none()
+                && let [only] = facts.block_package_names.as_slice()
+                && only != module
+            {
+                crate::runtime::cow_table_mut(&mut self.module.module_block_packages).insert(
+                    crate::symbol::Symbol::intern(module),
+                    crate::symbol::Symbol::intern(only),
+                );
+            }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.module.unit_module_loading_stack.push(name);
                 true
