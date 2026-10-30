@@ -234,7 +234,7 @@ fn sub_value(
     let routine = interp.resolve_code_var(&name);
     // A CHECK phaser runs before the unit's subs are installed as lexicals,
     // but they are already in the function table (preregistered).
-    if matches!(routine.view(), ValueView::Nil)
+    if !matches!(routine.view(), ValueView::Sub(_))
         && !interp.has_proto(&name)
         && let Some(def) = interp.resolve_function(&name).map(|a| (*a).clone())
     {
