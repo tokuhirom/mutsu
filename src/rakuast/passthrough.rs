@@ -630,8 +630,6 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 mod pure;
 #[cfg(test)]
-mod survey_tmp;
-#[cfg(test)]
 mod tests;
 
 use pure::{analyse_expr, analyse_stmt};

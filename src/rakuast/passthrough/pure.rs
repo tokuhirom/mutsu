@@ -6,18 +6,12 @@
 //! test does not name is refused, never skipped.
 
 use crate::ast::parsed::{ParsedExpr, ParsedStmt};
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
-use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt};
+use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt};
 use crate::value::ValueView;
 
 /// Whether `stmt` may be carried, and if so whether it holds a spelling or a
 /// kept construct to undo first.
-pub(super) fn reason_of(stmt: &Stmt) -> Option<String> {
-    let mut purity = Purity::default();
-    purity.visit_stmt(stmt);
-    purity.reason
-}
-
 // Cost: O(s), s = nodes of `stmt`.
 pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
     // An empty statement is no statement of the lowered tree; inside a carried
@@ -55,7 +49,6 @@ pub(super) fn expr_node_allowed(expr: &Expr) -> bool {
 struct Purity {
     pure: bool,
     fixup: bool,
-    reason: Option<String>,
 }
 
 impl Default for Purity {
@@ -63,7 +56,6 @@ impl Default for Purity {
         Purity {
             pure: true,
             fixup: false,
-            reason: None,
         }
     }
 }
@@ -75,28 +67,6 @@ impl<'ast> Visit<'ast> for Purity {
         }
         if !self.stmt_allowed(stmt) {
             self.pure = false;
-            self.reason = Some(match stmt {
-                Stmt::Assign {
-                    name,
-                    target_is_sigilless,
-                    ..
-                } => format!(
-                    "Assign {} sigilless={target_is_sigilless}",
-                    name.chars().take(14).collect::<String>()
-                ),
-                Stmt::VarDecl {
-                    name, anonymous, ..
-                } => format!(
-                    "VarDecl {} anon={anonymous}",
-                    name.chars().take(14).collect::<String>()
-                ),
-                Stmt::Ast(n) => format!("Ast {:?}", n).chars().take(20).collect(),
-                other => format!("{other:?}")
-                    .split(|c: char| !c.is_alphanumeric())
-                    .next()
-                    .unwrap_or("")
-                    .to_string(),
-            });
             return;
         }
         walk_stmt(self, stmt);
@@ -121,18 +91,6 @@ impl<'ast> Visit<'ast> for Purity {
             return;
         }
         walk_expr(self, expr);
-    }
-
-    fn visit_param(&mut self, param: &'ast ParamDef) {
-        if !self.pure {
-            return;
-        }
-        if !pure_param(param) {
-            self.pure = false;
-            self.reason = Some("Param".to_string());
-            return;
-        }
-        walk_param(self, param);
     }
 }
 
@@ -314,10 +272,6 @@ pub(super) fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool
     }
 }
 
-fn pure_param(_param: &ParamDef) -> bool {
-    true
-}
-
 /// A variable name the parser's tree and the lowering agree on: not a
 /// placeholder, a match variable or a desugaring's temporary.
 // Cost: O(1).
@@ -350,12 +304,4 @@ fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     let mut code = Code(false);
     crate::ast_visit::walk_regex_tree(&mut code, tree);
     code.0
-}
-
-/// The name a declaration or assignment carries: the sigil of an array or hash
-/// variable is part of it. A code variable is not carried: `lower` resolves
-/// the calls that follow `my &emit` against the declaration it sees.
-// Cost: O(1).
-fn declared_name(name: &str) -> bool {
-    plain_name(name.strip_prefix(['@', '%']).unwrap_or(name))
 }
