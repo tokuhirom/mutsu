@@ -186,8 +186,8 @@ fn external_value(
         .as_map()
         .get("lexical-name")
         .map(|n| n.to_string_value())?;
-    if name.starts_with('&') {
-        return Some(Ok(interp.resolve_code_var(&name[1..])));
+    if let Some(routine) = name.strip_prefix('&') {
+        return Some(Ok(interp.resolve_code_var(routine)));
     }
     Some(Ok(Value::package(Symbol::intern(&name))))
 }

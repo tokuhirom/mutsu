@@ -81,7 +81,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         scopes.0.push(HashMap::new());
     }
     let parameter_type = (node.class == C::Parameter)
-        .then(|| type_name_of(&node))
+        .then(|| type_name_of(node))
         .flatten();
     for field in &mut node.fields {
         match &mut field.value {
