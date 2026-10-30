@@ -73,6 +73,20 @@ impl Compiler {
                 ]));
             }
         }
+        // The variable the statement being compiled declares is in the pad
+        // already (#15607).
+        if depth == 0
+            && !is_lexical
+            && let Some(name) = &self.decl_in_flight
+            && !seen.contains(name.as_str())
+        {
+            entries.push(Value::array(vec![
+                Value::str(Self::lexical_stash_display_name(name)),
+                Value::str(name.clone()),
+                Value::int(0),
+                Value::int(-1),
+            ]));
+        }
         if let Some(local_index) = target_index.checked_sub(self.enclosing_scopes.len()) {
             let level = local_index + 1;
             for &(_, name) in self

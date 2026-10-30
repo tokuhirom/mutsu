@@ -1753,6 +1753,10 @@ pub(crate) struct Compiler {
     /// entry and stores it on the closure's `CompiledCode`, so a block nested
     /// inside does not inherit it.
     pending_declarator_doc: Option<crate::decl_doc::DeclDoc>,
+    /// The variable the `my` declaration being compiled declares after its
+    /// initializer: raku's pad holds it from the start of the statement, so a
+    /// `MY::` read in the initializer lists it (`my @n = MY::.keys`, #15607).
+    decl_in_flight: Option<String>,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Scalar variables `:=`-bound to a non-itemized value (no Scalar
@@ -2180,6 +2184,7 @@ impl Compiler {
             mint_named_pair: false,
             pending_immutable_topic_block: false,
             pending_declarator_doc: None,
+            decl_in_flight: None,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             enclosing_noncontainer_bound_vars: std::collections::HashSet::new(),
