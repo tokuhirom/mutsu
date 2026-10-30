@@ -33,7 +33,7 @@
 use std::collections::HashMap;
 
 use super::lower::{call_name_str, leaf_str, positional_leaf};
-use super::{RakuAstClass as C, RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::{Value, ValueView};
 
 /// The declarations visible at the node being walked, innermost scope last:
@@ -46,6 +46,8 @@ struct Scopes<'a> {
     packages: Vec<String>,
     /// How many `*` arguments the enclosing thunk has numbered so far.
     whatever_args: Vec<usize>,
+    /// Anonymous subsets minted so far, for their internal names.
+    anonymous_subsets: usize,
 }
 
 impl Scopes<'_> {
@@ -70,6 +72,7 @@ pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) 
         imported,
         packages: Vec::new(),
         whatever_args: vec![0],
+        anonymous_subsets: 0,
     };
     walk(node, &mut scopes);
 }
@@ -127,6 +130,11 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     {
         *count += 1;
         node.origin.2 = Some(Value::str(format!("_whatever_arg_{count}")));
+    }
+    // `my Int $x where P` is a variable of an anonymous subset, as rakudo's tree
+    // has it: the declaration's `type` is a `Type::Subset` (`P` over `Int`).
+    if node.class == C::VarDeclarationSimple {
+        refine_with_anonymous_subset(node, scopes);
     }
     let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
     for field in &mut node.fields {
@@ -266,6 +274,57 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     }
 }
 
+/// Replace the `where` of a `VarDeclaration::Simple` and its `type` by an
+/// anonymous `Type::Subset` carrying both (internal name in its origin member).
+// Cost: O(f), f = fields of the node.
+fn refine_with_anonymous_subset(node: &mut RakuAstNode, scopes: &mut Scopes) {
+    let Some(at) = node.fields.iter().position(|f| f.name == Some("where")) else {
+        return;
+    };
+    let where_field = node.fields.remove(at);
+    let mut subset_fields = vec![RakuAstField {
+        name: Some("where"),
+        value: where_field.value,
+    }];
+    if let Some(at) = node.fields.iter().position(|f| f.name == Some("type")) {
+        let base = node.fields.remove(at);
+        subset_fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
+                class: C::TraitOf,
+                fields: vec![RakuAstField {
+                    name: None,
+                    value: base.value,
+                }],
+            }))]),
+        });
+    }
+    scopes.anonymous_subsets += 1;
+    let mut subset = RakuAstNode {
+        origin: Default::default(),
+        class: C::TypeSubset,
+        fields: subset_fields,
+    };
+    subset.origin.2 = Some(Value::str(format!(
+        "__mutsu_anon_subset_ast_{}",
+        scopes.anonymous_subsets
+    )));
+    // `type` is the first field a declaration lists after its scope.
+    let insert_at = node
+        .fields
+        .iter()
+        .position(|f| f.name == Some("desigilname"))
+        .unwrap_or(0);
+    node.fields.insert(
+        insert_at,
+        RakuAstField {
+            name: Some("type"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(subset))),
+        },
+    );
+}
+
 /// Whether the infix of an `ApplyInfix` is a short-circuit operator, whose
 /// sides are thunks of their own.
 // Cost: O(f), f = fields of the node.
@@ -353,7 +412,7 @@ pub(super) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
 
 /// The identifier a package declaration (`class Bar`) is named by.
 // Cost: O(f), f = fields of the node.
-fn package_name(node: &RakuAstNode) -> Option<String> {
+pub(super) fn package_name(node: &RakuAstNode) -> Option<String> {
     let field = node.fields.iter().find(|f| f.name == Some("name"))?;
     let RakuAstFieldValue::Node(name) = &field.value else {
         return None;
@@ -403,6 +462,12 @@ fn type_name_of(node: &RakuAstNode) -> Option<String> {
 /// (`Type::Definedness`) names its base type.
 // Cost: O(f), f = fields of the node.
 fn type_node_name(node: &RakuAstNode) -> Option<String> {
+    // An anonymous subset made by [`refine_with_anonymous_subset`].
+    if node.class == C::TypeSubset
+        && let Some(name) = node.origin.2.as_ref()
+    {
+        return Some(name.to_string_value());
+    }
     if let Some(base) = node.fields.iter().find(|f| f.name == Some("base-type")) {
         let RakuAstFieldValue::Node(base) = &base.value else {
             return None;

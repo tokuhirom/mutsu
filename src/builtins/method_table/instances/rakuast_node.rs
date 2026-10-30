@@ -309,6 +309,30 @@ fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A subset's type: declared now when it is an anonymous one.
+        K::TypeSubset => {
+            if let Some((statement, name)) = crate::rakuast::anonymous_subset_declaration(node) {
+                if let Err(err) = interp.eval_rakuast_node(&statement) {
+                    return Some(Err(err));
+                }
+                return Some(Ok(Value::package(Symbol::intern(&name))));
+            }
+            let name = node
+                .origin
+                .2
+                .as_ref()
+                .map(|n| n.to_string_value())
+                .or_else(|| crate::rakuast::declared_package_name(node))?;
+            // A named subset is declared when the unit runs; the analysis needs
+            // its type (and `.^refinee`) at CHECK time, as rakudo has it.
+            if !interp.registry().subsets.contains_key(&name) {
+                let statement = crate::rakuast::as_statement(target);
+                if let Err(err) = interp.eval_rakuast_node(&statement) {
+                    return Some(Err(err));
+                }
+            }
+            return Some(Ok(Value::package(Symbol::intern(&name))));
+        }
         // A block's value is its closure.
         K::Block | K::PointyBlock => {
             return Some(interp.eval_rakuast_node(&crate::rakuast::as_item_call_statement(target)));
