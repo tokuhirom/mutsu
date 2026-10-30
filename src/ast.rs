@@ -3431,7 +3431,7 @@ mod tail;
 mod virtual_call;
 
 pub(crate) use body_local_names::{collect_all_my_decl_names, collect_routine_body_local_names};
-pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
+pub(crate) use lvalue::{LvaluePeel, LvalueRoot, decl_target_var_name};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,

@@ -131,3 +131,25 @@ pub(crate) fn scope_statements(stmts: &[Stmt]) -> Vec<&Stmt> {
     crate::ast_visit::walk_stmts(&mut collector, stmts);
     collector.0
 }
+
+/// Whether `body` is the desugaring of a `my (...) = RHS` / `my (...) := RHS`
+/// destructuring declaration: it opens with the staging-temp declaration,
+/// wrapped in a bound block in binding mode.
+// Cost: O(s), s = statements of `body` before the staging temporary.
+pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
+    fn is_tmp_decl(stmt: &Stmt) -> bool {
+        matches!(stmt, Stmt::VarDecl { name, .. }
+            if name == "@__destructure_tmp__" || name == "%__destructure_tmp__")
+    }
+    // Plain targets are predeclared (default-initialized) ahead of the temp so
+    // the RHS sees them; skip those leading declarations.
+    let is_predecl =
+        |s: &Stmt| matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"));
+    match body.iter().find(|s| !is_predecl(s)) {
+        Some(Stmt::SyntheticBlock(inner)) => {
+            matches!(inner.as_slice(), [decl] if is_tmp_decl(decl))
+        }
+        Some(first) => is_tmp_decl(first),
+        None => false,
+    }
+}

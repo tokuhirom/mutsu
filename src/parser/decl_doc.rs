@@ -338,15 +338,6 @@ fn stmt_ident(stmt: &Stmt) -> Option<(SiteIdent, bool)> {
         Stmt::VarDecl { .. } => SiteIdent::Variable,
         // A declaration a `.AST` parse keeps as written (its header, a binding).
         Stmt::Ast(node) => return node.inner_stmt().and_then(stmt_ident),
-        // `class Foo:ver<1> { }` and similar come back as their metadata
-        // setters followed by the declaration itself.
-        Stmt::SyntheticBlock(stmts) => {
-            // Metadata may be an ordinary expression after the declaration
-            // (for example the export marker on `class C is export`). Find
-            // the declaration inside the wrapper instead of asking which
-            // child supplies the block's value.
-            return stmts.iter().rev().find_map(stmt_ident);
-        }
         _ => return None,
     };
     let named = match &ident {
