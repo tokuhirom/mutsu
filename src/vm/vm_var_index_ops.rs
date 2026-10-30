@@ -634,6 +634,17 @@ impl Interpreter {
         }
     }
 
+    /// Whether `target` is an instance whose class declares its own `AT-POS`.
+    // Cost: O(1) registry lookup.
+    fn is_user_at_pos_instance(&mut self, target: &Value) -> bool {
+        match target.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method_including_role(&class_name.resolve(), "AT-POS")
+            }
+            _ => false,
+        }
+    }
+
     /// `.elems` of a subscripted instance or mixin, for resolving a WhateverCode
     /// index: a `does Sequence` class's is its iterator's (the delegate), any
     /// other is its own `elems` method.
@@ -2516,6 +2527,17 @@ impl Interpreter {
             // through AT-KEY, mirroring the plain-Hash `(Hash, Whatever)` arm above.
             // Guarded on a user `keys` method so non-Associative instances keep the
             // Nil fallback below.
+            // `$obj[*]` on a user class that provides its own `AT-POS` is the
+            // object's `.list` (rakudo's `postcircumfix:<[ ]>(\SELF, Whatever:D)`);
+            // only a lone Whatever, not one inside a slice (`[*, 1]`, `[(*,)]`).
+            // Cost: O(1) dispatch plus the user `list` method.
+            (ValueView::Instance { class_name, .. }, ValueView::Whatever)
+                if is_positional
+                    && class_name.resolve() != "IO::Path::Parts"
+                    && self.has_user_method_including_role(&class_name.resolve(), "AT-POS") =>
+            {
+                self.try_compiled_method_or_interpret(target.clone(), "list", vec![])?
+            }
             (ValueView::Instance { class_name, .. }, ValueView::Whatever)
                 if self.has_user_method(&class_name.resolve(), "keys") =>
             {
@@ -2602,6 +2624,26 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(keys.len());
                 for k in keys.iter() {
                     let value = match k.view() {
+                        // A Whatever among a slice's indices (`$o[*, 1]`, `$o[(*,)]`)
+                        // reads every element of an object with its own `AT-POS`,
+                        // as one nested list, like `$o[^$o.elems]`.
+                        ValueView::Whatever
+                            if is_positional && self.is_user_at_pos_instance(&target) =>
+                        {
+                            let len = self.subscripted_elems(&target);
+                            let mut all = Vec::with_capacity(len as usize);
+                            for i in 0..len {
+                                all.push(
+                                    self.try_compiled_method_or_interpret(
+                                        target.clone(),
+                                        "AT-POS",
+                                        vec![Value::int(i)],
+                                    )?
+                                    .deref_container(),
+                                );
+                            }
+                            Value::array(all)
+                        }
                         ValueView::Int(_)
                         | ValueView::Num(_)
                         | ValueView::Range(_, _)
