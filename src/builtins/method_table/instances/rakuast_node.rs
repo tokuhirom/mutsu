@@ -553,9 +553,13 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             Some(out)
         }
         RakuAstClass::ParameterTargetVar => {
-            Some(vec![node_value("declaration").unwrap_or_else(|| {
-                rakuast(target_declaration(node), Vec::new(), &node.origin)
-            })])
+            Some(vec![
+                node_value("declaration")
+                    .or_else(|| crate::rakuast::annotated_target_declaration(node))
+                    .unwrap_or_else(|| {
+                        rakuast(target_declaration(node), Vec::new(), &node.origin)
+                    }),
+            ])
         }
         // Rakudo visits a quoted regex's adverbs before its body.
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx
@@ -599,14 +603,17 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             if target_node.class != RakuAstClass::ParameterTargetVar {
                 return None;
             }
-            let declaration = rakuast(
-                target_declaration(target_node),
-                vec![RakuAstField {
-                    name: Some("type"),
-                    value: RakuAstFieldValue::Node(explicit_type),
-                }],
-                &target_node.origin,
-            );
+            let declaration = crate::rakuast::annotated_target_declaration(target_node)
+                .unwrap_or_else(|| {
+                    rakuast(
+                        target_declaration(target_node),
+                        vec![RakuAstField {
+                            name: Some("type"),
+                            value: RakuAstFieldValue::Node(explicit_type),
+                        }],
+                        &target_node.origin,
+                    )
+                });
             let mut new_target = target_node.clone();
             new_target.fields.push(RakuAstField {
                 name: Some("declaration"),

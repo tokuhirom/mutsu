@@ -266,8 +266,10 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
             ]))),
         ),
     ];
+    // The constructor's own order (`type` first), which the field lookups of a
+    // declaration read.
     if let Some(ty) = type_node {
-        fields.push(super::convert::leaf_field(Some("type"), ty.clone()));
+        fields.insert(0, super::convert::leaf_field(Some("type"), ty.clone()));
     }
     node.origin.2 = Some(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),

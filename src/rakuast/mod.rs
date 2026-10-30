@@ -1500,6 +1500,13 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// The `VarDeclaration::Simple` annotated onto a `ParameterTarget::Var` of the
+/// unit tree `$*CU` answers (see [`resolve`]).
+// Cost: O(1).
+pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> {
+    resolve::target_declaration(node)
+}
+
 /// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
