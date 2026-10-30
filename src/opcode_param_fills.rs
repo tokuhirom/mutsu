@@ -43,7 +43,18 @@ impl CompiledFunction {
             || pd.code_signature.is_some()
             || pd.shape_constraints.is_some()
             || pd.literal_value.is_some()
-            || pd.has_traits()
+            // A plain `$x is copy` keeps its constant default: the fill is an
+            // immutable constant bound by value, and the light bind leaves the
+            // parameter writable (`has_copy_positional_param`).
+            || (pd.has_traits()
+                && !(!pd.does_target
+                    && pd.traits.len() == 1
+                    && pd.traits[0] == "copy"
+                    && pd
+                        .name
+                        .as_bytes()
+                        .first()
+                        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')))
             // An `@`/`%` parameter's missing-optional value is a FRESH
             // container per call (`Value::element_descriptor_array`), which a
             // shared constant cannot be. The light path's eligibility check
