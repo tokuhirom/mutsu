@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 14;
+plan 17;
 
 # A plain `$x is copy` positional parameter stays writable on the light call
 # path and never aliases the caller's variable.
@@ -47,3 +47,10 @@ is @arr.elems, 3, 'the caller array is intact';
 my $sum = 0;
 $sum += bump($_) for ^20;
 is $sum, 210, 'repeated calls through the call cache';
+
+# A constant default is shared by every call: writing to the copy must not
+# change what the next call sees.
+sub defaulted($n is copy = 5) { $n++; $n }
+is defaulted(), 6, 'defaulted is copy parameter, default used';
+is defaulted(1), 2, 'defaulted is copy parameter, value supplied';
+is defaulted(), 6, 'the constant default is not modified by an earlier call';
