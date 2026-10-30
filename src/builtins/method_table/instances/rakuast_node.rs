@@ -270,7 +270,12 @@ fn external_value(
     if let Some(routine) = name.strip_prefix('&') {
         return Some(Ok(interp.resolve_code_var(routine)));
     }
-    Some(Ok(Value::package(Symbol::intern(&name))))
+    // A core type is its type object; anything else is a constant of the setting
+    // (`True`, `Inf`), read by evaluating its name.
+    if crate::core_type_names::contains(&name) {
+        return Some(Ok(Value::package(Symbol::intern(&name))));
+    }
+    Some(interp.eval_code_string(&name))
 }
 
 /// `compile-time-value` of a `RakuAST::Method` declared in a package of the
@@ -337,8 +342,13 @@ fn sub_value(
         K::Block | K::PointyBlock => {
             return Some(interp.eval_rakuast_node(&crate::rakuast::as_item_call_statement(target)));
         }
-        // `::T` stands for a type nobody has bound yet.
-        K::TypeCapture => return Some(Ok(Value::package(Symbol::intern("Any")))),
+        // `::T` is the generic type `T`: the same object a signature's
+        // `--> T` returns, until a call binds it.
+        K::TypeCapture => {
+            let name = crate::rakuast::declared_package_name(node)?;
+            crate::type_captures::note(&name);
+            return Some(Ok(Value::package(Symbol::intern(&name))));
+        }
         // A constant's value is its initializer's, evaluated now.
         K::VarDeclarationConstant => {
             let init = crate::rakuast::node_accessor(node, "initializer")?;

@@ -1598,7 +1598,7 @@ pub(crate) fn anonymous_subset_declaration(node: &RakuAstNode) -> Option<(Value,
 /// The identifier a package-like declaration (`class Bar`, `subset Pos`) is named by.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_package_name(node: &RakuAstNode) -> Option<String> {
-    resolve::package_name(node)
+    resolve::package_name(node).or_else(|| resolve::type_node_name(node))
 }
 
 /// `[kind, owner.., name, index]` of a `Parameter` of the unit tree `$*CU` answers.

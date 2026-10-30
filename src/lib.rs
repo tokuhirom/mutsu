@@ -70,6 +70,7 @@ pub(crate) mod thread_compat;
 mod token_kind;
 mod trace;
 pub(crate) mod trir;
+pub(crate) mod type_captures;
 pub(crate) mod type_id;
 mod ucd;
 pub(crate) mod unit_diagnostics;

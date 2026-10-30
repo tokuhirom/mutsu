@@ -343,6 +343,13 @@ impl Interpreter {
         result
     }
 
+    /// `EVAL` of a source string, for the rows that read a core constant at
+    /// compile time (`Declaration::External::Constant.compile-time-value`).
+    // Cost: O(n) in the source plus the evaluation itself.
+    pub(crate) fn eval_code_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
+        self.eval_eval_string(code)
+    }
+
     /// `EVAL` of a RakuAST node, for the rows that read a node's value at
     /// compile time (`VarDeclaration::Constant.compile-time-value`).
     // Cost: O(size of the node) to lower plus the evaluation itself.

@@ -573,6 +573,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         // (defaults, traits, `where`, sub-signatures) keeps the capture
         // without each construction site having to remember it.
         let (r, mut p) = parse_single_param_inner(rest)?;
+        crate::type_captures::note(&capture_name);
         p.type_capture = Some(capture_name);
         p.named |= named;
         p.slurpy |= slurpy;
