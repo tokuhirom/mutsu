@@ -31,6 +31,7 @@
 //! agree, so a case the facts get wrong fails the `t/` suite.
 
 use super::multi_rank::{self, MultiRank};
+use super::multi_rank_tiers;
 use super::*;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
@@ -101,6 +102,8 @@ impl ConformanceCache {
 /// was given.
 struct TierMemoEntry {
     ranks: Vec<MultiRank>,
+    /// How many leading candidates' tiers `tiers` holds valid answers for.
+    wanted: usize,
     tiers: Vec<(u32, bool)>,
 }
 
@@ -330,11 +333,15 @@ impl Interpreter {
     /// `RakuAST::Deparse` has 267 candidates, so the pairwise ranking cost
     /// ~20ms per node. A relation read from the registry or the env is never
     /// remembered: it can change between two dispatches.
-    // Cost: O(n) on a hit, O(n^2 * r) on a miss, n = candidates, r = one
+    /// Only the tiers of `items[..wanted]` are valid afterwards (see
+    /// [`multi_rank_tiers::assign_tiers_wanted`]); pass `items.len()` to read all.
+    // Cost: O(n) on a hit, O(n * k) on a miss (k = candidates the tier walk
+    // visits; O(n^2 * r) when it meets a cycle), n = candidates, r = one
     // `conforms` call.
     pub(crate) fn assign_tiers_memoised<T>(
         &self,
         items: &mut [T],
+        wanted: usize,
         rank: impl Fn(&mut T) -> &mut MultiRank,
     ) {
         let cache = &self.caches.type_conformance;
@@ -347,7 +354,10 @@ impl Interpreter {
         let ranks: Vec<MultiRank> = items.iter_mut().map(|item| *rank(item)).collect();
         {
             let memo = cache.tier_memo.borrow();
-            if let Some(entry) = memo.iter().find(|entry| entry.ranks == ranks) {
+            if let Some(entry) = memo
+                .iter()
+                .find(|entry| entry.wanted >= wanted && entry.ranks == ranks)
+            {
                 for (item, &(tier, bind_check)) in items.iter_mut().zip(&entry.tiers) {
                     let r = rank(item);
                     r.tier = tier;
@@ -377,7 +387,7 @@ impl Interpreter {
                 })
                 .collect()
         };
-        multi_rank::assign_tiers_with(items, &rank, &conforms, &mut |i, j, a, b| {
+        multi_rank_tiers::assign_tiers_wanted(items, wanted, &rank, &conforms, &mut |i, j, a, b| {
             let key = (ids[i], ids[j]);
             if let Some(&known) = cache.declared_pairs.borrow().get(&key) {
                 return known;
@@ -408,7 +418,11 @@ impl Interpreter {
         if memo.len() >= TIER_MEMO_CAP {
             memo.remove(0);
         }
-        memo.push(TierMemoEntry { ranks, tiers });
+        memo.push(TierMemoEntry {
+            ranks,
+            wanted,
+            tiers,
+        });
     }
 
     /// Whether `sup` is a RakuAST name without a smiley, the shape the

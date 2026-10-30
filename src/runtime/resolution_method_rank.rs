@@ -325,7 +325,7 @@ impl Interpreter {
             self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
         {
-            self.assign_tiers_memoised(&mut tiered, |rank| rank);
+            self.assign_tiers_memoised(&mut tiered, matched, |rank| rank);
         }
         for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
             rank.tier = tiered.tier;

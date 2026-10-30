@@ -589,7 +589,7 @@ impl MultiRank {
     /// incomparable, so which one Test's `is-approx(5, 6, 1)` reaches is
     /// decided by the required-named candidates that sit between them.
     // Cost: O(r), r = the cost of one `conforms` call.
-    fn rakudo_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+    pub(super) fn rakudo_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
         let coercive_mismatch = self.arity_mismatch(other)
             && self.profile.shares_coercion_with(&other.profile, self.arity.0.min(other.arity.0));
         if self.arity_mismatch(other) && !coercive_mismatch {

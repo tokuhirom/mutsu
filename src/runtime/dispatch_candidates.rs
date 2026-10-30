@@ -331,7 +331,8 @@ impl Interpreter {
             let key = self.candidate_rank_key(&def, rank_args);
             ranked.push((key, def));
         }
-        self.assign_tiers_memoised(&mut ranked, |(key, _)| key);
+        let wanted = ranked.len();
+        self.assign_tiers_memoised(&mut ranked, wanted, |(key, _)| key);
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, fetched.as_deref(), ranked, rejected)
     }
