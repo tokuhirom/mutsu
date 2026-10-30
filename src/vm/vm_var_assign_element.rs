@@ -1389,7 +1389,12 @@ impl Interpreter {
         // `env_dirty` removal) keeps the slot coherent. Plain Array/Hash element
         // assigns already update the slot via the fast paths and never reach here
         // as an Instance/Mixin, so this only fires for object subscript targets.
+        // `self` is the frame record's alone (ADR-14843): an env `self` is a
+        // leftover of a closure-captured environment (an attribute's `compose`
+        // closure) and written into the slot it would replace the invocant
+        // for the rest of the method.
         if result.is_ok()
+            && save_var_name != "self"
             && matches!(
                 self.env().get_sym(save_var_sym).map(Value::view),
                 Some(ValueView::Instance { .. }) | Some(ValueView::Mixin(..))
