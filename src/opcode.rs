@@ -7685,6 +7685,13 @@ pub(crate) struct CompiledCode {
     /// (`Compiler::lexical_scope_known`); empty otherwise, which keeps the
     /// by-name resolution. Read by `Interpreter::imported_amp_over_inherited`.
     pub(crate) unscoped_amp_reads: Vec<Symbol>,
+    /// The converse of `unscoped_amp_reads`: `&name` reads whose site the
+    /// compiler proved sits inside a lexical `&name` binding it can see (a
+    /// `for ... -> &name` parameter, a `my &name`), so the env `&name` entry
+    /// IS that binding even when the callable it holds was made in another
+    /// compunit. Recorded only when `Compiler::lexical_scope_known`. Read by
+    /// `Interpreter::imported_amp_over_inherited`.
+    pub(crate) bound_amp_reads: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -8508,6 +8515,7 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             eval_scope_names: std::collections::HashSet::new(),
             unscoped_amp_reads: Vec::new(),
+            bound_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             upvalue_syms: Vec::new(),
