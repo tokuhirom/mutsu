@@ -335,6 +335,19 @@ impl Interpreter {
         let obj = &args[0];
         let type_check = &args[1];
 
+        // A Rakudo metarole (`Metamodel::Naming`) is an NQP-level object, "not
+        // actually Mu": it is a type only of itself (Kind's refinement picks
+        // its `HOW`-based check on this).
+        if let (ValueView::Package(o), ValueView::Package(t)) = (obj.view(), type_check.view())
+            && let Some(role) = crate::runtime::types::metamodel_how_roles::metarole_bare_name(
+                &o.resolve(),
+            )
+        {
+            let same = crate::runtime::types::metamodel_how_roles::metarole_bare_name(&t.resolve())
+                == Some(role);
+            return Ok(Value::truth(same));
+        }
+
         // Use the general smartmatch type checking
         let result = self.smart_match(obj, type_check);
         Ok(Value::truth(result))
