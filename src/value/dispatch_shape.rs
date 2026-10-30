@@ -325,7 +325,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 102] = [
+    pub(crate) const ALL: [DispatchShape; 104] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
