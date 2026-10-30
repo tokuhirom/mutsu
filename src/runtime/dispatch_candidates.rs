@@ -167,6 +167,7 @@ impl Interpreter {
             );
             return fast;
         }
+        self.caches.type_conformance.note_dependent_answer();
         self.nominal_type_conforms_general(sub, sup)
     }
 
@@ -330,12 +331,7 @@ impl Interpreter {
             let key = self.candidate_rank_key(&def, rank_args);
             ranked.push((key, def));
         }
-        {
-            let _scope = self.conformance_scope();
-            multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
-                self.nominal_type_conforms(x, y)
-            });
-        }
+        self.assign_tiers_memoised(&mut ranked, |(key, _)| key);
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, fetched.as_deref(), ranked, rejected)
     }

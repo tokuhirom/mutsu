@@ -325,10 +325,7 @@ impl Interpreter {
             self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
         {
-            let _scope = self.conformance_scope();
-            multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
-                self.nominal_type_conforms(x, y)
-            });
+            self.assign_tiers_memoised(&mut tiered, |rank| rank);
         }
         for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
             rank.tier = tiered.tier;
