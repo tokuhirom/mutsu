@@ -800,6 +800,18 @@ impl Interpreter {
                         {
                             return false;
                         }
+                    } else if let Some(accepts) =
+                        Self::rakuast_node_accepts(&resolved_constraint, &dispatch_arg)
+                    {
+                        debug_assert_eq!(
+                            accepts,
+                            self.param_constraint_accepts(&resolved_constraint, &dispatch_arg),
+                            "the RakuAST hierarchy answer for {resolved_constraint} disagrees \
+                             with the general matcher"
+                        );
+                        if !accepts {
+                            return false;
+                        }
                     } else if (multi_dispatch
                         && arg_was_supplied
                         && !self.native_dispatch_arg_matches(
@@ -1608,5 +1620,41 @@ impl Interpreter {
         RuntimeError::new(
             "Too many positionals passed; expected 0 arguments but got more".to_string(),
         )
+    }
+}
+
+impl Interpreter {
+    /// Whether a RakuAST node `arg` satisfies the RakuAST parameter type `tc`
+    /// (`RakuAST::Node:D`, `RakuAST::IntLiteral`), answered from rakudo's
+    /// measured hierarchy ([`crate::rakuast::type_object_does`]) -- the same
+    /// last step the general matcher takes for such a value -- without the
+    /// matcher's earlier layers (~15k instructions per check;
+    /// `RakuAST::Deparse` asks it for each of its 267 `multi method deparse`
+    /// candidates). A node is always definite, so `:D` holds; `:U`/`:_`, a
+    /// parameterization or a coercion, a type object and any non-RakuAST
+    /// type answer `None` and take the general path unchanged.
+    // Cost: O(d + r), d = MRO depth, r = roles of the node's class.
+    fn rakuast_node_accepts(tc: &str, arg: &Value) -> Option<bool> {
+        let ValueView::RakuAst(node) = arg.view() else {
+            return None;
+        };
+        let base = tc.strip_suffix(":D").unwrap_or(tc);
+        if !base.starts_with("RakuAST::") {
+            return None;
+        }
+        // Only `::` separators: a `:U`/`:_` smiley leaves an odd colon, a
+        // parameterization, coercion or sub-signature a bracket.
+        let mut colons = 0usize;
+        for b in base.bytes() {
+            match b {
+                b':' => colons += 1,
+                b'[' | b']' | b'(' | b')' | b'<' | b'>' | b'{' | b' ' => return None,
+                _ => {}
+            }
+        }
+        if colons % 2 != 0 {
+            return None;
+        }
+        Some(crate::rakuast::type_object_does(node.class.printed_name(), base))
     }
 }
