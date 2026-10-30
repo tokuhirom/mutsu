@@ -1492,6 +1492,30 @@ pub(crate) fn lower_parsed_stmt(
     conditional_lower::lower_parsed(node)
 }
 
+/// The name a `RakuAST::Sub` node declares (`foo` of `sub foo { }`), if it has one.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
+    (node.class == RakuAstClass::Sub)
+        .then(|| declared_routines::declared_by(node))
+        .flatten()
+}
+
+/// The `VarDeclaration::Simple` annotated onto a `ParameterTarget::Var` of the
+/// unit tree `$*CU` answers (see [`resolve`]).
+// Cost: O(1).
+pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> {
+    resolve::target_declaration(node)
+}
+
+/// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
+/// parser builds for it (`Parameter.meta-object` is made from it).
+// Cost: O(size of the parameter node).
+pub(crate) fn parameter_param_def(
+    node: &RakuAstNode,
+) -> Result<crate::ast::ParamDef, RuntimeError> {
+    lower::lower_parameter_def(node)
+}
+
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
@@ -1507,13 +1531,16 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
 /// The `RakuAST::CompUnit` of the unit being compiled, as `$*CU` answers it:
 /// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub fn compile_time_compunit(source: &str) -> Result<Value, RuntimeError> {
+pub fn compile_time_compunit(
+    source: &str,
+    imported: &dyn Fn(&str) -> bool,
+) -> Result<Value, RuntimeError> {
     let cu = str_dot_ast_compunit(source)?;
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
     let mut node = RakuAstNode::clone(node);
-    resolve::annotate(&mut node);
+    resolve::annotate(&mut node, imported);
     Ok(Value::rakuast(Box::new(node)))
 }
 
@@ -3574,13 +3601,16 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if matches!(
         class,
-        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar
+        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar | RakuAstClass::Sub
     ) {
         names.push("compile-time-value");
     }
     if is_resolvable_lookup(class) {
         names.push("is-resolved");
         names.push("resolution");
+    }
+    if class == RakuAstClass::Parameter {
+        names.push("meta-object");
     }
     if class == RakuAstClass::StatementExpression {
         names.push("set-expression");

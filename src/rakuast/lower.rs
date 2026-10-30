@@ -2092,6 +2092,10 @@ pub(super) fn lower_signature_parameters(
     Ok(defs)
 }
 
+pub(super) fn lower_parameter_def(parameter: &RakuAstNode) -> Result<ParamDef, RuntimeError> {
+    lower_parameter(parameter, parameter)
+}
+
 fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<ParamDef, RuntimeError> {
     if parameter.class != RakuAstClass::Parameter {
         return Err(unsupported(owner));

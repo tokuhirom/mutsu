@@ -230,6 +230,9 @@ fn reorder_at_level(
     // Constants that textually precede a CHECK and have nothing but other such
     // constants before them: compile-time values a CHECK must see.
     let mut early_consts: Vec<Stmt> = Vec::new();
+    // Top-level subs of a unit with a CHECK phaser: rakudo installs a unit's
+    // subs while compiling it, so a CHECK phaser can call (or look up) them.
+    let mut early_subs: Vec<Stmt> = Vec::new();
     let last_check_idx = stmts.iter().rposition(|s| {
         matches!(
             s,
@@ -368,6 +371,14 @@ fn reorder_at_level(
             continue;
         }
 
+        if is_top
+            && last_check_idx.is_some()
+            && matches!(&stmt, Stmt::SubDecl { .. })
+        {
+            early_subs.push(stmt);
+            continue;
+        }
+
         rest.push(stmt);
     }
 
@@ -379,6 +390,7 @@ fn reorder_at_level(
     // Extra BEGIN from lifted phasers (e.g. inside string interpolation blocks).
     stmts.extend(extra_begin);
     stmts.extend(early_consts);
+    stmts.extend(early_subs);
     for body in check.iter().rev() {
         stmts.push(Stmt::Phaser { spans: Default::default(),
             kind: PhaserKind::Check,

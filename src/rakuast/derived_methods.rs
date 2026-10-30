@@ -31,7 +31,9 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
             &["dispatch", "dispatcher"]
         }
-        VarDeclarationSimple => &["original-type"],
+        InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
+        ParameterTargetVar => &["declaration"],
+        VarDeclarationSimple => &["original-type", "return-type"],
         VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
         Sub | RegexDeclaration | TokenDeclaration | RuleDeclaration => &["declarator"],
@@ -237,6 +239,12 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (TypeSubset, "of") | (VarDeclarationTerm, "type") => {
             Some(field(node, method).unwrap_or(Value::NIL))
         }
+        (ParameterTargetVar, "declaration") => {
+            Some(super::resolve::target_declaration(node).unwrap_or(Value::NIL))
+        }
+        (VarDeclarationSimple, "return-type") => Some(super::resolve::return_type(node)),
+        (InitializerAssign | InitializerCallAssign, "is-binding") => Some(Value::truth(false)),
+        (InitializerBind, "is-binding") => Some(Value::truth(true)),
         (ContextualizerItem, "sigil") => Some(Value::str_from("$")),
         (ContextualizerList, "sigil") => Some(Value::str_from("@")),
         (ContextualizerHash, "sigil") => Some(Value::str_from("%")),
