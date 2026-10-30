@@ -740,7 +740,7 @@ impl Interpreter {
                 // the declaring class (`class_sym`), which is where the
                 // metamethod body is registered.
                 let dispatch_target = self
-                    .call_method_with_values(target.clone(), "HOW", vec![])
+                    .dispatch_how(&target, &[])
                     .unwrap_or_else(|_| Value::package(class_sym));
                 if let Some(result) = self.try_dispatch_compiled_method_direct_as(
                     class_sym,
@@ -1441,7 +1441,7 @@ impl Interpreter {
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
         {
-            let how = self.call_method_with_values(target.clone(), "HOW", vec![])?;
+            let how = self.dispatch_how(&target, &[])?;
             let mut how_args = Vec::with_capacity(args.len() + 1);
             let type_target =
                 crate::runtime::Interpreter::meta_call_type_target(&how, meta_method, &target);

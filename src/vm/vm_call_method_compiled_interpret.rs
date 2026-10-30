@@ -483,7 +483,9 @@ impl Interpreter {
             && !meta_method.is_empty()
             && meta_method != "name"
         {
-            let how = loan_env!(self, call_method_with_values(target.clone(), "HOW", vec![]))?;
+            // See `try_compiled_method_mut_or_interpret_sym_inner`: the HOW of
+            // the receiver is a reflection answer, not a method call.
+            let how = loan_env!(self, dispatch_how(&target, &[]))?;
             let mut how_args = Vec::with_capacity(args.len() + 1);
             let type_target =
                 crate::runtime::Interpreter::meta_call_type_target(&how, meta_method, &target);
