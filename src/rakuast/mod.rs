@@ -3666,10 +3666,8 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if matches!(class, RakuAstClass::StatementList | RakuAstClass::SemiList) {
         names.push("code-statements");
     }
-    if matches!(
-        class,
-        RakuAstClass::StatementExpression | RakuAstClass::Block | RakuAstClass::PointyBlock
-    ) {
+    // (A statement's own `.^methods` does not list it: rakudo inherits it.)
+    if matches!(class, RakuAstClass::Block | RakuAstClass::PointyBlock) {
         names.push("is-block-statement");
     }
     if class == RakuAstClass::Block {
