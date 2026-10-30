@@ -97,6 +97,24 @@ pub(super) static ROWS: &[MethodRow] = &[
     // refuses any other node.
     node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
         .rakuast_add_colonpair(a[0].clone())),
+    // `Declaration::External::*.compile-time-value`: what a core name
+    // resolves to, read from the interpreter on demand (#15610).
+    MethodRow {
+        owner: "RakuAST::Declaration::External::Setting",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(external_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Declaration::External::Constant",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(external_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // `Origin.as-match`: an undocumented rakudo method that `static::CLI`'s
     // analysis calls (maintainer-approved, #15597): the span as a match-like
     // object carrying the file, line and offsets.
@@ -150,6 +168,28 @@ fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return None;
     };
     attributes.as_map().get("from").cloned().map(Ok)
+}
+
+/// `compile-time-value` of a core declaration stub: the core routine named by
+/// its `lexical-name` (`&say`), or the type object of a core type.
+// Cost: O(1) plus the interpreter's lookup of the name.
+fn external_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let name = attributes
+        .as_map()
+        .get("lexical-name")
+        .map(|n| n.to_string_value())?;
+    if name.starts_with('&') {
+        return Some(Ok(interp.resolve_code_var(&name[1..])));
+    }
+    Some(Ok(Value::package(Symbol::intern(&name))))
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
