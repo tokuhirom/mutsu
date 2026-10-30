@@ -82,12 +82,11 @@ pub(crate) struct ConformanceCache {
     /// RakuAST / `Mu` / `Any` relations); see [`Interpreter::assign_tiers_memoised`].
     dependent_answers: Cell<u64>,
     tier_memo: RefCell<Vec<TierMemoEntry>>,
-    /// `DeclaredKey` -> small id, so a candidate pair is a pair of integers.
-    declared_ids: RefCell<rustc_hash::FxHashMap<multi_rank::DeclaredKey, u32>>,
-    /// `multi_rank::MultiRank::declared_narrower` between two declared keys,
-    /// remembered only when every relation it asked about was static (see
+    /// The declared-type relation ([`multi_rank::declared_relation`]) of one
+    /// candidate set, keyed by the candidates' declared keys. Remembered only
+    /// when every relation it asked about was static (see
     /// [`Interpreter::assign_tiers_memoised`]), so it needs no invalidation.
-    declared_pairs: RefCell<rustc_hash::FxHashMap<(u32, u32), bool>>,
+    declared_relations: RefCell<Vec<(Vec<multi_rank::DeclaredKey>, Arc<Vec<Vec<bool>>>)>>,
 }
 
 impl ConformanceCache {
@@ -107,9 +106,9 @@ struct TierMemoEntry {
 /// Candidate sets below this size rank faster than they hash.
 const TIER_MEMO_MIN: usize = 16;
 const TIER_MEMO_CAP: usize = 16;
-/// Most remembered declared-pair answers before the table is dropped (about
-/// 16 bytes each).
-const DECLARED_PAIR_CAP: usize = 1 << 20;
+/// Most candidate sets whose declared relation is remembered at once (a
+/// 267-candidate set is about 70 KB).
+const DECLARED_RELATION_CAP: usize = 8;
 
 /// `NameFacts` by symbol id, without hashing: `slots[id]` is `(epoch, index
 /// into facts + 1)`, live only while `epoch` is the table's current one, so
@@ -358,41 +357,33 @@ impl Interpreter {
             }
         }
         let dependent_before = cache.dependent_answers.get();
-        // A pair of candidates that cannot bind the call is ordered by their
-        // declared types alone, which a later call with other arguments asks
+        // The candidates that cannot bind the call are ordered by their
+        // DECLARED types alone, which a later call with other arguments asks
         // again: `RakuAST::Deparse`'s 267 candidates are 71k such pairs per
-        // call. A static answer is remembered by the two candidates'
-        // declared keys; one read from the registry or the env is not.
-        let ids: Vec<u32> = {
-            let mut table = cache.declared_ids.borrow_mut();
-            if table.len() + ranks.len() > DECLARED_PAIR_CAP {
-                table.clear();
-                cache.declared_pairs.borrow_mut().clear();
-            }
-            ranks
+        // call. The whole relation is remembered by the candidates' declared
+        // keys, and only when every answer in it was static (a relation read
+        // from the registry or the env can change between two dispatches).
+        multi_rank::assign_tiers_with(items, &rank, &conforms, &|ranks| {
+            let keys: Vec<multi_rank::DeclaredKey> =
+                ranks.iter().map(MultiRank::declared_key).collect();
+            if let Some((_, relation)) = cache
+                .declared_relations
+                .borrow()
                 .iter()
-                .map(|r| {
-                    let next = table.len() as u32;
-                    *table.entry(r.declared_key()).or_insert(next)
-                })
-                .collect()
-        };
-        multi_rank::assign_tiers_with(items, &rank, &conforms, &mut |i, j, a, b| {
-            let key = (ids[i], ids[j]);
-            if let Some(&known) = cache.declared_pairs.borrow().get(&key) {
-                return known;
+                .find(|(known, _)| *known == keys)
+            {
+                return Arc::clone(relation);
             }
             let before = cache.dependent_answers.get();
-            let answer = a.declared_narrower(b, &conforms);
+            let relation = Arc::new(multi_rank::declared_relation(ranks, &conforms));
             if cache.dependent_answers.get() == before {
-                // Never cleared mid-ranking: the ids this ranking holds are
-                // only meaningful against the id table it was built from.
-                let mut pairs = cache.declared_pairs.borrow_mut();
-                if pairs.len() < DECLARED_PAIR_CAP {
-                    pairs.insert(key, answer);
+                let mut memo = cache.declared_relations.borrow_mut();
+                if memo.len() >= DECLARED_RELATION_CAP {
+                    memo.remove(0);
                 }
+                memo.push((keys, Arc::clone(&relation)));
             }
-            answer
+            relation
         });
         if cache.dependent_answers.get() != dependent_before {
             return;

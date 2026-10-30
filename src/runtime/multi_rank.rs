@@ -698,21 +698,46 @@ pub(crate) fn assign_tiers<T>(
     rank: impl Fn(&mut T) -> &mut MultiRank,
     conforms: &dyn Fn(Symbol, Symbol) -> bool,
 ) {
-    assign_tiers_with(items, rank, conforms, &mut |_, _, a, b| {
-        a.declared_narrower(b, conforms)
+    assign_tiers_with(items, rank, conforms, &|ranks| {
+        std::sync::Arc::new(declared_relation(ranks, conforms))
     });
 }
 
-/// [`assign_tiers`] with the answer for a pair whose candidates cannot bind
-/// the call (`declared_pair(i, j, ranks[i], ranks[j])`) supplied by the
-/// caller, who may remember it: it is a function of the two candidates'
-/// [`DeclaredKey`]s alone.
-// Cost: O(n^2 * p), n = candidates, p = the cost of one `declared_pair`.
+/// `relation[i][j]`: candidate `i` is narrower than `j` by their DECLARED
+/// types alone ([`MultiRank::declared_narrower`]), for a pair of method
+/// candidates. A function of the candidates' [`DeclaredKey`]s alone, so a
+/// caller that sees the same keys again can reuse it whatever arguments the
+/// candidates were ranked for.
+// Cost: O(n^2 * r), n = candidates, r = the cost of one `conforms` call.
+pub(crate) fn declared_relation(
+    ranks: &[MultiRank],
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
+) -> Vec<Vec<bool>> {
+    let n = ranks.len();
+    (0..n)
+        .map(|i| {
+            (0..n)
+                .map(|j| {
+                    i != j
+                        && ranks[i].invocant.is_some()
+                        && ranks[j].invocant.is_some()
+                        && ranks[i].declared_narrower(&ranks[j], conforms)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// [`assign_tiers`] with the declared-type relation ([`declared_relation`])
+/// of its candidates supplied by the caller, who may remember it by the
+/// candidates' [`DeclaredKey`]s.
+// Cost: O(n^2 + k^2 * r) per ranking given a remembered relation, n =
+// candidates, k = candidates that can bind the call.
 pub(crate) fn assign_tiers_with<T>(
     items: &mut [T],
     rank: impl Fn(&mut T) -> &mut MultiRank,
     conforms: &dyn Fn(Symbol, Symbol) -> bool,
-    declared_pair: &mut dyn FnMut(usize, usize, &MultiRank, &MultiRank) -> bool,
+    declared: &dyn Fn(&[MultiRank]) -> std::sync::Arc<Vec<Vec<bool>>>,
 ) {
     let n = items.len();
     if n < 2 {
@@ -732,6 +757,7 @@ pub(crate) fn assign_tiers_with<T>(
     // argument-dependent artifact push a binding candidate into a later
     // tier (`multi w(1, 'em')` putting `multi w($f, 'khz')` behind
     // `multi w(Numeric $n, Str:D $u)` for `w(0.1, 'khz')`).
+    let declared = declared(&ranks);
     let narrower: Vec<Vec<bool>> = (0..n)
         .map(|i| {
             (0..n)
@@ -743,9 +769,7 @@ pub(crate) fn assign_tiers_with<T>(
                         // Only method candidates compare by declared type
                         // (rakudo's tiers do); a sub's unbindable candidate
                         // stays out of the relation.
-                        return ranks[i].invocant.is_some()
-                            && ranks[j].invocant.is_some()
-                            && declared_pair(i, j, &ranks[i], &ranks[j]);
+                        return declared[i][j];
                     }
                     ranks[i].rakudo_narrower(&ranks[j], conforms)
                 })
