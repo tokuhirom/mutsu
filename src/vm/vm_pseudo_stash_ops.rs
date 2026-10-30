@@ -348,21 +348,19 @@ impl Interpreter {
         // scope frame. Preserve those visible package bindings while keeping
         // ordinary scalar entries frame-local; the latter are precisely what
         // makes MY:: stop leaking enclosing lexicals.
-        // A nested block's pad holds only what its own declarations and
-        // `use`s put there (#10626): the file-level `use Test` package is the
-        // unit's, not the block's.
-        let env_packages = if matches!(routines, LexicalStashRoutines::All) {
-            Some(self.env().iter())
-        } else {
-            None
-        };
-        for (key, value) in env_packages.into_iter().flatten() {
+        // A nested block's pad holds what its own declarations and `use`s put
+        // there (#10626): a loaded module's package the unit bound at file
+        // level (`use Test`) is the unit's, not the block's. The block's own
+        // `my class` stays.
+        let block_pad = !matches!(routines, LexicalStashRoutines::All);
+        for (key, value) in self.env().iter() {
             let key = key.resolve();
             // A module's package the BEGIN-time preload bound is a pad entry
             // only where the module is merged (ADR-11136, #13802).
             if self.should_hide_from_my_global_stash(&key)
                 || !matches!(value.view(), ValueView::Package(_))
                 || self.module_name_hidden_here(&key)
+                || (block_pad && self.module.loaded_modules.contains(key.as_str()))
             {
                 continue;
             }
