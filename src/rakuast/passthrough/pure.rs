@@ -20,6 +20,11 @@ pub(super) fn reason_of(stmt: &Stmt) -> Option<String> {
 
 // Cost: O(s), s = nodes of `stmt`.
 pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
+    // An empty statement is no statement of the lowered tree; inside a carried
+    // body `Kept` drops it, on its own the conversion does.
+    if matches!(stmt, Stmt::Expr(Expr::Spelled(spelled)) if is_empty_statement(spelled)) {
+        return None;
+    }
     let mut purity = Purity::default();
     purity.visit_stmt(stmt);
     purity.pure.then_some(purity.fixup)
@@ -132,46 +137,41 @@ impl Purity {
             }
             Stmt::Assign {
                 name,
-                target_is_sigilless: false,
+                target_is_sigilless,
                 ..
-            } => declared_name(name),
+            } => !target_is_sigilless && declared_name(name),
+            // An anonymous declaration (`my @`) is named by a desugaring's
+            // temporary; the conversion reads it as the declaration it is.
             Stmt::VarDecl {
-                name,
-                anonymous: false,
-                is_export: false,
-                export_tags,
-                custom_traits,
-                // A `constant` is a distinct RakuAST node; the scope scans
-                // of `bareword` must see it, so it is converted, not carried.
-                constant: None,
-                bind: None,
-                marks,
-                where_constraint: None,
-                ..
-            } => {
-                declared_name(name)
-                    && export_tags.is_empty()
-                    && custom_traits.is_empty()
-                    && marks.is_plain()
-            }
+                name, anonymous, ..
+            } => !anonymous && declared_name(name),
             // A named routine whose signature and body are themselves carried;
             // an operator's precedence, a symbolic name and a signature
             // alternative are still read by node class.
             Stmt::SubDecl {
-                name_expr: None,
-                associativity: None,
-                precedence_trait: None,
+                name_expr,
+                associativity,
+                precedence_trait,
                 signature_alternates,
                 ..
-            } => signature_alternates.is_empty(),
-            // A method, with the same conditions.
+            } => {
+                name_expr.is_none()
+                    && associativity.is_none()
+                    && precedence_trait.is_none()
+                    && signature_alternates.is_empty()
+            }
             Stmt::MethodDecl {
-                name_expr: None,
-                value_prototype: None,
-                deprecated_message: None,
-                nested_capture_index: None,
+                name_expr,
+                value_prototype,
+                deprecated_message,
+                nested_capture_index,
                 ..
-            } => true,
+            } => {
+                name_expr.is_none()
+                    && value_prototype.is_none()
+                    && deprecated_message.is_none()
+                    && nested_capture_index.is_none()
+            }
             // `temp Type.meth = v` is expanded (save, assign, restore) by the
             // conversion of the temporizer, not by the compiler.
             Stmt::TempMethodAssign { .. } => false,
@@ -193,8 +193,10 @@ impl Purity {
                     | ValueView::WeakSub(_)
                     | ValueView::Instance { .. }
             ),
+            // A desugaring's temporary (`__ANON_ARRAY__`) is the compiler's own
+            // name, carried as the parser built it.
             Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
-                plain_name(name)
+                plain_name(name) || name.starts_with("__")
             }
             // A type name: the spelled parse leaves a lowercase bareword to
             // the lowering, which resolves it against what the unit imported.
@@ -215,12 +217,17 @@ impl Purity {
                 self.fixup = true;
                 matches!(
                     node.as_ref(),
-                    ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)
+                    ParsedExpr::Assign(_)
+                        | ParsedExpr::CompoundAssign(_)
+                        | ParsedExpr::WordList(_)
+                        | ParsedExpr::WordsAtom(_)
                 )
             }
             // The lowering plants the priming scopes of a `*` itself (a second pass
             // over a tree the parser already marked wraps it again), and a `||`
             // dimension splat is a spelled form it rewrites.
+            // The marker a `my T $x .= new` declaration carries as its initializer.
+            Expr::CompoundAssign { op, .. } => op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP,
             Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
             Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
             Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
@@ -268,7 +275,7 @@ impl Purity {
 // Cost: O(1).
 /// Whether a spelling, or one it wraps, is the `;` of a `Statement::Empty`.
 // Cost: O(d), d = nesting depth of the spellings.
-fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
+pub(super) fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
     let mut spelled = spelled;
     loop {
         if matches!(

@@ -110,6 +110,13 @@ pub(super) fn is_declared_term(name: &str) -> bool {
     TERMS.with(|t| t.borrow().contains(name))
 }
 
+/// Whether `name` is a sigilless value term the unit declares or the parser
+/// scope it is lowered in knows (a term imported from a module).
+// Cost: O(s), s = open parser scopes.
+pub(super) fn is_value_term(name: &str) -> bool {
+    is_declared_term(name) || crate::parser::is_user_declared_value_term(name)
+}
+
 /// Whether the unit last passed to [`scan`] declares a term named `name`.
 // Cost: O(1).
 pub(super) fn is_shadowed(name: &str) -> bool {

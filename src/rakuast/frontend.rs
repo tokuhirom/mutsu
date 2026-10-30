@@ -80,6 +80,10 @@ pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, Runtim
     // spelled parse kept come off first (`expr_origins`).
     let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
     let _origins = super::expr_origins::strip(&mut stmts);
+    // The unit's declarations also classify the barewords a kept tree
+    // converts where it stands, while it is lowered.
+    let _declared = (!convert_level()).then(|| super::bareword::DeclaredNames::collect(&stmts));
+    let _top = (!convert_level()).then(|| super::bareword::BlockScope::enter(&stmts));
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower::lower_converted(&node)?;
     // The spelled parse keeps bare type names for the conversion; the

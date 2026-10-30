@@ -322,9 +322,15 @@ impl VisitMut for Kept {
     // The traits a routine was written with are compiler-inert: lowering them
     // produces no statement (a stub body `{ ... }` is the body's only one).
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        body.retain(|s| {
-            !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+        body.retain(|s| match s {
+            Stmt::Ast(node) => !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)),
+            // A `;` that ends no statement runs nothing and is no block's value.
+            Stmt::Expr(Expr::Spelled(spelled)) => !pure::is_empty_statement(spelled),
+            _ => true,
         });
+        // The names a body declares classify the barewords written in it, as
+        // they do when it is converted.
+        let _scope = super::bareword::BlockScope::enter(body);
         crate::ast_visit::walk_stmts_mut(self, body);
     }
 
@@ -364,6 +370,25 @@ impl VisitMut for Kept {
             *expr = super::lower_expression_assign(self.assignment(assign));
             return;
         }
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            let ParsedExpr::CompoundAssign(mut compound) = *node else {
+                unreachable!("checked above");
+            };
+            self.visit_expr_mut(&mut compound.target);
+            self.visit_expr_mut(&mut compound.source);
+            match super::compound::lower::lower_compound_expression_with(
+                compound,
+                super::shadowed_terms::is_value_term,
+            ) {
+                Ok(lowered) => *expr = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(RuntimeError::new(format!("{err:?}")));
+                }
+            }
+            return;
+        }
         // A word quote is the runtime's word list; its words are lowered
         // where they stand.
         if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)))
@@ -390,6 +415,25 @@ impl VisitMut for Kept {
                 unreachable!("checked above");
             };
             *stmt = super::lower_statement_assign(self.assignment(assign));
+            return;
+        }
+        if matches!(stmt, Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(_)))
+            && let Stmt::Expr(Expr::Ast(node)) = std::mem::replace(stmt, Stmt::Last(None))
+        {
+            let ParsedExpr::CompoundAssign(mut compound) = *node else {
+                unreachable!("checked above");
+            };
+            self.visit_expr_mut(&mut compound.target);
+            self.visit_expr_mut(&mut compound.source);
+            match super::compound::lower::lower_compound_statement_with(
+                compound,
+                super::shadowed_terms::is_value_term,
+            ) {
+                Ok(lowered) => *stmt = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(RuntimeError::new(format!("{err:?}")));
+                }
+            }
             return;
         }
         // A modifier lowers the declaration it governs itself (`my ($a, $b) =
