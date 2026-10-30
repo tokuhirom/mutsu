@@ -317,10 +317,7 @@ fn split_quotish_words(
         let (word, r) = rest.split_at(word_len);
         // `:<a b>` inside the quote words is that quote-word list: the colon only
         // separates it from what precedes.
-        if let Some(inner) = word
-            .strip_prefix(":<")
-            .and_then(|w| w.strip_suffix('>'))
-        {
+        if let Some(inner) = word.strip_prefix(":<").and_then(|w| w.strip_suffix('>')) {
             for w in split_angle_words(inner) {
                 words.push(WordItem::Expr(Expr::Literal(angle_word_value(w))));
             }
