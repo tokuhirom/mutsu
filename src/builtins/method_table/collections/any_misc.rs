@@ -10,7 +10,7 @@ macro_rules! junction_row {
             owner: "Any",
             name: $name,
             arity: 0,
-            handler: Handler::Pure($handler),
+            handler: Handler::Interp($handler),
             flags: RowFlags::TYPE_OBJECT_OK,
             named: &[],
         }
@@ -296,34 +296,73 @@ fn tree(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// A junction of `kind` over `target`'s list. A list held in a scalar
-/// (`my $l = (1, 2); $l.any`) is the list, not one item of it.
-// Cost: O(n), n = elements of the receiver's list.
-fn junction_of(kind: JunctionKind, target: &Value) -> Result<Value, RuntimeError> {
+/// (`my $l = (1, 2); $l.any`) is the list, not one item of it. An object of a
+/// class that is `Positional` or `Iterable` (a `CArray`, a user collection) is
+/// its `.list`, as `Any.all` is `self.list.all`.
+// Cost: O(n) plus one `.list` call for such an object, n = elements of the list.
+fn junction_of(
+    i: &mut crate::runtime::Interpreter,
+    kind: JunctionKind,
+    target: &Value,
+) -> Option<Result<Value, RuntimeError>> {
     let target = target.clone().deitemize_for_sigil_bind();
-    Ok(Value::junction(
+    let target = if matches!(
+        target.view(),
+        ValueView::Instance { .. } | ValueView::Mixin(..)
+    ) && (i.type_matches_value("Positional", &target)
+        || i.type_matches_value("Iterable", &target))
+    {
+        match i.call_method_with_values(target, "list", Vec::new()) {
+            Ok(list) => list,
+            Err(err) => return Some(Err(err)),
+        }
+    } else {
+        target
+    };
+    Some(Ok(Value::junction(
         kind,
         crate::runtime::Interpreter::value_to_list(&target),
-    ))
+    )))
 }
 
 // Cost: O(n), n = elements of the receiver's list.
-fn any(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    junction_of(JunctionKind::Any, target)
+fn any(
+    i: &mut crate::runtime::Interpreter,
+    t: &Value,
+    _: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    junction_of(i, JunctionKind::Any, t)
 }
 
 // Cost: O(n), n = elements of the receiver's list.
-fn all(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    junction_of(JunctionKind::All, target)
+fn all(
+    i: &mut crate::runtime::Interpreter,
+    t: &Value,
+    _: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    junction_of(i, JunctionKind::All, t)
 }
 
 // Cost: O(n), n = elements of the receiver's list.
-fn one(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    junction_of(JunctionKind::One, target)
+fn one(
+    i: &mut crate::runtime::Interpreter,
+    t: &Value,
+    _: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    junction_of(i, JunctionKind::One, t)
 }
 
 // Cost: O(n), n = elements of the receiver's list.
-fn none(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    junction_of(JunctionKind::None, target)
+fn none(
+    i: &mut crate::runtime::Interpreter,
+    t: &Value,
+    _: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    junction_of(i, JunctionKind::None, t)
 }
 
 /// `Any.nl-out`.
