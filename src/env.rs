@@ -579,14 +579,14 @@ pub struct Env {
     /// every overlay write ([`Self::cow_mut`]) and fallback install. Always
     /// empty on any other env.
     capture_merged: OnceLock<Arc<Tier>>,
-    /// Non-zero on a tier that is an *import layer* (ADR-14140): the names an
-    /// import scope's imports bind live here, below the block tier the region
-    /// runs over, and the region drops the whole layer on exit. The value is
-    /// the layer's id, which the import scope records.
-    import_layer: u32,
-    /// Non-zero on the block tier an import region runs over, above its import
-    /// layer: the id of that layer (see [`Env::open_import_region`]).
-    import_region: u32,
+    /// Non-zero on the two tiers of an import region (ADR-14140). On the
+    /// *import layer* (`id << 1`) the names an import scope's imports bind
+    /// live, below the block tier the region runs over, and the region drops
+    /// the whole layer on exit; the id is what the import scope records. On the
+    /// block tier above it (`id << 1 | 1`) the region's own writes land (see
+    /// [`Env::open_import_region`]). One field for both, so `Env` stays under
+    /// the 128 bytes `clippy::result_large_err` allows in a `Result`.
+    import_tag: u32,
     /// Number of parent tiers below this env (0 for a flat env). Used to bound
     /// the chain length: a recursive function would otherwise grow the chain one
     /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
@@ -857,8 +857,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -997,8 +996,7 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
-                    import_layer: 0,
-                    import_region: 0,
+                    import_tag: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base: None,
@@ -1026,8 +1024,7 @@ impl Env {
                 outer_is_foreign_unit: false,
                 owns_routine_state: false,
                 capture_merged: OnceLock::new(),
-                import_layer: 0,
-                import_region: 0,
+                import_tag: 0,
                 frame_writes: None,
                 code_entries: None,
                 dyn_base: None,
@@ -1060,8 +1057,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1108,8 +1104,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1138,10 +1133,10 @@ impl Env {
         }
         let (mut layer, parent_arc) = Env::open_block_tier(parent)?;
         drop(parent_arc);
-        layer.import_layer = id;
+        layer.import_tag = id << 1;
         let (mut tier, layer_arc) = Env::open_block_tier(layer)?;
         drop(layer_arc);
-        tier.import_region = id;
+        tier.import_tag = id << 1 | 1;
         Ok(tier)
     }
 
@@ -1152,13 +1147,13 @@ impl Env {
     // Cost: O(1) when nothing else holds the region's tiers; otherwise one
     // `Env` handle clone per tier.
     pub(crate) fn close_import_region(mut self, id: u32) -> Result<ClosedImportRegion, Env> {
-        let intact = self.import_region == id
+        let intact = self.import_tag == id << 1 | 1
             && self.fallback.is_none()
             && self.frame_writes.is_none()
             && self
                 .parent
                 .as_ref()
-                .is_some_and(|layer| layer.import_layer == id && layer.parent.is_some());
+                .is_some_and(|layer| layer.import_tag == id << 1 && layer.parent.is_some());
         if !intact {
             return Err(self);
         }
@@ -1185,7 +1180,7 @@ impl Env {
     pub(crate) fn has_import_layer(&self, id: u32) -> bool {
         let mut cur = self;
         loop {
-            if cur.import_layer == id {
+            if cur.import_tag == id << 1 {
                 return true;
             }
             match &cur.parent {
@@ -1214,7 +1209,7 @@ impl Env {
     }
 
     fn import_layer_mut(&mut self, id: u32) -> Option<&mut Env> {
-        if self.import_layer == id {
+        if self.import_tag == id << 1 {
             return Some(self);
         }
         Arc::make_mut(self.parent.as_mut()?).import_layer_mut(id)
@@ -1225,7 +1220,7 @@ impl Env {
     pub(crate) fn import_layer_entries(&self, id: u32) -> Option<Vec<(Symbol, Value)>> {
         let mut cur = self;
         loop {
-            if cur.import_layer == id {
+            if cur.import_tag == id << 1 {
                 return Some(cur.inner.iter().map(|(k, v)| (*k, v.clone())).collect());
             }
             cur = cur.parent.as_deref()?;
@@ -1237,8 +1232,8 @@ impl Env {
     pub(crate) fn import_layer_keys(&self, id: u32) -> Option<Vec<Symbol>> {
         let mut cur = self;
         loop {
-            if cur.import_layer == id {
-                return Some(cur.inner.iter().map(|(k, _)| *k).collect());
+            if cur.import_tag == id << 1 {
+                return Some(cur.inner.keys().copied().collect());
             }
             cur = cur.parent.as_deref()?;
         }
@@ -1249,7 +1244,7 @@ impl Env {
     pub(crate) fn import_layer_binds(&self, id: u32, key: Symbol) -> bool {
         let mut cur = self;
         loop {
-            if cur.import_layer == id {
+            if cur.import_tag == id << 1 {
                 return cur.inner.contains_key(&key);
             }
             match cur.parent.as_deref() {
@@ -1278,8 +1273,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1780,8 +1774,7 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
-                    import_layer: 0,
-                    import_region: 0,
+                    import_tag: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base,
@@ -1916,8 +1909,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -2108,8 +2100,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -2288,8 +2279,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -2481,8 +2471,7 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             fallback,
             frame_writes: None,
             code_entries: None,
@@ -3505,8 +3494,7 @@ impl From<ValueMap> for Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -3534,8 +3522,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+            import_tag: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
