@@ -1641,8 +1641,8 @@ impl Compiler {
                 // self-copies (`-> $_ is copy` lowers to `my $_ = $_`) rely on.
                 let early_slot = (init_sees_self || preapply_container_default)
                     .then(|| self.declare_local(name));
-                self.decl_in_flight = (early_slot.is_none() && !*is_our && !*is_state)
-                    .then(|| name.clone());
+                self.decl_in_flight =
+                    (early_slot.is_none() && !*is_our && !*is_state).then(|| name.clone());
                 if preapply_container_default {
                     let slot = early_slot.expect("defaulted container has an early slot");
                     self.emit_default_before_array_initializer(name_idx, slot, default_trait_expr);
