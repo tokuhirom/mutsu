@@ -233,6 +233,11 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 super::stmt::mark_stmt(declaration)
             }
             crate::ast::parsed::ParsedExpr::HyperPrefix(p) => mark_expr(&mut p.operand),
+            crate::ast::parsed::ParsedExpr::ObjectHash(entries) => {
+                for entry in entries {
+                    mark_expr(entry);
+                }
+            }
             crate::ast::parsed::ParsedExpr::SubscriptAdverbs(s) => {
                 mark_expr(&mut s.subscript);
                 for pair in &mut s.pairs {

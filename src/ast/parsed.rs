@@ -298,6 +298,10 @@ pub(crate) enum ParsedExpr {
     /// `colonpairs`). It lowers through the postcircumfix lowering
     /// (`rakuast::subscript_adverb::lower`).
     SubscriptAdverbs(SubscriptAdverbs),
+    /// `:{ KEY => VALUE, ... }`: the entries of an object hash as written
+    /// (`Circumfix::HashComposer(:object-hash)`). It lowers to the runtime's
+    /// `Mu`-keyed hash construction (`rakuast::hash_literal::lower_composer`).
+    ObjectHash(Vec<Expr>),
 }
 
 /// A subscript and the colonpairs written after it, in source order.

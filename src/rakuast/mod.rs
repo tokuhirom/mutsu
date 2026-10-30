@@ -3838,4 +3838,5 @@ pub(crate) use assign_writeback::{
     method_lvalue_call_parts, method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
     subscript_adverb_lvalue_assign_expr,
 };
+pub(crate) use hash_literal::object_hash_expr;
 pub(crate) use hyper_prefix::hyper_prefix_expr;
