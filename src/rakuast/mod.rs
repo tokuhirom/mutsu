@@ -1093,7 +1093,13 @@ pub(crate) fn type_object_conforms_to(class_name: &str) -> Option<Vec<String>> {
     if measured != class_name {
         names.push(measured.to_string());
     }
-    names.extend(entry.mro.iter().chain(entry.roles.iter()).map(|n| n.to_string()));
+    names.extend(
+        entry
+            .mro
+            .iter()
+            .chain(entry.roles.iter())
+            .map(|n| n.to_string()),
+    );
     Some(names)
 }
 
