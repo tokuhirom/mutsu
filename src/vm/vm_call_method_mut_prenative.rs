@@ -266,4 +266,36 @@ impl Interpreter {
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
         Some(native_result)
     }
+
+    /// `Type.HOW` / `Type.WHAT` (unquoted, no arguments) on a type object or an
+    /// instance. Rakudo compiles these two as macros, so no user method can
+    /// stand between the call and the reflection answer; the general path
+    /// reached the same `dispatch_how` / `dispatch_what` only after a native
+    /// probe that misses and a dozen receiver gates (~38k instructions per
+    /// call, `Red::Column.new` runs it nine times per construction).
+    // Cost: O(1) to decide; `dispatch_how` / `dispatch_what`'s own cost.
+    pub(super) fn try_mop_reflection_lane(
+        &mut self,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "HOW" | "WHAT")
+            || self.has_any_wrap_chains()
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
+            return None;
+        }
+        let target = self.stack.last()?;
+        if !matches!(
+            target.view(),
+            ValueView::Package(_) | ValueView::Instance { .. }
+        ) {
+            return None;
+        }
+        let target = target.clone();
+        Some(if method == "HOW" {
+            self.dispatch_how(&target, &[])
+        } else {
+            self.dispatch_what(&target, Vec::new())
+        })
+    }
 }
