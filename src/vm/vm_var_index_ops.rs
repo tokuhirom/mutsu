@@ -1028,20 +1028,6 @@ impl Interpreter {
             self.stack.push(Value::array(values));
             return Ok(());
         }
-        // `$obj[*]` on a user class that provides its own `AT-POS` is the
-        // object's `.list` (rakudo's `postcircumfix:<[ ]>(\SELF, Whatever:D)`);
-        // only a lone Whatever, not one inside a slice (`[*, 1]`, `[(*,)]`).
-        // Cost: O(1) dispatch plus the user `list` method.
-        if is_positional
-            && matches!(index.view(), ValueView::Whatever)
-            && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() != "IO::Path::Parts"
-            && self.has_user_method_including_role(&class_name.resolve(), "AT-POS")
-        {
-            let list = self.try_compiled_method_or_interpret(target.clone(), "list", vec![])?;
-            self.stack.push(list);
-            return Ok(());
-        }
         if let ValueView::Junction { kind, values } = target.view() {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
@@ -2541,6 +2527,17 @@ impl Interpreter {
             // through AT-KEY, mirroring the plain-Hash `(Hash, Whatever)` arm above.
             // Guarded on a user `keys` method so non-Associative instances keep the
             // Nil fallback below.
+            // `$obj[*]` on a user class that provides its own `AT-POS` is the
+            // object's `.list` (rakudo's `postcircumfix:<[ ]>(\SELF, Whatever:D)`);
+            // only a lone Whatever, not one inside a slice (`[*, 1]`, `[(*,)]`).
+            // Cost: O(1) dispatch plus the user `list` method.
+            (ValueView::Instance { class_name, .. }, ValueView::Whatever)
+                if is_positional
+                    && class_name.resolve() != "IO::Path::Parts"
+                    && self.has_user_method_including_role(&class_name.resolve(), "AT-POS") =>
+            {
+                self.try_compiled_method_or_interpret(target.clone(), "list", vec![])?
+            }
             (ValueView::Instance { class_name, .. }, ValueView::Whatever)
                 if self.has_user_method(&class_name.resolve(), "keys") =>
             {
