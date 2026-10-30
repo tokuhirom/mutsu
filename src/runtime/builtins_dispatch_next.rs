@@ -1276,10 +1276,20 @@ impl Interpreter {
                         // An instance whose class has no storage bridge
                         // (`Storage` handled it above): the default rendering.
                         self.any_base_native_entry(&invocant, &name, &args)?
-                    } else if matches!(invocant.view(), ValueView::Mixin(..)) {
-                        self.mixin_base_native_entry(&invocant, &name, &args)
-                            .transpose()?
-                            .unwrap_or(Value::NIL)
+                    } else if let ValueView::Mixin(inner, _) = invocant.view() {
+                        // A role mixed into a container-subclass instance
+                        // (`$dict but Info`): the instance's own storage is
+                        // still the base behind the role's `callsame`.
+                        let storage = matches!(inner.view(), ValueView::Instance { .. })
+                            .then(|| self.native_storage_base_entry(inner, &name, &args))
+                            .flatten();
+                        match storage {
+                            Some(res) => res?,
+                            None => self
+                                .mixin_base_native_entry(&invocant, &name, &args)
+                                .transpose()?
+                                .unwrap_or(Value::NIL),
+                        }
                     } else {
                         self.run_core_type_builtin(invocant, &name, args)?
                     };

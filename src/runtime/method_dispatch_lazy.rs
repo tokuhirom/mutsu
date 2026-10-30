@@ -62,6 +62,12 @@ impl Interpreter {
     /// its receiver class and still carries the storage.
     // Cost: O(1), three attribute probes.
     pub(super) fn invocant_carries_native_storage(invocant: &Value) -> bool {
+        // A role mixed into such an instance (`$dict but Info`) keeps the
+        // storage on the wrapped instance.
+        let invocant = match invocant.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => invocant,
+        };
         matches!(
             invocant.view(),
             ValueView::Instance { attributes, .. }

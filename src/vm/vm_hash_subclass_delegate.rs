@@ -241,8 +241,24 @@ impl Interpreter {
         if method == "BIND-KEY" && args.len() == 2 && matches!(storage.view(), ValueView::Hash(_)) {
             // Bound as the `Hash` row binds it (a cell, so `.values` hands the
             // bound value out and not a fresh Scalar), on the shared node.
+            // A source that is a variable (`self.BIND-KEY($k, $lval)`) binds as
+            // a writable Scalar, so `callsame` out of an overriding `AT-KEY` hands
+            // out a container as rakudo does (PDF::COS::Tie::Hash); only a value
+            // that names no variable stays a read-only cell.
+            let from_variable = self
+                .pending_call_arg_sources()
+                .and_then(|sources| sources.get(1))
+                .is_some_and(|name| name.is_some());
+            let bound_args: std::borrow::Cow<'_, [Value]> = if from_variable
+                && !matches!(args[1].view(), ValueView::ContainerRef(_))
+            {
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(args[1].clone()));
+                std::borrow::Cow::Owned(vec![args[0].clone(), Value::container_ref(cell)])
+            } else {
+                std::borrow::Cow::Borrowed(args)
+            };
             return Some(
-                crate::builtins::method_table::bind_key_in(self, &storage, args, None)
+                crate::builtins::method_table::bind_key_in(self, &storage, &bound_args, None)
                     .map(|(value, _)| value),
             );
         }
