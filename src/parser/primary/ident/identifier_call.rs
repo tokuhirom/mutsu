@@ -1767,6 +1767,28 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // against. Anything else falls through to the existing
             // "identifier after '::'" error below, exactly as before this
             // arm existed.
+            // An unquoted `«&foo:<bar> baz»` is several words (`&foo`, `bar`,
+            // `baz`): a slice of the stash, as the quote-word list spells it
+            // anywhere else (Unix::errno's `MY::«&item:<errno>»:exists`).
+            if let Some(after_bracket) = after.strip_prefix('«')
+                && let Some(end) = find_guillemet_subscript_end(after_bracket)
+                && {
+                    let raw = &after_bracket[..end];
+                    !raw.trim_start().starts_with(['\'', '"'])
+                        && (raw.contains(char::is_whitespace) || raw.contains(":<"))
+                }
+                && let Ok((r2, words)) = crate::parser::primary::container::french_quote_list(after)
+            {
+                return Ok((
+                    r2,
+                    Expr::Index {
+                        target: Box::new(Expr::PseudoStash(format!("{full_name}::"))),
+                        index: Box::new(words),
+                        is_positional: false,
+                        spelling: Default::default(),
+                    },
+                ));
+            }
             if let Some(after_bracket) = after.strip_prefix('«')
                 && let Some(end) = find_guillemet_subscript_end(after_bracket)
                 && let Some(symbol) = resolve_guillemet_symbol(&after_bracket[..end])
