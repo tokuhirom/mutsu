@@ -862,6 +862,15 @@ impl Interpreter {
             {
                 return self.try_compiled_method_or_interpret(callee, "CALL-ME", call_args);
             }
+            // A CORE routine value (`&CORE::name`) runs the built-in, never a
+            // same-named declaration of the program.
+            if let Some(ValueView::Str(core_name)) = data
+                .env
+                .get(crate::meta_ns::CORE_ROUTINE_KEY)
+                .map(Value::view)
+            {
+                return self.call_core_routine(&core_name, call_args);
+            }
             // Routine wrapper from .assuming() on a multi-dispatch sub
             if let Some(ValueView::Str(routine_name)) =
                 data.env.get("__mutsu_routine_name").map(Value::view)

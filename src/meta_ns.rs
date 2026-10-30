@@ -84,6 +84,10 @@
 
 use crate::symbol::Symbol;
 
+/// The env key that tags a CORE routine code value (`&CORE::name` while the
+/// program declares a routine of that name): the name of the built-in it runs.
+pub(crate) const CORE_ROUTINE_KEY: &str = "__mutsu_core_routine";
+
 /// Env-key prefix under which an enum key's value is stored (see
 /// `runtime::enum_bare_names`). Lives here so the lower layers can name it.
 pub(crate) const ENUM_BARE_PREFIX: &str = "__mutsu_enum_bare_";

@@ -3,6 +3,8 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
+use crate::meta_ns::CORE_ROUTINE_KEY;
+
 impl Interpreter {
     /// Compile a single method/submethod body to bytecode in place if it is not
     /// already compiled. Shared by the bulk registration pass and the on-demand
@@ -583,6 +585,45 @@ impl Interpreter {
         )
     }
 
+    /// A code value for the routine `name` of the CORE setting
+    /// (`&CORE::name`, `CORE::<&name>`): calling it runs the built-in routine
+    /// and never a same-named routine the program or an import declared
+    /// (`call_core_routine`).
+    // Cost: O(e), e = the frame env the Sub captures.
+    fn core_routine_sub(&self, name: &str) -> Value {
+        let mut env = self.env.clone();
+        env.insert(
+            CORE_ROUTINE_KEY.to_string(),
+            Value::str(name.to_string()),
+        );
+        // A call carrier (`sub_is_call_carrier`): the body is empty, the call
+        // goes through `call_sub_value`, which reads `CORE_ROUTINE_KEY` first.
+        env.insert(
+            "__mutsu_routine_name".to_string(),
+            Value::str(name.to_string()),
+        );
+        Value::make_sub(
+            Symbol::intern("GLOBAL"),
+            Symbol::intern(name),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            env,
+        )
+    }
+
+    /// Whether the program or an import declares a routine `name` the CORE
+    /// routine of that name would be hidden by (a `sub abs`, a `multi
+    /// infix:<eqv>`).
+    // Cost: O(1) hashed probes.
+    fn user_declares_routine(&self, name: &str) -> bool {
+        self.has_proto(name)
+            || self.has_multi_candidates_unindexed(name)
+            || self.resolve_function(name).is_some()
+            || self.env.get(&format!("&{name}")).is_some()
+    }
+
     /// Build a first-class Sub for a native routine that has no registry
     /// FunctionDef. Native functions normally enter through name dispatch, but
     /// Raku exposes the same routines as code values (`&sleep`,
@@ -635,6 +676,13 @@ impl Interpreter {
                 || normalized_name.starts_with("postcircumfix:<"))
             && normalized_name.ends_with('>')
         {
+            // `&CORE::infix:<op>` names the core operator, whatever the program
+            // declared under the same name.
+            if matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+                && self.user_declares_routine(&normalized_name)
+            {
+                return self.core_routine_sub(&normalized_name);
+            }
             // A concrete operator sub bound in env — a `my &infix:<op>` binding or
             // one installed by a custom `sub EXPORT` (`Map.new: '&infix:<op>' =>
             // &infix:<op>`) — must win over the by-name GLOBAL routine ref.
@@ -746,6 +794,14 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
+        if has_packages
+            && core_visible
+            && Self::is_builtin_function(lookup_name)
+            && matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+            && self.user_declares_routine(lookup_name)
+        {
+            return self.core_routine_sub(lookup_name);
+        }
         if has_packages && core_visible && Self::is_builtin_function(lookup_name) {
             return Value::routine_parts(
                 Symbol::intern("GLOBAL"),
