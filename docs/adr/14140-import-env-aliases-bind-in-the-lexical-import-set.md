@@ -219,6 +219,38 @@ for the reasons in the findings above. Open to the maintainer: whether the next
 slice moves the other import kinds into the same tier by exclusion (keep every
 non-import write) or by an explicit import layer below the block tier.
 
+### Design of the exclusion rules for the other import kinds (not implemented)
+
+The grant is excluded from the tier merge by its key prefix, which is a closed
+set. The other kinds write ordinary-looking keys (`&name`, a type name, a term
+key `\\name`, an enum bare key), so a prefix cannot separate them from the
+region's non-import writes. Two ways to separate them:
+
+1. **Key list at exit (today's rule, moved).** The tier exit drops the keys
+   `record_import_env_key` listed and merges the rest. Same list, same
+   `shadowed_env_values`; only the restore becomes "drop from the tier". This
+   gains nothing over the present mechanism and is **not** proposed.
+2. **An import layer.** `Env` gets a second overlay kind: the region opens an
+   *import layer* directly above the enclosing env and the ordinary block tier
+   above it. Import sites call `insert_import_sym`, which writes into the nearest
+   import layer of the chain instead of the top overlay; every other write lands
+   in the block tier as now. The exit drops the import layer wholesale and
+   merges the block tier. Shadowing is the chain order, a closure created in the
+   region captures the chain (so it keeps the import, as with the grant), a
+   callee frame does not chain to it (`lexically_scoped`), and neither
+   `imported_env_keys` nor `shadowed_env_values` exists. Open: whether a write
+   to an imported name from inside the region (`$CONST = 1` on an imported
+   variable) should go to the import layer (the binding) or be an error, as in
+   rakudo for a constant; and the depth cap (`MAX_OVERLAY_DEPTH`) now counts two
+   layers per import region.
+
+Per kind, with option 2: scan-invisible types and terms, hook maps and
+`require` call `insert_import_sym` from `install_export_symbol` /
+`require_scoped_symbols` (the sites `record_import_env_key` marks today);
+`import M` of an inline module needs a region for its statement (§2.4); the
+replay record stores the import layer's entries instead of a key list. The
+tests that pin the expectations are the list above.
+
 ## 3. Consequences
 
 - A name an import binds is invisible after the block and in callees, as in
