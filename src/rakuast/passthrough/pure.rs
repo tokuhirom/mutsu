@@ -5,7 +5,7 @@
 //! given and lets the visitor's `walk_*` functions recurse, so a variant the
 //! test does not name is refused, never skipped.
 
-use crate::ast::parsed::{ParsedExpr, ParsedStmt};
+use crate::ast::parsed::ParsedExpr;
 use crate::ast::{CallArg, Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt};
 use crate::value::ValueView;
@@ -102,19 +102,9 @@ impl Purity {
             | Stmt::Die(_)
             | Stmt::Fail(_)
             | Stmt::Take(..) => true,
-            Stmt::Ast(node) => {
+            Stmt::Ast(_) => {
                 self.fixup = true;
-                matches!(
-                    node.as_ref(),
-                    ParsedStmt::Conditional(_)
-                        | ParsedStmt::Given { .. }
-                        | ParsedStmt::When { .. }
-                        | ParsedStmt::Default(_)
-                        | ParsedStmt::BareBlock(_)
-                        | ParsedStmt::WhileLoop(_)
-                        | ParsedStmt::For { .. }
-                        | ParsedStmt::Modified(_)
-                )
+                true
             }
             Stmt::Assign {
                 name,
