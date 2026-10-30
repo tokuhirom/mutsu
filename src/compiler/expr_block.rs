@@ -1238,7 +1238,7 @@ impl Compiler {
             // are confined to the synthetic block and read as undeclared in the
             // `if`/`while` body.
             Stmt::SyntheticBlock(inner)
-                if crate::parser::sink_warn::is_destructure_block(inner) =>
+                if crate::ast::signature_decl::is_destructure_block(inner) =>
             {
                 self.compile_synthetic_block_inline(inner);
             }

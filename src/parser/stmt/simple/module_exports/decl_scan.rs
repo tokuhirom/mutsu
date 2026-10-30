@@ -544,10 +544,10 @@ impl<'ast> Visit<'ast> for DeclScan {
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
             // A traited or adverbed declarator (`class Foo is export { }`,
-            // `module Foo:auth<x> { }`) is wrapped in a bare or synthetic
+            // `module Foo:auth<x> { }`) is wrapped in a bare
             // block together with its metadata statements. The wrapper opens
             // no package, so it stays on the spine with the same paths.
-            Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
+            Stmt::Block(_) => {
                 if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt) {
                     self.header_exports(decl, &header);
                 }

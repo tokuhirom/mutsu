@@ -1,23 +1,6 @@
 use crate::ast::{Expr, LvaluePeel, LvalueRoot, Stmt};
 use crate::value::Value;
 
-/// Extract the writeback variable name from a declaration used in expression
-/// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
-/// Without this the assignment would target a detached value and the mutation
-/// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
-/// declarations the parser produces for `:=` binds and readonly scalar binds.
-// Cost: O(s), s = statements of a SyntheticBlock.
-pub(crate) fn decl_target_var_name(stmt: &crate::ast::Stmt) -> Option<String> {
-    match stmt {
-        crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
-        crate::ast::Stmt::SyntheticBlock(inner) => inner.iter().find_map(|s| match s {
-            crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
-            _ => None,
-        }),
-        _ => None,
-    }
-}
-
 /// The variable a method-call lvalue (`$s.substr-rw(0, 1) = "x"`,
 /// `x.AT-KEY(k) = v` for a sigil-less `x`) writes the updated invocant back
 /// through, or `None` when the invocant is not a variable. The parentheses
