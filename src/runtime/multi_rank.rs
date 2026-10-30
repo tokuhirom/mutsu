@@ -699,33 +699,61 @@ pub(crate) fn assign_tiers<T>(
     conforms: &dyn Fn(Symbol, Symbol) -> bool,
 ) {
     assign_tiers_with(items, rank, conforms, &|ranks| {
-        std::sync::Arc::new(declared_relation(ranks, conforms))
+        std::sync::Arc::new(declared_relation(ranks, conforms, &|| 0).0)
     });
 }
 
 /// `relation[i][j]`: candidate `i` is narrower than `j` by their DECLARED
 /// types alone ([`MultiRank::declared_narrower`]), for a pair of method
-/// candidates. A function of the candidates' [`DeclaredKey`]s alone, so a
-/// caller that sees the same keys again can reuse it whatever arguments the
-/// candidates were ranked for.
+/// candidates. A function of the candidates' [`DeclaredKey`]s and of the
+/// `conforms` answers, so a caller that sees the same keys again can reuse
+/// every pair whose answers were fixed. `probe` is a counter that moves
+/// whenever `conforms` gives an answer that may change between two calls (read
+/// from the registry or the env); the pairs it moved for are returned
+/// alongside, for the caller to ask again.
 // Cost: O(n^2 * r), n = candidates, r = the cost of one `conforms` call.
 pub(crate) fn declared_relation(
     ranks: &[MultiRank],
     conforms: &dyn Fn(Symbol, Symbol) -> bool,
-) -> Vec<Vec<bool>> {
+    probe: &dyn Fn() -> u64,
+) -> (Vec<Vec<bool>>, Vec<(u32, u32)>) {
     let n = ranks.len();
-    (0..n)
+    let mut dynamic = Vec::new();
+    let relation = (0..n)
         .map(|i| {
             (0..n)
                 .map(|j| {
-                    i != j
-                        && ranks[i].invocant.is_some()
-                        && ranks[j].invocant.is_some()
-                        && ranks[i].declared_narrower(&ranks[j], conforms)
+                    if i == j || ranks[i].invocant.is_none() || ranks[j].invocant.is_none() {
+                        return false;
+                    }
+                    let before = probe();
+                    let answer = ranks[i].declared_narrower(&ranks[j], conforms);
+                    if probe() != before {
+                        dynamic.push((i as u32, j as u32));
+                    }
+                    answer
                 })
                 .collect()
         })
-        .collect()
+        .collect();
+    (relation, dynamic)
+}
+
+/// Ask again the pairs of a remembered [`declared_relation`] whose answers
+/// were not fixed.
+// Cost: O(n^2) to copy the relation, O(d * r) to refresh it, d = those pairs.
+pub(crate) fn refresh_declared_relation(
+    relation: &[Vec<bool>],
+    dynamic: &[(u32, u32)],
+    ranks: &[MultiRank],
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
+) -> Vec<Vec<bool>> {
+    let mut fresh = relation.to_vec();
+    for &(i, j) in dynamic {
+        let (i, j) = (i as usize, j as usize);
+        fresh[i][j] = ranks[i].declared_narrower(&ranks[j], conforms);
+    }
+    fresh
 }
 
 /// [`assign_tiers`] with the declared-type relation ([`declared_relation`])

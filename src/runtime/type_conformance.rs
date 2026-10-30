@@ -86,7 +86,7 @@ pub(crate) struct ConformanceCache {
     /// candidate set, keyed by the candidates' declared keys. Remembered only
     /// when every relation it asked about was static (see
     /// [`Interpreter::assign_tiers_memoised`]), so it needs no invalidation.
-    declared_relations: RefCell<Vec<(Vec<multi_rank::DeclaredKey>, Arc<Vec<Vec<bool>>>)>>,
+    declared_relations: RefCell<Vec<DeclaredRelationEntry>>,
 }
 
 impl ConformanceCache {
@@ -101,6 +101,15 @@ impl ConformanceCache {
 struct TierMemoEntry {
     ranks: Vec<MultiRank>,
     tiers: Vec<(u32, bool)>,
+}
+
+/// One remembered candidate set: the relation of its static pairs, and the
+/// pairs whose answers came from the registry or the env, asked again at each
+/// ranking.
+struct DeclaredRelationEntry {
+    keys: Vec<multi_rank::DeclaredKey>,
+    relation: Arc<Vec<Vec<bool>>>,
+    dynamic: Vec<(u32, u32)>,
 }
 
 /// Candidate sets below this size rank faster than they hash.
@@ -366,23 +375,35 @@ impl Interpreter {
         multi_rank::assign_tiers_with(items, &rank, &conforms, &|ranks| {
             let keys: Vec<multi_rank::DeclaredKey> =
                 ranks.iter().map(MultiRank::declared_key).collect();
-            if let Some((_, relation)) = cache
+            if let Some(entry) = cache
                 .declared_relations
                 .borrow()
                 .iter()
-                .find(|(known, _)| *known == keys)
+                .find(|entry| entry.keys == keys)
             {
-                return Arc::clone(relation);
-            }
-            let before = cache.dependent_answers.get();
-            let relation = Arc::new(multi_rank::declared_relation(ranks, &conforms));
-            if cache.dependent_answers.get() == before {
-                let mut memo = cache.declared_relations.borrow_mut();
-                if memo.len() >= DECLARED_RELATION_CAP {
-                    memo.remove(0);
+                if entry.dynamic.is_empty() {
+                    return Arc::clone(&entry.relation);
                 }
-                memo.push((keys, Arc::clone(&relation)));
+                return Arc::new(multi_rank::refresh_declared_relation(
+                    &entry.relation,
+                    &entry.dynamic,
+                    ranks,
+                    &conforms,
+                ));
             }
+            let (relation, dynamic) = multi_rank::declared_relation(ranks, &conforms, &|| {
+                cache.dependent_answers.get()
+            });
+            let relation = Arc::new(relation);
+            let mut memo = cache.declared_relations.borrow_mut();
+            if memo.len() >= DECLARED_RELATION_CAP {
+                memo.remove(0);
+            }
+            memo.push(DeclaredRelationEntry {
+                keys,
+                relation: Arc::clone(&relation),
+                dynamic,
+            });
             relation
         });
         if cache.dependent_answers.get() != dependent_before {
