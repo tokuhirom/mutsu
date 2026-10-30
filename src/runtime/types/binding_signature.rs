@@ -3177,12 +3177,16 @@ impl Interpreter {
                     // writeback target lets a nested callee's same-named local
                     // clobber the caller (JSON::Unmarshal's
                     // `maybe-nominalize(type)` exposed this).
+                    // A coercion-typed parameter (`Num() \y`) binds the coerced
+                    // value, a fresh one rather than the caller's container, so
+                    // there is no variable to alias.
                     let implicit_raw_veto = is_raw
                         && !pd.traits.iter().any(|t| t == "raw")
                         && ((!arg_is_container_ref
                             && !arg_is_multidim_slice
                             && arg_source_name.is_none())
-                            || arg_is_source_type_object);
+                            || arg_is_source_type_object
+                            || pd.type_constraint.as_deref().is_some_and(is_coercion_constraint));
                     // An explicit `is raw` parameter also cannot write through
                     // a sigilless readonly source.  Such a source denotes a
                     // value rather than a caller container; allowing the raw
