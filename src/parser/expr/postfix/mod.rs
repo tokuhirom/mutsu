@@ -13,7 +13,6 @@ mod call_method;
 mod dot_assign;
 mod helpers;
 mod loop_;
-mod named_adverb;
 
 // Re-exports preserving original visibility
 pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};

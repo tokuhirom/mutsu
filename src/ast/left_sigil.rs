@@ -149,6 +149,9 @@ fn step(expr: &Expr) -> Step<'_> {
         }
         Expr::Ast(node) => match node.as_ref() {
             super::parsed::ParsedExpr::Assign(assign) => Step::Assign(&assign.source),
+            super::parsed::ParsedExpr::SubscriptAdverbs(adverbs) => {
+                Step::Postfix(&adverbs.subscript)
+            }
             _ => Step::Skip,
         },
         _ => Step::Skip,

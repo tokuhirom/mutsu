@@ -373,7 +373,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         if matches!(
             expr,
             Expr::MethodCall { .. } | Expr::Call { .. } | Expr::CallOn { .. }
-        ) {
+        ) || matches!(&expr, Expr::Ast(node)
+            if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_)))
+        {
             let stmt = crate::parser::stmt::assign::written_assignment_stmt(expr, rhs);
             return parse_statement_modifier(r, stmt);
         }

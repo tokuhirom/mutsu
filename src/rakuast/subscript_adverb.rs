@@ -12,225 +12,52 @@
 //!                       value => Circumfix::Parentheses(…)))
 //! ```
 //!
-//! The parser expands the adverbs into the shapes the compiler executes;
-//! `ast::subscript_adverb` holds that expansion. The converter reads an
-//! expansion back with `ast::subscript_adverb::adverbs`, and lowering rebuilds
-//! it with `ast::subscript_adverb::expand`.
+//! The parser keeps the colonpairs as written (`ParsedExpr::SubscriptAdverbs`);
+//! [`postcircumfix_node`] is their view and [`lower`] the one lowering, which expands them
+//! into the shapes the compiler executes (`ast::subscript_adverb::expand`).
 
 use super::convert::{
-    angle_key_text, angle_subscript_node, colonpair_value_expr, convert_expr, leaf_field,
-    splat_dimensions, subscript_dims_node, unsupported as convert_unsupported,
+    angle_key_text, angle_subscript_node, convert_expr, leaf_field, splat_dimensions,
+    subscript_dims_node, unsupported as convert_unsupported,
 };
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
-use crate::ast::subscript_adverb::{self, Adverb};
+use crate::ast::subscript_adverb;
 use crate::value::{RuntimeError, Value, ValueView};
-use std::borrow::Cow;
 
-mod dynamic_multidim;
 mod hyperslice;
 
-/// The postcircumfix node for `expr` when it is a subscript with adverbs;
-/// `None` when it is not one.
-// Cost: O(n), n = AST nodes under `expr`.
-pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
-    if let Expr::Spelled(spelled) = expr
-        && let crate::ast::spelled::Spelling::ConditionalMultidimDelete { source, condition } =
-            &spelled.spelling
-    {
-        return Some(dynamic_multidim::convert_conditional(source, condition));
-    }
-    if let Some(node) = dynamic_multidim::convert_dynamic(expr) {
-        return Some(node);
-    }
-    if let Expr::HyperSlice { target, adverb } = expr {
-        let pair = colonpair(&(
-            hyperslice::name(*adverb).to_string(),
-            Expr::Literal(Value::TRUE),
-        ));
-        return Some(pair.and_then(|pair| {
-            subscript_dims_node(target, &[Expr::HyperWhatever], false, None, vec![pair])
-        }));
-    }
-    // The parser records an explicit `:exists(False)` value in `arg`. The
-    // generic expansion inverse cannot infer that syntax from a false value:
-    // it would rebuild `:!exists` and fail the structural identity check.
-    if let Expr::Exists {
-        target,
-        negated: false,
-        delete: false,
-        arg: Some(arg),
-        adverb: crate::ast::ExistsAdverb::None,
-    } = expr
-    {
-        let pair = colonpair_value_expr(&Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str_from("exists"))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: arg.clone(),
-            form: Default::default(),
-        });
-        return Some(pair.and_then(|pair| {
-            let colonpairs = vec![Value::rakuast(Box::new(pair))];
-            match target.as_ref() {
-                Expr::Index {
-                    target,
-                    index,
-                    is_positional: false,
-                    spelling: crate::ast::IndexSpelling::Angle,
-                } if angle_key_text(index).is_some() => {
-                    angle_subscript_node(target, index, None, colonpairs)
-                }
-                Expr::Index {
-                    target,
-                    index,
-                    is_positional,
-                    ..
-                } => subscript_dims_node(
-                    target,
-                    std::slice::from_ref(index.as_ref()),
-                    *is_positional,
-                    None,
-                    colonpairs,
-                ),
-                _ => Err(convert_unsupported("explicit existence subscript")),
-            }
-        }));
-    }
-    if let Expr::Spelled(spelled) = expr
-        && let crate::ast::spelled::Spelling::NamedSubscript { subscript, pairs }
-        | crate::ast::spelled::Spelling::ConflictingSubscript { subscript, pairs } =
-            &spelled.spelling
-    {
-        return Some(convert_named_subscript(subscript, pairs));
-    }
-    if let Expr::Call { name, args, .. } = expr
-        && *name == subscript_adverb::SUBSCRIPT_NAMED_ADVERBS_FN
-    {
-        let [
-            target,
-            index,
-            Expr::Literal(_source),
-            Expr::Literal(shape),
-            pairs @ ..,
-        ] = args.as_slice()
-        else {
-            return Some(Err(convert_unsupported("named subscript adverb call")));
-        };
-        let ValueView::Str(shape) = shape.view() else {
-            return Some(Err(convert_unsupported("named subscript shape")));
-        };
-        let shape = shape.as_str();
-        let is_positional = shape.starts_with('[');
-        let dimensions = match shape {
-            "[; ]" | "{; }" => match index {
-                Expr::ArrayLiteral(items) => items.as_slice(),
-                _ => {
-                    return Some(Err(convert_unsupported("named multidimensional subscript")));
-                }
-            },
-            "[ ] zen" | "{ } zen" => &[],
-            "[ ]" | "{ }" => std::slice::from_ref(index),
-            _ => return Some(Err(convert_unsupported("named subscript shape"))),
-        };
-        return Some(
-            pairs
-                .iter()
-                .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
-                .collect::<Result<Vec<_>, _>>()
-                .and_then(|pairs| {
-                    subscript_dims_node(target, dimensions, is_positional, None, pairs)
-                }),
-        );
-    }
-    if let Some((target, index, is_positional, mode, condition)) =
-        subscript_adverb::explicit_value_condition(expr)
-    {
-        let pair = colonpair_value_expr(&Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(mode.to_string()))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(condition.clone()),
-            form: Default::default(),
-        });
-        return Some(pair.and_then(|pair| {
-            let dims = if matches!(index, Expr::Literal(value) if matches!(value.view(), ValueView::Whatever)) {
-                &[][..]
-            } else {
-                std::slice::from_ref(index)
-            };
-            subscript_dims_node(target, dims, is_positional, None, vec![Value::rakuast(Box::new(pair))])
-        }));
-    }
-    if !matches!(
-        expr,
-        Expr::Exists { .. } | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::Ternary { .. }
-    ) {
+/// `%h{**}:k`: the hash hyperslice the parser keeps as `Expr::HyperSlice`.
+// Cost: O(n), n = nodes under the target.
+pub(super) fn convert_hyper_slice(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    let Expr::HyperSlice { target, adverb } = expr else {
         return None;
-    }
-    let (subscript, adverbs) = subscript_adverb::adverbs(expr)?;
-    let (target, dims, is_positional) = match &subscript {
-        Expr::Index {
-            target,
-            index,
-            is_positional: false,
-            spelling: crate::ast::IndexSpelling::Angle,
-        } if angle_key_text(index).is_some() => {
-            return Some(
-                adverbs
-                    .iter()
-                    .map(colonpair)
-                    .collect::<Result<Vec<_>, _>>()
-                    .and_then(|colonpairs| angle_subscript_node(target, index, None, colonpairs)),
-            );
-        }
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            ..
-        } if matches!(index.as_ref(), Expr::Literal(value) if matches!(value.view(), ValueView::Whatever)) =>
-        {
-            // The parser uses a literal Whatever for `[]:adverb`; a written
-            // `[*]:adverb` uses Expr::Whatever. Rakudo keeps the former index
-            // as an empty SemiList, even though both execute as a slice.
-            (target, Cow::Borrowed(&[][..]), *is_positional)
-        }
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            ..
-        } => (
-            target,
-            Cow::Borrowed(std::slice::from_ref(&**index)),
-            *is_positional,
-        ),
-        Expr::MultiDimIndex {
-            target,
-            dimensions,
-            is_positional,
-        } => (target, splat_dimensions(dimensions), *is_positional),
-        // `@a[]:adverb` / `%h{}:adverb`: no dimension at all.
-        Expr::ZenSlice(target) => (
-            target,
-            Cow::Borrowed(&[][..]),
-            !matches!(&**target, Expr::HashVar(_)),
-        ),
-        _ => return None,
     };
-    Some(
-        adverbs
-            .iter()
-            .map(colonpair)
-            .collect::<Result<Vec<_>, _>>()
-            .and_then(|colonpairs| {
-                subscript_dims_node(target, &dims, is_positional, None, colonpairs)
-            }),
-    )
+    let pair = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ColonPairTrue,
+        fields: vec![leaf_field(
+            None,
+            Value::str(hyperslice::name(*adverb).to_string()),
+        )],
+    };
+    Some(subscript_dims_node(
+        target,
+        &[Expr::HyperWhatever],
+        false,
+        None,
+        vec![Value::rakuast(Box::new(pair))],
+    ))
 }
 
+/// The postcircumfix node of `subscript` carrying the colonpairs `pairs`, as
+/// the parser kept them (`ParsedExpr::SubscriptAdverbs`).
 // Cost: O(n), n = nodes under the subscript and its adverbs.
-fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn postcircumfix_node(
+    subscript: &Expr,
+    pairs: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let colonpairs = pairs
         .iter()
         .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
@@ -250,6 +77,9 @@ fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNo
             is_positional,
             ..
         } => {
+            // The parser writes `[]:adverb` with a literal Whatever index;
+            // a written `[*]:adverb` is `Expr::Whatever`. Rakudo keeps the
+            // former as an empty SemiList, though both execute as a slice.
             let dims = if matches!(index.as_ref(), Expr::Literal(value) if matches!(value.view(), ValueView::Whatever))
             {
                 &[][..]
@@ -269,34 +99,59 @@ fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNo
             None,
             colonpairs,
         ),
-        _ => Err(convert_unsupported("named subscript source form")),
+        _ => Err(convert_unsupported("subscript adverb source form")),
     }
 }
 
-/// `:key` / `:!key` / `:key(value)`.
-fn colonpair((key, value): &Adverb) -> Result<Value, RuntimeError> {
-    let flag = match value {
-        Expr::Literal(v) => match v.view() {
-            ValueView::Bool(true) => Some(RakuAstClass::ColonPairTrue),
-            ValueView::Bool(false) => Some(RakuAstClass::ColonPairFalse),
-            _ => None,
-        },
-        _ => None,
+/// A subscript (`Expr::Index` / `Expr::MultiDimIndex`) carrying the colonpairs
+/// `pairs`, at least one of them not a built-in adverb: Raku passes them all as
+/// named arguments to the subscript operator.
+///
+/// With a user `postcircumfix:<...>` candidate in scope the call goes to the
+/// operator itself, so multi-dispatch picks the candidate exactly as an
+/// explicit call would. Otherwise it goes to the CORE candidate model
+/// (`subscript_adverb::named_adverb_call`), which raises what rakudo's
+/// candidates raise for these arguments. `None` for any other expression.
+// Cost: O(n), n = nodes under the subscript and its adverbs.
+fn named_subscript(subscript: &Expr, pairs: Vec<Expr>) -> Option<Expr> {
+    let (target, index, op_name) = match subscript {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => {
+            let op = if *is_positional {
+                "postcircumfix:<[ ]>"
+            } else {
+                "postcircumfix:<{ }>"
+            };
+            (target.as_ref(), index.as_ref().clone(), op)
+        }
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => {
+            let op = if *is_positional {
+                "postcircumfix:<[; ]>"
+            } else {
+                "postcircumfix:<{; }>"
+            };
+            (target.as_ref(), Expr::ArrayLiteral(dimensions.clone()), op)
+        }
+        _ => return None,
     };
-    let node = match flag {
-        Some(class) => RakuAstNode {
-            origin: Default::default(),
-            class,
-            fields: vec![leaf_field(None, Value::str(key.clone()))],
-        },
-        None => colonpair_value_expr(&Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(key.clone()))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(value.clone()),
-            form: Default::default(),
-        })?,
-    };
-    Ok(Value::rakuast(Box::new(node)))
+    if crate::parser::is_user_declared_sub(op_name) {
+        let mut args = vec![target.clone(), index];
+        args.extend(pairs);
+        return Some(Expr::Call {
+            name: crate::symbol::Symbol::intern(op_name),
+            args,
+            listop: false,
+        });
+    }
+    subscript_adverb::named_adverb_call(subscript, pairs)
 }
 
 /// `subscript` with the postcircumfix's `colonpairs` applied; `subscript`
@@ -361,7 +216,7 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
         .iter()
         .any(|(key, _)| !subscript_adverb::is_builtin_name(key))
     {
-        return subscript_adverb::named_adverb_call(
+        return named_subscript(
             &subscript,
             adverbs
                 .iter()
@@ -387,7 +242,13 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
         .filter(|(key, _)| matches!(key.as_str(), "k" | "v" | "kv" | "p"))
         .count()
         >= 2
-        && let Expr::Index { target, index, .. } = &subscript
+        && let Some((target, what)) = match &subscript {
+            Expr::Index { target, index, .. } => {
+                Some((target, subscript_adverb::subscript_what(target, index)))
+            }
+            Expr::MultiDimIndex { target, .. } => Some((target, "slice")),
+            _ => None,
+        }
     {
         let names = adverbs
             .iter()
@@ -400,7 +261,7 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
             })
             .collect::<Vec<_>>();
         return Ok(subscript_adverb::build_adverb_error_call(
-            subscript_adverb::subscript_what(target, index),
+            what,
             &target.sigiled_var_name().unwrap_or_default(),
             Some(target),
             &names,

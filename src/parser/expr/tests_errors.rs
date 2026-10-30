@@ -290,9 +290,8 @@ fn parse_subscript_adverb_does_not_become_call_adverb() {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
-            assert!(
-                matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
-            );
+            assert!(matches!(&args[0], Expr::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
         }
         _ => panic!("expected call expression"),
     }
@@ -306,9 +305,8 @@ fn parse_hash_subscript_adverb_does_not_become_call_adverb() {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
-            assert!(
-                matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
-            );
+            assert!(matches!(&args[0], Expr::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
         }
         _ => panic!("expected call expression"),
     }
