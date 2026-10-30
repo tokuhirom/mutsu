@@ -380,7 +380,13 @@ impl Interpreter {
         if is_regex && let Some(src) = self.token_declaration_source(owner, name) {
             attrs.insert("__mutsu_regex_source".to_string(), Value::str(src));
         }
-        Value::make_instance(Symbol::intern(class_name), attrs)
+        // Like a user's single method, a native one is its own sole candidate
+        // (`.candidates` is what a signature-checking caller walks).
+        let method_obj = Value::make_instance(Symbol::intern(class_name), attrs);
+        if let ValueView::Instance { attributes, .. } = method_obj.view() {
+            attributes.insert("candidates", Value::array(vec![method_obj.clone()]));
+        }
+        method_obj
     }
 
     // Cost: O(n), n = size of the declaration's source tree.

@@ -146,6 +146,8 @@ impl Interpreter {
             bin: false,
             win_verbatim_args: false,
             out_handle_id: None,
+            err_handle_id: None,
+            in_handle_id: None,
             merge: false,
         };
         for value in args.iter().skip(skip) {
@@ -161,7 +163,7 @@ impl Interpreter {
                         }
                         "err" => {
                             opts.err_explicit = true;
-                            opts.capture_err = inner.truthy();
+                            Self::extract_err_option(inner, &mut opts);
                         }
                         "out" => {
                             opts.out_explicit = true;
@@ -192,7 +194,7 @@ impl Interpreter {
                     }
                     "err" => {
                         opts.err_explicit = true;
-                        opts.capture_err = inner.truthy();
+                        Self::extract_err_option(inner, &mut opts);
                     }
                     "out" => {
                         opts.out_explicit = true;
@@ -230,6 +232,17 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
+            && class_name.resolve() == "IO::Handle"
+            && let Some(id) = attributes.as_map().get("handle").and_then(|v| v.as_int())
+        {
+            opts.in_handle_id = Some(id as usize);
+            return;
+        }
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
             && class_name.resolve() == "IO::Pipe"
         {
             opts.capture_in = true;
@@ -260,6 +273,22 @@ impl Interpreter {
             return;
         }
         opts.capture_in = value.truthy();
+    }
+
+    fn extract_err_option(value: &Value, opts: &mut ProcOptions) {
+        // :err can be an IO::Handle (redirect stderr to that file handle)
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+            && class_name.resolve() == "IO::Handle"
+            && let Some(id) = attributes.as_map().get("handle").and_then(|v| v.as_int())
+        {
+            opts.err_handle_id = Some(id as usize);
+            return;
+        }
+        opts.capture_err = value.truthy();
     }
 
     fn extract_out_option(value: &Value, opts: &mut ProcOptions) {

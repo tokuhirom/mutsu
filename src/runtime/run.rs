@@ -738,7 +738,7 @@ impl Interpreter {
         if compile_only {
             // `-c`: what is left of the unit is the BEGIN prologue, the CHECK
             // phasers (reordered ahead of INIT and the mainline above), the
-            // subs hoisted ahead of them and the check code they run.
+            // subs and types hoisted ahead of them and the check code they run.
             let mut index = 0;
             body_main.retain(|stmt| {
                 let keep = index < head_len
@@ -748,6 +748,11 @@ impl Interpreter {
                             kind: crate::ast::PhaserKind::Check,
                             ..
                         } | Stmt::SubDecl { .. }
+                            | Stmt::ClassDecl { .. }
+                            | Stmt::RoleDecl { .. }
+                            | Stmt::Package { .. }
+                            | Stmt::EnumDecl { .. }
+                            | Stmt::SubsetDecl { .. }
                             | Stmt::RunCheckCode
                     );
                 index += 1;

@@ -377,6 +377,10 @@ pub(super) struct ProcOptions {
     pub(super) win_verbatim_args: bool,
     /// When :out is given an IO::Handle, store the handle ID to dup the fd
     pub(super) out_handle_id: Option<usize>,
+    /// `:err($handle)`: the child's stderr is written to that handle's file.
+    pub(super) err_handle_id: Option<usize>,
+    /// `:in($handle)`: the child reads its stdin from that handle's file.
+    pub(super) in_handle_id: Option<usize>,
     /// When :merge is True, redirect stderr to stdout
     pub(super) merge: bool,
 }

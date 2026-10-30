@@ -1500,6 +1500,12 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// The `(package, name)` of a `Method` of the unit tree `$*CU` answers.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
+    resolve::declared_method(node)
+}
+
 /// The `VarDeclaration::Simple` annotated onto a `ParameterTarget::Var` of the
 /// unit tree `$*CU` answers (see [`resolve`]).
 // Cost: O(1).
@@ -3398,6 +3404,13 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
             | RakuAstClass::CallNameWithoutParentheses
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeSetting
+            // A package declaration does `Lookup` too, but nothing resolves it.
+            | RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
+            | RakuAstClass::Native
     )
 }
 
@@ -3591,6 +3604,12 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         _ => {}
     }
     names.extend(accessor_names(class));
+    // The accessor over a class's single positional field (`Infix.operator`).
+    if let Some(accessor) = fields::positional_accessor(class)
+        && !names.contains(&accessor)
+    {
+        names.push(accessor);
+    }
     names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
         names.push("add-check-code");
@@ -3603,7 +3622,11 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if matches!(
         class,
-        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar | RakuAstClass::Sub
+        RakuAstClass::VarDeclarationSimple
+            | RakuAstClass::ParameterTargetVar
+            | RakuAstClass::Sub
+            | RakuAstClass::Method
+            | RakuAstClass::Submethod
     ) {
         names.push("compile-time-value");
     }

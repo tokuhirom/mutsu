@@ -408,7 +408,9 @@ impl Interpreter {
                         crate::builtin_types::catalog::builtin_type_info(level).is_some()
                             && self.registry().declares_builtin_method(level, method_name)
                     })
-                    .unwrap_or(class_name_str)
+                    // A user class inherits what no built-in ancestor declares
+                    // from `Mu` (`C.^find_method('new').package` is `Mu`).
+                    .unwrap_or_else(|| "Mu".to_string())
             };
             return Some(self.make_native_method_object(method_name, &owner));
         }

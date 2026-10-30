@@ -240,6 +240,26 @@ fn external_value(
     Some(Ok(Value::package(Symbol::intern(&name))))
 }
 
+/// `compile-time-value` of a `RakuAST::Method` declared in a package of the
+/// unit: the method object its class holds.
+// Cost: O(1) plus the interpreter's method lookup.
+fn method_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    let (owner, name) = crate::rakuast::declared_method(node)?;
+    Some(interp.call_method_with_values(
+        Value::package(Symbol::intern(&owner)),
+        "^find_method",
+        vec![Value::str(name)],
+    ))
+}
+
 /// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
 // Cost: O(1) plus the interpreter's lookup of the name.
 fn sub_value(
@@ -251,6 +271,14 @@ fn sub_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // One row serves the routine kinds (the first owner that declares a name
+    // is the only one the walk asks).
+    if matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::Method | crate::rakuast::RakuAstClass::Submethod
+    ) {
+        return method_value(interp, target, _args, _named);
+    }
     let name = crate::rakuast::declared_sub_name(node)?;
     let routine = interp.resolve_code_var(&name);
     // A CHECK phaser runs before the unit's subs are installed as lexicals,
