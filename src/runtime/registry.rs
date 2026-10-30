@@ -44,10 +44,6 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 /// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
 /// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
 pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
-/// [`Registry::proto_functions`]'s map.
-pub(crate) type ProtoFunctionMap = HashMap<Symbol, Arc<FunctionDef>>;
-/// The `proto sub` marker set behind [`Registry::proto_subs_snapshot`].
-pub(crate) type ProtoSubSet = HashSet<String>;
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
@@ -687,12 +683,6 @@ pub(crate) struct Registry {
     /// key of it was last found in (`reinstate_module_functions`, #9170).
     pub(crate) module_functions_present:
         Option<(std::sync::Arc<std::collections::HashSet<Symbol>>, u64)>,
-    /// How many times [`Registry::functions`] was written or replaced: every
-    /// `functions_mut` borrow, `install_function` and wholesale restore counts
-    /// one. Never decreases, so an import scope that logged its own writes can
-    /// tell at its pop whether anything else wrote the map meanwhile
-    /// (`ImportScopeSnapshot::logged_function_writes`, #9170).
-    pub(crate) function_writes: u64,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
@@ -1927,7 +1917,6 @@ impl Registry {
     /// answerable without every mutating site having to say so (#8314).
     #[inline]
     pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
-        self.function_writes += 1;
         crate::runtime::cow_table_mut(&mut self.functions).map_mut()
     }
 
@@ -1947,7 +1936,6 @@ impl Registry {
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
         // `functions` and `fn_transitions` are disjoint fields; the split
         // borrow is what lets the memo drive the table (and its stamp).
-        self.function_writes += 1;
         let transitions = &mut self.fn_transitions;
         transitions.install(&mut self.functions, key, def);
     }
