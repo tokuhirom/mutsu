@@ -319,6 +319,15 @@ impl Kept {
 }
 
 impl VisitMut for Kept {
+    // The traits a routine was written with are compiler-inert: lowering them
+    // produces no statement (a stub body `{ ... }` is the body's only one).
+    fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        body.retain(|s| {
+            !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+        });
+        crate::ast_visit::walk_stmts_mut(self, body);
+    }
+
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
@@ -364,7 +373,26 @@ impl VisitMut for Kept {
             *stmt = super::lower_statement_assign(self.assignment(assign));
             return;
         }
+        // A modifier lowers the declaration it governs itself (`my ($a, $b) =
+        // ... if $c` declares unconditionally), so that statement stays kept
+        // while its own operands are lowered.
+        let mut pending = None;
+        if let Stmt::Ast(node) = stmt
+            && let ParsedStmt::Modified(modified) = node.as_mut()
+            && matches!(modified.stmt.as_ref(), Stmt::Ast(_))
+        {
+            pending = Some(std::mem::replace(modified.stmt.as_mut(), Stmt::Last(None)));
+        }
+        if let Some(inner) = pending.as_mut() {
+            crate::ast_visit::walk_stmt_mut(self, inner);
+        }
         crate::ast_visit::walk_stmt_mut(self, stmt);
+        if let Some(inner) = pending
+            && let Stmt::Ast(node) = stmt
+            && let ParsedStmt::Modified(modified) = node.as_mut()
+        {
+            *modified.stmt = inner;
+        }
         if matches!(stmt, Stmt::Ast(_))
             && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
         {
