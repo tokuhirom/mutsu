@@ -3,9 +3,7 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
-/// The env key a CORE routine code value carries (`core_routine_sub`): the
-/// name of the built-in routine it runs.
-pub(crate) const CORE_ROUTINE_KEY: &str = "__mutsu_core_routine";
+use crate::meta_ns::CORE_ROUTINE_KEY;
 
 impl Interpreter {
     /// Compile a single method/submethod body to bytecode in place if it is not

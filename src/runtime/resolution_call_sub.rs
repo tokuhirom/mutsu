@@ -866,7 +866,7 @@ impl Interpreter {
             // same-named declaration of the program.
             if let Some(ValueView::Str(core_name)) = data
                 .env
-                .get(crate::runtime::accessors_resolve::CORE_ROUTINE_KEY)
+                .get(crate::meta_ns::CORE_ROUTINE_KEY)
                 .map(Value::view)
             {
                 return self.call_core_routine(&core_name, call_args);
