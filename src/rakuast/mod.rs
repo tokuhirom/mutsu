@@ -3475,6 +3475,14 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .unwrap_or_else(|| Value::str("_whatever_arg_1".to_string())),
         );
     }
+    if method == "return-type" && node.class == RakuAstClass::VarAttribute {
+        return Some(
+            node.origin
+                .2
+                .clone()
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
+        );
+    }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }
@@ -3675,6 +3683,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if class == RakuAstClass::Block {
         names.push("is-immediate-block-user-body");
+    }
+    if class == RakuAstClass::VarAttribute {
+        names.push("return-type");
     }
     if class == RakuAstClass::WhateverCodeArgument {
         names.push("name");

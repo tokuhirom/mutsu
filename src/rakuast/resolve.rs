@@ -193,6 +193,14 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if opened {
         scopes.scopes.pop();
     }
+    // `$!name` answers its attribute's declared type as `return-type`.
+    if node.class == C::VarAttribute
+        && let Some(name) = leaf(node, "name")
+        && let Some(decl) = scopes.find(&format!("attr:{name}"))
+        && let ValueView::RakuAst(decl) = decl.view()
+    {
+        node.origin.2 = Some(return_type(decl));
+    }
     if let Some(resolution) = resolve(node, scopes) {
         node.origin.2 = Some(resolution);
     }
@@ -220,6 +228,17 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     let ValueView::RakuAst(held) = child.view() else {
         return;
     };
+    // A `has` attribute is visible to `$!name` in its class's methods.
+    if held.class == C::VarDeclarationSimple
+        && leaf(held, "scope").as_deref() == Some("has")
+        && let Some(variable) = declared_variable(held)
+        && let Some(sigil) = variable.chars().next()
+    {
+        scopes.declare(
+            format!("attr:{sigil}!{}", &variable[sigil.len_utf8()..]),
+            child.clone(),
+        );
+    }
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
     {
