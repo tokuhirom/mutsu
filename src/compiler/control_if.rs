@@ -320,6 +320,10 @@ impl Compiler {
         branch: &[Stmt],
         is_statement_modifier: bool,
     ) {
+        self.compile_if_statement_branch_body(branch, is_statement_modifier);
+    }
+
+    fn compile_if_statement_branch_body(&mut self, branch: &[Stmt], is_statement_modifier: bool) {
         if Self::has_block_enter_leave_phasers(branch) {
             // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
             // scope: its LEAVE must fire when the branch exits (OO::Monitors
@@ -360,11 +364,13 @@ impl Compiler {
                 body_end: 0,
                 value_on_stack: needs_value,
             });
-            if needs_value {
-                self.compile_body_with_implicit_try_value(branch);
-            } else {
-                self.compile_body_with_implicit_try(branch);
-            }
+            self.with_branch_import_region(branch, is_statement_modifier, |c| {
+                if needs_value {
+                    c.compile_body_with_implicit_try_value(branch);
+                } else {
+                    c.compile_body_with_implicit_try(branch);
+                }
+            });
             self.code.patch_let_block_end(idx);
             if needs_value {
                 // The frame peeks the body value to decide a real `let`, so
@@ -372,7 +378,27 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
         } else {
-            self.compile_body_with_implicit_try(branch);
+            self.with_branch_import_region(branch, is_statement_modifier, |c| {
+                c.compile_body_with_implicit_try(branch)
+            });
+        }
+    }
+
+    /// Bracket an `if` branch body in an import region (#15698): a branch is a
+    /// block, so its imports are lexical to it. A statement modifier is no block.
+    /// The region sits inside the branch's other scope opcodes
+    /// (`BlockLocalScope`, `LetBlock`), which restore the env wholesale on exit
+    /// and so must close after the region's layer.
+    pub(super) fn with_branch_import_region(
+        &mut self,
+        branch: &[Stmt],
+        is_statement_modifier: bool,
+        body: impl FnOnce(&mut Self),
+    ) {
+        if is_statement_modifier {
+            body(self);
+        } else {
+            self.with_import_scope_region(branch, body);
         }
     }
 }

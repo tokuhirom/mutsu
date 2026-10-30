@@ -677,7 +677,11 @@ impl Compiler {
         });
         // `succeed_boundary: true` already absorbs the succeed at exactly this
         // level, so the body does not need its own `SucceedBarrier`.
-        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try_inner(stmts, false));
+        self.in_scope_restored_body(|c| {
+            c.with_branch_import_region(stmts, false, |c| {
+                c.compile_body_with_implicit_try_inner(stmts, false)
+            })
+        });
         self.code.patch_block_local_body_end(idx);
     }
 
@@ -695,11 +699,13 @@ impl Compiler {
                 body_end: 0,
                 value_on_stack: needs_value,
             });
-            if needs_value {
-                c.compile_body_with_implicit_try_value(stmts);
-            } else {
-                c.compile_body_with_implicit_try(stmts);
-            }
+            c.with_branch_import_region(stmts, false, |c| {
+                if needs_value {
+                    c.compile_body_with_implicit_try_value(stmts);
+                } else {
+                    c.compile_body_with_implicit_try(stmts);
+                }
+            });
             c.code.patch_let_block_end(let_idx);
             if needs_value {
                 // Keep the block-local scope stack-balanced after the frame
