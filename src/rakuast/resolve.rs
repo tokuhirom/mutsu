@@ -22,6 +22,12 @@
 //!   `Declaration::External::Constant`. Their `compile-time-value` is looked up
 //!   from the interpreter on demand (see `rakuast_node.rs`).
 //!
+//! - a unit-declared sub to a stub copy of its `RakuAST::Sub` (without the body,
+//!   so the tree stays acyclic); a unit-declared package to a
+//!   `Declaration::LexicalPackage`; an imported routine to a
+//!   `Declaration::Import`. Subs and packages are visible in their whole scope
+//!   (they are hoisted), so a use before the declaration resolves too.
+//!
 //! Everything else (dynamic variables, unknown names) stays unresolved.
 
 use std::collections::HashMap;
@@ -79,6 +85,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let opened = opens_scope(node.class);
     if opened {
         scopes.0.push(HashMap::new());
+        hoist(node, scopes);
     }
     let parameter_type = (node.class == C::Parameter)
         .then(|| type_name_of(node))
@@ -105,6 +112,61 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     }
     if let Some(resolution) = resolve(node, scopes) {
         node.origin.2 = Some(resolution);
+    }
+}
+
+/// Register the subs and packages `node`'s own scope declares, before its
+/// statements are walked (they are visible from the start of the scope).
+// Cost: O(size of the scope's statements, not counting nested scopes).
+fn hoist(node: &RakuAstNode, scopes: &mut Scopes) {
+    for field in &node.fields {
+        match &field.value {
+            RakuAstFieldValue::Node(child) => hoist_child(child, scopes),
+            RakuAstFieldValue::List(items) => {
+                for item in items {
+                    hoist_child(item, scopes);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// Cost: O(size of the subtree, not counting nested scopes).
+fn hoist_child(child: &Value, scopes: &mut Scopes) {
+    let ValueView::RakuAst(held) = child.view() else {
+        return;
+    };
+    if let Some(name) = super::declared_routines::declared_by(held)
+        && held.class == C::Sub
+    {
+        let mut stub = RakuAstNode::clone(held);
+        stub.fields.retain(|f| f.name != Some("body"));
+        scopes.declare(format!("&{name}"), Value::rakuast(Box::new(stub)));
+    } else if matches!(held.class, C::Class | C::Role | C::Grammar | C::Module | C::Package)
+        && let Some(name) = package_name(held)
+        && let Some(package) = external("RakuAST::Declaration::LexicalPackage", &name)
+    {
+        scopes.declare(name, package);
+    }
+    if !opens_scope(held.class) {
+        hoist(held, scopes);
+    }
+}
+
+/// The identifier a package declaration (`class Bar`) is named by.
+// Cost: O(f), f = fields of the node.
+fn package_name(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|f| f.name == Some("name"))?;
+    let RakuAstFieldValue::Node(name) = &field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(name) = name.view() else {
+        return None;
+    };
+    match super::name_parts::name_shape(name) {
+        Some(super::name_parts::NameShape::Identifier(name)) => Some(name),
+        _ => None,
     }
 }
 
@@ -259,16 +321,25 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
         }
         C::CallName | C::CallNameWithoutParentheses => {
             let name = call_name_str(node).ok()?;
-            if scopes.find(&format!("&{name}")).is_some()
-                || super::declared_routines::is_declared(&name)
-                || !crate::runtime::Interpreter::is_builtin_function(&name)
-            {
+            if let Some(declared) = scopes.find(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
+            if super::declared_routines::is_declared(&name) {
+                return None;
+            }
+            if super::declared_routines::is_user_call(node) {
+                return external("RakuAST::Declaration::Import", &format!("&{name}"));
+            }
+            if !crate::runtime::Interpreter::is_builtin_function(&name) {
                 return None;
             }
             external_setting(&name)
         }
         C::TypeSimple | C::TypeSetting => {
             let name = type_node_name(node)?;
+            if let Some(package) = scopes.find(&name) {
+                return Some(package.clone());
+            }
             if !crate::core_type_names::contains(&name) {
                 return None;
             }

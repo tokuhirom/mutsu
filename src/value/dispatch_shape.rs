@@ -315,6 +315,10 @@ pub(crate) enum DispatchShape {
     RakuAstDeclarationExternalSetting,
     /// `RakuAST::Declaration::External::Constant` (opaque).
     RakuAstDeclarationExternalConstant,
+    /// `RakuAST::Declaration::Import` (opaque).
+    RakuAstDeclarationImport,
+    /// `RakuAST::Declaration::LexicalPackage` (opaque).
+    RakuAstDeclarationLexicalPackage,
 }
 
 impl DispatchShape {
@@ -420,6 +424,8 @@ impl DispatchShape {
         DispatchShape::RakuAstOriginMatch,
         DispatchShape::RakuAstDeclarationExternalSetting,
         DispatchShape::RakuAstDeclarationExternalConstant,
+        DispatchShape::RakuAstDeclarationImport,
+        DispatchShape::RakuAstDeclarationLexicalPackage,
         DispatchShape::Iterator,
         DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
