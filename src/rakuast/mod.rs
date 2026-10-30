@@ -3439,6 +3439,17 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(resolve::declared_type(node));
     }
+    if method == "is-block-statement" {
+        match node.class {
+            // A statement ends where its block does, or at a semicolon.
+            RakuAstClass::StatementExpression => return Some(Value::TRUE),
+            // A block is a block statement when it is a statement itself.
+            RakuAstClass::Block | RakuAstClass::PointyBlock => {
+                return Some(Value::truth(node.origin.2.is_some()));
+            }
+            _ => {}
+        }
+    }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }
@@ -3630,6 +3641,12 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if matches!(class, RakuAstClass::StatementList | RakuAstClass::SemiList) {
         names.push("code-statements");
     }
+    if matches!(
+        class,
+        RakuAstClass::StatementExpression | RakuAstClass::Block | RakuAstClass::PointyBlock
+    ) {
+        names.push("is-block-statement");
+    }
     if class == RakuAstClass::VarDeclarationSimple {
         names.push("container-type");
     }
@@ -3640,6 +3657,8 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::Sub
             | RakuAstClass::Method
             | RakuAstClass::Submethod
+            | RakuAstClass::TypeCapture
+            | RakuAstClass::VarDeclarationConstant
     ) {
         names.push("compile-time-value");
     }

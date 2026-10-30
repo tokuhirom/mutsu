@@ -93,6 +93,7 @@ fn opens_scope(class: C) -> bool {
 // Cost: O(size of the subtree * d).
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let opened = opens_scope(node.class);
+    let node_class = node.class;
     if opened {
         scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
@@ -120,7 +121,19 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
                 }
                 visit_child(child, scopes);
             }
-            RakuAstFieldValue::Node(child) => visit_child(child, scopes),
+            RakuAstFieldValue::Node(child) => {
+                visit_child(child, scopes);
+                // A block that is a statement's expression is a block statement.
+                if node_class == C::StatementExpression
+                    && field.name == Some("expression")
+                    && let ValueView::RakuAst(held) = child.view()
+                    && matches!(held.class, C::Block | C::PointyBlock)
+                {
+                    let mut marked = RakuAstNode::clone(held);
+                    marked.origin.2 = Some(Value::TRUE);
+                    *child = Value::rakuast(Box::new(marked));
+                }
+            }
             RakuAstFieldValue::List(items) => {
                 for item in items {
                     visit_child(item, scopes);

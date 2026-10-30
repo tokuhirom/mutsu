@@ -343,6 +343,13 @@ impl Interpreter {
         result
     }
 
+    /// `EVAL` of a RakuAST node, for the rows that read a node's value at
+    /// compile time (`VarDeclaration::Constant.compile-time-value`).
+    // Cost: O(size of the node) to lower plus the evaluation itself.
+    pub(crate) fn eval_rakuast_node(&mut self, node: &Value) -> Result<Value, RuntimeError> {
+        self.builtin_eval(std::slice::from_ref(node))
+    }
+
     pub(super) fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // EVAL of a RakuAST node (ADR-0011 Phase 5): lower it to the internal AST
         // and run it through the existing evaluator — no new execution engine.

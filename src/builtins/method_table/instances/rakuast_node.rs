@@ -276,15 +276,28 @@ fn sub_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    // One row serves the routine kinds (the first owner that declares a name
-    // is the only one the walk asks).
-    if matches!(
-        node.class,
-        crate::rakuast::RakuAstClass::Method | crate::rakuast::RakuAstClass::Submethod
-    ) {
-        return method_value(interp, target, _args, _named);
+    // One row serves the declaration kinds (the first owner that declares a
+    // name is the only one the walk asks).
+    use crate::rakuast::RakuAstClass as K;
+    match node.class {
+        K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // `::T` stands for a type nobody has bound yet.
+        K::TypeCapture => return Some(Ok(Value::package(Symbol::intern("Any")))),
+        // A constant's value is its initializer's, evaluated now.
+        K::VarDeclarationConstant => {
+            let init = crate::rakuast::node_accessor(node, "initializer")?;
+            let ValueView::RakuAst(init) = init.view() else {
+                return None;
+            };
+            let expression = crate::rakuast::node_accessor(init, "expression")?;
+            return Some(interp.eval_rakuast_node(&expression));
+        }
+        _ => {}
     }
-    let name = crate::rakuast::declared_sub_name(node)?;
+    let Some(name) = crate::rakuast::declared_sub_name(node) else {
+        // An anonymous sub is its own closure.
+        return (node.class == K::Sub).then(|| interp.eval_rakuast_node(target));
+    };
     let routine = interp.resolve_code_var(&name);
     // A CHECK phaser runs before the unit's subs are installed as lexicals,
     // but they are already in the function table (preregistered).
