@@ -648,6 +648,11 @@ impl Compiler {
         // so the program scope is this routine's lexical outer.
         sub_compiler.code.outer_is_unit =
             !(self.is_routine || self.lexically_in_routine || self.in_closure_body);
+        // The import sets of the blocks the declaration sits in: the frame
+        // does not hide what those blocks' `use`s imported
+        // (`hide_unit_names_from_frame`).
+        sub_compiler.code.enclosing_import_chain =
+            self.lexical_import_chain.iter().rev().copied().collect();
         sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
