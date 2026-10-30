@@ -354,7 +354,12 @@ impl Compiler {
     /// its own again as the body compiles.
     // Cost: O(s * c), s = call-site chains of `origin`, c = sets per chain.
     pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
-        self.import_region_chain = origin.enclosing_import_regions.iter().rev().copied().collect();
+        self.import_region_chain = origin
+            .enclosing_import_regions
+            .iter()
+            .rev()
+            .copied()
+            .collect();
         let mut chains = origin.lexical_import_chains.iter();
         let Some(first) = chains.next() else {
             // No call site recorded a chain: the body still starts inside the
