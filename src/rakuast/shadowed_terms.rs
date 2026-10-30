@@ -106,6 +106,12 @@ pub(super) fn declares_package(name: &str) -> bool {
 }
 
 fn visit_packages(node: &RakuAstNode, found: &mut HashSet<String>) {
+    if super::passthrough::is_leaf(node) {
+        let mut facts = super::passthrough::ScopeFacts::default();
+        super::passthrough::scope_facts_of(node, &mut facts);
+        found.extend(facts.packages);
+        return;
+    }
     if matches!(
         node.class,
         RakuAstClass::Class
@@ -144,6 +150,12 @@ pub(super) fn is_declared_term(name: &str) -> bool {
 }
 
 fn visit_terms(node: &RakuAstNode, found: &mut HashSet<String>) {
+    if super::passthrough::is_leaf(node) {
+        let mut facts = super::passthrough::ScopeFacts::default();
+        super::passthrough::scope_facts_of(node, &mut facts);
+        found.extend(facts.terms);
+        return;
+    }
     let declared = match node.class {
         RakuAstClass::VarDeclarationTerm => named_child(node, "name").ok(),
         RakuAstClass::ParameterTargetTerm => named_child_or_positional(node).ok(),
@@ -203,6 +215,12 @@ fn is_term_declaration(class: RakuAstClass) -> bool {
 }
 
 fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
+    if super::passthrough::is_leaf(node) {
+        let mut facts = super::passthrough::ScopeFacts::default();
+        super::passthrough::scope_facts_of(node, &mut facts);
+        found.extend(facts.terms);
+        return;
+    }
     let in_decl = in_decl || is_term_declaration(node.class);
     for field in &node.fields {
         // The initializer of `constant p = pi` / `my \p = pi` reads terms, it

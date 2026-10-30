@@ -415,6 +415,51 @@ pub(super) fn declared_routines_of(
     });
 }
 
+/// The names a unit declares that `lower` resolves other names against
+/// (`shadowed_terms`): sigilless terms and the packages a carried tree holds.
+#[derive(Default)]
+pub(super) struct ScopeFacts {
+    pub(super) terms: std::collections::HashSet<String>,
+    pub(super) packages: std::collections::HashSet<String>,
+}
+
+/// The scope facts the tree a leaf carries declares; the node scans of
+/// `shadowed_terms` cannot see inside a leaf, so they ask it.
+// Cost: O(n), n = nodes of the carried tree.
+pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
+    struct Facts<'f>(&'f mut ScopeFacts);
+    impl<'ast> crate::ast_visit::Visit<'ast> for Facts<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                Stmt::Ast(node) => {
+                    if let ParsedStmt::SigillessDecl(source) = node.as_ref() {
+                        self.0.terms.insert(source.name.clone());
+                    }
+                }
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::Package { name, .. } => {
+                    self.0.packages.insert(name.resolve());
+                }
+                _ => {}
+            }
+            crate::ast_visit::walk_stmt(self, stmt);
+        }
+    }
+    let Ok(at) = slot(node) else { return };
+    TABLE.with(|t| {
+        let table = t.borrow();
+        let Some(Some(slot)) = table.as_ref().and_then(|t| t.get(at)) else {
+            return;
+        };
+        let mut facts = Facts(facts);
+        match &slot.held {
+            Held::Expr(e) => crate::ast_visit::Visit::visit_expr(&mut facts, e),
+            Held::Stmt(s) => crate::ast_visit::Visit::visit_stmt(&mut facts, s),
+        }
+    });
+}
+
 /// The expression a leaf carries.
 // Cost: O(e), e = nodes of the tree (one clone).
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
