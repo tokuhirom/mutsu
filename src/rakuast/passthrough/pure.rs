@@ -139,17 +139,13 @@ impl Purity {
                 associativity: None,
                 precedence_trait: None,
                 signature_alternates,
-                export_tags,
                 custom_traits,
-                is_export: false,
                 is_test_assertion: false,
                 supersede: false,
                 is_hidden_from_backtrace: false,
                 ..
             } => {
-                signature_alternates.is_empty()
-                    && export_tags.is_empty()
-                    && custom_traits.is_empty()
+                signature_alternates.is_empty() && custom_traits.is_empty()
             }
             // A plain method, with the same conditions.
             Stmt::MethodDecl {
@@ -274,13 +270,10 @@ fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
 }
 
 fn pure_param(param: &ParamDef) -> bool {
-    param.default.is_none()
-        && param.where_constraint.is_none()
-        && param.sub_signature.is_none()
+    param.sub_signature.is_none()
         && param.outer_sub_signature.is_none()
         && param.code_signature.is_none()
         && param.shape_constraints.is_none()
-        && param.literal_value.is_none()
         && param.type_capture.is_none()
         && param.no_traits()
         && param.trait_args.is_empty()
