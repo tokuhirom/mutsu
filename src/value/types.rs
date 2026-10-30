@@ -116,8 +116,21 @@ pub(crate) fn parametric_role_name(base_name: &str, type_args: &[Value]) -> Stri
 /// [`parametric_role_name`] as a human sees it (`.^name`, `.gist`, `.raku`):
 /// a lexical role's declaration-site key (`R\u{0}<id>`, ADR-0047) is dropped.
 /// The raw name stays the identity key compositions are matched on.
+///
+/// Rakudo leaves the named arguments out of the name (`NT[Int, :coerce(&cf)]`
+/// is `NT[Int]`, #15504); the identity name keeps them, since two
+/// concretizations of one role must stay distinguishable to the composition
+/// machinery.
 pub(crate) fn parametric_role_display_name(base_name: &str, type_args: &[Value]) -> String {
-    crate::value::user_facing_type_name(&parametric_role_name(base_name, type_args)).into_owned()
+    let positional: Vec<Value> = type_args
+        .iter()
+        .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+        .cloned()
+        .collect();
+    if positional.is_empty() && !type_args.is_empty() {
+        return crate::value::user_facing_type_name(base_name).into_owned();
+    }
+    crate::value::user_facing_type_name(&parametric_role_name(base_name, &positional)).into_owned()
 }
 
 pub(crate) fn what_type_name(val: &Value) -> String {

@@ -106,6 +106,47 @@ pub(crate) fn parse_generic_suffix(input: &str) -> PResult<'_, String> {
     Ok((&input[end..], input[..end].to_string()))
 }
 
+/// Drop the named arguments (`:coerce(&cf)`) from the bracketed argument text
+/// `suffix` (`[Int, :coerce(&cf)]`) of a parameterized type: rakudo names and
+/// checks `NT[Int, :coerce(&cf)]` as `NT[Int]` (#15504), so a constraint
+/// carries the positional arguments only. A suffix left with none is empty.
+// Cost: O(n), n = length of the suffix.
+fn strip_named_role_args(suffix: String) -> String {
+    let Some(inner) = suffix.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
+        return suffix;
+    };
+    let mut items: Vec<&str> = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (idx, b) in inner.bytes().enumerate() {
+        match b {
+            b'[' | b'(' | b'{' => depth += 1,
+            b']' | b')' | b'}' => depth -= 1,
+            b',' if depth == 0 => {
+                items.push(inner[start..idx].trim());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    items.push(inner[start..].trim());
+    let is_named = |item: &str| {
+        item.strip_prefix(':')
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && !matches!(item, ":D" | ":U" | ":_")
+    };
+    let named = items.iter().any(|item| is_named(item));
+    let kept: Vec<&str> = items.into_iter().filter(|item| !is_named(item)).collect();
+    if !named {
+        return suffix;
+    }
+    if kept.is_empty() {
+        return String::new();
+    }
+    format!("[{}]", kept.join(", "))
+}
+
 pub(crate) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> {
     // Handle ::?CLASS and ::?ROLE pseudo-types
     let (mut rest, mut type_name) = if let Some(r) = input.strip_prefix("::?CLASS") {
@@ -151,7 +192,7 @@ pub(crate) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
     };
     while rest.starts_with('[') {
         let (r2, suffix) = parse_generic_suffix(rest).ok()?;
-        type_name.push_str(&suffix);
+        type_name.push_str(&strip_named_role_args(suffix));
         rest = r2;
     }
     if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
@@ -163,7 +204,7 @@ pub(crate) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
         // always sees the canonical `Name[params]:D` form.
         while rest.starts_with('[') {
             let (r2, suffix) = parse_generic_suffix(rest).ok()?;
-            type_name.push_str(&suffix);
+            type_name.push_str(&strip_named_role_args(suffix));
             rest = r2;
         }
         type_name.push_str(smiley);
