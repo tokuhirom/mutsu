@@ -3,7 +3,7 @@ use Test;
 # `$x.&f(args)` is the call `f($x, args)`: same sub, same multi pick, the
 # invocant binds as the first positional (and as its container for `is rw`),
 # and a visible `my &f` or an enclosing lexical sub keeps its meaning.
-plan 12;
+plan 14;
 
 sub double($n) { $n * 2 }
 sub add($a, $b) { $a + $b }
@@ -38,3 +38,8 @@ is-deeply @out, [2, 4, 6], 'inside a loop';
 is (1, 2, 3).&elems, 3, 'a core routine through .&';
 sub opt($v, :$by = 1) { $v * $by }
 is $x.&opt(:by(3)), 15, 'a named argument after the invocant';
+
+# Names that are not a plain routine keep their own meaning.
+is (3,).map({ $_ > 1 ?? ($_ - 1).&?BLOCK !! $_ }).raku, '(1,).Seq', '.&?BLOCK recurses into the block';
+my &*dyn = -> $v { $v + 2 };
+is 3.&*dyn, 5, 'a dynamic code variable called with .&*name';

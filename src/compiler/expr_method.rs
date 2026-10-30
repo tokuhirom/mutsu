@@ -1045,8 +1045,10 @@ impl Compiler {
             // sub to the code-variable form, so those keep their meaning.
             if let Expr::CodeVar(name) = name_expr
                 && !name.contains("::")
-                && !name.is_empty()
-                && !name.starts_with(|c: char| c.is_ascii_digit())
+                // An identifier only: `.&?BLOCK`, `.&*f` (a dynamic variable)
+                // and the like name something other than a declared routine.
+                && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '\''))
             {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern(name),
