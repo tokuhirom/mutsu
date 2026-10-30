@@ -74,7 +74,7 @@ impl Interpreter {
                     // the path and then answered Nil.
                     // A scoped family's export holds the candidates the module
                     // imported too, which a by-name read of its own does not.
-                    let mut code = if self.operator_has_import_scope(name) {
+                    let mut code = if !name.contains(":<") && self.operator_has_import_scope(name) {
                         self.export_alias_code_value(module, name)
                     } else {
                         Value::NIL
@@ -660,6 +660,7 @@ impl Interpreter {
             .get(&qualified(pkg, name_sym))
             .cloned();
         let pkg_str = pkg.as_str();
+        let is_exact = exact.is_some();
         let mut candidates: Vec<(Symbol, Arc<FunctionDef>)> = match exact {
             Some(def) => vec![(qualified(pkg, name_sym), def)],
             None => self
@@ -682,7 +683,7 @@ impl Interpreter {
         // extends that family: its `&name` holds the imported candidates too.
         let unit = self.unit_of_source(candidates[0].1.source_file.as_deref());
         let imported = self.imported_family_candidates(unit, name);
-        if candidates.len() == 1 && imported.is_empty() {
+        if is_exact && imported.is_empty() {
             return self.sub_value_from_function_def((*candidates[0].1).clone());
         }
         candidates.extend(imported);

@@ -334,6 +334,10 @@ impl Interpreter {
         unit: Symbol,
         name: &str,
     ) -> Vec<(Symbol, Arc<FunctionDef>)> {
+        // An operator family is ranked per importer (`operator_candidate_visible`).
+        if name.contains(":<") {
+            return Vec::new();
+        }
         let Some(name_sym) = Symbol::lookup(name) else {
             return Vec::new();
         };
