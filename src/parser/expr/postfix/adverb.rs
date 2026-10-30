@@ -11,9 +11,9 @@
 //! `ParsedExpr::SubscriptAdverbs` node.
 
 use super::call_method::has_ternary_else_after;
+use crate::ast::Expr;
 use crate::ast::parsed::{ParsedExpr, SubscriptAdverbs};
 use crate::ast::subscript_adverb::pair_key;
-use crate::ast::Expr;
 use crate::parser::helpers::ws;
 use crate::value::Value;
 
@@ -45,7 +45,9 @@ pub(crate) fn scan_subscript_adverbs(input: &str) -> Option<(&str, Vec<Expr>)> {
             break;
         }
         let pair = if canonical != name
-            && let Expr::Binary { op, right, form, .. } = pair
+            && let Expr::Binary {
+                op, right, form, ..
+            } = pair
         {
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(canonical))),

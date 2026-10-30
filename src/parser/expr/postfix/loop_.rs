@@ -1,11 +1,11 @@
 use super::adverb::{
-    has_exists_adverb, scan_subscript_adverbs, subscript_adverbs_expr, supports_postfix_call_adverbs,
+    has_exists_adverb, scan_subscript_adverbs, subscript_adverbs_expr,
+    supports_postfix_call_adverbs,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
-    is_postfix_operator_boundary, parse_bracket_indices_inner,
-    parse_custom_postfix_operator, parse_prefix_as_postfix, parse_private_method_name,
-    parse_quoted_method_name,
+    is_postfix_operator_boundary, parse_bracket_indices_inner, parse_custom_postfix_operator,
+    parse_prefix_as_postfix, parse_private_method_name, parse_quoted_method_name,
 };
 use super::dot_assign::{
     atomic_elem_update, atomic_operator_call, atomic_var_name, parse_dot_assign,
@@ -2352,10 +2352,7 @@ fn postfix_expr_loop_from<'a>(
 
         // Adverbs on a subscript (`@a[0]:exists`, `%h<a>:delete:k`, `@a[1] :foo`):
         // the colonpairs written after it, kept as the postcircumfix's own.
-        if matches!(
-            &expr,
-            Expr::Index { .. } | Expr::MultiDimIndex { .. }
-        ) {
+        if matches!(&expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) {
             let (r_adv, _) = ws(rest)?;
             if let Some((r_after, pairs)) = scan_subscript_adverbs(r_adv) {
                 expr = subscript_adverbs_expr(expr, pairs);
