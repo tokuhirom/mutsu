@@ -223,7 +223,7 @@ non-import write) or by an explicit import layer below the block tier.
 
 The grant is excluded from the tier merge by its key prefix, which is a closed
 set. The other kinds write ordinary-looking keys (`&name`, a type name, a term
-key `\\name`, an enum bare key), so a prefix cannot separate them from the
+key `\name`, an enum bare key), so a prefix cannot separate them from the
 region's non-import writes. Two ways to separate them:
 
 1. **Key list at exit (today's rule, moved).** The tier exit drops the keys
