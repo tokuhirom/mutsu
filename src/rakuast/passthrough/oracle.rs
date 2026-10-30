@@ -1,58 +1,64 @@
-//! The differential oracle of the cut-over (ADR-15334 slice 9): for every file of
-//! a list, the lowered tree of the default round trip (leaves) must equal the
-//! lowered tree of the convert level (every node through `convert` and `lower`).
-//! A family may be carried as a leaf only while the two agree.
+//! Survey of what the executing round trip still converts (ADR-15334 slice 9):
+//! counts, per statement variant, the statements of a file list that
+//! the purity test refuses, so the cut-over starts from the largest family.
 //!
-//! `ORACLE_FILES=list.txt cargo test --lib oracle_corpus -- --ignored --nocapture`
+//! `ORACLE_FILES=list.txt cargo test --lib convert_survey -- --ignored --nocapture`
+
+use std::collections::BTreeMap;
 
 use crate::ast::Stmt;
-use crate::rakuast::frontend::{CONVERT_OVERRIDE, round_trip};
+use crate::ast_visit::{Visit, walk_stmt};
 
-fn shape(stmts: &[Stmt]) -> Vec<String> {
-    stmts
-        .iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(..)))
-        .map(|s| format!("{s:?}"))
-        .collect()
-}
+#[derive(Default)]
+struct Survey(BTreeMap<String, (usize, usize)>);
 
-fn lowered(stmts: &[Stmt], convert: bool) -> Result<Vec<String>, String> {
-    CONVERT_OVERRIDE.with(|c| c.set(Some(convert)));
-    let out = round_trip(stmts);
-    CONVERT_OVERRIDE.with(|c| c.set(None));
-    out.map(|s| shape(&s)).map_err(|e| e.message)
+impl<'ast> Visit<'ast> for Survey {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        let name = format!("{stmt:?}");
+        let name = name
+            .split(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let entry = self.0.entry(name).or_default();
+        if super::pure::analyse_stmt(stmt).is_some() {
+            entry.0 += 1;
+        } else {
+            entry.1 += 1;
+        }
+        walk_stmt(self, stmt);
+    }
 }
 
 #[test]
 #[ignore]
-fn oracle_corpus() {
+fn convert_survey() {
     let Ok(list) = std::env::var("ORACLE_FILES") else {
         return;
     };
-    let mut diverged = 0;
-    for path in std::fs::read_to_string(list).unwrap().lines() {
-        let Ok(source) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let Ok((spelled, _)) = crate::parse_dispatch::parse_source_spelled(&source) else {
-            continue;
-        };
-        let leaf = lowered(&spelled, false);
-        let full = lowered(&spelled, true);
-        match (leaf, full) {
-            (Ok(a), Ok(b)) if a == b => {}
-            (Ok(a), Ok(b)) => {
-                diverged += 1;
-                let at = a.iter().zip(&b).position(|(x, y)| x != y).unwrap_or(0);
-                let cut = |s: Option<&String>| s.map(|s| s.chars().take(300).collect::<String>());
-                println!(
-                    "DIVERGE {path} at {at}\n  leaf:    {:?}\n  convert: {:?}",
-                    cut(a.get(at)),
-                    cut(b.get(at))
-                );
+    let run = move || {
+        let mut survey = Survey::default();
+        for path in std::fs::read_to_string(list).unwrap().lines() {
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok((spelled, _)) = crate::parse_dispatch::parse_source_spelled(&source) else {
+                continue;
+            };
+            for stmt in &spelled {
+                survey.visit_stmt(stmt);
             }
-            (a, b) => println!("ERR {path}: leaf={:?} convert={:?}", a.err(), b.err()),
         }
-    }
-    println!("diverged: {diverged}");
+        let mut rows: Vec<_> = survey.0.into_iter().filter(|(_, (_, n))| *n > 0).collect();
+        rows.sort_by_key(|(_, (_, n))| std::cmp::Reverse(*n));
+        for (name, (carried, converted)) in rows {
+            println!("{name}\tcarried={carried}\tconverted={converted}");
+        }
+    };
+    std::thread::Builder::new()
+        .stack_size(512 << 20)
+        .spawn(run)
+        .unwrap()
+        .join()
+        .unwrap();
 }
