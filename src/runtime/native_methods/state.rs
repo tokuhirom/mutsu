@@ -99,6 +99,13 @@ fn supply_taps_map() -> &'static SupplyTapsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type SupplyTapLineModesMap = std::sync::Mutex<HashMap<u64, Vec<Option<bool>>>>;
+
+fn supply_tap_line_modes_map() -> &'static SupplyTapLineModesMap {
+    static MAP: OnceLock<SupplyTapLineModesMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 type SupplyCollectedMap = std::sync::Mutex<HashMap<u64, String>>;
 
 fn supply_collected_map() -> &'static SupplyCollectedMap {
@@ -997,9 +1004,50 @@ pub(crate) fn next_supplier_id() -> u64 {
 }
 
 pub(in crate::runtime) fn register_supply_tap(supply_id: u64, tap: Value) {
+    register_supply_tap_with_lines(supply_id, tap, None);
+}
+
+/// [`register_supply_tap`] for a tap on a `.lines` view of a Proc::Async output
+/// stream: `lines_chomp` is `Some(chomp)` when the tap wants the stream split
+/// into lines (the stream itself delivers chunks), `None` for a raw tap.
+/// Recorded index-aligned with the taps, see [`get_supply_tap_line_modes`].
+// Cost: O(1) amortized.
+pub(in crate::runtime) fn register_supply_tap_with_lines(
+    supply_id: u64,
+    tap: Value,
+    lines_chomp: Option<bool>,
+) {
     if let Ok(mut map) = supply_taps_map().lock() {
         map.entry(supply_id).or_default().push(tap);
+        if let Ok(mut modes) = supply_tap_line_modes_map().lock() {
+            let modes = modes.entry(supply_id).or_default();
+            // Keep the modes index-aligned with the taps even if a tap was
+            // ever registered without one.
+            let taps = map.get(&supply_id).map_or(0, Vec::len);
+            while modes.len() + 1 < taps {
+                modes.push(None);
+            }
+            modes.push(lines_chomp);
+        }
     }
+}
+
+/// The line mode of each tap on `supply_id`, aligned with [`get_supply_taps`]:
+/// `Some(chomp)` for a tap on a `.lines` view, `None` for a raw one.
+// Cost: O(t), t = taps on the supply.
+pub(in crate::runtime) fn get_supply_tap_line_modes(supply_id: u64) -> Vec<Option<bool>> {
+    let taps = supply_taps_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supply_id).map(Vec::len))
+        .unwrap_or(0);
+    let mut modes = supply_tap_line_modes_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supply_id).cloned())
+        .unwrap_or_default();
+    modes.resize(taps, None);
+    modes
 }
 
 pub(in crate::runtime) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
