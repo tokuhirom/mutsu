@@ -567,6 +567,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let end = body_end as usize;
         self.push_import_scope();
+        // The region's block-level module-merge grants (`MetaNs::ModuleMerge`)
+        // live in a tier of their own: it is dropped with the region, so
+        // they need no key list and no restore (ADR-14140).
+        let tier = self.open_block_env_tier();
         let result = self.run_range(code, *ip + 1, end, compiled_fns);
         // LEAVE phasers a `use` in the body attached to this scope
         // (`runtime::attach_target`) run before the imports roll back, on
@@ -578,6 +582,21 @@ impl Interpreter {
             self.run_attached_leave_phasers(phasers)
         };
         self.pop_import_scope();
+        let closed = self.close_block_env_tier(tier);
+        let mut restored = closed.base;
+        let grant = crate::meta_ns::MetaNs::ModuleMerge.prefix();
+        for (key, value) in closed.writes.iter() {
+            if key.with_str(|k| k.starts_with(grant)) {
+                continue;
+            }
+            restored.insert_sym(*key, value.clone());
+        }
+        if let Some(removed) = closed.removed {
+            for key in removed {
+                restored.remove_sym(key);
+            }
+        }
+        *self.env_mut() = restored;
         result?;
         leave?;
         *ip = end;

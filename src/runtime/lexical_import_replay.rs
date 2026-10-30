@@ -33,6 +33,8 @@ pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
     /// whether `record_import_env_key` noted them as the unit's imports.
     env_keys: Vec<(Symbol, Value, bool)>,
+    /// The modules whose packages the `use` merged into the block.
+    merged: Vec<Symbol>,
     /// The routine aliases it noted (`GLOBAL::name`).
     routine_aliases: Vec<Symbol>,
     /// Those of them the scope lists as its own imports (`MY::`).
@@ -61,6 +63,7 @@ pub(crate) struct ImportEffectProbe {
     aliases_before: Arc<HashSet<Symbol>>,
     env_keys_before: rustc_hash::FxHashSet<Symbol>,
     own_imports_before: rustc_hash::FxHashSet<Symbol>,
+    merged_before: rustc_hash::FxHashSet<Symbol>,
     had_export_args: bool,
 }
 
@@ -95,6 +98,12 @@ impl Interpreter {
                 .import_scope_stack
                 .last()
                 .map(|top| top.own_routine_imports.clone())
+                .unwrap_or_default(),
+            merged_before: self
+                .module
+                .import_scope_stack
+                .last()
+                .map(|top| top.merged_modules.clone())
                 .unwrap_or_default(),
             had_export_args: self.module.pending_use_export_args.is_some(),
         }
@@ -154,7 +163,6 @@ impl Interpreter {
             return None;
         }
         let top = self.module.import_scope_stack.last()?;
-        let merge = crate::meta_ns::MetaNs::ModuleMerge.prefix();
         let mut env_keys = Vec::new();
         for key in top.imported_env_keys.difference(&probe.env_keys_before) {
             let value = self.env.get_sym(*key)?;
@@ -162,7 +170,7 @@ impl Interpreter {
             // value is the same object on every run. Any other env alias the
             // import wrote (an exported variable, a term, a `&name` hook
             // value) is not replayed.
-            if !key.with_str(|k| k.starts_with(merge)) && !Self::replayable_import_value(value) {
+            if !Self::replayable_import_value(value) {
                 return None;
             }
             let noted = self.env_key_imported_here(*key);
@@ -179,8 +187,14 @@ impl Interpreter {
             .difference(&probe.own_imports_before)
             .copied()
             .collect();
+        let merged = top
+            .merged_modules
+            .difference(&probe.merged_before)
+            .copied()
+            .collect();
         Some(LexicalImportReplay {
             env_keys,
+            merged,
             routine_aliases,
             own_routine_imports,
             aliases_memo: (
@@ -248,6 +262,11 @@ impl Interpreter {
             }
             top.own_routine_imports
                 .extend(replay.own_routine_imports.iter().copied());
+            top.merged_modules.extend(replay.merged.iter().copied());
+        }
+        for module in &replay.merged {
+            self.env
+                .insert_sym(crate::meta_ns::MetaNs::ModuleMerge.key(*module), Value::TRUE);
         }
         for (key, value, _) in &replay.env_keys {
             self.env.insert_sym(*key, value.clone());
