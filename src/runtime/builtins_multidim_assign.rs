@@ -1062,6 +1062,18 @@ impl Interpreter {
         // TARGET must keep its container, but the assigned VALUE is an ordinary
         // rvalue — `$obj.attr = $p` stores what `$p` FETCHes.
         let value = self.fetch_proxy_for_store(args[3].clone())?;
+        // The assigned value is an rvalue: a variable argument arrives as the
+        // variable's own cell (`$msg.opcode = Binary`, an imported term), and
+        // storing that cell would alias the attribute to the variable. The
+        // next store then wrote the cell into itself (a cycle that hung every
+        // later read of the variable). An itemized share (`$o.a = @b`) keeps
+        // its cell: that flavour is the value-share mark (ADR-0097).
+        let value = match value.view() {
+            ValueView::ContainerRef(_) if !value.container_ref_is_itemized() => {
+                value.deref_container()
+            }
+            _ => value,
+        };
         // A list-valued accessor assignment (`$obj.data .= grep &pred`)
         // receives grep's lazy Seq as the rvalue.  Force it eagerly so an
         // `@`/`%` accessor's in-place replacement (`replace_container_contents`)
