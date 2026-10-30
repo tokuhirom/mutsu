@@ -17,7 +17,38 @@ impl Interpreter {
         if let ValueView::Sub(data) = block.view()
             && let Some(cc) = data.compiled_code.as_ref()
         {
-            for sym in &cc.free_var_syms {
+            // The block's own free variables, plus those of the closures it
+            // calls through a variable it captures (`my $work = { ... };
+            // start { $work() }`): the call reads `$work`'s free variables on
+            // the worker too, and they are not in this block's code, so
+            // without them a scalar written by that closure (`$done` under a
+            // `Lock.protect`) stayed on the name lane and resolved to another
+            // iteration's binding.
+            let mut free: Vec<crate::symbol::Symbol> = cc.free_var_syms.to_vec();
+            let mut seen_subs: Vec<*const ()> = Vec::new();
+            let mut i = 0;
+            while i < free.len() && free.len() < 512 {
+                let sym = free[i];
+                i += 1;
+                let sname = sym.resolve();
+                let bare = sname.trim_start_matches(['$', '&']);
+                if let Some(v) = self.env.get(bare).or_else(|| self.env.get(&sname))
+                    && let ValueView::Sub(inner) = v.deref_container().view()
+                    && let Some(icc) = inner.compiled_code.as_ref()
+                {
+                    let key = std::sync::Arc::as_ptr(icc) as *const ();
+                    if seen_subs.contains(&key) {
+                        continue;
+                    }
+                    seen_subs.push(key);
+                    for extra in &icc.free_var_syms {
+                        if !free.contains(extra) {
+                            free.push(*extra);
+                        }
+                    }
+                }
+            }
+            for sym in &free {
                 let name = sym.resolve();
                 if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
                     continue;
