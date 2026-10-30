@@ -489,7 +489,7 @@ pub(crate) fn register_inline_module_exports(module: &str, exports: Vec<InlineMo
         .into_iter()
         .map(|(name, precedence_trait, associativity)| {
             let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
-                resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+                trait_reference_level(ref_op).map(|ref_level| match trait_name.as_str() {
                     "tighter" => ref_level + 5,
                     "looser" => ref_level - 5,
                     _ => ref_level,
@@ -1074,6 +1074,20 @@ fn is_export_stash_package(package: &str) -> bool {
     !tag.is_empty() && !tag.contains("::")
 }
 
+/// The level an `is tighter/looser/equiv(&infix:<x>)` trait is relative to.
+///
+/// A scan reads the module after its parse scopes are gone, so an operator the
+/// module declared itself without a precedence trait of its own
+/// (`sub infix:«|>»(*@o) is export`) is no longer known; it sits at the
+/// trait-less additive level, as it did in the module's own parse.
+// Cost: O(1) plus `resolve_op_precedence`.
+fn trait_reference_level(ref_op: &str) -> Option<i32> {
+    resolve_op_precedence(ref_op).or_else(|| {
+        let op = ref_op.strip_prefix('&').unwrap_or(ref_op);
+        (op.starts_with("infix:<") || op.starts_with("infix:\u{ab}")).then_some(PREC_ADDITIVE)
+    })
+}
+
 /// The parser-facing export record of one routine declaration: its name plus
 /// a custom operator's precedence (resolved from an `is tighter/looser/equiv`
 /// trait against the referenced operator) and associativity.
@@ -1084,7 +1098,7 @@ pub(super) fn sub_export_entry(
     is_test_assertion: bool,
 ) -> InlineModuleExport {
     let precedence = precedence_trait.and_then(|(trait_name, ref_op)| {
-        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+        trait_reference_level(ref_op).map(|ref_level| match trait_name.as_str() {
             "tighter" => ref_level + 5,
             "looser" => ref_level - 5,
             _ => ref_level,
