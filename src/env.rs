@@ -997,8 +997,8 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+                    import_layer: 0,
+                    import_region: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base: None,
@@ -1026,8 +1026,8 @@ impl Env {
                 outer_is_foreign_unit: false,
                 owns_routine_state: false,
                 capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+                import_layer: 0,
+                import_region: 0,
                 frame_writes: None,
                 code_entries: None,
                 dyn_base: None,
@@ -1139,8 +1139,7 @@ impl Env {
         let (mut layer, parent_arc) = Env::open_block_tier(parent)?;
         drop(parent_arc);
         layer.import_layer = id;
-        let (mut tier, layer_arc) = Env::open_block_tier(layer)
-            .unwrap_or_else(|_| unreachable!("the layer is below the depth cap"));
+        let (mut tier, layer_arc) = Env::open_block_tier(layer)?;
         drop(layer_arc);
         tier.import_region = id;
         Ok(tier)
@@ -1156,18 +1155,23 @@ impl Env {
         let intact = self.import_region == id
             && self.fallback.is_none()
             && self.frame_writes.is_none()
-            && self.parent.as_ref().is_some_and(|layer| {
-                layer.import_layer == id && layer.parent.is_some()
-            });
+            && self
+                .parent
+                .as_ref()
+                .is_some_and(|layer| layer.import_layer == id && layer.parent.is_some());
         if !intact {
             return Err(self);
         }
-        let layer_arc = self.parent.take().expect("checked above");
+        let Some(layer_arc) = self.parent.take() else {
+            return Err(self);
+        };
         let overlay = std::mem::replace(&mut self.inner, empty_overlay());
         let tombstones = self.tombstones.take().map(|t| *t);
         drop(self);
         let mut layer = Arc::try_unwrap(layer_arc).unwrap_or_else(|a| (*a).clone());
-        let outer_arc = layer.parent.take().expect("checked above");
+        let Some(outer_arc) = layer.parent.take() else {
+            return Err(layer);
+        };
         let outer = Arc::try_unwrap(outer_arc).unwrap_or_else(|a| (*a).clone());
         Ok(ClosedImportRegion {
             overlay,
@@ -1200,16 +1204,20 @@ impl Env {
         if !self.has_import_layer(id) {
             return false;
         }
-        self.import_layer_mut(id).insert_sym(key, value);
-        true
+        match self.import_layer_mut(id) {
+            Some(layer) => {
+                layer.insert_sym(key, value);
+                true
+            }
+            None => false,
+        }
     }
 
-    fn import_layer_mut(&mut self, id: u32) -> &mut Env {
+    fn import_layer_mut(&mut self, id: u32) -> Option<&mut Env> {
         if self.import_layer == id {
-            return self;
+            return Some(self);
         }
-        let parent = self.parent.as_mut().expect("has_import_layer found the layer");
-        Arc::make_mut(parent).import_layer_mut(id)
+        Arc::make_mut(self.parent.as_mut()?).import_layer_mut(id)
     }
 
     /// What the import layer `id` binds, if the chain holds it.
@@ -1772,8 +1780,8 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
-            import_layer: 0,
-            import_region: 0,
+                    import_layer: 0,
+                    import_region: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base,

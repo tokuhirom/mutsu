@@ -15,6 +15,7 @@ use super::*;
 
 /// An env import region opened by [`Interpreter::open_import_region`].
 pub(crate) struct ImportRegion {
+    /// The layer's id; `0` when no region could be opened.
     id: u32,
 }
 
@@ -31,13 +32,20 @@ impl Interpreter {
         let id = crate::env::next_import_layer_id();
         let entry = std::mem::replace(self.env_mut(), Env::empty_placeholder());
         match Env::open_import_region(entry, id) {
-            Ok(tier) => *self.env_mut() = tier,
-            Err(_) => unreachable!("the chain was flattened below the depth cap"),
+            Ok(tier) => {
+                *self.env_mut() = tier;
+                if let Some(top) = self.module.import_scope_stack.last_mut() {
+                    top.import_layer = id;
+                }
+                ImportRegion { id }
+            }
+            // Not reachable after the flatten above; the imports then bind in
+            // the env itself, as for a scope with no region.
+            Err(env) => {
+                *self.env_mut() = env;
+                ImportRegion { id: 0 }
+            }
         }
-        if let Some(top) = self.module.import_scope_stack.last_mut() {
-            top.import_layer = id;
-        }
-        ImportRegion { id }
     }
 
     /// Leave an import region: the region's by-name writes merge into the
@@ -45,6 +53,9 @@ impl Interpreter {
     /// the import layer is dropped.
     // Cost: O(w), w = the region's by-name writes.
     pub(crate) fn close_import_region(&mut self, region: ImportRegion) {
+        if region.id == 0 {
+            return;
+        }
         let current = std::mem::replace(self.env_mut(), Env::empty_placeholder());
         match current.close_import_region(region.id) {
             Ok(closed) => {
