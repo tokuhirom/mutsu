@@ -1,17 +1,21 @@
 use super::Compiler;
 
-/// The `readonly_code_params` of the sub `name` declared in `src`.
+/// The `readonly_code_params` of the sub `name` declared in `src`; empty when
+/// the source does not parse or the sub is not compiled, which fails the
+/// assertions below.
 fn readonly_params(src: &str, name: &str) -> Vec<String> {
-    let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("source parses");
+    let Ok((stmts, _)) = crate::parse_dispatch::parse_source(src) else {
+        return vec!["<does not parse>".to_string()];
+    };
     let (code, fns) = Compiler::new().compile(&stmts);
-    let plan = code
+    let function = code
         .sub_decl_plans
         .iter()
         .find(|plan| plan.name.as_str() == name && !plan.compiled_routine_keys.is_empty())
-        .expect("the sub has a declaration plan");
-    let function = fns
-        .get(&plan.compiled_routine_keys[0])
-        .expect("the sub is compiled");
+        .and_then(|plan| fns.get(&plan.compiled_routine_keys[0]));
+    let Some(function) = function else {
+        return vec!["<not compiled>".to_string()];
+    };
     let mut names: Vec<String> = function
         .code
         .readonly_code_params
