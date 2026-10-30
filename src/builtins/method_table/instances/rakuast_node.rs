@@ -231,7 +231,16 @@ fn sub_value(
         return None;
     };
     let name = crate::rakuast::declared_sub_name(node)?;
-    Some(Ok(interp.resolve_code_var(&name)))
+    let routine = interp.resolve_code_var(&name);
+    // A CHECK phaser runs before the unit's subs are installed as lexicals,
+    // but they are already in the function table (preregistered).
+    if matches!(routine.view(), ValueView::Nil)
+        && !interp.has_proto(&name)
+        && let Some(def) = interp.resolve_function(&name).map(|a| (*a).clone())
+    {
+        return Some(Ok(interp.sub_value_from_function_def(def)));
+    }
+    Some(Ok(routine))
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
