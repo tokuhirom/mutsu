@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 17;
+plan 20;
 
 # A plain `$x is copy` positional parameter stays writable on the light call
 # path and never aliases the caller's variable.
@@ -54,3 +54,15 @@ sub defaulted($n is copy = 5) { $n++; $n }
 is defaulted(), 6, 'defaulted is copy parameter, default used';
 is defaulted(1), 2, 'defaulted is copy parameter, value supplied';
 is defaulted(), 6, 'the constant default is not modified by an earlier call';
+
+# A typed copy checks stores into it; an untyped one is not constrained by a
+# same-named typed variable of its caller (ADR-13757).
+sub typed-store(Int $n is copy) { $n = 'str'; $n }
+my $three2 = 3;
+dies-ok { typed-store($three2) }, 'a store into a typed is copy parameter is type-checked';
+sub caller-typed(Int $got) { untyped-copy('s') }
+sub untyped-copy(Mu $got is copy) { $got = 'str'; $got }
+is caller-typed(1), 'str', 'an untyped is copy ignores a same-named typed caller variable';
+multi shadow(Seq:D $got) { shadow($got.cache) }
+multi shadow(Mu $got is copy) { $got = 'str'; $got }
+is shadow((1, 2).Seq), 'str', 'a Mu copy under a Seq:D caller of the same name';

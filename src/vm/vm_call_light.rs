@@ -858,9 +858,26 @@ impl Interpreter {
             // A plain `@x`/`%x` stays writable for the same reason: it is the
             // caller's container, which the body may store into (`%h<k> = v`,
             // `@a = ...`), and the general binder never marks one readonly.
+            let is_copy_param = cf.has_copy_positional_param
+                && cf.param_defs[param_idx].traits.iter().any(|t| t == "copy");
+            // A writable parameter owns its name's type metadata, as the
+            // general binder makes it: a typed one registers its constraint
+            // (so a store into the copy is checked), and an untyped one drops
+            // an inherited same-named caller constraint (`Mu $got is copy`
+            // under a caller's `Seq:D $got`). Only a name that could have
+            // metadata needs the write.
+            if is_copy_param {
+                let name_sym = match cf.param_name_syms.get(param_idx) {
+                    Some(&sym) => sym,
+                    None => Symbol::intern(param_name),
+                };
+                let constraint = cf.param_defs[param_idx].assignment_type_constraint();
+                if constraint.is_some() || Self::env_type_constraint_seen_for(name_sym) {
+                    self.bind_param_type_constraint_sym(param_name, name_sym, constraint);
+                }
+            }
             let writable = is_rw_param
-                || (cf.has_copy_positional_param
-                    && cf.param_defs[param_idx].traits.iter().any(|t| t == "copy"))
+                || is_copy_param
                 || (cf.aggregate_positional_params != 0 && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) if writable => self.unmark_readonly_sym(*sym),
