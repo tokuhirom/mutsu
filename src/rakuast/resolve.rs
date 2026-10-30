@@ -328,7 +328,7 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 return None;
             }
             if super::declared_routines::is_user_call(node)
-                || crate::parser::stmt::simple::is_imported_function(&name)
+                || crate::parser::is_imported_function(&name)
             {
                 return external("RakuAST::Declaration::Import", &format!("&{name}"));
             }
