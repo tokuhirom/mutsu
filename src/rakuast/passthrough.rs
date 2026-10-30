@@ -497,6 +497,12 @@ pub(super) fn declared_routines_of(
             if let Stmt::SubDecl { name, .. } = stmt {
                 self.0.insert(name.resolve());
             }
+            // `my &name` declares a routine of the unit.
+            if let Stmt::VarDecl { name, .. } = stmt
+                && let Some(code) = name.strip_prefix('&')
+            {
+                self.0.insert(code.to_string());
+            }
             crate::ast_visit::walk_stmt(self, stmt);
         }
         fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {

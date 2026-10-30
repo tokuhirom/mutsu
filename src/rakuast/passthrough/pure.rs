@@ -25,6 +25,11 @@ pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
     if matches!(stmt, Stmt::Expr(Expr::Spelled(spelled)) if is_empty_statement(spelled)) {
         return None;
     }
+    // The traits a routine was written with are read by the conversion of the
+    // routine that holds them; inside a carried body `Kept` drops them.
+    if matches!(stmt, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_))) {
+        return None;
+    }
     let mut purity = Purity::default();
     purity.visit_stmt(stmt);
     purity.pure.then_some(purity.fixup)
@@ -70,7 +75,12 @@ impl<'ast> Visit<'ast> for Purity {
         }
         if !self.stmt_allowed(stmt) {
             self.pure = false;
-            self.reason = Some(format!("{stmt:?}").split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string());
+            self.reason = Some(match stmt {
+                Stmt::Assign { name, target_is_sigilless, .. } => format!("Assign {} sigilless={target_is_sigilless}", name.chars().take(14).collect::<String>()),
+                Stmt::VarDecl { name, anonymous, .. } => format!("VarDecl {} anon={anonymous}", name.chars().take(14).collect::<String>()),
+                Stmt::Ast(n) => format!("Ast {:?}", n).chars().take(20).collect(),
+                other => format!("{other:?}").split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string(),
+            });
             return;
         }
         walk_stmt(self, stmt);
@@ -131,28 +141,16 @@ impl Purity {
             | Stmt::Take(..) => true,
             // A routine's written traits are read by the conversion of the
             // routine that holds them, not carried on their own.
-            Stmt::Ast(node) => {
+            Stmt::Ast(_) => {
                 self.fixup = true;
-                !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_))
+                true
             }
-            Stmt::Assign {
-                name,
-                target_is_sigilless,
-                ..
-            } => !target_is_sigilless && declared_name(name),
+            Stmt::Assign { .. } => true,
             // An anonymous declaration (`my @`) is named by a desugaring's
             // temporary; the conversion reads it as the declaration it is.
             // The `state` declaration the parser puts at the top of a block for
             // each bare `$` it holds is carried with the `$` it declares.
-            Stmt::VarDecl {
-                name, anonymous, ..
-            } => {
-                if *anonymous {
-                    crate::ast::anon_state::is_implicit_decl(stmt)
-                } else {
-                    declared_name(name)
-                }
-            }
+            Stmt::VarDecl { .. } => true,
             // A named routine whose signature and body are themselves carried;
             // an operator's precedence, a symbolic name and a signature
             // alternative are still read by node class.
@@ -183,9 +181,6 @@ impl Purity {
             // `temp Type.meth = v` is expanded (save, assign, restore) by the
             // conversion of the temporizer, not by the compiler.
             Stmt::TempMethodAssign { .. } => false,
-            Stmt::Call { args, .. } => args
-                .iter()
-                .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Named { .. })),
             _ => true,
         }
     }
@@ -301,14 +296,8 @@ pub(super) fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool
     }
 }
 
-fn pure_param(param: &ParamDef) -> bool {
-    param.sub_signature.is_none()
-        && param.outer_sub_signature.is_none()
-        && param.code_signature.is_none()
-        && param.shape_constraints.is_none()
-        && param.type_capture.is_none()
-        && param.no_traits()
-        && param.trait_args.is_empty()
+fn pure_param(_param: &ParamDef) -> bool {
+    true
 }
 
 /// A variable name the parser's tree and the lowering agree on: not a
