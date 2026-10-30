@@ -208,8 +208,8 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     // ending in it returns `(6 3)` (Math::Handy's `infix:</%>`). The trailing
     // items are therefore emitted as ONE list headed by the declared scalar,
     // after the declaration so evaluation order is unchanged.
-    let decl_name = crate::ast::decl_target_var_name(&first)
-        .filter(|n| !n.starts_with(['$', '@', '%', '&']));
+    let decl_name =
+        crate::ast::decl_target_var_name(&first).filter(|n| !n.starts_with(['$', '@', '%', '&']));
     let mut stmts = vec![first];
     let mut r_inner = after_ws;
     if r_inner.starts_with(';') || r_inner.is_empty() || r_inner.starts_with('}') {

@@ -663,8 +663,7 @@ pub(crate) fn build_compound_assign_expr(
         // evaluated first (declaring the variable and yielding its container), the value
         // then reads it, and the helper assigns back into that container.
         Expr::DoStmt(stmt) if crate::ast::decl_target_var_name(&stmt).is_some() => {
-            let name =
-                crate::ast::decl_target_var_name(&stmt).expect("guarded by the match arm");
+            let name = crate::ast::decl_target_var_name(&stmt).expect("guarded by the match arm");
             let read_back = match name.as_bytes().first() {
                 Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
                 Some(b'%') => Expr::HashVar(name[1..].to_string()),
