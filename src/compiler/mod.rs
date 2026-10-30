@@ -1863,6 +1863,10 @@ pub(crate) struct Compiler {
     /// (`package P { for @a <-> $v { $v = 9 } }` wrote `$P::v`, losing the rw
     /// write-back).
     for_param_names: Vec<String>,
+    /// `&name` parameters (`&middleware`) a re-compile of a block body found
+    /// already bound in env, with no slot in the fresh compiler
+    /// (`seed_prebound_amp_params`).
+    prebound_amp_params: Vec<String>,
     /// Loop parameters of the `for` loops being compiled that live only in env
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
@@ -2188,6 +2192,7 @@ impl Compiler {
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
             for_param_names: Vec::new(),
+            prebound_amp_params: Vec::new(),
             by_name_for_params: Vec::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
@@ -2858,6 +2863,16 @@ impl Compiler {
     /// call it. No-op for the common empty case.
     pub(crate) fn seed_enclosing_sigilless(&mut self, names: &[String]) {
         self.enclosing_sigilless.extend(names.iter().cloned());
+    }
+
+    /// Seed the `&name` parameters (`for @l -> &middleware`, `.map(-> &f {..})`)
+    /// a re-compile of a block body finds already bound in env: the fresh
+    /// compiler has no slot for them, but they are lexical bindings of the
+    /// body all the same (`bound_amp_reads`).
+    // Cost: O(p), p = parameters.
+    pub(crate) fn seed_prebound_amp_params(&mut self, params: &[String]) {
+        self.prebound_amp_params
+            .extend(params.iter().filter(|p| p.starts_with('&')).cloned());
     }
 
     /// Seed the placeholder parameters an interpret-path caller has already

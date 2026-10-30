@@ -31,13 +31,29 @@ impl Compiler {
     ///
     /// Cost: O(s), s = scopes in the chain (one hashed probe per scope).
     pub(super) fn note_unscoped_amp_read(&mut self, name: &str) {
-        if !self.lexical_scope_known
-            || !name.starts_with(|c: char| c.is_alphabetic() || c == '_')
-            || name.contains(':')
-        {
+        if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') || name.contains(':') {
             return;
         }
+        // A binding the active scopes hold is proof the read is lexical even
+        // when the enclosing scopes were not seen (`lexical_scope_known`),
+        // which only the negative proof below needs. `bound` below
+        // over-approximates (a closed sibling block's `&name` still counts),
+        // so only the active scopes count here. A body with no scope frame of
+        // its own (a pointy block's parameters) has no closed sibling either,
+        // so its `local_map` is exactly its active bindings.
         let key = format!("&{name}");
+        if self.amp_binding_in_active_scope(name)
+            || (self.local_scopes.is_empty() && self.local_map.contains_key(&key))
+            || self.prebound_amp_params.contains(&key)
+        {
+            let sym = Symbol::intern(name);
+            if !self.code.bound_amp_reads.contains(&sym) {
+                self.code.bound_amp_reads.push(sym);
+            }
+        }
+        if !self.lexical_scope_known {
+            return;
+        }
         let bound = self.local_map.contains_key(&key)
             || self.amp_binding_in_active_scope(name)
             || self.code.outer_code_var_names.contains(&key)

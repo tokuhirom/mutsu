@@ -21,12 +21,15 @@ impl Interpreter {
     /// `&name` type parameter lives only in env, so without that proof a
     /// same-unit binding cannot be told apart from a lexical one. With it, a
     /// caller's same-unit `my &g` no longer replaces the `sub g` a routine's
-    /// `&g` names (#10997).
+    /// `&g` names (#10997). The env entry is also kept when the compiler saw a
+    /// lexical `&name` around the read site (`bound_amp_reads`: a
+    /// `for @l -> &name` parameter has no frame slot), whichever compunit made
+    /// the callable it holds.
     ///
     /// Cost: O(1) when env has no `&name` entry (one hashed probe); otherwise
-    /// O(u) plus `resolve_code_var`, u = this code's `unscoped_amp_reads`
-    /// (a handful at most), after a set probe, a local-slot probe and an
-    /// import-table probe.
+    /// O(u + b) plus `resolve_code_var`, u = this code's `unscoped_amp_reads`
+    /// and b = its `bound_amp_reads` (a handful at most), after a set probe,
+    /// a local-slot probe and an import-table probe.
     fn imported_amp_over_inherited(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         if name.contains(":<") || name.starts_with(['!', '?', '*', '.']) {
             return None;
@@ -37,6 +40,12 @@ impl Interpreter {
             return None;
         }
         let name_sym = Symbol::intern(name);
+        // The read site sits inside a lexical `&name` the compiler saw (a
+        // `for @l -> &name` parameter): the env entry is that binding, whichever
+        // compunit made the callable it holds.
+        if code.bound_amp_reads.contains(&name_sym) {
+            return None;
+        }
         if Self::callable_declared_in_unit_of(&val, code)
             && !code.unscoped_amp_reads.contains(&name_sym)
         {
