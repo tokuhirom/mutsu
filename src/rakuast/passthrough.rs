@@ -382,7 +382,10 @@ impl VisitMut for Kept {
 /// parameter. A node outside any leaf says it with its own class
 /// (`declared_routines::declared_by`).
 // Cost: O(n), n = nodes of the carried tree.
-pub(super) fn declared_routines_of(node: &RakuAstNode, found: &mut std::collections::HashSet<String>) {
+pub(super) fn declared_routines_of(
+    node: &RakuAstNode,
+    found: &mut std::collections::HashSet<String>,
+) {
     struct Names<'f>(&'f mut std::collections::HashSet<String>);
     impl<'ast> crate::ast_visit::Visit<'ast> for Names<'_> {
         fn visit_stmt(&mut self, stmt: &'ast Stmt) {
