@@ -80,7 +80,9 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if opened {
         scopes.0.push(HashMap::new());
     }
-    let parameter_type = (node.class == C::Parameter).then(|| type_name_of(&node)).flatten();
+    let parameter_type = (node.class == C::Parameter)
+        .then(|| type_name_of(&node))
+        .flatten();
     for field in &mut node.fields {
         match &mut field.value {
             RakuAstFieldValue::Node(child) if field.name == Some("target") => {
@@ -210,10 +212,12 @@ pub(super) fn declared_type(node: &RakuAstNode) -> Value {
 /// (`Var::Lexical.new("$x")`, `Infix.new("+")`).
 // Cost: O(f), f = fields of the node.
 fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
-    leaf_str(node, name).ok().or_else(|| match positional_leaf(node).ok()?.view() {
-        ValueView::Str(s) => Some(s.to_string()),
-        _ => None,
-    })
+    leaf_str(node, name)
+        .ok()
+        .or_else(|| match positional_leaf(node).ok()?.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
 }
 
 /// The variable (`$x`, `@a`, `&f`) a declaration node declares.
@@ -278,7 +282,10 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
 /// without the sigil (`infix:<+>`, `say`).
 // Cost: O(1).
 fn external_setting(name: &str) -> Option<Value> {
-    external("RakuAST::Declaration::External::Setting", &format!("&{name}"))
+    external(
+        "RakuAST::Declaration::External::Setting",
+        &format!("&{name}"),
+    )
 }
 
 /// An external declaration of the given class; its `compile-time-value` is
@@ -286,7 +293,10 @@ fn external_setting(name: &str) -> Option<Value> {
 // Cost: O(1).
 fn external(class: &str, lexical_name: &str) -> Option<Value> {
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("lexical-name".to_string(), Value::str(lexical_name.to_string()));
+    attrs.insert(
+        "lexical-name".to_string(),
+        Value::str(lexical_name.to_string()),
+    );
     Some(Value::make_instance(
         crate::symbol::Symbol::intern(class),
         attrs,
