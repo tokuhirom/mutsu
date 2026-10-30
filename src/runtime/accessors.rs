@@ -499,6 +499,16 @@ impl Interpreter {
         {
             return Ok(Value::int(i));
         }
+        // A plain single-quoted string with no escape (`--> ''`, `--> 'x'`):
+        // its value is the text between the quotes. Without this, each return
+        // of one ran a full string EVAL (`RakuAST::Deparse`'s empty-body
+        // candidates did, ~1.1G instructions over three rounds of six snippets).
+        // A backslash (`'\0'`, `'a\'b'`) keeps the EVAL path.
+        if let Some(text) = s.strip_prefix('\'').and_then(|t| t.strip_suffix('\''))
+            && !text.contains(['\\', '\''])
+        {
+            return Ok(Value::str(text.to_string()));
+        }
         // A user-declared enum value (`--> B`, #8022): read directly out of
         // the enum-key bare-name namespace rather than through `eval_eval_string`
         // below. `EVAL` compiles a fresh compilation unit and does not resolve
