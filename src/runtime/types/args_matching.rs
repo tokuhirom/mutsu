@@ -1652,7 +1652,7 @@ impl Interpreter {
                 _ => {}
             }
         }
-        if colons % 2 != 0 {
+        if !colons.is_multiple_of(2) {
             return None;
         }
         Some(crate::rakuast::type_object_does(node.class.printed_name(), base))

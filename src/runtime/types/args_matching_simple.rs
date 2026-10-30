@@ -74,12 +74,10 @@ impl Interpreter {
         }
         // A constraint that still needs resolving (a type capture, a package
         // alias, a generic) is the general walk's to resolve.
-        // A measured RakuAST name is static (see `rakuast_instance_accepts`):
-        // nothing in the env resolves it, so it is not asked.
         if param_defs.iter().any(|pd| {
-            pd.type_constraint.as_deref().is_some_and(|tc| {
-                !tc.starts_with("RakuAST::") && self.try_resolved_type_capture_name(tc).is_some()
-            })
+            pd.type_constraint
+                .as_deref()
+                .is_some_and(|tc| self.try_resolved_type_capture_name(tc).is_some())
         }) {
             return None;
         }
@@ -97,31 +95,16 @@ impl Interpreter {
                 arg = fetched;
             }
             match pd.type_constraint.as_deref() {
-                Some(tc) => match self.rakuast_instance_accepts(tc, &arg) {
-                    Some(false) => {
-                        debug_assert!(
-                            !self.param_constraint_accepts(tc, &arg),
-                            "the static RakuAST answer for {tc} disagrees with the general matcher"
-                        );
+                Some(tc) => {
+                    if multi_dispatch
+                        && !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
+                    {
                         return Some(false);
                     }
-                    Some(true) => {
-                        debug_assert!(
-                            self.param_constraint_accepts(tc, &arg),
-                            "the static RakuAST answer for {tc} disagrees with the general matcher"
-                        );
+                    if !self.param_constraint_accepts(tc, &arg) {
+                        return Some(false);
                     }
-                    None => {
-                        if multi_dispatch
-                            && !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
-                        {
-                            return Some(false);
-                        }
-                        if !self.param_constraint_accepts(tc, &arg) {
-                            return Some(false);
-                        }
-                    }
-                },
+                }
                 // An untyped `$` parameter is implicitly `Any`: it rejects a
                 // Junction (autothreading happens above dispatch) and `Mu`.
                 None => {
@@ -264,41 +247,4 @@ impl Interpreter {
 /// `VarRef` tag of a by-variable argument and through a shared cell.
 pub(crate) fn unwrap_varref_value_for_dispatch(raw: &Value) -> Value {
     unwrap_varref_value(raw.clone()).deref_container()
-}
-
-impl Interpreter {
-    /// Whether `arg`, an instance of a measured RakuAST class, satisfies the
-    /// RakuAST parameter type `tc` (`RakuAST::Node:D`, `RakuAST::IntLiteral`),
-    /// answered from the static RakuAST conformance table the multi ranking
-    /// uses ([`Interpreter::conformance_fast`]) instead of the general type
-    /// matcher (~15k instructions per check; `RakuAST::Deparse` asks it for
-    /// each of its 267 `multi method deparse` candidates). `None` for every
-    /// other shape -- a type object, a `:U`/`:_` smiley, a parameterized or
-    /// non-RakuAST name, a class the table does not measure -- which takes the
-    /// general path unchanged.
-    // Cost: O(1), two symbol lookups and a table probe.
-    fn rakuast_instance_accepts(&self, tc: &str, arg: &Value) -> Option<bool> {
-        let base = tc.strip_suffix(":D").unwrap_or(tc);
-        if !base.starts_with("RakuAST::") {
-            return None;
-        }
-        // Only `::` separators: a `:U`/`:_` smiley, a parameterization or a
-        // coercion leaves an odd colon or a bracket.
-        let mut colons = 0usize;
-        for b in base.bytes() {
-            match b {
-                b':' => colons += 1,
-                b'[' | b']' | b'(' | b')' | b'<' | b'>' | b' ' => return None,
-                _ => {}
-            }
-        }
-        if colons % 2 != 0 {
-            return None;
-        }
-        let ValueView::Instance { class_name, .. } = arg.view() else {
-            return None;
-        };
-        let _scope = self.conformance_scope();
-        self.conformance_fast(class_name, crate::symbol::Symbol::intern(base))
-    }
 }
