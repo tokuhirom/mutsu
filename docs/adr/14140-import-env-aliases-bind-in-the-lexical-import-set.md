@@ -67,9 +67,26 @@ block's lexical import set**, whose chain a name lookup already walks
    open set of the importing unit (or the unit's own top-level set, which already
    exists for module units and `EVAL`). `Stmt::Import` gets a set id from the
    compiler exactly as `Stmt::Use` does. A top-level import of the main program
-   binds into the unit set, so the pseudo-stash and indirect-lookup readers
+   (including `import M`) is decided to bind into the unit set, so the pseudo-stash and indirect-lookup readers
    (`MY::`, `::()`, `EVAL`) read the chain and not `imported_env_aliases`.
-4. **Deletion.** Once 1-3 hold, delete in the same change:
+4. **Blocks with no `use` of their own set: `need`, conditional `use`,
+   `import`, `use ... :from`.** Today `Compiler::use_set_id` names a set only
+   for an unconditional `Stmt::Use` of a lexically importable module. A block
+   whose only imports are a `need` (or `use M if COND`, an inline-module
+   `import M`, `use M:from<...>`) still opens an `ImportScope`, and the module
+   merge grant it makes is the *only* state it leaves in the env. Deleting the
+   env marker without a home for that grant would either lose it (`need M;
+   M::Foo` stops resolving in the block) or put it in an outer set, leaking it
+   past the block. So every import-carrying statement, whatever its kind, gets a
+   *grant set*: the compiler names one per statement (id = statement kind,
+   module, tags, a per-site ordinal for a conditional one), opens it in
+   `enter_lexical_use_block` like any other set, and the statement fills it when
+   it runs (a conditional `use` fills it only when its condition held). The
+   grant is an entry of that set (`LexicalImport::Merge`), nothing else.
+   A closure created in the block carries the set in its chain, so it keeps
+   the grant after the block exits, while a callee written outside the block
+   does not have it (#13801).
+5. **Deletion.** Once 1-4 hold, delete in the same change:
    `imported_env_keys`, `shadowed_env_values`, `block_bound_keys` (if unused),
    `record_import_env_key`, `restore_import_env_keys`, the `ModuleMerge` env key
    and its `static_link` / `vm_unit_hidden` special cases, and the
@@ -77,6 +94,21 @@ block's lexical import set**, whose chain a name lookup already walks
 
 Shadowing needs no restore: an inner block's set is earlier in the chain than
 the outer one, and leaving the block drops the inner set from the chain.
+
+### Tests that hold the visibility expectations
+
+The implementation is verified against these (each reads a grant or a bound
+name across a block, a closure or a callee):
+`t/modules/import-export/use-in-block-repeated-calls.t`,
+`use-in-block-binds-global-types-lexically.t`,
+`t/modules/unit-stash-lists-lexical-types.t` (the three that fail when the
+restore is skipped), and for the `need` path
+`need-after-load-export-stash.t`, `need-populates-export-stash.t`,
+`need-preserves-nested-use-imports.t`, `need-bare-module-multi-not-imported.t`,
+`need-bare-module-plain-sub-not-imported.t`,
+`need-file-module-our-code-var-stays-private.t`,
+`t/modules/module-global-merge-is-lexical.t`,
+`use-merges-packages-into-my-not-global.t`, plus `roast/S11-modules`.
 
 ## 3. Consequences
 
@@ -108,5 +140,3 @@ the outer one, and leaving the block drops the inner set from the chain.
 
 - Whether `LexicalImport::Term` and the enum-key namespace
   (`enum_bare_names`) should share one entry kind.
-- Whether a main-program top-level `import M` is a unit-set entry or stays a
-  registry-path import (it currently persists for the whole program by design).
