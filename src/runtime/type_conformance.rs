@@ -31,6 +31,7 @@
 //! agree, so a case the facts get wrong fails the `t/` suite.
 
 use super::multi_rank::{self, MultiRank};
+use super::declared_index;
 use super::multi_rank_tiers;
 use super::*;
 use std::cell::{Cell, RefCell};
@@ -89,6 +90,8 @@ pub(crate) struct ConformanceCache {
     /// remembered only when every relation it asked about was static (see
     /// [`Interpreter::assign_tiers_memoised`]), so it needs no invalidation.
     declared_pairs: RefCell<rustc_hash::FxHashMap<(u32, u32), bool>>,
+    /// The declared-type relation of whole candidate families.
+    declared_index: RefCell<super::declared_index::DeclaredIndexCache>,
 }
 
 impl ConformanceCache {
@@ -378,6 +381,7 @@ impl Interpreter {
             if table.len() + ranks.len() > DECLARED_PAIR_CAP {
                 table.clear();
                 cache.declared_pairs.borrow_mut().clear();
+                cache.declared_index.borrow_mut().clear();
             }
             ranks
                 .iter()
@@ -387,6 +391,18 @@ impl Interpreter {
                 })
                 .collect()
         };
+        let (order, pos_of) = declared_index::canonical_order(&ids);
+        let sorted_ids: Vec<u32> = order.iter().map(|&i| ids[i]).collect();
+        let index = cache.declared_index.borrow().get(&sorted_ids).unwrap_or_else(|| {
+            let canonical: Vec<&MultiRank> = order.iter().map(|&i| &ranks[i]).collect();
+            let before = cache.dependent_answers.get();
+            let index = Arc::new(declared_index::build(&canonical, &conforms));
+            if cache.dependent_answers.get() == before {
+                cache.declared_index.borrow_mut().insert(sorted_ids.clone(), Arc::clone(&index));
+            }
+            index
+        });
+        let mut declared_preds = |j: usize| declared_index::preds_of(&index, &order, &pos_of, j);
         multi_rank_tiers::assign_tiers_wanted(items, wanted, &rank, &conforms, &mut |i, j, a, b| {
             let key = (ids[i], ids[j]);
             if let Some(&known) = cache.declared_pairs.borrow().get(&key) {
@@ -403,7 +419,7 @@ impl Interpreter {
                 }
             }
             answer
-        });
+        }, &mut declared_preds);
         if cache.dependent_answers.get() != dependent_before {
             return;
         }

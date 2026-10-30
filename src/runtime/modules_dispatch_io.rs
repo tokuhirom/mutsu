@@ -15,6 +15,7 @@ mod role_type_distance;
 pub(crate) mod type_conformance;
 mod multi_rank;
 mod multi_rank_tiers;
+mod declared_index;
 mod multi_type_walk;
 pub(crate) mod dispatch_key;
 mod dispatch_narrow;
