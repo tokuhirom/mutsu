@@ -142,9 +142,17 @@ impl Purity {
             } => !target_is_sigilless && declared_name(name),
             // An anonymous declaration (`my @`) is named by a desugaring's
             // temporary; the conversion reads it as the declaration it is.
+            // The `state` declaration the parser puts at the top of a block for
+            // each bare `$` it holds is carried with the `$` it declares.
             Stmt::VarDecl {
                 name, anonymous, ..
-            } => !anonymous && declared_name(name),
+            } => {
+                if *anonymous {
+                    crate::ast::anon_state::is_implicit_decl(stmt)
+                } else {
+                    declared_name(name)
+                }
+            }
             // A named routine whose signature and body are themselves carried;
             // an operator's precedence, a symbolic name and a signature
             // alternative are still read by node class.

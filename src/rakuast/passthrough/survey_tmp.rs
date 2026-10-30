@@ -77,3 +77,16 @@ fn survey_tmp() {
     };
     std::thread::Builder::new().stack_size(512 << 20).spawn(run).unwrap().join().unwrap();
 }
+
+#[test]
+#[ignore]
+fn dump_spelled_tmp() {
+    let src = std::env::var("DUMP_SRC").unwrap();
+    let run = move || {
+        let (st, _) = crate::parse_dispatch::parse_source_spelled(&src).unwrap();
+        for s in &st {
+            println!("{s:?}");
+        }
+    };
+    std::thread::Builder::new().stack_size(256 << 20).spawn(run).unwrap().join().unwrap();
+}
