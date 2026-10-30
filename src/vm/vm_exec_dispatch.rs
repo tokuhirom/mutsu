@@ -4206,7 +4206,7 @@ impl Interpreter {
             // copied into the composed Sub).
             OpCode::FunctionCompose => {
                 self.sync_source_line(code, *ip);
-                self.exec_function_compose_op();
+                self.exec_function_compose_op()?;
                 *ip += 1;
             }
 
