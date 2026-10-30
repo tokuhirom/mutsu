@@ -5,7 +5,7 @@
 //! given and lets the visitor's `walk_*` functions recurse, so a variant the
 //! test does not name is refused, never skipped.
 
-use crate::ast::parsed::{ParsedExpr, ParsedStmt};
+use crate::ast::parsed::{CompoundAssign, CompoundMeta, ParsedExpr, ParsedStmt};
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt};
 use crate::value::ValueView;
@@ -98,6 +98,10 @@ impl Purity {
     // Cost: O(1) for the node itself.
     fn stmt_allowed(&mut self, stmt: &Stmt) -> bool {
         match stmt {
+            // Its statement form is read by the conversion too.
+            Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(c) if !compound_carried(c)) => {
+                false
+            }
             Stmt::SetLine(..)
             | Stmt::Last(_)
             | Stmt::Next(_)
@@ -194,13 +198,13 @@ impl Purity {
             }
             Expr::Ast(node) => {
                 self.fixup = true;
-                matches!(
-                    node.as_ref(),
-                    ParsedExpr::Assign(_)
-                        | ParsedExpr::CompoundAssign(_)
-                        | ParsedExpr::WordList(_)
-                        | ParsedExpr::WordsAtom(_)
-                )
+                match node.as_ref() {
+                    ParsedExpr::CompoundAssign(compound) => compound_carried(compound),
+                    ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_) => {
+                        true
+                    }
+                    _ => false,
+                }
             }
             // The lowering plants the priming scopes of a `*` itself (a second pass
             // over a tree the parser already marked wraps it again), and a `||`
@@ -304,4 +308,20 @@ fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     let mut code = Code(false);
     crate::ast_visit::walk_regex_tree(&mut code, tree);
     code.0
+}
+
+/// Whether a compound assignment is lowered from its typed node: a scalar `Z+=`
+/// and a bracketed metaoperator assignment (`@a X= 10`) are read by the
+/// conversion.
+// Cost: O(1).
+fn compound_carried(compound: &CompoundAssign) -> bool {
+    matches!(
+        compound.meta,
+        CompoundMeta::Plain
+            | CompoundMeta::Bracketed(_)
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty
+            | CompoundMeta::TopicDotty
+            | CompoundMeta::Reverse
+    )
 }

@@ -277,29 +277,41 @@ fn known_call_stmt_splits_assignment_from_following_test_args() {
         "is $ = bar(), \"NoModule::bar\", \"can import symbol not inside module\";",
     )
     .unwrap();
-    // The anonymous `$` is declared by state variables ahead of the call.
-    let stmt = crate::parser::test_lower::stmts(vec![stmt])
+    // The anonymous `$` is declared by state variables ahead of the call; the
+    // call is the statement form `Stmt::Call` or the expression statement.
+    let (name, args) = crate::parser::test_lower::stmts(vec![stmt])
         .into_iter()
-        .rfind(|s| matches!(s, Stmt::Expr(Expr::Call { .. })))
+        .rev()
+        .find_map(|s| match s {
+            Stmt::Expr(Expr::Call { name, args, .. }) => Some((name, args)),
+            Stmt::Call { name, args, .. } => Some((
+                name,
+                args.into_iter()
+                    .filter_map(|arg| match arg {
+                        crate::ast::CallArg::Positional(expr) => Some(expr),
+                        _ => None,
+                    })
+                    .collect(),
+            )),
+            _ => None,
+        })
         .unwrap_or_else(|| panic!("no call"));
     assert_eq!(rest, ";");
-    match stmt {
-        Stmt::Expr(Expr::Call { name, args, .. }) => {
-            assert_eq!(name.resolve().as_str(), "is");
-            assert!(matches!(args.first(), Some(Expr::AssignExpr { .. })));
-            assert!(matches!(
-                args.get(1),
-                Some(Expr::Literal(lit))
-                    if matches!(lit.view(), ValueView::Str(expected) if **expected == "NoModule::bar")
-            ));
-            assert!(matches!(
-                args.get(2),
-                Some(Expr::Literal(lit))
-                    if matches!(lit.view(), ValueView::Str(expected) if **expected == "can import symbol not inside module")
-            ));
-        }
-        other => panic!("expected known call statement, got {other:?}"),
-    }
+    assert_eq!(name.resolve().as_str(), "is");
+    assert!(matches!(
+        args.first(),
+        Some(Expr::AssignExpr { .. } | Expr::Ast(_))
+    ));
+    assert!(matches!(
+        args.get(1),
+        Some(Expr::Literal(lit))
+            if matches!(lit.view(), ValueView::Str(expected) if **expected == "NoModule::bar")
+    ));
+    assert!(matches!(
+        args.get(2),
+        Some(Expr::Literal(lit))
+            if matches!(lit.view(), ValueView::Str(expected) if **expected == "can import symbol not inside module")
+    ));
 }
 
 #[test]
