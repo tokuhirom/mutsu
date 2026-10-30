@@ -787,6 +787,10 @@ impl Compiler {
     pub(super) fn stmt_value_may_user_sink(expr: &Expr) -> bool {
         match expr {
             Expr::MethodCall { .. } => true,
+            // A user-declared infix (`a |> b`) is a routine call whose result is
+            // a fresh value, sunk like a method call's (Shell::DSL's pipeline
+            // runs from its `sink` method).
+            Expr::InfixFunc { .. } => true,
             // `$x but R` / `$x does R` freshly composes a new mixin value, so
             // it is an rvalue by construction — never a container return the
             // exclusion above is guarding against. Raku sinks it, and the
