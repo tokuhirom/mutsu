@@ -345,9 +345,7 @@ pub use stmt::simple::{
     set_parser_program_path, set_parser_source_file,
 };
 
-pub(crate) use expr::precedence::{
-    assign_to_target_expr, single_target_list_lvalue_expr,
-};
+pub(crate) use expr::precedence::{assign_to_target_expr, single_target_list_lvalue_expr};
 pub(crate) use expr::wrap_finished_expr;
 pub(crate) use stmt::simple_expr_stmt::lvalue::method_lvalue_target_name;
 

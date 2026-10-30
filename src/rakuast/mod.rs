@@ -78,6 +78,7 @@ mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
 pub(crate) use infix_func::{add_colonpair, with_caller_operators};
+mod assign_ro;
 mod infix_origins;
 mod infix_spelling;
 mod inherited_fields;
@@ -161,7 +162,6 @@ mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
-mod assign_ro;
 mod word_list;
 mod word_quote;
 
@@ -3834,6 +3834,7 @@ fn field_to_value(fv: &RakuAstFieldValue) -> Value {
     }
 }
 
+pub(crate) use assign_ro::{assignment_ro_expr, literal_assign_ro_expr};
 pub(crate) use assign_target::{assign_to_target_expr, unwrap_grouped_lvalue};
 pub(crate) use assign_writeback::{
     callable_lvalue_assign_expr, method_lvalue_assign_expr, method_lvalue_call,
@@ -3842,5 +3843,4 @@ pub(crate) use assign_writeback::{
 };
 pub(crate) use hash_literal::object_hash_expr;
 pub(crate) use hyper_prefix::hyper_prefix_expr;
-pub(crate) use assign_ro::{assignment_ro_expr, literal_assign_ro_expr};
 pub(crate) use word_list::{word_list_expr, words_atom_expr};
