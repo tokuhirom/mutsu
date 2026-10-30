@@ -695,9 +695,12 @@ impl Interpreter {
                 // unit's CHECK phasers (which follow the marker), before INIT.
                 // Only a unit with BEGIN-time effects can have queued any.
                 if end > 0 {
+                    // Declarations the reorder left among the CHECK phasers
+                    // (`my $v = 1;`) must not end the run early: it goes after
+                    // the last CHECK phaser.
                     let checks = body_main[end + 1..]
                         .iter()
-                        .take_while(|stmt| {
+                        .rposition(|stmt| {
                             matches!(
                                 stmt,
                                 Stmt::Phaser {
@@ -706,7 +709,7 @@ impl Interpreter {
                                 }
                             )
                         })
-                        .count();
+                        .map_or(0, |last| last + 1);
                     body_main.insert(end + 1 + checks, Stmt::RunCheckCode);
                 }
                 (end > 0, if end > 0 { end + 1 } else { 0 })
@@ -719,8 +722,9 @@ impl Interpreter {
             }
         };
         if compile_only {
-            // `-c`: what is left of the unit is the BEGIN prologue and the CHECK
-            // phasers (reordered ahead of INIT and the mainline above).
+            // `-c`: what is left of the unit is the BEGIN prologue, the CHECK
+            // phasers (reordered ahead of INIT and the mainline above), the
+            // subs hoisted ahead of them and the check code they run.
             let mut index = 0;
             body_main.retain(|stmt| {
                 let keep = index < head_len
@@ -729,7 +733,8 @@ impl Interpreter {
                         Stmt::Phaser {
                             kind: crate::ast::PhaserKind::Check,
                             ..
-                        }
+                        } | Stmt::SubDecl { .. }
+                            | Stmt::RunCheckCode
                     );
                 index += 1;
                 keep

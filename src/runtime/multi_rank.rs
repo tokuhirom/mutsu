@@ -535,7 +535,11 @@ impl MultiRank {
     /// by declared types alone, the invocant first, and tied or unrelated
     /// types leave a candidate without a slurpy positional narrower.
     // Cost: O(r), r = the cost of one `conforms` call.
-    fn declared_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+    pub(crate) fn declared_narrower(
+        &self,
+        other: &MultiRank,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> bool {
         if self.arity_mismatch(other) {
             return self.non_slurpy && !other.non_slurpy;
         }
@@ -644,6 +648,42 @@ impl MultiRank {
     }
 }
 
+/// Everything [`MultiRank::declared_narrower`] reads of one candidate, and
+/// nothing it does not: the candidate's arity and slurpiness, its invocant,
+/// its declared positional types and which of them are unrefined. None of it
+/// depends on the call's arguments, so two ranks with an equal key compare
+/// the same way against any third rank (given the same `conforms` answers),
+/// whatever arguments each was ranked for.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct DeclaredKey {
+    arity: (usize, usize),
+    non_slurpy: bool,
+    invocant: Option<Symbol>,
+    declared: [Option<Symbol>; PROFILE_LEN],
+    /// Bit `i`: the low ("unrefined") score bit of a declared slot `i`.
+    unrefined: u8,
+}
+
+impl MultiRank {
+    /// The key [`Self::declared_narrower`] depends on.
+    // Cost: O(1), the profile length is a constant.
+    pub(crate) fn declared_key(&self) -> DeclaredKey {
+        let mut unrefined = 0u8;
+        for (i, declared) in self.profile.declared.iter().enumerate() {
+            if declared.is_some() && self.profile.scores[i] & 1 == 1 {
+                unrefined |= 1 << i;
+            }
+        }
+        DeclaredKey {
+            arity: self.arity,
+            non_slurpy: self.non_slurpy,
+            invocant: self.invocant,
+            declared: self.profile.declared,
+            unrefined,
+        }
+    }
+}
+
 /// Give each rank its rakudo tier: the candidates nothing in `ranks` is
 /// narrower than form tier 0, those only tier-0 candidates are narrower than
 /// form tier 1, and so on — rakudo's topological sort of a multi's candidate
@@ -657,6 +697,22 @@ pub(crate) fn assign_tiers<T>(
     items: &mut [T],
     rank: impl Fn(&mut T) -> &mut MultiRank,
     conforms: &dyn Fn(Symbol, Symbol) -> bool,
+) {
+    assign_tiers_with(items, rank, conforms, &mut |_, _, a, b| {
+        a.declared_narrower(b, conforms)
+    });
+}
+
+/// [`assign_tiers`] with the answer for a pair whose candidates cannot bind
+/// the call (`declared_pair(i, j, ranks[i], ranks[j])`) supplied by the
+/// caller, who may remember it: it is a function of the two candidates'
+/// [`DeclaredKey`]s alone.
+// Cost: O(n^2 * p), n = candidates, p = the cost of one `declared_pair`.
+pub(crate) fn assign_tiers_with<T>(
+    items: &mut [T],
+    rank: impl Fn(&mut T) -> &mut MultiRank,
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    declared_pair: &mut dyn FnMut(usize, usize, &MultiRank, &MultiRank) -> bool,
 ) {
     let n = items.len();
     if n < 2 {
@@ -689,7 +745,7 @@ pub(crate) fn assign_tiers<T>(
                         // stays out of the relation.
                         return ranks[i].invocant.is_some()
                             && ranks[j].invocant.is_some()
-                            && ranks[i].declared_narrower(&ranks[j], conforms);
+                            && declared_pair(i, j, &ranks[i], &ranks[j]);
                     }
                     ranks[i].rakudo_narrower(&ranks[j], conforms)
                 })

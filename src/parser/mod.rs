@@ -952,16 +952,86 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
 }
 
 /// Split `input` at its `=finish` line: the code before it, and the text after
-/// the `=finish` line (the `$=finish` data section), if there is one.
+/// the `=finish` line (the `$=finish` data section), if there is one. A
+/// `=finish` line inside a heredoc body (`q:to/END/` ... `END`) is text, not the
+/// marker.
 // Cost: O(n), n = length of `input`.
 pub(crate) fn split_finish_section(input: &str) -> (&str, Option<String>) {
-    let Some(idx) = input.find("\n=finish") else {
+    let Some(idx) = finish_line_offset(input) else {
         return (input, None);
     };
     let content = &input[idx + "\n=finish".len()..];
     // Skip to next newline
     let content = content.find('\n').map_or("", |nl| &content[nl + 1..]);
     (&input[..idx], Some(content.to_string()))
+}
+
+/// The offset of the `\n` that precedes the first `=finish` line outside any
+/// heredoc body.
+// Cost: O(n), n = length of `input`.
+fn finish_line_offset(input: &str) -> Option<usize> {
+    // Delimiters of the heredocs opened on the lines read so far, whose bodies
+    // follow; the line that equals the first one closes it.
+    let mut pending: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut offset = 0;
+    for (n, line) in input.split_inclusive('\n').enumerate() {
+        let text = line.trim_end_matches(['\n', '\r']);
+        if let Some(delimiter) = pending.front() {
+            if text.trim() == delimiter.as_str() {
+                pending.pop_front();
+            }
+        } else if n > 0 && text.starts_with("=finish") {
+            return Some(offset - 1);
+        } else {
+            pending.extend(heredoc_delimiters(text));
+        }
+        offset += line.len();
+    }
+    // A heredoc that never closes was not one: read the unit as plain text.
+    if pending.is_empty() {
+        None
+    } else {
+        input.find("\n=finish")
+    }
+}
+
+/// The delimiters of the heredocs a line opens: `:to/END/`, `:to<END>`,
+/// `:to"END"`, `<<END`, `<<"END"`.
+// Cost: O(l), l = length of the line.
+fn heredoc_delimiters(line: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = line;
+    while let Some(at) = rest.find(":to").or_else(|| rest.find("<<")) {
+        let (marker, tail) = if rest[at..].starts_with(":to") {
+            (":to", &rest[at + 3..])
+        } else {
+            ("<<", &rest[at + 2..])
+        };
+        let tail = tail.trim_start();
+        let (open, body) = match tail.chars().next() {
+            Some(c @ ('/' | '<' | '"' | '\'' | '(' | '{' | '[')) => {
+                (Some(c), &tail[c.len_utf8()..])
+            }
+            _ => (None, tail),
+        };
+        let closer = match open {
+            Some('<') => '>',
+            Some('(') => ')',
+            Some('{') => '}',
+            Some('[') => ']',
+            Some(c) => c,
+            None => ' ',
+        };
+        let end = body
+            .find(|c: char| c == closer || (open.is_none() && !(c.is_alphanumeric() || c == '_')))
+            .unwrap_or(body.len());
+        let name = &body[..end];
+        if !name.is_empty() && (open.is_some() || marker == "<<") {
+            found.push(name.to_string());
+        }
+        rest = &rest[at + marker.len()..];
+    }
+    found
 }
 
 /// Parse a full program using the nom-based parser.

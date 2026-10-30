@@ -139,7 +139,7 @@ pub(crate) fn end_compile_phase() {
 /// when the source does not convert.
 // Cost: O(n) on the first read of a unit (parse + conversion), O(1) after;
 // n = source length.
-pub(crate) fn compile_time_cu() -> Option<Value> {
+pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> {
     enum Step {
         Built(Value),
         Build(Rc<str>),
@@ -157,7 +157,7 @@ pub(crate) fn compile_time_cu() -> Option<Value> {
     match step {
         Step::Built(cu) => Some(cu),
         Step::Build(source) => {
-            let cu = crate::rakuast::compile_time_compunit(&source).ok()?;
+            let cu = crate::rakuast::compile_time_compunit(&source, imported).ok()?;
             UNITS.with(|units| {
                 let mut units = units.borrow_mut();
                 if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {

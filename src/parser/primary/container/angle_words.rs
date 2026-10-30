@@ -315,6 +315,15 @@ fn split_quotish_words(
         }
         let word_len = find_quotish_word_end(rest, delims);
         let (word, r) = rest.split_at(word_len);
+        // `:<a b>` inside the quote words is that quote-word list: the colon only
+        // separates it from what precedes.
+        if let Some(inner) = word.strip_prefix(":<").and_then(|w| w.strip_suffix('>')) {
+            for w in split_angle_words(inner) {
+                words.push(WordItem::Expr(Expr::Literal(angle_word_value(w))));
+            }
+            rest = r;
+            continue;
+        }
         if word.starts_with(':')
             && let Ok((remaining, expr)) = expression(word)
             && remaining.is_empty()
@@ -434,8 +443,58 @@ fn skip_quotish_embedded_comment(input: &str) -> Option<&str> {
     }
 }
 
+/// Where the colonpair that opens `input` (`:name`, `:<word>`, `:name<word>`,
+/// `:name(...)`) ends, or `None` when `input` does not open with one.
+// Cost: O(n), n = length of the colonpair.
+fn colonpair_word_len(input: &str) -> Option<usize> {
+    let after = input.strip_prefix(':')?;
+    let mut len = 1usize;
+    let mut chars = after.char_indices().peekable();
+    match chars.peek() {
+        Some(&(_, c)) if c.is_alphabetic() || c == '_' => {
+            while let Some(&(i, c)) = chars.peek() {
+                if c.is_alphanumeric() || c == '_' || c == '-' {
+                    len = 1 + i + c.len_utf8();
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+        }
+        Some(&(_, '<')) => {}
+        _ => return None,
+    }
+    let tail = &input[len..];
+    let (open, close) = match tail.chars().next() {
+        Some('<') => ('<', '>'),
+        Some('(') => ('(', ')'),
+        _ => return Some(len),
+    };
+    let mut depth = 0usize;
+    for (i, c) in tail.char_indices() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(len + i + c.len_utf8());
+            }
+        }
+    }
+    // An unclosed bracket: the colonpair is just its name.
+    (len > 1).then_some(len)
+}
+
 fn find_quotish_word_end(input: &str, delims: Option<(&str, &str)>) -> usize {
+    // A colonpair opening the word is a word of its own (`«a:<b>c»` is `a`, `b`,
+    // `c`); one inside a word ends it first.
+    if let Some(len) = colonpair_word_len(input) {
+        return len;
+    }
     for (idx, c) in input.char_indices() {
+        if idx > 0 && c == ':' && colonpair_word_len(&input[idx..]).is_some() {
+            return idx;
+        }
         if let Some((open, close)) = delims {
             // A nested opener closes the word it ends; a nested closer starts
             // a new one (rakudo: `<< a<<b>>c >>` is `("a<<", "b", ">>c")`).

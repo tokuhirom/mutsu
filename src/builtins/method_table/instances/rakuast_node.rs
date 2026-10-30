@@ -115,6 +115,26 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // `RakuAST::Sub.compile-time-value`: the routine a resolved call of a unit
+    // sub stands for (#15610), read from the interpreter on demand.
+    MethodRow {
+        owner: "RakuAST::Sub",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(sub_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    // `RakuAST::Parameter.meta-object`: the `Parameter` the node declares
+    // (`static::Analyzer` reads its type, `rw`, `copy`, ...; #15610).
+    MethodRow {
+        owner: "RakuAST::Parameter",
+        name: "meta-object",
+        arity: 0,
+        handler: Handler::Interp(parameter_meta_object),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // An imported routine (`use Test; plan`) and a unit-declared package.
     MethodRow {
         owner: "RakuAST::Declaration::Import",
@@ -207,6 +227,46 @@ fn external_value(
         return Some(Ok(interp.resolve_code_var(routine)));
     }
     Some(Ok(Value::package(Symbol::intern(&name))))
+}
+
+/// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
+// Cost: O(1) plus the interpreter's lookup of the name.
+fn sub_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    let name = crate::rakuast::declared_sub_name(node)?;
+    let routine = interp.resolve_code_var(&name);
+    // A CHECK phaser runs before the unit's subs are installed as lexicals,
+    // but they are already in the function table (preregistered).
+    if !matches!(routine.view(), ValueView::Sub(_))
+        && !interp.has_proto(&name)
+        && let Some(def) = interp.resolve_function(&name).map(|a| (*a).clone())
+    {
+        return Some(Ok(interp.sub_value_from_function_def(def)));
+    }
+    Some(Ok(routine))
+}
+
+/// `Parameter.meta-object` of a `RakuAST::Parameter` node.
+// Cost: O(size of the parameter node).
+fn parameter_meta_object(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    Some(crate::rakuast::parameter_param_def(node).map(|def| {
+        crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
+    }))
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
@@ -490,11 +550,11 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
-        RakuAstClass::ParameterTargetVar => {
-            Some(vec![node_value("declaration").unwrap_or_else(|| {
-                rakuast(target_declaration(node), Vec::new(), &node.origin)
-            })])
-        }
+        RakuAstClass::ParameterTargetVar => Some(vec![
+            node_value("declaration")
+                .or_else(|| crate::rakuast::annotated_target_declaration(node))
+                .unwrap_or_else(|| rakuast(target_declaration(node), Vec::new(), &node.origin)),
+        ]),
         // Rakudo visits a quoted regex's adverbs before its body.
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx
             if node.fields.iter().any(|f| f.name == Some("adverbs")) =>
@@ -537,14 +597,17 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             if target_node.class != RakuAstClass::ParameterTargetVar {
                 return None;
             }
-            let declaration = rakuast(
-                target_declaration(target_node),
-                vec![RakuAstField {
-                    name: Some("type"),
-                    value: RakuAstFieldValue::Node(explicit_type),
-                }],
-                &target_node.origin,
-            );
+            let declaration = crate::rakuast::annotated_target_declaration(target_node)
+                .unwrap_or_else(|| {
+                    rakuast(
+                        target_declaration(target_node),
+                        vec![RakuAstField {
+                            name: Some("type"),
+                            value: RakuAstFieldValue::Node(explicit_type),
+                        }],
+                        &target_node.origin,
+                    )
+                });
             let mut new_target = target_node.clone();
             new_target.fields.push(RakuAstField {
                 name: Some("declaration"),

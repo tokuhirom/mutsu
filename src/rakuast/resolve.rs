@@ -38,17 +38,21 @@ use crate::value::{Value, ValueView};
 
 /// The declarations visible at the node being walked, innermost scope last:
 /// the declaration node `Value` by the name it declares (`$x`, `@a`).
-struct Scopes(Vec<HashMap<String, Value>>);
+struct Scopes<'a> {
+    scopes: Vec<HashMap<String, Value>>,
+    /// Whether the interpreter knows a routine of this name (an import).
+    imported: &'a dyn Fn(&str) -> bool,
+}
 
-impl Scopes {
+impl Scopes<'_> {
     // Cost: O(d), d = scope depth.
     fn find(&self, name: &str) -> Option<&Value> {
-        self.0.iter().rev().find_map(|scope| scope.get(name))
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     // Cost: O(1) amortized.
     fn declare(&mut self, name: String, declaration: Value) {
-        if let Some(scope) = self.0.last_mut() {
+        if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, declaration);
         }
     }
@@ -56,8 +60,11 @@ impl Scopes {
 
 /// Resolve every lookup of the unit tree rooted at `node`.
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub(super) fn annotate(node: &mut RakuAstNode) {
-    let mut scopes = Scopes(vec![HashMap::new()]);
+pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) {
+    let mut scopes = Scopes {
+        scopes: vec![HashMap::new()],
+        imported,
+    };
     walk(node, &mut scopes);
 }
 
@@ -84,17 +91,15 @@ fn opens_scope(class: C) -> bool {
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let opened = opens_scope(node.class);
     if opened {
-        scopes.0.push(HashMap::new());
+        scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
     }
-    let parameter_type = (node.class == C::Parameter)
-        .then(|| type_name_of(node))
-        .flatten();
+    let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
     for field in &mut node.fields {
         match &mut field.value {
             RakuAstFieldValue::Node(child) if field.name == Some("target") => {
-                if let Some(type_name) = &parameter_type {
-                    embed_type(child, type_name);
+                if let Some(type_node) = &parameter_type {
+                    embed_declaration(child, type_node.as_ref());
                 }
                 visit_child(child, scopes);
             }
@@ -108,7 +113,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         }
     }
     if opened {
-        scopes.0.pop();
+        scopes.scopes.pop();
     }
     if let Some(resolution) = resolve(node, scopes) {
         node.origin.2 = Some(resolution);
@@ -233,16 +238,60 @@ fn type_node_name(node: &RakuAstNode) -> Option<String> {
     }
 }
 
-/// Record the declared type of the parameter a `ParameterTarget::Var` belongs
-/// to in its metadata (`compile-time-value` answers it).
+/// The `type` field of a declaration node, if it has one.
+// Cost: O(f), f = fields of the node.
+fn type_field(node: &RakuAstNode) -> Option<Value> {
+    match &node.fields.iter().find(|f| f.name == Some("type"))?.value {
+        RakuAstFieldValue::Node(ty) => Some(ty.clone()),
+        _ => None,
+    }
+}
+
+/// Record the `VarDeclaration::Simple` a `ParameterTarget::Var` declares in its
+/// metadata: `ParameterTarget::Var.declaration` answers it, and
+/// `compile-time-value` reads the declared type off it. It is built once, so it
+/// keeps its identity.
 // Cost: O(1).
-fn embed_type(target: &mut Value, type_name: &str) {
+fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     let ValueView::RakuAst(held) = target.view() else {
         return;
     };
     let mut node = RakuAstNode::clone(held);
-    node.origin.2 = Some(Value::str(type_name.to_string()));
+    let Some(name) = leaf(&node, "name") else {
+        return;
+    };
+    let mut chars = name.chars();
+    let (Some(sigil), rest) = (chars.next(), chars.as_str()) else {
+        return;
+    };
+    let mut fields = vec![
+        super::convert::leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+        super::convert::leaf_field(
+            Some("desigilname"),
+            Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
+                super::name_parts::simple_part(rest),
+            ]))),
+        ),
+    ];
+    // The constructor's own order (`type` first), which the field lookups of a
+    // declaration read.
+    if let Some(ty) = type_node {
+        fields.insert(0, super::convert::leaf_field(Some("type"), ty.clone()));
+    }
+    node.origin.2 = Some(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: C::VarDeclarationSimple,
+        fields,
+    })));
     *target = Value::rakuast(Box::new(node));
+}
+
+/// The `VarDeclaration::Simple` of a `ParameterTarget::Var` ([`embed_declaration`]).
+// Cost: O(1).
+pub(super) fn target_declaration(node: &RakuAstNode) -> Option<Value> {
+    (node.class == C::ParameterTargetVar)
+        .then(|| node.origin.2.clone())
+        .flatten()
 }
 
 /// `compile-time-value` of a variable declaration: the type of its container
@@ -256,7 +305,10 @@ pub(super) fn declared_type(node: &RakuAstNode) -> Value {
     };
     let sigil = sigil_name.as_deref().and_then(|s| s.chars().next());
     let explicit = match node.class {
-        C::ParameterTargetVar => node.origin.2.as_ref().map(Value::to_string_value),
+        C::ParameterTargetVar => target_declaration(node).and_then(|d| match d.view() {
+            ValueView::RakuAst(d) => type_name_of(d),
+            _ => None,
+        }),
         _ => type_name_of(node),
     }
     .filter(|t| t != "Any");
@@ -270,6 +322,49 @@ pub(super) fn declared_type(node: &RakuAstNode) -> Value {
         _ => "Any".to_string(),
     };
     Value::package(crate::symbol::Symbol::intern(&name))
+}
+
+/// `VarDeclaration::Simple.return-type`: the type of the declared container as
+/// rakudo answers it: `Mu` when untyped, the declared type (`Int`, `Str:D`),
+/// `Positional`/`Associative` (parameterized by a declared element type) and
+/// `Callable` for the sigiled forms.
+// Cost: O(f), f = fields of the node.
+pub(super) fn return_type(node: &RakuAstNode) -> Value {
+    let sigil = leaf(node, "sigil").and_then(|s| s.chars().next());
+    let element = declared_type_with_smiley(node);
+    let name = match (sigil, element) {
+        (Some('@'), Some(t)) => format!("Positional[{t}]"),
+        (Some('@'), None) => "Positional".to_string(),
+        (Some('%'), Some(t)) => format!("Associative[{t}]"),
+        (Some('%'), None) => "Associative".to_string(),
+        (Some('&'), _) => "Callable".to_string(),
+        (_, Some(t)) => t,
+        _ => "Mu".to_string(),
+    };
+    Value::package(crate::symbol::Symbol::intern(&name))
+}
+
+/// The declared type of `node` including a definiteness smiley (`Str:D`).
+// Cost: O(f), f = fields of the node.
+fn declared_type_with_smiley(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|f| f.name == Some("type"))?;
+    let RakuAstFieldValue::Node(ty) = &field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(ty) = ty.view() else {
+        return None;
+    };
+    let base = type_node_name(ty)?;
+    let smiley = ty
+        .fields
+        .iter()
+        .find(|f| f.name == Some("definite"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => Some(if v.truthy() { ":D" } else { ":U" }),
+            _ => None,
+        })
+        .unwrap_or("");
+    Some(format!("{base}{smiley}"))
 }
 
 /// A leaf string of `node`: the named field, else its single positional one
@@ -333,7 +428,9 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 return external("RakuAST::Declaration::Import", &format!("&{name}"));
             }
             if !crate::runtime::Interpreter::is_builtin_function(&name) {
-                return None;
+                return (scopes.imported)(&name)
+                    .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
+                    .flatten();
             }
             external_setting(&name)
         }
