@@ -1465,7 +1465,13 @@ impl Interpreter {
                 self.module
                     .module_loading_unit_stack
                     .push((phaser.unit, self.routine_stack.len()));
+                // An `END` declared in a method sees that method's `self`.
+                let fixtures_mark = self.routine_stack.fixtures_len();
+                if let Some(fixtures) = &phaser.fixtures {
+                    self.routine_stack.push_scoped_fixtures(fixtures.clone());
+                }
                 let body_result = self.run_block(body);
+                self.routine_stack.truncate_fixtures(fixtures_mark);
                 self.module.module_loading_unit_stack.pop();
                 self.current_unit = saved_unit;
                 self.set_current_package(saved_package);

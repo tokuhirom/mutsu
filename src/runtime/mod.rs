@@ -1732,6 +1732,11 @@ pub(crate) struct EndPhaser {
     /// capture counter on entry and `update_end_phaser_envs` freezes exactly
     /// the phasers that captured at or after it.
     pub(crate) capture_seq: Option<u64>,
+    /// The declaring method frame's record (its invocant, `?CLASS`): an `END`
+    /// in a method closes over `self` (`END { $!channel.close }` in
+    /// Event::Emitter's `submethod BUILD`), and no frame is left at exit to
+    /// answer it. `None` for an `END` that is not inside a method.
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
 }
 
 /// Install-order bases for [`EndPhaser::order`]; lowest = installed earliest =
