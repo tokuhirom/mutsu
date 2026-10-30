@@ -2631,8 +2631,7 @@ impl Interpreter {
                         // reads every element of an object with its own `AT-POS`,
                         // as one nested list, like `$o[^$o.elems]`.
                         ValueView::Whatever
-                            if is_positional
-                                && self.is_user_at_pos_instance(&target) =>
+                            if is_positional && self.is_user_at_pos_instance(&target) =>
                         {
                             let len = self.subscripted_elems(&target);
                             let mut all = Vec::with_capacity(len as usize);
