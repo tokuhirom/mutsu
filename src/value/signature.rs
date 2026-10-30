@@ -1206,6 +1206,14 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
         _ => Value::Package(Symbol::intern("Signature")),
     };
     attrs.insert("sub_signature".to_string(), sub_signature_val);
+    // `.signature_constraint` (an undocumented MOP method `static::CLI` reads,
+    // maintainer-approved in #15614) answers the undefined `Signature` type
+    // object for every parameter shape measured under rakudo: untyped, typed,
+    // `where`, destructuring and `|c where :(...)` alike.
+    attrs.insert(
+        "signature_constraint".to_string(),
+        Value::Package(Symbol::intern("Signature")),
+    );
     attrs
 }
 
