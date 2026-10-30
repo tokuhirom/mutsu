@@ -124,8 +124,9 @@ fn parse_hyper_prefix_slip_right_on_angle_list() {
 #[test]
 fn parse_slip_prefix_with_space_before_french_quote_list() {
     let (rest, expr) = expression("| «echo test»").unwrap();
-    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
+    // The quote is the word-list node: two words, not a call a user's own
+    // `sub list` could capture.
     assert!(matches!(
         expr,
         Expr::Unary {
@@ -133,13 +134,8 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
             expr, ..
         } if matches!(
             *expr,
-            Expr::ArrayLiteral(ref items) if items.len() == 2
-        ) || matches!(
-            *expr,
-            // A word list lowers to the RESERVED `__mutsu_word_list`, not to a
-            // plain `list` call a user's own `sub list` could capture.
-            Expr::Call { ref name, ref args, .. }
-                if name.resolve() == "__mutsu_word_list" && args.len() == 2
+            Expr::Ast(ref node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::WordList(list) if list.items.len() == 2)
         )
     ));
 }

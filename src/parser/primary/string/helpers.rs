@@ -1,7 +1,5 @@
 pub(crate) use super::word_result::{
-    make_processed_word_result, make_word_result_expr, quotewords_atom_expr,
-    quotewords_atom_expr_allomorphic, quotewords_from_words, word_quote_expr,
-    word_quote_text_is_plain, word_quote_text_is_plain_mode,
+    word_quote_items, word_quote_text_is_plain, word_quote_text_is_plain_mode,
 };
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;

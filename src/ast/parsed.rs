@@ -302,6 +302,66 @@ pub(crate) enum ParsedExpr {
     /// (`Circumfix::HashComposer(:object-hash)`). It lowers to the runtime's
     /// `Mu`-keyed hash construction (`rakuast::hash_literal::lower_composer`).
     ObjectHash(Vec<Expr>),
+    /// `qw/a b/`, `qqww/a $b/`, `«a b»`, `<<a b>>`, `%h<<$k>>`: the words of a
+    /// word quote and the quote as written (`QuotedString` with `words` /
+    /// `quotewords` processors). It lowers to the runtime's word list
+    /// (`rakuast::word_list::lower_word_list`).
+    WordList(WordList),
+    /// `qqw/a $x b/`: an interpolating `words` quote whose string is split
+    /// into words at run time (`QuotedString` with `words` processors over its
+    /// interpolation). It lowers to the runtime's words call
+    /// (`rakuast::word_list::lower_words_atom`).
+    WordsAtom(WordsAtom),
+}
+
+/// The words of a word quote and its source.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WordList {
+    /// The words, in source order.
+    pub(crate) items: Vec<WordItem>,
+    /// The quote has the `val` processor: its words are allomorphs, and a
+    /// quote of one word is that word, not a list.
+    pub(crate) val: bool,
+    /// The quote as written.
+    pub(crate) source: WordSource,
+}
+
+/// One word of a [`WordList`].
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum WordItem {
+    /// A word that is its own value: a literal or a quoted word.
+    Expr(Expr),
+    /// An unquoted word of a `quotewords` quote that interpolates: the
+    /// string it spells, whose literal runs glue to the values around them.
+    Atom { string: Expr, allomorphic: bool },
+}
+
+/// The text of a word quote, for the RakuAST view.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum WordSource {
+    /// Nothing interpolates or nests: one literal segment.
+    Plain {
+        /// `quotewords` (honours inner quotes) rather than `words`.
+        quotewords: bool,
+        text: Box<str>,
+    },
+    /// `«a $b "c d"»`, `qqww/a $b/`, `Qww/"c d"/`: the segments are derived
+    /// from the text.
+    Interpolating {
+        text: Box<str>,
+        /// The source delimiter for nested `<< >>` or `« »` word quotes.
+        delimiter: Option<char>,
+        /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
+        interpolates: bool,
+    },
+}
+
+/// An interpolating `words` string that is split into words when it runs.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WordsAtom {
+    pub(crate) string: Expr,
+    /// The words are allomorphs (`val`).
+    pub(crate) allomorphic: bool,
 }
 
 /// A subscript and the colonpairs written after it, in source order.

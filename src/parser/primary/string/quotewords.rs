@@ -1,12 +1,13 @@
 use super::*;
 use crate::ast::Expr;
+use crate::ast::parsed::WordItem;
 use crate::parser::parse_result::PError;
 
 use super::helpers::literal_str;
 pub(crate) fn parse_quotewords_items(
     content: &str,
     flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
-) -> Result<Vec<Expr>, PError> {
+) -> Result<Vec<WordItem>, PError> {
     let mut items = Vec::new();
     let mut rest = content;
     loop {
@@ -15,7 +16,7 @@ pub(crate) fn parse_quotewords_items(
             break;
         }
         if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest)? {
-            items.push(quoted);
+            items.push(WordItem::Expr(quoted));
             rest = next;
             continue;
         }
@@ -24,7 +25,10 @@ pub(crate) fn parse_quotewords_items(
         let (atom, next) = rest.split_at(atom_len);
         let atom_expr =
             crate::parser::primary::quote_adverbs::process_content_with_flags(atom, flags)?;
-        items.push(quotewords_atom_expr_allomorphic(atom_expr, flags.val));
+        items.push(WordItem::Atom {
+            string: atom_expr,
+            allomorphic: flags.val,
+        });
         rest = next;
     }
     Ok(items)

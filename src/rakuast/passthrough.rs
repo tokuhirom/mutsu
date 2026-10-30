@@ -328,6 +328,21 @@ impl VisitMut for Kept {
             *expr = super::lower_expression_assign(self.assignment(assign));
             return;
         }
+        // A word quote is the runtime's word list; its words are lowered
+        // where they stand.
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            *expr = match *node {
+                ParsedExpr::WordList(list) => {
+                    super::word_list::lower_word_list(list.items, list.val)
+                }
+                ParsedExpr::WordsAtom(atom) => {
+                    super::word_list::lower_words_atom(atom.string, atom.allomorphic)
+                }
+                _ => unreachable!("checked above"),
+            };
+        }
         crate::ast_visit::walk_expr_mut(self, expr);
     }
 

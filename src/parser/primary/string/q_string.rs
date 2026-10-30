@@ -1,6 +1,6 @@
 use super::*;
 use crate::ast::Expr;
-use crate::ast::spelled::Spelling;
+use crate::ast::parsed::{WordItem, WordSource};
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
@@ -97,14 +97,7 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     // Process content with flags
     if flags.quotewords {
         let items = parse_quotewords_items(content, &flags)?;
-        return Ok((
-            after,
-            spell_word_quote(
-                &flags,
-                content,
-                make_processed_word_result(items, flags.val),
-            ),
-        ));
+        return Ok((after, word_quote_node(&flags, content, items)));
     }
     let expr = process_content_with_flags(content, &flags)?;
 
@@ -112,51 +105,34 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     apply_post_processing(after, expr, &flags)
 }
 
-/// `expr`, a word quote written with `flags` over the plain text `text`,
-/// remembering that spelling when the parse keeps them (ADR-12199): rakudo
-/// renders it as one `QuotedString` with `words` / `quotewords` processors. A
-/// quote that interpolates keeps its segments (`InterpolatingWords`).
-fn spell_word_quote(
+/// The node of a word quote written with `flags` over `text`, holding its
+/// `items`: rakudo renders it as one `QuotedString` with `words` / `quotewords`
+/// processors. A quote that interpolates keeps its segments.
+fn word_quote_node(
     flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
     text: &str,
-    expr: Expr,
+    items: Vec<WordItem>,
 ) -> Expr {
-    let processed = spell_word_quote_contents(flags, text, expr);
-    if flags.format {
-        crate::ast::quote_processing::format(processed)
+    let source = if flags.quotewords
+        && !super::word_quote_text_is_plain_mode(text, flags.has_interpolation())
+    {
+        WordSource::Interpolating {
+            text: text.into(),
+            delimiter: None,
+            interpolates: flags.has_interpolation(),
+        }
     } else {
-        processed
-    }
-}
-
-fn spell_word_quote_contents(
-    flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
-    text: &str,
-    expr: Expr,
-) -> Expr {
-    if !super::word_quote_text_is_plain_mode(text, flags.has_interpolation()) {
-        if flags.quotewords {
-            return Expr::spelled(expr, || Spelling::InterpolatingWords {
-                val: flags.val,
-                text: text.into(),
-                delimiter: None,
-                interpolates: flags.has_interpolation(),
-            });
+        WordSource::Plain {
+            quotewords: flags.quotewords,
+            text: text.into(),
         }
-        if flags.words && !flags.has_interpolation() {
-            return Expr::spelled(expr, || Spelling::WordQuote {
-                quotewords: false,
-                val: flags.val,
-                text: text.into(),
-            });
-        }
-        return expr;
+    };
+    let node = crate::rakuast::word_list_expr(items, flags.val, source);
+    if flags.format {
+        crate::ast::quote_processing::format(node)
+    } else {
+        node
     }
-    Expr::spelled(expr, || Spelling::WordQuote {
-        quotewords: flags.quotewords,
-        val: flags.val,
-        text: text.into(),
-    })
 }
 
 /// Apply execute, word-split, and format post-processing to a quote expression.
@@ -197,43 +173,29 @@ fn apply_plain_post_processing<'a>(
         && let ValueView::Str(s) = lit.view()
     {
         let items = parse_quotewords_items(&s, flags)?;
-        return Ok((
-            after,
-            spell_word_quote(flags, &s, make_processed_word_result(items, flags.val)),
-        ));
+        return Ok((after, word_quote_node(flags, &s, items)));
     }
 
     if flags.words || flags.quotewords {
         if let Expr::Literal(ref lit) = expr
             && let ValueView::Str(s) = lit.view()
         {
-            let words: Vec<Expr> = if flags.val {
+            let words: Vec<WordItem> = if flags.val {
                 s.split_whitespace()
-                    .map(|w| Expr::Literal(crate::parser::primary::container::angle_word_value(w)))
+                    .map(|w| {
+                        WordItem::Expr(Expr::Literal(
+                            crate::parser::primary::container::angle_word_value(w),
+                        ))
+                    })
                     .collect()
             } else {
                 s.split_whitespace()
-                    .map(|w| Expr::Literal(literal_str(w.to_string())))
+                    .map(|w| WordItem::Expr(Expr::Literal(literal_str(w.to_string()))))
                     .collect()
             };
-            return Ok((
-                after,
-                spell_word_quote(flags, &s, make_processed_word_result(words, flags.val)),
-            ));
+            return Ok((after, word_quote_node(flags, &s, words)));
         }
-        let func_name = if flags.val {
-            "__mutsu_quotewords_atom"
-        } else {
-            "__mutsu_words_atom"
-        };
-        return Ok((
-            after,
-            Expr::Call {
-                name: Symbol::intern(func_name),
-                args: vec![expr],
-                listop: false,
-            },
-        ));
+        return Ok((after, crate::rakuast::words_atom_expr(expr, flags.val)));
     }
 
     Ok((after, expr))
@@ -380,14 +342,7 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // Process content with flags
     if flags.quotewords {
         let items = parse_quotewords_items(content, &flags)?;
-        return Ok((
-            rest,
-            spell_word_quote(
-                &flags,
-                content,
-                make_processed_word_result(items, flags.val),
-            ),
-        ));
+        return Ok((rest, word_quote_node(&flags, content, items)));
     }
     let expr = process_content_with_flags(content, &flags)?;
 

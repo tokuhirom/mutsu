@@ -756,8 +756,7 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 
 pub(crate) use primary::{
     QuoteWordsPart, angle_word_is_numeric_literal, angle_words_expr, item_statements_expr,
-    item_statements_parts, normalized_quote, quotewords_from_words, quotewords_spelled_parts,
-    word_quote_expr,
+    item_statements_parts, normalized_quote, quotewords_spelled_parts, word_quote_items,
 };
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
@@ -1430,10 +1429,10 @@ mod tests {
         let Stmt::VarDecl { expr, .. } = &stmts[0] else {
             panic!("expected VarDecl")
         };
+        // The executing parse lowers a word quote to the runtime's word list.
         let items = match expr {
             Expr::ArrayLiteral(items) => items,
-            // The reserved spelling a word list lowers to; see `make_list_expr`.
-            Expr::Call { name, args, .. } if name.resolve() == "__mutsu_word_list" => args,
+            Expr::Call { args, .. } => args,
             _ => panic!("expected list expression"),
         };
         assert_eq!(items.len(), 7);

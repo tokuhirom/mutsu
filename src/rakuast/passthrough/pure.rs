@@ -178,7 +178,10 @@ impl Purity {
             }
             Expr::Ast(node) => {
                 self.fixup = true;
-                matches!(node.as_ref(), ParsedExpr::Assign(_))
+                matches!(
+                    node.as_ref(),
+                    ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)
+                )
             }
             // The lowering plants the priming scopes of a `*` itself (a second pass
             // over a tree the parser already marked wraps it again), and a `||`
