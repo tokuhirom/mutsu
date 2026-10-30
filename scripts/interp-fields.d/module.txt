@@ -16,7 +16,6 @@ fatal_mode
 import_scope_stack
 import_target_package
 imported_compiled_fns
-imported_env_aliases
 imported_exported_proto_tags
 imported_operator_names
 imported_routine_aliases

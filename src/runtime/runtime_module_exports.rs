@@ -1417,10 +1417,8 @@ impl Interpreter {
             {
                 let bare_key = format!("&{name}");
                 let qualified_key = format!("&{current_pkg}::{name}");
-                self.record_import_env_key(&bare_key);
-                self.record_import_env_key(&qualified_key);
-                self.env.insert(bare_key, val.clone());
-                self.env.insert(qualified_key, val);
+                self.import_env_insert(&bare_key, val.clone());
+                self.import_env_insert(&qualified_key, val);
             }
         }
         for (name, symbol_tags) in vars {
@@ -1519,8 +1517,7 @@ impl Interpreter {
                     }
                     self.note_unit_hook_routine(routine, &routine_value);
                 }
-                self.record_import_env_key(&env_target);
-                self.env.insert(env_target, value.clone());
+                self.import_env_insert(&env_target, value.clone());
                 // The loading module's own routines run in their CALLER's env
                 // once the load restores it, so they find a short type name
                 // only through the package's alias table
@@ -1556,8 +1553,7 @@ impl Interpreter {
                             None,
                         ));
                     }
-                    self.record_import_env_key(&short);
-                    self.env.insert(short, value);
+                    self.import_env_insert(&short, value);
                 }
             }
         }

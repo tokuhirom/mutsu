@@ -19,19 +19,10 @@ impl Interpreter {
             return;
         }
         self.save_lexical_type_binding_for_scope_exit(name);
-        self.env
-            .insert(name.to_string(), Value::package(Symbol::intern(name)));
-        // The stub is the block's lexical binding of the package: a top-level
-        // routine the block calls does not see it (`hide_unit_names_from_frame`,
-        // #13801).
-        if let Some(scope) = self
-            .module
-            .import_scope_stack
-            .last_mut()
-            .filter(|scope| scope.scope_classes)
-        {
-            scope.imported_env_keys.insert(Symbol::intern(name));
-        }
+        // The stub is the block's lexical binding of the package: it lives in
+        // the block's import layer, so a top-level routine the block calls
+        // does not see it (`hide_unit_names_from_frame`, #13801).
+        self.bind_in_open_import_layer(name, Value::package(Symbol::intern(name)));
         self.register_lexical_class(name.to_string());
     }
 

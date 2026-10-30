@@ -92,7 +92,11 @@ impl Interpreter {
     /// dynamic-scope: the live binding belongs to whoever is importing now,
     /// not to the scope that happened to load the module first.
     fn overlay_caller_dynamics(env: &mut crate::env::Env, caller_env: &crate::env::Env) {
-        for (key, value) in caller_env {
+        // The caller's env may be a tier (an import region, a block): its own
+        // iterator lists only that tier's writes, not the dynamics an outer
+        // frame declared.
+        let visible = caller_env.flattened();
+        for (key, value) in &visible {
             if key.is_dynamic_var_env_key() {
                 env.insert_sym(*key, value.clone());
             }
@@ -508,7 +512,6 @@ impl Interpreter {
         // compiler's static scope chain plus this alias table -- not from a
         // dynamic env scan) sees a symbol a custom `sub EXPORT` installed, not
         // just one an `is export` tag installed (#8564).
-        self.record_import_env_key(&env_key);
         // A sigilless import can shadow a CORE term keyword (`True`, `False`,
         // ...) for the importing compunit — `Logic::Ternary` replaces all of
         // `True`/`Unknown`/`False` with three-valued-logic objects this way.
@@ -527,8 +530,7 @@ impl Interpreter {
             // Recorded like the plain key, so a scope that undoes its imports
             // (an EVAL) drops this entry with it.
             let term_key = crate::runtime::term_names::term_key(&env_key);
-            self.record_import_env_key(&term_key);
-            self.env.insert(term_key, value.clone());
+            self.import_env_insert(&term_key, value.clone());
         }
         // A sigilless term is also part of the LOADING module's own scope, so
         // that module's routines still find it once a re-`use` of an
@@ -551,8 +553,7 @@ impl Interpreter {
         // stores the bare symbol too) -- the Today dist exports its term this
         // way from `sub EXPORT`.
         if let Some(symbol) = Interpreter::term_symbol_from_name(&env_key) {
-            self.record_import_env_key(symbol);
-            self.env.insert(symbol.to_string(), value.clone());
+            self.import_env_insert(symbol, value.clone());
         }
         // A module body's own import is part of the LOADING module's scope,
         // not of the scope that loads it: the load's restore takes the env
@@ -578,10 +579,9 @@ impl Interpreter {
                 break;
             }
         }
-        self.env.insert(env_key.clone(), value.clone());
+        self.import_env_insert(&env_key, value.clone());
         if normalized_env_key != env_key {
-            self.record_import_env_key(&normalized_env_key);
-            self.env.insert(normalized_env_key, value);
+            self.import_env_insert(&normalized_env_key, value);
         }
         self.invalidate_fn_resolution();
     }

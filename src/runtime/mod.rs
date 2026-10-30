@@ -2780,17 +2780,13 @@ pub(crate) struct ImportScopeSnapshot {
     /// Fully-qualified imported proto names whose enclosing family this scope
     /// already hid. Further imports of the name merge with the first one.
     pub(crate) shadowed_proto_names: HashSet<String>,
-    /// Exact `env` keys `import_module` wrote as an imported alias while
-    /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
-    /// or the importing-package-qualified `&GLOBAL::ok` the trait-value
-    /// path also writes). Recorded explicitly at the write site
-    /// (`record_import_env_key`) rather than diffed from a before/after
-    /// snapshot: `env` also carries ordinary statement-level state that has
-    /// nothing to do with imports (`$!`, `$_`, a plain `my` local, ...), and
-    /// diffing would drop those too just because they happened to be
-    /// written for the first time inside a `use`-containing block — see
-    /// `pop_import_scope`'s doc comment for the regression that caused.
-    pub(crate) imported_env_keys: rustc_hash::FxHashSet<Symbol>,
+    /// The id of the import layer (`Env::mark_import_layer`) this scope's
+    /// imports bind into: the `env` names `import_module`, a `sub EXPORT` hook
+    /// and `require` write as imported aliases (`&ok`, `$CONST`, an exported
+    /// type, an enum key). The region drops the layer whole on exit, so no key
+    /// list and no restore exist (ADR-14140). `0` for a scope with no region
+    /// (a BEGIN-time preload), whose imports persist by design.
+    pub(crate) import_layer: u32,
     /// The modules whose GLOBAL this scope's block merged into itself (`need`,
     /// `use`): the block's grant of their packages. The `ModuleMerge` env marker
     /// that makes it visible lives in the region's own env tier
@@ -2802,12 +2798,6 @@ pub(crate) struct ImportScopeSnapshot {
     /// routine written outside the block must not see them through its
     /// caller's frame either (`hide_unit_names_from_frame`).
     pub(crate) block_bound_keys: rustc_hash::FxHashSet<Symbol>,
-    /// The value each of `imported_env_keys` held before this scope first
-    /// imported over it, for the keys that already had one. The block's
-    /// import shadows that outer binding, so `pop_import_scope` puts it back
-    /// instead of removing the key (`use M :t; { use M } t` still sees the
-    /// outer import of `t`).
-    pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
     /// The env-key import record (`ModuleState::unit_env_imports`) as it was
     /// before this scope was pushed.
     pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,

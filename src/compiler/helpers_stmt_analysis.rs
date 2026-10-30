@@ -690,7 +690,7 @@ impl Compiler {
     /// Check if a block directly contains a `use`/`need`/`require`/`import`/`no`
     /// statement (non-recursive). A `need` or `require` merges a module into the
     /// block too (ADR-11136).
-    pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
+    pub(crate) fn has_use_stmt(stmts: &[Stmt]) -> bool {
         stmts.iter().any(Self::opens_import_scope)
     }
 

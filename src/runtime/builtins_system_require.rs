@@ -698,24 +698,20 @@ impl Interpreter {
             RequiredKey::None => {}
             RequiredKey::Routine => self.install_required_routine(module, &symbol[1..]),
             RequiredKey::Var => {
-                self.env.insert(symbol.to_string(), value.clone());
-                self.record_import_env_key(symbol);
+                self.import_env_insert(symbol, value.clone());
             }
             RequiredKey::Term => {
-                self.env.insert(symbol.to_string(), value.clone());
+                self.import_env_insert(symbol, value.clone());
                 self.env
                     .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
-                self.record_import_env_key(symbol);
             }
             RequiredKey::EnumKey => {
                 let key = crate::runtime::enum_bare_names::enum_bare_key_for_insert(symbol);
                 self.unsuppress_name(symbol);
-                self.record_import_env_key(&key);
-                self.env.insert(key, value.clone());
+                self.import_env_insert(&key, value.clone());
             }
             RequiredKey::TermKey(term) => {
-                self.record_import_env_key(&term);
-                self.env.insert(term, value.clone());
+                self.import_env_insert(&term, value.clone());
             }
         }
         Some(value)
@@ -795,8 +791,8 @@ impl Interpreter {
                     // the scope records the import, though it binds the name
                     // itself.
                     match &key {
-                        RequiredKey::Term => self.record_import_env_key(symbol),
-                        RequiredKey::TermKey(term) => self.record_import_env_key(term),
+                        RequiredKey::Term => self.note_import_env_key(Symbol::intern(symbol)),
+                        RequiredKey::TermKey(term) => self.note_import_env_key(Symbol::intern(term)),
                         _ => {}
                     }
                     values.insert(Symbol::intern(symbol), value);

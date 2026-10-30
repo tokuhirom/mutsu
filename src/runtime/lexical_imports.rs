@@ -515,7 +515,7 @@ impl Interpreter {
     }
 
     /// Note an env key the running import wrote (see
-    /// [`Self::record_import_env_key`]).
+    /// [`Self::import_env_insert`]).
     // Cost: O(1).
     pub(crate) fn note_lexical_import_env_key(&mut self, key: Symbol) {
         if !key.resolve().starts_with('&') {
