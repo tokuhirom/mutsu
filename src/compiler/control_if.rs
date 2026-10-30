@@ -320,6 +320,20 @@ impl Compiler {
         branch: &[Stmt],
         is_statement_modifier: bool,
     ) {
+        // A branch is a block: its imports are lexical to it, so an import
+        // region brackets it (#15698). A statement modifier is no block, and a
+        // topic-mutating branch is compiled as a `Stmt::Block`, which opens its
+        // own region.
+        if is_statement_modifier || Self::body_mutates_topic(branch) {
+            self.compile_if_statement_branch_body(branch, is_statement_modifier);
+        } else {
+            self.with_import_scope_region(branch, |c| {
+                c.compile_if_statement_branch_body(branch, is_statement_modifier)
+            });
+        }
+    }
+
+    fn compile_if_statement_branch_body(&mut self, branch: &[Stmt], is_statement_modifier: bool) {
         if Self::has_block_enter_leave_phasers(branch) {
             // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
             // scope: its LEAVE must fire when the branch exits (OO::Monitors
