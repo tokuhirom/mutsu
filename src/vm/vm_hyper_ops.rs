@@ -204,6 +204,65 @@ impl Interpreter {
         }
     }
 
+    /// Whether `v` is an instance that is `Positional` but not `Iterable`.
+    // Cost: O(1) type checks.
+    fn is_positional_non_iterable_instance(&mut self, v: &Value) -> bool {
+        let v = v.deref_container();
+        let v = v.descalarize();
+        matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+            && self.type_matches_value("Positional", v)
+            && !self.type_matches_value("Iterable", v)
+    }
+
+    /// The hyper operands with any `Positional`-but-not-`Iterable` instance
+    /// resolved: `X::Multi::Ambiguous` when the other operand is listy too (or
+    /// is such an instance), else its `.list`.
+    // Cost: O(1) type checks plus one `.list` call per such operand.
+    fn hyper_positional_instance_operands(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let lp = self.is_positional_non_iterable_instance(&left);
+        let rp = self.is_positional_non_iterable_instance(&right);
+        if !lp && !rp {
+            return Ok((left, right));
+        }
+        if (lp && (rp || Self::is_listy(&right))) || (rp && Self::is_listy(&left)) {
+            let name = |v: &Value| match v.view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                _ => crate::value::type_name::value_type_name(v).to_string(),
+            };
+            let msg = format!(
+                "Ambiguous call to 'infix(Hyper: {}, {})'; these signatures all match:\n\
+                 (Hyper $:: Positional:D \\left, \\right)\n\
+                 (Hyper $:: \\left, Positional:D \\right)\n\
+                 (Hyper $:: \\left, \\right)",
+                name(&left),
+                name(&right)
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let mut err = RuntimeError::new(format!("X::Multi::Ambiguous: {msg}"));
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::Multi::Ambiguous"),
+                attrs,
+            )));
+            return Err(err);
+        }
+        let left = if lp {
+            self.try_compiled_method_or_interpret(left.deref_container(), "list", vec![])?
+        } else {
+            left
+        };
+        let right = if rp {
+            self.try_compiled_method_or_interpret(right.deref_container(), "list", vec![])?
+        } else {
+            right
+        };
+        Ok((left, right))
+    }
+
     /// Cost: O(max(e_l, e_r)) operator applications, e = elements of each operand
     /// (nested structures recurse, so O(total leaves)); results built eagerly.
     pub(super) fn exec_hyper_op(
@@ -214,6 +273,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        // An object that is `Positional` but not `Iterable` (a NativeCall `CArray`)
+        // ties rakudo's three `Hyper` candidates against any other listy operand
+        // (`X::Multi::Ambiguous`); against a plain scalar it expands as its `.list`.
+        let from_positional_object = self.is_positional_non_iterable_instance(&left)
+            || self.is_positional_non_iterable_instance(&right);
+        let (left, right) = self.hyper_positional_instance_operands(left, right)?;
         let left_itemized = Self::is_itemized_operand(&left);
         let right_itemized = Self::is_itemized_operand(&right);
         let right = Self::deitemize_hyper_operand(&right);
@@ -288,7 +353,10 @@ impl Interpreter {
         // The result inherits the itemization of the operand that donated its
         // structure (the left when listy, else the right): raku renders
         // `($a >>+<< (2,4,6)).raku` as `$(3, 6, 9)` for an itemized `$a`.
-        let result = if left_itemized || (!Self::is_listy(&left) && right_itemized) {
+        let result = if from_positional_object
+            || left_itemized
+            || (!Self::is_listy(&left) && right_itemized)
+        {
             Self::itemize_value(result)
         } else {
             result
