@@ -334,6 +334,12 @@ impl Interpreter {
                 crate::runtime::Interpreter::meta_call_type_target(&how, meta_method, &target);
             how_args.push(type_target);
             how_args.extend(args);
+            if let Some(result) = loan_env!(
+                self,
+                try_builtin_how_meta_lane(&how, meta_method, &how_args)
+            ) {
+                return result;
+            }
             // CARRIER: MOP dispatch through the receiver's HOW, mut (MOP). See ledger §C.
             crate::vm::vm_stats::record_method_fallback(method);
             return loan_env!(self, call_method_with_values(how, meta_method, how_args));
