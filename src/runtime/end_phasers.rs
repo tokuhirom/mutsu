@@ -172,6 +172,7 @@ impl Interpreter {
             dead_keys,
             order,
             capture_seq: None,
+            fixtures: None,
         });
         self.control.main_end_slots.insert(end_index, slot);
     }
@@ -215,7 +216,9 @@ impl Interpreter {
         let unit = self.executing_unit_sym_for_module_load();
         let mark = self.control.end_phaser_capture_seq;
         self.control.end_phaser_capture_seq += 1;
+        let fixtures = self.frame_fixtures().cloned();
         let phaser = &mut self.control.end_phasers[slot];
+        phaser.fixtures = fixtures;
         phaser.env = captured_env;
         phaser.package = package;
         phaser.unit = unit;
@@ -240,6 +243,7 @@ impl Interpreter {
             dead_keys: crate::runtime::NameSet::default(),
             order,
             capture_seq: Some(mark),
+            fixtures: self.frame_fixtures().cloned(),
         });
     }
 
