@@ -393,7 +393,8 @@ impl Interpreter {
         };
         let (order, pos_of) = declared_index::canonical_order(&ids);
         let sorted_ids: Vec<u32> = order.iter().map(|&i| ids[i]).collect();
-        let index = cache.declared_index.borrow().get(&sorted_ids).unwrap_or_else(|| {
+        let cached = cache.declared_index.borrow().get(&sorted_ids);
+        let index = cached.unwrap_or_else(|| {
             let canonical: Vec<&MultiRank> = order.iter().map(|&i| &ranks[i]).collect();
             let before = cache.dependent_answers.get();
             let index = Arc::new(declared_index::build(&canonical, &conforms));
