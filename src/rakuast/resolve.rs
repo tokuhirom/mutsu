@@ -143,8 +143,10 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
         let mut stub = RakuAstNode::clone(held);
         stub.fields.retain(|f| f.name != Some("body"));
         scopes.declare(format!("&{name}"), Value::rakuast(Box::new(stub)));
-    } else if matches!(held.class, C::Class | C::Role | C::Grammar | C::Module | C::Package)
-        && let Some(name) = package_name(held)
+    } else if matches!(
+        held.class,
+        C::Class | C::Role | C::Grammar | C::Module | C::Package
+    ) && let Some(name) = package_name(held)
         && let Some(package) = external("RakuAST::Declaration::LexicalPackage", &name)
     {
         scopes.declare(name, package);
