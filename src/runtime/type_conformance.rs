@@ -413,3 +413,44 @@ impl Interpreter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The memoised answer for two measured RakuAST names, `Mu` and `Any`
+    /// is what the general walk answers (outside a scope there is no memo).
+    #[test]
+    fn rakuast_and_special_names_agree_with_the_general_walk() {
+        let interp = Interpreter::new();
+        let names = [
+            "RakuAST::IntLiteral",
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Node",
+            "RakuAST::Sinkable",
+            "RakuAST::Statement::Expression",
+            "RakuAST::Call::BlockMethod",
+            "RakuAST::Call::TermAsMethod",
+            "RakuAST::IMPL",
+            "RakuAST::NoSuchNode",
+            "Mu",
+            "Any",
+            "Str",
+        ];
+        let general: Vec<bool> = names
+            .iter()
+            .flat_map(|sub| names.iter().map(move |sup| (*sub, *sup)))
+            .map(|(sub, sup)| interp.nominal_type_conforms(Symbol::intern(sub), Symbol::intern(sup)))
+            .collect();
+        let _scope = interp.conformance_scope();
+        let memoised: Vec<bool> = names
+            .iter()
+            .flat_map(|sub| names.iter().map(move |sup| (*sub, *sup)))
+            .map(|(sub, sup)| interp.nominal_type_conforms(Symbol::intern(sub), Symbol::intern(sup)))
+            .collect();
+        assert_eq!(general, memoised);
+        // And the relation is not trivially all-false or all-true.
+        assert!(memoised.iter().any(|b| *b) && memoised.iter().any(|b| !*b));
+    }
+}
