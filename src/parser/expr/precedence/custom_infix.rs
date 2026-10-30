@@ -243,31 +243,13 @@ pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
         || crate::parser::stmt::simple::is_user_defined_infix(&name)
 }
 
-/// Core infix words the expression parser has a dedicated level for, so a
-/// declaration of one (an overload) does not need the custom-word path to be
-/// parsed. The comparison words (`eq`, `lt`, `eqv`, `after`, ...) are not here:
-/// a declared one still reaches the parser only through that path.
-const CORE_PARSED_INFIX_WORDS: &[&str] = &[
-    "and",
-    "or",
-    "xor",
-    "andthen",
-    "orelse",
-    "notandthen",
-    "min",
-    "max",
-    "cmp",
-    "coll",
-    "unicmp",
-    "leg",
-    "ff",
-    "fff",
-    "gcd",
-    "lcm",
-    "x",
-    "xx",
-    "o",
-];
+/// Core infix words whose dedicated parser level also dispatches to a declared
+/// candidate, so a declaration of one (an overload) does not need the
+/// custom-word path to be parsed. Other core words are not here: the comparison
+/// words (`eq`, `lt`, `eqv`, `after`, ...) are reached only through that path,
+/// and `unicmp`, `coll` and `o` run their core body without trying the declared
+/// candidate (`t/routines/dispatch/core-infix-user-candidate-fallbacks.t`).
+const CORE_PARSED_INFIX_WORDS: &[&str] = &["cmp", "leg", "min", "max", "x", "xx"];
 
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
 /// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
