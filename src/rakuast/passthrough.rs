@@ -470,6 +470,15 @@ impl VisitMut for Kept {
             crate::ast_visit::walk_stmt_mut(self, inner);
         }
         crate::ast_visit::walk_stmt_mut(self, stmt);
+        // The traits a package was written with (`is T`, `does R`) are the
+        // package's own fields; only a routine keeps them in its body.
+        if let Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } | Stmt::Package { body, .. } =
+            stmt
+        {
+            body.retain(|s| {
+                !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+            });
+        }
         if let Some(inner) = pending
             && let Stmt::Ast(node) = stmt
             && let ParsedStmt::Modified(modified) = node.as_mut()
