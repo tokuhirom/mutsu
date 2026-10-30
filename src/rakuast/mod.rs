@@ -3404,6 +3404,9 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
             | RakuAstClass::CallNameWithoutParentheses
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeSetting
+            | RakuAstClass::TypeSubset
+            | RakuAstClass::TermEnum
+            | RakuAstClass::TermName
             // A package declaration does `Lookup` too, but nothing resolves it.
             | RakuAstClass::Class
             | RakuAstClass::Role
@@ -3436,6 +3439,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(resolve::declared_type(node));
     }
+    if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
+        return Some(resolve::container_type(node));
+    }
     if is_resolvable_lookup(node.class) {
         match method {
             "is-resolved" => return Some(Value::truth(node.origin.2.is_some())),
@@ -3467,7 +3473,11 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             node.class,
             RakuAstClass::StatementList | RakuAstClass::StatementSequence | RakuAstClass::SemiList
         ))
-        || (method == "code-statements" && node.class == RakuAstClass::StatementList)
+        || (method == "code-statements"
+            && matches!(
+                node.class,
+                RakuAstClass::StatementList | RakuAstClass::SemiList
+            ))
         || (method == "args" && node.class == RakuAstClass::ArgList)
     {
         let items = node
@@ -3617,8 +3627,11 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         names.push("add-worry");
         names.push("replace-statement-list");
     }
-    if class == RakuAstClass::StatementList {
+    if matches!(class, RakuAstClass::StatementList | RakuAstClass::SemiList) {
         names.push("code-statements");
+    }
+    if class == RakuAstClass::VarDeclarationSimple {
+        names.push("container-type");
     }
     if matches!(
         class,
