@@ -97,6 +97,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     // refuses any other node.
     node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
         .rakuast_add_colonpair(a[0].clone())),
+    // `Origin.as-match`: an undocumented rakudo method that `static::CLI`'s
+    // analysis calls (maintainer-approved, #15597): the span as a match-like
+    // object carrying the file, line and offsets.
+    origin_row!("RakuAST::Origin", "as-match", 0, origin_as_match),
+    origin_row!("RakuAST::Origin::Match", "file", 0, match_file),
+    origin_row!("RakuAST::Origin::Match", "line", 0, match_line),
+    origin_row!("RakuAST::Origin::Match", "from", 0, origin_position),
+    origin_row!("RakuAST::Origin::Match", "to", 0, origin_end),
+    origin_row!("RakuAST::Origin::Match", "orig", 0, match_orig),
+    super::narrow_row!("RakuAST::Origin::Match", "Str", 0, match_str),
+    origin_row!("RakuAST::Origin::Match", "chars", 0, match_chars),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
@@ -139,6 +150,100 @@ fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return None;
     };
     attributes.as_map().get("from").cloned().map(Ok)
+}
+
+/// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
+/// the line the span begins on, its character offsets and the unit's text.
+// Cost: O(1) plus a copy of the unit text handle.
+fn origin_as_match(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let origin = attributes.as_map();
+    let mut match_attrs = std::collections::HashMap::new();
+    for key in ["from", "to"] {
+        match_attrs.insert(key.to_string(), origin.get(key).cloned()?);
+    }
+    match_attrs.insert(
+        "line".to_string(),
+        origin
+            .get(crate::rakuast::unit_source::LINE_ATTR)
+            .cloned()
+            .unwrap_or_else(|| Value::int(1)),
+    );
+    let file = crate::unit_source_file::current()
+        .map(|file| file.resolve().to_string())
+        .unwrap_or_default();
+    match_attrs.insert("file".to_string(), Value::str(file));
+    if let Some(source) = origin.get("source")
+        && let ValueView::Instance { attributes, .. } = source.view()
+        && let Some(orig) = attributes
+            .as_map()
+            .get(crate::rakuast::unit_source::ORIG_ATTR)
+    {
+        match_attrs.insert("orig".to_string(), orig.clone());
+    }
+    Some(Ok(Value::make_instance(
+        Symbol::intern("RakuAST::Origin::Match"),
+        match_attrs,
+    )))
+}
+
+/// A `Match`-shaped origin's attribute, by name.
+// Cost: O(1).
+fn match_attr(target: &Value, name: &str) -> Option<Value> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes.as_map().get(name).cloned()
+}
+
+/// `Match.file`.
+// Cost: O(1).
+fn match_file(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "file").map(Ok)
+}
+
+/// `Match.line`: the 1-based line the span begins on.
+// Cost: O(1).
+fn match_line(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "line").map(Ok)
+}
+
+/// `Match.orig`: the whole unit text.
+// Cost: O(1).
+fn match_orig(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match_attr(target, "orig").map(Ok)
+}
+
+/// `Match.Str`: the text of the span.
+// Cost: O(n), n = chars of the unit up to the span's end.
+fn match_str(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let (ValueView::Int(from), ValueView::Int(to)) = (
+        match_attr(target, "from")?.view(),
+        match_attr(target, "to")?.view(),
+    ) else {
+        return None;
+    };
+    let orig = match_attr(target, "orig")?.to_string_value();
+    let text: String = orig
+        .chars()
+        .skip(from.max(0) as usize)
+        .take((to - from).max(0) as usize)
+        .collect();
+    Some(Ok(Value::str(text)))
+}
+
+/// `Match.chars`: the length of the span.
+// Cost: O(1).
+fn match_chars(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let (ValueView::Int(from), ValueView::Int(to)) = (
+        match_attr(target, "from")?.view(),
+        match_attr(target, "to")?.view(),
+    ) else {
+        return None;
+    };
+    Some(Ok(Value::int((to - from).max(0))))
 }
 
 /// `Origin.to`.
