@@ -1500,6 +1500,15 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
+/// parser builds for it (`Parameter.meta-object` is made from it).
+// Cost: O(size of the parameter node).
+pub(crate) fn parameter_param_def(
+    node: &RakuAstNode,
+) -> Result<crate::ast::ParamDef, RuntimeError> {
+    lower::lower_parameter_def(node)
+}
+
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
@@ -3589,6 +3598,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if is_resolvable_lookup(class) {
         names.push("is-resolved");
         names.push("resolution");
+    }
+    if class == RakuAstClass::Parameter {
+        names.push("meta-object");
     }
     if class == RakuAstClass::StatementExpression {
         names.push("set-expression");

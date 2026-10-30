@@ -125,6 +125,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // `RakuAST::Parameter.meta-object`: the `Parameter` the node declares
+    // (`static::Analyzer` reads its type, `rw`, `copy`, ...; #15610).
+    MethodRow {
+        owner: "RakuAST::Parameter",
+        name: "meta-object",
+        arity: 0,
+        handler: Handler::Interp(parameter_meta_object),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // An imported routine (`use Test; plan`) and a unit-declared package.
     MethodRow {
         owner: "RakuAST::Declaration::Import",
@@ -241,6 +251,24 @@ fn sub_value(
         return Some(Ok(interp.sub_value_from_function_def(def)));
     }
     Some(Ok(routine))
+}
+
+/// `Parameter.meta-object` of a `RakuAST::Parameter` node.
+// Cost: O(size of the parameter node).
+fn parameter_meta_object(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    Some(
+        crate::rakuast::parameter_param_def(node).map(|def| {
+            crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
+        }),
+    )
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
