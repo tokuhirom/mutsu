@@ -1009,7 +1009,9 @@ fn heredoc_delimiters(line: &str) -> Vec<String> {
         };
         let tail = tail.trim_start();
         let (open, body) = match tail.chars().next() {
-            Some(c @ ('/' | '<' | '"' | '\'' | '(' | '{' | '[')) => (Some(c), &tail[c.len_utf8()..]),
+            Some(c @ ('/' | '<' | '"' | '\'' | '(' | '{' | '[')) => {
+                (Some(c), &tail[c.len_utf8()..])
+            }
             _ => (None, tail),
         };
         let closer = match open {
