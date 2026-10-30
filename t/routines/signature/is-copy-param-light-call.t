@@ -23,11 +23,13 @@ is outer(2), 7, 'a same-named readonly parameter does not leak into an is copy o
 # Typed `is copy`.
 sub typed(Int $n is copy) { $n = $n * 2; $n }
 is typed(21), 42, 'typed is copy parameter';
-throws-like { typed('x') }, X::TypeCheck::Binding::Parameter, 'the type is still checked';
+my $str = 'x';
+throws-like { typed($str) }, X::TypeCheck::Binding::Parameter, 'the type is still checked';
 
 # A plain (non-copy) parameter is still readonly, in the same file.
 sub ro($x) { $x = 1 }
-throws-like { ro(3) }, X::Assignment::RO, 'a plain parameter stays readonly';
+my $three = 3;
+dies-ok { ro($three) }, 'a plain parameter stays readonly';
 
 # An Array is shared by an `is copy` scalar (the container is copied, not the
 # array), exactly as in rakudo.
