@@ -47,8 +47,8 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
     }
 }
 
-pub(super) use super::statements::{block_statements, statement_list, statement_list_owned};
 use super::statements::{Statements, statement_list_inner};
+pub(super) use super::statements::{block_statements, statement_list, statement_list_owned};
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
 /// `unit` for `unit class` / `unit module`; `our` is the default and renders

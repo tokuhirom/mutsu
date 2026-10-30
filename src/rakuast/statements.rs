@@ -128,4 +128,3 @@ pub(super) fn statement_list_inner(mut stmts: Statements<'_>) -> Result<RakuAstN
         fields,
     })
 }
-
