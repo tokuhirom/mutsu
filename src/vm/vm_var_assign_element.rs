@@ -1394,7 +1394,7 @@ impl Interpreter {
         // closure) and written into the slot it would replace the invocant
         // for the rest of the method.
         if result.is_ok()
-            && save_var_name != "self"
+            && save_var_sym != crate::symbol::wk::self_()
             && matches!(
                 self.env().get_sym(save_var_sym).map(Value::view),
                 Some(ValueView::Instance { .. }) | Some(ValueView::Mixin(..))
