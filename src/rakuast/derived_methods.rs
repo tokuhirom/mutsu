@@ -31,7 +31,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
             &["dispatch", "dispatcher"]
         }
-        VarDeclarationSimple => &["original-type"],
+        VarDeclarationSimple => &["original-type", "return-type"],
         VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
         Sub | RegexDeclaration | TokenDeclaration | RuleDeclaration => &["declarator"],
@@ -237,6 +237,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (TypeSubset, "of") | (VarDeclarationTerm, "type") => {
             Some(field(node, method).unwrap_or(Value::NIL))
         }
+        (VarDeclarationSimple, "return-type") => Some(super::resolve::return_type(node)),
         (ContextualizerItem, "sigil") => Some(Value::str_from("$")),
         (ContextualizerList, "sigil") => Some(Value::str_from("@")),
         (ContextualizerHash, "sigil") => Some(Value::str_from("%")),

@@ -272,6 +272,49 @@ pub(super) fn declared_type(node: &RakuAstNode) -> Value {
     Value::package(crate::symbol::Symbol::intern(&name))
 }
 
+/// `VarDeclaration::Simple.return-type`: the type of the declared container as
+/// rakudo answers it: `Mu` when untyped, the declared type (`Int`, `Str:D`),
+/// `Positional`/`Associative` (parameterized by a declared element type) and
+/// `Callable` for the sigiled forms.
+// Cost: O(f), f = fields of the node.
+pub(super) fn return_type(node: &RakuAstNode) -> Value {
+    let sigil = leaf(node, "sigil").and_then(|s| s.chars().next());
+    let element = declared_type_with_smiley(node);
+    let name = match (sigil, element) {
+        (Some('@'), Some(t)) => format!("Positional[{t}]"),
+        (Some('@'), None) => "Positional".to_string(),
+        (Some('%'), Some(t)) => format!("Associative[{t}]"),
+        (Some('%'), None) => "Associative".to_string(),
+        (Some('&'), _) => "Callable".to_string(),
+        (_, Some(t)) => t,
+        _ => "Mu".to_string(),
+    };
+    Value::package(crate::symbol::Symbol::intern(&name))
+}
+
+/// The declared type of `node` including a definiteness smiley (`Str:D`).
+// Cost: O(f), f = fields of the node.
+fn declared_type_with_smiley(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|f| f.name == Some("type"))?;
+    let RakuAstFieldValue::Node(ty) = &field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(ty) = ty.view() else {
+        return None;
+    };
+    let base = type_node_name(ty)?;
+    let smiley = ty
+        .fields
+        .iter()
+        .find(|f| f.name == Some("definite"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => Some(if v.truthy() { ":D" } else { ":U" }),
+            _ => None,
+        })
+        .unwrap_or("");
+    Some(format!("{base}{smiley}"))
+}
+
 /// A leaf string of `node`: the named field, else its single positional one
 /// (`Var::Lexical.new("$x")`, `Infix.new("+")`).
 // Cost: O(f), f = fields of the node.
