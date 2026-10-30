@@ -118,6 +118,10 @@ pub(super) fn declared_by(node: &RakuAstNode) -> Option<String> {
 }
 
 fn visit(node: &RakuAstNode, found: &mut HashSet<String>) {
+    if super::passthrough::is_leaf(node) {
+        super::passthrough::declared_routines_of(node, found);
+        return;
+    }
     if let Some(name) = declared_by(node) {
         found.insert(name);
     }

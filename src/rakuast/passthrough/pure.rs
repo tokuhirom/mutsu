@@ -140,6 +140,40 @@ impl Purity {
                     && custom_traits.is_empty()
                     && marks.is_plain()
             }
+            // A plain named routine whose signature and body are themselves
+            // carried: nothing in it is read by node class.
+            Stmt::SubDecl {
+                name_expr: None,
+                associativity: None,
+                precedence_trait: None,
+                return_type: None,
+                signature_alternates,
+                export_tags,
+                custom_traits,
+                is_export: false,
+                is_test_assertion: false,
+                supersede: false,
+                is_hidden_from_backtrace: false,
+                ..
+            } => {
+                signature_alternates.is_empty()
+                    && export_tags.is_empty()
+                    && custom_traits.is_empty()
+            }
+            // A plain method, with the same conditions.
+            Stmt::MethodDecl {
+                name_expr: None,
+                value_prototype: None,
+                return_type: None,
+                deprecated_message: None,
+                handles,
+                custom_traits,
+                is_export: false,
+                is_hidden_from_backtrace: false,
+                export_tags,
+                nested_capture_index: None,
+                ..
+            } => handles.is_empty() && custom_traits.is_empty() && export_tags.is_empty(),
             Stmt::Call { args, .. } => args
                 .iter()
                 .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Named { .. })),
