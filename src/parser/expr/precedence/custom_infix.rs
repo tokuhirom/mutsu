@@ -248,8 +248,25 @@ pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
 /// parsed. The comparison words (`eq`, `lt`, `eqv`, `after`, ...) are not here:
 /// a declared one still reaches the parser only through that path.
 const CORE_PARSED_INFIX_WORDS: &[&str] = &[
-    "and", "or", "xor", "andthen", "orelse", "notandthen", "min", "max", "cmp", "coll", "unicmp",
-    "leg", "ff", "fff", "gcd", "lcm", "x", "xx", "o",
+    "and",
+    "or",
+    "xor",
+    "andthen",
+    "orelse",
+    "notandthen",
+    "min",
+    "max",
+    "cmp",
+    "coll",
+    "unicmp",
+    "leg",
+    "ff",
+    "fff",
+    "gcd",
+    "lcm",
+    "x",
+    "xx",
+    "o",
 ];
 
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
