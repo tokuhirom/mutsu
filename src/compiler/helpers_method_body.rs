@@ -199,7 +199,7 @@ impl Compiler {
             "?ROLE".to_string(),
         ];
         method_params.extend(effective_params.iter().cloned());
-        let mut cc = method_compiler.compile_routine_closure_body(
+        let mut cc = method_compiler.compile_method_closure_body(
             &method_params,
             &effective_param_defs,
             body,
