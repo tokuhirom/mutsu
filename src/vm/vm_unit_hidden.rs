@@ -16,6 +16,23 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl Interpreter {
+    /// Whether the open import scope `scope` belongs to a block `code` was
+    /// declared in: one of the scope's `use` import sets is among the sets
+    /// lexically around the declaration. Such a routine is written inside the
+    /// block, so what the block imported is in its lexical outer and its frame
+    /// does not hide it (#15661).
+    // Cost: O(s * c), s = the scope's import sets, c = the declaration's chain.
+    fn scope_encloses_code(
+        scope: &crate::runtime::ImportScopeSnapshot,
+        code: &CompiledCode,
+    ) -> bool {
+        !code.enclosing_import_chain.is_empty()
+            && scope
+                .lexical_sets
+                .iter()
+                .any(|set| code.enclosing_import_chain.contains(set))
+    }
+
     /// Mark the running frame root, just made for `code` (a routine declared
     /// at a compunit's top level, `CompiledCode::outer_is_unit`), as linked to
     /// that compunit's scope: the program scope for the program's own code,
@@ -87,6 +104,7 @@ impl Interpreter {
             None => {
                 if !self.module.import_scope_stack.iter().any(|scope| {
                     scope.scope_classes
+                        && !Self::scope_encloses_code(scope, code)
                         && !(self
                             .env()
                             .import_layer_keys(scope.import_layer)
@@ -113,7 +131,7 @@ impl Interpreter {
             .module
             .import_scope_stack
             .iter()
-            .filter(|scope| scope.scope_classes)
+            .filter(|scope| scope.scope_classes && !Self::scope_encloses_code(scope, code))
             .flat_map(|scope| {
                 self.env()
                     .import_layer_keys(scope.import_layer)

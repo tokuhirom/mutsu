@@ -1,0 +1,3 @@
+# A named sub written inside a `use`-block sees what the block imported
+
+A routine declared in a bare block at the mainline is called through the registry, and its frame hid the symbols the open block-scoped `use`s imported, so a `sub` inside `{ use M; ... }` could not resolve `::('T')` or `EVAL 'T'` for a type `M` exports (#15661). The compiler now records the import sets lexically around a named sub's declaration (`CompiledCode::enclosing_import_chain`), and `hide_unit_names_from_frame` leaves the imports of an open scope that holds one of those sets visible, as the routine's lexical outer holds them. A routine written outside the block still does not see them.
