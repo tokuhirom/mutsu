@@ -59,6 +59,52 @@ fn with_elem_chain_root(expr: &Expr, root: &Expr) -> Expr {
         })
 }
 
+/// For an element chain rooted in a package stash (`Foo::<%reg><x>`): the
+/// stash's entry (`Foo::<%reg>`) and the chain below it rooted at a
+/// placeholder variable (the caller swaps in the temporary that holds the
+/// entry), or `None` when the chain has no subscript below the entry or is
+/// rooted elsewhere.
+// Cost: O(d), d = subscript and paren depth.
+fn stash_entry_root(expr: &Expr) -> Option<(Expr, Expr)> {
+    let mut levels = Vec::new();
+    let mut cur = expr;
+    loop {
+        match cur {
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } => {
+                levels.push((index, *is_positional));
+                cur = target;
+            }
+            Expr::Grouped(inner) => cur = inner,
+            _ => break,
+        }
+    }
+    if !matches!(cur, Expr::PseudoStash(_)) || levels.len() < 2 {
+        return None;
+    }
+    let (entry, is_positional) = levels.pop()?;
+    let entry = Expr::Index {
+        target: Box::new(cur.clone()),
+        index: entry.clone(),
+        is_positional,
+        spelling: Default::default(),
+    };
+    let below = levels.into_iter().rev().fold(
+        Expr::Var(String::new()),
+        |target, (index, is_positional)| Expr::Index {
+            target: Box::new(target),
+            index: index.clone(),
+            is_positional,
+            spelling: Default::default(),
+        },
+    );
+    Some((entry, below))
+}
+
 impl Compiler {
     /// `++`/`--` on an element whose chain is rooted in something other than
     /// a variable or a method call: a call (`f()[0]++`) or a declaration
@@ -102,11 +148,19 @@ impl Compiler {
             return true;
         }
         let tmp = format!("__mutsu_incdec_root_{}", self.code.constants.len());
+        // A package stash root (`Foo::<%reg><x>++`): the stash is no container
+        // to write through, but its entry (`Foo::<%reg>`, the shared `our %reg`)
+        // is, so the temporary binds the entry and the chain continues below it.
+        let (root, expr) = match stash_entry_root(expr) {
+            Some((entry, below)) => (entry, below),
+            None => (root.clone(), expr.clone()),
+        };
+        let expr = &expr;
         let bind_decl = Stmt::VarDecl {
             marks: Default::default(),
             anonymous: false,
             name: tmp.clone(),
-            expr: root.clone(),
+            expr: root,
             type_constraint: None,
             is_state: false,
             is_our: false,
