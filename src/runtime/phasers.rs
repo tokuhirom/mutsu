@@ -374,7 +374,6 @@ fn reorder_at_level(
         if is_top
             && last_check_idx.is_some()
             && matches!(&stmt, Stmt::SubDecl { .. })
-            && rest.iter().all(stmt_is_hoist_safe)
         {
             early_subs.push(stmt);
             continue;
