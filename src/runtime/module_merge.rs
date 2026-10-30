@@ -456,15 +456,10 @@ impl Interpreter {
             .last()
             .is_some_and(|scope| scope.unit == importer);
         if block_level {
-            let key = MetaNs::ModuleMerge.key(module_sym);
-            let previous = self.env.get_sym(key).cloned();
-            if let Some(scope) = self.module.import_scope_stack.last_mut()
-                && scope.imported_env_keys.insert(key)
-                && let Some(previous) = previous
-            {
-                scope.shadowed_env_values.insert(key, previous);
+            if let Some(scope) = self.module.import_scope_stack.last_mut() {
+                scope.merged_modules.insert(module_sym);
             }
-            self.env.insert_sym(key, Value::TRUE);
+            self.env.insert_sym(MetaNs::ModuleMerge.key(module_sym), Value::TRUE);
             return;
         }
         crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
