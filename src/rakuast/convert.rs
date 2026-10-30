@@ -2801,20 +2801,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             .ok_or_else(|| unsupported("dynamic match regex without a source tree"))
             .and_then(quoted_regex_node),
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
-            if name.as_str() == "__object_hash" {
-                let mut fields = Vec::with_capacity(2);
-                if args.len() == 1 {
-                    fields.push(node_field(None, convert_expr(&args[0])?));
-                } else if !args.is_empty() {
-                    fields.push(node_field(None, comma_list_node(args)?));
-                }
-                fields.push(leaf_field(Some("object-hash"), Value::truth(true)));
-                return Ok(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::CircumfixHashComposer,
-                    fields,
-                });
-            }
             if name.as_str() == "require"
                 && let Some(require) = super::use_stmt::convert_require(args)?
             {
@@ -6468,7 +6454,7 @@ pub(super) fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNo
     })
 }
 
-fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(items.len());
     for it in items {
         operands.push(Value::rakuast(Box::new(convert_expr(it)?)));

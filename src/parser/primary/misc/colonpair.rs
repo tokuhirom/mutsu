@@ -114,17 +114,10 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(after_brace) = r.strip_prefix('{') {
         let (inner, _) = ws_inner(after_brace);
         // Empty object hash: :{} — still a Mu-keyed object hash, so route
-        // through the same `__object_hash()` construction as the non-empty
+        // through the same object-hash node as the non-empty
         // form (a plain `Expr::Hash` would lose the key-type marking).
         if let Some(rest) = inner.strip_prefix('}') {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: crate::symbol::Symbol::intern("__object_hash"),
-                    args: Vec::new(),
-                    listop: false,
-                },
-            ));
+            return Ok((rest, crate::rakuast::object_hash_expr(Vec::new())));
         }
         return parse_object_hash_body(inner);
     }
@@ -886,8 +879,8 @@ fn parse_signature_fragment(input: &str) -> PResult<'_, String> {
 
 /// Parse the body of an object hash `:{ ... }`.
 /// Object hashes allow arbitrary expression keys (e.g., regex), so we parse
-/// each entry using full expression parsing and emit an `__object_hash(...)`
-/// call with Pair arguments — the runtime builds a `Mu`-keyed object hash
+/// each entry using full expression parsing and keep the entries as the object-hash node —
+/// the runtime builds a `Mu`-keyed object hash
 /// (`.WHICH`-keyed, key objects preserved), matching raku's `Hash[Mu,Mu]`.
 fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
     let mut args = Vec::new();
@@ -895,14 +888,7 @@ fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
     loop {
         let (r, _) = ws_inner(rest);
         if let Some(rest) = r.strip_prefix('}') {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: crate::symbol::Symbol::intern("__object_hash"),
-                    args,
-                    listop: false,
-                },
-            ));
+            return Ok((rest, crate::rakuast::object_hash_expr(args)));
         }
 
         // Parse each entry as a full expression (which handles `expr => expr` as
