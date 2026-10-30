@@ -264,11 +264,9 @@ fn parameter_meta_object(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    Some(
-        crate::rakuast::parameter_param_def(node).map(|def| {
-            crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
-        }),
-    )
+    Some(crate::rakuast::parameter_param_def(node).map(|def| {
+        crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
+    }))
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,
@@ -552,15 +550,11 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
-        RakuAstClass::ParameterTargetVar => {
-            Some(vec![
-                node_value("declaration")
-                    .or_else(|| crate::rakuast::annotated_target_declaration(node))
-                    .unwrap_or_else(|| {
-                        rakuast(target_declaration(node), Vec::new(), &node.origin)
-                    }),
-            ])
-        }
+        RakuAstClass::ParameterTargetVar => Some(vec![
+            node_value("declaration")
+                .or_else(|| crate::rakuast::annotated_target_declaration(node))
+                .unwrap_or_else(|| rakuast(target_declaration(node), Vec::new(), &node.origin)),
+        ]),
         // Rakudo visits a quoted regex's adverbs before its body.
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx
             if node.fields.iter().any(|f| f.name == Some("adverbs")) =>
