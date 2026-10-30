@@ -92,7 +92,11 @@ impl Interpreter {
     /// dynamic-scope: the live binding belongs to whoever is importing now,
     /// not to the scope that happened to load the module first.
     fn overlay_caller_dynamics(env: &mut crate::env::Env, caller_env: &crate::env::Env) {
-        for (key, value) in caller_env {
+        // The caller's env may be a tier (an import region, a block): its own
+        // iterator lists only that tier's writes, not the dynamics an outer
+        // frame declared.
+        let visible = caller_env.flattened();
+        for (key, value) in &visible {
             if key.is_dynamic_var_env_key() {
                 env.insert_sym(*key, value.clone());
             }
