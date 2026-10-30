@@ -796,6 +796,17 @@ impl Interpreter {
         if let Some(value) = self.try_user_infix("infix:<eqv>", &left, &right)? {
             return Ok(value);
         }
+        self.core_eqv_values(left, right)
+    }
+
+    /// The core `infix:<eqv>` alone (`&CORE::infix:<eqv>`): [`Self::eqv_values`]
+    /// without the first refusal it gives a user candidate.
+    // Cost: as `eqv_values`.
+    pub(crate) fn core_eqv_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         // `eqv` on two lazy iterables of the SAME type cannot be answered without
         // iterating them, so it throws X::Cannot::Lazy (action `eqv`). Two lazy
         // iterables of DIFFERENT type are trivially not-eqv (no iteration needed),
