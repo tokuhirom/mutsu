@@ -110,6 +110,46 @@ restore is skipped), and for the `need` path
 `t/modules/module-global-merge-is-lexical.t`,
 `use-merges-packages-into-my-not-global.t`, plus `roast/S11-modules`.
 
+## 2.1 Where the grant lives at run time: a frame-record field
+
+The leaf readers of the grant (`module_merged_here`, `package_merged_here`,
+`modules_merged_in_view`, `hide_unit_names_from_frame`, `lexical_import_replay`)
+are run-time gates reached from dynamic name resolution. They have no source
+position, so a compile-time chain index cannot reach them, and a set entry alone
+cannot say whether its block is still open (a set is global by id). The grant
+needs (a) a region that opens and closes with the block, (b) inheritance by
+closures and routines created inside the region, (c) invisibility to a callee
+written outside it (#13801). Options:
+
+| Option | (a) region | (b) closure capture | (c) callee | Cost per read | Cost per closure creation |
+| --- | --- | --- | --- | --- | --- |
+| A. A field of the frame record (`FrameFixtures`, ADR-14843) | scoped helper opens and cuts it, as `begin_scoped_invocant` does | `capture_fixtures` already copies the creator's record into `SubData`/`LazyList` | a call pushes its own record, so the callee has none | O(g), g = granted modules in the record (usually 0-2), one record read | O(1) extra: the record is already copied, the grant list is an `Arc` bump |
+| B. A new `SubData` field | the region still needs its own stack | explicit, but a second capture mechanism beside `fixtures` | needs a second per-call push | O(g) | one more field on every closure |
+| C. The compile-time chain of the creating code | none: the chain is static, so a statement after an inline block sees the block's set | free | free | O(s) | O(1) |
+| D. Set entries plus a run-time "open" flag | a flag per set, restored on every exit path | none: a closure would read the flag after exit | wrong: the flag is global | O(s) | none |
+
+**Recommendation: A.** `FrameFixtures` gains `import_grants:
+Option<Arc<[Symbol]>>` (the modules the open block regions of this frame, and of
+the frame a closure was created in, merged). `OpCode::ImportScope`'s open and
+close edit it through a scoped helper, the same way a rebinding of `self` is
+scoped: pushed at the region's entry, cut on every exit path (return, exception,
+non-local exit). `merge_module_into_importer` adds to the innermost record
+instead of writing an env key. The readers ask the current record. The grant set
+of §2.4 stays the compile-time declaration of *which* statements grant (and the
+home of the other entries); the record is the run-time extent. Lifetime: a
+closure that escapes keeps its `Arc`, which dies with the closure; nothing is
+global. Consistency with ADR-14843: the record is already the authority for the
+frame's fixed names, copied into closures and pushed with the frame, so the
+grant adds no second capture path, and `make check-frame-fixtures` extends to it.
+
+Known cost of A: a named `sub` declared in the block and called after the block
+exited carries no record unless routine values capture one; whether
+`capture_fixtures` already covers them is verified before implementation, and if
+not, the grant for such a routine falls back to the compile-time chain of its
+declaration (option C, which is exact for a routine because its body is one
+code object). Open to the maintainer: whether the record or the closure should
+own the `Arc`.
+
 ## 3. Consequences
 
 - A name an import binds is invisible after the block and in callees, as in
