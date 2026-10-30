@@ -31,6 +31,9 @@ pub(crate) fn shadow_slots_active() -> bool {
 }
 
 #[cfg(test)]
+mod readonly_code_param_tests;
+
+#[cfg(test)]
 mod declaration_plan_tests {
     use super::Compiler;
     use crate::ast::Stmt;
@@ -3178,10 +3181,25 @@ impl Compiler {
     /// mentioned in a body is not a declaration of it (raku: `my $y = 7;
     /// sub f { say $y; { say $OUTER::y } }` prints 7 then Nil).
     /// Record `pd` in `CompiledCode::readonly_code_params` when it is an
-    /// `&`-parameter whose binding nothing can change: no `is copy`, `is rw`
-    /// or `is raw`.
+    /// `&`-parameter or a plain `$`-scalar parameter whose binding nothing can
+    /// change: no `is copy`, `is rw` or `is raw`.
+    ///
+    /// A scalar parameter is included so that a closure created in the routine
+    /// (`$!lock.protect: { ... $id ... }`) captures THIS invocation's value
+    /// rather than resolving the name later: a thread cloned while a caller
+    /// held a shared cell under the same name would otherwise answer that
+    /// cell's stale value (#15625).
     fn note_readonly_code_param(&mut self, pd: &crate::ast::ParamDef) {
-        if pd.name.starts_with('&')
+        let plain_scalar = !pd.sigilless
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && pd.name != "_"
+            && pd
+                .name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_');
+        if (pd.name.starts_with('&') || plain_scalar)
             && !pd
                 .traits
                 .iter()
