@@ -748,7 +748,8 @@ pub(crate) use type_decl_site::TypeDeclSiteCaches;
 /// free.
 pub(crate) static NIL_VALUE: Value = Value(NanBox::NIL);
 pub(crate) use types::{
-    parametric_role_display_name, parametric_role_name, role_mixin_suffix, what_type_name,
+    constraint_without_named_args, parametric_role_display_name, parametric_role_name,
+    role_mixin_suffix, what_type_name,
 };
 pub use view::ValueView;
 

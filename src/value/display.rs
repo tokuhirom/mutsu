@@ -148,6 +148,10 @@ pub(crate) fn is_core_metamodel_name(name: &str) -> bool {
 /// just the first, or a display would keep only `Store` and silently drop
 /// `::Session`.
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    // A parameterized type is named without its named arguments (#15504).
+    if let std::borrow::Cow::Owned(plain) = super::constraint_without_named_args(name) {
+        return std::borrow::Cow::Owned(user_facing_type_name(&plain).into_owned());
+    }
     // `:_` is the "either" smiley — it constrains nothing, and Rakudo does not
     // keep it in the type object's name (`(Int:_).^name` is `Int`, while `:D`
     // and `:U` ARE kept). Normalising it here — a display-only site — leaves

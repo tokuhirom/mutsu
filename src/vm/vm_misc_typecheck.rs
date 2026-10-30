@@ -24,7 +24,8 @@ impl Interpreter {
         }
         // A `use variables :D/:U` smiley is already part of the constraint:
         // the compiler applies the (lexical) pragma to the declaration.
-        let effective_constraint = std::borrow::Cow::Borrowed(Self::const_str(code, tc_idx));
+        let effective_constraint =
+            crate::value::constraint_without_named_args(Self::const_str(code, tc_idx));
         // A `constant` type alias stands for the type it names, so resolve it
         // to that target once, here, before anything below reads the
         // constraint. Everything downstream then sees `Int` rather than

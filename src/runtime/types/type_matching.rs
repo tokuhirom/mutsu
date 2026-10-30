@@ -895,6 +895,18 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // A parameterized role's named arguments are no part of the type
+        // (#15504).
+        let constraint = &*crate::value::constraint_without_named_args(constraint);
+        // A type object spelled the same way (an attribute's `NT[Int,
+        // :coerce(&cf)]` default) is named without them too.
+        if let ValueView::Package(name) = value.view() {
+            let spelled = name.resolve();
+            if let std::borrow::Cow::Owned(plain) = crate::value::constraint_without_named_args(&spelled) {
+                let plain = Value::package(crate::symbol::Symbol::intern(&plain));
+                return self.type_matches_value_unviewed_why(constraint, &plain, why);
+            }
+        }
         // `CORE::Name` names the type the scope outside every `my` declaration
         // of `Name` sees. The parser writes it for a type position that
         // precedes a later `my class Name` in its scope (rakudo resolves a
