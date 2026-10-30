@@ -30,6 +30,7 @@
 //! Debug builds recompute every fast answer the general way and assert the two
 //! agree, so a case the facts get wrong fails the `t/` suite.
 
+use super::multi_rank::{self, MultiRank};
 use super::*;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
@@ -51,6 +52,21 @@ struct NameFacts {
     /// The env leaves this name alone (it may be the `sup`).
     sup_ok: bool,
     sup_serial: u32,
+    /// The measured RakuAST names this name conforms to, when it is one
+    /// (`None` inside: it is not). Static, like the table it comes from.
+    rakuast: Option<Option<Ancestors>>,
+    /// Whether this name is a RakuAST name a measured name can be compared
+    /// with (no smiley), as a `sup`.
+    rakuast_sup: Option<bool>,
+    /// `Mu` or `Any`, whose relation to every other name is fixed.
+    special: Option<Special>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Special {
+    None,
+    Mu,
+    Any,
 }
 
 #[derive(Default)]
@@ -62,7 +78,29 @@ pub(crate) struct ConformanceCache {
     /// Identifies the outermost open scope; `serial 0` is never a live scope.
     scope_serial: Cell<u32>,
     names: RefCell<NameTable>,
+    /// Answers given by the registry or the env (everything but the static
+    /// RakuAST / `Mu` / `Any` relations); see [`Interpreter::assign_tiers_memoised`].
+    dependent_answers: Cell<u64>,
+    tier_memo: RefCell<Vec<TierMemoEntry>>,
 }
+
+impl ConformanceCache {
+    // Cost: O(1).
+    pub(super) fn note_dependent_answer(&self) {
+        self.dependent_answers.set(self.dependent_answers.get() + 1);
+    }
+}
+
+/// The tiers `assign_tiers` gave one candidate set, keyed by the ranks it
+/// was given.
+struct TierMemoEntry {
+    ranks: Vec<MultiRank>,
+    tiers: Vec<(u32, bool)>,
+}
+
+/// Candidate sets below this size rank faster than they hash.
+const TIER_MEMO_MIN: usize = 16;
+const TIER_MEMO_CAP: usize = 16;
 
 /// `NameFacts` by symbol id, without hashing: `slots[id]` is `(epoch, index
 /// into facts + 1)`, live only while `epoch` is the table's current one, so
@@ -168,6 +206,40 @@ impl Interpreter {
         let serial = cache.scope_serial.get();
         // Nothing below runs user code or re-enters this cache.
         let mut names = cache.names.borrow_mut();
+        // Two RakuAST names: the measured hierarchy answers, exactly as
+        // `type_hierarchy_distance` does for a node or type object of the
+        // `sub` class (rakudo's own `RakuAST::Deparse` ranks 267 candidates
+        // by it). Not a registry fact, so independent of the stamp and scope.
+        let sup_special = *names
+            .get_or_default(sup)?
+            .special
+            .get_or_insert_with(|| Self::special_of(sup));
+        let sub_special = *names
+            .get_or_default(sub)?
+            .special
+            .get_or_insert_with(|| Self::special_of(sub));
+        // `nominal_type_conforms_general`'s opening rules.
+        if sup_special == Special::Mu {
+            return Some(true);
+        }
+        if sup_special == Special::Any {
+            return Some(sub_special != Special::Mu);
+        }
+        if sub_special != Special::None {
+            return Some(false);
+        }
+        let sup_is_rakuast = *names
+            .get_or_default(sup)?
+            .rakuast_sup
+            .get_or_insert_with(|| Self::is_rakuast_sup_name(sup));
+        if let Some(conforms_to) = names
+            .get_or_default(sub)?
+            .rakuast
+            .get_or_insert_with(|| Self::compute_rakuast_conformance(sub))
+        {
+            return sup_is_rakuast.then(|| conforms_to.contains(&sup.raw()));
+        }
+        cache.dependent_answers.set(cache.dependent_answers.get() + 1);
         let sup_facts = names.get_or_default(sup)?;
         if sup_facts.sup_serial != serial {
             sup_facts.sup_ok = self.compute_conformance_sup_is_plain(sup);
@@ -232,6 +304,87 @@ impl Interpreter {
         Some(Arc::from(ids))
     }
 
+    // Cost: O(1).
+    fn special_of(name: Symbol) -> Special {
+        name.with_str(|n| match n {
+            "Mu" => Special::Mu,
+            "Any" => Special::Any,
+            _ => Special::None,
+        })
+    }
+
+    /// [`multi_rank::assign_tiers`] over `items`, remembering the result when
+    /// every relation it asked about is static (a measured RakuAST name,
+    /// `Mu`, `Any`): the tiers are then a function of the ranks alone, and a
+    /// later dispatch with the same ranks (the same candidates and argument
+    /// types) reuses them instead of comparing every pair again. Rakudo's
+    /// `RakuAST::Deparse` has 267 candidates, so the pairwise ranking cost
+    /// ~20ms per node. A relation read from the registry or the env is never
+    /// remembered: it can change between two dispatches.
+    // Cost: O(n) on a hit, O(n^2 * r) on a miss, n = candidates, r = one
+    // `conforms` call.
+    pub(crate) fn assign_tiers_memoised<T>(
+        &self,
+        items: &mut [T],
+        rank: impl Fn(&mut T) -> &mut MultiRank,
+    ) {
+        let cache = &self.caches.type_conformance;
+        let _scope = self.conformance_scope();
+        let conforms = |x, y| self.nominal_type_conforms(x, y);
+        if items.len() < TIER_MEMO_MIN {
+            multi_rank::assign_tiers(items, &rank, &conforms);
+            return;
+        }
+        let ranks: Vec<MultiRank> = items.iter_mut().map(|item| *rank(item)).collect();
+        {
+            let memo = cache.tier_memo.borrow();
+            if let Some(entry) = memo.iter().find(|entry| entry.ranks == ranks) {
+                for (item, &(tier, bind_check)) in items.iter_mut().zip(&entry.tiers) {
+                    let r = rank(item);
+                    r.tier = tier;
+                    r.tiered = true;
+                    r.tier_bind_check = bind_check;
+                }
+                return;
+            }
+        }
+        let dependent_before = cache.dependent_answers.get();
+        multi_rank::assign_tiers(items, &rank, &conforms);
+        if cache.dependent_answers.get() != dependent_before {
+            return;
+        }
+        let tiers = items
+            .iter_mut()
+            .map(|item| {
+                let r = rank(item);
+                (r.tier, r.tier_bind_check)
+            })
+            .collect();
+        let mut memo = cache.tier_memo.borrow_mut();
+        if memo.len() >= TIER_MEMO_CAP {
+            memo.remove(0);
+        }
+        memo.push(TierMemoEntry { ranks, tiers });
+    }
+
+    /// Whether `sup` is a RakuAST name without a smiley, the shape the
+    /// measured-hierarchy answer of `type_hierarchy_distance` covers.
+    // Cost: O(1), a prefix and suffix test.
+    fn is_rakuast_sup_name(sup: Symbol) -> bool {
+        sup.with_str(|n| n.starts_with("RakuAST::") && !n.ends_with(":D") && !n.ends_with(":U"))
+    }
+
+    /// The ids of the measured RakuAST names `sub` conforms to, when `sub` is
+    /// a measured name.
+    // Cost: O(d + r), d = MRO depth, r = roles of `sub`.
+    fn compute_rakuast_conformance(sub: Symbol) -> Option<Ancestors> {
+        let names = sub.with_str(crate::rakuast::type_object_conforms_to)?;
+        let mut ids: Vec<u32> = names.iter().map(|n| Symbol::intern(n).raw()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        Some(Arc::from(ids))
+    }
+
     /// Whether the env leaves the type name `sup` alone, so the ranking walk
     /// treats it as the type it spells.
     // Cost: O(1) lookups, see `type_name_binding`.
@@ -258,5 +411,46 @@ impl Interpreter {
                 matches!(bound.view(), ValueView::Package(p) if p.with_str(|p| p == name))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The memoised answer for two measured RakuAST names, `Mu` and `Any`
+    /// is what the general walk answers (outside a scope there is no memo).
+    #[test]
+    fn rakuast_and_special_names_agree_with_the_general_walk() {
+        let interp = Interpreter::new();
+        let names = [
+            "RakuAST::IntLiteral",
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Node",
+            "RakuAST::Sinkable",
+            "RakuAST::Statement::Expression",
+            "RakuAST::Call::BlockMethod",
+            "RakuAST::Call::TermAsMethod",
+            "RakuAST::IMPL",
+            "RakuAST::NoSuchNode",
+            "Mu",
+            "Any",
+            "Str",
+        ];
+        let general: Vec<bool> = names
+            .iter()
+            .flat_map(|sub| names.iter().map(move |sup| (*sub, *sup)))
+            .map(|(sub, sup)| interp.nominal_type_conforms(Symbol::intern(sub), Symbol::intern(sup)))
+            .collect();
+        let _scope = interp.conformance_scope();
+        let memoised: Vec<bool> = names
+            .iter()
+            .flat_map(|sub| names.iter().map(move |sup| (*sub, *sup)))
+            .map(|(sub, sup)| interp.nominal_type_conforms(Symbol::intern(sub), Symbol::intern(sup)))
+            .collect();
+        assert_eq!(general, memoised);
+        // And the relation is not trivially all-false or all-true.
+        assert!(memoised.iter().any(|b| *b) && memoised.iter().any(|b| !*b));
     }
 }

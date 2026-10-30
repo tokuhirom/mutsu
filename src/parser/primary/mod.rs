@@ -1040,17 +1040,19 @@ mod tests {
 
     #[test]
     fn parse_typed_hash_literal_with_non_string_keys() {
-        // Object hash `:{ ... }` parses as an `__object_hash(...)` call —
-        // the runtime builds a Mu-keyed, `.WHICH`-keyed object hash — with
-        // expression-typed keys (e.g., regex keys) preserved as arguments.
+        // Object hash `:{ ... }` parses as an object-hash node (the runtime
+        // builds a Mu-keyed, `.WHICH`-keyed hash) with expression-typed keys
+        // (e.g., regex keys) preserved as entries.
         let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args, .. } => {
-                assert_eq!(name, "__object_hash");
-                assert_eq!(args.len(), 3);
-            }
-            _ => panic!("expected __object_hash call, got {:?}", expr),
+            Expr::Ast(node) => match *node {
+                crate::ast::parsed::ParsedExpr::ObjectHash(entries) => {
+                    assert_eq!(entries.len(), 3)
+                }
+                other => panic!("expected an object hash, got {:?}", other),
+            },
+            _ => panic!("expected an object hash node, got {:?}", expr),
         }
     }
 

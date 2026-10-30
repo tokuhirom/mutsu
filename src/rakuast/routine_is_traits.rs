@@ -87,7 +87,9 @@ fn is_operator_reference(reference: &str) -> bool {
                 && category.chars().all(|c| c.is_ascii_alphabetic())
                 && op.ends_with('>')
                 && !op[..op.len() - 1].is_empty()
-                && !op[..op.len() - 1].contains(['<', '>'])
+                // `>` is a valid operator character (`&infix:<|>>`); a `<`
+                // would start a second subscript.
+                && !op[..op.len() - 1].contains('<')
                 // Only a bracketing operator's name holds a space
                 // (`&postcircumfix:<[ ]>`); `<a b>` is not an operator.
                 && (!op.contains(' ') || category.ends_with("circumfix"))
@@ -139,9 +141,24 @@ fn precedence_reference(argument: &RakuAstNode) -> Result<Option<String>, Runtim
         return Ok(None);
     }
     match positional_leaf(variable)?.view() {
-        ValueView::Str(reference) if is_operator_reference(&reference) => {
-            Ok(Some(reference.to_string()))
+        ValueView::Str(reference) => {
+            let reference = canonical_operator_reference(&reference);
+            Ok(is_operator_reference(&reference).then_some(reference))
         }
         _ => Ok(None),
     }
+}
+
+/// `&infix:«|>»` (the interpolating spelling of an operator's name, needed when
+/// the symbol holds a `>`) as the `&infix:<|>>` form the precedence lookup and
+/// the parser's own trait reference use. Any other spelling is returned as is.
+// Cost: O(|reference|).
+fn canonical_operator_reference(reference: &str) -> String {
+    reference
+        .split_once(":\u{ab}")
+        .and_then(|(head, rest)| {
+            rest.strip_suffix('\u{bb}')
+                .map(|symbol| format!("{head}:<{symbol}>"))
+        })
+        .unwrap_or_else(|| reference.to_string())
 }

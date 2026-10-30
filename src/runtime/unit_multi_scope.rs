@@ -325,6 +325,41 @@ impl Interpreter {
         self.invalidate_fn_resolution();
     }
 
+    /// The candidates of the scoped family `name` that compunit `unit`
+    /// imported from other compunits, by registry key. Its own are not
+    /// included.
+    // Cost: O(f), f = registered functions; O(1) unless `name` is scoped.
+    pub(crate) fn imported_family_candidates(
+        &self,
+        unit: Symbol,
+        name: &str,
+    ) -> Vec<(Symbol, Arc<FunctionDef>)> {
+        // An operator family is ranked per importer (`operator_candidate_visible`).
+        if name.contains(":<") {
+            return Vec::new();
+        }
+        let Some(name_sym) = Symbol::lookup(name) else {
+            return Vec::new();
+        };
+        let Some(families) = self.module.operator_import_units.get(&name_sym) else {
+            return Vec::new();
+        };
+        self.registry()
+            .functions
+            .iter()
+            .filter(|(key, def)| {
+                function_key_base_name(key.as_str()) == name && {
+                    let decl_unit = self.unit_of_source(def.source_file.as_deref());
+                    decl_unit != unit
+                        && families
+                            .get(&decl_unit)
+                            .is_some_and(|importers| importers.contains(&unit))
+                }
+            })
+            .map(|(key, def)| (*key, def.clone()))
+            .collect()
+    }
+
     /// Narrow a positive multi-candidate probe for a scoped `name` (see
     /// [`Self::operator_has_import_scope`]) to the candidates the running code
     /// can see: a family only another compunit declared or imported leaves

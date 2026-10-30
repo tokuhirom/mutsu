@@ -37,10 +37,6 @@ fn source_call_provenance_does_not_escape_into_arguments() {
 fn source_names_do_not_activate_generated_helper_conversion() {
     let expr = Expr::source_identifier(call("__object_hash", Vec::new()), "__object_hash()");
     assert_eq!(convert_expr(&expr).unwrap().class, RakuAstClass::CallName);
-    assert_eq!(
-        convert_expr(&call("__object_hash", Vec::new()))
-            .unwrap()
-            .class,
-        RakuAstClass::CircumfixHashComposer,
-    );
+    // The reserved name is lowered output now; unmarked, it is refused like any other.
+    assert!(convert_expr(&call("__object_hash", Vec::new())).is_err());
 }
