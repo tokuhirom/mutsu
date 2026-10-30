@@ -83,19 +83,18 @@ pub(super) fn is_keyword_shadowed(name: &str) -> bool {
     KEYWORD_SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(name)))
 }
 
-/// Record the constant names `root` redeclares, replacing the previous unit's.
+/// Record the names `root` declares that lowering resolves other names
+/// against: the constants it redeclares, its sigilless terms, its packages and
+/// its routines (`declared_routines`). One walk of the unit finds all four.
 // Cost: O(n), n = nodes in the unit.
 pub(super) fn scan(root: &RakuAstNode) {
     KEYWORD_SCOPES.with(|s| s.borrow_mut().clear());
-    let mut found = HashSet::new();
-    visit(root, false, &mut found);
-    SHADOWED.with(|s| *s.borrow_mut() = found);
-    let mut terms = HashSet::new();
-    visit_terms(root, &mut terms);
-    TERMS.with(|t| *t.borrow_mut() = terms);
-    let mut packages = HashSet::new();
-    visit_packages(root, &mut packages);
-    PACKAGES.with(|p| *p.borrow_mut() = packages);
+    let mut found = Found::default();
+    walk(root, false, &mut found);
+    SHADOWED.with(|s| *s.borrow_mut() = found.shadowed);
+    TERMS.with(|t| *t.borrow_mut() = found.terms);
+    PACKAGES.with(|p| *p.borrow_mut() = found.packages);
+    super::declared_routines::set(found.routines);
 }
 
 /// Whether the unit last passed to [`scan`] declares a package named `name`.
@@ -105,85 +104,10 @@ pub(super) fn declares_package(name: &str) -> bool {
     PACKAGES.with(|p| p.borrow().contains(name))
 }
 
-fn visit_packages(node: &RakuAstNode, found: &mut HashSet<String>) {
-    if matches!(
-        node.class,
-        RakuAstClass::Class
-            | RakuAstClass::Role
-            | RakuAstClass::Grammar
-            | RakuAstClass::Module
-            | RakuAstClass::Package
-    ) && let Ok(name) = named_child(node, "name")
-        && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
-    {
-        found.insert(name);
-    }
-    for field in &node.fields {
-        match &field.value {
-            RakuAstFieldValue::Node(v) => visit_packages_value(v, found),
-            RakuAstFieldValue::List(items) => {
-                for v in items {
-                    visit_packages_value(v, found);
-                }
-            }
-            RakuAstFieldValue::Adverb(_) => {}
-        }
-    }
-}
-
-fn visit_packages_value(v: &crate::value::Value, found: &mut HashSet<String>) {
-    if let ValueView::RakuAst(child) = v.view() {
-        visit_packages(child, found);
-    }
-}
-
 /// Whether the unit last passed to [`scan`] declares a sigilless term `name`.
 // Cost: O(1).
 pub(super) fn is_declared_term(name: &str) -> bool {
     TERMS.with(|t| t.borrow().contains(name))
-}
-
-fn visit_terms(node: &RakuAstNode, found: &mut HashSet<String>) {
-    let declared = match node.class {
-        RakuAstClass::VarDeclarationTerm => named_child(node, "name").ok(),
-        RakuAstClass::ParameterTargetTerm => named_child_or_positional(node).ok(),
-        _ => None,
-    };
-    if let Some(name) = declared
-        && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
-    {
-        found.insert(name);
-    }
-    if node.class == RakuAstClass::VarDeclarationConstant
-        && let Ok(name) = leaf_str(node, "name")
-    {
-        // `constant term:<$box> = …` declares the term `$box`, sigil and all.
-        if let Some(term) = name
-            .strip_prefix("term:<")
-            .and_then(|rest| rest.strip_suffix('>'))
-        {
-            found.insert(term.to_string());
-        } else if !name.starts_with(['$', '@', '%', '&']) {
-            found.insert(name);
-        }
-    }
-    for field in &node.fields {
-        match &field.value {
-            RakuAstFieldValue::Node(v) => visit_terms_value(v, found),
-            RakuAstFieldValue::List(items) => {
-                for v in items {
-                    visit_terms_value(v, found);
-                }
-            }
-            RakuAstFieldValue::Adverb(_) => {}
-        }
-    }
-}
-
-fn visit_terms_value(v: &crate::value::Value, found: &mut HashSet<String>) {
-    if let ValueView::RakuAst(child) = v.view() {
-        visit_terms(child, found);
-    }
 }
 
 /// Whether the unit last passed to [`scan`] declares a term named `name`.
@@ -202,7 +126,62 @@ fn is_term_declaration(class: RakuAstClass) -> bool {
     )
 }
 
-fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
+#[derive(Default)]
+struct Found {
+    shadowed: HashSet<String>,
+    terms: HashSet<String>,
+    packages: HashSet<String>,
+    routines: HashSet<String>,
+}
+
+fn walk(node: &RakuAstNode, in_decl: bool, found: &mut Found) {
+    if super::passthrough::is_leaf(node) {
+        let mut facts = super::passthrough::ScopeFacts::default();
+        super::passthrough::scope_facts_of(node, &mut facts);
+        found.shadowed.extend(facts.terms.iter().cloned());
+        found.terms.extend(facts.terms);
+        found.packages.extend(facts.packages);
+        super::passthrough::declared_routines_of(node, &mut found.routines);
+        return;
+    }
+    if let Some(name) = super::declared_routines::declared_by(node) {
+        found.routines.insert(name);
+    }
+    if matches!(
+        node.class,
+        RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
+    ) && let Ok(name) = named_child(node, "name")
+        && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
+    {
+        found.packages.insert(name);
+    }
+    let declared = match node.class {
+        RakuAstClass::VarDeclarationTerm => named_child(node, "name").ok(),
+        RakuAstClass::ParameterTargetTerm => named_child_or_positional(node).ok(),
+        _ => None,
+    };
+    if let Some(name) = declared
+        && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
+    {
+        found.terms.insert(name);
+    }
+    if node.class == RakuAstClass::VarDeclarationConstant
+        && let Ok(name) = leaf_str(node, "name")
+    {
+        // `constant term:<$box> = ...` declares the term `$box`, sigil and all.
+        if let Some(term) = name
+            .strip_prefix("term:<")
+            .and_then(|rest| rest.strip_suffix('>'))
+        {
+            found.terms.insert(term.to_string());
+        } else if !name.starts_with(['$', '@', '%', '&']) {
+            found.terms.insert(name);
+        }
+    }
     let in_decl = in_decl || is_term_declaration(node.class);
     for field in &node.fields {
         // The initializer of `constant p = pi` / `my \p = pi` reads terms, it
@@ -213,10 +192,10 @@ fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
                 RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationTerm
             ) && field.name == Some("initializer"));
         match &field.value {
-            RakuAstFieldValue::Node(v) => visit_value(v, in_decl, found),
+            RakuAstFieldValue::Node(v) => walk_value(v, in_decl, found),
             RakuAstFieldValue::List(items) => {
                 for v in items {
-                    visit_value(v, in_decl, found);
+                    walk_value(v, in_decl, found);
                 }
             }
             RakuAstFieldValue::Adverb(_) => {}
@@ -224,11 +203,11 @@ fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
     }
 }
 
-fn visit_value(v: &crate::value::Value, in_decl: bool, found: &mut HashSet<String>) {
+fn walk_value(v: &crate::value::Value, in_decl: bool, found: &mut Found) {
     match v.view() {
-        ValueView::RakuAst(child) => visit(child, in_decl, found),
+        ValueView::RakuAst(child) => walk(child, in_decl, found),
         ValueView::Str(s) if in_decl => {
-            found.insert(s.to_string());
+            found.shadowed.insert(s.to_string());
         }
         _ => {}
     }

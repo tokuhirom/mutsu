@@ -31,10 +31,19 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let normalized = super::subclass::normalize_for_lower(node, 0)?;
-    let node = normalized.as_ref().unwrap_or(node);
+    lower_normalized(normalized.as_ref().unwrap_or(node))
+}
+
+/// [`lower`] for a tree `convert` just built: it holds no user subclass, so the
+/// walk that replaces one is skipped.
+// Cost: as [`lower`] without the normalizing walk.
+pub(super) fn lower_converted(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    lower_normalized(node)
+}
+
+fn lower_normalized(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
-    super::declared_routines::scan(node);
     super::infix_func::reset();
     let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(node))?;
     super::unspell::strip(&mut stmts);

@@ -81,7 +81,7 @@ pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, Runtim
     let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
-    let mut lowered = super::lower(&node)?;
+    let mut lowered = super::lower::lower_converted(&node)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);

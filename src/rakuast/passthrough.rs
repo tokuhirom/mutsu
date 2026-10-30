@@ -319,6 +319,15 @@ impl Kept {
 }
 
 impl VisitMut for Kept {
+    // The traits a routine was written with are compiler-inert: lowering them
+    // produces no statement (a stub body `{ ... }` is the body's only one).
+    fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        body.retain(|s| {
+            !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+        });
+        crate::ast_visit::walk_stmts_mut(self, body);
+    }
+
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
@@ -364,7 +373,26 @@ impl VisitMut for Kept {
             *stmt = super::lower_statement_assign(self.assignment(assign));
             return;
         }
+        // A modifier lowers the declaration it governs itself (`my ($a, $b) =
+        // ... if $c` declares unconditionally), so that statement stays kept
+        // while its own operands are lowered.
+        let mut pending = None;
+        if let Stmt::Ast(node) = stmt
+            && let ParsedStmt::Modified(modified) = node.as_mut()
+            && matches!(modified.stmt.as_ref(), Stmt::Ast(inner) if matches!(inner.as_ref(), ParsedStmt::SignatureDecl(_)))
+        {
+            pending = Some(std::mem::replace(modified.stmt.as_mut(), Stmt::Last(None)));
+        }
+        if let Some(inner) = pending.as_mut() {
+            crate::ast_visit::walk_stmt_mut(self, inner);
+        }
         crate::ast_visit::walk_stmt_mut(self, stmt);
+        if let Some(inner) = pending
+            && let Stmt::Ast(node) = stmt
+            && let ParsedStmt::Modified(modified) = node.as_mut()
+        {
+            *modified.stmt = inner;
+        }
         if matches!(stmt, Stmt::Ast(_))
             && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
         {
@@ -411,6 +439,51 @@ pub(super) fn declared_routines_of(
         match &slot.held {
             Held::Expr(e) => crate::ast_visit::Visit::visit_expr(&mut names, e),
             Held::Stmt(s) => crate::ast_visit::Visit::visit_stmt(&mut names, s),
+        }
+    });
+}
+
+/// The names a unit declares that `lower` resolves other names against
+/// (`shadowed_terms`): sigilless terms and the packages a carried tree holds.
+#[derive(Default)]
+pub(super) struct ScopeFacts {
+    pub(super) terms: std::collections::HashSet<String>,
+    pub(super) packages: std::collections::HashSet<String>,
+}
+
+/// The scope facts the tree a leaf carries declares; the node scans of
+/// `shadowed_terms` cannot see inside a leaf, so they ask it.
+// Cost: O(n), n = nodes of the carried tree.
+pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
+    struct Facts<'f>(&'f mut ScopeFacts);
+    impl<'ast> crate::ast_visit::Visit<'ast> for Facts<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                Stmt::Ast(node) => {
+                    if let ParsedStmt::SigillessDecl(source) = node.as_ref() {
+                        self.0.terms.insert(source.name.clone());
+                    }
+                }
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::Package { name, .. } => {
+                    self.0.packages.insert(name.resolve());
+                }
+                _ => {}
+            }
+            crate::ast_visit::walk_stmt(self, stmt);
+        }
+    }
+    let Ok(at) = slot(node) else { return };
+    TABLE.with(|t| {
+        let table = t.borrow();
+        let Some(Some(slot)) = table.as_ref().and_then(|t| t.get(at)) else {
+            return;
+        };
+        let mut facts = Facts(facts);
+        match &slot.held {
+            Held::Expr(e) => crate::ast_visit::Visit::visit_expr(&mut facts, e),
+            Held::Stmt(s) => crate::ast_visit::Visit::visit_stmt(&mut facts, s),
         }
     });
 }

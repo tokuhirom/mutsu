@@ -73,15 +73,13 @@ pub(super) fn is_user_call_field(field: &RakuAstField) -> bool {
     field.name == Some(USER_CALL)
 }
 
-/// Record the routine names `root` declares, replacing the previous unit's.
-// Cost: O(n), n = nodes in the unit.
-pub(super) fn scan(root: &RakuAstNode) {
-    let mut found = HashSet::new();
-    visit(root, &mut found);
+/// Replace the routine names the unit declares (found by `shadowed_terms::scan`).
+// Cost: O(1).
+pub(super) fn set(found: HashSet<String>) {
     DECLARED.with(|d| *d.borrow_mut() = found);
 }
 
-/// Whether the unit last passed to [`scan`] declares a routine named `name`.
+/// Whether the unit last passed to [`set`] declares a routine named `name`.
 // Cost: O(1).
 pub(super) fn is_declared(name: &str) -> bool {
     DECLARED.with(|d| d.borrow().contains(name))
@@ -114,32 +112,5 @@ pub(super) fn declared_by(node: &RakuAstNode) -> Option<String> {
             .ok()
             .and_then(|name| name.strip_prefix('&').map(str::to_string)),
         _ => None,
-    }
-}
-
-fn visit(node: &RakuAstNode, found: &mut HashSet<String>) {
-    if super::passthrough::is_leaf(node) {
-        super::passthrough::declared_routines_of(node, found);
-        return;
-    }
-    if let Some(name) = declared_by(node) {
-        found.insert(name);
-    }
-    for field in &node.fields {
-        match &field.value {
-            RakuAstFieldValue::Node(v) => visit_value(v, found),
-            RakuAstFieldValue::List(items) => {
-                for v in items {
-                    visit_value(v, found);
-                }
-            }
-            RakuAstFieldValue::Adverb(_) => {}
-        }
-    }
-}
-
-fn visit_value(v: &crate::value::Value, found: &mut HashSet<String>) {
-    if let ValueView::RakuAst(child) = v.view() {
-        visit(child, found);
     }
 }

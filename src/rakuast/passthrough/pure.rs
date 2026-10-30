@@ -102,19 +102,11 @@ impl Purity {
             | Stmt::Die(_)
             | Stmt::Fail(_)
             | Stmt::Take(..) => true,
+            // A routine's written traits are read by the conversion of the
+            // routine that holds them, not carried on their own.
             Stmt::Ast(node) => {
                 self.fixup = true;
-                matches!(
-                    node.as_ref(),
-                    ParsedStmt::Conditional(_)
-                        | ParsedStmt::Given { .. }
-                        | ParsedStmt::When { .. }
-                        | ParsedStmt::Default(_)
-                        | ParsedStmt::BareBlock(_)
-                        | ParsedStmt::WhileLoop(_)
-                        | ParsedStmt::For { .. }
-                        | ParsedStmt::Modified(_)
-                )
+                !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_))
             }
             Stmt::Assign {
                 name,
