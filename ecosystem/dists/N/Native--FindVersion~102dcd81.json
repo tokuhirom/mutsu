@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.26,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -35,53 +35,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 16.26,
+        "secs": 13.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'key' for invocant of type 'Set'. Did you mean 'keys'?",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.25,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.49,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'key' for invocant of type 'Set'. Did you mean 'keys'?",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.25,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-constant.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.71,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +91,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.25,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,6 +101,28 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-not-found.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
         "secs": 0.5,
         "skip": 0,
         "todo": 0,
@@ -113,42 +133,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.25,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
-      },
-      "path": "t/04-not-found.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'key' for invocant of type 'Set'. Did you mean 'keys'?",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
       "path": "t/05-with-arg.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.61,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,10 +157,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -174,13 +171,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/AT/NATIVE_FINDVERSION/18ae37949de960699d3f28110d4b5addd90255e8.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 6,
-    "mutsu_assertions": 2,
-    "parity_files": 3,
-    "regressed_files": 3
+    "mutsu_assertions": 8,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 39.75,
+        "secs": 44.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,7 +43,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.91,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.35,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,10 +68,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -80,7 +80,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/M/AT/MATH_QUANTILEREGRESSION/40a77d85bc68daab96e819a3a50e616f9ab8f2a2.tar.gz"
+    "url": "https://360.zef.pm/M/AT/MATH_QUANTILEREGRESSION/f991498a70d74d03c4548e8aa32f24c522cc09b0.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -90,5 +90,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.3"
+  "version": "0.0.4"
 }

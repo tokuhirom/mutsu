@@ -18,13 +18,13 @@
   "dist": "Code::Coverage",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "accepted",
       "mutsu": {
         "first_failure": "is the first coverage ok",
         "nok": 5,
         "ok": 9,
         "plan": 14,
-        "secs": 1.2,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 22.81,
+        "secs": 25.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,10 +46,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -60,13 +60,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OD/CODE_COVERAGE/4980d0914ecbf30f144a145fa9e04124e028a5aa.tar.gz"
   },
-  "status": "red",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 14,
-    "baseline_files": 1,
-    "mutsu_assertions": 9,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.9"
 }

@@ -13,37 +13,44 @@
   "dist": "Selkie::UI",
   "files": [
     {
-      "cmp": "no_baseline",
-      "path": "t/01-button-textinput.rakutest",
-      "raku": {
-        "first_failure": "SWEEP-TIMEOUT",
+      "cmp": "parity",
+      "mutsu": {
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.11,
+        "ok": 21,
+        "plan": 21,
+        "secs": 42.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
+      },
+      "path": "t/01-button-textinput.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 160.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Ambiguous call to 'set(Selkie::UI::SplitBuilder: )'; these signatures all match:",
         "nok": 0,
-        "ok": 3,
-        "plan": null,
-        "secs": 48.73,
+        "ok": 12,
+        "plan": 12,
+        "secs": 37.93,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-layout-structure.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 4.42,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,7 +62,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 46.45,
+        "secs": 39.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +72,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.24,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,7 +84,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 48.39,
+        "secs": 40.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +94,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.7,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,7 +106,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 47.51,
+        "secs": 41.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +116,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.93,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -121,7 +128,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 49.18,
+        "secs": 40.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +138,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.55,
+        "secs": 3.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -143,7 +150,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 47.91,
+        "secs": 42.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +160,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.43,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -209,10 +216,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -223,13 +230,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EL/SELKIE_UI/94159aef61f1935117c1575b39a04d8ed5ee8674.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 50,
-    "baseline_files": 6,
-    "mutsu_assertions": 41,
-    "parity_files": 5,
-    "regressed_files": 1
+    "baseline_assertions": 71,
+    "baseline_files": 7,
+    "mutsu_assertions": 71,
+    "parity_files": 7,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

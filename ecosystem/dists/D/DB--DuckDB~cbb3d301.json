@@ -27,11 +27,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "/home/runner/.cache/mutsu-ecosystem/run/ecosweep-fng0f3ob/dist/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
+        "first_failure": "/home/runner/.cache/mutsu-ecosystem/run/ecosweep-meubaqpm/dist/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 32.31,
+        "secs": 48.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.22,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.11,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.51,
+        "secs": 4.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 1.46,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,7 +101,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.42,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.67,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.41,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.37,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 2.05,
+        "secs": 4.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -171,20 +171,65 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.1,
+        "secs": 5.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-temporal.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 3.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-decimal-enum.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     }
   ],
-  "load": {},
+  "load": {
+    "DB::DuckDB": "ok",
+    "DB::DuckDB::Appender": "ok",
+    "DB::DuckDB::Arrow": "ok",
+    "DB::DuckDB::ArrowShim": "ok",
+    "DB::DuckDB::ArrowShim::Native": "ok",
+    "DB::DuckDB::Bridge": "ok",
+    "DB::DuckDB::Chunk": "ok",
+    "DB::DuckDB::ColumnView": "ok",
+    "DB::DuckDB::Connection": "ok",
+    "DB::DuckDB::Decoder": "ok",
+    "DB::DuckDB::Error": "ok",
+    "DB::DuckDB::Native": "ok",
+    "DB::DuckDB::Result": "ok",
+    "DB::DuckDB::Statement": "ok",
+    "DB::DuckDB::VarcharShim": "ok",
+    "DB::DuckDB::VarcharShim::Native": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -193,7 +238,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/B_/DB_DUCKDB/8daa1826614d22f79ee1a6cb936bd7351e0427e8.tar.gz"
+    "url": "https://360.zef.pm/D/B_/DB_DUCKDB/072505cc1e59c5f63e9f54c10a905b02a7bd9d2d.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -203,5 +248,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.6.5"
+  "version": "0.7.1"
 }

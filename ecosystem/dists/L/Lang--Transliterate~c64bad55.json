@@ -7,7 +7,30 @@
     "unresolved": []
   },
   "dist": "Lang::Transliterate",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 16.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Lang::Transliterate": "ok",
     "Lang::Transliterate::Ar::ALALC": "ok",
@@ -21,12 +44,12 @@
     "Lang::Transliterate::Ar::UNGEGN": "ok",
     "Lang::Transliterate::Ar::Wehr": "ok",
     "Lang::Transliterate::Arc::Arabic": "ok",
-    "Lang::Transliterate::Arc::Brahmi": "Failed to parse module 'Lang::Transliterate::Arc::Brahmi': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex ",
-    "Lang::Transliterate::Arc::Cyrillic": "Failed to parse module 'Lang::Transliterate::Arc::Cyrillic': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Rege",
+    "Lang::Transliterate::Arc::Brahmi": "ok",
+    "Lang::Transliterate::Arc::Cyrillic": "ok",
     "Lang::Transliterate::Arc::Geez": "ok",
-    "Lang::Transliterate::Arc::Greek": "Failed to parse module 'Lang::Transliterate::Arc::Greek': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex w",
+    "Lang::Transliterate::Arc::Greek": "ok",
     "Lang::Transliterate::Arc::Hebrew": "ok",
-    "Lang::Transliterate::Arc::Kharosthi": "Failed to parse module 'Lang::Transliterate::Arc::Kharosthi': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Reg",
+    "Lang::Transliterate::Arc::Kharosthi": "ok",
     "Lang::Transliterate::Arc::Latin": "ok",
     "Lang::Transliterate::Arc::Maalouli": "ok",
     "Lang::Transliterate::Arc::Nabataean": "ok",
@@ -34,9 +57,9 @@
     "Lang::Transliterate::Arc::Phoenician": "ok",
     "Lang::Transliterate::Arc::ProtoSinaitic": "ok",
     "Lang::Transliterate::Arc::SouthArabian": "ok",
-    "Lang::Transliterate::Arc::Syriac": "Failed to parse module 'Lang::Transliterate::Arc::Syriac': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex ",
-    "Lang::Transliterate::Arc::Turkic": "Failed to parse module 'Lang::Transliterate::Arc::Turkic': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex ",
-    "Lang::Transliterate::BasicASCII": "Failed to parse module 'Lang::Transliterate::BasicASCII': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex w",
+    "Lang::Transliterate::Arc::Syriac": "ok",
+    "Lang::Transliterate::Arc::Turkic": "ok",
+    "Lang::Transliterate::BasicASCII": "ok",
     "Lang::Transliterate::Be::ALALC": "ok",
     "Lang::Transliterate::Be::BGNPCGN": "ok",
     "Lang::Transliterate::Be::BritishStandard": "ok",
@@ -134,10 +157,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -148,12 +171,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/AN/LANG_TRANSLITERATE/d936c36f3c47dd00040b9c9c2d899a207a10c786.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 16,
+    "baseline_files": 1,
+    "mutsu_assertions": 16,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.0"

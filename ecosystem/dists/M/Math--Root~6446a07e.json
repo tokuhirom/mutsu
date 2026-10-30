@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 75,
         "plan": 75,
-        "secs": 0.15,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 75,
         "plan": 75,
-        "secs": 1.57,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "square root 2 ridiculous precision ok",
-        "nok": 1,
-        "ok": 66,
+        "nok": 0,
+        "ok": 67,
         "plan": 67,
-        "secs": 0.39,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-rational.t",
       "raku": {
         "nok": 0,
         "ok": 67,
         "plan": 67,
-        "secs": 1.53,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -95,13 +94,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_ROOT/6ed2e9465aa3d11ba955e476c1ac05bf1d1298b4.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 163,
     "baseline_files": 3,
-    "mutsu_assertions": 162,
-    "parity_files": 2,
-    "regressed_files": 1
+    "mutsu_assertions": 163,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

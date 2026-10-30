@@ -21,46 +21,44 @@
   "dist": "BSON::Simple",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Redeclaration of symbol 'Hash::Ordered'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.88,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.03,
+        "secs": 17.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Redeclaration of symbol 'Hash::Ordered'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.54,
+        "ok": 92,
+        "plan": 92,
+        "secs": 2.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 75.12,
+        "secs": 84.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +72,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 101,
-        "secs": 90.75,
+        "secs": 77.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -86,10 +84,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -100,13 +98,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/SO/BSON_SIMPLE/e407469b86c1e2139e631526a5c2d6de8969e880.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 93,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 93,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

@@ -1,29 +1,3439 @@
 {
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "Test::Output",
+      "URI"
+    ],
+    "unresolved": []
+  },
   "dist": "BDD::Behave",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/classes/class.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/benchmark-format.rakutest",
+      "raku": {
+        "first_failure": "--benchmark renders an aligned text table",
+        "nok": 3,
+        "ok": 1,
+        "plan": 7,
+        "secs": 112.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/benchmark.rakutest",
+      "raku": {
+        "first_failure": "Benchmarks section is opt-in",
+        "nok": 4,
+        "ok": 3,
+        "plan": 11,
+        "secs": 47.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/bisect.rakutest",
+      "raku": {
+        "first_failure": "--only-example for non-polluted example exits 0",
+        "nok": 17,
+        "ok": 10,
+        "plan": 27,
+        "secs": 46.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/bisector.rakutest",
+      "raku": {
+        "first_failure": "the initial pass found failures",
+        "nok": 1,
+        "ok": 0,
+        "plan": 4,
+        "secs": 3.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/fail-fast.rakutest",
+      "raku": {
+        "first_failure": "failing fixture reports all 3 failures by default",
+        "nok": 8,
+        "ok": 8,
+        "plan": 16,
+        "secs": 28.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/file-filtering.rakutest",
+      "raku": {
+        "first_failure": "single positional FILE runs every example",
+        "nok": 2,
+        "ok": 0,
+        "plan": 4,
+        "secs": 13.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/file-line-shorthand.rakutest",
+      "raku": {
+        "first_failure": "FILE:LINE runs only the targeted example",
+        "nok": 4,
+        "ok": 1,
+        "plan": 5,
+        "secs": 15.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/file-line-snap.rakutest",
+      "raku": {
+        "first_failure": "exact `it` line runs that example only",
+        "nok": 10,
+        "ok": 0,
+        "plan": 10,
+        "secs": 30.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/files.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/files-2-1793315528084386' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-documentation.rakutest",
+      "raku": {
+        "first_failure": "all-passing run exits 0",
+        "nok": 7,
+        "ok": 4,
+        "plan": 11,
+        "secs": 9.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-html.rakutest",
+      "raku": {
+        "first_failure": "passing run exits 0",
+        "nok": 9,
+        "ok": 3,
+        "plan": 12,
+        "secs": 9.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-json.rakutest",
+      "raku": {
+        "first_failure": "passing run exits 0",
+        "nok": 2,
+        "ok": 1,
+        "plan": 17,
+        "secs": 6.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-junit.rakutest",
+      "raku": {
+        "first_failure": "passing run exits 0",
+        "nok": 9,
+        "ok": 3,
+        "plan": 12,
+        "secs": 9.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-progress.rakutest",
+      "raku": {
+        "first_failure": "all-passing run with --format progress exits 0",
+        "nok": 8,
+        "ok": 5,
+        "plan": 13,
+        "secs": 14.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format-tap.rakutest",
+      "raku": {
+        "first_failure": "passing run exits 0",
+        "nok": 7,
+        "ok": 3,
+        "plan": 11,
+        "secs": 9.13,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/format.rakutest",
+      "raku": {
+        "first_failure": "default run (no --format) exits 0",
+        "nok": 5,
+        "ok": 6,
+        "plan": 11,
+        "secs": 17.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/load-errors.rakutest",
+      "raku": {
+        "first_failure": "passing spec file exits 0",
+        "nok": 3,
+        "ok": 6,
+        "plan": 9,
+        "secs": 18.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/missing-specs-dir.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-no-specs-t-2-HNODWSACTK' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/only-failures.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-only-failures-test-2-HNODWTCS4L' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/order.rakutest",
+      "raku": {
+        "first_failure": "default run exits successfully",
+        "nok": 5,
+        "ok": 6,
+        "plan": 11,
+        "secs": 23.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/profile.rakutest",
+      "raku": {
+        "first_failure": "baseline run succeeds",
+        "nok": 6,
+        "ok": 6,
+        "plan": 12,
+        "secs": 18.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/retry.rakutest",
+      "raku": {
+        "first_failure": "--retry 2 succeeds when the fixture passes on the third attempt",
+        "nok": 1,
+        "ok": 4,
+        "plan": 14,
+        "secs": 9.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/cli/version.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/configuration/cli-features.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-cli-feat-t-2-1793315989164602.behave: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/configuration/cli-precedence.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-cli-prec-t-2-1793315994350741.behave: Read-only file system",
+        "nok": 0,
+        "ok": 4,
+        "plan": 14,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/configuration/config-parts.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/configuration/configuration.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-load-2-1793316003735387.behave: Read-only file system",
+        "nok": 0,
+        "ok": 55,
+        "plan": 61,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/configuration/parallel-precedence.rakutest",
+      "raku": {
+        "first_failure": "default run succeeds",
+        "nok": 1,
+        "ok": 0,
+        "plan": 8,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/configuration/runner-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/basic.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/describe.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/dsl-guards.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/example-block.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/example.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/expectation-failed.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/files.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/matcher-descriptions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/nesting.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/order.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/pending.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/runner-hooks.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/runner-results.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/spec-node.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/core/spec-tree.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core/specify.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/diff/array-diff.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/diff/hash-diff.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/diff/junction-diff.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 46,
+        "plan": null,
+        "secs": 14.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/diff/nested-diff.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/diff/set-bag-mix-diff.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/diff/shape-detection.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 15,
+        "plan": null,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/diff/string-diff.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/doc-extraction/cli-doc-mode.rakutest",
+      "raku": {
+        "first_failure": "--doc emits markdown without running examples",
+        "nok": 7,
+        "ok": 3,
+        "plan": 10,
+        "secs": 27.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 53,
+        "plan": 53,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/doc-extraction/doc-extractor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 53,
+        "plan": 53,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/dry-run/dry-run.rakutest",
+      "raku": {
+        "first_failure": "--dry-run prints hierarchical list without running",
+        "nok": 8,
+        "ok": 1,
+        "plan": 10,
+        "secs": 26.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/dry-run/filter-matching.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/dry-run/list-examples.rakutest",
+      "raku": {
+        "first_failure": "--list-examples emits one line per example",
+        "nok": 8,
+        "ok": 2,
+        "plan": 10,
+        "secs": 29.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/example-filter/example-filter.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/example-filter/runner-filter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/aggregate-failures.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/all.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/async-matcher-parts.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/auto-aggregate-failures.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/be-between.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/be-nil.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/be-within.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/change-by.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/change-from-to.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/change-matcher.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/change.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/collection-type-parts.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/comparison.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/composable-matchers.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/composed-matcher-parts.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/custom-matchers.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/emit.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/eq.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/eventually-chain.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/eventually.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/expect-actual-values.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/expect.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/expectation-readback.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/have-attributes.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/include.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/junction.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/line-numbers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/match.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/matcher.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/numeric-matcher-parts.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/promise.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expectations/raise-error-matcher.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/raise-error.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/raise.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/respond-to.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/sequence.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/string-content.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/throw.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/truthiness.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/expectations/type-checking.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/focus-skip/focus.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/focus-skip/skip.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/base-formatter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/documentation-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 3,
+        "plan": 23,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/failure-rendering.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-fmt-render-tree-spec.raku: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/formatter-role.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/html-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 28,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/html-fragments.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/json-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 31,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/json-records.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/junit-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 21,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/junit-tap-parts.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/progress-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: Str:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 3,
+        "plan": 24,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/registry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/formatter/runner-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/tap-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 23,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatter/tree-formatter.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: Str:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 29,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/hooks/around-hooks.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/hooks/around-not-continued.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/hooks/hook-failure.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/hooks/hooks.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/hooks/metadata-keyed-hooks.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 142,
+        "plan": 142,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta-provides.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 142,
+        "plan": 142,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.16,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.44,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/integration/spec-loader-x-import.rakutest",
+      "raku": {
+        "first_failure": "behave exits 0 when a sibling spec triggered DBIish.connect at load time",
+        "nok": 2,
+        "ok": 2,
+        "plan": 4,
+        "secs": 10.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/let/dependent-let.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/is-expected.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/let-bang.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/let-bareword.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/let-scoping.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/lets.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/runtime-let.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/let/subject.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 71,
+        "plan": 71,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta/provides.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 71,
+        "plan": 71,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/allow.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/mocks/arg-matcher.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/double.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/have-received-failures.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/have-received.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/partial-mocking.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/spy.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/stub-registry.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mocks/verified-double.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/benchmark-aggregation.rakutest",
+      "raku": {
+        "first_failure": "benchmark section header is printed under --parallel",
+        "nok": 5,
+        "ok": 0,
+        "plan": 9,
+        "secs": 13.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/bucket-filters.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-broken-t-2-HNOE85FONX-spec.raku: Read-only file system",
+        "nok": 0,
+        "ok": 16,
+        "plan": 18,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/discovery-failures.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/discovery-subprocess.rakutest",
+      "raku": {
+        "first_failure": "pending example flag round-trips through JSON",
+        "nok": 3,
+        "ok": 5,
+        "plan": 25,
+        "secs": 4.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/distribution.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 50,
+        "plan": 50,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/event-stream.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 50,
+        "plan": 50,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/failures-section.rakutest",
+      "raku": {
+        "first_failure": "--parallel run prints the Failures: header",
+        "nok": 6,
+        "ok": 2,
+        "plan": 8,
+        "secs": 12.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/json-events-attribution.rakutest",
+      "raku": {
+        "first_failure": "no workers: first failing example carries its own failure line",
+        "nok": 12,
+        "ok": 2,
+        "plan": 14,
+        "secs": 9.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/json-events-lifecycle.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/json-events-line.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/json-events.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/load-errors.rakutest",
+      "raku": {
+        "first_failure": "summary mentions the failed spec count",
+        "nok": 4,
+        "ok": 2,
+        "plan": 6,
+        "secs": 9.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/manifest.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/parallel-mode.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-parallel-mode-t-2-1793316623214007' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 7,
+        "plan": 9,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/parent-run.rakutest",
+      "raku": {
+        "first_failure": "Failed to get the directory contents of '/tmp/behave-parent-run-t-2-HNOEA8QK4R': Failed to open dir: no such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/precompile-pass.rakutest",
+      "raku": {
+        "first_failure": "compile-only exits 0 when every file loads",
+        "nok": 2,
+        "ok": 7,
+        "plan": 14,
+        "secs": 14.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/precompile-recovery.rakutest",
+      "raku": {
+        "first_failure": "No such method 'cleanup' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/profile-aggregation.rakutest",
+      "raku": {
+        "first_failure": "profile section header is printed under --parallel",
+        "nok": 2,
+        "ok": 2,
+        "plan": 4,
+        "secs": 24.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/progress-chars.rakutest",
+      "raku": {
+        "first_failure": "five passing examples produce five '.' chars",
+        "nok": 5,
+        "ok": 0,
+        "plan": 5,
+        "secs": 6.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/progress-total.rakutest",
+      "raku": {
+        "first_failure": "(1/9) appears in progress stream",
+        "nok": 6,
+        "ok": 1,
+        "plan": 7,
+        "secs": 19.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/queue.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/seed-mode.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/shard-retry.rakutest",
+      "raku": {
+        "first_failure": "recovers cleanly with parallel-retry",
+        "nok": 7,
+        "ok": 3,
+        "plan": 10,
+        "secs": 18.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/signal-death.rakutest",
+      "raku": {
+        "first_failure": "lpt: the failure names the signal death",
+        "nok": 5,
+        "ok": 5,
+        "plan": 10,
+        "secs": 31.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/worker-count.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$dir'; expected IO::Path but got Any (Any)",
+        "nok": 0,
+        "ok": 7,
+        "plan": 10,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/parallel/worker-pool.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-worker-pool-t-2-HNOEG2L1CB' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/worker-stderr.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parallel/worker.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/registry/query-examples.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/registry/query-filters.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/retry/failure-store.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-failure-store-test-2-HNOEG5ZWP9.txt: Read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": 14,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/retry/reporting.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/retry/retry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/shared-contexts/registry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/shared-contexts/shared-contexts.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/shared-examples/registry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/shared-examples/shared-examples.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tags/tags.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/benchmark-delta-cell.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/timing/benchmark-mode.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/benchmark-baseline-2-1793316997383208.txt: Read-only file system",
+        "nok": 0,
+        "ok": 14,
+        "plan": 18,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/timing/benchmark-reporting.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-rep-2-1793317000718953.txt: Read-only file system",
+        "nok": 0,
+        "ok": 5,
+        "plan": 12,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/benchmark.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/example-timing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/profile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/time-helpers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/timing/time-mocking.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/type-name/short-type-name.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/variables/variables.rakutest",
+      "raku": {
+        "first_failure": "Incompatible MROs in P6opaque rebless for types Raku::Grammar and Failure+{LetSlangActions} mixin",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/version/version.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-version-test-2-1793317013047733' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/cli.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-watch-cli-2-HNOEGSCA8D' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 4,
+        "plan": 6,
+        "secs": 6.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/entry-points.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-watch-entry-t-2-1793317035035322' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/session-changes.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/behave-session-changes-t-2-HNOEH1XDBD' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/session.rakutest",
+      "raku": {
+        "first_failure": "No such method 'd' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/smart-selector.rakutest",
+      "raku": {
+        "first_failure": "No such method 'd' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/ui-reader.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/behave-watch-reader-t-2-HNOEH69V71.txt: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/ui.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/watch/watcher.rakutest",
+      "raku": {
+        "first_failure": "No such method 'd' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "BDD::Behave": "raku_also_fails",
+    "BDD::Behave::Benchmark": "ok",
+    "BDD::Behave::Benchmark::Baseline": "ok",
+    "BDD::Behave::Benchmark::Format": "ok",
+    "BDD::Behave::Bisect": "ok",
+    "BDD::Behave::Colors": "ok",
+    "BDD::Behave::Configuration": "ok",
+    "BDD::Behave::Coverage": "ok",
+    "BDD::Behave::DSL": "ok",
+    "BDD::Behave::Diff": "ok",
+    "BDD::Behave::DocExtractor": "ok",
+    "BDD::Behave::DryRun": "ok",
+    "BDD::Behave::Expectation": "ok",
+    "BDD::Behave::Failure": "ok",
+    "BDD::Behave::FailureStore": "ok",
+    "BDD::Behave::Failures": "ok",
+    "BDD::Behave::Files": "ok",
+    "BDD::Behave::Formatter": "ok",
+    "BDD::Behave::Formatter::Documentation": "ok",
+    "BDD::Behave::Formatter::HTML": "ok",
+    "BDD::Behave::Formatter::JSON": "ok",
+    "BDD::Behave::Formatter::JUnit": "ok",
+    "BDD::Behave::Formatter::JsonEvents": "ok",
+    "BDD::Behave::Formatter::Progress": "ok",
+    "BDD::Behave::Formatter::Registry": "ok",
+    "BDD::Behave::Formatter::TAP": "ok",
+    "BDD::Behave::Formatter::Tree": "ok",
+    "BDD::Behave::LetRuntime": "ok",
+    "BDD::Behave::Matcher": "ok",
+    "BDD::Behave::Matcher::Async": "ok",
+    "BDD::Behave::Matcher::Boolean": "ok",
+    "BDD::Behave::Matcher::Change": "ok",
+    "BDD::Behave::Matcher::Collection": "ok",
+    "BDD::Behave::Matcher::Core": "ok",
+    "BDD::Behave::Matcher::Custom": "ok",
+    "BDD::Behave::Matcher::Exception": "ok",
+    "BDD::Behave::Matcher::Numeric": "ok",
+    "BDD::Behave::Matcher::String": "ok",
+    "BDD::Behave::Matcher::Type": "ok",
+    "BDD::Behave::Mock::Allow": "ok",
+    "BDD::Behave::Mock::ArgMatcher": "ok",
+    "BDD::Behave::Mock::Double": "ok",
+    "BDD::Behave::Mock::HaveReceived": "ok",
+    "BDD::Behave::Mock::Spy": "ok",
+    "BDD::Behave::Mock::Stub": "ok",
+    "BDD::Behave::Parallel": "ok",
+    "BDD::Behave::Parallel::Distribution": "ok",
+    "BDD::Behave::Parallel::EventStream": "ok",
+    "BDD::Behave::Parallel::Manifest": "ok",
+    "BDD::Behave::Parallel::Queue": "ok",
+    "BDD::Behave::Parallel::WorkerPool": "ok",
+    "BDD::Behave::Runner": "ok",
+    "BDD::Behave::SharedContexts": "ok",
+    "BDD::Behave::SharedExamples": "ok",
+    "BDD::Behave::Slang": "ok",
+    "BDD::Behave::SpecLoader": "ok",
+    "BDD::Behave::SpecRegistry": "ok",
+    "BDD::Behave::SpecTree": "ok",
+    "BDD::Behave::SpecTree::Core": "ok",
+    "BDD::Behave::SpecTree::Example": "ok",
+    "BDD::Behave::SpecTree::ExampleGroup": "ok",
+    "BDD::Behave::SpecTree::Suite": "ok",
+    "BDD::Behave::Time": "ok",
+    "BDD::Behave::TypeName": "ok",
+    "BDD::Behave::Version": "ok",
+    "BDD::Behave::Watch": "ok",
+    "BDD::Behave::Watch::Session": "ok",
+    "BDD::Behave::Watch::SmartSelector": "ok",
+    "BDD::Behave::Watch::UI": "ok",
+    "BDD::Behave::Watch::Watcher": "ok",
+    "BDD::Behave::Worker": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-28",
+    "date": "2026-10-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d15777dd",
+    "mutsu_commit": "7e0fdd6c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
-  "note": "harness error: FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/.cache/mutsu-ecosystem/tarballs/39f5b8d70a71-B_DD_BDD_BEHAVE_93fb615a1bb2bfa4fd535fb0635557ca1256d43a.tar.gz.part' -> '/home/runner/.cache/mutsu-ecosystem/tarballs/39f5b8d70a71-B_DD_BDD_BEHAVE_93fb615a1bb2bfa4fd535fb0635557ca1256d43a.tar.gz'",
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/B/DD/BDD_BEHAVE/93fb615a1bb2bfa4fd535fb0635557ca1256d43a.tar.gz"
   },
-  "status": "skipped",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1110,
+    "baseline_files": 63,
+    "mutsu_assertions": 1110,
+    "parity_files": 63,
     "regressed_files": 0
   },
   "version": "0.9.5"
