@@ -3198,6 +3198,25 @@ impl Interpreter {
                             .as_deref()
                             .is_some_and(|name| self.name_is_readonly_binding(name));
                     if is_rw || (is_raw && !implicit_raw_veto && !raw_readonly_source) {
+                        // A `$x is raw` parameter that took a literal is bound to
+                        // the value itself (`Immutable`, no Scalar behind it);
+                        // forwarding it to an `is rw` parameter hands over no
+                        // container, so a multi candidate with `is rw` must not
+                        // match (PDF::COS::Coercer's `$obj is rw` candidates).
+                        if is_rw
+                            && arg_source_name.as_deref().is_some_and(|name| {
+                                matches!(
+                                    self.readonly_kind(name),
+                                    Some(crate::ast::ReadonlyKind::Immutable)
+                                )
+                            })
+                            && !arg_is_container_ref
+                        {
+                            return Err(crate::runtime::utils::parameter_rw_not_container(
+                                &param_display_name(pd),
+                                &args[positional_idx],
+                            ));
+                        }
                         let source_name = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
