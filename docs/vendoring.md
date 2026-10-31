@@ -12,7 +12,7 @@ projects rather than written here:
 | `roast/`          | <https://github.com/Raku/roast>            | The official Raku spec test suite             |
 | `raku-doc/`       | <https://github.com/Raku/doc>              | The official Raku language/type documentation |
 | `old-design-docs/`| <https://github.com/Raku/old-design-docs>  | The historical Perl 6 design synopses         |
-| `vendor/rakudo/`  | <https://github.com/rakudo/rakudo>         | A sparse copy: `RakuAST::Deparse`, run by `.DEPARSE` (ADR-14845) |
+| `vendor/rakudo/`  | <https://github.com/rakudo/rakudo>         | A sparse copy: `RakuAST::Deparse`, run by `.DEPARSE` (ADR-14845), and `RakuAST::Deparse::Highlight` (#15793) |
 
 ## Why vendored, not git submodules
 
