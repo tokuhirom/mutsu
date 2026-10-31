@@ -1812,6 +1812,11 @@ impl Interpreter {
                         self.resolve_code_var(routine).view(),
                         crate::value::ValueView::Sub(_)
                     )
+                    // A module reading `$*CU` (static's `CHECK`) has none of the
+                    // unit's imports in its own scope: ask the unit that called it.
+                    || self
+                        .unit_import_routine(crate::runtime::main_unit(), routine)
+                        .is_some()
             });
         }
         if let Some(v) = Self::lazy_magic_dynamic_var(name) {

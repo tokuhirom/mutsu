@@ -268,7 +268,15 @@ fn external_value(
         .get("lexical-name")
         .map(|n| n.to_string_value())?;
     if let Some(routine) = name.strip_prefix('&') {
-        return Some(Ok(interp.resolve_code_var(routine)));
+        let found = interp.resolve_code_var(routine);
+        if !matches!(found.view(), ValueView::Sub(_))
+            // The analysis runs in a module's scope, the import in its caller's.
+            && let Some(imported) =
+                interp.unit_import_routine(crate::runtime::main_unit(), routine)
+        {
+            return Some(Ok(imported));
+        }
+        return Some(Ok(found));
     }
     // A core type is its type object; anything else is a constant of the setting
     // (`True`, `Inf`), read by evaluating its name.

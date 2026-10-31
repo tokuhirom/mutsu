@@ -125,7 +125,7 @@ impl Interpreter {
 /// is built (`.WHERE`, `nqp::objectid`), as Rakudo's one method object per
 /// declaration.
 // Cost: O(a), a = attributes of the method object.
-fn stable_method_object(method: Value, class_name: &str, method_name: &str) -> Value {
+pub(super) fn stable_method_object(method: Value, class_name: &str, method_name: &str) -> Value {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
     static IDS: OnceLock<Mutex<HashMap<(String, String), u64>>> = OnceLock::new();

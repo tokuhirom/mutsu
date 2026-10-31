@@ -411,7 +411,18 @@ impl Interpreter {
             let owner = if crate::builtin_types::catalog::builtin_type_info(&class_name_str)
                 .is_some()
             {
-                class_name_str
+                // A method a built-in type inherits belongs to the ancestor
+                // that declares it (`Array`'s `pick` is `List`'s).
+                self.builtin_method_ancestors(&class_name_str)
+                    .into_iter()
+                    .find(|level| {
+                        crate::builtin_types::catalog::builtin_type_info(level).is_some()
+                            && crate::builtins::method_introspection::native_method_declared(
+                                level,
+                                method_name,
+                            )
+                    })
+                    .unwrap_or(class_name_str)
             } else {
                 self.builtin_method_ancestors(&class_name_str)
                     .into_iter()

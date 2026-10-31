@@ -261,7 +261,14 @@ impl Interpreter {
     /// separate slice (see
     /// `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
     pub(super) fn make_native_method_object(&self, name: &str, owner: &str) -> Value {
-        self.make_native_method_object_ex(name, owner, false)
+        // One object per declaration, so `Array.^find_method('pick') ===
+        // List.^find_method('pick')` and `.WHERE` agree.
+        let method = self.make_native_method_object_ex(name, owner, false);
+        super::methods_classhow_private_methods::stable_method_object(
+            method,
+            &format!("native:{owner}"),
+            name,
+        )
     }
 
     /// A public attribute's auto-generated accessor method object, carrying
