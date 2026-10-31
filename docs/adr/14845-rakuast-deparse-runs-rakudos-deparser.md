@@ -1,6 +1,6 @@
 # ADR-14845: `.DEPARSE` runs rakudo's own `RakuAST::Deparse`, vendored verbatim
 
-- **Status**: Proposed (2026-10-24)
+- **Status**: Accepted (maintainer decision, 2026-10-31); amended by §6
 - **Date**: 2026-10-24
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#14845](https://github.com/tokuhirom/mutsu/issues/14845). Roadmap:
@@ -97,3 +97,27 @@ accessor (`RakuAST::VarDeclaration::Simple.original-type`).
   `update-vendor.sh` names the tree.
 - Whether the precomp cache keys the prelude by the vendored commit (it should, so a re-vendor
   invalidates it).
+
+## 6. Amendment 1 — the implementation as it is (2026-10-31)
+
+Maintainer decision (2026-10-31): this ADR is Accepted, with the following recorded as the implementation stands
+(`src/runtime/run_prelude_deparse.rs`, `vendor.lock`). It supersedes the parts of §2 and §5 it names; the decision
+itself (run rakudo's own deparser, vendored verbatim, grow mutsu until it runs) is unchanged.
+
+1. **Loading.** The trigger is a source substring: a unit whose source contains `DEPARSE` or `RakuAST::Deparse`
+   gets the prelude injected. It is parsed once per process behind an `AtomicBool`, and is **not** kept in the
+   precompilation cache (§2.2 said "kept in the precomp cache"; §5's second open question is answered: there is no
+   cache yet, so the question of keying it by the vendored commit does not arise until there is one). A computed
+   method name (`$node."DEP{'ARSE'}"`) misses the trigger.
+2. **The one load-time textual change.** The prelude replaces `class RakuAST::Deparse {` by
+   `class GLOBAL::RakuAST::Deparse {` so the class lands in `GLOBAL::` whatever unit it is injected into. The
+   vendored file itself is unedited.
+3. **What is vendored.** The source is rakudo `main` at `9a94801c154543573d926e6258e062f3c3782635` (2026-09-28,
+   `vendor.lock`), not a release tag. §2.1's "from the release mutsu's RakuAST tracks (2026.09)" is reworded
+   accordingly: the file is the one that ships in rakudo 2026.09's lineage and is pinned by commit; it is re-pinned to a
+   release tag when `vendor.lock` moves to one.
+4. **Parity measurement.** §2.5's corpus ratchet is **not implemented**: `scripts/ast-text-corpus.sh` compares
+   `.AST` text, not `.DEPARSE`. It is tracked as #15792. §5's first open question is answered: the vendored files
+   live under `vendor/rakudo/`.
+5. **Further vendored files.** `RakuAST::Deparse::Highlight` ships with rakudo 2026.09
+   (`lib/RakuAST/Deparse/Highlight*`) and is vendored under this same rule (§3, second bullet); tracked as #15793.
