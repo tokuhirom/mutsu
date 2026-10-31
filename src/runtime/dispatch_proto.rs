@@ -1,6 +1,21 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether any `trait_mod:<is>` candidate is registered anywhere, visible
+    /// to the running code or not. A class declared inside a module loaded
+    /// later than the module that exports the trait does not see the
+    /// candidate through the bare-name search (the import lands in the
+    /// exporter's own set), yet `is Foo` on an unknown name is still the
+    /// named trait argument there (`class X is Singleton` in a module that
+    /// `use`s the trait's provider, Pop); the dispatch that follows
+    /// resolves the candidates through the normal path and falls back to
+    /// X::Inheritance::UnknownParent when none matches.
+    // Cost: O(1) with the base-name key index filled, O(n) once to fill it,
+    // n = registered routines.
+    pub(crate) fn has_any_trait_mod_is(&mut self) -> bool {
+        !self.fn_keys_for_base("trait_mod:<is>").is_empty()
+    }
+
     pub(crate) fn has_proto(&self, name: &str) -> bool {
         // Same gate `resolve_proto_function` applies: a `my`-scoped (non-`our`)
         // proto is not in the package stash, so a package-qualified call must
