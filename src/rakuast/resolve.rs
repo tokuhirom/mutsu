@@ -48,6 +48,9 @@ struct Scopes<'a> {
     whatever_args: Vec<usize>,
     /// Anonymous subsets minted so far, for their internal names.
     anonymous_subsets: usize,
+    /// `multi` declarations met so far per routine name: the next one is that
+    /// candidate of the name's dispatcher.
+    multi_candidates: HashMap<String, usize>,
 }
 
 impl Scopes<'_> {
@@ -73,6 +76,7 @@ pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) 
         packages: Vec::new(),
         whatever_args: vec![0],
         anonymous_subsets: 0,
+        multi_candidates: HashMap::new(),
     };
     walk(node, &mut scopes);
 }
@@ -114,9 +118,20 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if matches!(node.class, C::Method | C::Submethod) && !scopes.packages.is_empty() {
         node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
+    // A `multi sub` remembers which candidate of its name it declares.
+    if node.class == C::Sub
+        && super::lower::leaf_str(node, "multiness").is_ok_and(|m| m == "multi")
+        && let Some(name) = super::declared_routines::declared_by(node)
+    {
+        let seen = scopes.multi_candidates.entry(name).or_insert(0);
+        node.origin.2 = Some(Value::str(format!("multi:{seen}")));
+        *seen += 1;
+    }
     let named_package = package.is_some();
     if let Some(name) = package {
         scopes.packages.push(name);
+        // A package remembers its qualified name, for `compile-time-value`.
+        node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
     // `*` arguments are numbered within one thunk: a statement, a parameter's
     // `where`, or a side of a short-circuit operator.
@@ -348,7 +363,14 @@ fn short_circuits(node: &RakuAstNode) -> bool {
 // Cost: O(f), f = fields of the node.
 fn parameter_owner(node: &RakuAstNode, scopes: &Scopes) -> Option<String> {
     match node.class {
-        C::Sub => super::declared_routines::declared_by(node).map(|name| format!("sub\u{1}{name}")),
+        C::Sub => {
+            super::declared_routines::declared_by(node).map(|name| {
+                match multi_candidate_index(node) {
+                    Some(candidate) => format!("sub\u{1}{name}\u{1}multi:{candidate}"),
+                    None => format!("sub\u{1}{name}"),
+                }
+            })
+        }
         C::Method | C::Submethod if !scopes.packages.is_empty() => {
             let name = package_name(node)?;
             Some(format!(
@@ -493,6 +515,50 @@ pub(super) fn type_node_name(node: &RakuAstNode) -> Option<String> {
     }
 }
 
+/// [`type_node_name`] keeping a parameterization: `Array[Int]` for
+/// `Type::Parameterized`, its arguments named the same way.
+// Cost: O(size of the type node).
+fn type_node_full_name(node: &RakuAstNode) -> Option<String> {
+    if node.class != C::TypeParameterized {
+        return type_node_name(node);
+    }
+    let base = type_node_full_name(held_node(node, "base-type")?)?;
+    let args = held_node(node, "args")?;
+    let mut names = Vec::new();
+    for field in &args.fields {
+        match &field.value {
+            RakuAstFieldValue::List(items) => {
+                for item in items {
+                    let ValueView::RakuAst(arg) = item.view() else {
+                        return None;
+                    };
+                    names.push(type_node_full_name(arg)?);
+                }
+            }
+            RakuAstFieldValue::Node(item) => {
+                let ValueView::RakuAst(arg) = item.view() else {
+                    return None;
+                };
+                names.push(type_node_full_name(arg)?);
+            }
+            _ => {}
+        }
+    }
+    Some(format!("{base}[{}]", names.join(",")))
+}
+
+/// The node held by the named field of `node`.
+// Cost: O(f), f = fields of the node.
+fn held_node<'a>(node: &'a RakuAstNode, field: &str) -> Option<&'a RakuAstNode> {
+    match &node.fields.iter().find(|f| f.name == Some(field))?.value {
+        RakuAstFieldValue::Node(v) => match v.view() {
+            ValueView::RakuAst(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// The `type` field of a declaration node, if it has one.
 // Cost: O(f), f = fields of the node.
 fn type_field(node: &RakuAstNode) -> Option<Value> {
@@ -609,7 +675,7 @@ fn declared_type_with_smiley(node: &RakuAstNode) -> Option<String> {
     let ValueView::RakuAst(ty) = ty.view() else {
         return None;
     };
-    let base = type_node_name(ty)?;
+    let base = type_node_full_name(ty)?;
     let smiley = ty
         .fields
         .iter()
@@ -638,12 +704,15 @@ fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
 /// sigil (`Array` for `@`, `Hash` for `%`, `Scalar` otherwise).
 // Cost: O(f), f = fields of the node.
 pub(super) fn container_type(node: &RakuAstNode) -> Value {
-    let name = match leaf(node, "sigil").as_deref() {
-        Some("@") => "Array",
-        Some("%") => "Hash",
-        _ => "Scalar",
+    let element = declared_type_with_smiley(node);
+    let name = match (leaf(node, "sigil").as_deref(), element) {
+        (Some("@"), Some(t)) => format!("Array[{t}]"),
+        (Some("@"), None) => "Array".to_string(),
+        (Some("%"), Some(t)) => format!("Hash[{t}]"),
+        (Some("%"), None) => "Hash".to_string(),
+        _ => "Scalar".to_string(),
     };
-    Value::package(crate::symbol::Symbol::intern(name))
+    Value::package(crate::symbol::Symbol::intern(&name))
 }
 
 /// The variable (`$x`, `@a`, `&f`) a declaration node declares.
@@ -743,4 +812,27 @@ fn external(class: &str, lexical_name: &str) -> Option<Value> {
         crate::symbol::Symbol::intern(class),
         attrs,
     ))
+}
+
+/// Which candidate of its name's dispatcher a `multi sub` node declares.
+// Cost: O(1).
+pub(super) fn multi_candidate_index(node: &RakuAstNode) -> Option<usize> {
+    node.origin
+        .2
+        .as_ref()?
+        .to_string_value()
+        .strip_prefix("multi:")?
+        .parse()
+        .ok()
+}
+
+/// The qualified name of a package declaration of the unit tree `$*CU` answers.
+// Cost: O(1).
+pub(super) fn package_qualified_name(node: &RakuAstNode) -> Option<String> {
+    matches!(
+        node.class,
+        C::Class | C::Role | C::Grammar | C::Module | C::Package
+    )
+    .then(|| node.origin.2.as_ref().map(|n| n.to_string_value()))
+    .flatten()
 }

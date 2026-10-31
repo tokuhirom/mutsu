@@ -25,12 +25,11 @@ impl Interpreter {
             let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
                 continue;
             };
+            // A public method may share the name (`method !v`, `method v`).
+            let overloads: Vec<_> = overloads.iter().filter(|def| def.is_private).cloned().collect();
             let Some(first) = overloads.first() else {
                 continue;
             };
-            if !first.is_private {
-                continue;
-            }
             let method = self.make_method_object_with_owner(
                 &method_name,
                 first,
@@ -39,6 +38,7 @@ impl Interpreter {
                 Some(&overloads),
                 Some(class_name),
             );
+            let method = stable_method_object(method, class_name, &method_name);
             entries.push((method_name.to_string(), method));
         }
         entries
@@ -92,4 +92,40 @@ impl Interpreter {
                 .collect(),
         )
     }
+}
+
+/// `method` under the object id its declaration keeps however often the table
+/// is built (`.WHERE`, `nqp::objectid`), as Rakudo's one method object per
+/// declaration.
+// Cost: O(a), a = attributes of the method object.
+fn stable_method_object(method: Value, class_name: &str, method_name: &str) -> Value {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static IDS: OnceLock<Mutex<HashMap<(String, String), u64>>> = OnceLock::new();
+    let ValueView::Instance {
+        class_name: kind,
+        attributes,
+        ..
+    } = method.view()
+    else {
+        return method;
+    };
+    let id = *IDS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .entry((class_name.to_string(), method_name.to_string()))
+        .or_insert_with(crate::value::next_instance_id);
+    let attrs = attributes.as_map().clone();
+    let own_candidate = attrs.get("candidates").is_some_and(|c| match c.view() {
+        ValueView::Array(items, _) => {
+            items.len() == 1 && crate::value::identity::values_identical(&items[0], &method)
+        }
+        _ => false,
+    });
+    let stable = Value::make_instance_with_id(kind, attrs, id);
+    if own_candidate && let ValueView::Instance { attributes, .. } = stable.view() {
+        attributes.insert("candidates", Value::array(vec![stable.clone()]));
+    }
+    stable
 }

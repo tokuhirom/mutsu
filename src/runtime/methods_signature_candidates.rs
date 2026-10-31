@@ -348,16 +348,24 @@ impl Interpreter {
                         Value::str(return_type.clone()),
                     );
                 }
-                Value::make_sub_for_routine(
-                    def.package,
-                    def.name,
+                let fingerprint =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let (package_sym, name_sym) = (def.package, def.name);
+                let mut data = Value::sub_data_for_routine(
+                    package_sym,
+                    name_sym,
                     def.params.clone(),
                     def.param_defs.clone(),
                     def.body.clone(),
                     def.is_rw,
                     env,
                     def.compiled_fn().cloned(),
-                )
+                    Vec::new(),
+                );
+                // One declaration is one object however often `.candidates`
+                // is asked (`.WHERE`, `nqp::objectid`).
+                data.id = stable_candidate_id(package_sym, name_sym, fingerprint);
+                Value::from_sub_data(data)
             })
             .collect()
     }
@@ -719,4 +727,23 @@ impl Interpreter {
             Self::candidate_count_value(&infos)
         })
     }
+}
+
+/// The object id of the candidate a declaration makes, minted on first use.
+// Cost: O(1) expected.
+fn stable_candidate_id(
+    package: crate::symbol::Symbol,
+    name: crate::symbol::Symbol,
+    fingerprint: u64,
+) -> u64 {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type Key = (crate::symbol::Symbol, crate::symbol::Symbol, u64);
+    static IDS: OnceLock<Mutex<HashMap<Key, u64>>> = OnceLock::new();
+    let mut ids = IDS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *ids.entry((package, name, fingerprint))
+        .or_insert_with(crate::value::next_instance_id)
 }

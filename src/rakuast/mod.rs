@@ -1501,6 +1501,19 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// The qualified name of a package declaration of the unit tree `$*CU` answers.
+// Cost: O(1).
+pub(crate) fn declared_package_qualified_name(node: &RakuAstNode) -> Option<String> {
+    resolve::package_qualified_name(node)
+}
+
+/// Which candidate of its name's dispatcher a `multi sub` of the unit tree `$*CU`
+/// answers declares.
+// Cost: O(1).
+pub(crate) fn declared_multi_candidate(node: &RakuAstNode) -> Option<usize> {
+    resolve::multi_candidate_index(node)
+}
+
 /// The `(package, name)` of a `Method` of the unit tree `$*CU` answers.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
@@ -3602,7 +3615,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     }
     if is_resolvable_lookup(node.class) {
         match method {
-            "is-resolved" => return Some(Value::truth(node.origin.2.is_some())),
+            // A package declaration keeps its qualified name there, not a resolution.
+            "is-resolved" => {
+                return Some(Value::truth(
+                    node.origin.2.is_some() && resolve::package_qualified_name(node).is_none(),
+                ));
+            }
+            "resolution" if resolve::package_qualified_name(node).is_some() => {
+                return Some(Value::NIL);
+            }
             "resolution" => return Some(node.origin.2.clone().unwrap_or(Value::NIL)),
             _ => {}
         }
@@ -3823,6 +3844,11 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::Block
             | RakuAstClass::PointyBlock
             | RakuAstClass::TypeSubset
+            | RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
     ) {
         names.push("compile-time-value");
     }

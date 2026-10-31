@@ -462,11 +462,23 @@ impl Interpreter {
             ValueView::Instance {
                 class_name,
                 attributes,
-                ..
+                id,
             } => {
                 let mut attrs = attributes.as_map().clone();
                 attrs.insert("__mutsu_method_table_entry".to_string(), Value::TRUE);
-                Value::make_instance(class_name, attrs)
+                // A plain method is its own sole candidate: the marked copy
+                // must be, not the object it was copied from.
+                let own_candidate = attrs.get("candidates").is_some_and(|c| match c.view() {
+                    ValueView::Array(items, _) => {
+                        items.len() == 1 && crate::value::identity::values_identical(&items[0], &value)
+                    }
+                    _ => false,
+                });
+                let marked = Value::make_instance_with_id(class_name, attrs, id);
+                if own_candidate && let ValueView::Instance { attributes, .. } = marked.view() {
+                    attributes.insert("candidates", Value::array(vec![marked.clone()]));
+                }
+                marked
             }
             _ => value,
         }
