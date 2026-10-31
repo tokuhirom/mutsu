@@ -50,6 +50,34 @@ impl Interpreter {
         Ok(Value::array(new_items))
     }
 
+    /// The store of a hyper assignment whose right operand sets the length
+    /// (`@a «=« (9, 8)`, `@a «+=« (10, 20)`): the assignment writes the elements
+    /// the right side reaches and leaves the others alone, it does not replace
+    /// the array by the result list. `args[0]` is the target's current value,
+    /// `args[1]` the hyper op's result; the merged array is returned for the
+    /// outer store.
+    ///
+    /// A result shorter than the target overwrites the target's head. A result
+    /// longer than the target (the target is cycled) lands on slot `i % len`, the
+    /// last write winning, so the array keeps its length.
+    // TODO: `@a «+=« (1, 2, 3)` over a 2-element `@a` applies the op to the
+    // already-updated slot on the cycle (rakudo: `[5 4]`); the result list was
+    // computed from the original elements, so a compound op gives `[4 4]` here.
+    // Cost: O(n + m), n = target length, m = result length.
+    pub(super) fn builtin_hyper_assign_merge(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let current = crate::runtime::value_to_list(args.first().unwrap_or(&Value::NIL));
+        let result = crate::runtime::value_to_list(args.get(1).unwrap_or(&Value::NIL));
+        if current.is_empty() || result.len() == current.len() {
+            return Ok(Value::array(result));
+        }
+        let mut merged = current;
+        let slots = merged.len();
+        for (i, value) in result.into_iter().enumerate() {
+            merged[i % slots] = value;
+        }
+        Ok(Value::array(merged))
+    }
+
     pub(super) fn builtin_feed_append(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() < 2 {
             return Err(RuntimeError::new(

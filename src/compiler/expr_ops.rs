@@ -276,6 +276,14 @@ impl Compiler {
             return;
         }
         if is_assign_op {
+            let merge_into_array = dwim_left && !dwim_right && matches!(left, Expr::ArrayVar(_));
+            if merge_into_array {
+                // `@a «=« (9, 8)`: the right operand sets the length, and the
+                // assignment writes only the elements it reaches. The target's
+                // current elements go first, then the hyper op's result, and the
+                // store gets the two merged.
+                self.compile_expr(left);
+            }
             self.compile_expr(left);
             self.compile_expr(right);
             self.emit_lex_import_meta(Symbol::intern(base_op));
@@ -284,6 +292,27 @@ impl Compiler {
                 dwim_left,
                 dwim_right,
             });
+            if merge_into_array && let Expr::ArrayVar(name) = left {
+                // The expression's value is the hyper op's result (rakudo yields
+                // `(9 8)` for `@a «=« (9, 8)`), the store gets it merged.
+                let tmp_name = format!("__mutsu_tmp_hyper_assign_{}", self.code.constants.len());
+                let tmp_idx = self.code.add_constant(Value::str(tmp_name));
+                self.code.emit(OpCode::Dup);
+                self.code.emit(OpCode::SetGlobal(tmp_idx));
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str("__mutsu_hyper_assign_merge".to_string()));
+                self.code.emit(OpCode::CallFunc {
+                    name_idx,
+                    arity: 2,
+                    arg_sources_idx: None,
+                    literal_native_args: 0,
+                    static_arg_types: false,
+                });
+                self.emit_set_named_var(&format!("@{}", name));
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                return;
+            }
             // Assign the result back to the left-hand side variable. Keep a copy
             // on the stack (via Dup) so the hyper-assignment also yields its
             // value as an expression, e.g. `my @r = @a »+=« (1,2,3)`.

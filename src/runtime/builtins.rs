@@ -674,6 +674,7 @@ impl Interpreter {
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
             "__mutsu_cross_xx" => self.builtin_cross_xx(&args),
             "__mutsu_zip_assign" => self.builtin_zip_assign(&args),
+            "__mutsu_hyper_assign_merge" => self.builtin_hyper_assign_merge(&args),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_subscript_adverb_error" => Self::builtin_subscript_adverb_error(&args),
             "__mutsu_subscript_named_adverbs" => self.builtin_subscript_named_adverbs(&args),
