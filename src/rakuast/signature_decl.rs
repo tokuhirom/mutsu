@@ -360,7 +360,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
 
 /// Collect flattened declaration leaves while retaining sub-signature groups.
 // Cost: O(n), n = parameter nodes, with nesting bounded at 128.
-fn lower_group_parameter(
+fn lower_group_parameter(names: &NameScope, 
     param: &RakuAstNode,
     vars: &mut Vec<SignatureVar>,
     depth: usize,

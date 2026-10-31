@@ -85,7 +85,7 @@ fn read_conditional(
 /// `with` family) rather than a parameter list. A hand-built block has no
 /// positions.
 // Cost: O(n), n = size of the block.
-fn read_block(block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeError> {
+fn read_block(names: &NameScope, block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeError> {
     let params = if block.class != RakuAstClass::PointyBlock {
         BlockParams::None
     } else if topic {

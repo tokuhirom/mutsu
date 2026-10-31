@@ -38,7 +38,7 @@ pub fn lower(names: &crate::scope::NameScope, node: &RakuAstNode) -> Result<Vec<
 /// [`lower`] for a tree `convert` just built: it holds no user subclass, so the
 /// walk that replaces one is skipped.
 // Cost: as [`lower`] without the normalizing walk.
-pub(super) fn lower_converted(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn lower_converted(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     lower_normalized(names, node)
 }
 
