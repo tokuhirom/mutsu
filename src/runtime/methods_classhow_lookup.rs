@@ -598,23 +598,21 @@ impl Interpreter {
         if let Some(rt) = &def.return_type {
             env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
         }
-        // A method that carries its compiled body runs it as bytecode, like a
-        // declared routine, instead of recompiling the AST through the
-        // tree-walk carrier at every call (#14572).
-        if let Some(code) = &def.compiled_code {
-            // `compiled_fns` holds the subs nested in the method's body; a
-            // method with none has no table, and the empty one resolves the
-            // same (`call_sub_value`'s own fallback).
-            let fns = def
-                .compiled_fns
-                .clone()
-                .unwrap_or_else(|| std::sync::Arc::new(CompiledFns::default()));
+        // A method that carries its compiled body and nests no subs runs as
+        // bytecode, like a declared routine, instead of recompiling the AST
+        // through the tree-walk carrier at every call (#14572).
+        // TODO: also compile a method that nests subs. A monitor method
+        // (`OO::Monitors` wraps it from a metaclass `add_method`) loses its
+        // nested sub when run as bytecode here, and the cause is not yet known.
+        if let (Some(code), Some(fns)) = (&def.compiled_code, &def.compiled_fns)
+            && fns.is_empty()
+        {
             return Value::make_sub_compiled_in(
                 (Symbol::intern(owner), Symbol::intern(name)),
                 (def.params.clone(), full_param_defs, (*def.body).clone()),
                 def.is_rw,
                 env,
-                (code.clone(), fns),
+                (code.clone(), fns.clone()),
             );
         }
         Value::make_sub(

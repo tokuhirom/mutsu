@@ -7,3 +7,6 @@ method, recompiled the body through the `call_sub_value` tree-walk carrier at ev
 `compiled_code` and its nested-sub table, and a method with none uses the empty table, as
 `call_sub_value` already does for a closure. `Value::make_sub_compiled_in` takes the package
 and `is rw` (#14572).
+
+A method that nests subs keeps the tree-walk carrier for now: a monitor method
+(`OO::Monitors`) lost its nested sub as bytecode, which broke the Cro::HTTP cookie jar suite.
