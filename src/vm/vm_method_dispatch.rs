@@ -1946,7 +1946,7 @@ impl Interpreter {
                         && !pd.is_invocant
                         && !pd.named
                         && !pd.slurpy
-                        && !pd.name.starts_with(['@', '%', '&', '!', '.'])
+                        && pd.name.starts_with(|c: char| c.is_alphabetic())
                         && !pd
                             .traits
                             .iter()
@@ -2495,7 +2495,12 @@ impl Interpreter {
             // env/locals from the live cell pre-op (`array_hash_attr_env_snapshot`),
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
-            Self::insert_fast_param_values(env, &param_values);
+            Self::insert_fast_param_values_by_name(
+                env,
+                &param_values,
+                method_def,
+                cc.static_name_lookup || cc.needs_reflective_capture,
+            );
         }
         // A light-bound plain `@x`/`%x` carries its constraint in the callee's
         // scope, which exists only now.
