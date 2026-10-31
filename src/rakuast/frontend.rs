@@ -84,7 +84,11 @@ pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, Runtim
     // converts where it stands, while it is lowered.
     let _declared = (!convert_level()).then(|| super::bareword::DeclaredNames::collect(&stmts));
     let _top = (!convert_level()).then(|| super::bareword::BlockScope::enter(&stmts));
-    let node = super::convert::statement_list(&stmts)?;
+    let node = if convert_level() {
+        super::convert::statement_list(&stmts)?
+    } else {
+        super::convert::statement_list_owned(&mut stmts)?
+    };
     let mut lowered = super::lower::lower_converted(&node)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.

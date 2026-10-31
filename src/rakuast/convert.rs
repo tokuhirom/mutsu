@@ -47,92 +47,8 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
     }
 }
 
-/// Top-level: a parsed program becomes a `RakuAST::StatementList`.
-pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let _underscore_scope = super::underscore_bindings::Scope::reset();
-    let _scope = bareword::DeclaredNames::collect(stmts);
-    statement_list_inner(stmts)
-}
-
-/// The statements of `stmts`, each as its node.
-// Cost: O(n), n = size of the statements.
-pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, RuntimeError> {
-    Ok(statement_list_inner(stmts)?
-        .fields
-        .into_iter()
-        .filter_map(|field| match field.value {
-            RakuAstFieldValue::Node(value) => match value.view() {
-                ValueView::RakuAst(node) => Some(node.clone()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect())
-}
-
-fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let _statements = super::passthrough::Block::enter();
-    let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
-    let _block = bareword::BlockScope::enter(stmts);
-    let mut fields = Vec::new();
-    // The line of the statement about to be converted: the `SetLine` marker
-    // in front of it becomes the node's hidden origin (see `origin`).
-    let mut line = None;
-    let mut trace = None;
-    for (at, stmt) in stmts.iter().enumerate() {
-        if let Stmt::SetLine(n, span) = stmt {
-            line = Some((*n, *span));
-            continue;
-        }
-        if matches!(stmt, Stmt::Trace { .. }) {
-            trace = Some(stmt);
-            continue;
-        }
-        // `unit module M;` / `unit package P;`: rakudo holds the rest of the
-        // unit in the declaration's body; the parser leaves it beside it.
-        let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| span));
-        if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
-            if let Some(mut node) = convert_stmt(&unit)? {
-                super::routine_origins::package_origins(&mut node, &unit);
-                if let Some(field) = trace.take().and_then(origin::trace_field) {
-                    node.fields.push(field);
-                }
-                if let Some((n, span)) = line.take() {
-                    origin::set(&mut node, n, span);
-                }
-                fields.push(node_field(None, node));
-            }
-            break;
-        }
-        // The `state` declaration the parser puts at the top of a block for
-        // each bare `$` it contains: rakudo's node is the `$` itself.
-        if crate::ast::anon_state::is_implicit_decl(stmt) && !super::passthrough::executing() {
-            continue;
-        }
-        if trace.is_none()
-            && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
-        {
-            line = None;
-            fields.push(node_field(None, leaf));
-            continue;
-        }
-        if let Some(mut node) = convert_stmt(stmt)? {
-            super::routine_origins::package_origins(&mut node, stmt);
-            if let Some(field) = trace.take().and_then(origin::trace_field) {
-                node.fields.push(field);
-            }
-            if let Some((n, span)) = line.take() {
-                origin::set(&mut node, n, span);
-            }
-            fields.push(node_field(None, node));
-        }
-    }
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::StatementList,
-        fields,
-    })
-}
+use super::statements::{Statements, statement_list_inner};
+pub(super) use super::statements::{block_statements, statement_list, statement_list_owned};
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
 /// `unit` for `unit class` / `unit module`; `our` is the default and renders
@@ -4150,7 +4066,10 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, statement_list_inner(body)?)],
+        fields: vec![node_field(
+            None,
+            statement_list_inner(Statements::Shared(body))?,
+        )],
     })
 }
 
@@ -6826,7 +6745,7 @@ fn is_injected_named_arg(arg: &Expr) -> bool {
 /// declaration with `rest` as its body (inside its header wrapper, if it has
 /// one). `None` for any other statement.
 // Cost: O(n), n = size of `rest` (it is cloned).
-fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
+pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
     let (declaration, header) = match stmt {
         Stmt::Ast(node) => match node.as_ref() {
             crate::ast::parsed::ParsedStmt::PackageHeader { decl, header, .. } => {
