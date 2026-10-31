@@ -65,9 +65,10 @@ fn is_closing(field: &RakuAstField) -> bool {
             && stmt.fields.iter().any(|f| {
                 held(f).is_some_and(|nqp| {
                     nqp.class == C::Nqp
-                        && nqp.fields.iter().any(|a| {
-                            held(a).is_some_and(|arg| arg.class == C::RoleMetaObject)
-                        })
+                        && nqp
+                            .fields
+                            .iter()
+                            .any(|a| held(a).is_some_and(|arg| arg.class == C::RoleMetaObject))
                 })
             })
     })
