@@ -2580,7 +2580,12 @@ impl Interpreter {
         if !Self::module_has_state_sub(stmts) {
             return;
         }
-        let (_code, compiled_fns) = self.compile_block_raw(stmts);
+        // Compiled as the module's own mainline is (a module unit, whose
+        // top-level `use`s fill lexical import sets): a `state`-declaring sub's
+        // shared body is what a qualified call (`Mod::sub(...)`) runs, and
+        // without the sets its calls to imported routines (`LexImportCall`)
+        // would resolve by bare name in the caller's scope instead.
+        let (_code, compiled_fns) = self.compile_module_mainline_uncached(stmts);
         for cf in compiled_fns.into_values() {
             self.module
                 .imported_compiled_fns
