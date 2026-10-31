@@ -391,12 +391,15 @@ impl Interpreter {
             // `.^can`/`.^lookup` and answered `Nil` when called -- silently.
             // Only the anonymous shapes (`method () {...}`, a pointy block)
             // ever worked. See `t/add-method-named-routine.t`.
-            let method_compiled = match (&method_compiled, sub_data.compiled_routine.as_ref()) {
-                (None, Some(routine)) if method_body.is_empty() => {
-                    Some(routine.code.clone())
-                }
-                _ => method_compiled,
-            };
+            // The subs nested in that body travel with the code.
+            let (method_compiled, method_compiled_fns) =
+                match (&method_compiled, sub_data.compiled_routine.as_ref()) {
+                    (None, Some(routine)) if method_body.is_empty() => {
+                        (Some(routine.code.clone()), routine.compiled_fns.clone())
+                    }
+                    (Some(_), _) => (method_compiled, sub_data.compiled_fns.clone()),
+                    _ => (method_compiled, None),
+                };
             // The name list has to lose the invocant too, not just
             // `param_defs`: dispatch binds arguments positionally against
             // `params`, so leaving `self` in it shifted every argument by one
@@ -449,7 +452,7 @@ impl Interpreter {
                 original_role: None,
                 return_type: None,
                 compiled_code: method_compiled,
-                compiled_fns: None,
+                compiled_fns: method_compiled_fns,
                 delegation: None,
                 is_default: false,
                 deprecated_message: None,

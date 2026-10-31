@@ -584,9 +584,9 @@ impl Interpreter {
     /// recompiling the AST through the tree-walk carrier at every call
     /// (#14572). `env` is what the callable closes over and `param_defs` the
     /// signature including the invocant.
-    // TODO: also compile a method that nests subs. A monitor method
-    // (`OO::Monitors` wraps it from a metaclass `add_method`) loses its
-    // nested sub when run as bytecode here, and the cause is not yet known.
+    // TODO: also compile a method that nests subs: its callable runs the
+    // body's nested `sub` through the chunk's own table, which a callable
+    // built here does not install yet.
     // Cost: O(1).
     pub(super) fn method_def_compiled_callable(
         owner: &str,
@@ -595,9 +595,10 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         env: &crate::env::Env,
     ) -> Option<Value> {
-        let (Some(code), Some(fns)) = (&def.compiled_code, &def.compiled_fns) else {
-            return None;
-        };
+        let code = def.compiled_code.as_ref()?;
+        // A def with no table of nested subs has none: both compile paths
+        // record the table only when it is non-empty.
+        let fns = def.compiled_fns.clone().unwrap_or_default();
         if !fns.is_empty() {
             return None;
         }
@@ -606,7 +607,7 @@ impl Interpreter {
             (def.params.clone(), param_defs.to_vec(), (*def.body).clone()),
             def.is_rw,
             env.clone(),
-            (code.clone(), fns.clone()),
+            (code.clone(), fns),
         ))
     }
 
