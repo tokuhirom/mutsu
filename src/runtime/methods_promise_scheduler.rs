@@ -10,6 +10,9 @@
 use super::*;
 use crate::symbol::Symbol;
 
+const THUNK_VOW_VAR: &str = "__mutsu_thunk_vow";
+const THUNK_ARG_VAR: &str = "__mutsu_thunk_arg";
+
 impl Interpreter {
     /// The `$*SCHEDULER` currently in effect, but only when it is a
     /// *user-defined* scheduler — a class that is not one of the built-ins.
@@ -109,41 +112,25 @@ impl Interpreter {
     /// `Callable` a user scheduler can store and invoke later. The body is a
     /// single call into a native method on a literal instance, so the block
     /// itself does no work of its own.
-    pub(in crate::runtime) fn synthesized_thunk(body: Vec<crate::ast::Stmt>) -> Value {
-        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-            fixtures: None,
-            package: Symbol::intern("GLOBAL"),
-            name: Symbol::intern(""),
-            params: crate::value::empty_params(),
-            param_defs: crate::value::empty_param_defs(),
-            body: std::sync::Arc::new(body),
-            is_rw: false,
-            is_raw: false,
-            env: Env::new(),
-            assumed_positional: Vec::new(),
-            assumed_named: ValueMap::default(),
-            id: crate::value::next_instance_id(),
-            is_direct_code: false,
-            empty_sig: false,
-            is_bare_block: true,
-            compiled_code: None,
-            compiled_fns: None,
-            compiled_routine: None,
-            is_decl_expr_thunk: false,
-            deprecated_message: None,
-            source_line: None,
-            source_file: None,
-            owned_captures: Vec::new(),
-            authoritative_captures: Vec::new(),
-            own_cell_captures: Vec::new(),
-            upvalues: Vec::new(),
-            captured_fatal_mode: false,
-            param_name_syms_cache: std::sync::OnceLock::new(),
-            source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
-            captured_readonly: None,
-            routine_cell: Default::default(),
-        }))
+    pub(in crate::runtime) fn synthesized_thunk(
+        key: &str,
+        body: Vec<crate::ast::Stmt>,
+        env: Env,
+    ) -> Value {
+        let chunk = crate::runtime::synthesized_closure_code(key, &[], &[], &body);
+        let mut thunk = Value::make_sub_compiled(Symbol::intern(""), Vec::<String>::new(), Vec::<crate::ast::ParamDef>::new(), body, env, chunk);
+        if let ValueView::Sub(data) = thunk.view() {
+            let mut data = (**data).clone();
+            data.package = Symbol::intern("GLOBAL");
+            // The captured names are the thunk's own: they win over a thunk
+            // of the same shape running in the caller's frame.
+            data.authoritative_captures = vec![
+                Symbol::intern(THUNK_VOW_VAR),
+                Symbol::intern(THUNK_ARG_VAR),
+            ];
+            thunk = Value::sub_value(crate::gc::Gc::new(data));
+        }
+        thunk
     }
 
     /// `start { ... }` / `Promise.start`: under a bound user scheduler the
@@ -200,18 +187,23 @@ impl Interpreter {
 
     /// A zero-arg block whose body is `$vow.<method>(arg)`, `$vow` being a
     /// `Promise::Vow` on `promise`.
-    fn vow_method_thunk(promise: &SharedPromise, method: &str, arg: Value) -> Value {
+    pub(super) fn vow_method_thunk(promise: &SharedPromise, method: &str, arg: Value) -> Value {
         let mut vow_attrs = std::collections::HashMap::new();
         vow_attrs.insert("promise".to_string(), Value::promise(promise.clone()));
         let vow = Value::make_instance(Symbol::intern("Promise::Vow"), vow_attrs);
+        // The vow and the argument ride in the captured env, so every thunk
+        // of one method shares a single compiled body.
+        let mut env = Env::new();
+        env.insert(THUNK_VOW_VAR.to_string(), vow);
+        env.insert(THUNK_ARG_VAR.to_string(), arg);
         let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(crate::ast::Expr::Literal(vow)),
+            target: Box::new(crate::ast::Expr::Var(THUNK_VOW_VAR.to_string())),
             name: Symbol::intern(method),
-            args: vec![crate::ast::Expr::Literal(arg)],
+            args: vec![crate::ast::Expr::Var(THUNK_ARG_VAR.to_string())],
             modifier: None,
             quoted: false, sugar: false,
         })];
-        Self::synthesized_thunk(body)
+        Self::synthesized_thunk(&format!("thunk:vow:{method}"), body, env)
     }
 
     /// `Promise::Vow.__mutsu_run_start(&block)`: run a scheduler-cued `start`
@@ -282,7 +274,7 @@ impl Interpreter {
         // The dispatcher only runs native subscribers and never throws; the
         // `:catch` is there because Rakudo passes one (a scheduler may branch
         // on it, as `Test::Scheduler` does).
-        let catch = Self::synthesized_thunk(Vec::new());
+        let catch = Self::synthesized_thunk("thunk:empty", Vec::new(), Env::new());
         let named_catch = Value::pair("catch".to_string(), catch);
         match self.call_method_with_values(scheduler, "cue", vec![dispatcher, named_catch]) {
             Ok(_) => Ok(()),
