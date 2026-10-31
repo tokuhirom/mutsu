@@ -21,6 +21,12 @@ and the nightly sweeps. At ~100 merges a day, PR runs queued for 5-15 minutes pe
   ("Use workflow from") before merging.
 - **The frontend has no opt-out to test.** `scripts/rakuast-frontend.sh check` (the `convert` level, in
   `test-suites`) is the one RakuAST-specific step; the default level is what `prove t/` runs.
+- **The `.AST` text has its own ratchet** (`scripts/ast-text-corpus.sh check`, `test-suites`): a pinned
+  sample of roast files whose `.AST` text, hashed per statement, is rakudo 2026.09's
+  (`ci/ast-text-corpus/rakudo.tsv`, made with `golden` since the runner has no `raku`), and the list of
+  statements that matched when it was last updated (`ci/ast-text-corpus/identical.tsv`, only ever
+  grows). A listed statement that stops matching fails the step; a roast file that changed since the
+  golden was made is skipped. After a roast re-vendor or a rakudo bump, run `golden` then `update`.
 - **CI on `main` runs hourly** (`schedule`, `23 * * * *`) and on `workflow_dispatch`. The `changes`
   job looks up the head of the last green non-PR run on `main` and classifies the diff since then
   exactly as it would a push: an unchanged `main` skips every build job, and a stretch of
