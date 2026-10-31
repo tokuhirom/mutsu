@@ -181,7 +181,10 @@ impl Interpreter {
         });
         let arg_keys = match arg_keys {
             Some(keys) => keys.to_vec(),
-            None => self.multi_arg_type_keys(arg_values)?,
+            // Named arguments are keyed by name and value type, the keys the
+            // keyed callers already pass (`resolve_function_with_types_cached`):
+            // refusing them left every `f(..., :force)` call unplanned.
+            None => self.multi_arg_type_keys_with_named(arg_values)?,
         };
         let visibility = self.operator_has_import_scope(name).then(|| {
             (
