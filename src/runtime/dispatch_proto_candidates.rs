@@ -45,8 +45,21 @@ impl Interpreter {
     /// [`Self::resolve_all_multi_candidates_indexed`] wherever `&mut self` is
     /// available — this `&self` spelling exists only for the reflective
     /// `resolve_code_var` path, which cannot build the index.
+    // Cost: O(c) when the base-name key index already holds `name` (the
+    // steady state: a dispatcher call has resolved the name before); O(f)
+    // for the first call, f = registry functions.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
-        self.multi_candidates_over(name, None)
+        // Read the index without filling it: this `&self` spelling cannot build
+        // one, but a name resolved earlier is indexed, and the indexed gather
+        // is the same answer by construction (`indexed_gather_equivalence_tests`).
+        // `captured_candidates_are_live` runs it on every call of a dispatcher
+        // value, where the full walk was O(registry) per call.
+        let indexed = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
+            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        match indexed {
+            Some(keys) => self.multi_candidates_over(name, Some(&keys)),
+            None => self.multi_candidates_over(name, None),
+        }
     }
 
     /// Same answer as [`Self::resolve_all_multi_candidates`], gathered from the
