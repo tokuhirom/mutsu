@@ -738,8 +738,8 @@ fn stable_candidate_id(
 ) -> u64 {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    static IDS: OnceLock<Mutex<HashMap<(crate::symbol::Symbol, crate::symbol::Symbol, u64), u64>>> =
-        OnceLock::new();
+    type Key = (crate::symbol::Symbol, crate::symbol::Symbol, u64);
+    static IDS: OnceLock<Mutex<HashMap<Key, u64>>> = OnceLock::new();
     let mut ids = IDS
         .get_or_init(Default::default)
         .lock()
