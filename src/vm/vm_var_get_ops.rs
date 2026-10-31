@@ -165,31 +165,6 @@ impl Interpreter {
         {
             return Err(self.no_such_qualified_symbol(package.as_str(), member.as_str()));
         }
-        // A qualified class name that is itself a declared class (`class
-        // Plugin::Registry is export` in a unit that imported another `Plugin`):
-        // that class is the name's meaning, not `Registry` looked up in the
-        // class the head `Plugin` stands for (`resolve_constant_package_alias_prefix`
-        // below).
-        if crate::qualified::is_qualified(name_sym) {
-            let declared = if self.registry().classes.contains_key(name) {
-                Some(name_sym)
-            } else {
-                // Or the class a `use` bound under that spelling
-                // (`P2::Plugin::Registry` exported as `Plugin::Registry`).
-                self.env().get(name).and_then(|v| match v.view() {
-                    ValueView::Package(target)
-                        if self.registry().classes.contains_key(target.as_str()) =>
-                    {
-                        Some(target)
-                    }
-                    _ => None,
-                })
-            };
-            if let Some(class) = declared {
-                self.stack.push(Value::package(class));
-                return Ok(());
-            }
-        }
         // A lexical `my class foo` is bound under its own `env` key space
         // (`lexical_type_key`) as well as the bare name a same-named `$foo`
         // shares (#12109). The bare binding is the ordinary resolution; the
@@ -329,6 +304,33 @@ impl Interpreter {
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.
         if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
+            // A qualified name that is itself a declared class (`class
+            // Plugin::Registry is export` in a unit that imported another
+            // `Plugin`) is that class when the head's package has no such
+            // member: the rewrite would only produce "Could not find symbol".
+            if !self.has_type(&real)
+                && !self.is_known_package(&real)
+                && crate::qualified::is_qualified(name_sym)
+            {
+                let declared = if self.registry().classes.contains_key(name) {
+                    Some(name_sym)
+                } else {
+                    // Or the class a `use` bound under that spelling
+                    // (`P2::Plugin::Registry` exported as `Plugin::Registry`).
+                    self.env().get(name).and_then(|v| match v.view() {
+                        ValueView::Package(target)
+                            if self.registry().classes.contains_key(target.as_str()) =>
+                        {
+                            Some(target)
+                        }
+                        _ => None,
+                    })
+                };
+                if let Some(class) = declared {
+                    self.stack.push(Value::package(class));
+                    return Ok(());
+                }
+            }
             return self.push_bare_word_value_in(Symbol::intern(&real), compiled_fns, false);
         }
         // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
