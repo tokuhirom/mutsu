@@ -82,7 +82,9 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name.as_str() == "Duration" => attributes.as_map().get("value").and_then(to_float_value),
+        } if class_name.as_str() == "Duration" => {
+            attributes.as_map().get("value").and_then(to_float_value)
+        }
         ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
         ValueView::Str(s) => {
             let t = s.trim();
