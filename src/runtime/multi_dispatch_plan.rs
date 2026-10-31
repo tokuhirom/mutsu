@@ -25,8 +25,8 @@
 //! type keys)` and the functions map, whose generation tags the entry. The two
 //! things that depend on the executing *frame* are handled apart: an imported
 //! operator's visibility (#9944) is decided by the executing units, which join
-//! the key for such a name, and a compunit-private name is never planned at
-//! all.
+//! the key for such a name, and so do those of a compunit-private name, which
+//! is planned per asking unit (as the plain-sub memo keys it, ADR-12529).
 
 use super::multi_rank::{self, MultiRank};
 use super::*;
@@ -74,6 +74,13 @@ pub(crate) struct BareMultiPlanKey {
     /// For an operator some `use` imported: `(current unit, executing unit,
     /// import-table generation)`, the inputs of `operator_candidate_visible`.
     visibility: Option<(Symbol, Symbol, u64)>,
+    /// For a compunit-scoped name (`my multi sub`, a module's own `our`
+    /// routines): `(current unit, executing unit, executing unit for a module
+    /// load)`, the same inputs the plain-sub memo (`PlainFnResolveKey`) keys such a name by. The
+    /// plan answers per asking unit; without them in the key the name was
+    /// never planned and every call re-gathered and re-ranked all its
+    /// candidates (ADR-15737; #15786).
+    units: Option<(Symbol, Symbol, Symbol)>,
     arg_keys: Vec<Symbol>,
 }
 
@@ -165,9 +172,13 @@ impl Interpreter {
         arg_values: &[Value],
         arg_keys: Option<&[Symbol]>,
     ) -> Option<BareMultiPlanKey> {
-        if self.is_unit_scoped_routine_name(name) {
-            return None;
-        }
+        let units = self.is_unit_scoped_routine_name(name).then(|| {
+            (
+                self.current_unit,
+                self.executing_unit_sym(),
+                self.executing_unit_sym_for_module_load(),
+            )
+        });
         let arg_keys = match arg_keys {
             Some(keys) => keys.to_vec(),
             None => self.multi_arg_type_keys(arg_values)?,
@@ -189,6 +200,7 @@ impl Interpreter {
             proto_generation: self.registry().proto_generation(),
             subsets: self.registry().subsets.len(),
             visibility,
+            units,
             arg_keys,
         })
     }
@@ -374,7 +386,14 @@ impl Interpreter {
     /// subsets. Its name and argument keys are the caller's to match.
     // Cost: O(1), one registry read.
     pub(crate) fn light_plan_key_current(&self, key: &BareMultiPlanKey) -> bool {
-        key.package == self.current_package_sym()
+        key.units.is_none_or(|units| {
+            units
+                == (
+                    self.current_unit,
+                    self.executing_unit_sym(),
+                    self.executing_unit_sym_for_module_load(),
+                )
+        }) && key.package == self.current_package_sym()
             && key.lexical_package
                 == self
                     .routine_stack()
