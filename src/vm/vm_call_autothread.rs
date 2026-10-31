@@ -453,11 +453,25 @@ impl Interpreter {
                     ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                         let resolved_args: Vec<Value> =
                             args.iter().map(Self::unwrap_junction_deep).collect();
-                        match self.resolve_method_with_owner(
-                            &class_name.resolve(),
-                            method,
-                            &resolved_args,
-                        ) {
+                        // A private call (`self!m($j)`) carries the `!` in its name:
+                        // its candidates are the private methods, which the public
+                        // lookup never finds, so it would thread every junction even
+                        // when the parameter is `Mu` (#15842).
+                        let resolved = if method.starts_with('!') {
+                            self.resolve_private_method_for_vm_sym(
+                                class_name,
+                                Symbol::intern(method),
+                                &resolved_args,
+                            )
+                            .map(|(owner, def)| (owner, (*def).clone()))
+                        } else {
+                            self.resolve_method_with_owner(
+                                &class_name.resolve(),
+                                method,
+                                &resolved_args,
+                            )
+                        };
+                        match resolved {
                             Some((_, def)) => self.autothread_indices_for_params(
                                 args,
                                 &junction_indices,
