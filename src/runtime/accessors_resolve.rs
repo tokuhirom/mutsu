@@ -617,7 +617,7 @@ impl Interpreter {
     /// routine of that name would be hidden by (a `sub abs`, a `multi
     /// infix:<eqv>`).
     // Cost: O(1) hashed probes.
-    fn user_declares_routine(&self, name: &str) -> bool {
+    pub(crate) fn user_declares_routine(&self, name: &str) -> bool {
         self.has_proto(name)
             || self.has_multi_candidates_unindexed(name)
             || self.resolve_function(name).is_some()
