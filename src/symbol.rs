@@ -550,7 +550,10 @@ impl SymbolMemo {
             }
         }
         let v = compute(sym.as_str());
-        debug_assert!(v & Self::COMPUTED == 0, "memo value must leave bit 15 clear");
+        debug_assert!(
+            v & Self::COMPUTED == 0,
+            "memo value must leave bit 15 clear"
+        );
         let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
         chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v | Self::COMPUTED, Ordering::Relaxed);
         v

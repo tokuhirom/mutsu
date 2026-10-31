@@ -851,9 +851,32 @@ const COOL_SEARCH_FOR_SHAPELESS: [&str; 9] = [
 
 /// The names `shapeless_row` takes one positional argument for.
 const SHAPELESS_TAKES_ARG: [&str; 26] = [
-    "join", "pick", "roll", "head", "tail", "combinations", "batch", "uniprop", "uniprops",
-    "unimatch", "samecase", "samemark", "indent", "words", "lines", "chop", "comb", "flat", "isa",
-    "lazy-if", "AT-POS", "EXISTS-POS", "AT-KEY", "EXISTS-KEY", "ACCEPTS", "WALK",
+    "join",
+    "pick",
+    "roll",
+    "head",
+    "tail",
+    "combinations",
+    "batch",
+    "uniprop",
+    "uniprops",
+    "unimatch",
+    "samecase",
+    "samemark",
+    "indent",
+    "words",
+    "lines",
+    "chop",
+    "comb",
+    "flat",
+    "isa",
+    "lazy-if",
+    "AT-POS",
+    "EXISTS-POS",
+    "AT-KEY",
+    "EXISTS-KEY",
+    "ACCEPTS",
+    "WALK",
 ];
 
 /// Which audited name lists a method name is on. Each is a linear scan of
