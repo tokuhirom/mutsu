@@ -1803,6 +1803,15 @@ pub(crate) struct Compiler {
     /// lexical block like `constant_vars_in_scope`, and handed to nested
     /// closure compilers by `inherit_enclosing_scopes`.
     lexical_type_shadows: std::collections::HashSet<String>,
+    /// Names a `use X` of this scope (the unit's own, or the enclosing block's)
+    /// declares as the package `X`: a bareword `X` after it names that package,
+    /// not a sigilless `\X` of an outer scope (#15806). A later `my \X` of the
+    /// same scope drops the name again.
+    use_declared_names: std::collections::HashSet<String>,
+    /// True for an `EVAL`'d unit (`mark_as_eval_unit`). It cannot see which
+    /// sigilless bindings its call site holds, so its own `use X` declares `X`
+    /// whether or not one is visible at compile time.
+    in_eval_unit: bool,
     /// Bare names of the lexical types (`my class`/`my role`/`my grammar`)
     /// declared in this scope or an enclosing one. A method body's compiler
     /// reads them through `lexical_type_shadows`, so a method names such a
@@ -2193,6 +2202,8 @@ impl Compiler {
             enclosing_readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             lexical_type_shadows: std::collections::HashSet::new(),
+            use_declared_names: std::collections::HashSet::new(),
+            in_eval_unit: false,
             lexical_types_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -2992,6 +3003,8 @@ impl Compiler {
             .collect();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
+        sub.use_declared_names
+            .extend(self.use_declared_names.iter().cloned());
         sub.lexical_types_in_scope
             .extend(self.lexical_types_in_scope.iter().cloned());
     }
@@ -3351,6 +3364,7 @@ impl Compiler {
     }
 
     pub(crate) fn mark_as_eval_unit(&mut self) {
+        self.in_eval_unit = true;
         self.unit_tail_on_stack = true;
         self.push_local_scope();
         // The EVAL'd unit's declarations now land in this freshly-pushed frame,

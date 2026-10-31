@@ -61,6 +61,8 @@ impl Compiler {
     /// container, so the name is registered BEFORE the declaration compiles.
     pub(super) fn begin_term_decl(&mut self, name: &str, kind: TermMark) {
         self.sigilless_locals.insert(name.to_string());
+        // A term declared after a `use` of the same name is the nearer binding.
+        self.use_declared_names.remove(name);
         if kind == TermMark::Readonly {
             let key =
                 crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
