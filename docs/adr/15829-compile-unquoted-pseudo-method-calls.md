@@ -58,11 +58,23 @@ and the lowering for `^name`; the lowering is justified by the parity test, whos
 
 Execution is **guard + existing path as the miss tail** (the ADR-15737 D1 shape; no new slow path):
 
-1. Evaluate the receiver exactly as `CallMethod` does today.
+1. Evaluate the receiver exactly as the call does today. The new opcode replaces **both**
+   lowerings of an unquoted, argument-less pseudo-method call: `CallMethod` and `CallMethodMut`
+   (a call on a variable receiver is emitted as `CallMethodMut`, and the expensive chain in
+   Context starts at `exec_call_method_mut_op`; an opcode that replaced only `CallMethod` would
+   rarely be reached). A pseudo-method needs no write-back (it never rebinds its receiver), so the
+   mut form lowers to the same arm; the receiver is read from its slot as the mut form does today.
+   Both opcodes already carry the `quoted` flag, which is what makes the compile-time split of
+   quoted calls straightforward.
 2. If the receiver is a *plain value or type object* (Int, Num, Str, Bool, a built-in or user type
    object) and the kind's per-kind guard holds, call the same runtime function the generic arm
-   calls today (`dispatch_what`, `dispatch_how`, `dispatch_who`) directly, with no method
-   resolution.
+   calls today directly, with no method resolution: `dispatch_what`, `dispatch_how`,
+   `dispatch_who` (`methods_introspect.rs`); `.DEFINITE` is the `Mu.DEFINITE` row's `definite`
+   (`builtins/method_table/ctors_mop/mu_identity.rs`), and `.WHERE` is that file's `where_in`
+   (`Mu.WHERE`: the object's identity address, with the NativeCall-handle exception
+   `try_native_handle_repr_where`, so a receiver that is a NativeCall handle takes the generic
+   path). `.WHERE` and `.DEFINITE` are the two kinds with no `dispatch_*` function; the parity
+   test pins them against `raku` before they join the first slice.
 3. Otherwise run the existing generic method-call opcode path unchanged.
 
 The guards are the decision's substance, because each marks a place where the generic path does
@@ -106,15 +118,20 @@ measured so far:
 **Precondition for accepting this ADR's estimate:** a table of the pseudo-method calls in one
 Mooish iteration (and in Red's `t/38-equal` loop once it can be run), by kind and receiver class
 (plain value, type object, Instance, container, Proxy, Failure), recorded with a stats hook at the
-call-site level so every entry point is counted. It decides the first slice: if most land in
+call-site level so every entry point is counted. The same table records the cost of the `^name`
+rewrite: measure `.HOW.name($x)` (the opcode plus the remaining generic `.name($obj)` call on the
+HOW object) against today's `.^name` (26.4k Ir) before committing to the lowering. If the rewritten
+form is not cheaper, the rewrite buys only semantic uniformity for the `.^` metamethods, and the
+ADR keeps it for that reason alone or drops it. It decides the first slice: if most land in
 container/Proxy/Instance, the realistic first slice is `.WHAT`/`.HOW` (and the `^name` rewrite)
 for values and type objects, which helps `Test`-style code and roast helpers, not Mooish. The ADR
 does **not** claim to close #15688 or #15498 either way.
 
 ## Consequences
 
-- Positive: removes the most expensive recurring calls in the measured workloads without adding a
-  cache; the miss tail is today's code, so a wrong guard degrades to today's speed, not to a wrong
+- Positive: removes the most expensive recurring calls on plain values and type objects (26-70k Ir
+  each on main) without adding a cache; whether that reaches the measured workloads (Mooish, Red)
+  is the open question under Expected effect; the miss tail is today's code, so a wrong guard degrades to today's speed, not to a wrong
   answer; the deleted work (the per-call user-override probes for these six names) is gone from the
   hot path.
 - Negative: a second implementation site for the six names must stay in lock-step with the generic
