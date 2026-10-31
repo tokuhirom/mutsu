@@ -413,7 +413,7 @@ impl Interpreter {
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
         // The visible multi candidates that did not bind, for the tiers of
         // `pick_method_winner`.
-        let mut rivals: Vec<(Symbol, MethodDef)> = Vec::new();
+        let mut rivals: Vec<(Symbol, Rival)> = Vec::new();
         let mut idx = 0;
         while idx < candidates.len() {
             let ResolvedCandidate::User { level, .. } = &candidates[idx] else {
@@ -476,7 +476,7 @@ impl Interpreter {
                 ) {
                     all_matches.push((owner.symbol(), (**def).clone()));
                 } else if def.is_multi {
-                    rivals.push((owner.symbol(), (**def).clone()));
+                    rivals.push((owner.symbol(), Rival::owned((**def).clone())));
                 }
             }
         }

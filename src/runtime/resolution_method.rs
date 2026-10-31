@@ -333,7 +333,7 @@ impl Interpreter {
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
         // The visible multi candidates that did not bind: they still shape
         // rakudo's tiers (see `pick_method_winner`).
-        let mut rivals: Vec<(Symbol, MethodDef)> = Vec::new();
+        let mut rivals: Vec<(Symbol, Rival)> = Vec::new();
         // Track whether a non-multi submethod was found on an ancestor
         // (submethods block MRO search for their class but not for
         // descendants).
@@ -398,7 +398,7 @@ impl Interpreter {
                         return Some((*cn, only.clone()));
                     }
                 }
-                for def in overloads.iter() {
+                for (def_idx, def) in overloads.iter().enumerate() {
                     if def.is_private {
                         continue;
                     }
@@ -426,7 +426,7 @@ impl Interpreter {
                         }
                         all_matches.push((*cn, def.clone()));
                     } else if def.is_multi {
-                        rivals.push((*cn, def.clone()));
+                        rivals.push((*cn, Rival::of_row(&overloads, def_idx)));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
