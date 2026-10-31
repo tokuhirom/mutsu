@@ -77,7 +77,49 @@ impl Interpreter {
         Ok(Value::package(crate::symbol::wk::any()))
     }
 
+    /// `lines()` / `get()` are `$*ARGFILES.lines` / `$*ARGFILES.get`: when
+    /// roles were mixed into the default input handle (`$*ARGFILES does R`),
+    /// the mixin's override has to run, with the native method reachable
+    /// through its `callsame`.
+    // Cost: O(1) to decline; the method call otherwise.
+    // TODO: compile to bytecode -- a method call from a builtin function;
+    // the right shape is `lines()` compiling to `$*ARGFILES.lines`.
+    fn argfiles_mixin_method(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty() {
+            return None;
+        }
+        let handle = self.default_input_handle()?;
+        let mixed = match handle.view() {
+            ValueView::Mixin(..) => true,
+            ValueView::Instance { class_name, .. } => {
+                class_name.as_str().starts_with("IO::Handle+{")
+            }
+            _ => false,
+        };
+        if !mixed {
+            return None;
+        }
+        // The mixin's `callsame` reaches the native method, which reads through
+        // this same function: only the outermost call dispatches to the mixin.
+        thread_local! {
+            static IN_ARGFILES_MIXIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if IN_ARGFILES_MIXIN.with(|c| c.replace(true)) {
+            return None;
+        }
+        let result = self.call_method_with_values(handle, name, Vec::new());
+        IN_ARGFILES_MIXIN.with(|c| c.set(false));
+        Some(result)
+    }
+
     pub(super) fn builtin_get(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.argfiles_mixin_method("get", args) {
+            return result;
+        }
         let handle = args
             .first()
             .cloned()
@@ -117,6 +159,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.argfiles_mixin_method("lines", args) {
+            return result;
+        }
         if let Some(result) = self.try_io_path_content_sub(args, false) {
             return result;
         }

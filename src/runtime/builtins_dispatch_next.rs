@@ -791,6 +791,30 @@ impl Interpreter {
         self.try_native_method(inner, Symbol::intern(method_name), args)
     }
 
+    /// A plain `IO::Handle` view (same cell) of an instance whose class is
+    /// `IO::Handle` with roles mixed in (`IO::Handle+{R}`), else `None`.
+    // Cost: O(1).
+    pub(crate) fn plain_io_handle_view(value: &Value) -> Option<Value> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+        else {
+            return None;
+        };
+        class_name
+            .as_str()
+            .starts_with("IO::Handle+{")
+            .then(|| {
+                Value::instance_sharing_cell(
+                    &attributes,
+                    Symbol::intern("IO::Handle"),
+                    attributes.instance_id(),
+                )
+            })
+    }
+
     /// The default `gist`/`raku`/`Str` of an instance, the last candidate of a
     /// user override's deferral chain (`DeferralEntry::Native`).
     fn any_base_native_entry(
@@ -1272,6 +1296,12 @@ impl Interpreter {
                     };
                     let result = if let Some(res) = bridge {
                         res?
+                    } else if let Some(plain) = Self::plain_io_handle_view(&invocant) {
+                        // A role mixed into an open handle (`$*ARGFILES does R`,
+                        // reblessed to `IO::Handle+{R}`): the base behind the
+                        // role's `callsame` is the native `IO::Handle` method on
+                        // the same handle, without the mixin.
+                        self.call_method_with_values(plain, &name, args)?
                     } else if matches!(invocant.view(), ValueView::Instance { .. }) {
                         // An instance whose class has no storage bridge
                         // (`Storage` handled it above): the default rendering.
