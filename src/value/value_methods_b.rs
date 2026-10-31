@@ -626,15 +626,16 @@ impl Value {
     /// that chunk instead of recompiling its AST body through the tree-walk
     /// carrier. Everything that differs per instance rides in `env`.
     // Cost: O(1).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_sub_compiled(
         name: Symbol,
         params: impl Into<std::sync::Arc<Vec<String>>>,
         param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         env: Env,
-        code: std::sync::Arc<crate::opcode::CompiledCode>,
-        fns: std::sync::Arc<crate::opcode::CompiledFns>,
+        (code, fns): (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            std::sync::Arc<crate::opcode::CompiledFns>,
+        ),
     ) -> Self {
         let mut data = Self::new_code_object(
             Symbol::intern(""),

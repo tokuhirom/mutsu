@@ -142,17 +142,18 @@ fn substr_rw_row(
     if crate::qualified::is_qualified(Symbol::intern(&name)) {
         return None;
     }
-    // Through the VM the Proxy aliases the variable's shared cell, so both of
-    // its closures are shared compiled bodies and none names the variable
-    // (#14572); an interpreter entry keeps the by-name Proxy.
-    if let Some(code) = place.code()
-        && !name.starts_with(['@', '%', '&'])
-    {
-        let cell =
-            interp.capture_rw_arg_cell(code, &name, place.value().descalarize().clone(), None);
-        if cell.is_container_ref() {
-            return Some(interp.make_substr_rw_proxy_cell(cell, args));
-        }
+    // The Proxy aliases the variable's shared cell, so both of its closures are
+    // shared compiled bodies and none names the variable (#14572). A call that
+    // did not come through the VM has no chunk to box the variable in.
+    let code = place.code()?;
+    if name.starts_with(['@', '%', '&']) {
+        return None;
     }
-    Some(interp.make_substr_rw_proxy(&name, args))
+    let mut cell =
+        interp.capture_rw_arg_cell(code, &name, place.value().descalarize().clone(), None);
+    if !cell.is_container_ref() {
+        // Not a local of this frame: a captured outer scalar.
+        cell = interp.capture_outer_scalar_cell(&name)?;
+    }
+    Some(interp.make_substr_rw_proxy(cell, args))
 }

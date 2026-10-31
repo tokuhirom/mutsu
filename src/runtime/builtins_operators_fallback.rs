@@ -493,27 +493,7 @@ impl Interpreter {
         {
             // The VM hands the source variable's shared cell: alias it.
             if args[0].is_container_ref() {
-                return self.make_substr_rw_proxy_cell(args[0].clone(), rest);
-            }
-            // Try to get the variable name of the first argument for Proxy support
-            let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
-            if let Some(Some(var_name)) = arg_sources.first() {
-                return self.make_substr_rw_proxy(var_name, rest);
-            }
-            // Fallback: search env for matching value to find variable name
-            let target_var = {
-                let target = &args[0];
-                let mut found = None;
-                for (k, v) in self.env.iter() {
-                    if crate::runtime::values_identical(v, target) && !k.starts_with("__") {
-                        found = Some(k.resolve());
-                        break;
-                    }
-                }
-                found
-            };
-            if let Some(ref var_name) = target_var {
-                return self.make_substr_rw_proxy(var_name, rest);
+                return self.make_substr_rw_proxy(args[0].clone(), rest);
             }
             // No variable name available, just return the substring
             return self.call_method_with_values(args[0].clone(), "substr-rw", rest.to_vec());
