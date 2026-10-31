@@ -3290,7 +3290,6 @@ mod tests {
             compiled_fns: None,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            deprecated_message: None,
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
@@ -3300,7 +3299,7 @@ mod tests {
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
+            _state_scope_guard: None,
             captured_readonly: None,
             routine_cell: Default::default(),
         });

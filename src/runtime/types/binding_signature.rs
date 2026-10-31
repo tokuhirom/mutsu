@@ -927,46 +927,6 @@ impl Interpreter {
         )
     }
 
-    /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
-    /// when it cannot be told.
-    ///
-    /// A COMPILED routine carries the answer on its `CompiledCode`; its
-    /// `SubData::body` is empty, because the AST is gone once the bytecode
-    /// exists, so asking the body there would answer a confident and wrong
-    /// "no". An interpreted one still has its body and is asked directly.
-    pub(crate) fn routine_reads_args_array(data: &crate::value::SubData) -> Option<bool> {
-        if let Some(cc) = data.compiled_code.as_ref() {
-            return Some(cc.reads_args_array);
-        }
-        if data.body.is_empty() {
-            return None;
-        }
-        Some(crate::ast::body_reads_args_array(&data.body))
-    }
-
-    /// Whether a routine reads its implicit named argument hash `%_`.
-    /// Compiled closures need the flag because their AST body is empty.
-    pub(crate) fn routine_reads_args_hash(
-        data: &crate::value::SubData,
-        args: &[Value],
-    ) -> Option<bool> {
-        if !data.param_defs.is_empty()
-            || data.params.is_empty()
-            || !args
-                .iter()
-                .any(|arg| matches!(unwrap_varref_value(arg.clone()).view(), ValueView::Pair(..)))
-        {
-            return Some(false);
-        }
-        if let Some(cc) = data.compiled_code.as_ref() {
-            return Some(cc.reads_args_hash);
-        }
-        if data.body.is_empty() {
-            return None;
-        }
-        Some(crate::ast::body_reads_args_hash(&data.body))
-    }
-
     /// [`Interpreter::bind_function_args_values`] plus whether the routine
     /// reads the legacy argument array `@_` and named argument hash `%_`.
     ///
