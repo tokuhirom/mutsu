@@ -994,8 +994,12 @@ impl Interpreter {
             }
         }
         self.locals.refill_slots(cc.locals.len());
-        for (i, local_name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
+        // The names were interned when the chunk was built (`locals_sym`), so the
+        // per-call seed is an array read, not an interner round trip per local.
+        for i in 0..cc.locals.len() {
+            if let Some(sym) = cc.local_sym(i)
+                && let Some(val) = self.env().get_sym(sym)
+            {
                 self.locals[i] = val.clone();
             }
         }
@@ -1230,11 +1234,12 @@ impl Interpreter {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
                 // The frame's record answers the fixed names (ADR-14843).
-                if !local_name.is_empty() && !is_fixed_frame_name(local_name) {
-                    {
-                        let __v = self.locals[i].clone();
-                        self.env_mut().insert(local_name.clone(), __v);
-                    }
+                if !local_name.is_empty()
+                    && !is_fixed_frame_name(local_name)
+                    && let Some(sym) = cc.local_sym(i)
+                {
+                    let __v = self.locals[i].clone();
+                    self.env_mut().insert_sym_noting(sym, __v);
                 }
             }
 

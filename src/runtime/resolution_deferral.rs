@@ -45,9 +45,10 @@ impl Interpreter {
     /// a known gap for a role that was never punned (see `resolution_sequence.rs`'s module doc)
     /// which `resolve_all_methods_with_owner` does not share, and this function must not
     /// regress it.
-    fn own_overloads_at_level(&mut self, owner: &str, method_name: &str) -> Option<Vec<MethodDef>> {
+    // Cost: O(1) probe + O(overload count) copy; both names arrive interned (ADR-15737 D2b).
+    fn own_overloads_at_level(&mut self, owner: Symbol, method: Symbol) -> Option<Vec<MethodDef>> {
         self.registry()
-            .get_method_overloads_with_role_fallback(owner, method_name)
+            .get_method_overloads_with_role_fallback_sym(owner, method)
             .map(|overloads| overloads.to_vec())
     }
 
@@ -119,6 +120,8 @@ impl Interpreter {
         method_name: &str,
     ) -> Vec<(Symbol, MethodDef)> {
         let mro = self.class_mro(class_name);
+        // Interned once here, not once per MRO level and pass (ADR-15737 D2b).
+        let method_sym = Symbol::intern(method_name);
         let mro_depth: HashMap<Symbol, usize> =
             mro.iter().enumerate().map(|(idx, s)| (*s, idx)).collect();
         // Pass 1: bottom-up (nearest-ancestor-first among those still to visit), so a level's
@@ -126,16 +129,15 @@ impl Interpreter {
         let mut governing: HashMap<Symbol, Vec<(Symbol, MethodDef)>> = HashMap::new();
         for (idx, owner) in mro.iter().enumerate().rev() {
             let is_ancestor = idx > 0;
-            let owner_str = owner.as_str();
             let own_multis: Vec<MethodDef> = self
-                .own_overloads_at_level(owner_str, method_name)
+                .own_overloads_at_level(*owner, method_sym)
                 .into_iter()
                 .flatten()
                 .filter(|d| d.is_multi && !d.is_private && !(d.is_my && is_ancestor))
                 .collect();
             let explicit_proto = self
                 .registry()
-                .method_entry_proto(owner_str, method_name)
+                .method_entry_proto_sym(*owner, method_sym)
                 .is_some();
             if own_multis.is_empty() && !explicit_proto {
                 continue;
@@ -154,8 +156,7 @@ impl Interpreter {
         let mut expansion = Vec::new();
         for (idx, owner) in mro.iter().enumerate() {
             let is_ancestor = idx > 0;
-            let owner_str = owner.as_str();
-            let Some(overloads) = self.own_overloads_at_level(owner_str, method_name) else {
+            let Some(overloads) = self.own_overloads_at_level(*owner, method_sym) else {
                 continue;
             };
             if overloads.iter().any(|d| d.is_multi) {

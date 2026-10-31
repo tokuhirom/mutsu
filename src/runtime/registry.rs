@@ -900,11 +900,20 @@ impl Registry {
         class_name: &str,
         method_name: &str,
     ) -> Option<MethodOverloads> {
+        self.user_method_overloads_sym(Symbol::intern(class_name), Symbol::intern(method_name))
+    }
+
+    /// [`Self::user_method_overloads`] for a caller that already holds both
+    /// names as `Symbol`s (an MRO entry, a method name interned once outside a
+    /// loop), so a per-level probe does not re-intern the same two names.
+    // Cost: O(1) hash probe plus an O(overload count) `Arc` clone.
+    pub(crate) fn user_method_overloads_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<MethodOverloads> {
         self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
+            .get(&MethodEntryKey { owner, name })
             .filter(|entry| !entry.user_candidates.is_empty())
             .map(|entry| entry.user_candidates.clone())
     }
@@ -1848,6 +1857,20 @@ impl Registry {
     ) -> Option<MethodOverloads> {
         self.get_method_overloads(class_name, method_name)
             .or_else(|| self.role_method_overloads(class_name, method_name).map(MethodOverloads::from))
+    }
+
+    /// [`Self::get_method_overloads_with_role_fallback`] with both names already
+    /// interned; the role-table fallback still reads the `&str` forms.
+    // Cost: O(1) on a hit; a miss adds the role-table probe.
+    pub(crate) fn get_method_overloads_with_role_fallback_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<MethodOverloads> {
+        self.user_method_overloads_sym(owner, name).or_else(|| {
+            self.role_method_overloads(owner.as_str(), name.as_str())
+                .map(MethodOverloads::from)
+        })
     }
 
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map
