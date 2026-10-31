@@ -1,6 +1,6 @@
 # ADR-15737: Shrink the Raku-level call path's instruction count and footprint
 
-- **Status**: Proposed
+- **Status**: Accepted (user decision 2026-10-31, D1-D3 including the PGO step)
 - **Issue**: [#15737](https://github.com/tokuhirom/mutsu/issues/15737) (carries #15688 AttrX::Mooish
   and #15498 Red `t/38-equal.rakutest`)
 - **Input**: the perf-tuning skill (callgrind slope method, section 5a "slices of 1-2% cannot reach
@@ -58,6 +58,23 @@ frame. `reconcile_attrs`, `method_body_package`, `method_attr_cells_for` and the
 location are computed once per site, not per call. A guard miss falls back to the existing path
 (no new slow path is added; the existing one stays as the guard-miss tail).
 
+**Relation to the existing caches.** Resolution is already memoized per `(class, method)` in the
+`caches` subsystem (`method_resolve_cache`, `fast_method_cache`, `last_method_resolve` in
+`src/runtime/resolution_caches.rs`, invalidated by `method_cache_generation`). D1 does not add a
+third resolution cache: the plan *extends* the `fast_method_cache` entry with what is derived
+after resolution today (frame shape, attribute cells, body package, binding plan), and the
+per-site part is only a slot that points at that entry so a hit skips the hash probe. The two
+precedents it follows are the direct-mapped `call_ic` slots of the positional light sub-call
+path (epoch-stamped, retired wholesale by bumping `pos_light_ic_epoch`) and the guard shape of
+the built-in method-table lane (ADR-11276 §2.4/§2.5, `src/vm/vm_method_site_lane.rs`): a list of
+cheap conditions, any of which failing leaves the call to the full path untouched.
+
+**Threads.** The plan lives in per-interpreter state (the `caches` subsystem, which
+`fork_for_thread` starts empty in a spawned thread), not in the shared `CompiledCode`. A slot in
+`CompiledCode` would be mutable state reachable from several Raku threads and would need atomics
+or a lock to stay memory-safe under ADR-12814; per-interpreter slots need neither, at the price of
+each thread warming its own.
+
 Expected effect: the call floor 11.2k Ir toward ~5k; the Mooish iteration performs a few hundred
 calls, so factor (1) improves by up to ~1.3x on its own. The larger benefit is footprint: fewer
 distinct hot functions is the only code-level lever on factor (2).
@@ -66,7 +83,7 @@ distinct hot functions is the only code-level lever on factor (2).
 
 Survey (`cg-summary.py --allocs`, A/B) and remove the allocation sites on a plain method call and
 on `Foo.new`: `MethodDef` string fields to `Arc<str>` (clone becomes a refcount bump), call-frame
-`Vec`s reused from a per-interpreter pool, `Symbol::intern` calls on names that are known at the
+`Vec`s reused from a pool owned by the `frame` subsystem (ADR-10779; no new `Interpreter` field), `Symbol::intern` calls on names that are known at the
 call site (3.7k interns per Mooish iteration; ~21% come from `user_method_overloads` and the
 deferral resolution, which intern the same two names per lookup). Each item is a mechanical,
 measurable change with its own test; together they address the largest cross-cutting term in (5).
@@ -75,9 +92,21 @@ measurable change with its own test; together they address the largest cross-cut
 
 Factor (2) is the I1/branch-miss term; the only lever is layout. A PGO step (instrumented run of
 `make test`-style workloads, then `-C profile-use`) in the release workflow, or a
-post-link BOLT step. This changes how shipped binaries are built, so it needs the maintainer's
-decision (AGENTS.md hard rules: no change to the release pipeline without approval); it is listed
-here so the decision is made once and recorded.
+post-link BOLT step. This changes how every shipped binary is built, so it was put to the
+maintainer as a decision rather than slipped into a workflow; the maintainer approved it on
+2026-10-31. The constraints it lands under:
+
+- **All four release targets stay required** (Linux/macOS x x64/arm64; `cut-release`). The
+  instrumented binary has to run on the target architecture, so each target needs a runner of
+  its own architecture for the training run. A target whose training run cannot be made to work
+  ships its ordinary (non-PGO) build; no target is dropped or weakened to get PGO on another.
+- **No hardening flag changes.** PGO/BOLT must keep PIE, RELRO and the other protections of the
+  current build (the hard rule on security protections; #11104 / #11158). A BOLT variant that
+  needs non-PIE or relocations stripped is out unless approved separately.
+- **Training workload**: a fixed, checked-in set (the slice-1 benchmark loops plus a subset of
+  `t/`), not the full roast, so release time stays bounded; the choice is measured in slice 6.
+- **It ships only on a measured gain** on the slice-1 numbers and on #15688 / #15498, quoted in
+  its PR.
 
 ## Deletion list (what D1 removes when it lands)
 
@@ -90,9 +119,13 @@ here so the decision is made once and recorded.
 
 ## Slice plan
 
-1. **Measure harness** (no code): checked-in `scripts/` recipe for the three numbers used here
-   (Ir/iteration slope, wall, cachegrind I1/mispredict) on the Mooish loop and the plain-call loop,
-   so each later slice quotes the same three numbers.
+1. **Measure harness** (no interpreter code): extend `scripts/bench-det.sh` (which already
+   reports Ir and allocations) with the cachegrind I1/mispredict numbers, and check in the Mooish
+   loop and the plain-call loop as its inputs, so each later slice quotes the same three numbers
+   (Ir/iteration slope, wall, I1/mispredict). Also measure the method-call path's inclusive share
+   (`call_compiled_method_fast_in_unit` and its call site) on a reduced Red `38-equal` loop: the
+   per-call breakdown in (4) is from Mooish only, and how far D1/D2 can move #15498 depends on that
+   share.
 2. **D2a** `MethodDef` string fields to `Arc<str>`; A/B on DEPARSE and Mooish.
 3. **D2b** interned names known at the call site (`user_method_overloads`,
    `own_overloads_at_level`, `resolve_deferral_expansion` take `Symbol`s).
@@ -100,7 +133,8 @@ here so the decision is made once and recorded.
    shape), guarded by class stamp + registry stamp; wraps, `find_method` intercepts and user
    `FALLBACK` keep the existing path.
 5. **D1b** extend to `callsame`/`nextsame` chains and multi methods once D1a's guard is proven.
-6. **D3** only after the maintainer decides on the pipeline change.
+6. **D3** PGO in the release workflow under the constraints in D3 (approved 2026-10-31); it
+   touches `.github/` and so also waits for the maintainer's CODEOWNERS review.
 
 Each slice is a `Refs #15737` PR with its own before/after numbers; #15688 and #15498 are
 re-measured and commented after slices 3, 4, 5 and 6.
@@ -116,6 +150,11 @@ re-measured and commented after slices 3, 4, 5 and 6.
 - Unknown: how much of factor (2) is code footprint versus data-dependent branching; D3 is the
   experiment that answers it and is the only step whose benefit is not predictable from the
   numbers above.
+- Unknown: how much of Red's 191 s is the method-call path at all. The estimates above are from
+  the Mooish iteration; slice 1 measures Red's share, and if it is small, #15498 needs its own
+  analysis rather than more of this plan.
+- Negative (D3): the release workflow gets slower (an instrumented build and a training run per
+  target) and gains per-architecture runner requirements.
 
 ## Alternatives considered
 
@@ -130,7 +169,7 @@ re-measured and commented after slices 3, 4, 5 and 6.
 
 ## Open questions
 
-- Is the release pipeline allowed a PGO step (D3), and on which workloads is it trained?
-- Should D1's plan cache live in the `CompiledCode` of the call site (per-site, cheapest guard) or
-  in a registry-level table (shared by sites, one more hash probe)? Slice 4 measures both on the
-  `calls.raku` shape before choosing.
+- Which training workload gives D3 its gain at a bounded release time (measured in slice 6)?
+- D1's per-site slot: direct-mapped like `call_ic` (cheapest, can thrash on collisions) or keyed
+  by site id in a small hash (no collisions, one more probe)? Both are per-interpreter (see
+  *Threads* under D1); slice 4 measures both on the `calls.raku` shape before choosing.
