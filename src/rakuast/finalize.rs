@@ -64,6 +64,7 @@ pub(super) fn finalize_unit(scope: &NameScope, mut stmts: Vec<Stmt>) -> Result<V
     let _operators = super::infix_func::enter_scope();
     let _keywords = super::shadowed_terms::enter_scope();
     let mut finalize = Finalize {
+        scope,
         failed: None,
         line: None,
         top: true,
@@ -91,7 +92,8 @@ fn declares_routine(stmt: &Stmt) -> bool {
 
 /// Lowers every typed node and spelling of a tree where it stands, innermost
 /// first.
-struct Finalize {
+struct Finalize<'s> {
+    scope: &'s NameScope,
     failed: Option<RuntimeError>,
     /// The line of the last `SetLine` of the list being finalized.
     line: Option<i64>,
@@ -99,7 +101,7 @@ struct Finalize {
     top: bool,
 }
 
-impl Finalize {
+impl Finalize<'_> {
     /// The operands of a compound assignment lowered as the conversion reads
     /// them: `* *= 2` curries to `{ $_ *= 2 }`, so a priming argument target is
     /// the bare `*`, and a conditional target is restored.
@@ -147,7 +149,7 @@ impl Finalize {
     }
 }
 
-impl VisitMut for Finalize {
+impl VisitMut for Finalize<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         body.retain(|s| match s {
             // A `;` that ends no statement runs nothing and is no block's value.
@@ -158,7 +160,7 @@ impl VisitMut for Finalize {
         let line = self.line.take();
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(scope, body);
+        let _scope = super::bareword::BlockScope::enter(self.scope, body);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in
@@ -312,7 +314,7 @@ impl VisitMut for Finalize {
     }
 }
 
-impl Finalize {
+impl Finalize<'_> {
     /// The statements of a list in order, each registered as a routine of the
     /// scope when `register` is set.
     fn visit_listed_all(&mut self, body: &mut [Stmt], register: bool) {
