@@ -98,6 +98,21 @@ impl NameScope {
         std::mem::replace(&mut *self.declared.borrow_mut(), declared)
     }
 
+    /// Add `found` to the unit's declared names (a later declaration of a name
+    /// replaces an earlier one).
+    // Cost: O(f), f = size of `found`.
+    pub(crate) fn extend_declared(&self, found: HashMap<String, DeclaredKind>) {
+        self.declared.borrow_mut().extend(found);
+    }
+
+    /// Add `own` to the innermost open block, if any.
+    // Cost: O(o), o = size of `own`.
+    pub(crate) fn extend_block(&self, own: HashMap<String, DeclaredKind>) {
+        if let Some(block) = self.blocks.borrow_mut().last_mut() {
+            block.extend(own);
+        }
+    }
+
     /// Open a block that declares `own`; [`Self::pop_block`] closes it.
     // Cost: O(1).
     pub(crate) fn push_block(&self, own: HashMap<String, DeclaredKind>) {

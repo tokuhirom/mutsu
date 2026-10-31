@@ -60,7 +60,7 @@ pub(super) fn finalize_unit(
     let _executing = Executing::enter();
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
+    let _declared = super::bareword::DeclaredNames::begin(names);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan_stmts(&stmts);
     super::infix_func::reset();
@@ -164,7 +164,7 @@ impl VisitMut for Finalize<'_> {
         let line = self.line.take();
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(self.names, body);
+        let _scope = super::bareword::BlockScope::open(self.names);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in
@@ -324,6 +324,7 @@ impl Finalize<'_> {
     /// scope when `register` is set.
     fn visit_listed_all(&mut self, body: &mut [Stmt], register: bool) {
         for stmt in body.iter_mut() {
+            super::bareword::declare_statement(self.names, stmt);
             self.visit_listed(stmt);
             if register {
                 crate::parser::register_rakuast_user_sub_binding(stmt);

@@ -51,20 +51,36 @@ pub(super) struct DeclaredNames<'s> {
 }
 
 impl<'s> DeclaredNames<'s> {
-    // Cost: O(n), n = size of the unit's AST (one `collect_declared_names` scan).
-    pub(super) fn collect(names: &'s NameScope, stmts: &[Stmt]) -> Self {
+    /// Start a unit in source order: only the terms its imports provide are
+    /// known. Each statement declares its own names with [`declare_statement`]
+    /// just before it is converted, so a use before the declaration is not
+    /// classified as declared (rakudo hoists routines only, ADR-15760 §2.3).
+    // Cost: O(i), i = number of imported terms.
+    pub(super) fn begin(names: &'s NameScope) -> Self {
         let mut found = HashMap::new();
         found.extend(
             crate::parser::imported_value_term_names()
                 .into_iter()
                 .map(|name| (name, DeclaredKind::Term)),
         );
-        collect_declared_names(names, stmts, &mut found);
         Self {
             names,
             previous: names.replace_declared(found),
         }
     }
+}
+
+/// Declare what `stmt` declares, at any depth (see `collect_declared_names`),
+/// and what it declares directly in the innermost open block. Called before the
+/// statement is converted, never for a statement after it.
+// Cost: O(n), n = size of `stmt`.
+pub(super) fn declare_statement(names: &NameScope, stmt: &Stmt) {
+    let mut found = HashMap::new();
+    collect_declared_names(names, std::slice::from_ref(stmt), &mut found);
+    names.extend_declared(found);
+    let mut own = HashMap::new();
+    own_declarations(names, stmt, &mut own);
+    names.extend_block(own);
 }
 
 impl Drop for DeclaredNames<'_> {
@@ -105,40 +121,45 @@ fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
     }
 }
 
+/// What `stmt` itself declares in its block: the names a later statement of the
+/// same block sees shadowing what is declared further out.
+// Cost: O(v), v = number of enum values the statement declares.
+fn own_declarations(names: &NameScope, stmt: &Stmt, own: &mut HashMap<String, DeclaredKind>) {
+        match stmt {
+            Stmt::EnumDecl { name, variants, .. } => {
+                own.insert(name.resolve(), DeclaredKind::Type);
+                for variant in crate::parser::enum_value_names(variants) {
+                    own.insert(variant, DeclaredKind::Term);
+                }
+            }
+            Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::SubsetDecl { name, .. }
+            | Stmt::Package { name, .. } => {
+                own.insert(name.resolve(), DeclaredKind::Type);
+            }
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                constant,
+                expr,
+                ..
+            } if constant.is_some() => {
+                own.insert(name.clone(), constant_kind(names, expr));
+            }
+            _ => {}
+        }
+}
+
 /// RAII guard for one block's own declarations ([`NameScope::push_block`]).
 pub(super) struct BlockScope<'s>(&'s NameScope);
 
 impl<'s> BlockScope<'s> {
-    // Cost: O(m), m = number of statements in the list (direct children only).
-    pub(super) fn enter(names: &'s NameScope, stmts: &[Stmt]) -> Self {
-        let mut own = HashMap::new();
-        for stmt in stmts {
-            match stmt {
-                Stmt::EnumDecl { name, variants, .. } => {
-                    own.insert(name.resolve(), DeclaredKind::Type);
-                    for variant in crate::parser::enum_value_names(variants) {
-                        own.insert(variant, DeclaredKind::Term);
-                    }
-                }
-                Stmt::ClassDecl { name, .. }
-                | Stmt::RoleDecl { name, .. }
-                | Stmt::SubsetDecl { name, .. }
-                | Stmt::Package { name, .. } => {
-                    own.insert(name.resolve(), DeclaredKind::Type);
-                }
-                Stmt::VarDecl {
-                    name,
-                    custom_traits,
-                    constant,
-                    expr,
-                    ..
-                } if constant.is_some() => {
-                    own.insert(name.clone(), constant_kind(names, expr));
-                }
-                _ => {}
-            }
-        }
-        names.push_block(own);
+    /// Open a block with no declarations yet; [`declare_statement`] adds them as
+    /// the block's statements are reached.
+    // Cost: O(1).
+    pub(super) fn open(names: &'s NameScope) -> Self {
+        names.push_block(HashMap::new());
         Self(names)
     }
 }

@@ -13,7 +13,7 @@ pub(super) fn statement_list(
     stmts: &[Stmt],
 ) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::reset();
-    let _scope = bareword::DeclaredNames::collect(names, stmts);
+    let _scope = bareword::DeclaredNames::begin(names);
     statement_list_inner(names, stmts)
 }
 
@@ -41,7 +41,7 @@ pub(super) fn statement_list_inner(
     stmts: &[Stmt],
 ) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
-    let _block = bareword::BlockScope::enter(names, stmts);
+    let _block = bareword::BlockScope::open(names);
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
@@ -52,6 +52,7 @@ pub(super) fn statement_list_inner(
             line = Some((*n, *span));
             continue;
         }
+        bareword::declare_statement(names, stmt);
         if matches!(stmt, Stmt::Trace { .. }) {
             trace = Some(stmt.clone());
             continue;
