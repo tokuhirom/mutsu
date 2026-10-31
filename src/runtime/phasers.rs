@@ -619,6 +619,15 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     if marks.begin_static {
         return Some((stmt.clone(), None));
     }
+    // An expansion the parser builds with `has_initializer: false` but a real
+    // initializer expression -- the staging temp and the targets of
+    // `my ($a, $b) = RHS` read each other in order -- has no static half to
+    // split off: splitting would drop its initializer (`has_init` is false) and
+    // leave every target `Any` in a unit that has a CHECK/INIT phaser (#15728).
+    // Only a bare `my @a;` / `my %h;` / `my $x;` carries a default literal.
+    if !*has_initializer && !is_default_literal(init_expr) {
+        return None;
+    }
     // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
     // sigil-based default literal (`Literal(Array([]))` / `Literal(Hash({}))`),
     // not `Literal(NIL)` — so testing the initializer expression against a NIL
@@ -699,4 +708,23 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         target_is_sigilless: false,
     });
     Some((static_decl, assign))
+}
+
+/// Whether `expr` is the literal a bare declaration (`my $x;`, `my @a;`,
+/// `my %h;`) is parsed with: `Nil`, an empty array or an empty hash, as a
+/// literal or (for a hash) an empty composer expression.
+// Cost: O(1).
+fn is_default_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(v) => match v.view() {
+            crate::value::ValueView::Array(items, _) => items.is_empty(),
+            crate::value::ValueView::Hash(map) => map.is_empty(),
+            _ => true,
+        },
+        // `my %h;` is parsed with an empty hash composer expression.
+        Expr::Hash(pairs, _) => pairs.is_empty(),
+        // `Any`, `Int`, ... the type object a typed bare declaration holds.
+        Expr::BareWord(_) => true,
+        _ => false,
+    }
 }
