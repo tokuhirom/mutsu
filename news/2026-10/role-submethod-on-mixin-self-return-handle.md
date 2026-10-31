@@ -9,4 +9,4 @@ class. A handle with a role mixed in (`IO::Handle+{R}`) is also recognised as
 the open handle, so `lines()` keeps reading through `$*ARGFILES does R`.
 Found via LN (`IO::CatHandle::AutoLines`): `use LN` now loads and mixes the
 role into `$*ARGFILES`; the line counter still needs `$*ARGFILES` to be a real
-`IO::ArgFiles` (#NEW).
+`IO::ArgFiles` (#15788).
