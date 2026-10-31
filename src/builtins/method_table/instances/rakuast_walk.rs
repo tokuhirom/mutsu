@@ -7,6 +7,11 @@
 //! `:depth-first`, after them (post-order); the node itself is not visited.
 //! `find-nodes` walks breadth first, a queue of nodes whose children it
 //! visits in turn, and can stop the descent below a node (`:stopper`).
+//!
+//! `parent($generation)` answers from the lineage the three walks keep while
+//! they call back: rakudo's `@*LINEAGE`, the visited node's ancestors nearest
+//! first, without the node the walk started from. Outside those walks, and in
+//! `find-nodes`, there is none and `parent` answers `Nil`.
 
 use std::collections::VecDeque;
 
@@ -49,16 +54,92 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &["condition", "stopper"],
     },
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "parent",
+        arity: 0,
+        handler: Handler::Interp(parent),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "parent",
+        arity: 1,
+        handler: Handler::Interp(parent),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
 ];
+
+thread_local! {
+    /// The lineage of the node each running `map` / `grep` / `first` walk is
+    /// visiting, innermost walk last: ancestors nearest first.
+    static LINEAGES: std::cell::RefCell<Vec<Vec<Value>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Pops the walk's lineage frame however the walk ends.
+struct LineageFrame;
+
+impl LineageFrame {
+    // Cost: O(1).
+    fn enter() -> Self {
+        LINEAGES.with(|l| l.borrow_mut().push(Vec::new()));
+        LineageFrame
+    }
+
+    // Cost: O(d), d = depth of the visited node.
+    fn set(&self, path: &[Value]) {
+        LINEAGES.with(|l| {
+            if let Some(top) = l.borrow_mut().last_mut() {
+                top.clear();
+                top.extend(path.iter().rev().cloned());
+            }
+        });
+    }
+}
+
+impl Drop for LineageFrame {
+    fn drop(&mut self) {
+        LINEAGES.with(|l| {
+            l.borrow_mut().pop();
+        });
+    }
+}
+
+/// `parent($generation = 0)`: the ancestor of the node a walk is visiting that
+/// many generations up (0 is its parent), or `Nil` beyond the top or outside a
+/// walk.
+// Cost: O(1).
+fn parent(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let generation = match args.first() {
+        None => 0,
+        Some(g) => match g.view() {
+            ValueView::Int(i) if i >= 0 => i as usize,
+            _ => return Some(Ok(Value::NIL)),
+        },
+    };
+    let found = LINEAGES.with(|l| {
+        l.borrow()
+            .last()
+            .and_then(|lineage| lineage.get(generation).cloned())
+    });
+    Some(Ok(found.unwrap_or(Value::NIL)))
+}
 
 /// The most nodes one walk visits before it gives up, as `visit` does.
 const MAX_WALK_NODES: usize = 1_000_000;
 
-/// One step of a walk: a node to visit, and whether its children have been
-/// put on the stack already (the second visit of a post-order walk).
+/// One step of a walk: a node to visit at a depth, and whether its children
+/// have been put on the stack already (the second visit of a post-order walk).
 enum Step {
-    Enter(Value),
-    Leave(Value),
+    Enter(Value, usize),
+    Leave(Value, usize),
 }
 
 /// The children of a node value, a subclass or mixin answering through the
@@ -73,8 +154,10 @@ fn node_children(value: &Value) -> Option<Vec<Value>> {
 }
 
 /// Walk the descendants of `root` in pre-order, or in post-order when
-/// `post_order`, calling `visit` on each until it answers `true` (stop).
-// Cost: O(n + v), n = descendants of `root`, v = the work of `visit`.
+/// `post_order`, calling `visit` on each until it answers `true` (stop). The
+/// visited node's lineage is what `parent` answers while `visit` runs.
+// Cost: O(n * d + v), n = descendants of `root`, d = their depth, v = the work
+// of `visit`.
 fn walk(
     interp: &mut Interpreter,
     root: &Value,
@@ -84,27 +167,50 @@ fn walk(
     let mut stack: Vec<Step> = node_children(root)?
         .into_iter()
         .rev()
-        .map(Step::Enter)
+        .map(|child| Step::Enter(child, 0))
         .collect();
+    let frame = LineageFrame::enter();
+    // The ancestors of the node being entered, outermost first.
+    let mut path: Vec<Value> = Vec::new();
     let mut visited = 0usize;
     while let Some(step) = stack.pop() {
         let value = match step {
-            Step::Leave(value) => value,
-            Step::Enter(value) => {
+            Step::Leave(value, depth) => {
+                path.truncate(depth);
+                value
+            }
+            Step::Enter(value, depth) => {
                 visited += 1;
                 if visited > MAX_WALK_NODES {
                     return Some(Err(too_many()));
                 }
+                path.truncate(depth);
                 let below = node_children(&value).unwrap_or_default();
                 if post_order {
-                    stack.push(Step::Leave(value));
-                    stack.extend(below.into_iter().rev().map(Step::Enter));
+                    path.push(value.clone());
+                    stack.push(Step::Leave(value, depth));
+                    stack.extend(
+                        below
+                            .into_iter()
+                            .rev()
+                            .map(|child| Step::Enter(child, depth + 1)),
+                    );
                     continue;
                 }
-                stack.extend(below.into_iter().rev().map(Step::Enter));
+                stack.extend(
+                    below
+                        .into_iter()
+                        .rev()
+                        .map(|child| Step::Enter(child, depth + 1)),
+                );
                 value
             }
         };
+        frame.set(&path);
+        if !post_order {
+            // The node's children are entered below it.
+            path.push(value.clone());
+        }
         match visit(interp, &value) {
             Ok(true) => break,
             Ok(false) => {}
