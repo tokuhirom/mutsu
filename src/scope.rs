@@ -131,11 +131,8 @@ mod tests {
 
     #[test]
     fn the_unit_declares_before_the_caller() {
-        let mut scope = NameScope::default().with_caller_names(
-            vec!["N".to_string()],
-            Vec::new(),
-            |_| false,
-        );
+        let mut scope =
+            NameScope::default().with_caller_names(vec!["N".to_string()], Vec::new(), |_| false);
         scope.set_declared(HashMap::from([("N".to_string(), DeclaredKind::Term)]));
         assert_eq!(scope.kind("N"), Some(DeclaredKind::Term));
         scope.take_declared();
