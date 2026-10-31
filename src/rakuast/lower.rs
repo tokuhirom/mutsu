@@ -54,7 +54,7 @@ fn lower_normalized(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 /// spellings come off, the priming scopes of a `*` are planted and the scope
 /// diagnostics are reported.
 // Cost: O(n), n = size of the unit.
-pub(super) fn finish_unit(stmts: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
+pub(super) fn finish_unit(stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
     super::unspell::strip(stmts);
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
