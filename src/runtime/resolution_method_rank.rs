@@ -265,7 +265,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         mut all_matches: Vec<(Symbol, MethodDef)>,
-        rivals: Vec<(Symbol, MethodDef)>,
+        rivals: Vec<(Symbol, Rival)>,
     ) -> Option<(Symbol, MethodDef)> {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();

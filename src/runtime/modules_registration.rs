@@ -52,6 +52,8 @@ pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_method_rank;
+mod method_rival;
+pub(crate) use method_rival::Rival;
 mod resolution_private_method;
 mod resolution_qualified_enclosing;
 mod resolution_sequence;

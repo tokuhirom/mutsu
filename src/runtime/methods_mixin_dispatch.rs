@@ -563,10 +563,10 @@ impl Interpreter {
             let owner = Symbol::intern(&role_name);
             let matching: Vec<(Symbol, MethodDef)> =
                 matching.into_iter().map(|def| (owner, def)).collect();
-            let rivals: Vec<(Symbol, MethodDef)> = rivals
+            let rivals: Vec<(Symbol, Rival)> = rivals
                 .into_iter()
                 .filter(|def| def.is_multi)
-                .map(|def| (owner, def))
+                .map(|def| (owner, Rival::owned(def)))
                 .collect();
             let Some((_, def)) = self.pick_method_winner(
                 &[Symbol::intern(&role_name)],
