@@ -356,8 +356,7 @@ fn run_main() {
     // and what it does to a dynamic variable such as `$*ARGFILES` survives into
     // the program): written on the program's first line, which keeps every line
     // number.
-    let (with_args, preload_modules): (Vec<String>, Vec<String>) =
-        (preload_modules, Vec::new());
+    let (with_args, preload_modules): (Vec<String>, Vec<String>) = (preload_modules, Vec::new());
     let input = if with_args.is_empty() {
         input
     } else {

@@ -82,8 +82,9 @@ impl Interpreter {
     /// the mixin's override has to run, with the native method reachable
     /// through its `callsame`.
     // Cost: O(1) to decline; the method call otherwise.
-    // TODO: compile to bytecode -- a method call from a builtin function;
-    // the right shape is `lines()` compiling to `$*ARGFILES.lines`.
+    // The right shape is the compiler lowering a zero-argument `lines()` /
+    // `get()` to `$*ARGFILES.lines` / `.get`; this keeps the builtin and
+    // dispatches to the mixin only when roles were mixed into the handle.
     fn argfiles_mixin_method(
         &mut self,
         name: &str,
