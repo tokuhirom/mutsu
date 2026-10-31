@@ -89,11 +89,17 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> crate::runtime::MultiCandidateList {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
-        // A scoped family's candidate list depends on the executing compunit,
-        // which the memo key does not carry (#11004).
-        if self.operator_has_import_scope_sym(name_sym) {
-            return Arc::new(self.resolve_all_multi_candidates_indexed(name));
-        }
+        // A scoped family's candidate list depends on the executing compunit
+        // (#11004), so the units that decide it join the memo key (as they do
+        // the dispatch plan's, `BareMultiPlanKey`) instead of bypassing the
+        // memo: an exported multi paid the whole gather on every call.
+        let units = self.operator_has_import_scope_sym(name_sym).then(|| {
+            (
+                self.current_unit,
+                self.executing_unit_sym(),
+                self.module.operator_import_gen,
+            )
+        });
         let generation = (
             self.caches.fn_resolve_gen,
             self.registry().proto_generation(),
@@ -108,6 +114,7 @@ impl Interpreter {
             self.routine_stack()
                 .last()
                 .and_then(|frame| frame.lexical_package),
+            units,
         );
         if let Some(cached) = self.caches.multi_dispatch_candidates_memo.get(&key) {
             return cached.clone();

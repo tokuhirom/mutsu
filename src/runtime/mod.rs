@@ -36,10 +36,14 @@ pub(crate) type PlainMethodLaneKey = (Symbol, Symbol, Vec<Symbol>);
 /// `is export`-ed regex declarator bodies, keyed by the module that declared
 /// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
 type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
-/// `(name, current package, frame lexical package) -> candidate list`: see
-/// `Interpreter::multi_dispatch_candidates_memo`.
-pub(crate) type MultiDispatchCandidatesMemo =
-    rustc_hash::FxHashMap<(Symbol, Symbol, Option<Symbol>), MultiCandidateList>;
+/// `(name, current package, frame lexical package, units) -> candidate list`:
+/// see `Interpreter::multi_dispatch_candidates_memo`. `units` is
+/// `(current unit, executing unit, import-table generation)` for a family with
+/// import records, whose list depends on the asking unit (#11004), else `None`.
+pub(crate) type MultiDispatchCandidatesMemo = rustc_hash::FxHashMap<
+    (Symbol, Symbol, Option<Symbol>, Option<(Symbol, Symbol, u64)>),
+    MultiCandidateList,
+>;
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
