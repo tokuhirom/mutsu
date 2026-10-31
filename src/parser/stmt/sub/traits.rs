@@ -258,9 +258,16 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 if trait_name == "DEPRECATED" {
                     // Extract the deprecation message from parenthesized form
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
+                    // A message that is not a string literal (`$msg`, a call) is
+                    // evaluated when the routine is declared: the expression
+                    // travels with the trait instead of its source text.
+                    let mut computed = None;
                     if let Ok((after, expr)) = expression(paren_content)
                         && after.trim().is_empty()
                     {
+                        if !matches!(&expr, crate::ast::Expr::Literal(v) if v.as_str().is_some()) {
+                            computed = Some(expr.clone());
+                        }
                         source_argument = Some(TraitArgument::Parentheses(expr));
                     }
                     let msg = paren_content.trim();
@@ -274,7 +281,10 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     };
                     // Replace the plain "DEPRECATED" with "DEPRECATED:msg"
                     if let Some(pos) = custom_traits.iter().position(|(t, _)| t == "DEPRECATED") {
-                        custom_traits[pos] = (format!("DEPRECATED:{}", msg), None);
+                        custom_traits[pos] = match computed {
+                            Some(expr) => ("DEPRECATED".to_string(), Some(expr)),
+                            None => (format!("DEPRECATED:{}", msg), None),
+                        };
                     }
                 } else if trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv"
                 {

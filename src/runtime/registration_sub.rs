@@ -1215,13 +1215,34 @@ impl Interpreter {
             effective_return_type.as_deref(),
         );
         self.validate_static_default_typechecks(&effective_param_defs)?;
-        let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
+        let mut deprecated_message = None;
+        for (t, arg) in custom_traits.iter() {
             if t == "DEPRECATED" {
-                Some(String::new())
-            } else {
-                t.strip_prefix("DEPRECATED:").map(|msg| msg.to_string())
+                // `is DEPRECATED($expr)`: the message is the expression's value
+                // when the declaration runs, not on the hoisting pass, which
+                // precedes the statements the expression may read.
+                match arg {
+                    Some(arg) if !pass.hoisted && !is_lexical_hoist => {
+                        let value = self.eval_decl_trait_arg(arg)?;
+                        deprecated_message = Some(
+                            if value.is_nil() || matches!(value.view(), ValueView::Package(_)) {
+                                String::new()
+                            } else {
+                                value.to_string_value()
+                            },
+                        );
+                    }
+                    // The hoisting pass does not know the message yet; the
+                    // declaration itself installs the deprecated routine.
+                    Some(_) => {}
+                    None => deprecated_message = Some(String::new()),
+                }
+                break;
+            } else if let Some(msg) = t.strip_prefix("DEPRECATED:") {
+                deprecated_message = Some(msg.to_string());
+                break;
             }
-        });
+        }
         if multi {
             let single_key = self.current_package_qualified(name).to_string();
             // Skip this check during the hoist pass. Sub declarations (including

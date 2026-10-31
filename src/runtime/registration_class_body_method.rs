@@ -31,6 +31,10 @@ impl Interpreter {
             .expect("method_decls misaligned with class body walk");
         self.validate_private_access_in_stmts(cx.name, &decl.body, &cx.type_aliases)?;
         Self::validate_attr_declared_in_class(&cx.attr_ctx(), &decl.body)?;
+        let deprecated_message = self.declared_deprecated_message(
+            decl.deprecated_message.as_ref(),
+            &decl.custom_traits,
+        )?;
         // In BUILD/TWEAK submethods, :$!attr parameters must refer
         // to declared attributes; reject undeclared ones with
         // X::Attribute::Undeclared.
@@ -240,7 +244,7 @@ impl Interpreter {
             compiled_fns: installed_compiled_fns,
             delegation: None,
             is_default: decl.is_default_candidate,
-            deprecated_message: decl.deprecated_message.clone(),
+            deprecated_message: deprecated_message.clone(),
             is_submethod: decl.is_submethod,
             is_hidden_from_backtrace: decl.is_hidden_from_backtrace,
             captured_env: nested_capture,

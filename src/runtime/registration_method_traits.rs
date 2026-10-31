@@ -10,10 +10,40 @@ use crate::symbol::Symbol;
 /// as a `__`-prefixed pseudo-trait so the RakuAST converter can tell the two
 /// apart; nothing in trait application should ever see it.
 pub(super) fn is_parser_marker(trait_name: &str) -> bool {
-    trait_name.starts_with("__")
+    // `DEPRECATED` carrying an expression is the declaration's own message.
+    trait_name.starts_with("__") || trait_name == "DEPRECATED"
 }
 
 impl Interpreter {
+    /// The `is DEPRECATED` message of a routine declaration: the one the parser
+    /// kept as text, or the value of `is DEPRECATED($expr)`'s expression,
+    /// evaluated now -- when the declaration runs, as rakudo applies the trait.
+    // Cost: O(t + e), t = custom traits, e = the work of the message expression.
+    // TODO: precompile the expression into the class plan (a `CompiledDeclExpr`
+    // beside `method_name_chunks`) instead of compiling it at registration.
+    pub(super) fn declared_deprecated_message(
+        &mut self,
+        literal: Option<&String>,
+        traits: &[(String, Option<crate::ast::Expr>)],
+    ) -> Result<Option<String>, RuntimeError> {
+        let computed = traits.iter().find_map(|(t, arg)| match (t.as_str(), arg) {
+            ("DEPRECATED", Some(expr)) => Some(expr),
+            _ => None,
+        });
+        match computed {
+            Some(expr) => {
+                let body = [crate::ast::Stmt::Expr(expr.clone())];
+                let value = self.vm_eval_block_value(&body)?;
+                Ok(Some(if value.is_nil() || matches!(value.view(), ValueView::Package(_)) {
+                    String::new()
+                } else {
+                    value.to_string_value()
+                }))
+            }
+            None => Ok(literal.cloned()),
+        }
+    }
+
     /// Seal a declaration's wrapper snapshot before any initializer clones it.
     // Cost: O(w), w = wrappers installed on this declaration.
     pub(super) fn finish_method_value_prototype(
