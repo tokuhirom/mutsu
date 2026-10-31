@@ -7,16 +7,59 @@
     "unresolved": []
   },
   "dist": "SelectiveImporting",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "Error while importing from 'testimporting': no such tag 'select' [at SelectiveImporting-0.1.3/t/01-basic.rakutest:8]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-export.rakutest",
+      "raku": {
+        "first_failure": "Error while importing from 'exportmodule': no such tag 'select' [at SelectiveImporting-0.1.3/t/02-export.rakutest:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-except.rakutest",
+      "raku": {
+        "first_failure": "Error while importing from 'testimporting': no such tag 'except' [at SelectiveImporting-0.1.3/t/03-except.rakutest:11]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "SelectiveImporting": "Dynamic variable $*W not found"
+    "SelectiveImporting": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-29",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -27,7 +70,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EL/SELECTIVEIMPORTING/3f756c4c9dde5bc1c35dd7f41652036060cb2557.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.0,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 10.23,
+        "secs": 10.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.47,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.81,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.55,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.05,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.44,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.78,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.57,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,7 +115,95 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.97,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/pretty-table-int-float-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/pretty-table-maximum-widths.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/pretty-table-override.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/pretty-table-preset.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,55 +220,11 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/pretty-table-int-float-basic.t",
+      "path": "t/pretty-table-print-english.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/pretty-table-maximum-widths.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/pretty-table-override.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
         "secs": 1.17,
         "skip": 0,
         "todo": 0,
@@ -191,19 +235,41 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.78,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/pretty-table-preset.t",
+      "path": "t/pretty-table-slicing.t",
       "raku": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.24,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/pretty-table-sorting.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -220,78 +286,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/pretty-table-print-english.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/pretty-table-slicing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/pretty-table-sorting.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/pretty-table-unpadded-table.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.74,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -304,10 +304,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -29,7 +29,7 @@
         "nok": 3,
         "ok": 7,
         "plan": 10,
-        "secs": 1.0,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -39,11 +39,11 @@
       "cmp": "no_baseline",
       "path": "t/00ast.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.52,
+        "secs": 5.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,11 +53,11 @@
       "cmp": "no_baseline",
       "path": "t/00config.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.08,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.47,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.42,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,11 +89,11 @@
       "cmp": "no_baseline",
       "path": "t/00dom-w3c.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.56,
+        "secs": 5.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -103,11 +103,11 @@
       "cmp": "no_baseline",
       "path": "t/00dom.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.36,
+        "secs": 5.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,315 +117,7 @@
       "cmp": "no_baseline",
       "path": "t/00dtd-decls.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00dtd.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00errors.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00hash-object.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00hash-type.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00input-callback.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00native.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist [at LibXML-0.11.3/t/00native.t:2]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00query-selectors.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00sax-coverage.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00sax.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00subclass.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00threads.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00with-cache.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/00xpath-object.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/01basic.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02parse.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03doc.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04node.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/05text.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/06elements.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/07dtd.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/08findnodes.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/09xpath.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -437,9 +129,107 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/10ns.t",
+      "path": "t/00dtd.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00errors.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00hash-object.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00hash-type.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00input-callback.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00native.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist [at LibXML-0.11.3/t/00native.t:2]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00query-selectors.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00sax-coverage.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -451,13 +241,223 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/12html.t",
+      "path": "t/00sax.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.28,
+        "secs": 5.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00subclass.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00threads.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00with-cache.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00xpath-object.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01basic.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02parse.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03doc.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04node.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05text.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06elements.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07dtd.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08findnodes.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09xpath.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10ns.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12html.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -467,11 +467,11 @@
       "cmp": "no_baseline",
       "path": "t/13dtd.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.01,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -481,11 +481,11 @@
       "cmp": "no_baseline",
       "path": "t/14sax.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.22,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -495,11 +495,11 @@
       "cmp": "no_baseline",
       "path": "t/15nodelist.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.15,
+        "secs": 4.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -509,11 +509,11 @@
       "cmp": "no_baseline",
       "path": "t/16docnodes.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.21,
+        "secs": 4.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -523,11 +523,11 @@
       "cmp": "no_baseline",
       "path": "t/17callbacks.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.05,
+        "secs": 4.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -537,11 +537,11 @@
       "cmp": "no_baseline",
       "path": "t/18docfree.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.21,
+        "secs": 4.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -551,11 +551,11 @@
       "cmp": "no_baseline",
       "path": "t/19encoding.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.63,
+        "secs": 4.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -565,11 +565,11 @@
       "cmp": "no_baseline",
       "path": "t/20extras.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.45,
+        "secs": 4.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -579,11 +579,11 @@
       "cmp": "no_baseline",
       "path": "t/21catalog.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.42,
+        "secs": 4.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -593,11 +593,11 @@
       "cmp": "no_baseline",
       "path": "t/23rawfunctions.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.42,
+        "secs": 4.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -607,11 +607,11 @@
       "cmp": "no_baseline",
       "path": "t/24c14n.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.38,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -621,11 +621,11 @@
       "cmp": "no_baseline",
       "path": "t/25relaxng.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.58,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -635,11 +635,11 @@
       "cmp": "no_baseline",
       "path": "t/26schema.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.29,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -649,11 +649,11 @@
       "cmp": "no_baseline",
       "path": "t/27input_callbacks_simple.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.64,
+        "secs": 2.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -663,11 +663,11 @@
       "cmp": "no_baseline",
       "path": "t/28input_callbacks_multiple.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.69,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -677,11 +677,11 @@
       "cmp": "no_baseline",
       "path": "t/29id.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.65,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -691,11 +691,11 @@
       "cmp": "no_baseline",
       "path": "t/30keep_blanks.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.46,
+        "secs": 3.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -705,11 +705,11 @@
       "cmp": "no_baseline",
       "path": "t/30xpathcontext.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.41,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -719,11 +719,11 @@
       "cmp": "no_baseline",
       "path": "t/31xpc_functions.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.6,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -733,11 +733,11 @@
       "cmp": "no_baseline",
       "path": "t/32xpc_variables.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.31,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -747,11 +747,11 @@
       "cmp": "no_baseline",
       "path": "t/35huge_mode.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.74,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -761,11 +761,11 @@
       "cmp": "no_baseline",
       "path": "t/40reader.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.57,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -775,11 +775,11 @@
       "cmp": "no_baseline",
       "path": "t/40reader_mem_error.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.78,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -789,11 +789,11 @@
       "cmp": "no_baseline",
       "path": "t/41xinclude.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.38,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -805,7 +805,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.34,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -815,7 +815,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.71,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -825,11 +825,11 @@
       "cmp": "no_baseline",
       "path": "t/43options.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.72,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -839,11 +839,11 @@
       "cmp": "no_baseline",
       "path": "t/44extent.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.65,
+        "secs": 2.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -853,11 +853,11 @@
       "cmp": "no_baseline",
       "path": "t/45regex.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.24,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -867,11 +867,11 @@
       "cmp": "no_baseline",
       "path": "t/46err_column.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.65,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -881,11 +881,11 @@
       "cmp": "no_baseline",
       "path": "t/47load_xml_callbacks.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -895,11 +895,11 @@
       "cmp": "no_baseline",
       "path": "t/48importing_nodes_IDs.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -909,11 +909,11 @@
       "cmp": "no_baseline",
       "path": "t/49global_extent.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.62,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -923,11 +923,11 @@
       "cmp": "no_baseline",
       "path": "t/60error_prev_chain.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.43,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -937,11 +937,11 @@
       "cmp": "no_baseline",
       "path": "t/61error.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -951,11 +951,11 @@
       "cmp": "no_baseline",
       "path": "t/90threads.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.49,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -965,11 +965,11 @@
       "cmp": "no_baseline",
       "path": "t/91unique_key.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.76,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -979,11 +979,11 @@
       "cmp": "no_baseline",
       "path": "t/99doc-examples.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.21,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -993,11 +993,11 @@
       "cmp": "no_baseline",
       "path": "t/issue#025.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.43,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1007,11 +1007,11 @@
       "cmp": "no_baseline",
       "path": "t/issue#095.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-2m8w_zl4/dist",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-c_smr7j8/dist",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.17,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1090,10 +1090,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-29",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -1,29 +1,94 @@
 {
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AlgorithmsIT",
+      "Crypt::Random",
+      "Date::Event",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "JSON::Fast",
+      "Text::Utils",
+      "UUID::V4",
+      "if"
+    ],
+    "unresolved": []
+  },
   "dist": "Date::Easter",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/1-gregorian-easter.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/2-easter-events.t",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Date::Easter": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-29",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
-  "note": "harness error: FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/.cache/mutsu-ecosystem/tarballs/1bdeef83d951-D_AT_DATE_EVENT_3e02498d3b9ec61e2d36162b4e8a7a5757a9061a.tar.gz.part' -> '/home/runner/.cache/mutsu-ecosystem/tarballs/1bdeef83d951-D_AT_DATE_EVENT_3e02498d3b9ec61e2d36162b4e8a7a5757a9061a.tar.gz'",
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATE_EASTER/27e87fe2563c68e16950047e945e6aa3a108e379.tar.gz"
   },
-  "status": "skipped",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 57,
+    "baseline_files": 2,
+    "mutsu_assertions": 57,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.5"

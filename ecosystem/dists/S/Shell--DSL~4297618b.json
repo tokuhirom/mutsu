@@ -9,17 +9,32 @@
     "unresolved": []
   },
   "dist": "Shell::DSL",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "touch: cannot touch '/tmp/1617939846091767.txt': Read-only file system",
+        "nok": 3,
+        "ok": 3,
+        "plan": null,
+        "secs": 12.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "IO::PipeFD": "ok",
-    "Shell::DSL": "Failed to parse module 'Shell::DSL': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::Sub`"
+    "Shell::DSL": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-29",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -30,7 +45,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/HE/SHELL_DSL/9cf1559eeea87a6c2d6ec3e0fa9000db5c6a7783.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

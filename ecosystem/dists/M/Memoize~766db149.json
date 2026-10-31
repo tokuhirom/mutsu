@@ -20,23 +20,22 @@
   "dist": "Memoize",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: routine trait `memoized` argument",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.02,
+        "ok": 7,
+        "plan": 7,
+        "secs": 5.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 5.96,
+        "secs": 6.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +47,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.29,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +57,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.51,
+        "secs": 0.61,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -70,10 +69,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -84,13 +83,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/M/Memoize/Memoize%3Aver%3C%2A%3E%3Aauth%3Cgithub%3Aazawawi%3E.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 2,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 8,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "*"
 }

@@ -11,25 +11,17 @@
   "dist": "Distribution::Builder::Cmake-alt",
   "files": [
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "build process",
+        "nok": 1,
+        "ok": 3,
         "plan": 4,
-        "secs": 4.99,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       }
     }
   ],
@@ -38,10 +30,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-29",
+    "date": "2026-10-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7e0fdd6c",
+    "mutsu_commit": "151b3e15",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -50,15 +42,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/7916105731248df9dcafe8af324093ab48142d23.tar.gz"
+    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/23ad4eb804d25f6b14fda9037146c7fa9672ab8f.tar.gz"
   },
-  "status": "green",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 4,
-    "baseline_files": 1,
-    "mutsu_assertions": 4,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "1.0.0"
+  "version": "1.0.6"
 }
