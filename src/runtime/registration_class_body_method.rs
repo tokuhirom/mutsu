@@ -276,8 +276,7 @@ impl Interpreter {
                 // A write to an enclosing variable needs the carrier's by-name
                 // write-back (the routine path gates on the same fact).
                 code.filter(|c| {
-                    fns.is_empty()
-                        && c.free_var_writes.is_empty()
+                    c.free_var_writes.is_empty()
                         && c.free_var_container_writes.is_empty()
                 })
                 .map(|code| (code, fns))

@@ -584,9 +584,6 @@ impl Interpreter {
     /// recompiling the AST through the tree-walk carrier at every call
     /// (#14572). `env` is what the callable closes over and `param_defs` the
     /// signature including the invocant.
-    // TODO: also compile a method that nests subs: its callable runs the
-    // body's nested `sub` through the chunk's own table, which a callable
-    // built here does not install yet.
     // Cost: O(1).
     pub(super) fn method_def_compiled_callable(
         owner: &str,
@@ -599,9 +596,6 @@ impl Interpreter {
         // A def with no table of nested subs has none: both compile paths
         // record the table only when it is non-empty.
         let fns = def.compiled_fns.clone().unwrap_or_default();
-        if !fns.is_empty() {
-            return None;
-        }
         Some(Value::make_sub_compiled_in(
             (Symbol::intern(owner), Symbol::intern(name)),
             (def.params.clone(), param_defs.to_vec(), (*def.body).clone()),
