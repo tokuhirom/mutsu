@@ -8,7 +8,6 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
@@ -18,6 +17,7 @@ use super::lower::{
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::temporize::{self, Assigned, Target, Temporized};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `ApplyPrefix(Prefix "temp" | "let", operand)`.
@@ -46,11 +46,14 @@ fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
 fn operand_node(names: &NameScope, target: &Target) -> Result<RakuAstNode, RuntimeError> {
     match target {
         Target::Variable(key) => convert_expr(names, &temporize::variable_expr(key)),
-        Target::Undefine(key) => convert_expr(names, &Expr::Call {
-            name: crate::symbol::Symbol::intern("undefine"),
-            args: vec![temporize::variable_expr(key)],
-            listop: false,
-        }),
+        Target::Undefine(key) => convert_expr(
+            names,
+            &Expr::Call {
+                name: crate::symbol::Symbol::intern("undefine"),
+                args: vec![temporize::variable_expr(key)],
+                listop: false,
+            },
+        ),
         Target::Element(element) => convert_expr(names, element),
     }
 }
@@ -63,7 +66,10 @@ fn is_scalar_variable(target: &Target) -> bool {
 
 /// `temp my $x`: the declaration under a `temp` prefix.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert_declaration(names: &NameScope, decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_declaration(
+    names: &NameScope,
+    decl: &Stmt,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(prefix_node(
         true,
         convert_expr(names, &Expr::DoStmt(Box::new(decl.clone())))?,
@@ -75,7 +81,10 @@ pub(super) fn convert_declaration(names: &NameScope, decl: &Stmt) -> Result<Raku
 /// already-expanded writeback value for the compiler; its identity marker
 /// preserves the compound operator and original left operand for this model.
 // Cost: O(e), e = size of the assignment value and method arguments.
-pub(super) fn convert_method_assign_stmt(names: &NameScope, stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_method_assign_stmt(
+    names: &NameScope,
+    stmt: &Stmt,
+) -> Result<RakuAstNode, RuntimeError> {
     let Stmt::TempMethodAssign {
         var_name,
         method_name,
@@ -87,7 +96,8 @@ pub(super) fn convert_method_assign_stmt(names: &NameScope, stmt: &Stmt) -> Resu
     else {
         return Err(super::convert::unsupported("temp method assignment"));
     };
-    convert_method_assign(names, 
+    convert_method_assign(
+        names,
         var_name,
         method_name,
         method_args,
@@ -98,7 +108,8 @@ pub(super) fn convert_method_assign_stmt(names: &NameScope, stmt: &Stmt) -> Resu
 }
 
 // Cost: O(e), e = size of the assignment value and method arguments.
-fn convert_method_assign(names: &NameScope, 
+fn convert_method_assign(
+    names: &NameScope,
     var_name: &str,
     method_name: &str,
     method_args: &[Expr],
@@ -126,14 +137,17 @@ fn convert_method_assign(names: &NameScope,
             Some(meta) if type_invocant => (meta, Some('^')),
             _ => (method_name, None),
         };
-        convert_expr(names, &Expr::MethodCall {
-            target: Box::new(invocant),
-            name: crate::symbol::Symbol::intern(method_name),
-            args: method_args.to_vec(),
-            modifier,
-            quoted: false,
-            sugar: false,
-        })?
+        convert_expr(
+            names,
+            &Expr::MethodCall {
+                target: Box::new(invocant),
+                name: crate::symbol::Symbol::intern(method_name),
+                args: method_args.to_vec(),
+                modifier,
+                quoted: false,
+                sugar: false,
+            },
+        )?
     };
     let left = prefix_node(true, target);
     if let Expr::Binary {
@@ -151,17 +165,26 @@ fn convert_method_assign(names: &NameScope,
         )
     {
         let operator = crate::compiler::helpers_ops::token_kind_to_op_name(op);
-        return super::convert::compound_assignment_with_left(names, left, &format!("{operator}="), right);
+        return super::convert::compound_assignment_with_left(
+            names,
+            left,
+            &format!("{operator}="),
+            right,
+        );
     }
     super::convert::assignment_around(names, left, is_attribute, value)
 }
 
 /// The prefix over the lvalue, with the assignment around it.
 // Cost: O(n), n = size of the lvalue and the assigned expression.
-pub(super) fn convert_temporized(names: &NameScope, t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_temporized(
+    names: &NameScope,
+    t: &Temporized,
+) -> Result<RakuAstNode, RuntimeError> {
     match &t.assigned {
         Assigned::No => Ok(prefix_node(t.is_temp, operand_node(names, &t.target)?)),
-        Assigned::Plain(value) => super::convert::assignment_around(names, 
+        Assigned::Plain(value) => super::convert::assignment_around(
+            names,
             prefix_node(t.is_temp, operand_node(names, &t.target)?),
             is_scalar_variable(&t.target),
             value,
@@ -186,7 +209,8 @@ pub(super) fn convert_temporized(names: &NameScope, t: &Temporized) -> Result<Ra
             crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
                 let left = prefix_node(t.is_temp, convert_expr(names, &a.target)?);
                 super::parsed_view::with_compound_meta(
-                    super::convert::compound_assignment_with_left(names, 
+                    super::convert::compound_assignment_with_left(
+                        names,
                         left,
                         &super::parsed_view::compound_spelling(a),
                         &a.source,
@@ -268,7 +292,9 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     let after = match wrapper {
         None => After::Nothing,
         Some(w) if w.class == RakuAstClass::ApplyDottyInfix => After::Dotty(w),
-        Some(w) if infix_is_assignment(w) => After::Value(lower_expr(names, named_child(w, "right")?)?),
+        Some(w) if infix_is_assignment(w) => {
+            After::Value(lower_expr(names, named_child(w, "right")?)?)
+        }
         Some(w) if infix_is_compound_assignment(w) => After::Compound(w),
         Some(_) => return Err(unsupported(node)),
     };
@@ -341,7 +367,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
 /// A temporary method/attribute lvalue is already represented as the source
 /// prefix plus assignment. Recover its shared save/restore statement directly.
 // Cost: O(e), e = size of the lvalue and assignment expression.
-fn lower_method_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+fn lower_method_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Stmt>, RuntimeError> {
     let (prefix, wrapper) = match node.class {
         RakuAstClass::ApplyPrefix => (node, None),
         RakuAstClass::ApplyInfix => (named_child(node, "left")?, Some(node)),

@@ -24,7 +24,6 @@
 //! list is a scope, and an `infix:<…>` sub or `&infix:<…>` variable declared in
 //! it counts for the rest of that list and for what is nested in it.
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, unsupported as unsupported_expr,
 };
@@ -34,6 +33,7 @@ use super::lower::{
 use super::meta_infix::is_list_assoc;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -108,7 +108,8 @@ fn is_adverb(expr: &Expr) -> bool {
 
 /// An [`Expr::InfixFunc`] as its `ApplyInfix` / `ApplyListInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     name: &str,
     left: &Expr,
     right: &[Expr],
@@ -199,7 +200,10 @@ pub(super) fn convert(names: &NameScope,
         ],
     };
     for adverb in adverbs {
-        add_colonpair(&mut node, Value::rakuast(Box::new(convert_expr(names, adverb)?)))?;
+        add_colonpair(
+            &mut node,
+            Value::rakuast(Box::new(convert_expr(names, adverb)?)),
+        )?;
     }
     Ok(node)
 }

@@ -15,19 +15,23 @@
 //! which lowers to the bare word the compiler reads as the completion unless
 //! a lexical `&done` shadows it.
 
-use crate::scope::NameScope;
 use super::convert::{
     block_node, blockoid, convert_expr, name_from_identifier, node_field, true_field,
 };
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, RoutineDeclarator, Stmt};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 /// `react { body }`, or `react STATEMENT` (`blorst`), whose one statement the
 /// node holds directly.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_react(names: &NameScope, body: &[Stmt], blorst: bool) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_react(
+    names: &NameScope,
+    body: &[Stmt],
+    blorst: bool,
+) -> Result<RakuAstNode, RuntimeError> {
     let blorst = match (blorst, body) {
         (false, _) => block_node(names, body)?,
         (
@@ -76,7 +80,8 @@ fn whenever_block(params: &[String], param_defs: &[ParamDef], body: &[Stmt]) -> 
 
 /// `whenever SUPPLY BLOCK`.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_whenever(names: &NameScope, 
+pub(super) fn convert_whenever(
+    names: &NameScope,
     supply: &Expr,
     params: &[String],
     param_defs: &[ParamDef],
@@ -110,7 +115,10 @@ pub(super) fn convert_whenever(names: &NameScope,
 
 /// `supply { body }` -> `StatementPrefix::Supply(Block)`.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_supply(
+    names: &NameScope,
+    body: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementPrefixSupply,

@@ -1,4 +1,3 @@
-use crate::scope::NameScope;
 use super::super::control_signature;
 use super::*;
 use crate::ast::SrcSpan;
@@ -6,13 +5,15 @@ use crate::ast::parsed::{
     BlockParams, ClauseKind, Conditional, ConditionalClause, ConditionalKind, LoopKind, LoopStmt,
     ParsedBlock, ParsedStmt, WhileLoop,
 };
+use crate::scope::NameScope;
 
 /// Lower a `Statement::If` / `::Unless` / `::With` / `::Without` node: read it
 /// into the [`Conditional`] the parser builds for the same source and lower
 /// that, so a hand-built or round-tripped conditional runs exactly as a parsed
 /// one (ADR-10723 Stage 2, one lowering per family).
 // Cost: O(n), n = size of the conditional.
-pub(super) fn lower_conditional(names: &NameScope, 
+pub(super) fn lower_conditional(
+    names: &NameScope,
     node: &RakuAstNode,
     kind: ConditionalKind,
 ) -> Result<Stmt, RuntimeError> {
@@ -20,7 +21,8 @@ pub(super) fn lower_conditional(names: &NameScope,
 }
 
 // Cost: O(n), n = size of the conditional.
-fn read_conditional(names: &NameScope, 
+fn read_conditional(
+    names: &NameScope,
     node: &RakuAstNode,
     kind: ConditionalKind,
 ) -> Result<Conditional, RuntimeError> {
@@ -60,13 +62,18 @@ fn read_conditional(names: &NameScope,
         clauses.push(ConditionalClause {
             kind,
             condition: lower_expr(names, named_child(clause, "condition")?)?,
-            then: read_block(names, named_child(clause, "then")?, kind == ClauseKind::Orwith)?,
+            then: read_block(
+                names,
+                named_child(clause, "then")?,
+                kind == ClauseKind::Orwith,
+            )?,
         });
     }
     let else_block = match node.fields.iter().find(|f| f.name == Some("else")) {
         // The parser reads the `else` of a clause-less `with` with the `with`
         // block's own parameter rules, and every other `else` with `if`'s.
-        Some(_) => Some(read_block(names, 
+        Some(_) => Some(read_block(
+            names,
             named_child(node, "else")?,
             topical && clauses.is_empty(),
         )?),
@@ -85,7 +92,11 @@ fn read_conditional(names: &NameScope,
 /// `with` family) rather than a parameter list. A hand-built block has no
 /// positions.
 // Cost: O(n), n = size of the block.
-fn read_block(names: &NameScope, block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeError> {
+fn read_block(
+    names: &NameScope,
+    block: &RakuAstNode,
+    topic: bool,
+) -> Result<ParsedBlock, RuntimeError> {
     let params = if block.class != RakuAstClass::PointyBlock {
         BlockParams::None
     } else if topic {
@@ -116,7 +127,10 @@ fn read_block(names: &NameScope, block: &RakuAstNode, topic: bool) -> Result<Par
 /// `repeat` loops: read the node into the [`ParsedStmt`] the parser builds for
 /// the same source and lower that (ADR-10723 Stage 2).
 // Cost: O(n), n = size of the statement.
-pub(super) fn lower_block_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_block_statement(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Stmt, RuntimeError> {
     super::super::conditional_lower::lower_parsed(read_block_statement(names, node)?)
 }
 
@@ -160,7 +174,10 @@ fn read_block_statement(names: &NameScope, node: &RakuAstNode) -> Result<ParsedS
         RakuAstClass::StatementLoop => ParsedStmt::Loop(LoopStmt {
             kind: LoopKind::Loop,
             init: match node.fields.iter().any(|f| f.name == Some("setup")) {
-                true => Some(Box::new(lower_stmt_inner(names, named_child(node, "setup")?)?)),
+                true => Some(Box::new(lower_stmt_inner(
+                    names,
+                    named_child(node, "setup")?,
+                )?)),
                 false => None,
             },
             condition: match node.fields.iter().any(|f| f.name == Some("condition")) {

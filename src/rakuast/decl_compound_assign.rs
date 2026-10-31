@@ -7,11 +7,11 @@
 //! compound assignment over a declaration term instead re-ran the declaration
 //! with every iteration of a postfix `for`.
 
-use crate::scope::NameScope;
 use super::compound::op::{CompoundAssignOp, compound_assigned_value_expr};
 use super::lower::{lower_expr, lower_stmt, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
 /// Whether `node` is a compound assignment whose left side is a variable

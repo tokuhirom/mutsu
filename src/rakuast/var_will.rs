@@ -3,7 +3,6 @@
 //! the parser spells as the declaration followed by one phaser per trait
 //! ([`crate::ast::var_will`]).
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_stmt, expression_of, leaf_field, node_field, signature_block_node,
     statement_expression, unsupported,
@@ -11,11 +10,13 @@ use super::convert::{
 use super::lower::{leaf_str, lower_block, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// The declaration statement with its `will` phasers as its traits.
 // Cost: O(n), n = size of the declaration and the phaser bodies.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     decl: &Stmt,
     phasers: &[(PhaserKind, Vec<Stmt>)],
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -53,7 +54,8 @@ type LoweredPhaser = (PhaserKind, Vec<Stmt>);
 /// A declaration node without its `Trait::Will` entries, and the phasers they
 /// declare (kind and lowered body); `None` when it has none.
 // Cost: O(n), n = size of the phaser bodies.
-pub(super) fn split(names: &NameScope, 
+pub(super) fn split(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<Option<(RakuAstNode, Vec<LoweredPhaser>)>, RuntimeError> {
     let Some(RakuAstField {

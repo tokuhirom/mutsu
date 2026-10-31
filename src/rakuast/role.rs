@@ -10,7 +10,6 @@
 //! is a `DoesDecl` too, told apart by its `also` flag. Lowering rebuilds the
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
-use crate::scope::NameScope;
 use super::convert::{
     blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
 };
@@ -21,6 +20,7 @@ use super::lower::{
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamDef, Stmt};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -113,8 +113,8 @@ pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
             name: name.resolve(),
             args: args.clone(),
         };
-        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(names, 
-            &parent,
+        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
+            names, &parent,
         )?)));
     }
     if role.is_rw && !super::convert::has_is(written, "rw") {
@@ -161,7 +161,8 @@ pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
 /// A header parent clause (`does R[Int]`, `is P`) as the `DoesDecl` the
 /// parser builds for it.
 // Cost: O(k), k = length of the type's spelling.
-fn parent_clause(names: &NameScope, 
+fn parent_clause(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
     from_is: bool,
@@ -200,7 +201,12 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
             };
             match t.class {
                 RakuAstClass::TraitDoes => {
-                    header.push(parent_clause(names, node, named_child_or_positional(t)?, false)?);
+                    header.push(parent_clause(
+                        names,
+                        node,
+                        named_child_or_positional(t)?,
+                        false,
+                    )?);
                 }
                 RakuAstClass::TraitIs => {
                     if let Ok(type_node) = named_child(t, "type") {
@@ -254,9 +260,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     }
     let stripped = super::role_implicit::shown(role_body);
     let role_body = stripped.as_ref().unwrap_or(role_body);
-    let body = lower_package_body(lower_stmts(names, named_child_or_positional(named_child(
-        role_body, "body",
-    )?)?)?);
+    let body = lower_package_body(lower_stmts(
+        names,
+        named_child_or_positional(named_child(role_body, "body")?)?,
+    )?);
     header.extend(body);
     let type_param_defs = match named_child(node, "parameterization") {
         Ok(sig) => lower_signature_parameters(names, sig, node)?,
@@ -281,7 +288,8 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
 
 /// `also does R[ARGS];` -> `Statement::Also(traits => (Trait::Does(R[ARGS]),))`.
 // Cost: O(k + a), k = role spelling length; a = number of arguments.
-pub(super) fn also_statement(names: &NameScope, 
+pub(super) fn also_statement(
+    names: &NameScope,
     role: &str,
     args: Option<&[crate::ast::Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -341,7 +349,8 @@ pub(super) fn lower_also(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, 
             // `name` when it is not (declared outside this unit).
             let (name, args) = match named_child(t, "type") {
                 Ok(type_node) => {
-                    let Stmt::DoesDecl { name, args, .. } = parent_clause(names, node, type_node, true)?
+                    let Stmt::DoesDecl { name, args, .. } =
+                        parent_clause(names, node, type_node, true)?
                     else {
                         unreachable!("parent_clause builds a DoesDecl");
                     };

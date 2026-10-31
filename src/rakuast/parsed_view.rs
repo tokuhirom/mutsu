@@ -4,7 +4,6 @@
 //! the statement's own origin is added by the statement list, as for every
 //! statement.
 
-use crate::scope::NameScope;
 use super::convert::{
     block_node, convert_expr, label_fields, loop_setup_node, node_field, pointy_block,
     signature_block_node, statement_expression, topic_block_node,
@@ -15,11 +14,15 @@ use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, CompoundMeta, Conditional, ConditionalKind, LoopKind,
     LoopStmt, Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
 // Cost: O(n), n = size of the construct.
-pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_node(
+    names: &NameScope,
+    node: &ParsedStmt,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(match node {
         ParsedStmt::Conditional(c) => conditional_node(names, c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
@@ -35,7 +38,10 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
             class: RakuAstClass::StatementWhen,
             fields: vec![
                 node_field(Some("condition"), convert_expr(names, condition)?),
-                node_field(Some("body"), view_block(names, block, BlockKind::Signature)?),
+                node_field(
+                    Some("body"),
+                    view_block(names, block, BlockKind::Signature)?,
+                ),
             ],
         },
         ParsedStmt::Default(block) => RakuAstNode {
@@ -48,7 +54,10 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
         },
         ParsedStmt::WhileLoop(w) => {
             let mut fields = label_fields(&w.label);
-            fields.push(node_field(Some("condition"), convert_expr(names, &w.condition)?));
+            fields.push(node_field(
+                Some("condition"),
+                convert_expr(names, &w.condition)?,
+            ));
             fields.push(node_field(
                 Some("body"),
                 view_block(names, &w.block, BlockKind::Signature)?,
@@ -91,23 +100,24 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
         ParsedStmt::RoutineTraits(_) => {
             return Err(super::convert::unsupported("routine traits outside a body"));
         }
-        ParsedStmt::TakeLogicalTail { value, op, right } => {
-            statement_expression(super::convert::take_logical_tail_node(names, value, op, right)?)
-        }
+        ParsedStmt::TakeLogicalTail { value, op, right } => statement_expression(
+            super::convert::take_logical_tail_node(names, value, op, right)?,
+        ),
         ParsedStmt::InlineProtoUse { proto, use_stmt } => {
             super::use_stmt::convert_inline_proto(names, proto, use_stmt)?
         }
         // Rakudo keeps `done VALUE` as the one call with its payload.
-        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(names, 
+        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(
+            names,
             "done",
             std::slice::from_ref(value),
         )?),
-        ParsedStmt::CallAssignList { head, items } => {
-            statement_expression(super::decl_tail::convert_call_assign_list(names, head, items)?)
-        }
-        ParsedStmt::CommaDecls(declarations) => {
-            statement_expression(super::convert::comma_declarations_node(names, declarations)?)
-        }
+        ParsedStmt::CallAssignList { head, items } => statement_expression(
+            super::decl_tail::convert_call_assign_list(names, head, items)?,
+        ),
+        ParsedStmt::CommaDecls(declarations) => statement_expression(
+            super::convert::comma_declarations_node(names, declarations)?,
+        ),
         ParsedStmt::ImmediateCall { decl, args } => {
             statement_expression(super::immediate_call::convert(names, decl, args)?)
         }
@@ -117,7 +127,9 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
         ParsedStmt::AttributeColonArglist(attributes) => {
             statement_expression(super::attribute_group::convert_colon(names, attributes)?)
         }
-        ParsedStmt::Temporize(t) => statement_expression(super::temporize::convert_temporized(names, t)?),
+        ParsedStmt::Temporize(t) => {
+            statement_expression(super::temporize::convert_temporized(names, t)?)
+        }
         ParsedStmt::SignatureDecl(decl) => {
             statement_expression(super::signature_decl::convert(names, decl)?)
         }
@@ -135,7 +147,8 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
                 ) => Some((name, args.as_slice())),
                 _ => None,
             };
-            statement_expression(super::convert::term_declaration(names, 
+            statement_expression(super::convert::term_declaration(
+                names,
                 &crate::ast::sigilless_decl::SigillessDecl {
                     name: &d.name,
                     expr: &d.expr,
@@ -147,7 +160,9 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
                 },
             )?)
         }
-        ParsedStmt::WillDecl { decl, phasers, .. } => super::var_will::convert(names, decl, phasers)?,
+        ParsedStmt::WillDecl { decl, phasers, .. } => {
+            super::var_will::convert(names, decl, phasers)?
+        }
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::convert::does_declaration(names, decl, role, init.as_ref())?
                 .ok_or_else(|| super::convert::unsupported("does declaration"))?
@@ -174,7 +189,10 @@ pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAs
 /// folds an assignment to a positional or a literal hash subscript into the
 /// subscript's `assignee` (`@a[0] = 1`, `%h<k> = 1`; measured on 2026.09).
 // Cost: O(n), n = size of the expression.
-pub(super) fn parsed_expr_node(names: &NameScope, node: &ParsedExpr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_expr_node(
+    names: &NameScope,
+    node: &ParsedExpr,
+) -> Result<RakuAstNode, RuntimeError> {
     match node {
         ParsedExpr::Assign(a) => match &a.target {
             crate::ast::Expr::Index {
@@ -182,7 +200,14 @@ pub(super) fn parsed_expr_node(names: &NameScope, node: &ParsedExpr) -> Result<R
                 index,
                 is_positional: true,
                 ..
-            } => super::convert::subscript_node(names, target, index, true, Some(&a.source), Vec::new()),
+            } => super::convert::subscript_node(
+                names,
+                target,
+                index,
+                true,
+                Some(&a.source),
+                Vec::new(),
+            ),
             crate::ast::Expr::Index {
                 target,
                 index,
@@ -190,14 +215,21 @@ pub(super) fn parsed_expr_node(names: &NameScope, node: &ParsedExpr) -> Result<R
                 spelling: crate::ast::IndexSpelling::Angle,
                 ..
             } if super::convert::angle_key_text(index).is_some() => {
-                super::convert::angle_subscript_node(names, target, index, Some(&a.source), Vec::new())
+                super::convert::angle_subscript_node(
+                    names,
+                    target,
+                    index,
+                    Some(&a.source),
+                    Vec::new(),
+                )
             }
             // `@a[|| @i] = 7`: one (spread) dimension folds the same way.
             crate::ast::Expr::MultiDimIndex {
                 target,
                 dimensions,
                 is_positional,
-            } if dimensions.len() == 1 => super::convert::subscript_dims_node(names, 
+            } if dimensions.len() == 1 => super::convert::subscript_dims_node(
+                names,
                 target,
                 &super::convert::splat_dimensions(dimensions),
                 *is_positional,
@@ -246,7 +278,10 @@ fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNo
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
 // Cost: O(n), n = size of the target and source.
-fn assignment_node(names: &NameScope, a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
+fn assignment_node(
+    names: &NameScope,
+    a: &crate::ast::parsed::Assign,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
@@ -276,7 +311,8 @@ fn assignment_node(names: &NameScope, a: &crate::ast::parsed::Assign) -> Result<
 /// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
 /// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
 // Cost: O(n + d), n = size of the target and source, d = bracket depth.
-fn compound_assignment_node(names: &NameScope, 
+fn compound_assignment_node(
+    names: &NameScope,
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
     if a.meta == CompoundMeta::Dotty {
@@ -302,10 +338,18 @@ fn compound_assignment_node(names: &NameScope,
             left: Box::new(a.target.clone()),
             right: Box::new(a.source.clone()),
         };
-        return super::meta_infix::convert_bracketed_assignment(names, &written, usize::from(depth));
+        return super::meta_infix::convert_bracketed_assignment(
+            names,
+            &written,
+            usize::from(depth),
+        );
     }
-    let node =
-        super::convert::compound_assignment_infix(names, &a.target, &compound_spelling(a), &a.source)?;
+    let node = super::convert::compound_assignment_infix(
+        names,
+        &a.target,
+        &compound_spelling(a),
+        &a.source,
+    )?;
     with_compound_meta(node, a.meta)
 }
 
@@ -566,7 +610,10 @@ enum BlockKind {
 
 /// `Statement::If` / `::Unless` / `::With` / `::Without` for `node`.
 // Cost: O(n), n = size of the conditional.
-pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn conditional_node(
+    names: &NameScope,
+    node: &Conditional,
+) -> Result<RakuAstNode, RuntimeError> {
     let topical = matches!(node.kind, ConditionalKind::With | ConditionalKind::Without);
     let (class, block_name) = match node.kind {
         ConditionalKind::If => (RakuAstClass::StatementIf, "then"),
@@ -606,7 +653,10 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
         });
     }
     if let Some(block) = &node.else_block {
-        fields.push(node_field(Some("else"), clause_block(names, block, else_topical)?));
+        fields.push(node_field(
+            Some("else"),
+            clause_block(names, block, else_topical)?,
+        ));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -618,8 +668,13 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
 /// A clause's `Block` (`implicit-topic` when the clause topicalizes) or
 /// `PointyBlock`.
 // Cost: O(n), n = size of the block.
-fn clause_block(names: &NameScope, block: &ParsedBlock, topical: bool) -> Result<RakuAstNode, RuntimeError> {
-    view_block(names, 
+fn clause_block(
+    names: &NameScope,
+    block: &ParsedBlock,
+    topical: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    view_block(
+        names,
         block,
         if topical {
             BlockKind::Topic
@@ -632,7 +687,11 @@ fn clause_block(names: &NameScope, block: &ParsedBlock, topical: bool) -> Result
 /// `block` as a `PointyBlock` when it has parameters, else as `kind`, with the
 /// origins of the block, its `Blockoid` and its `StatementList`.
 // Cost: O(n), n = size of the block.
-fn view_block(names: &NameScope, block: &ParsedBlock, kind: BlockKind) -> Result<RakuAstNode, RuntimeError> {
+fn view_block(
+    names: &NameScope,
+    block: &ParsedBlock,
+    kind: BlockKind,
+) -> Result<RakuAstNode, RuntimeError> {
     let node = match &block.params {
         BlockParams::None => match kind {
             BlockKind::Signature => signature_block_node(names, &block.body)?,
@@ -640,7 +699,8 @@ fn view_block(names: &NameScope, block: &ParsedBlock, kind: BlockKind) -> Result
             BlockKind::Plain => block_node(names, &block.body)?,
         },
         BlockParams::List(defs) => pointy_block(names, defs, &block.body, None)?,
-        BlockParams::Topic { def, .. } => pointy_block(names, 
+        BlockParams::Topic { def, .. } => pointy_block(
+            names,
             def.as_deref().map_or(&[], std::slice::from_ref),
             &block.body,
             None,

@@ -120,7 +120,9 @@ pub(super) fn lower_term(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
     let (sigil, explicit) = parts(node)?;
     if is_my(node)? || explicit {
         return if sigil == "$" {
-            Ok(Expr::DoStmt(Box::new(super::lower::lower_var_decl(names, node)?)))
+            Ok(Expr::DoStmt(Box::new(super::lower::lower_var_decl(
+                names, node,
+            )?)))
         } else {
             Err(unsupported(node))
         };

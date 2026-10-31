@@ -6,11 +6,11 @@
 //! `::(EXPR)` in the parameter's `type_constraint`, so the converter reparses
 //! the expression text and lowering spells a plain string literal back.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field, unsupported};
 use super::lower::lower_expr;
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The captured name `(EXPR)` of an indirect capture, as the parser spells it.

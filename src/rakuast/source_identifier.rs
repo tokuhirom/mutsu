@@ -1,14 +1,17 @@
 //! Conversion of source-written identifiers, independent of generated helpers.
-use crate::scope::NameScope;
 use super::convert::{call_name, leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// Source provenance applies to this identifier only. Arguments still pass
 /// through ordinary conversion, including its generated-construct guards.
 // Cost: O(n), n = identifier length and converted argument nodes.
-pub(super) fn written_identifier(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn written_identifier(
+    names: &NameScope,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Var(name) => Ok(written_variable("$", name)),
         Expr::ArrayVar(name) => Ok(written_variable("@", name)),
@@ -23,7 +26,8 @@ pub(super) fn written_identifier(names: &NameScope, expr: &Expr) -> Result<RakuA
     }
 }
 
-pub(super) fn named_routine_call(names: &NameScope, 
+pub(super) fn named_routine_call(
+    names: &NameScope,
     expr: &Expr,
     name: &str,
     args: &[Expr],

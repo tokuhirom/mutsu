@@ -19,11 +19,11 @@
 //! parse time, and the parser records it as a bare `(NAME, None)` entry. Any
 //! other trait stays refused.
 
-use crate::scope::NameScope;
 use super::convert::{name_from_identifier, node_field};
 use super::lower::{named_child, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The parser's `custom_traits` entry for an `is default(…)` trait.
@@ -79,7 +79,8 @@ pub(super) fn type_node(names: &NameScope, name: &str) -> Result<RakuAstNode, Ru
 /// The `traits` items for a declaration's rendered custom traits, in source
 /// order.
 // Cost: O(t), t = custom traits of the declaration.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     custom_traits: &[(String, Option<Expr>)],
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut items = Vec::new();
@@ -152,7 +153,10 @@ pub(super) fn insert(decl: &mut RakuAstNode, items: Vec<Value>) {
 /// flag rather than as a `custom_traits` entry, with the argument a
 /// `is dynamic(ARG)` wrote (`VarMarks::dynamic_argument`).
 // Cost: O(a), a = size of the argument.
-pub(super) fn dynamic_trait(names: &NameScope, argument: Option<&Expr>) -> Result<Value, RuntimeError> {
+pub(super) fn dynamic_trait(
+    names: &NameScope,
+    argument: Option<&Expr>,
+) -> Result<Value, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name_from_identifier(DYNAMIC))];
     if let Some(arg) = argument {
         fields.push(node_field(
@@ -170,7 +174,8 @@ pub(super) fn dynamic_trait(names: &NameScope, argument: Option<&Expr>) -> Resul
 /// A declaration's `traits` back as `custom_traits` entries, in order, and
 /// the `is dynamic` among them: `None` without one, else its written argument.
 // Cost: O(t + a), t = traits of the declaration, a = size of their arguments.
-pub(super) fn lower(names: &NameScope, 
+pub(super) fn lower(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(CustomTraits, Option<Option<Expr>>), RuntimeError> {
     let refuse = || super::lower::unsupported(node);
@@ -219,7 +224,9 @@ pub(super) fn lower(names: &NameScope,
             [_] if name == DYNAMIC => dynamic = Some(None),
             [_, _] if name == DYNAMIC => {
                 let argument = named_child(t, "argument")?;
-                dynamic = Some(Some(super::attribute::lower_paren_argument(names, t, argument)?));
+                dynamic = Some(Some(super::attribute::lower_paren_argument(
+                    names, t, argument,
+                )?));
             }
             // `is marked`.
             [_] => traits.push((name, None)),

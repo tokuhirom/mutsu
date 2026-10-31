@@ -1,10 +1,10 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, is_simple_type, node_field, unsupported};
 use super::type_build::{MAX_TYPE_DEPTH, application_open, build_type_node_at};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 /// Yield comma-separated arguments without splitting inside brackets or quotes.
@@ -93,14 +93,16 @@ fn colonpair_argument(names: &NameScope, source: &str) -> Result<RakuAstNode, Ru
 
 /// Convert a type application using its parsed argument expressions. Only a
 /// type-only constraint without parsed arguments needs the spelling scanner.
-pub(super) fn parameterized_type_node(names: &NameScope, 
+pub(super) fn parameterized_type_node(
+    names: &NameScope,
     spelling: &str,
     parsed: Option<&[Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
     parameterized_type_node_at(names, spelling, parsed, 0)
 }
 
-pub(super) fn parameterized_type_node_at(names: &NameScope, 
+pub(super) fn parameterized_type_node_at(
+    names: &NameScope,
     spelling: &str,
     parsed: Option<&[Expr]>,
     depth: usize,

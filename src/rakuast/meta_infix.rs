@@ -16,13 +16,13 @@
 //! left-nested [`Expr::MetaOp`], so the converter flattens the chain and the
 //! lowering folds the operands back.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field, plain_infix, unsupported as unsupported_expr};
 use super::lower::{
     list_field, lower_expr, named_child, positional_leaf, rakuast_node_of, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Whether the base operator `op` is list-associative, which makes a reversed
@@ -126,7 +126,8 @@ fn assign_base(op: &str) -> Option<&str> {
 
 /// `@a X+= @b` -> `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross(Infix("+"))), right)`.
 // Cost: O(n), n = nodes of the operands.
-fn convert_assign(names: &NameScope, 
+fn convert_assign(
+    names: &NameScope,
     meta: &str,
     base: &str,
     left: &Expr,
@@ -160,7 +161,8 @@ fn convert_assign(names: &NameScope,
 
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     meta: &str,
     op: &str,
     left: &Expr,
@@ -220,7 +222,8 @@ pub(super) fn convert(names: &NameScope,
 /// A bracketed compound assignment whose parser execution form erased the
 /// bracket pairs. `depth` is the number of pairs inside `MetaInfix::Assign`.
 // Cost: O(n + d), n = operand nodes, d = bracket depth (bounded at 128).
-pub(super) fn convert_bracketed_assignment(names: &NameScope, 
+pub(super) fn convert_bracketed_assignment(
+    names: &NameScope,
     expr: &Expr,
     depth: usize,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -340,7 +343,8 @@ pub(super) fn eq_meta_assignment(
 /// The two-operand `ApplyListInfix` of [`eq_meta_assignment`] through the
 /// parser's one lowering of the compound-assignment family.
 // Cost: O(n), n = nodes of the operands.
-fn lower_eq_meta_assignment(names: &NameScope, 
+fn lower_eq_meta_assignment(
+    names: &NameScope,
     node: &RakuAstNode,
     kind: crate::ast::parsed::BracketedMeta,
     depth: u8,
@@ -388,7 +392,11 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
 /// `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross|Zip(Infix(OP))), right)`
 /// as the parser's `MetaOp` over `OP=`, or `None` for a plain `OP=`.
 // Cost: O(n), n = nodes of the operands.
-fn lower_assign(names: &NameScope, node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+fn lower_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+    assign: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     let inner = super::lower::named_child_or_positional(assign).ok()?;
     let meta = meta_of(inner.class).filter(|m| *m != "R")?;
     Some((|| {
@@ -402,7 +410,12 @@ fn lower_assign(names: &NameScope, node: &RakuAstNode, assign: &RakuAstNode) -> 
     })())
 }
 
-fn fold(names: &NameScope, node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError> {
+fn fold(
+    names: &NameScope,
+    node: &RakuAstNode,
+    meta: &str,
+    op: String,
+) -> Result<Expr, RuntimeError> {
     let operands = if node.class == RakuAstClass::ApplyInfix {
         vec![
             lower_expr(names, named_child(node, "left")?)?,

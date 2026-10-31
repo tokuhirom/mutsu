@@ -6,9 +6,9 @@
 //! `Range` keeps only the bounds and exclusions that were written; the
 //! quantified atom holds the `separator` and a `trailing-separator` flag.
 
-use crate::scope::NameScope;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{QuantifierKind, RegexBacktrack, RegexNode, RegexQuantifier};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const BACKTRACKS: [(RegexBacktrack, RakuAstClass); 3] = [
@@ -27,7 +27,8 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 /// The `QuantifiedAtom` node for `atom` under `quantifier`. `separator` is
 /// the already converted separator node.
 // Cost: O(1).
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,
     separator: Option<RakuAstNode>,
@@ -53,7 +54,10 @@ pub(super) fn convert(names: &NameScope,
 }
 
 // Cost: O(n), n = size of a block.
-fn quantifier_node(names: &NameScope, quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeError> {
+fn quantifier_node(
+    names: &NameScope,
+    quantifier: &RegexQuantifier,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     let class = match &quantifier.kind {
         QuantifierKind::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,

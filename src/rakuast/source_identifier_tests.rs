@@ -1,7 +1,7 @@
-use crate::scope::NameScope;
 use super::RakuAstClass;
 use super::convert::convert_expr;
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 
 fn call(name: &str, args: Vec<Expr>) -> Expr {
@@ -40,7 +40,10 @@ fn source_call_provenance_does_not_escape_into_arguments() {
 fn source_names_do_not_activate_generated_helper_conversion() {
     let names = &crate::scope::NameScope::default();
     let expr = Expr::source_identifier(call("__object_hash", Vec::new()), "__object_hash()");
-    assert_eq!(convert_expr(names, &expr).unwrap().class, RakuAstClass::CallName);
+    assert_eq!(
+        convert_expr(names, &expr).unwrap().class,
+        RakuAstClass::CallName
+    );
     // The reserved name is lowered output now; unmarked, it is refused like any other.
     assert!(convert_expr(names, &call("__object_hash", Vec::new())).is_err());
 }

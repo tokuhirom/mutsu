@@ -18,7 +18,6 @@
 //! ([`enum_variants_from_body`]), so a round-tripped enum takes the same path
 //! the parsed one did.
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
 };
@@ -26,6 +25,7 @@ use super::lower::{list_field, lower_expr, named_child, positional_leaf, unsuppo
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{EnumVariantForm, Expr};
 use crate::parser::enum_variants_from_body;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 type Variants = Vec<(String, Option<Expr>)>;
@@ -36,7 +36,8 @@ const DYNAMIC: &str = "__DYNAMIC__";
 /// The `term` of an enum declaration, from the parser's variants and the
 /// spelling it recorded.
 // Cost: O(v), v = variants.
-pub(super) fn enum_term_node(names: &NameScope, 
+pub(super) fn enum_term_node(
+    names: &NameScope,
     variants: &[(String, Option<Expr>)],
     form: &EnumVariantForm,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -94,7 +95,8 @@ fn parenthesized(expr: RakuAstNode) -> RakuAstNode {
 /// contract: omitting it would turn `Red Green` into one enum member named
 /// "Red Green" when the node is evaluated. A `«…»` body may hold colonpair
 /// variants; each is a `QuoteWordsAtom` segment between the literal words.
-fn word_term(names: &NameScope, 
+fn word_term(
+    names: &NameScope,
     variants: &[(String, Option<Expr>)],
     processor: &'static str,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -161,7 +163,10 @@ fn str_literal(text: String) -> Value {
 }
 
 /// The parenthesized pair-list term.
-fn pair_list_term(names: &NameScope, variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
+fn pair_list_term(
+    names: &NameScope,
+    variants: &[(String, Option<Expr>)],
+) -> Result<RakuAstNode, RuntimeError> {
     if variants.is_empty() {
         return Ok(RakuAstNode {
             origin: Default::default(),
@@ -214,7 +219,8 @@ fn pair_list_term(names: &NameScope, variants: &[(String, Option<Expr>)]) -> Res
 
 /// The variants and spelling of an enum's `term` (the lowering direction).
 // Cost: O(v), v = variants.
-pub(super) fn lower_enum_term(names: &NameScope, 
+pub(super) fn lower_enum_term(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let term = named_child(node, "term")?;
@@ -234,7 +240,10 @@ pub(super) fn lower_enum_term(names: &NameScope,
     }
 }
 
-fn lower_word_term(names: &NameScope, term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), RuntimeError> {
+fn lower_word_term(
+    names: &NameScope,
+    term: &RakuAstNode,
+) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let processors = list_field(term, "processors")?;
     let processor_names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
     let form = match processor_names.as_slice() {
@@ -274,7 +283,8 @@ fn lower_word_term(names: &NameScope, term: &RakuAstNode) -> Result<(Variants, E
 }
 
 /// A `:key(value)` / `:key` colonpair word of a `«…»` body.
-fn lower_atom_pair(names: &NameScope, 
+fn lower_atom_pair(
+    names: &NameScope,
     term: &RakuAstNode,
     atom: &RakuAstNode,
 ) -> Result<(String, Option<Expr>), RuntimeError> {

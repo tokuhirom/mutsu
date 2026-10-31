@@ -12,7 +12,6 @@
 //! ([`crate::ast::decl_tail`]), so the converter puts the head back in place of
 //! that re-read, and lowering takes it out again.
 
-use crate::scope::NameScope;
 use super::convert::{
     anonymous_declaration, convert_expr, convert_stmt, expression_of, node_field, plain_infix,
     split_sigil, var_lexical,
@@ -20,6 +19,7 @@ use super::convert::{
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The operand an expression node starts with: the left of an infix, the first
@@ -120,7 +120,11 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 
 /// A head and its loose tail as the one expression they were written as.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert(names: &NameScope, head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    head: &Stmt,
+    tail: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     (|| {
         let converted = convert_expr(names, tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
@@ -154,7 +158,8 @@ pub(super) fn convert(names: &NameScope, head: &Stmt, tail: &Expr) -> Result<Rak
 /// item as the parser kept them. RakuAST has one comma application whose first
 /// operand is the declaration.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_call_assign_list(names: &NameScope, 
+pub(super) fn convert_call_assign_list(
+    names: &NameScope,
     head: &Stmt,
     items: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {

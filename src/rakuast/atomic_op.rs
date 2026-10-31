@@ -6,13 +6,13 @@
 //! operator nodes, the atomicity being in the operator's name. The parser's
 //! spelling of each is `ast::atomic_op`'s.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field, plain_infix, postfix_operand};
 use super::lower::{leaf_str, lower_expr, named_child, positional_leaf};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
 use crate::ast::parsed::AtomicVar;
 use crate::ast::{Expr, temporize};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn prefix_op(operator: &str) -> RakuAstNode {
@@ -53,7 +53,10 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(names, &temporize::variable_expr(name))?),
+                node_field(
+                    Some("left"),
+                    convert_expr(names, &temporize::variable_expr(name))?,
+                ),
                 node_field(Some("infix"), plain_infix("⚛=")),
                 node_field(Some("right"), convert_expr(names, value)?),
             ],
@@ -64,7 +67,11 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
 /// The node of the atomic operator the call `name(args)` is, or `None` when it
 /// is not one.
 // Cost: O(n), n = size of the operands.
-pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn convert(
+    names: &NameScope,
+    name: &str,
+    args: &[Expr],
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     let atomic = atomic_op::recognize(name, args)?;
     Some((|| match atomic {
         Atomic::Unary {

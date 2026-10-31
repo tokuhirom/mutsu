@@ -7,7 +7,6 @@
 //! an `OnlyStar`. The parser keeps the first as the `Whatever` term and the
 //! second as the onlystar dispatch call (`Expr::onlystar_dispatch`).
 
-use crate::scope::NameScope;
 use super::convert::{leaf_field, routine_node, unsupported};
 use super::lower::{
     call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
@@ -16,6 +15,7 @@ use super::lower::{
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
@@ -45,7 +45,10 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert(names: &NameScope, proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    proto: ProtoDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
     if proto.has_traits && crate::ast::routine_trait::get(proto.body).is_none() {
         return Err(unsupported("proto with traits"));
     }
@@ -56,7 +59,8 @@ pub(super) fn convert(names: &NameScope, proto: ProtoDecl<'_>) -> Result<RakuAst
     };
     let onlystar = is_onlystar_body(proto.body);
     let body: &[Stmt] = if onlystar { &[] } else { proto.body };
-    let mut node = routine_node(names, 
+    let mut node = routine_node(
+        names,
         class,
         &proto.name.resolve(),
         proto.param_defs,

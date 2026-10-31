@@ -12,16 +12,17 @@
 //! turns the nodes into the canonical name again by the same rule the parser
 //! applies to the source.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Put the written colonpairs of the declared name onto `decl`'s
 /// `desigilname`, when the parse recorded them.
 // Cost: O(n), n = length of the written colonpairs.
-pub(super) fn apply(names: &NameScope, 
+pub(super) fn apply(
+    names: &NameScope,
     decl: &mut RakuAstNode,
     marks: &crate::ast::var_marks::VarMarks,
 ) -> Result<(), RuntimeError> {

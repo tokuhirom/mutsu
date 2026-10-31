@@ -16,7 +16,6 @@
 //! [`postcircumfix_node`] is their view and [`lower`] the one lowering, which expands them
 //! into the shapes the compiler executes (`ast::subscript_adverb::expand`).
 
-use crate::scope::NameScope;
 use super::convert::{
     angle_key_text, angle_subscript_node, convert_expr, leaf_field, splat_dimensions,
     subscript_dims_node, unsupported as convert_unsupported,
@@ -25,13 +24,17 @@ use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::subscript_adverb;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 mod hyperslice;
 
 /// `%h{**}:k`: the hash hyperslice the parser keeps as `Expr::HyperSlice`.
 // Cost: O(n), n = nodes under the target.
-pub(super) fn convert_hyper_slice(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn convert_hyper_slice(
+    names: &NameScope,
+    expr: &Expr,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     let Expr::HyperSlice { target, adverb } = expr else {
         return None;
     };
@@ -43,7 +46,8 @@ pub(super) fn convert_hyper_slice(names: &NameScope, expr: &Expr) -> Option<Resu
             Value::str(hyperslice::name(*adverb).to_string()),
         )],
     };
-    Some(subscript_dims_node(names, 
+    Some(subscript_dims_node(
+        names,
         target,
         &[Expr::HyperWhatever],
         false,
@@ -55,7 +59,8 @@ pub(super) fn convert_hyper_slice(names: &NameScope, expr: &Expr) -> Option<Resu
 /// The postcircumfix node of `subscript` carrying the colonpairs `pairs`, as
 /// the parser kept them (`ParsedExpr::SubscriptAdverbs`).
 // Cost: O(n), n = nodes under the subscript and its adverbs.
-pub(super) fn postcircumfix_node(names: &NameScope, 
+pub(super) fn postcircumfix_node(
+    names: &NameScope,
     subscript: &Expr,
     pairs: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -93,7 +98,8 @@ pub(super) fn postcircumfix_node(names: &NameScope,
             target,
             dimensions,
             is_positional,
-        } => subscript_dims_node(names, 
+        } => subscript_dims_node(
+            names,
             target,
             &splat_dimensions(dimensions),
             *is_positional,
@@ -158,7 +164,11 @@ fn named_subscript(subscript: &Expr, pairs: Vec<Expr>) -> Option<Expr> {
 /// `subscript` with the postcircumfix's `colonpairs` applied; `subscript`
 /// itself when it has none.
 // Cost: O(a), a = colonpairs (plus lowering their values).
-pub(super) fn lower(names: &NameScope, subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    subscript: Expr,
+    postfix: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
     let Ok(colonpairs) = list_field(postfix, "colonpairs") else {
         return Ok(subscript);
     };

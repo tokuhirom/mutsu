@@ -1,15 +1,18 @@
 //! RakuAST conversion of method-assignment declarations and calls.
 
-use crate::scope::NameScope;
 use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
 use crate::ast::method_assign_decl::MethodAssignDecl;
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
-pub(super) fn convert(names: &NameScope, form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    form: &MethodAssignDecl,
+) -> Result<RakuAstNode, RuntimeError> {
     if form.where_constraint.is_some()
         || form
             .custom_traits
@@ -32,7 +35,8 @@ pub(super) fn convert(names: &NameScope, form: &MethodAssignDecl) -> Result<Raku
     } else {
         (form.name.as_str(), None)
     };
-    let mut decl = var_declaration(names, 
+    let mut decl = var_declaration(
+        names,
         name,
         Some(Initializer::CallAssign(form)),
         scope,
@@ -131,7 +135,8 @@ pub(super) fn lower_chained(names: &NameScope, node: &RakuAstNode) -> Result<Stm
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
-pub(super) fn call_method(names: &NameScope, 
+pub(super) fn call_method(
+    names: &NameScope,
     name: &str,
     args: &[Expr],
     modifier: Option<char>,

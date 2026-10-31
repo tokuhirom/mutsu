@@ -23,13 +23,13 @@
 //! (`:$a ($x, $y)`) destructures; it is rendered with a `sub-signature` field
 //! like a positional one.
 
-use crate::scope::NameScope;
 use super::convert::{
     build_type_node, convert_expr, implicit_parameter_type, node_field, split_sigil,
     type_capture_name, type_capture_node, type_captures_field, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, ParamTarget};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// The parts of a named parameter, read off the parser's alias chain.
@@ -127,7 +127,8 @@ fn set_once<'a, T: ?Sized>(slot: &mut Option<&'a T>, value: &'a T) -> Result<(),
 
 /// The `RakuAST::Parameter` of the named parameter `pd`, every field but
 /// `sub-signature` and `traits` (the caller appends those after it).
-pub(super) fn named_parameter(names: &NameScope, 
+pub(super) fn named_parameter(
+    names: &NameScope,
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {

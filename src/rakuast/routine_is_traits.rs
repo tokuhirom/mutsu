@@ -1,9 +1,9 @@
 //! Execution flags read from written routine traits.
-use crate::scope::NameScope;
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::routine_traits::export_tags;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 const DEFAULT_TAG: &str = "DEFAULT";
 
@@ -27,7 +27,11 @@ impl IsTraits {
     /// Read one `Trait::Is` into the flags; `false` for a trait this set does
     /// not model.
     // Cost: O(a), a = size of the trait's argument.
-    pub(super) fn read(&mut self, names: &NameScope, t: &RakuAstNode) -> Result<bool, RuntimeError> {
+    pub(super) fn read(
+        &mut self,
+        names: &NameScope,
+        t: &RakuAstNode,
+    ) -> Result<bool, RuntimeError> {
         let Ok(name_node) = named_child(t, "name") else {
             // `Trait::Is(type => TYPE)` is a user type trait, lowered through
             // the routine's custom-trait path.
@@ -126,7 +130,10 @@ fn assoc_value(names: &NameScope, argument: &RakuAstNode) -> Result<Option<Strin
 }
 
 /// The `&infix:<+>` of an `is tighter(&infix:<+>)` argument.
-fn precedence_reference(names: &NameScope, argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+fn precedence_reference(
+    names: &NameScope,
+    argument: &RakuAstNode,
+) -> Result<Option<String>, RuntimeError> {
     if argument.class == RakuAstClass::QuotedString {
         return assoc_value(names, argument);
     }

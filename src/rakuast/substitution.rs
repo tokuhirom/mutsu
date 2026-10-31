@@ -27,7 +27,6 @@
 //! evaluates it with the match bound as `$/`, which is what a `qq` replacement
 //! reads — because a tree has no `qq` source to give back.
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, quoted_string, regex_node,
     statement_expression, unsupported as unsupported_what,
@@ -39,6 +38,7 @@ use super::lower::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SubstThunk};
 use crate::regex_tree::{RegexAdverb, RegexTree};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `s///`, `S///` and `tr///` as their RakuAST nodes.
@@ -51,7 +51,8 @@ pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Run
             replacement_thunk,
             tree,
             ..
-        } => substitution(names, 
+        } => substitution(
+            names,
             true,
             *samespace,
             replacement,
@@ -64,7 +65,8 @@ pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Run
             replacement_thunk,
             tree,
             ..
-        } => substitution(names, 
+        } => substitution(
+            names,
             false,
             *samespace,
             replacement,
@@ -83,7 +85,8 @@ pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Run
 }
 
 // Cost: O(n), n = size of the pattern and replacement.
-fn substitution(names: &NameScope, 
+fn substitution(
+    names: &NameScope,
     destructive: bool,
     samespace: bool,
     replacement: &str,
@@ -101,7 +104,10 @@ fn substitution(names: &NameScope,
         leaf_field(Some("immutable"), Value::truth(!destructive)),
         leaf_field(Some("samespace"), Value::truth(samespace && !written_ss)),
     ];
-    push_adverbs(&mut fields, tree.adverbs.iter().map(|adverb| adverb_node(names, adverb)))?;
+    push_adverbs(
+        &mut fields,
+        tree.adverbs.iter().map(|adverb| adverb_node(names, adverb)),
+    )?;
     // `s[a] = EXPR` is `infix => Assignment`, `s[a] OP= EXPR`
     // `infix => MetaInfix::Assign(Infix(OP))` with EXPR as the replacement.
     let replacement = match thunk {
@@ -191,7 +197,10 @@ fn push_adverbs(
 
 /// One written adverb: `:g`, `:2nth`, `:x(2)`.
 // Cost: O(|argument|).
-pub(super) fn adverb_node(names: &NameScope, adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn adverb_node(
+    names: &NameScope,
+    adverb: &RegexAdverb,
+) -> Result<RakuAstNode, RuntimeError> {
     let digits = adverb
         .name
         .chars()
@@ -308,7 +317,10 @@ fn adverbs_of(names: &NameScope, node: &RakuAstNode) -> Result<Vec<RegexAdverb>,
 }
 
 // Cost: O(n), n = size of the adverb.
-pub(super) fn lower_adverb(names: &NameScope, node: &RakuAstNode) -> Result<RegexAdverb, RuntimeError> {
+pub(super) fn lower_adverb(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<RegexAdverb, RuntimeError> {
     let string = |v: Value| match v.view() {
         ValueView::Str(s) => Ok(s.to_string()),
         _ => Err(unsupported(node)),
@@ -329,8 +341,9 @@ pub(super) fn lower_adverb(names: &NameScope, node: &RakuAstNode) -> Result<Rege
         RakuAstClass::ColonPairValue => {
             let value = named_child(node, "value")?;
             let expression = parenthesized_expression(value).ok_or_else(|| unsupported(node))?;
-            let argument = crate::regex_tree::expression_argument_source(&lower_expr(names, expression)?)
-                .ok_or_else(|| unsupported(node))?;
+            let argument =
+                crate::regex_tree::expression_argument_source(&lower_expr(names, expression)?)
+                    .ok_or_else(|| unsupported(node))?;
             Ok(RegexAdverb {
                 name: leaf_str(node, "key")?,
                 argument: Some(argument),
@@ -348,7 +361,10 @@ pub(super) struct LoweredMatchAdverbs {
 
 /// Split dynamic `m:p(EXPR)` / `m:c(EXPR)` values from the static adverbs so
 /// lowering can reuse the parser's existing per-match expression path.
-pub(super) fn lower_match_adverbs(names: &NameScope, node: &RakuAstNode) -> Result<LoweredMatchAdverbs, RuntimeError> {
+pub(super) fn lower_match_adverbs(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<LoweredMatchAdverbs, RuntimeError> {
     let mut adverbs = Vec::new();
     let mut pos_expr = None;
     let mut continue_expr = None;
@@ -416,7 +432,10 @@ fn parenthesized_expression(node: &RakuAstNode) -> Option<&RakuAstNode> {
 
 /// `Substitution` as the parser's `Expr::Subst` / `Expr::NonDestructiveSubst`.
 // Cost: O(n), n = size of the pattern and replacement.
-pub(super) fn lower_substitution(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_substitution(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
     let adverbs = adverbs_of(names, node)?;
     let samespace = bool_field(node, "samespace")?;
     // `None` for `s[a] = EXPR`, the operator of `s[a] OP= EXPR`.
@@ -515,7 +534,10 @@ fn table_text(names: &NameScope, node: &RakuAstNode) -> Result<String, RuntimeEr
 
 /// `Transliteration` as the parser's `Expr::Transliterate`.
 // Cost: O(|from| + |to| + a), a = number of adverbs.
-pub(super) fn lower_transliteration(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_transliteration(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
     let (mut delete, mut complement, mut squash) = (false, false, false);
     let mut written = Vec::new();
     for adverb in adverbs_of(names, node)? {

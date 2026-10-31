@@ -7,18 +7,19 @@
 //! `type`, a `returns` or a trait's type goes through [`type_constraint`], so
 //! a type spelling the converter can render is one every site can lower.
 
-use crate::scope::NameScope;
 use super::lower::{
     lower_expr, named_child, named_child_or_positional, regex_subrule_argument_source, unsupported,
 };
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
 /// Return-value literals retain their expression form instead of becoming names.
 // Cost: O(n), n = constraint spelling length.
-pub(super) fn return_constraint(names: &NameScope, 
+pub(super) fn return_constraint(
+    names: &NameScope,
     owner: &RakuAstNode,
     node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
@@ -54,7 +55,8 @@ pub(super) fn return_constraint(names: &NameScope,
 
 /// The parser's spelling of `type_node`; `owner` names the node a refusal
 /// reports.
-pub(super) fn type_constraint(names: &NameScope, 
+pub(super) fn type_constraint(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
@@ -64,7 +66,8 @@ pub(super) fn type_constraint(names: &NameScope,
 /// Parent names retain the absolute edge; parameter captures and ordinary
 /// type-object expressions use their existing, context-specific spelling.
 // Cost: O(n), n = type-node size; composition depth is bounded.
-pub(super) fn parent_type_constraint(names: &NameScope, 
+pub(super) fn parent_type_constraint(
+    names: &NameScope,
     owner: &RakuAstNode,
     node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
@@ -83,7 +86,8 @@ pub(super) fn parent_type_constraint(names: &NameScope,
     Err(unsupported(owner))
 }
 
-fn type_constraint_at(names: &NameScope, 
+fn type_constraint_at(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
     depth: usize,
@@ -181,7 +185,8 @@ fn type_constraint_at(names: &NameScope,
 
 /// Preserve argument expressions for `is`/`does` role applications when
 /// lowering a parameterized type from RakuAST.
-pub(super) fn type_application_args(names: &NameScope, 
+pub(super) fn type_application_args(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
 ) -> Result<Option<Vec<Expr>>, RuntimeError> {
@@ -207,7 +212,9 @@ pub(super) fn type_application_args(names: &NameScope,
                 return Err(unsupported(owner));
             };
             if node.class == RakuAstClass::TypeSimple {
-                Ok(Expr::BareWord(argument_type_constraint(names, owner, node)?))
+                Ok(Expr::BareWord(argument_type_constraint(
+                    names, owner, node,
+                )?))
             } else {
                 lower_expr(names, node)
             }
@@ -218,14 +225,16 @@ pub(super) fn type_application_args(names: &NameScope,
 
 /// A leading empty edge denotes a capture only in a type argument. Ordinary
 /// type references such as `::Int` still resolve the plain identifier.
-fn argument_type_constraint(names: &NameScope, 
+fn argument_type_constraint(
+    names: &NameScope,
     owner: &RakuAstNode,
     node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
     argument_type_constraint_at(names, owner, node, 0)
 }
 
-fn argument_type_constraint_at(names: &NameScope, 
+fn argument_type_constraint_at(
+    names: &NameScope,
     owner: &RakuAstNode,
     node: &RakuAstNode,
     depth: usize,
@@ -241,7 +250,8 @@ fn argument_type_constraint_at(names: &NameScope,
 }
 
 /// Composed bases use the same bounded recursion as type arguments.
-fn composed_base(names: &NameScope, 
+fn composed_base(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
     depth: usize,
@@ -267,7 +277,7 @@ mod tests {
 
     #[test]
     fn composed_type_lowering_shares_one_depth_budget() {
-    let names = &crate::scope::NameScope::default();
+        let names = &crate::scope::NameScope::default();
         let mut node = super::super::bareword::simple_type_node("Int");
         for _ in 0..super::super::type_build::MAX_TYPE_DEPTH {
             node = RakuAstNode {
@@ -280,6 +290,9 @@ mod tests {
         let node = super::super::type_build::build_type_node(names, "Int:D(Str)").unwrap();
         assert_eq!(type_constraint(names, &node, &node).unwrap(), "Int:D(Str)");
         let node = super::super::type_build::build_type_node(names, "Hash[Int:D]:D").unwrap();
-        assert_eq!(type_constraint(names, &node, &node).unwrap(), "Hash[Int:D]:D");
+        assert_eq!(
+            type_constraint(names, &node, &node).unwrap(),
+            "Hash[Int:D]:D"
+        );
     }
 }

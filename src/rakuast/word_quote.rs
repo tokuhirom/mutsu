@@ -9,7 +9,6 @@
 //! (`Spelling::InterpolatingWords`), so the segments are re-derived here; the
 //! lowering splits them back into words and hands them to `word_list::lower_quotewords`.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, interp_segment, node_field};
 use super::lower::{
     list_field, lower_expr, named_child_or_positional, positional_leaf, unsupported,
@@ -17,11 +16,13 @@ use super::lower::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::parser::QuoteWordsPart;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for the interpolating `quotewords` quote written as `text`.
 // Cost: O(n), n = length of `text`.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     val: bool,
     text: &str,
     delimiter: Option<char>,
@@ -30,7 +31,8 @@ pub(super) fn convert(names: &NameScope,
     convert_nested(names, val, text, delimiter, interpolates, 0)
 }
 
-fn convert_nested(names: &NameScope, 
+fn convert_nested(
+    names: &NameScope,
     val: bool,
     text: &str,
     delimiter: Option<char>,
@@ -63,7 +65,8 @@ fn convert_nested(names: &NameScope,
                 })));
             }
             QuoteWordsPart::Nested(inner) => {
-                segments.push(Value::rakuast(Box::new(convert_nested(names, 
+                segments.push(Value::rakuast(Box::new(convert_nested(
+                    names,
                     val,
                     inner,
                     delimiter,
@@ -113,14 +116,19 @@ pub(super) fn interpolating_plain_words(node: &RakuAstNode, segments: &[Value]) 
 /// spell: runs split at whitespace, a variable or block joins the word it
 /// touches, a `QuoteWordsAtom` is a word of its own.
 // Cost: O(s + n), s = segments, n = their text.
-pub(super) fn lower(names: &NameScope, node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+    val: bool,
+) -> Result<Expr, RuntimeError> {
     Ok(super::word_list::lower_quotewords(
         val,
         lower_parts(names, node, val, 0)?,
     ))
 }
 
-fn lower_parts(names: &NameScope, 
+fn lower_parts(
+    names: &NameScope,
     node: &RakuAstNode,
     val: bool,
     depth: usize,

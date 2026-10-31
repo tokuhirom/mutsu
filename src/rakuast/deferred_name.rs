@@ -1,10 +1,10 @@
 //! Preserve the parser's runtime choices for names supplied by EXPORT hooks.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, convert_literal, leaf_field};
 use super::lower::{leaf_str, lower_expr, unsupported};
 use super::{RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 

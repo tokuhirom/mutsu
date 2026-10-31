@@ -10,10 +10,10 @@
 //! trait argument holding a quote) keeps those parts without a range: exact
 //! or absent.
 
-use crate::scope::NameScope;
 use super::infix_origins::{byte_range, child, with_child};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::source_comments::trivia_len;
 use crate::value::{Value, ValueView};
 

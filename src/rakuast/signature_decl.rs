@@ -23,11 +23,11 @@
 //! `is default` is metadata omitted by Rakudo's renderer. Nested groups remain
 //! refused until their parser representation retains the grouping.
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Construct the same declaring signature shape produced by the parser.
@@ -77,7 +77,10 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn convert(names: &NameScope, decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    decl: &SignatureDecl,
+) -> Result<RakuAstNode, RuntimeError> {
     let is_binding = decl.init.as_ref().is_some_and(|init| init.is_binding);
     let parameters = if let Some(shape) = &decl.group_shape {
         shape
@@ -108,7 +111,10 @@ pub(super) fn convert(names: &NameScope, decl: &SignatureDecl) -> Result<RakuAst
     let mut fields = vec![node_field(Some("signature"), signature)];
     if let Some(default) = &decl.group_default {
         // Rakudo omits the group trait from .raku, but execution still needs it.
-        fields.push(node_field(Some("group-default"), convert_expr(names, default)?));
+        fields.push(node_field(
+            Some("group-default"),
+            convert_expr(names, default)?,
+        ));
     }
     if decl.is_our || decl.is_state {
         let scope = if decl.is_our { "our" } else { "state" };
@@ -145,7 +151,8 @@ pub(super) fn convert(names: &NameScope, decl: &SignatureDecl) -> Result<RakuAst
 
 /// A source group into a parameter with a nested sub-signature.
 // Cost: O(n), n = leaves in the group, with nesting bounded at 128.
-fn convert_group(names: &NameScope, 
+fn convert_group(
+    names: &NameScope,
     item: &SignatureGroup,
     vars: &[SignatureVar],
     is_binding: bool,
@@ -157,7 +164,8 @@ fn convert_group(names: &NameScope,
         ));
     }
     let node = match item {
-        SignatureGroup::Var(index) => parameter(names, 
+        SignatureGroup::Var(index) => parameter(
+            names,
             vars.get(*index)
                 .ok_or_else(|| unsupported("signature declaration group index"))?,
             is_binding,
@@ -196,7 +204,11 @@ fn convert_group(names: &NameScope,
 /// writable container (unless the declaration binds with `:=`). A named or
 /// slurpy element has no `optional`.
 // Cost: O(e), e = size of the element's `where` expression.
-fn parameter(names: &NameScope, var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, RuntimeError> {
+fn parameter(
+    names: &NameScope,
+    var: &SignatureVar,
+    is_binding: bool,
+) -> Result<RakuAstNode, RuntimeError> {
     if let Some(literal) = &var.literal_value {
         return super::signature_literal::convert(names, literal);
     }
@@ -360,7 +372,8 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
 
 /// Collect flattened declaration leaves while retaining sub-signature groups.
 // Cost: O(n), n = parameter nodes, with nesting bounded at 128.
-fn lower_group_parameter(names: &NameScope, 
+fn lower_group_parameter(
+    names: &NameScope,
     param: &RakuAstNode,
     vars: &mut Vec<SignatureVar>,
     depth: usize,
@@ -405,7 +418,9 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
             Some("optional") => {
                 var.is_optional = super::lower::bool_field(param, "optional")?;
             }
-            Some("default") => var.default = Some(lower_expr(names, named_child(param, "default")?)?),
+            Some("default") => {
+                var.default = Some(lower_expr(names, named_child(param, "default")?)?)
+            }
             Some("type") => {
                 let type_node = named_child(param, "type")?;
                 var.per_var_type_constraint =

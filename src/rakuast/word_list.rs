@@ -8,10 +8,10 @@
 //! lowering every path shares: the executing parse (a kept node), `EVAL` of a
 //! string and `EVAL` of the quote's `.AST`.
 
-use crate::scope::NameScope;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::parsed::{ParsedExpr, WordItem, WordList, WordSource, WordsAtom};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
@@ -179,8 +179,8 @@ pub(super) fn atom_node(names: &NameScope, atom: &WordsAtom) -> Result<RakuAstNo
     let segments = items
         .iter()
         .map(|item| {
-            Ok(Value::rakuast(Box::new(super::convert::interp_segment(names, 
-                item,
+            Ok(Value::rakuast(Box::new(super::convert::interp_segment(
+                names, item,
             )?)))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;

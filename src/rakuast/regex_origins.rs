@@ -11,10 +11,10 @@
 //! not read here, ends the walk: it and every node after it stay without a
 //! range. Exact or absent.
 
-use crate::scope::NameScope;
 use super::infix_origins::{byte_range, leaf_text};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::value::{Value, ValueView};
 
 /// Place the body of `node`, a `QuotedRegex` with a range, and its adverbs.
@@ -302,7 +302,13 @@ impl Walk<'_> {
 
     /// `[ ... ]` / `( ... )`.
     // Cost: O(n), n = length of the group's text.
-    fn bracketed(&mut self, names: &NameScope, node: &mut RakuAstNode, open: &str, close: &str) -> Option<()> {
+    fn bracketed(
+        &mut self,
+        names: &NameScope,
+        node: &mut RakuAstNode,
+        open: &str,
+        close: &str,
+    ) -> Option<()> {
         self.eat(open)?;
         self.blank();
         self.child_at(names, node, 0)?;

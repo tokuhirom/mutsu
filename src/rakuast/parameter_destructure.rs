@@ -1,11 +1,11 @@
 //! Anonymous positional and slurpy destructuring parameters.
 
-use crate::scope::NameScope;
 use super::convert::{
     build_type_node, leaf_field, node_field, signature, type_setting_any, unsupported,
 };
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{ParamDef, ParamTarget};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// An anonymous destructuring parameter, `[$a, $b]` or `($a, $b)`: rakudo's
@@ -15,7 +15,8 @@ use crate::value::{RuntimeError, Value};
 /// parameter's (measured on rakudo 2026.09). Defaults, where constraints and
 /// traits remain fields on the outer parameter.
 // Cost: O(s), s = size of the sub-signature.
-pub(super) fn anonymous_destructuring(names: &NameScope, 
+pub(super) fn anonymous_destructuring(
+    names: &NameScope,
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {

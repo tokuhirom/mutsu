@@ -16,12 +16,12 @@
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
 //! assignment, is `Expr::IndirectTypeLookup`, handled in `convert.rs`).
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
@@ -39,7 +39,11 @@ pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
 
 /// `$::($n)` as `Var::Package`.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn convert(names: &NameScope, sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    sigil: &str,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarPackage,
@@ -52,7 +56,8 @@ pub(super) fn convert(names: &NameScope, sigil: &str, expr: &Expr) -> Result<Rak
 
 /// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
 // Cost: O(n), n = nodes of the package expression plus the static name.
-pub(super) fn convert_indirect_code(names: &NameScope, 
+pub(super) fn convert_indirect_code(
+    names: &NameScope,
     package: &Expr,
     name: &str,
     caller: bool,
@@ -81,7 +86,10 @@ pub(super) fn convert_indirect_code(names: &NameScope,
 
 /// Recognize the two measured dynamic code-variable name shapes.
 // Cost: O(n), n = name parts.
-pub(super) fn lower_indirect_code(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower_indirect_code(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     if node.class != RakuAstClass::VarPackage
         || super::lower::leaf_str(node, "sigil").ok()?.as_str() != "&"
     {
@@ -117,11 +125,13 @@ pub(super) fn lower_indirect_code(names: &NameScope, node: &RakuAstNode) -> Opti
         return None;
     };
     let name = name_parts::part_identifier(last)?;
-    Some(lower_expr(names, package).map(|package| Expr::IndirectCodeLookup {
-        package: Box::new(package),
-        name,
-        caller,
-    }))
+    Some(
+        lower_expr(names, package).map(|package| Expr::IndirectCodeLookup {
+            package: Box::new(package),
+            name,
+            caller,
+        }),
+    )
 }
 
 /// The name expression of a plain `::(EXPR)` name (no static tail).
@@ -157,7 +167,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
 /// `ApplyInfix(Var::Package(dynamic) | Term::Name(dynamic), Assignment, v)` as
 /// the parser's assignment node, or `None` for any other assignment.
 // Cost: O(n), n = nodes of the name expression and the value.
-pub(super) fn lower_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
     let value = || lower_expr(names, named_child(node, "right")?).map(Box::new);
     match left.class {
@@ -213,7 +226,8 @@ fn is_lexical_pseudo_package(segment: &str) -> bool {
 /// `MY::(EXPR)` / `GLOBAL::(EXPR)`: the package's parts, then the key as a
 /// `Name::Part::Expression`.
 // Cost: O(n), n = nodes of the key, plus the package's segments.
-pub(super) fn convert_package_indirect(names: &NameScope, 
+pub(super) fn convert_package_indirect(
+    names: &NameScope,
     package: &str,
     key: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -261,7 +275,10 @@ pub(super) fn package_indirect(node: &RakuAstNode) -> Option<(String, &RakuAstNo
 /// [`package_indirect`] as the parser's lookup: the symbolic dereference of
 /// `"PKG::" ~ EXPR`.
 // Cost: O(n), n = nodes of the key.
-pub(super) fn lower_package_indirect(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower_package_indirect(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     let (package, key) = package_indirect(node)?;
     Some(lower_expr(names, key).map(|key| Expr::SymbolicDeref {
         sigil: String::new(),
@@ -279,7 +296,8 @@ pub(super) fn lower_package_indirect(names: &NameScope, node: &RakuAstNode) -> O
 /// `Name(Part::Empty, Part::Expression(EXPR))`. A literal or bare word keeps
 /// its text as the name, anything else the parser's placeholder.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn lower_declarator_name(names: &NameScope, 
+pub(super) fn lower_declarator_name(
+    names: &NameScope,
     name: &RakuAstNode,
 ) -> Result<Option<(String, Expr)>, RuntimeError> {
     let Some(NameShape::Indirect {
@@ -311,7 +329,8 @@ pub(super) fn lower_declarator_name(names: &NameScope,
 /// Swap a routine node's `name` for the `::(EXPR)` form when the declaration
 /// had a computed name.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn replace_declarator_name(names: &NameScope, 
+pub(super) fn replace_declarator_name(
+    names: &NameScope,
     node: &mut RakuAstNode,
     name_expr: Option<&Expr>,
 ) -> Result<(), RuntimeError> {

@@ -1,8 +1,8 @@
 //! Named subroutine lowering.
-use crate::scope::NameScope;
 use super::RakuAstNode;
 use super::lower::*;
 use crate::ast::{Stmt, SubScope};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 /// Lower `sub NAME (SIG) { … }` to `Stmt::SubDecl`. Only bare positional scalar
@@ -24,7 +24,10 @@ pub(super) fn lower_sub(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         },
     };
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let mut body = lower_routine_stmts(names, named_child_or_positional(named_child(node, "body")?)?)?;
+    let mut body = lower_routine_stmts(
+        names,
+        named_child_or_positional(named_child(node, "body")?)?,
+    )?;
     super::routine_source::retain(names, node, &mut body)?;
     // A sub with no signature of its own takes its placeholder variables.
     let (params, mut param_defs) =
@@ -70,7 +73,8 @@ pub(super) fn lower_sub(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
 
 /// A declarator's name and, for `::(EXPR)`, its name expression.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn declarator_name(names: &NameScope, 
+pub(super) fn declarator_name(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(String, Option<crate::ast::Expr>), RuntimeError> {
     match super::symbolic_deref::lower_declarator_name(names, named_child(node, "name")?)? {

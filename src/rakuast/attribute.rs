@@ -30,13 +30,13 @@
 //! message `something else`).
 
 mod argument;
-use crate::scope::NameScope;
 use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::attr_trait::AttrTrait;
 use crate::ast_visit::VisitMut;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 use argument::trait_argument;
 pub(super) use argument::{lower_paren_argument, paren_argument};
@@ -111,7 +111,10 @@ impl AttributeTraits {
                 AttrTrait::Required => match &self.is_required {
                     Some(Some(reason)) => trait_is(
                         "required",
-                        Some(paren_argument(names, &Expr::Literal(Value::str(reason.clone())))?),
+                        Some(paren_argument(
+                            names,
+                            &Expr::Literal(Value::str(reason.clone())),
+                        )?),
                     ),
                     _ => trait_is("required", None),
                 },
@@ -136,9 +139,10 @@ impl AttributeTraits {
                     Some(DEPRECATED_DEFAULT) | None => trait_is("DEPRECATED", None),
                     Some(message) => trait_is(
                         "DEPRECATED",
-                        Some(paren_argument(names, &Expr::Literal(Value::str(
-                            message.to_string(),
-                        )))?),
+                        Some(paren_argument(
+                            names,
+                            &Expr::Literal(Value::str(message.to_string())),
+                        )?),
                     ),
                 },
                 AttrTrait::Type => {
@@ -162,7 +166,9 @@ impl AttributeTraits {
                     match kind.as_str() {
                         "is" => match argument {
                             None => trait_is_name_or_type(names, name),
-                            Some(argument) => trait_is(name, Some(trait_argument(names, argument)?)),
+                            Some(argument) => {
+                                trait_is(name, Some(trait_argument(names, argument)?))
+                            }
                         },
                         "does" => Value::rakuast(Box::new(RakuAstNode {
                             origin: Default::default(),
@@ -244,11 +250,12 @@ fn convert_handles_term(names: &NameScope, term: &Expr) -> Result<RakuAstNode, R
 /// ahead of an implicit `WillBuild`, creating the field (after `desigilname`)
 /// when the declaration has no default.
 // Cost: O(f + t), f = fields of `decl`, t = traits.
-pub(super) fn add_traits(names: &NameScope, 
+pub(super) fn add_traits(
+    names: &NameScope,
     decl: &mut RakuAstNode,
     traits: &AttributeTraits,
 ) -> Result<(), RuntimeError> {
-    let mut items = traits.items(names, )?;
+    let mut items = traits.items(names)?;
     if items.is_empty() {
         return Ok(());
     }
@@ -288,7 +295,10 @@ fn string_argument(argument: &Expr) -> Option<String> {
 /// fields and their written order. An implicit `WillBuild` is accepted only
 /// alongside an `initializer`, which carries the same default.
 // Cost: O(t + a), t = traits of the declaration, a = size of their arguments.
-pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<AttributeTraits, RuntimeError> {
+pub(super) fn lower_traits(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<AttributeTraits, RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let mut traits = AttributeTraits::default();
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
@@ -318,7 +328,8 @@ pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<Attr
             }
             // `does ROLE`.
             RakuAstClass::TraitDoes => {
-                let role = super::lower::simple_type_name(names, node, named_child_or_positional(t)?)?;
+                let role =
+                    super::lower::simple_type_name(names, node, named_child_or_positional(t)?)?;
                 traits.unknown_traits.push(("does".to_string(), role, None));
                 traits.order.push(AttrTrait::Custom);
             }
@@ -348,7 +359,8 @@ pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<Attr
 }
 
 /// One `Trait::Is` of an attribute.
-fn lower_trait_is(names: &NameScope, 
+fn lower_trait_is(
+    names: &NameScope,
     node: &RakuAstNode,
     t: &RakuAstNode,
     is_aggregate: bool,

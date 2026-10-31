@@ -16,11 +16,11 @@
 //! renders as a call. A `%(...)` of literal pairs is an [`Expr::Hash`] instead
 //! (see `hash_literal`).
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field, statement_expression};
 use super::lower::{lower_expr, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{ContextKind, Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 fn class_of(kind: ContextKind) -> RakuAstClass {
@@ -33,7 +33,11 @@ fn class_of(kind: ContextKind) -> RakuAstClass {
 
 /// An [`Expr::Contextualizer`] as its `Contextualizer::*` node.
 // Cost: O(n), n = nodes of the contents.
-pub(super) fn convert(names: &NameScope, kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    kind: ContextKind,
+    inner: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     // `$@(...)` / `$%(...)`: the inner contextualizer is the child itself;
     // otherwise the child is a `StatementSequence` of the parenthesized contents.
     let contents = match inner {
@@ -62,7 +66,10 @@ pub(super) fn convert(names: &NameScope, kind: ContextKind, inner: &Expr) -> Res
 /// The `$(EXPR)` of an interpolated string: the parser spells it
 /// `DoStmt(Expr(EXPR))`, raku `Contextualizer::Item(StatementSequence(..))`.
 // Cost: O(n), n = nodes of the contents.
-pub(super) fn convert_segment(names: &NameScope, contents: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_segment(
+    names: &NameScope,
+    contents: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
@@ -76,7 +83,10 @@ pub(super) fn convert_segment(names: &NameScope, contents: &Expr) -> Result<Raku
 /// The inverse of [`convert_segment`]: the contents of a one-expression
 /// `Contextualizer::Item` segment, `None` for any other shape.
 // Cost: O(n), n = nodes of the contents.
-pub(super) fn lower_segment(names: &NameScope, node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower_segment(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
     let target = named_child_or_positional(node)?;
     if target.class != RakuAstClass::StatementSequence {
         return Ok(None);
@@ -95,7 +105,10 @@ pub(super) fn lower_segment(names: &NameScope, node: &RakuAstNode) -> Result<Opt
 /// `$(STMT; STMT; ...)`: the parser's [`crate::parser::item_statements_expr`] as
 /// `Contextualizer::Item(StatementSequence(Statement::*, ...))`.
 // Cost: O(n), n = nodes of the statements.
-pub(super) fn convert_statements(names: &NameScope, stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_statements(
+    names: &NameScope,
+    stmts: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     let fields = super::convert::block_statements(names, stmts)?
         .into_iter()
         .map(|statement| node_field(None, statement))
@@ -125,7 +138,11 @@ fn sequence(statement: Option<RakuAstNode>) -> RakuAstNode {
 /// A `Contextualizer::*` node -> an [`Expr::Contextualizer`]. A `%(...)` of
 /// literal pairs is the [`Expr::Hash`] the parser builds for it instead.
 // Cost: O(n), n = nodes of the contents.
-pub(super) fn lower(names: &NameScope, node: &RakuAstNode, kind: ContextKind) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+    kind: ContextKind,
+) -> Result<Expr, RuntimeError> {
     if kind == ContextKind::Hash
         && let Ok(hash) = super::hash_literal::lower_contextualizer(names, node)
     {
@@ -221,7 +238,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode, kind: ContextKind) ->
 /// An [`Expr::Itemize`] (`$@a`, `$%h`, `$[1, 2]`) as `Contextualizer::Item`
 /// over the term itself, which holds no `StatementSequence`.
 // Cost: O(n), n = nodes of the term.
-pub(super) fn convert_itemize(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_itemize(
+    names: &NameScope,
+    inner: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     if !matches!(
         inner,
         Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BracketArray(..)
@@ -239,7 +259,10 @@ pub(super) fn convert_itemize(names: &NameScope, inner: &Expr) -> Result<RakuAst
 /// `$[1, 2]`) as `Contextualizer::Item` over the composer, which holds no
 /// `StatementSequence`; the parser spells it as an `.item` call.
 // Cost: O(n), n = nodes of the composer.
-pub(super) fn convert_item_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_item_call(
+    names: &NameScope,
+    inner: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
@@ -253,7 +276,10 @@ pub(super) fn convert_item_call(names: &NameScope, inner: &Expr) -> Result<RakuA
 /// rebuild the re-reading contextualizer instead of an explicit `.list` call,
 /// which consumes a `Seq` (#9930).
 // Cost: O(n), n = nodes of the term.
-pub(super) fn convert_list_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_list_call(
+    names: &NameScope,
+    inner: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerList,

@@ -1,14 +1,18 @@
 //! Executable and written `is` traits of modules and packages.
 
-use crate::scope::NameScope;
 use super::convert::unsupported;
 use super::lower::{list_field, named_child};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(a + t), a = constructor arguments, t = traits.
-pub(super) fn construct(names: &NameScope, name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(super) fn construct(
+    names: &NameScope,
+    name: &str,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     let class = match name {
         "RakuAST::Module" => RakuAstClass::Module,
         "RakuAST::Package" => RakuAstClass::Package,
@@ -72,7 +76,8 @@ pub(super) fn construct(names: &NameScope, name: &str, args: &[Value]) -> Option
     })())
 }
 
-pub(super) fn apply(names: &NameScope, 
+pub(super) fn apply(
+    names: &NameScope,
     node: &mut RakuAstNode,
     traits: &[(String, Option<Expr>)],
     body: &[Stmt],
@@ -95,7 +100,10 @@ pub(super) fn has_export(node: &RakuAstNode) -> bool {
     })
 }
 
-pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
     if !node.fields.iter().any(|field| field.name == Some("traits")) {
         return Ok(Vec::new());
     }

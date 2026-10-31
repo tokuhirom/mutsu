@@ -1,17 +1,20 @@
 //! RakuAST's synthesized predicate block for shaped array parameters.
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, name_from_identifier, node_field, plain_infix, statement_expression,
     unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Build Rakudo's `array-shape` predicate block from the parser's dimensions.
 // Cost: O(d), d = number of dimensions and their expression trees.
-pub(super) fn convert(names: &NameScope, pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    pd: &ParamDef,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Some(dimensions) = &pd.shape_constraints else {
         return Ok(None);
     };

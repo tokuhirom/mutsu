@@ -74,7 +74,10 @@ pub(crate) fn round_trip(names: &NameScope, stmts: &[Stmt]) -> Result<Vec<Stmt>,
 /// [`round_trip`] for a unit the caller owns: the origins come off the tree
 /// in place, with no copy of it.
 // Cost: O(n), n = size of the unit.
-pub(crate) fn round_trip_owned(names: &NameScope, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(crate) fn round_trip_owned(
+    names: &NameScope,
+    stmts: Vec<Stmt>,
+) -> Result<Vec<Stmt>, RuntimeError> {
     let mut lowered = if convert_level() {
         let node = super::convert::statement_list(names, &stmts)?;
         super::lower::lower_converted(names, &node)?
@@ -91,10 +94,7 @@ pub(crate) fn round_trip_owned(names: &NameScope, stmts: Vec<Stmt>) -> Result<Ve
 /// [`round_trip_unit`] for an `EVAL` string, whose bare names may be declared
 /// by the scope that called it: `names` holds those names and the operator
 /// routines the calling scope makes visible.
-pub(crate) fn round_trip_eval(
-    stmts: &[Stmt],
-    names: NameScope,
-) -> Result<Vec<Stmt>, RuntimeError> {
+pub(crate) fn round_trip_eval(stmts: &[Stmt], names: NameScope) -> Result<Vec<Stmt>, RuntimeError> {
     round_trip(&names, stmts).map_err(refusal)
 }
 
@@ -147,11 +147,12 @@ mod tests {
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {
-    let names = &crate::scope::NameScope::default();
+        let names = &crate::scope::NameScope::default();
         let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
             crate::value::Value::regex("a".to_owned()),
         ))];
-        let error = round_trip(names, &stmts).expect_err("a regex value without source tree must refuse");
+        let error =
+            round_trip(names, &stmts).expect_err("a regex value without source tree must refuse");
         let reported = refusal(error);
         assert!(reported.message.contains("MUTSU_RAKUAST"));
         assert!(

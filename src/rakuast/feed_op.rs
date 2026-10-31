@@ -10,11 +10,11 @@
 //! `==>` (the source is the inner feed) and right-nested for `<==` (the
 //! source is the inner feed too, but written last).
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field, unsupported as unsupported_expr};
 use super::lower::{list_field, lower_expr, positional_leaf, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(1), apart from the parenthesization wrappers of the operand.
@@ -70,7 +70,8 @@ fn written_operands<'a>(source: &'a Expr, sink: &'a Expr, to_right: bool) -> Vec
 
 /// An [`Expr::Feed`] as its `ApplyListInfix` over a `Feed`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(names: &NameScope, 
+pub(super) fn convert(
+    names: &NameScope,
     source: &Expr,
     sink: &Expr,
     append: bool,

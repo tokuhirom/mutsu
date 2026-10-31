@@ -10,9 +10,9 @@
 //! a `predicate` of words (a `QuotedString`) or, for `<:Nv(1)>`, of a
 //! parenthesised expression.
 
-use crate::scope::NameScope;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn named(name: &'static str, value: Value) -> RakuAstField {
@@ -39,7 +39,10 @@ fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
 
 /// The `Assertion::CharClass` node for a tree assertion.
 // Cost: O(n), n = total number of entries.
-pub(super) fn convert(names: &NameScope, elements: &[CharClassElement]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    elements: &[CharClassElement],
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::RegexAssertionCharClass,
@@ -95,7 +98,10 @@ fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Valu
 
 /// `<Latin>` as a words `QuotedString`, `(1)` as a parenthesised expression.
 // Cost: O(|predicate|).
-fn convert_predicate(names: &NameScope, predicate: &PropertyPredicate) -> Result<Value, RuntimeError> {
+fn convert_predicate(
+    names: &NameScope,
+    predicate: &PropertyPredicate,
+) -> Result<Value, RuntimeError> {
     match predicate {
         PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::convert::word_quote(
             text.trim(),

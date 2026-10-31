@@ -1,11 +1,11 @@
 //! Quoted string conversion and lowering, including ordered format processing.
-use crate::scope::NameScope;
 use super::lower::{
     list_field, lower_block, lower_expr, lower_statement_sequence, named_child_or_positional,
     positional_leaf, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
@@ -13,7 +13,10 @@ const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
 /// Keep the parser's lexical-scope diagnostic while exposing the public
 /// interpolated string tree.
 // Cost: O(n), n = heredoc content size.
-pub(super) fn convert_closed_block_heredoc(names: &NameScope, content: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_closed_block_heredoc(
+    names: &NameScope,
+    content: &str,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut quoted =
         super::convert::convert_expr(names, &crate::parser::interpolate_heredoc_content(content)?)?;
     if quoted.class != RakuAstClass::QuotedString {
@@ -32,7 +35,10 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(n), n = quoted-string expression size.
-pub(super) fn convert_format(names: &NameScope, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_format(
+    names: &NameScope,
+    args: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
         return Err(super::convert::unsupported("format quote arguments"));
     };
@@ -157,8 +163,8 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
             };
             // The first processor was checked above; take only its own list.
             *processors = processors.iter().skip(1).cloned().collect();
-            return Ok(crate::ast::quote_processing::format(lower_contents(names, 
-                &contents,
+            return Ok(crate::ast::quote_processing::format(lower_contents(
+                names, &contents,
             )?));
         }
     }
@@ -177,7 +183,10 @@ fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runtime
     {
         let mut plain = node.clone();
         plain.fields.retain(|f| f.name != Some("processors"));
-        return Ok(super::word_list::lower_words_atom(lower_expr(names, &plain)?, val));
+        return Ok(super::word_list::lower_words_atom(
+            lower_expr(names, &plain)?,
+            val,
+        ));
     }
     if let Some((quotewords, val, content)) = word_quote_content(node)? {
         // `<…>` keeps its own lowering (a lone numeric word is a
@@ -207,7 +216,9 @@ fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runtime
         // the ordinary expression path would build a closure and
         // interpolate its stringification instead of its result.
         if seg.class == RakuAstClass::Block {
-            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(names, seg)?))));
+            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(
+                names, seg,
+            )?))));
             continue;
         }
         // `"a$(EXPR)b"` is the parser's `DoStmt(Expr(EXPR))`.
@@ -223,7 +234,9 @@ fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runtime
             && sequence.class == RakuAstClass::StatementSequence
             && sequence.fields.len() > 1
         {
-            parts.push(Expr::desugar_block(lower_statement_sequence(names, sequence)?));
+            parts.push(Expr::desugar_block(lower_statement_sequence(
+                names, sequence,
+            )?));
             continue;
         }
         parts.push(lower_expr(names, seg)?);

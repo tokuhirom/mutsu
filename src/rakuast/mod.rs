@@ -1764,7 +1764,8 @@ pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> 
 /// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
-pub(crate) fn parameter_param_def(names: &NameScope, 
+pub(crate) fn parameter_param_def(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<crate::ast::ParamDef, RuntimeError> {
     lower::lower_parameter_def(names, node)
@@ -1785,7 +1786,8 @@ pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeErro
 /// The `RakuAST::CompUnit` of the unit being compiled, as `$*CU` answers it:
 /// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub fn compile_time_compunit(names: &NameScope, 
+pub fn compile_time_compunit(
+    names: &NameScope,
     source: &str,
     imported: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
@@ -1850,7 +1852,11 @@ pub fn str_dot_ast_compunit(names: &NameScope, source: &str) -> Result<Value, Ru
 /// An absent or undefined `$slang` (rakudo's `Mu $slang?` default) is the
 /// plain parse. Any other value names the module verbatim — rakudo has no
 /// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
-pub fn str_dot_ast_with_slang(names: &NameScope, source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_with_slang(
+    names: &NameScope,
+    source: &str,
+    slang: Option<&str>,
+) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
         return str_dot_ast(names, source);
     };
@@ -1885,7 +1891,8 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// single-positional-argument constructors such as literals, names, and
 /// return-type traits, plus the supported named-field constructors.
 // Cost: O(n), n = arguments and contained list elements or identifier bytes.
-pub fn construct(names: &NameScope, 
+pub fn construct(
+    names: &NameScope,
     class_name: &str,
     method: &str,
     args: &[Value],
@@ -1902,7 +1909,8 @@ pub fn construct(names: &NameScope,
     construct_values(names, class_name, method, args)
 }
 
-fn construct_values(names: &NameScope, 
+fn construct_values(
+    names: &NameScope,
     class_name: &str,
     method: &str,
     args: &[Value],

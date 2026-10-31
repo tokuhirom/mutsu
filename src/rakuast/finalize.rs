@@ -53,7 +53,10 @@ impl Drop for Executing {
 /// Finalize the spelled compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(names: &NameScope, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn finalize_unit(
+    names: &NameScope,
+    mut stmts: Vec<Stmt>,
+) -> Result<Vec<Stmt>, RuntimeError> {
     let _executing = Executing::enter();
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
@@ -130,7 +133,8 @@ impl Finalize<'_> {
 
     /// A statement the parser's own tree cannot stand for, converted and
     /// lowered on its own.
-    fn convert_statement(&mut self, stmt: &mut Stmt) { let names = self.names;
+    fn convert_statement(&mut self, stmt: &mut Stmt) {
+        let names = self.names;
         let line = self.line;
         let converted = super::convert::convert_stmt(names, stmt).and_then(|node| match node {
             Some(node) => {
@@ -177,7 +181,8 @@ impl VisitMut for Finalize<'_> {
 
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
-    fn visit_expr_mut(&mut self, expr: &mut Expr) { let names = self.names;
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        let names = self.names;
         // An expression the parser's tree cannot stand for (a bareword to
         // classify, a regex with code, ...) is converted and lowered on its own.
         let mut inner = &*expr;
@@ -363,7 +368,7 @@ mod tests {
     /// A unit finalizes to the tree an ordinary parse builds.
     #[test]
     fn finalization_is_the_ordinary_tree() {
-    let names = &crate::scope::NameScope::default();
+        let names = &crate::scope::NameScope::default();
         for source in [
             "say 1 + 2;",
             "my $x = 5; say $x * 2;",
@@ -381,7 +386,7 @@ mod tests {
     /// A regex with code is converted where it stands, not carried.
     #[test]
     fn a_regex_with_code_is_converted_where_it_stands() {
-    let names = &crate::scope::NameScope::default();
+        let names = &crate::scope::NameScope::default();
         let (spelled, _) =
             crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
         let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");

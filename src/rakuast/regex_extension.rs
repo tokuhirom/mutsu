@@ -5,7 +5,6 @@
 //! [`regex_code`](super::regex_code), as a code block does, because there is no
 //! deparser to turn the statement back into the text the matcher reads.
 
-use crate::scope::NameScope;
 use super::convert::{
     block_statements, convert_expr, leaf_field, name_from_identifier, node_field, quoted_string,
     regex_node, unsupported, var_lexical,
@@ -13,11 +12,15 @@ use super::convert::{
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{RegexCode, RegexExtension, RegexNode};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `extension` as its RakuAST node.
 // Cost: O(n), n = size of the construct.
-pub(super) fn convert(names: &NameScope, extension: &RegexExtension) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    extension: &RegexExtension,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(match extension {
         RegexExtension::Lookahead { negated, assertion } => {
             let mut fields = Vec::new();
@@ -205,7 +208,8 @@ pub(super) fn convert(names: &NameScope, extension: &RegexExtension) -> Result<R
             array,
             gaps,
             regex,
-        } => super::regex_variable_alias::convert(names, 
+        } => super::regex_variable_alias::convert(
+            names,
             (name, *sequential, *array),
             gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
             regex,
@@ -242,7 +246,11 @@ fn contextualizer_class(sigil: char) -> Result<RakuAstClass, RuntimeError> {
 
 /// A branching node over `operands`, which are its positional children.
 // Cost: O(n), n = size of the operands.
-fn branches(names: &NameScope, class: RakuAstClass, operands: &[RegexNode]) -> Result<RakuAstNode, RuntimeError> {
+fn branches(
+    names: &NameScope,
+    class: RakuAstClass,
+    operands: &[RegexNode],
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class,
@@ -256,7 +264,10 @@ fn branches(names: &NameScope, class: RakuAstClass, operands: &[RegexNode]) -> R
 /// The node of `class` as a [`RegexNode`], or `None` when it is not one of
 /// these constructs.
 // Cost: O(n), n = size of the construct.
-pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<RegexNode, RuntimeError>> {
     let extension = match node.class {
         RakuAstClass::RegexAssertionLookahead => return lower_lookahead(names, node),
         RakuAstClass::RegexQuote => return lower_quote(node),
@@ -277,7 +288,9 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Rege
             })
         }
         RakuAstClass::RegexAssertionRecurse => Ok(RegexExtension::Recurse),
-        RakuAstClass::RegexConjunction => lower_branches(names, node).map(RegexExtension::Conjunction),
+        RakuAstClass::RegexConjunction => {
+            lower_branches(names, node).map(RegexExtension::Conjunction)
+        }
         RakuAstClass::RegexSequentialConjunction => {
             lower_branches(names, node).map(RegexExtension::SequentialConjunction)
         }
@@ -315,7 +328,10 @@ fn lower_quote(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
     )))
 }
 
-fn lower_backtrack_modified(names: &NameScope, node: &RakuAstNode) -> Result<RegexExtension, RuntimeError> {
+fn lower_backtrack_modified(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<RegexExtension, RuntimeError> {
     let atom = super::lower::named_child(node, "atom")?;
     let backtrack = node
         .fields
@@ -365,7 +381,10 @@ fn lower_words(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
 
 /// `<?name>` / `<!name>` / `<?[x]>`: a lookahead whose assertion is not the
 /// `before` / `after` keyword form, which the tree models on its own.
-fn lower_lookahead(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+fn lower_lookahead(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<RegexNode, RuntimeError>> {
     let assertion = super::lower::named_child(node, "assertion").ok()?;
     let keyword_form = assertion.class == RakuAstClass::RegexAssertionNamedRegexArg
         || assertion.class == RakuAstClass::RegexAssertionInterpolatedVar;
@@ -399,7 +418,10 @@ fn lower_branches(names: &NameScope, node: &RakuAstNode) -> Result<Vec<RegexNode
 
 /// `$(EXPR)` and its siblings: an interpolation whose `var` is a contextualizer
 /// over a statement sequence (any other interpolation is the tree's own node).
-fn lower_contextualized(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+fn lower_contextualized(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<RegexNode, RuntimeError>> {
     let var = super::lower::named_child(node, "var").ok()?;
     let sigil = match var.class {
         RakuAstClass::ContextualizerItem => '$',
@@ -541,7 +563,10 @@ fn lower_alias(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode
 
 /// `<name regex>` is a named assertion with a regex argument. The `before`
 /// and `after` names remain the lookaround forms handled by the core lowerer.
-fn lower_named_regex_arg(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+fn lower_named_regex_arg(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<RegexNode, RuntimeError>> {
     let name = super::lower::named_child(node, "name")
         .and_then(super::lower::lower_regex_subrule_name)
         .ok()?;

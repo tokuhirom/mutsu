@@ -1,10 +1,10 @@
 //! Bounded composition of the parser's type spellings into source nodes.
 
-use crate::scope::NameScope;
 use super::bareword::simple_type_node;
 use super::convert::{is_pseudo_type, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) const MAX_TYPE_DEPTH: usize = 128;
@@ -24,7 +24,10 @@ pub(super) fn build_type_node(names: &NameScope, t: &str) -> Result<RakuAstNode,
 
 /// A declaration's capture type is a `Type::Capture`; other type positions
 /// retain their existing interpretation of a leading `::`.
-pub(super) fn declaration_type_node(names: &NameScope, t: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn declaration_type_node(
+    names: &NameScope,
+    t: &str,
+) -> Result<RakuAstNode, RuntimeError> {
     if let Some(name) = crate::qualified::type_capture_name(t)
         && !name.is_empty()
         && name
@@ -38,7 +41,10 @@ pub(super) fn declaration_type_node(names: &NameScope, t: &str) -> Result<RakuAs
 
 /// A return constraint may pin a numeric value instead of naming a type.
 // Cost: O(n), n = constraint spelling length.
-pub(super) fn return_constraint_node(names: &NameScope, t: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn return_constraint_node(
+    names: &NameScope,
+    t: &str,
+) -> Result<RakuAstNode, RuntimeError> {
     if let Some(value) = crate::parser::numeric_literal_value(t) {
         return super::convert::convert_literal(names, &value);
     }
@@ -91,7 +97,11 @@ pub(super) fn strip_smiley<'a>(t: &'a str, smiley: &str) -> Option<&'a str> {
     t.strip_suffix(smiley).filter(|base| !base.ends_with(':'))
 }
 
-pub(super) fn build_type_node_at(names: &NameScope, t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn build_type_node_at(
+    names: &NameScope,
+    t: &str,
+    depth: usize,
+) -> Result<RakuAstNode, RuntimeError> {
     if depth >= MAX_TYPE_DEPTH {
         return Err(unsupported("type composition exceeds 128 levels"));
     }
@@ -110,7 +120,10 @@ pub(super) fn build_type_node_at(names: &NameScope, t: &str, depth: usize) -> Re
             origin: Default::default(),
             class: RakuAstClass::TypeDefinedness,
             fields: vec![
-                node_field(Some("base-type"), build_type_node_at(names, base, depth + 1)?),
+                node_field(
+                    Some("base-type"),
+                    build_type_node_at(names, base, depth + 1)?,
+                ),
                 RakuAstField {
                     name: Some("definite"),
                     value: RakuAstFieldValue::Node(Value::truth(t.ends_with(":D"))),
@@ -205,14 +218,16 @@ mod tests {
 
     #[test]
     fn type_composition_is_bounded_across_argument_edges() {
-    let names = &crate::scope::NameScope::default();
+        let names = &crate::scope::NameScope::default();
         let nested = format!(
             "{}Int{}",
             "Array[".repeat(MAX_TYPE_DEPTH + 1),
             "]".repeat(MAX_TYPE_DEPTH + 1)
         );
         assert!(build_type_node(names, &nested).is_err());
-        assert!(build_type_node(names, &format!("Int{}", ":D".repeat(MAX_TYPE_DEPTH + 1))).is_err());
+        assert!(
+            build_type_node(names, &format!("Int{}", ":D".repeat(MAX_TYPE_DEPTH + 1))).is_err()
+        );
         assert!(build_type_node(names, "Int:D(Str)").is_ok());
         assert!(build_type_node(names, "Array[Int](Cool)").is_ok());
     }

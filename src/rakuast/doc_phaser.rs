@@ -3,13 +3,13 @@
 //! phaser behind that public statement so lowering can restore `--doc`
 //! execution without running a parse-time probe.
 
-use crate::scope::NameScope;
 use super::convert::{
     convert_stmt, name_from_identifier, node_field, statement_expression, unsupported,
 };
 use super::lower::{child_node, lower_stmt};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 const SOURCE_DOC_PHASER: &str = "source-doc-phaser";

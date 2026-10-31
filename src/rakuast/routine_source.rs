@@ -1,6 +1,5 @@
 //! Routine traits in written order, independently of their execution fields.
 
-use crate::scope::NameScope;
 use super::convert::{blockoid, name_from_identifier, signature};
 use super::convert::{leaf_field, node_field, unsupported};
 use super::lower::{
@@ -11,6 +10,7 @@ use super::type_build::return_constraint_node;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{ParentKind, RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const SOURCE_SIGNATURE_ALTERNATES: &str = "source-signature-alternates";
@@ -21,7 +21,8 @@ pub(super) type SignatureAlternates = Vec<(Vec<String>, Vec<ParamDef>)>;
 /// source parser but have no public Rakudo node shape. Carry their executable
 /// source data without changing the public Sub constructor rendering.
 // Cost: O(p), p = parameters in alternate signatures.
-pub(super) fn mark_legacy_sub_forms(names: &NameScope, 
+pub(super) fn mark_legacy_sub_forms(
+    names: &NameScope,
     node: &mut RakuAstNode,
     alternates: &[(Vec<String>, Vec<ParamDef>)],
     supersede: bool,
@@ -29,7 +30,9 @@ pub(super) fn mark_legacy_sub_forms(names: &NameScope,
     if !alternates.is_empty() {
         let signatures = alternates
             .iter()
-            .map(|(_, defs)| signature(names, defs, true, None).map(|sig| Value::rakuast(Box::new(sig))))
+            .map(|(_, defs)| {
+                signature(names, defs, true, None).map(|sig| Value::rakuast(Box::new(sig)))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         node.fields.push(RakuAstField {
             name: Some(SOURCE_SIGNATURE_ALTERNATES),
@@ -50,7 +53,10 @@ pub(super) fn package_supersede_field() -> RakuAstField {
 }
 
 // Cost: O(p), p = parameters in alternate signatures.
-pub(super) fn lower_alternates(names: &NameScope, node: &RakuAstNode) -> Result<SignatureAlternates, RuntimeError> {
+pub(super) fn lower_alternates(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<SignatureAlternates, RuntimeError> {
     let Some(field) = node
         .fields
         .iter()
@@ -94,7 +100,10 @@ pub(super) fn is_legacy_source_field(field: &RakuAstField) -> bool {
 
 /// The `Trait::*` node for one trait the source wrote.
 // Cost: O(k + a), k = length of the trait's spelling, a = size of its argument.
-pub(super) fn trait_node(names: &NameScope, item: &RoutineTrait) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn trait_node(
+    names: &NameScope,
+    item: &RoutineTrait,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(match item {
         RoutineTrait::Is { name, argument } => {
             let argument = match argument {
@@ -103,7 +112,8 @@ pub(super) fn trait_node(names: &NameScope, item: &RoutineTrait) -> Result<RakuA
                 Some(TraitArgument::ExportTags(tags)) => {
                     super::routine_traits::explicit_export_argument(tags)
                 }
-                Some(TraitArgument::Operator(reference)) => Some(super::attribute::paren_argument(names, 
+                Some(TraitArgument::Operator(reference)) => Some(super::attribute::paren_argument(
+                    names,
                     &Expr::CodeVar(crate::op_prec::trait_target_name(reference)),
                 )?),
                 Some(TraitArgument::Parentheses(expr)) => {
@@ -186,7 +196,11 @@ pub(super) fn header_traits(names: &NameScope, body: &[Stmt]) -> Result<Vec<Valu
 }
 
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
-pub(super) fn apply(names: &NameScope, node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, RuntimeError> {
+pub(super) fn apply(
+    names: &NameScope,
+    node: &mut RakuAstNode,
+    body: &[Stmt],
+) -> Result<bool, RuntimeError> {
     let Some(traits) = crate::ast::routine_trait::get(body) else {
         return Ok(false);
     };
@@ -264,7 +278,11 @@ pub(super) fn handle_specs(body: &[Stmt]) -> Option<Vec<crate::ast::HandleSpec>>
 
 /// Retain a constructed node's traits when lowering it to the execution AST.
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
-pub(super) fn retain(names: &NameScope, node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
+pub(super) fn retain(
+    names: &NameScope,
+    node: &RakuAstNode,
+    body: &mut Vec<Stmt>,
+) -> Result<(), RuntimeError> {
     if !node.fields.iter().any(|field| field.name == Some("traits")) {
         return Ok(());
     }
@@ -275,16 +293,18 @@ pub(super) fn retain(names: &NameScope, node: &RakuAstNode, body: &mut Vec<Stmt>
         };
         let source = match item.class {
             RakuAstClass::TraitReturns | RakuAstClass::TraitOf => {
-                let ty = super::lower::simple_type_name(names, node, named_child_or_positional(item)?)?;
+                let ty =
+                    super::lower::simple_type_name(names, node, named_child_or_positional(item)?)?;
                 if item.class == RakuAstClass::TraitReturns {
                     RoutineTrait::Returns(ty)
                 } else {
                     RoutineTrait::Of(ty)
                 }
             }
-            RakuAstClass::TraitHandles => {
-                RoutineTrait::Handles(super::lower::lower_expr(names, named_child_or_positional(item)?)?)
-            }
+            RakuAstClass::TraitHandles => RoutineTrait::Handles(super::lower::lower_expr(
+                names,
+                named_child_or_positional(item)?,
+            )?),
             RakuAstClass::TraitIs => {
                 if named_child(item, "type").is_ok() {
                     let (name, argument) = super::routine_traits::lower_custom(names, node, item)?
@@ -341,7 +361,8 @@ pub(super) fn retain(names: &NameScope, node: &RakuAstNode, body: &mut Vec<Stmt>
 /// the signature's `-->`; a `returns` / `of` trait the source wrote replaces
 /// that when [`apply`] puts the written traits on the node.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn routine_node(names: &NameScope, 
+pub(super) fn routine_node(
+    names: &NameScope,
     class: RakuAstClass,
     name: &str,
     param_defs: &[ParamDef],

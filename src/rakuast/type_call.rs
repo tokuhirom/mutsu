@@ -9,11 +9,11 @@
 //! marker on its `Call::Term`, which the lowering reads back; a hand-built
 //! `Call::Term` has none and stays a call on the type object.
 
-use crate::scope::NameScope;
 use super::convert::{arg_list, node_field};
 use super::lower::arg_exprs;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// The hidden marker field's name.
@@ -28,7 +28,11 @@ pub(super) fn is_marker(field: &RakuAstField) -> bool {
 /// `Num(EXPR)` -> the call on the type term; `None` when `name` is not a type
 /// name. `args` is absent for `Int()`.
 // Cost: O(k + n), k = length of `name`, n = size of the arguments.
-pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    name: &str,
+    args: &[Expr],
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     if !name.starts_with(char::is_uppercase) {
         return Ok(None);
     }
@@ -65,7 +69,11 @@ pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Result<Op
 /// The coercion call `Type(EXPR)` a marked `Call::Term` on `operand` spells;
 /// `None` for an unmarked one or an operand that is not a type name.
 // Cost: O(n), n = size of the arguments.
-pub(super) fn lower(names: &NameScope, operand: &Expr, postfix: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    operand: &Expr,
+    postfix: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
     if !postfix.fields.iter().any(is_marker) {
         return Ok(None);
     }

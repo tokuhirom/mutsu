@@ -1,9 +1,9 @@
 //! Parenthesized `has` declarations as one source RakuAST signature.
 
-use crate::scope::NameScope;
 use super::convert::{build_type_node, leaf_field, node_field, unsupported};
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const ATTRIBUTES: &str = "attribute-group-members";
@@ -12,7 +12,10 @@ const ATTRIBUTES: &str = "attribute-group-members";
 /// declarations as hidden semantic metadata, since traits on a grouped `has`
 /// are not printed in Rakudo's constructor-form gist.
 // Cost: O(a), a = total size of the attribute declarations and their expressions.
-pub(super) fn to_signature(names: &NameScope, attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn to_signature(
+    names: &NameScope,
+    attributes: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     let mut parameters = Vec::with_capacity(attributes.len());
     let mut members = Vec::with_capacity(attributes.len());
     let mut common_type: Option<&str> = None;
@@ -97,7 +100,10 @@ pub(super) fn to_signature(names: &NameScope, attributes: &[Stmt]) -> Result<Rak
 /// declarations parsed from that list. Preserve those declarations as hidden
 /// model metadata so evaluating the RakuAST still installs them.
 // Cost: O(a), a = total size of the declarations and expressions in the colon argument list.
-pub(super) fn convert_colon(names: &NameScope, attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_colon(
+    names: &NameScope,
+    attributes: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     let Some(visible) = attributes.last() else {
         return Err(unsupported("empty attribute colon argument list"));
     };

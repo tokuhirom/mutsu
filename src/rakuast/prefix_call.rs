@@ -16,11 +16,11 @@
 //! (raku keeps the bare statement); the parser does not record which was
 //! written.
 
-use crate::scope::NameScope;
 use super::convert::{block_node, convert_expr, node_field, statement_expression};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, make_anon_sub};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 fn prefix_class(name: &str) -> Option<RakuAstClass> {
@@ -35,7 +35,11 @@ fn prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a call named `name` with `args` spells, or `None` for
 /// any other call.
 // Cost: O(n), n = size of the argument.
-pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn convert(
+    names: &NameScope,
+    name: &str,
+    args: &[Expr],
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     let class = prefix_class(name)?;
     let [arg] = args else {
         return None;
@@ -124,7 +128,8 @@ fn method_prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a `sugar` method call named `name` on `target` spells,
 /// or `None` for any other call.
 // Cost: O(n), n = size of the operand.
-pub(super) fn convert_method(names: &NameScope, 
+pub(super) fn convert_method(
+    names: &NameScope,
     name: &str,
     target: &Expr,
 ) -> Option<Result<RakuAstNode, RuntimeError>> {

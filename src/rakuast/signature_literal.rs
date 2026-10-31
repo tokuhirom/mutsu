@@ -1,11 +1,11 @@
 //! Literal postconstraints in a declaring signature. The generated `where`
 //! refers to the parameter's value through Term::Declaration, as Rakudo does.
 
-use crate::scope::NameScope;
 use super::convert::{build_type_node, leaf_field, name_from_identifier, node_field, unsupported};
 use super::lower::named_child;
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SignatureVar};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 fn node(class: C, fields: Vec<RakuAstField>) -> RakuAstNode {

@@ -6,17 +6,18 @@
 //! it would silently change callback checking and multi dispatch. The parser
 //! already distinguishes the two with `ParamDef::sub_signature`.
 
-use crate::scope::NameScope;
 use super::convert::{node_field, signature};
 use super::lower::{lower_signature_parameters, named_child};
 use super::{RakuAstField, RakuAstNode};
 use crate::ast::ParamDef;
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 const CONSTRAINT: &str = "code-signature";
 
 // Cost: O(s), s = size of the callable signature.
-pub(super) fn attach_constraint(names: &NameScope, 
+pub(super) fn attach_constraint(
+    names: &NameScope,
     node: &mut RakuAstNode,
     def: &ParamDef,
     type_setting: bool,
@@ -34,7 +35,10 @@ pub(super) fn attach_constraint(names: &NameScope,
 
 /// Lower a pointy block without discarding its binding or return constraints.
 // Cost: O(n), n = size of the block and signature.
-pub(super) fn lower_pointy(names: &NameScope, node: &RakuAstNode) -> Result<crate::ast::Expr, RuntimeError> {
+pub(super) fn lower_pointy(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<crate::ast::Expr, RuntimeError> {
     use super::lower::{lower_block, signature_positional_params};
     use crate::ast::Expr;
     let (params, mut param_defs) = signature_positional_params(names, node)?;
@@ -47,7 +51,8 @@ pub(super) fn lower_pointy(names: &NameScope, node: &RakuAstNode) -> Result<crat
                 .iter()
                 .any(|field| field.name == Some("returns")) =>
         {
-            Some(super::type_lower::return_constraint(names, 
+            Some(super::type_lower::return_constraint(
+                names,
                 node,
                 named_child(signature, "returns")?,
             )?)
@@ -120,7 +125,11 @@ pub(super) fn is_metadata(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(s), s = size of the callable signature.
-pub(super) fn lower_constraint(names: &NameScope, node: &RakuAstNode, def: &mut ParamDef) -> Result<(), RuntimeError> {
+pub(super) fn lower_constraint(
+    names: &NameScope,
+    node: &RakuAstNode,
+    def: &mut ParamDef,
+) -> Result<(), RuntimeError> {
     let constraint = if node
         .fields
         .iter()
@@ -139,7 +148,8 @@ pub(super) fn lower_constraint(names: &NameScope, node: &RakuAstNode, def: &mut 
             .iter()
             .any(|field| field.name == Some("returns"))
         {
-            Some(super::type_lower::return_constraint(names, 
+            Some(super::type_lower::return_constraint(
+                names,
                 node,
                 named_child(signature, "returns")?,
             )?)

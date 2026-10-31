@@ -1,6 +1,5 @@
 //! Attribute declarations retain value types and keyed hash shapes independently.
 
-use crate::scope::NameScope;
 use super::convert::{
     Initializer, convert_expr, node_field, statement_expression, unsupported as unsupported_source,
     var_declaration,
@@ -11,6 +10,7 @@ use super::lower::{
 };
 use super::{RakuAstClass, RakuAstNode, attribute};
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
 pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -91,7 +91,8 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
     } else {
         format!("{}{}", sigil, name.resolve())
     };
-    let mut decl = var_declaration(names, 
+    let mut decl = var_declaration(
+        names,
         &full_name,
         explicit_default.map(|value| {
             if *default_is_bind {
@@ -117,7 +118,8 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
             super::keyed_hash::insert_shape(names, &mut decl, key)?;
         }
     }
-    attribute::add_traits(names, 
+    attribute::add_traits(
+        names,
         &mut decl,
         &attribute::AttributeTraits {
             order: trait_order.clone(),

@@ -3,10 +3,10 @@
 //! spells as a declaration, an in-place mixin and the initializer
 //! ([`crate::ast::var_does`]).
 
-use crate::scope::NameScope;
 use super::lower::{lower_expr, named_child_or_positional, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// A declaration node without its `Trait::Does` entries, and the role types
@@ -60,7 +60,8 @@ pub(super) fn split(
 /// The parser's expansion of `declaration` (lowered without its role) mixed
 /// with `roles`.
 // Cost: O(n), n = size of the declaration and the role.
-pub(super) fn lower_expansion(names: &NameScope, 
+pub(super) fn lower_expansion(
+    names: &NameScope,
     node: &RakuAstNode,
     declaration: Stmt,
     roles: &[RakuAstNode],
