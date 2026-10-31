@@ -468,8 +468,13 @@ impl Interpreter {
     /// variable declared `int` / `num` / `str` ranks as native.
     // Cost: O(1) plus one variable-type lookup for a varref.
     fn unwrap_arg_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
-        let (mut arg, var_type) = self.unwrap_varref_for_dispatch(value);
+        let (mut arg, mut var_type) = self.unwrap_varref_for_dispatch(value);
         if arg.is_container_ref() {
+            // A native cell ranks as the native variable it is the container
+            // of (ADR-15309).
+            if var_type.is_none() {
+                var_type = arg.native_container_type();
+            }
             arg = arg.deref_container();
         }
         (arg, var_type)

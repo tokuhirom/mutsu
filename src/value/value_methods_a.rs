@@ -1372,6 +1372,23 @@ impl Value {
         }
     }
 
+    /// The native `of`-type of the container this value is (`byte` for a
+    /// `my byte` variable's cell), `None` for any other value or a cell that is
+    /// not native. The multi dispatcher reads it for a container argument
+    /// (ADR-15309).
+    // Cost: O(1) for a non-native cell (one atomic load); one lock and clone
+    // for a native one.
+    pub(crate) fn native_container_type(&self) -> Option<String> {
+        // Tag probe first: `view()` on a lazy Match would materialize it.
+        if !self.is_container_ref() {
+            return None;
+        }
+        match self.view() {
+            ValueView::ContainerRef(cell) => cell.native_type_name(),
+            _ => None,
+        }
+    }
+
     /// Tag probe (never decodes `view()`): this runs on every `GetLocal`, and
     /// a `view()` on a lazy Match would materialize it just to see it is not
     /// a `ContainerRef`.
