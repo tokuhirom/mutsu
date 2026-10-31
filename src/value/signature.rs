@@ -6,7 +6,60 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueMap;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// Compiles a synthesized closure body once per key (`runtime::synth_closure`
+/// installs it); the value layer cannot name the compiler.
+pub(crate) type SynthCompile = fn(
+    &str,
+    &[String],
+    &[ParamDef],
+    &[Stmt],
+) -> (
+    Arc<crate::opcode::CompiledCode>,
+    Arc<crate::opcode::CompiledFns>,
+);
+
+static SYNTH_COMPILE: OnceLock<SynthCompile> = OnceLock::new();
+
+/// Install the synthesized-closure compiler; the first call wins.
+// Cost: O(1).
+pub(crate) fn install_synth_compile(compile: SynthCompile) {
+    let _ = SYNTH_COMPILE.set(compile);
+}
+
+/// A zero-parameter code object running `body`: the shared compiled chunk for
+/// that text once the compiler is installed, else an AST body.
+// Cost: O(b) for the text key, b = size of the body; the compile happens once
+// per distinct text.
+fn synthesized_thunk(name: &str, body: Vec<Stmt>, is_rw: bool) -> Value {
+    let Some(compile) = SYNTH_COMPILE.get() else {
+        return Value::make_sub(
+            Symbol::intern(""),
+            Symbol::intern(name),
+            Vec::new(),
+            Vec::new(),
+            body,
+            is_rw,
+            crate::env::Env::new(),
+        );
+    };
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{body:?}{is_rw}").hash(&mut hasher);
+        format!("signature-thunk:{:x}", hasher.finish())
+    };
+    let chunk = compile(&key, &[], &[], &body);
+    Value::make_sub_compiled(
+        Symbol::intern(name),
+        Vec::<String>::new(),
+        Vec::<ParamDef>::new(),
+        body,
+        crate::env::Env::new(),
+        chunk,
+    )
+}
 
 pub(crate) use super::signature_smartmatch::{signature_smartmatch, signature_smartmatch_with};
 
@@ -1111,15 +1164,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
     // (rakudo), not a missing method — `with $param.default` must still work.
     let default_val = if let Some(ref default_expr) = p.default_expr {
         let body = vec![Stmt::Expr(*default_expr.clone())];
-        Value::make_sub(
-            Symbol::intern(""),
-            Symbol::intern("<default>"),
-            Vec::new(),
-            Vec::new(),
-            body,
-            false,
-            crate::env::Env::new(),
-        )
+        synthesized_thunk("<default>", body, false)
     } else {
         Value::Package(Symbol::intern("Code"))
     };
@@ -1676,15 +1721,7 @@ fn where_expr_to_value(expr: &Expr) -> Value {
         Expr::AnonSub { body, is_rw, .. } => {
             // Block constraint: { $_ % 2 == 0 }
             // Create a Sub with no explicit params — $_ is handled implicitly
-            Value::make_sub(
-                Symbol::intern(""),
-                Symbol::intern("<anon>"),
-                Vec::new(),
-                Vec::new(),
-                body.clone(),
-                *is_rw,
-                crate::env::Env::new(),
-            )
+            synthesized_thunk("<anon>", body.clone(), *is_rw)
         }
         Expr::BareWord(name) => {
             // Type constraint like `Int`, `Str`, etc.
@@ -1703,15 +1740,7 @@ fn where_expr_to_value(expr: &Expr) -> Value {
                 expr.clone()
             };
             let body = vec![Stmt::Expr(body)];
-            Value::make_sub(
-                Symbol::intern(""),
-                Symbol::intern("<constraints>"),
-                Vec::new(),
-                Vec::new(),
-                body,
-                false,
-                crate::env::Env::new(),
-            )
+            synthesized_thunk("<constraints>", body, false)
         }
     }
 }

@@ -39,3 +39,10 @@ pub(crate) fn synthesized_closure_code(
     SYNTH_CODE.with(|c| c.borrow_mut().insert(key.to_string(), chunk.clone()));
     chunk
 }
+
+/// Hand the value layer the compiler for the closures it synthesizes
+/// (`Parameter.default`, `.constraints`).
+// Cost: O(1).
+pub(crate) fn install_value_layer_compiler() {
+    crate::value::signature::install_synth_compile(synthesized_closure_code);
+}

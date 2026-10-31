@@ -3043,6 +3043,7 @@ impl Interpreter {
     }
 
     pub fn new() -> Self {
+        crate::runtime::install_value_layer_compiler();
         // Every thread that runs an interpreter is a GC mutator: register it
         // before this constructor's first `Gc` write and before the safepoint
         // below, which may itself collect (#11714).
