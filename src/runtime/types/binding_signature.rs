@@ -3794,6 +3794,15 @@ impl Interpreter {
                         } else if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
+                            if let Some(crate::value::VarRefDeclared::Resolved(Some(declared))) =
+                                raw_arg.varref_declared()
+                            {
+                                self.alias_param_declared_type(
+                                    &storage_name,
+                                    &resolved_source,
+                                    &declared,
+                                );
+                            }
                             value = inner;
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(resolved_source));

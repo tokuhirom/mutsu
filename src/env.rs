@@ -2761,6 +2761,17 @@ impl Env {
                     cur = outer;
                     continue;
                 }
+                // A routine's record is the variable's own, and the variable is
+                // not reached through the frames that called it (ADR-13757
+                // step 4): a caller's `my Int @x` says nothing about this
+                // code's `@x`. A sigilless alias parameter carries its
+                // source's record under its own name (the binder writes it,
+                // `alias_param_declared_type`). A frame with no outer of its
+                // own is a block or closure running inside the frame below it,
+                // whose records are its scope, so those keep the walk.
+                if follow.is_some() && cur.has_static_outer() {
+                    return found;
+                }
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
@@ -2768,6 +2779,16 @@ impl Env {
             }
         }
         cur.base_get(key).or(found)
+    }
+
+    /// Whether this frame root has a lexical outer of its own (a static link
+    /// or the program scope) that its caller frames are not part of. A frame
+    /// without one is a closure or block whose lexical outer IS the frame that
+    /// ran it, so the frames below it are its scope, not unrelated callers.
+    // Cost: O(1).
+    #[inline]
+    fn has_static_outer(&self) -> bool {
+        self.outer_is_unit || self.inner.static_link().is_some()
     }
 
     #[inline]
