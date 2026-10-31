@@ -932,6 +932,7 @@ impl RakuAstClass {
         matches!(
             self,
             RakuAstClass::Assignment
+                | RakuAstClass::Signature
                 | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::DottyInfixCall
@@ -2070,10 +2071,13 @@ fn construct_values(
         }];
         if let Some(arg_list) = named_arg(args, "args") {
             require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
-            fields.push(RakuAstField {
-                name: Some("args"),
-                value: RakuAstFieldValue::Node(arg_list),
-            });
+            // An empty `ArgList` is the default; rakudo's `.raku` leaves it out.
+            if !named_ctor::is_empty_arg_list(&arg_list) {
+                fields.push(RakuAstField {
+                    name: Some("args"),
+                    value: RakuAstFieldValue::Node(arg_list),
+                });
+            }
         }
         // `$x.?m` / `$x.+m` / `$x.*m`: a method call's dispatcher.
         if class == RakuAstClass::CallMethod
@@ -3039,6 +3043,53 @@ fn construct_values(
             origin: Default::default(),
             class,
             fields,
+        }))));
+    }
+    // `Slurpy::Flattened.new`, `Backtrack::Greedy.new`, ...: a bare marker class
+    // whose constructor answers the type object itself (rakudo: `.new === $type`).
+    if method == "new"
+        && let Some(class) = class_from_name(class_name)
+        && class.renders_bare()
+    {
+        if !args.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "{class_name}.new expects no arguments"
+            )));
+        }
+        return Ok(Some(slurpy_marker_value(class)));
+    }
+    // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
+    // from a simple (single identifier) name node.
+    if class_name == "RakuAST::Term::Enum" && method == "new" {
+        let identifier = match args {
+            [name] => match name.view() {
+                ValueView::RakuAst(node) if node.class == RakuAstClass::Name => {
+                    match node.fields.as_slice() {
+                        [
+                            RakuAstField {
+                                name: None,
+                                value: RakuAstFieldValue::Node(id),
+                            },
+                        ] if id.as_str().is_some() => Some(id.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(identifier) = identifier else {
+            return Err(RuntimeError::new(
+                "RakuAST::Term::Enum.new expects one simple RakuAST::Name",
+            ));
+        };
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TermEnum,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(identifier),
+            }],
         }))));
     }
     if let Some(class) = zero_positional_class(class_name, method) {
