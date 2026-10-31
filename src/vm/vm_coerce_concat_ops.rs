@@ -466,6 +466,8 @@ impl Interpreter {
         } else {
             v
         };
+        // ...and so does one inside a rendered `Pair`/`Hash` (#15772).
+        let v = self.fetch_nested_proxies_for_str(v)?;
         // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
         if let Some(r) = self.user_find_method_stringify(&v, "Stringy") {
             return r;

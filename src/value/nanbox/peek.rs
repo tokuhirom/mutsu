@@ -984,6 +984,17 @@ impl NanBox {
         )
     }
 
+    /// Whether this is a `Pair` or a plain `Hash`, the aggregates whose
+    /// element containers a string context renders but that
+    /// `may_hide_a_stringifiable_list` does not cover. A pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_pair_or_hash(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::Pair | Kind::ValuePair | Kind::HashPlain | Kind::HashItemized)
+        )
+    }
+
     /// The `MatchNode` pointee if this is a lazy `Match`. The non-forcing
     /// probe behind the seam accessors' fast paths.
     #[inline]

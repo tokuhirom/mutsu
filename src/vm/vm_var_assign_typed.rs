@@ -741,6 +741,7 @@ impl Interpreter {
             } else {
                 v
             };
+            let v = self.fetch_nested_proxies_for_str(v)?;
             // A container is transparent to interpolation: `"{ $x }"` renders
             // what it holds. Without this the user-`Str` dispatch below never
             // saw the `Instance` inside a `ContainerRef` and rendered the pure
