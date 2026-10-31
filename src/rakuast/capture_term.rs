@@ -14,7 +14,7 @@ use crate::value::RuntimeError;
 // Cost: O(n), n = nodes of the items.
 pub(super) fn convert(items: &[Expr], parenthesized: bool) -> Result<RakuAstNode, RuntimeError> {
     let source = match items {
-        [item] if !parenthesized => convert_expr(scope, item)?,
+        [item] if !parenthesized => convert_expr(item)?,
         _ => arg_list(items)?,
     };
     Ok(RakuAstNode {

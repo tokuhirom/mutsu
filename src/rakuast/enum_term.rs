@@ -69,7 +69,7 @@ pub(super) fn enum_term_node(
 
 /// A computed body is the parenthesized term itself.
 fn computed_term(body: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let node = convert_expr(scope, body)?;
+    let node = convert_expr(body)?;
     if node.class == RakuAstClass::CircumfixParentheses {
         return Ok(node);
     }
@@ -120,7 +120,7 @@ fn word_term(
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(name.clone())),
-                node_field(Some("value"), convert_expr(scope, value)?),
+                node_field(Some("value"), convert_expr(value)?),
             ],
         };
         segments.push(Value::rakuast(Box::new(RakuAstNode {
@@ -179,7 +179,7 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
         .iter()
         .map(|(name, value)| {
             let value = match value {
-                Some(value) => convert_expr(scope, value)?,
+                Some(value) => convert_expr(value)?,
                 // A bare `'name'` element: the parser keeps no value for it.
                 None => {
                     return Ok(Value::rakuast(Box::new(quoted_string(Value::str(

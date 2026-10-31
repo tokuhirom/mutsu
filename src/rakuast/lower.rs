@@ -29,7 +29,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// Lower a top-level RakuAST node to a statement list. A bare expression node
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
-pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+pub fn lower(names: &crate::scope::NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let normalized = super::subclass::normalize_for_lower(node, 0)?;
     lower_normalized(normalized.as_ref().unwrap_or(node))
 }
@@ -4297,7 +4297,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         return meta;
     }
     // `$a minmax $b`, `$a foo $b`: the parser's `InfixFunc` call of the operator.
-    if let Some(call) = super::infix_func::lower(scope, node) {
+    if let Some(call) = super::infix_func::lower(node) {
         return call;
     }
     // `1 ==> foo()`: the parser's deferred feed node.

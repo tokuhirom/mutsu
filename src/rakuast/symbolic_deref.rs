@@ -16,7 +16,6 @@
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
 //! assignment, is `Expr::IndirectTypeLookup`, handled in `convert.rs`).
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
@@ -25,11 +24,11 @@ use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
-pub(super) fn indirect_name(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(scope, expr)?)],
+        fields: vec![node_field(None, convert_expr(expr)?)],
     };
     Ok(name_parts::name_from_parts(vec![
         name_parts::leading_empty(),
@@ -52,7 +51,7 @@ pub(super) fn convert(sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
 
 /// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
 // Cost: O(n), n = nodes of the package expression plus the static name.
-pub(super) fn convert_indirect_code(scope: &NameScope, 
+pub(super) fn convert_indirect_code(
     package: &Expr,
     name: &str,
     caller: bool,
@@ -66,7 +65,7 @@ pub(super) fn convert_indirect_code(scope: &NameScope,
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(scope, package)?)],
+        fields: vec![node_field(None, convert_expr(package)?)],
     })));
     parts.push(name_parts::simple_part(name));
     Ok(RakuAstNode {
@@ -213,7 +212,7 @@ fn is_lexical_pseudo_package(segment: &str) -> bool {
 /// `MY::(EXPR)` / `GLOBAL::(EXPR)`: the package's parts, then the key as a
 /// `Name::Part::Expression`.
 // Cost: O(n), n = nodes of the key, plus the package's segments.
-pub(super) fn convert_package_indirect(scope: &NameScope, 
+pub(super) fn convert_package_indirect(
     package: &str,
     key: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -223,7 +222,7 @@ pub(super) fn convert_package_indirect(scope: &NameScope,
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(scope, key)?)],
+        fields: vec![node_field(None, convert_expr(key)?)],
     })));
     let name = name_parts::name_from_parts(parts);
     let lexical = name_parts::identifier_segments(package)

@@ -4,7 +4,6 @@
 //! the statement's own origin is added by the statement list, as for every
 //! statement.
 
-use crate::scope::NameScope;
 use super::convert::{
     block_node, convert_expr, label_fields, loop_setup_node, node_field, pointy_block,
     signature_block_node, statement_expression, topic_block_node,
@@ -19,14 +18,14 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
 // Cost: O(n), n = size of the construct.
-pub(super) fn parsed_node(scope: &NameScope, node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(match node {
         ParsedStmt::Conditional(c) => conditional_node(c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::StatementGiven,
             fields: vec![
-                node_field(Some("source"), convert_expr(scope, topic)?),
+                node_field(Some("source"), convert_expr(topic)?),
                 node_field(Some("body"), view_block(block, BlockKind::Topic)?),
             ],
         },
@@ -34,7 +33,7 @@ pub(super) fn parsed_node(scope: &NameScope, node: &ParsedStmt) -> Result<RakuAs
             origin: Default::default(),
             class: RakuAstClass::StatementWhen,
             fields: vec![
-                node_field(Some("condition"), convert_expr(scope, condition)?),
+                node_field(Some("condition"), convert_expr(condition)?),
                 node_field(Some("body"), view_block(block, BlockKind::Signature)?),
             ],
         },
@@ -48,7 +47,7 @@ pub(super) fn parsed_node(scope: &NameScope, node: &ParsedStmt) -> Result<RakuAs
         },
         ParsedStmt::WhileLoop(w) => {
             let mut fields = label_fields(&w.label);
-            fields.push(node_field(Some("condition"), convert_expr(scope, &w.condition)?));
+            fields.push(node_field(Some("condition"), convert_expr(&w.condition)?));
             fields.push(node_field(
                 Some("body"),
                 view_block(&w.block, BlockKind::Signature)?,
@@ -246,7 +245,7 @@ fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
 // Cost: O(n), n = size of the target and source.
-fn assignment_node(scope: &NameScope, a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
+fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
@@ -267,7 +266,7 @@ fn assignment_node(scope: &NameScope, a: &crate::ast::parsed::Assign) -> Result<
                     },
                 },
             ),
-            node_field(Some("right"), convert_expr(scope, &a.source)?),
+            node_field(Some("right"), convert_expr(&a.source)?),
         ],
     })
 }
@@ -276,7 +275,7 @@ fn assignment_node(scope: &NameScope, a: &crate::ast::parsed::Assign) -> Result<
 /// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
 /// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
 // Cost: O(n + d), n = size of the target and source, d = bracket depth.
-fn compound_assignment_node(scope: &NameScope, 
+fn compound_assignment_node(
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
     if a.meta == CompoundMeta::Dotty {
@@ -292,7 +291,7 @@ fn compound_assignment_node(scope: &NameScope,
             kind,
             depth,
             target_node(&a.target)?,
-            convert_expr(scope, &a.source)?,
+            convert_expr(&a.source)?,
         );
     }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
@@ -441,24 +440,24 @@ pub(super) fn with_compound_meta(
 /// double-underscore name (a user's `$__c`, or an anonymous `$`'s minted name)
 /// that an expression read refuses as an internal marker.
 // Cost: O(n), n = size of the target.
-fn target_node(scope: &NameScope, target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
+fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, name) = match target {
         crate::ast::Expr::Var(name) => ("$", name),
         crate::ast::Expr::ArrayVar(name) => ("@", name),
         crate::ast::Expr::HashVar(name) => ("%", name),
-        _ => return convert_expr(scope, target),
+        _ => return convert_expr(target),
     };
     if name.starts_with("__") {
         return Ok(super::convert::var_lexical(sigil, name));
     }
-    convert_expr(scope, target)
+    convert_expr(target)
 }
 
 /// The statement as written, with its modifiers as its `condition-modifier`
 /// and `loop-modifier`, and the positions the parser recorded for the
 /// modified expression and each modifier.
 // Cost: O(n), n = size of the statement and its modifiers' operands.
-fn modified_node(scope: &NameScope, m: &Modified) -> Result<RakuAstNode, RuntimeError> {
+fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
     let mut node = super::convert::convert_stmt(&m.stmt)?
         .ok_or_else(|| super::convert::unsupported("empty modified statement"))?;
     if m.body.is_some()
@@ -479,7 +478,7 @@ fn modified_node(scope: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
-            fields: vec![node_field(None, convert_expr(scope, &modifier.expr)?)],
+            fields: vec![node_field(None, convert_expr(&modifier.expr)?)],
         };
         if modifier.span.is_some() {
             super::origin::set_span(&mut modifier_node, modifier.span);
@@ -513,17 +512,17 @@ fn modifier_class(kind: ModifierKind) -> RakuAstClass {
 /// `Statement::Loop` (C-style or bare) or `Statement::Loop::RepeatWhile` /
 /// `::RepeatUntil`.
 // Cost: O(n), n = size of the loop.
-fn loop_node(scope: &NameScope, l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
+fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = label_fields(&l.label);
     if l.kind == LoopKind::Loop {
         if let Some(init) = l.init.as_deref() {
             fields.push(node_field(Some("setup"), loop_setup_node(init)?));
         }
         if let Some(cond) = &l.condition {
-            fields.push(node_field(Some("condition"), convert_expr(scope, cond)?));
+            fields.push(node_field(Some("condition"), convert_expr(cond)?));
         }
         if let Some(step) = &l.step {
-            fields.push(node_field(Some("increment"), convert_expr(scope, step)?));
+            fields.push(node_field(Some("increment"), convert_expr(step)?));
         }
         fields.push(node_field(
             Some("body"),
@@ -540,7 +539,7 @@ fn loop_node(scope: &NameScope, l: &LoopStmt) -> Result<RakuAstNode, RuntimeErro
         view_block(&l.block, BlockKind::Signature)?,
     ));
     if let Some(cond) = &l.condition {
-        fields.push(node_field(Some("condition"), convert_expr(scope, cond)?));
+        fields.push(node_field(Some("condition"), convert_expr(cond)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -566,7 +565,7 @@ enum BlockKind {
 
 /// `Statement::If` / `::Unless` / `::With` / `::Without` for `node`.
 // Cost: O(n), n = size of the conditional.
-pub(super) fn conditional_node(scope: &NameScope, node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
     let topical = matches!(node.kind, ConditionalKind::With | ConditionalKind::Without);
     let (class, block_name) = match node.kind {
         ConditionalKind::If => (RakuAstClass::StatementIf, "then"),
@@ -575,7 +574,7 @@ pub(super) fn conditional_node(scope: &NameScope, node: &Conditional) -> Result<
         ConditionalKind::Without => (RakuAstClass::StatementWithout, "body"),
     };
     let mut fields = vec![
-        node_field(Some("condition"), convert_expr(scope, &node.condition)?),
+        node_field(Some("condition"), convert_expr(&node.condition)?),
         node_field(Some(block_name), clause_block(&node.then, topical)?),
     ];
     let mut elsifs = Vec::with_capacity(node.clauses.len());
@@ -592,7 +591,7 @@ pub(super) fn conditional_node(scope: &NameScope, node: &Conditional) -> Result<
                 RakuAstClass::StatementElsif
             },
             fields: vec![
-                node_field(Some("condition"), convert_expr(scope, &clause.condition)?),
+                node_field(Some("condition"), convert_expr(&clause.condition)?),
                 node_field(Some("then"), clause_block(&clause.then, orwith)?),
             ],
         };

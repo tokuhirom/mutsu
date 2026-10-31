@@ -62,7 +62,7 @@ pub(crate) fn parse_compilation_unit_of(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parser::parse_program_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(scope, stmts)?, finish))
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
 /// Parse a quote-construct body under `qq` (double-quote) interpolation rules,

@@ -60,7 +60,7 @@ pub(super) fn postcircumfix_node(
 ) -> Result<RakuAstNode, RuntimeError> {
     let colonpairs = pairs
         .iter()
-        .map(|pair| convert_expr(scope, pair).map(|node| Value::rakuast(Box::new(node))))
+        .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
         .collect::<Result<Vec<_>, _>>()?;
     match subscript {
         Expr::Index {

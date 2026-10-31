@@ -23,9 +23,9 @@ impl Interpreter {
             self.str_ast_caller_trait_types(),
         );
         let result = if compunit {
-            crate::rakuast::str_dot_ast_compunit(scope, scope, scope, scope, &scope, source)
+            crate::rakuast::str_dot_ast_compunit(&scope, source)
         } else {
-            crate::rakuast::str_dot_ast(scope, scope, scope, scope, &scope, source)
+            crate::rakuast::str_dot_ast(&scope, source)
         };
         crate::parser::clear_parser_lib_paths();
         result
@@ -51,7 +51,7 @@ impl Interpreter {
             self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
         );
-        let result = crate::rakuast::str_dot_ast_with_slang(scope, scope, scope, scope, &scope, source, slang.as_deref());
+        let result = crate::rakuast::str_dot_ast_with_slang(&scope, source, slang.as_deref());
         crate::parser::clear_parser_lib_paths();
         result
     }

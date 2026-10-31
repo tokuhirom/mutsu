@@ -52,7 +52,7 @@ pub(super) fn anonymous_destructuring(
     if let Some(default) = &pd.default {
         fields.push(node_field(
             Some("default"),
-            super::convert::convert_expr(scope, default)?,
+            super::convert::convert_expr(default)?,
         ));
     } else if pd.onearg || pd.slurpy {
         let marker = if pd.onearg {
@@ -72,7 +72,7 @@ pub(super) fn anonymous_destructuring(
     if let Some(where_constraint) = &pd.where_constraint {
         fields.push(node_field(
             Some("where"),
-            super::convert::convert_expr(scope, where_constraint)?,
+            super::convert::convert_expr(where_constraint)?,
         ));
     }
     if let Some(traits) = super::convert::parameter_traits(pd)? {

@@ -54,7 +54,7 @@ pub(super) fn apply(
         .ok_or_else(|| super::convert::unsupported("a variable name's colonpairs"))?;
     let pairs = exprs
         .iter()
-        .map(|e| convert_expr(scope, e).map(|n| Value::rakuast(Box::new(n))))
+        .map(|e| convert_expr(e).map(|n| Value::rakuast(Box::new(n))))
         .collect::<Result<Vec<_>, _>>()?;
     let mut named = super::convert::name_from_identifier(stem);
     named.fields.push(RakuAstField {

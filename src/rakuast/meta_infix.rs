@@ -150,9 +150,9 @@ fn convert_assign(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(scope, left)?),
+            node_field(Some("left"), convert_expr(left)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(scope, right)?),
+            node_field(Some("right"), convert_expr(right)?),
         ],
     })
 }
@@ -191,9 +191,9 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(scope, left)?),
+                node_field(Some("left"), convert_expr(left)?),
                 node_field(Some("infix"), infix),
-                node_field(Some("right"), convert_expr(scope, right)?),
+                node_field(Some("right"), convert_expr(right)?),
             ],
         });
     }
@@ -201,7 +201,7 @@ pub(super) fn convert(
     operands.push(right);
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(scope, operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -279,9 +279,9 @@ pub(super) fn convert_bracketed_assignment(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(scope, target)?),
+            node_field(Some("left"), convert_expr(target)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(scope, rhs)?),
+            node_field(Some("right"), convert_expr(rhs)?),
         ],
     })
 }

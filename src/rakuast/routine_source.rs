@@ -1,6 +1,5 @@
 //! Routine traits in written order, independently of their execution fields.
 
-use crate::scope::NameScope;
 use super::convert::{blockoid, name_from_identifier, signature};
 use super::convert::{leaf_field, node_field, unsupported};
 use super::lower::{
@@ -94,7 +93,7 @@ pub(super) fn is_legacy_source_field(field: &RakuAstField) -> bool {
 
 /// The `Trait::*` node for one trait the source wrote.
 // Cost: O(k + a), k = length of the trait's spelling, a = size of its argument.
-pub(super) fn trait_node(scope: &NameScope, item: &RoutineTrait) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn trait_node(item: &RoutineTrait) -> Result<RakuAstNode, RuntimeError> {
     Ok(match item {
         RoutineTrait::Is { name, argument } => {
             let argument = match argument {
@@ -116,7 +115,7 @@ pub(super) fn trait_node(scope: &NameScope, item: &RoutineTrait) -> Result<RakuA
             };
             // A bare lowercase `is NAME` names a type when NAME is one.
             if super::routine_traits::is_type_trait_name(name)
-                || (argument.is_none() && super::bareword::names_type(scope, name))
+                || (argument.is_none() && super::bareword::names_type(names, name))
             {
                 super::routine_traits::trait_is_type(name, argument)?
             } else {
@@ -135,14 +134,14 @@ pub(super) fn trait_node(scope: &NameScope, item: &RoutineTrait) -> Result<RakuA
         RoutineTrait::Handles(term) => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitHandles,
-            fields: vec![node_field(None, super::convert::convert_expr(scope, term)?)],
+            fields: vec![node_field(None, super::convert::convert_expr(term)?)],
         },
         RoutineTrait::Parent { kind, name, args } => {
             // `is NAME` names a parent only when NAME is a type; any other name
             // is a trait of the program's own, rendered by name.
             if *kind == ParentKind::Is
                 && args.is_none()
-                && !super::bareword::names_type(scope, name)
+                && !super::bareword::names_type(names, name)
                 && !name.contains(['[', ':'])
             {
                 return Ok(super::routine_traits::trait_is(name, None));
@@ -177,22 +176,22 @@ pub(super) fn trait_node(scope: &NameScope, item: &RoutineTrait) -> Result<RakuA
 /// written in front of its block, in written order. A class with no record
 /// wrote none.
 // Cost: O(t + a), t = written traits, a = size of their arguments.
-pub(super) fn header_traits(scope: &NameScope, body: &[Stmt]) -> Result<Vec<Value>, RuntimeError> {
+pub(super) fn header_traits(body: &[Stmt]) -> Result<Vec<Value>, RuntimeError> {
     crate::ast::routine_trait::get(body)
         .unwrap_or_default()
         .iter()
-        .map(|item| trait_node(scope, item).map(|node| Value::rakuast(Box::new(node))))
+        .map(|item| trait_node(item).map(|node| Value::rakuast(Box::new(node))))
         .collect()
 }
 
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
-pub(super) fn apply(scope: &NameScope, node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, RuntimeError> {
+pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, RuntimeError> {
     let Some(traits) = crate::ast::routine_trait::get(body) else {
         return Ok(false);
     };
     let mut nodes = Vec::with_capacity(traits.len());
     for item in traits {
-        nodes.push(Value::rakuast(Box::new(trait_node(scope, item)?)));
+        nodes.push(Value::rakuast(Box::new(trait_node(item)?)));
     }
     node.fields.retain(|field| field.name != Some("traits"));
     let at = node
@@ -357,7 +356,7 @@ pub(super) fn routine_node(
             signature(param_defs, true, returns)?,
         ));
     }
-    fields.push(node_field(Some("body"), blockoid(scope, body)?));
+    fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
         origin: Default::default(),
         class,

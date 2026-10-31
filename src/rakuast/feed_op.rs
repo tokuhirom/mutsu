@@ -10,7 +10,6 @@
 //! `==>` (the source is the inner feed) and right-nested for `<==` (the
 //! source is the inner feed too, but written last).
 
-use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field, unsupported as unsupported_expr};
 use super::lower::{list_field, lower_expr, positional_leaf, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -70,7 +69,7 @@ fn written_operands<'a>(source: &'a Expr, sink: &'a Expr, to_right: bool) -> Vec
 
 /// An [`Expr::Feed`] as its `ApplyListInfix` over a `Feed`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(scope: &NameScope, 
+pub(super) fn convert(
     source: &Expr,
     sink: &Expr,
     append: bool,
@@ -92,7 +91,7 @@ pub(super) fn convert(scope: &NameScope,
                 "feed sink must be a routine call or appendable variable",
             ));
         }
-        nodes.push(Value::rakuast(Box::new(convert_expr(scope, operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     let feed = RakuAstNode {
         origin: Default::default(),

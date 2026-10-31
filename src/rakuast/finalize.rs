@@ -53,18 +53,18 @@ impl Drop for Executing {
 /// Finalize the spelled compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(scope: &NameScope, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn finalize_unit(names: &NameScope, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     let _executing = Executing::enter();
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    let _declared = super::bareword::DeclaredNames::collect(scope, &stmts);
+    let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan_stmts(&stmts);
     super::infix_func::reset();
     let _operators = super::infix_func::enter_scope();
     let _keywords = super::shadowed_terms::enter_scope();
     let mut finalize = Finalize {
-        scope,
+        names,
         failed: None,
         line: None,
         top: true,
@@ -93,7 +93,7 @@ fn declares_routine(stmt: &Stmt) -> bool {
 /// Lowers every typed node and spelling of a tree where it stands, innermost
 /// first.
 struct Finalize<'s> {
-    scope: &'s NameScope,
+    names: &'s NameScope,
     failed: Option<RuntimeError>,
     /// The line of the last `SetLine` of the list being finalized.
     line: Option<i64>,
@@ -160,7 +160,7 @@ impl VisitMut for Finalize<'_> {
         let line = self.line.take();
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(self.scope, body);
+        let _scope = super::bareword::BlockScope::enter(self.names, body);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in
@@ -185,7 +185,7 @@ impl VisitMut for Finalize<'_> {
             inner = &spelled.expr;
         }
         if !carried::expr_carried(inner) {
-            match super::convert::convert_expr(scope, expr)
+            match super::convert::convert_expr(expr)
                 .and_then(|node| super::lower::lower_expr(&node))
             {
                 Ok(lowered) => *expr = lowered,

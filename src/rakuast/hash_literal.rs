@@ -73,7 +73,7 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
             class: RakuAstClass::FatArrow,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.clone())),
-                node_field(Some("value"), convert_expr(scope, value)?),
+                node_field(Some("value"), convert_expr(value)?),
             ],
         };
         super::infix_origins::derive(&mut pair);
@@ -114,7 +114,7 @@ pub(crate) fn object_hash_expr(entries: Vec<Expr>) -> Expr {
 pub(super) fn object_hash_node(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::with_capacity(2);
     if args.len() == 1 {
-        fields.push(node_field(None, convert_expr(scope, &args[0])?));
+        fields.push(node_field(None, convert_expr(&args[0])?));
     } else if !args.is_empty() {
         fields.push(node_field(None, super::convert::comma_list_node(args)?));
     }

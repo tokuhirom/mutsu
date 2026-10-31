@@ -85,7 +85,7 @@ fn colonpair_argument(source: &str) -> Result<RakuAstNode, RuntimeError> {
         .iter()
         .filter(|statement| !matches!(statement, crate::ast::Stmt::SetLine(..)));
     match (expressions.next(), expressions.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(scope, expr),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr),
         _ => Err(unsupported(&format!("type argument `{source}`"))),
     }
 }
@@ -153,7 +153,7 @@ pub(super) fn parameterized_type_node_at(
             {
                 build_type_node_at(name, depth + 1)?
             } else {
-                convert_expr(scope, expr)?
+                convert_expr(expr)?
             };
             fields.push(node_field(None, node));
         }
@@ -204,7 +204,7 @@ fn term_argument(source: &str) -> Option<RakuAstNode> {
         .iter()
         .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
     match (exprs.next(), exprs.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(scope, expr).ok(),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr).ok(),
         _ => None,
     }
 }

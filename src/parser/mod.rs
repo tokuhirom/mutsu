@@ -522,7 +522,7 @@ fn apply_inherited_scopes() {
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parse_fragment_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(scope, stmts)?, finish))
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
 /// [`parse_fragment`] without the round trip: the spelled tree only the RakuAST
@@ -1039,7 +1039,7 @@ fn heredoc_delimiters(line: &str) -> Vec<String> {
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parse_program_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(scope, stmts)?, finish))
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
 /// [`parse_program`] without the round trip: the terms that remember how they
@@ -1324,7 +1324,7 @@ pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
     let (stmts, finish_content, mut errors) = parse_program_recovering_spelled(input);
-    match crate::rakuast::frontend::round_trip_unit(scope, stmts) {
+    match crate::rakuast::frontend::round_trip_unit(stmts) {
         Ok(lowered) => (lowered, finish_content, errors),
         Err(refusal) => {
             errors.push(refusal);

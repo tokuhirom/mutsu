@@ -30,7 +30,6 @@
 //! message `something else`).
 
 mod argument;
-use crate::scope::NameScope;
 use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -83,8 +82,8 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
 }
 
 /// `is NAME`, which is a container type when `NAME` names one at parse time.
-fn trait_is_name_or_type(scope: &NameScope, name: &str) -> Value {
-    if super::decl_traits::is_container_type(scope, name) {
+fn trait_is_name_or_type(name: &str) -> Value {
+    if super::decl_traits::is_container_type(name) {
         return Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitIs,
@@ -100,7 +99,7 @@ fn trait_is_name_or_type(scope: &NameScope, name: &str) -> Value {
 impl AttributeTraits {
     /// The `Trait::*` nodes of the written traits, in written order.
     // Cost: O(t + a), t = traits, a = size of their arguments.
-    fn items(&self, scope: &NameScope) -> Result<Vec<Value>, RuntimeError> {
+    fn items(&self) -> Result<Vec<Value>, RuntimeError> {
         let mut custom = self.unknown_traits.iter();
         let mut handles = self.handles_terms.iter();
         let mut items = Vec::with_capacity(self.order.len());
@@ -161,7 +160,7 @@ impl AttributeTraits {
                         .ok_or_else(|| unsupported("attribute trait list out of step"))?;
                     match kind.as_str() {
                         "is" => match argument {
-                            None => trait_is_name_or_type(scope, name),
+                            None => trait_is_name_or_type(name),
                             Some(argument) => trait_is(name, Some(trait_argument(argument)?)),
                         },
                         "does" => Value::rakuast(Box::new(RakuAstNode {
@@ -215,7 +214,7 @@ impl AttributeTraits {
 /// Bare identifiers in a `handles(...)` list name delegated methods, so their
 /// term value is the method name string rather than a lexical bareword.
 // Cost: O(e), e = size of the handles term.
-fn convert_handles_term(scope: &NameScope, term: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     struct MethodNames;
     impl VisitMut for MethodNames {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
@@ -237,7 +236,7 @@ fn convert_handles_term(scope: &NameScope, term: &Expr) -> Result<RakuAstNode, R
     }
     let mut term = term.clone();
     MethodNames.visit_expr_mut(&mut term);
-    convert_expr(scope, &term)
+    convert_expr(&term)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,

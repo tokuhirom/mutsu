@@ -7,7 +7,6 @@
 //! an `OnlyStar`. The parser keeps the first as the `Whatever` term and the
 //! second as the onlystar dispatch call (`Expr::onlystar_dispatch`).
 
-use crate::scope::NameScope;
 use super::convert::{leaf_field, routine_node, unsupported};
 use super::lower::{
     call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
@@ -45,7 +44,7 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert(scope: &NameScope, proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     if proto.has_traits && crate::ast::routine_trait::get(proto.body).is_none() {
         return Err(unsupported("proto with traits"));
     }
@@ -77,7 +76,7 @@ pub(super) fn convert(scope: &NameScope, proto: ProtoDecl<'_>) -> Result<RakuAst
     }
     // The traits are the ones the source wrote; `is export` is folded into
     // `is_export` / `export_tags`, which are not read back.
-    if !super::routine_source::apply(scope, &mut node, proto.body)? && proto.is_export {
+    if !super::routine_source::apply(&mut node, proto.body)? && proto.is_export {
         return Err(unsupported(
             "proto with `is export` and no written-trait record",
         ));

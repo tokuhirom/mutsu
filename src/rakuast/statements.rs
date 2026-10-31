@@ -1,23 +1,22 @@
 //! The statements of a compilation unit or a block, each as its RakuAST node
 //! (`RakuAST::StatementList`), with the carried ones as leaves.
 
-use crate::scope::NameScope;
 use super::convert::{convert_stmt, node_field, unit_package_taking};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, bareword, origin};
 use crate::ast::Stmt;
 use crate::value::{RuntimeError, ValueView};
 
 /// Top-level: a parsed program becomes a `RakuAST::StatementList`.
-pub(super) fn statement_list(scope: &NameScope, stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::reset();
-    let _scope = bareword::DeclaredNames::collect(scope, stmts);
-    statement_list_inner(scope, stmts)
+    let _scope = bareword::DeclaredNames::collect(names, stmts);
+    statement_list_inner(stmts)
 }
 
 /// The statements of `stmts`, each as its node.
 // Cost: O(n), n = size of the statements.
-pub(super) fn block_statements(scope: &NameScope, stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, RuntimeError> {
-    Ok(statement_list_inner(scope, stmts)?
+pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, RuntimeError> {
+    Ok(statement_list_inner(stmts)?
         .fields
         .into_iter()
         .filter_map(|field| match field.value {
@@ -30,9 +29,9 @@ pub(super) fn block_statements(scope: &NameScope, stmts: &[Stmt]) -> Result<Vec<
         .collect())
 }
 
-pub(super) fn statement_list_inner(scope: &NameScope, stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
-    let _block = bareword::BlockScope::enter(scope, stmts);
+    let _block = bareword::BlockScope::enter(names, stmts);
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).

@@ -10,7 +10,7 @@ use crate::value::{RuntimeError, Value};
 // Cost: O(n), n = nodes of the fallback expression.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
     match expr {
-        Expr::ExportTermOrCall { name, call } => Some(convert_expr(scope, call).map(|mut node| {
+        Expr::ExportTermOrCall { name, call } => Some(convert_expr(call).map(|mut node| {
             node.fields.push(leaf_field(
                 Some("export-term-name"),
                 Value::str(name.resolve()),

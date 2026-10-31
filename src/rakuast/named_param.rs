@@ -180,7 +180,7 @@ pub(super) fn named_parameter(
     // A named parameter is optional unless marked `!`; rakudo writes the
     // field only when the source spelled a marker.
     match flat.default {
-        Some(d) => fields.push(node_field(Some("default"), convert_expr(scope, d)?)),
+        Some(d) => fields.push(node_field(Some("default"), convert_expr(d)?)),
         None if pd.required || pd.optional_marker => fields.push(RakuAstField {
             name: Some("optional"),
             value: RakuAstFieldValue::Node(Value::truth(!pd.required)),
@@ -188,7 +188,7 @@ pub(super) fn named_parameter(
         None => {}
     }
     if let Some(w) = flat.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(scope, w)?));
+        fields.push(node_field(Some("where"), convert_expr(w)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),

@@ -58,7 +58,7 @@ fn convert_nested(
                 segments.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::QuoteWordsAtom,
-                    fields: vec![node_field(None, convert_expr(scope, expr)?)],
+                    fields: vec![node_field(None, convert_expr(expr)?)],
                 })));
             }
             QuoteWordsPart::Nested(inner) => {

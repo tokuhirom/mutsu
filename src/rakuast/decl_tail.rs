@@ -121,7 +121,7 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 // Cost: O(n), n = size of the statement.
 pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeError> {
     (|| {
-        let converted = convert_expr(scope, tail)?;
+        let converted = convert_expr(tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
             let (bottom, depth) = leftmost(&converted, true);
             // The tail must start with a re-read of the variable the head declares.
@@ -134,7 +134,7 @@ pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeEr
                 return Err(unsupported_statement());
             }
             let operand = if let Some(expr) = compound_assignment_expr(head) {
-                convert_expr(scope, expr)?
+                convert_expr(expr)?
             } else {
                 let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
                 super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
@@ -161,7 +161,7 @@ pub(super) fn convert_call_assign_list(
     let [first_item, rest @ ..] = items else {
         return Err(unsupported_statement());
     };
-    let first = convert_expr(scope, first_item)?;
+    let first = convert_expr(first_item)?;
     if leftmost(&first, true).0 == &var_lexical(sigil, name) {
         // A postfix chain over the declared variable, not a list item.
         return Err(unsupported_statement());
@@ -171,7 +171,7 @@ pub(super) fn convert_call_assign_list(
     let mut operands = vec![Value::rakuast(Box::new(declaration))];
     operands.push(Value::rakuast(Box::new(first)));
     for item in rest {
-        operands.push(Value::rakuast(Box::new(convert_expr(scope, item)?)));
+        operands.push(Value::rakuast(Box::new(convert_expr(item)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -307,7 +307,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     };
     if is_signature_declaration {
         let seed = signature_seed(&head)?;
-        let seed_node = match convert_expr(scope, &seed) {
+        let seed_node = match convert_expr(&seed) {
             Ok(node) => node,
             Err(error) => return Some(Err(error)),
         };

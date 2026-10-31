@@ -9,7 +9,7 @@ use crate::value::{RuntimeError, ValueView};
 pub(super) fn trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match argument {
         Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::BracketTraitArgument) => {
-            convert_expr(scope, &spelled.expr)
+            convert_expr(&spelled.expr)
         }
         Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => paren_argument(inner),
         other => paren_argument(other),
@@ -22,7 +22,7 @@ pub(in crate::rakuast) fn paren_argument(expr: &Expr) -> Result<RakuAstNode, Run
     let semilist = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(scope, expr)?))],
+        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
     };
     Ok(RakuAstNode {
         origin: Default::default(),

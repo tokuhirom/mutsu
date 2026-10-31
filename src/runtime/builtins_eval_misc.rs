@@ -369,8 +369,8 @@ impl Interpreter {
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
-            let scope = crate::rakuast::frontend::lower_scope(&operators);
-            let stmts = crate::rakuast::lower(scope, scope, scope, scope, &scope, node)?;
+            let names = crate::rakuast::frontend::lower_scope(&operators);
+            let stmts = crate::rakuast::lower(&names, node)?;
             return self.eval_lowered_unit(stmts);
         }
         if let Some(first_arg) = Self::positional_value(args, 0)
@@ -381,8 +381,8 @@ impl Interpreter {
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
-            let scope = crate::rakuast::frontend::lower_scope(&operators);
-            let stmts = crate::rakuast::lower(scope, scope, scope, scope, &scope, node)?;
+            let names = crate::rakuast::frontend::lower_scope(&operators);
+            let stmts = crate::rakuast::lower(&names, node)?;
             return self.eval_lowered_unit(stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks

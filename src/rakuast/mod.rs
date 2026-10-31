@@ -46,12 +46,12 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
-use crate::scope::NameScope;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
 mod statements;
 use crate::core_type_names;
+use crate::scope::NameScope;
 mod decl_compound_assign;
 mod decl_modifier_split;
 mod sigilless_lower;
@@ -1771,13 +1771,13 @@ pub(crate) fn parameter_param_def(
 }
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
-pub fn str_dot_ast(scope: &NameScope, source: &str) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let mut node = convert::statement_list(scope, &stmts)?;
+    let mut node = convert::statement_list(&stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }
@@ -1806,11 +1806,11 @@ pub fn compile_time_compunit(
 /// different names); mutsu derives one from the source and a process-wide
 /// counter, which keeps that distinctness.
 // Cost: O(n), n = source length (the parse dominates).
-pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_compunit(names: &NameScope, source: &str) -> Result<Value, RuntimeError> {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast(scope, source)?;
+    let statement_list = str_dot_ast(source)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1850,9 +1850,9 @@ pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
 /// An absent or undefined `$slang` (rakudo's `Mu $slang?` default) is the
 /// plain parse. Any other value names the module verbatim — rakudo has no
 /// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
-pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_with_slang(names: &NameScope, source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
-        return str_dot_ast(scope, source);
+        return str_dot_ast(source);
     };
     let module = format!("L10N::{slang}");
     let activation = crate::runtime::slang_activation::run_slang_activation(
@@ -1867,7 +1867,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
     let result = (|| {
         crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
-        str_dot_ast(scope, source)
+        str_dot_ast(source)
     })();
     crate::parser::set_l10n_preseed(None);
     crate::parser::restore_slang_state(saved_modes, saved_vocabulary);

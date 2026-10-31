@@ -76,7 +76,7 @@ pub(super) fn apply(
     traits: &[(String, Option<Expr>)],
     body: &[Stmt],
 ) -> Result<(), RuntimeError> {
-    if super::routine_source::apply(scope, node, body)? || traits.is_empty() {
+    if super::routine_source::apply(node, body)? || traits.is_empty() {
         return Ok(());
     }
     // The traits are the ones the source wrote, in written order; the custom

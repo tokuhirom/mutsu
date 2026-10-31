@@ -10,7 +10,6 @@
 //! is a `DoesDecl` too, told apart by its `also` flag. Lowering rebuilds the
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
-use crate::scope::NameScope;
 use super::convert::{
     blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
 };
@@ -40,7 +39,7 @@ pub(super) struct RoleDecl<'a> {
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
-pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
     // Any plain trait name is a trait of the program's own (`is array_type(T)`),
     // rendered by name.
@@ -92,7 +91,7 @@ pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
             "role header the written-trait record does not account for",
         ));
     }
-    let mut traits = super::routine_source::header_traits(scope, role.body)?;
+    let mut traits = super::routine_source::header_traits(role.body)?;
     // What follows the written clauses is `also is Parent;` / `also is rw;`
     // lifted out of the body: a parent without a header spelling renders as
     // a trailing `is` trait, which lowers back to the same clause.
@@ -113,7 +112,7 @@ pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
             name: name.resolve(),
             args: args.clone(),
         };
-        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(scope, 
+        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
             &parent,
         )?)));
     }
@@ -142,7 +141,7 @@ pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
         super::role_implicit::add(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RoleBody,
-            fields: vec![node_field(Some("body"), blockoid(scope, &body)?)],
+            fields: vec![node_field(Some("body"), blockoid(&body)?)],
         }),
     ));
     if !role.type_param_defs.is_empty() {
