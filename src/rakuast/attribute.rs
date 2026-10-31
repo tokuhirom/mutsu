@@ -100,7 +100,7 @@ fn trait_is_name_or_type(scope: &NameScope, name: &str) -> Value {
 impl AttributeTraits {
     /// The `Trait::*` nodes of the written traits, in written order.
     // Cost: O(t + a), t = traits, a = size of their arguments.
-    fn items(&self) -> Result<Vec<Value>, RuntimeError> {
+    fn items(&self, scope: &NameScope) -> Result<Vec<Value>, RuntimeError> {
         let mut custom = self.unknown_traits.iter();
         let mut handles = self.handles_terms.iter();
         let mut items = Vec::with_capacity(self.order.len());
@@ -215,7 +215,7 @@ impl AttributeTraits {
 /// Bare identifiers in a `handles(...)` list name delegated methods, so their
 /// term value is the method name string rather than a lexical bareword.
 // Cost: O(e), e = size of the handles term.
-fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn convert_handles_term(scope: &NameScope, term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     struct MethodNames;
     impl VisitMut for MethodNames {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {

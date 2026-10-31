@@ -4,6 +4,7 @@
 //! the statement's own origin is added by the statement list, as for every
 //! statement.
 
+use crate::scope::NameScope;
 use super::convert::{
     block_node, convert_expr, label_fields, loop_setup_node, node_field, pointy_block,
     signature_block_node, statement_expression, topic_block_node,
@@ -18,7 +19,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
 // Cost: O(n), n = size of the construct.
-pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_node(scope: &NameScope, node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(match node {
         ParsedStmt::Conditional(c) => conditional_node(c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
@@ -245,7 +246,7 @@ fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
 // Cost: O(n), n = size of the target and source.
-fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
+fn assignment_node(scope: &NameScope, a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
@@ -275,7 +276,7 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
 /// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
 /// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
 // Cost: O(n + d), n = size of the target and source, d = bracket depth.
-fn compound_assignment_node(
+fn compound_assignment_node(scope: &NameScope, 
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
     if a.meta == CompoundMeta::Dotty {
@@ -440,7 +441,7 @@ pub(super) fn with_compound_meta(
 /// double-underscore name (a user's `$__c`, or an anonymous `$`'s minted name)
 /// that an expression read refuses as an internal marker.
 // Cost: O(n), n = size of the target.
-fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
+fn target_node(scope: &NameScope, target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, name) = match target {
         crate::ast::Expr::Var(name) => ("$", name),
         crate::ast::Expr::ArrayVar(name) => ("@", name),
@@ -457,7 +458,7 @@ fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
 /// and `loop-modifier`, and the positions the parser recorded for the
 /// modified expression and each modifier.
 // Cost: O(n), n = size of the statement and its modifiers' operands.
-fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
+fn modified_node(scope: &NameScope, m: &Modified) -> Result<RakuAstNode, RuntimeError> {
     let mut node = super::convert::convert_stmt(&m.stmt)?
         .ok_or_else(|| super::convert::unsupported("empty modified statement"))?;
     if m.body.is_some()
@@ -512,7 +513,7 @@ fn modifier_class(kind: ModifierKind) -> RakuAstClass {
 /// `Statement::Loop` (C-style or bare) or `Statement::Loop::RepeatWhile` /
 /// `::RepeatUntil`.
 // Cost: O(n), n = size of the loop.
-fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
+fn loop_node(scope: &NameScope, l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = label_fields(&l.label);
     if l.kind == LoopKind::Loop {
         if let Some(init) = l.init.as_deref() {
@@ -565,7 +566,7 @@ enum BlockKind {
 
 /// `Statement::If` / `::Unless` / `::With` / `::Without` for `node`.
 // Cost: O(n), n = size of the conditional.
-pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn conditional_node(scope: &NameScope, node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
     let topical = matches!(node.kind, ConditionalKind::With | ConditionalKind::Without);
     let (class, block_name) = match node.kind {
         ConditionalKind::If => (RakuAstClass::StatementIf, "then"),

@@ -108,7 +108,7 @@ fn is_adverb(expr: &Expr) -> bool {
 
 /// An [`Expr::InfixFunc`] as its `ApplyInfix` / `ApplyListInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(
+pub(super) fn convert(scope: &NameScope, 
     name: &str,
     left: &Expr,
     right: &[Expr],
