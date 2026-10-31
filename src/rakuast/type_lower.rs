@@ -267,6 +267,7 @@ mod tests {
 
     #[test]
     fn composed_type_lowering_shares_one_depth_budget() {
+    let names = &crate::scope::NameScope::default();
         let mut node = super::super::bareword::simple_type_node("Int");
         for _ in 0..super::super::type_build::MAX_TYPE_DEPTH {
             node = RakuAstNode {
@@ -275,10 +276,10 @@ mod tests {
                 fields: vec![super::super::convert::node_field(Some("base-type"), node)],
             };
         }
-        assert!(type_constraint(&node, &node).is_err());
-        let node = super::super::type_build::build_type_node("Int:D(Str)").unwrap();
-        assert_eq!(type_constraint(&node, &node).unwrap(), "Int:D(Str)");
-        let node = super::super::type_build::build_type_node("Hash[Int:D]:D").unwrap();
-        assert_eq!(type_constraint(&node, &node).unwrap(), "Hash[Int:D]:D");
+        assert!(type_constraint(names, &node, &node).is_err());
+        let node = super::super::type_build::build_type_node(names, "Int:D(Str)").unwrap();
+        assert_eq!(type_constraint(names, &node, &node).unwrap(), "Int:D(Str)");
+        let node = super::super::type_build::build_type_node(names, "Hash[Int:D]:D").unwrap();
+        assert_eq!(type_constraint(names, &node, &node).unwrap(), "Hash[Int:D]:D");
     }
 }

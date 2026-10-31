@@ -147,10 +147,11 @@ mod tests {
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {
+    let names = &crate::scope::NameScope::default();
         let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
             crate::value::Value::regex("a".to_owned()),
         ))];
-        let error = round_trip(&stmts).expect_err("a regex value without source tree must refuse");
+        let error = round_trip(names, &stmts).expect_err("a regex value without source tree must refuse");
         let reported = refusal(error);
         assert!(reported.message.contains("MUTSU_RAKUAST"));
         assert!(

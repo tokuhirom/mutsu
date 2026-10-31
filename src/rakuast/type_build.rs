@@ -205,15 +205,16 @@ mod tests {
 
     #[test]
     fn type_composition_is_bounded_across_argument_edges() {
+    let names = &crate::scope::NameScope::default();
         let nested = format!(
             "{}Int{}",
             "Array[".repeat(MAX_TYPE_DEPTH + 1),
             "]".repeat(MAX_TYPE_DEPTH + 1)
         );
-        assert!(build_type_node(&nested).is_err());
-        assert!(build_type_node(&format!("Int{}", ":D".repeat(MAX_TYPE_DEPTH + 1))).is_err());
-        assert!(build_type_node("Int:D(Str)").is_ok());
-        assert!(build_type_node("Array[Int](Cool)").is_ok());
+        assert!(build_type_node(names, &nested).is_err());
+        assert!(build_type_node(names, &format!("Int{}", ":D".repeat(MAX_TYPE_DEPTH + 1))).is_err());
+        assert!(build_type_node(names, "Int:D(Str)").is_ok());
+        assert!(build_type_node(names, "Array[Int](Cool)").is_ok());
     }
 
     #[test]

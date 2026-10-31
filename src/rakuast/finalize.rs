@@ -351,9 +351,9 @@ mod tests {
         format!("{stmts:?}")
     }
 
-    fn finalized(source: &str) -> String {
+    fn finalized(names: &NameScope, source: &str) -> String {
         let (spelled, _) = crate::parse_dispatch::parse_source_spelled(source).unwrap();
-        shape(crate::rakuast::frontend::round_trip(&spelled).unwrap())
+        shape(crate::rakuast::frontend::round_trip(names, &spelled).unwrap())
     }
 
     fn ordinary(source: &str) -> String {
@@ -363,6 +363,7 @@ mod tests {
     /// A unit finalizes to the tree an ordinary parse builds.
     #[test]
     fn finalization_is_the_ordinary_tree() {
+    let names = &crate::scope::NameScope::default();
         for source in [
             "say 1 + 2;",
             "my $x = 5; say $x * 2;",
@@ -373,15 +374,16 @@ mod tests {
             "my %h = a => 1; say %h<a>;",
             "my $s = 'abc'; say \"v: $s\";",
         ] {
-            assert_eq!(finalized(source), ordinary(source), "{source}");
+            assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }
     }
 
     /// A regex with code is converted where it stands, not carried.
     #[test]
     fn a_regex_with_code_is_converted_where_it_stands() {
+    let names = &crate::scope::NameScope::default();
         let (spelled, _) =
             crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
-        let _ = crate::rakuast::frontend::round_trip(&spelled).expect("it lowers");
+        let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");
     }
 }
