@@ -515,6 +515,48 @@ const FLAG_CHUNKS: usize = 512;
 static FLAG_TABLE: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
     [const { OnceLock::new() }; FLAG_CHUNKS];
 
+/// A lock-free, process-global memo of a pure function of a symbol's string,
+/// indexed by symbol id: the [`FLAG_TABLE`] mechanism for a caller that needs
+/// its own bits (a method-name classification, ADR-15737 D2). Ids are global
+/// and append-only and the function is pure, so a racing writer stores the same
+/// value; a reader that loses the race recomputes. Bit 15 is the table's own
+/// "computed" marker, so a memoized value uses bits 0..=14.
+pub(crate) struct SymbolMemo {
+    chunks: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS],
+}
+
+impl SymbolMemo {
+    const COMPUTED: u16 = 1 << 15;
+
+    pub(crate) const fn new() -> Self {
+        Self {
+            chunks: [const { OnceLock::new() }; FLAG_CHUNKS],
+        }
+    }
+
+    /// `compute(sym.as_str())`, computed once per symbol. An id past the
+    /// table's reach recomputes every time (correct, unmemoized).
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> u16) -> u16 {
+        let idx = sym.0 as usize;
+        let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
+            return compute(sym.as_str());
+        };
+        if let Some(chunk) = cell.get() {
+            let v = chunk[idx & (FLAG_CHUNK_LEN - 1)].load(Ordering::Relaxed);
+            if v & Self::COMPUTED != 0 {
+                return v & !Self::COMPUTED;
+            }
+        }
+        let v = compute(sym.as_str());
+        debug_assert!(v & Self::COMPUTED == 0, "memo value must leave bit 15 clear");
+        let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
+        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v | Self::COMPUTED, Ordering::Relaxed);
+        v
+    }
+}
+
 /// The already-allocated flag slot for `idx`, if any. `None` means "not
 /// memoized yet" (or an id beyond the table), never "no such symbol".
 #[inline]
