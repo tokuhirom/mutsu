@@ -33,10 +33,7 @@ fn setting_type(name: &str) -> bool {
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-mod caller_names;
 mod package_alias;
-
-pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 
 /// What a bareword naming something the same compilation unit declared means.
 ///
@@ -44,26 +41,33 @@ pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 /// as a `Type::Simple` — exactly like a builtin type — and
 /// `constant X = 5; X` renders `X` as a `Term::Name`. Both measured against
 /// rakudo 2026.07.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DeclaredKind {
-    /// A `class` / `role` / `grammar` / `enum` name.
-    Type,
-    /// A `constant` name, an enum value the unit declares (`Red`,
-    /// `Color::Red`), or a sigilless parameter (`\x`): all render as
-    /// `Term::Name` (measured on rakudo 2026.09).
-    Term,
-    /// An `our sub` of a package, reached by its qualified name (`M::foo`):
-    /// rakudo renders the bare reference as an argument-less `Call::Name`.
-    Routine,
-}
+use crate::scope::{DeclaredKind, NameScope};
 
 thread_local! {
-    /// The names the compilation unit currently being converted declares.
+    /// The scope the conversion or lowering in progress reads names from: the
+    /// calling scope's names, installed by [`install_scope`], and the names the
+    /// unit being converted declares, filled in by [`DeclaredNames::collect`].
     /// Empty outside a conversion, so a nested/re-entrant conversion that never
     /// ran `statement_list` simply sees no declarations and keeps the old
     /// bareword boundary.
-    static DECLARED_NAMES: RefCell<HashMap<String, DeclaredKind>> =
-        RefCell::new(HashMap::new());
+    static CURRENT: RefCell<NameScope> = RefCell::new(NameScope::default());
+}
+
+/// RAII guard installing a [`NameScope`] for the duration of a conversion or
+/// lowering, restoring the one that was there before.
+pub(crate) struct InstalledScope(NameScope);
+
+/// Install `scope` as the one the frontend reads names from.
+// Cost: O(1).
+pub(crate) fn install_scope(scope: NameScope) -> InstalledScope {
+    InstalledScope(CURRENT.with(|c| std::mem::replace(&mut *c.borrow_mut(), scope)))
+}
+
+impl Drop for InstalledScope {
+    fn drop(&mut self) {
+        let previous = std::mem::take(&mut self.0);
+        CURRENT.with(|c| *c.borrow_mut() = previous);
+    }
 }
 
 /// RAII guard installing the unit's declared names for the duration of a
@@ -81,16 +85,27 @@ impl DeclaredNames {
                 .map(|name| (name, DeclaredKind::Term)),
         );
         collect_declared_names(stmts, &mut names);
-        Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
+        Self(CURRENT.with(|c| {
+            let mut scope = c.borrow_mut();
+            let previous = scope.take_declared();
+            scope.set_declared(names);
+            previous
+        }))
     }
 }
 
 impl Drop for DeclaredNames {
     fn drop(&mut self) {
-        DECLARED_NAMES.with(|d| {
-            *d.borrow_mut() = std::mem::take(&mut self.0);
-        });
+        let previous = std::mem::take(&mut self.0);
+        CURRENT.with(|c| c.borrow_mut().set_declared(previous));
     }
+}
+
+/// Whether the calling scope of the `EVAL` being lowered declares the operator
+/// routine `routine` (`infix:<…>`).
+// Cost: O(k), k = length of `routine`.
+pub(super) fn caller_declares_operator(routine: &str) -> bool {
+    CURRENT.with(|c| c.borrow().caller_declares_operator(routine))
 }
 
 /// What a `constant` renders as when named later. Rakudo evaluates the
@@ -120,7 +135,7 @@ fn constant_kind(init: &Expr) -> DeclaredKind {
 /// The declarations of the blocks being converted, innermost last. Each holds
 /// only the names its own statement list declares: a lexical enum variable
 /// shadows a class of the same name declared further out, which the unit-wide
-/// [`DECLARED_NAMES`] (one entry per name) cannot express.
+/// the unit-wide declared names (one entry per name) cannot express.
 #[derive(Default)]
 struct Scopes(Vec<HashMap<String, DeclaredKind>>);
 
@@ -179,9 +194,7 @@ fn scoped_kind(name: &str) -> Option<DeclaredKind> {
 }
 
 fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    scoped_kind(name)
-        .or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
-        .or_else(|| caller_names::kind(name))
+    scoped_kind(name).or_else(|| CURRENT.with(|c| c.borrow().kind(name)))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
@@ -192,7 +205,7 @@ pub(super) fn names_type(name: &str) -> bool {
     setting_type(name)
         || declared_kind(name) == Some(DeclaredKind::Type)
         || crate::parser::is_user_declared_type(name)
-        || caller_names::declares_trait_type(name)
+        || CURRENT.with(|c| c.borrow().declares_trait_type(name))
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of

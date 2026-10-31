@@ -291,9 +291,7 @@ impl Interpreter {
                 let (types, terms) = caller_names;
                 let stmts = match crate::rakuast::frontend::round_trip_eval(
                     &stmts,
-                    || types,
-                    || terms,
-                    op_names,
+                    crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 ) {
                     Ok(lowered) => lowered,
                     Err(refusal) => {

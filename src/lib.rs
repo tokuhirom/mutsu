@@ -58,6 +58,7 @@ pub mod repl;
 pub(crate) mod repl_core;
 mod runtime;
 pub(crate) mod scan_cache;
+mod scope;
 pub(crate) mod sigilless_alias_index;
 pub(crate) mod source_comments;
 mod state_scope;

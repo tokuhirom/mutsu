@@ -18,18 +18,17 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_trait_types(
+        let scope = crate::rakuast::frontend::str_ast_scope(
+            self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
-            || {
-                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-                    if compunit {
-                        crate::rakuast::str_dot_ast_compunit(source)
-                    } else {
-                        crate::rakuast::str_dot_ast(source)
-                    }
-                })
-            },
         );
+        let result = crate::rakuast::frontend::with_scope(scope, || {
+            if compunit {
+                crate::rakuast::str_dot_ast_compunit(source)
+            } else {
+                crate::rakuast::str_dot_ast(source)
+            }
+        });
         crate::parser::clear_parser_lib_paths();
         result
     }
@@ -50,14 +49,13 @@ impl Interpreter {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_trait_types(
+        let scope = crate::rakuast::frontend::str_ast_scope(
+            self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
-            || {
-                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-                    crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
-                })
-            },
         );
+        let result = crate::rakuast::frontend::with_scope(scope, || {
+            crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
+        });
         crate::parser::clear_parser_lib_paths();
         result
     }

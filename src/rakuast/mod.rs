@@ -78,7 +78,7 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
-pub(crate) use infix_func::{add_colonpair, with_caller_operators};
+pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
 mod carried;
 mod finalize;
