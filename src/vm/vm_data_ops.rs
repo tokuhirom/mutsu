@@ -496,7 +496,7 @@ impl Interpreter {
     /// binding sites ask for it, and only for a `$`-shaped name: an `@`/`%`
     /// variable IS its aggregate and has no Scalar to alias.
     // Cost: O(l), l = locals of the frame (the by-name slot fallback).
-    pub(super) fn capture_rw_arg_cell(
+    pub(crate) fn capture_rw_arg_cell(
         &mut self,
         code: &CompiledCode,
         name: &str,

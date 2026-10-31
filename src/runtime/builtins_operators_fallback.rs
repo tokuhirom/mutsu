@@ -491,6 +491,10 @@ impl Interpreter {
         if name == "substr-rw"
             && let Some((_target, rest)) = args.split_first()
         {
+            // The VM hands the source variable's shared cell: alias it.
+            if args[0].is_container_ref() {
+                return self.make_substr_rw_proxy_cell(args[0].clone(), rest);
+            }
             // Try to get the variable name of the first argument for Proxy support
             let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
             if let Some(Some(var_name)) = arg_sources.first() {
