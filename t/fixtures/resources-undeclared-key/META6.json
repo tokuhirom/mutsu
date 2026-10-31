@@ -1,0 +1,1 @@
+{"name":"ResUndeclared","version":"0.1","provides":{"ResUndeclared":"lib/ResUndeclared.rakumod"},"resources":["libraries/plain","data.txt"]}
