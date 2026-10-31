@@ -38,18 +38,31 @@ receiver, known to have one answer.
 
 ## Decision (proposed)
 
-Compile an **unquoted, argument-less** call of `.WHAT`, `.WHO`, `.HOW`, `.WHERE`, `.VAR`,
-`.DEFINITE` and the `^name` metamethod to a dedicated opcode `CallPseudoMethod(kind)` (the operand
-is a small enum, so `size_of::<OpCode>()` stays within 48 bytes). `.WHY` is not in the set: it is an
-ordinary overridable method.
+Compile an **unquoted, argument-less** call of `.WHAT`, `.WHO`, `.HOW`, `.WHERE`, `.VAR` and
+`.DEFINITE` (the six names `is_mop_pseudo_method` lists, which Rakudo compiles as macros) to a
+dedicated opcode `CallPseudoMethod(kind)`; the operand is a small enum, so `size_of::<OpCode>()`
+stays within 48 bytes. `.WHY` and `.WHICH` are not in the set: they are ordinary overridable
+methods. A *quoted* call (`$x."WHAT"()`) is lowered to the generic method-call opcode at compile
+time, so the opcode never sees one and needs no quoted flag.
+
+**`.^name` is not a pseudo-method and is not a kind of this opcode.** It is `$x.HOW.name($x)`, an
+ordinary metamethod call that a type can override (`class A { method ^name(\o) { "Custom" } }`
+makes `A.^name` and `A.new.^name` answer `Custom`) and that a custom metaclass changes (AttrX::Mooish
+itself uses `CustomClassHOW is Metamodel::ClassHOW`). This ADR takes the lowering option: the
+compiler rewrites `.^name` (and the other `.^` metamethods, later) to `.HOW.name($obj)` with `.HOW`
+as the opcode below and an ordinary generic call after it. Semantics hold by construction: `.HOW`
+returns the receiver's real HOW object (stock, custom, or the one a `method ^name` was added to),
+and the following call resolves on it as today. The first slice only introduces the `.HOW` opcode
+and the lowering for `^name`; the lowering is justified by the parity test, whose oracle for
+`^name` is `raku` (the reviewer's `method ^name` example and a `Metamodel::ClassHOW` subclass).
 
 Execution is **guard + existing path as the miss tail** (the ADR-15737 D1 shape; no new slow path):
 
 1. Evaluate the receiver exactly as `CallMethod` does today.
 2. If the receiver is a *plain value or type object* (Int, Num, Str, Bool, a built-in or user type
-   object, a non-Proxy non-`VarRef` non-container value) and the kind's per-kind guard holds, call the
-   same runtime function the generic arm calls today (`dispatch_what`, `dispatch_how`,
-   `dispatch_who`, the `.VAR` identity, `dispatch_caret_name`) directly, with no method resolution.
+   object) and the kind's per-kind guard holds, call the same runtime function the generic arm
+   calls today (`dispatch_what`, `dispatch_how`, `dispatch_who`) directly, with no method
+   resolution.
 3. Otherwise run the existing generic method-call opcode path unchanged.
 
 The guards are the decision's substance, because each marks a place where the generic path does
@@ -57,19 +70,46 @@ something the fast arm does not:
 
 - **Proxy, `VarRef` and container receivers** (`container_type_metadata`, `auto_fetch_proxy`):
   always the generic path.
-- **`.VAR`** has descriptor rules (ADR-0064, `var_meta_descriptor_defers`,
-  `try_var_meta_delegate`): the opcode takes only the case where the generic arm returns the target
-  itself.
-- **A `Failure` receiver** must still explode on use; generic path.
+- **`.VAR` is not in the first slice.** `$x.VAR` on a variable answers a `Scalar` (`raku -e 'my $i
+  = 1; say $i.VAR.WHAT'` gives `(Scalar)`), not the target, and has descriptor rules (ADR-0064's
+  `var_meta_descriptor_defers` / `try_var_meta_delegate`, ADR-0057's cell boxing). The earlier
+  draft's "take only the case where the generic arm returns the target itself" does not cover the
+  case that was measured (`$x.VAR.defined.Int`, 55.6k Ir). `.VAR` joins once those rules are
+  covered by the parity test.
+- **A `Failure` receiver** takes the generic path on day one, but not because it must explode: these
+  are macros, so a Failure is not "used" (`raku -e 'my $f = Failure.new("x"); say $f.WHAT;
+  say $f.DEFINITE'` prints `(Failure)` and `True`). It is simply not covered by the parity test yet;
+  once `Failure.new("x").WHAT/.DEFINITE/.HOW` are pinned against `raku` it can be admitted on the
+  fast arm.
 - **`augment` / `.wrap` of a built-in type** cannot override an unquoted pseudo-method, so no guard
   is needed for them; this is pinned by tests (below), not assumed.
 
 ## Expected effect
 
-Per-call cost for a plain receiver falls from 26-70k Ir to a few k (the opcode, the runtime function,
-the result), a target of <= 8k Ir per call (the issue's close condition). For Mooish that is
-about ten calls per iteration, so up to about -10% of its 4M Ir; the same calls recur in Red and in
-roast helpers. It does **not** close #15688 (5x of rakudo) or #15498 on its own.
+**Not yet established.** The earlier draft's "up to about -10% of the Mooish iteration" is
+withdrawn: it counted ten pseudo-method calls per iteration without knowing their receivers. What is
+measured so far:
+
+- A pseudo-method call on a plain Int costs 26-36k Ir on main (`$x.WHAT.defined.Int` 36.0k,
+  `$x.HOW.defined.Int` 69.4k); the target for the plain-value arm is <= 8k Ir per call.
+- `MUTSU_VM_STATS=1` counts 7 `.VAR` interpreter fallbacks per Mooish iteration, but `.VAR` is out
+  of the first slice, and a count of the pseudo-method calls that reach
+  `call_method_with_values_inner` on the same loop found 1 per iteration, a `.VAR` on a `Proxy`
+  (which the Proxy guard sends to the generic path). The other fallbacks are counted on other
+  entry points (`call_method_mut_with_values`, the mut opcodes) and their receivers were not
+  recorded.
+- Many Mooish `.VAR`/`.WHAT`/`.HOW` calls probably come from `nqp::what_nd` / `nqp::how_nd`, which
+  the compiler lowers to `.VAR.WHAT` / `.VAR.HOW` (`src/compiler/nqp_object_forms.rs:35-39`). If
+  their operands are attribute containers or Proxies, the guards send them to the generic path and
+  the first slice would not move Mooish at all.
+
+**Precondition for accepting this ADR's estimate:** a table of the pseudo-method calls in one
+Mooish iteration (and in Red's `t/38-equal` loop once it can be run), by kind and receiver class
+(plain value, type object, Instance, container, Proxy, Failure), recorded with a stats hook at the
+call-site level so every entry point is counted. It decides the first slice: if most land in
+container/Proxy/Instance, the realistic first slice is `.WHAT`/`.HOW` (and the `^name` rewrite)
+for values and type objects, which helps `Test`-style code and roast helpers, not Mooish. The ADR
+does **not** claim to close #15688 or #15498 either way.
 
 ## Consequences
 
@@ -79,8 +119,9 @@ roast helpers. It does **not** close #15688 (5x of rakudo) or #15498 on its own.
   hot path.
 - Negative: a second implementation site for the six names must stay in lock-step with the generic
   arms. Mitigation: the opcode calls the same runtime functions and a parity test runs every kind
-  against the generic path (`$x."WHAT"()` quoted is the oracle for the unquoted result on plain
-  receivers; `raku` is the oracle for the rest).
+  against the generic path (a quoted `$x."WHAT"()` is the oracle for the unquoted result on plain
+  receivers; `raku` is the oracle for everything else, and the only oracle for `^name`, which a
+  quoted call cannot be).
 - Negative: touches the compiler's method-call lowering and one more `OpCode` arm in
   `exec_one_dispatch` with its `// Cost:` line.
 
@@ -95,16 +136,12 @@ roast helpers. It does **not** close #15688 (5x of rakudo) or #15498 on its own.
   remainder is 1-4% per step.
 - **Fix the interpreter-fallback count generally** (the 21 fallbacks per iteration, which also include
   user methods of the Proxy classes such as `get_value`/`store-value`): a different problem
-  (D1a, the Raku-level call floor); this ADR covers only the six pseudo-methods and `^name`.
+  (D1a, the Raku-level call floor); this ADR covers only the six pseudo-methods and the `^name` rewrite.
 
 ## Open questions
 
-- Is `^name` best a kind of this opcode, or a rewrite to `.HOW.name($obj)` with `.HOW` as the opcode?
-  The measured cost (26k Ir) says the former is simpler; the latter composes with a future `.^`
-  family.
-- Which receivers does the guard admit on day one? Proposal: Int/Num/Str/Bool values and any
-  type object; Instances only after the parity test covers `handles`, `FALLBACK` and role-mixed
-  receivers.
-- Does the opcode need the quoted-call flag (`quoted_pseudo`) in its operand, or is "quoted" lowered
-  to the generic opcode at compile time (proposal: the latter, so the opcode never sees a quoted
-  call)?
+- Which receivers does the guard admit on day one? Proposal: Int/Num/Str/Bool values and any type
+  object; Instances only after the parity test covers `handles`, `FALLBACK` and role-mixed
+  receivers; Failure once pinned against `raku`.
+- Is the per-iteration table (Expected effect) enough to decide the first slice, or should `.VAR`
+  be measured separately on attribute containers first?
