@@ -673,7 +673,14 @@ impl Interpreter {
     /// in `stmts`, if any. Used by `load_module` to track which unit module
     /// is currently loading so exports can be mirrored under the module name.
     pub(crate) fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
-        for s in stmts {
+        // `unit module Widgets:ver<0.1>:auth<...>;` lowers to a synthetic block
+        // holding the version/auth metadata call and the package itself: look
+        // one level into it (it is never nested further).
+        let flat = stmts.iter().flat_map(|s| match s {
+            crate::ast::Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        });
+        for s in flat {
             match s {
                 crate::ast::Stmt::Package {
                     name,
