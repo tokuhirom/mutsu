@@ -789,7 +789,14 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 _ => None,
             })
         }
-        C::Infix => external_setting(&format!("infix:<{}>", leaf(node, "operator")?)),
+        C::Infix => {
+            let name = format!("infix:<{}>", leaf(node, "operator")?);
+            // An operator the unit declares itself is that routine.
+            scopes
+                .find(&format!("&{name}"))
+                .cloned()
+                .or_else(|| external_setting(&name))
+        }
         C::Prefix => external_setting(&format!("prefix:<{}>", leaf(node, "operator")?)),
         C::Postfix => external_setting(&format!("postfix:<{}>", leaf(node, "operator")?)),
         C::PostcircumfixArrayIndex => external_setting("postcircumfix:<[ ]>"),

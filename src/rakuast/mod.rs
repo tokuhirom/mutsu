@@ -1794,6 +1794,8 @@ pub fn compile_time_compunit(
         return Ok(cu);
     };
     let mut node = RakuAstNode::clone(node);
+    // The routines this unit declares, not those of the last unit lowered.
+    shadowed_terms::scan(&node);
     resolve::annotate(&mut node, imported);
     Ok(Value::rakuast(Box::new(node)))
 }
