@@ -555,6 +555,10 @@ pub enum RakuAstClass {
     StatementTrusts,
     StatementPrefixOnce,
     Nqp,
+    /// The statement rakudo's tree opens a role body with.
+    RoleResolveInstantiations,
+    /// The role's meta-object, as an expression of the closing `nqp` call.
+    RoleMetaObject,
     /// `nqp::const::NAME`, a constant of the nqp backend.
     NqpConst,
     StatementPrefixStart,
@@ -876,6 +880,8 @@ impl RakuAstClass {
             StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixOnce => "RakuAST::StatementPrefix::Once",
             Nqp => "RakuAST::Nqp",
+            RoleResolveInstantiations => "RakuAST::Role::ResolveInstantiations",
+            RoleMetaObject => "RakuAST::Role::MetaObject",
             NqpConst => "RakuAST::Nqp::Const",
             StatementPrefixStart => "RakuAST::StatementPrefix::Start",
             StatementPrefixQuietly => "RakuAST::StatementPrefix::Quietly",
@@ -1403,6 +1409,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixOnce,
     RakuAstClass::Nqp,
+    RakuAstClass::RoleResolveInstantiations,
+    RakuAstClass::RoleMetaObject,
     RakuAstClass::NqpConst,
     RakuAstClass::StatementPrefixStart,
     RakuAstClass::StatementPrefixQuietly,
@@ -3561,6 +3569,24 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(resolve::declared_type(node));
     }
+    if node.class == RakuAstClass::Nqp && matches!(method, "op" | "args") {
+        let mut positional = node.fields.iter().filter(|f| f.name.is_none());
+        let op = positional.next()?;
+        if method == "op" {
+            return match &op.value {
+                RakuAstFieldValue::Node(v) => Some(v.clone()),
+                _ => None,
+            };
+        }
+        return Some(Value::real_array(
+            positional
+                .filter_map(|f| match &f.value {
+                    RakuAstFieldValue::Node(v) => Some(v.clone()),
+                    _ => None,
+                })
+                .collect(),
+        ));
+    }
     if method == "is-block-statement" {
         match node.class {
             // A statement ends where its block does, or at a semicolon.
@@ -3849,8 +3875,18 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::Grammar
             | RakuAstClass::Module
             | RakuAstClass::Package
+            | RakuAstClass::RoleBody
     ) {
         names.push("compile-time-value");
+    }
+    if class == RakuAstClass::Nqp {
+        names.push("op");
+        names.push("args");
+    }
+    // The hidden name and signature a role's body holds in the unit tree.
+    if class == RakuAstClass::RoleBody {
+        names.push("name");
+        names.push("signature");
     }
     if is_resolvable_lookup(class) {
         names.push("is-resolved");

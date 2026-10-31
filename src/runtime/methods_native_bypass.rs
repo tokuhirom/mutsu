@@ -55,6 +55,7 @@ impl Interpreter {
             || cn == "Perl6::Metamodel::PackageHOW"
             || cn == "Perl6::Metamodel::SubsetHOW"
             || cn == "Perl6::Metamodel::EnumHOW"
+            || cn == "Perl6::Metamodel::NativeHOW"
             || cn == "Perl6::Metamodel::CurriedRoleHOW"
             || cn == "Perl6::Metamodel::ParametricRoleGroupHOW"
             // One individual `role` declaration, as opposed to the same-named

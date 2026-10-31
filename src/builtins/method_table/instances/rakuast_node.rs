@@ -293,6 +293,9 @@ fn method_value(
     let (owner, name) = crate::rakuast::declared_method(node)?;
     // A private method is in its class's private method table.
     if crate::rakuast::node_accessor(node, "private").is_some_and(|v| v.truthy()) {
+        if let Some(method) = interp.role_private_method_object(&owner, &name) {
+            return Some(Ok(method));
+        }
         let class = Value::package(Symbol::intern(&owner));
         let how = match interp.call_method_with_values(class.clone(), "HOW", Vec::new()) {
             Ok(how) => how,
@@ -327,6 +330,23 @@ fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A role body is the routine that builds the role (rakudo: a `Sub` over
+        // `::$?CLASS` and the role's parameters); one object per body.
+        K::RoleBody => {
+            thread_local! {
+                static BODIES: std::cell::RefCell<std::collections::HashMap<usize, Value>> =
+                    std::cell::RefCell::new(std::collections::HashMap::new());
+            }
+            let key = node as *const crate::rakuast::RakuAstNode as usize;
+            if let Some(known) = BODIES.with(|b| b.borrow().get(&key).cloned()) {
+                return Some(Ok(known));
+            }
+            let made = interp.eval_code_string("sub (Mu $, |) { }");
+            if let Ok(value) = &made {
+                BODIES.with(|b| b.borrow_mut().insert(key, value.clone()));
+            }
+            return Some(made);
+        }
         // A package declaration is its type object.
         K::Class | K::Role | K::Grammar | K::Module | K::Package => {
             let name = crate::rakuast::declared_package_qualified_name(node)?;

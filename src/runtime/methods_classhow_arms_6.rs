@@ -305,6 +305,16 @@ impl Interpreter {
             if let Some(decl) = self.native_decl(&type_name) {
                 return Ok(decl.nativesize.map_or(Value::NIL, Value::int));
             }
+            // The core native types, measured against rakudo: `int`, `uint`,
+            // `num` and `str` have no size of their own (a type object), the
+            // floats have theirs, and `atomicint` is MoarVM's -8.
+            match type_name.as_str() {
+                "int" | "uint" | "num" | "str" => return Ok(Value::NIL),
+                "num32" => return Ok(Value::int(32)),
+                "num64" => return Ok(Value::int(64)),
+                "atomicint" => return Ok(Value::int(-8)),
+                _ => {}
+            }
             match native_types::native_type_bits(&type_name) {
                 Some(bits) => Ok(Value::int(i64::from(bits))),
                 None => Err(RuntimeError::meta_method_not_found(
@@ -320,7 +330,9 @@ impl Interpreter {
             if let Some(decl) = self.native_decl(&type_name) {
                 return Ok(Value::int(i64::from(decl.unsigned)));
             }
-            if native_types::native_type_bits(&type_name).is_some() {
+            if matches!(type_name.as_str(), "num" | "num32" | "num64" | "str" | "atomicint") {
+                Ok(Value::int(0))
+            } else if native_types::native_type_bits(&type_name).is_some() {
                 Ok(Value::int(i64::from(!native_types::is_signed_native(
                     &type_name,
                 ))))

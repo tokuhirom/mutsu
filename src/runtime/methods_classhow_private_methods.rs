@@ -56,6 +56,33 @@ impl Interpreter {
         table
     }
 
+    /// The `Method` object of a private method a `role` declares, which the
+    /// role's metaobject has no table for (`RakuAST::Method.compile-time-value`
+    /// of one in a unit tree).
+    // Cost: O(m), m = overloads of the method name in the role.
+    pub(crate) fn role_private_method_object(&self, role_name: &str, name: &str) -> Option<Value> {
+        let registry = self.registry();
+        let overloads: Vec<_> = registry
+            .roles
+            .get(role_name)?
+            .methods
+            .get(name)?
+            .iter()
+            .filter(|def| def.is_private)
+            .cloned()
+            .collect();
+        let first = overloads.first()?;
+        let method = self.make_method_object_with_owner(
+            name,
+            first,
+            overloads.len() > 1,
+            first.return_type.clone(),
+            Some(&overloads),
+            Some(role_name),
+        );
+        Some(stable_method_object(method, role_name, name))
+    }
+
     /// `.^private_methods`: the class's own private methods as a list of
     /// `Method` objects, in declaration order (Manifest::StopWar walks it and
     /// calls each one back with `self!"$name"()`).
