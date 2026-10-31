@@ -481,9 +481,12 @@ impl Compiler {
     /// routine-registry scoping (hoist + snapshot/restore). Mirrors the set of
     /// statements that [`Self::hoist_sub_decls`] acts on (`Stmt::SubDecl`).
     pub(crate) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
-        stmts
-            .iter()
-            .any(|s| matches!(s, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } | Stmt::Use { .. }))
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } | Stmt::Use { .. }
+            )
+        })
     }
 
     /// Position of a top-level `unit module`/`unit package` declaration in
