@@ -37,6 +37,21 @@ use std::sync::{Mutex, OnceLock, Weak};
 
 use crate::value::Value;
 
+/// Offset added to every id when it is SHOWN in a `.WHICH` string.
+///
+/// Rakudo's `.WHICH` of a reference object carries an address-sized number
+/// (`Array|3168270547864`), and consumers tell a real object address from a
+/// fallback by its digits (Data::Dump::Tree matches `\d ** 4`). The ids stay
+/// small and never reused internally; the offset gives the displayed number the
+/// same 13-digit magnitude without touching any id used as a table key.
+pub const WHICH_SHOWN_BASE: u64 = 3_168_000_000_000;
+
+/// The number a `.WHICH` string shows for the object identity `id`.
+// Cost: O(1).
+pub fn shown(id: u64) -> u64 {
+    WHICH_SHOWN_BASE.wrapping_add(id)
+}
+
 /// Source of the ids. Starts at 1 so `0` can mean "not yet minted".
 static NEXT_WHICH_ID: AtomicU64 = AtomicU64::new(1);
 
