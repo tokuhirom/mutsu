@@ -278,6 +278,17 @@ impl Interpreter {
         mut candidates: Vec<(String, Arc<FunctionDef>)>,
     ) -> Vec<PlanEntry> {
         self.retain_visible_operator_candidates(name, &mut candidates);
+        self.rank_candidates_unfiltered(args, candidates)
+    }
+
+    /// [`Self::rank_candidates_for_plan`] over candidates the caller already
+    /// holds in scope (a captured dispatcher's own), so no visibility filter.
+    // Cost: O(c * p), c = candidates, p = parameters per candidate.
+    fn rank_candidates_unfiltered(
+        &mut self,
+        args: &[Value],
+        candidates: Vec<(String, Arc<FunctionDef>)>,
+    ) -> Vec<PlanEntry> {
         let mut entries: Vec<PlanEntry> = candidates
             .into_iter()
             .map(|(_, def)| PlanEntry {
@@ -459,10 +470,9 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Option<(Arc<FunctionDef>, Vec<Arc<FunctionDef>>)>, RuntimeError>> {
         let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        // `visibility` (an imported name) stays in the key; the captured
+        // candidates need no visibility filter, they are the dispatcher's own.
         let mut key = self.bare_multi_plan_key(family, args, Some(&arg_keys))?;
-        if key.visibility.is_some() {
-            return None;
-        }
         let mut ids = Vec::with_capacity(candidates.len());
         for code in candidates {
             let ValueView::Sub(data) = code.view() else {
@@ -532,7 +542,7 @@ impl Interpreter {
         let mut ordered = rows.clone();
         self.sort_candidates_by_specificity(&mut ordered);
         BareMultiPlan {
-            stage: self.rank_candidates_for_plan(family, args, rows),
+            stage: self.rank_candidates_unfiltered(args, rows),
             program: std::sync::OnceLock::new(),
             found_multi_candidates: true,
             keyed: true,
