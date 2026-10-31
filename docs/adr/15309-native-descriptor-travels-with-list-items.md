@@ -1,14 +1,15 @@
 # ADR-15309: A native variable's descriptor travels with the container its List item shares
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-11-01)
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15309](https://github.com/tokuhirom/mutsu/issues/15309) (Net::BGP `Net::BGP::Conversions`,
   about 15 of its 25 test files)
 - **Related**: [ADR-0049](0049-nil-decays-to-the-container-default-at-the-element-store.md) (the `default` that lives on
-  `ContainerCell`, as the `of`-type does: `src/value/mod.rs`, `CellConstraint`). Dispatch ranking by source variable
-  type: `src/runtime/multi_type_walk.rs` (`unwrap_arg_for_dispatch`) and `src/runtime/dispatch_candidates.rs`
-  (`type_hierarchy_distance_with_var_type`).
+  `ContainerCell`, as the `of`-type does: `src/value/mod.rs`, `CellConstraint`). Dispatch by source variable type:
+  `src/runtime/multi_type_walk.rs` (`unwrap_arg_for_dispatch`), `src/runtime/types/args_matching.rs`
+  (`native_dispatch_arg_matches`), `src/vm/vm_call_method_compiled_cache.rs` (`multi_arg_type_keys_impl`).
+  Element arguments: `src/vm/vm_subscript_invocant_ref.rs` (`exec_index_arg_ref_op`).
 
 ## 1. Context
 
@@ -23,21 +24,22 @@ say n16(($b1, $b0));     # rakudo: 256     mutsu: Cannot resolve caller n16(Int:
 
 ### 1.2 What rakudo does (measured with `raku`, 2026.09)
 
-A `multi` with `(byte $a)` and `(Int $a)` candidates, `my byte $b = 1`:
+A `multi` with `(byte $a)` and `(Int $a)` candidates, `my byte $b = 1`, `my $l = ($b, $b)`:
 
 | argument expression | candidate chosen |
 | --- | --- |
 | `$b` | `byte` |
-| `($b, 5)[0]`, `my $l = ($b, $b); $l[0]` | `byte` |
+| `($b, 5)[0]`, `$l[0]`, `$l.head`, `$l.first`, `$l.AT-POS(0)` | `byte` |
 | `($b, 5)[1]` | `Int` |
 | `my @bound := ($b, $b); @bound[0]` | `byte` |
-| `my @arr = ($b, $b); @arr[0]`, `[$b][0]`, `%h<a>` after `%h = a => $b` | `Int` |
-| `id($b)` for `sub id($x) { $x }`, and `idr($b)` for `sub idr(\x) { x }` | `Int` |
-| `$l.head`, `$l.first` | `byte` |
+| `sub k(@a) { m(@a[0]) }; k(($b, 2))` (the Net::BGP shape) | `byte` |
 | `my \e = $l[0]; e` | `byte` |
 | `for $l.list <-> $x { $x }` | `byte` |
 | `for $l.list -> $x { $x }` | `Int` (a read-only parameter unwraps the container) |
-| `$l[0].VAR.^name` | `UIntLexRef`, i.e. the variable's own native container |
+| `my @arr = ($b, $b); @arr[0]`, `[$b][0]`, `%h<a>` after `%h = a => $b` | `Int` |
+| `id($b)` for `sub id($x) { $x }`, `r($b)` for `sub r(\x) is raw { x }`, `$l[0]<>` | `Int` |
+| `my uint8 $u; ($u,)[0]` against the same pair | `byte` |
+| `$l[0].VAR.^name` | `UIntLexRef`, the variable's own native container |
 
 So it is not a "native tag on a value", and it is not about subscripts. The rule is general:
 
@@ -46,86 +48,121 @@ So it is not a "native tag on a value", and it is not about subscripts. The rule
 2. An accessor that returns raw (`[]`, `.head`, `.first`, `AT-POS`, a `\e` binding) hands the container on as it is.
 3. The multi dispatcher reads the `of`-type of a *container* argument.
 4. Binding to a **read-only** parameter (`->`, a plain sub parameter, `$x` in `id($x)`) unwraps the container to its
-   value, which is why `id($b)` and `for ... -> $x` give `Int`, while `<->`, `\e` and `is raw` keep it.
+   value, which is why `id($b)` and `for ... -> $x` give `Int`, while `<->` and `\e` keep it.
 
 Copying into an `Array` (`my @arr = ...`) creates fresh `Scalar` containers, which drop the descriptor.
 
-A plain `Int` never satisfies a `byte` candidate of a multi (`n16(1, 0)` is refused); a single non-multi
-`sub f(byte $a)` accepts `f(1)`.
+A plain `Int` never satisfies a multi whose only candidate takes `byte` (`multi n(byte $a); n(1)` is a compile-time
+"will never work"); a single non-multi `sub f(byte $a)` accepts `f(1)`.
 
-### 1.3 What mutsu does today (measured on `main` 2026-10-31)
+### 1.3 What mutsu does today (measured on `main` at 73ac287c, 2026-10-31)
 
-- `ContainerCell` can hold an `of`-type (`constraint`, a `Mutex<Option<Box<CellConstraint>>>`) and a `default`, and a
-  typed scalar's `of` is documented to travel through aliases. **That is not established for a native variable**: the
-  `declared_untyped` comment (`src/value/mod.rs`, next to the `name` field) says that "no `of`-type" is what an untyped
-  variable's cell *and* a native variable's cell both look like. So the premise that the cell of a `my byte $b` carries
-  `byte` is something this ADR has to make true, not assume (§2 step 2, §5).
-- The dispatcher's `Value::varref` argument carries the source *variable's* declared type, which is how `f($b)` picks
-  `byte`; there is no equivalent for an argument that is a container reached through an accessor.
-- A List literal does alias its variables (`2` in the example above), but the element read hands the dispatcher the
-  dereferenced value: `($t,)[0].VAR.of` for `my Int $t` dies with `No such method 'of' for invocant of type 'Int'`
-  (rakudo: `Int`), `$l[0].VAR` of a plain `$x` is a `Scalar` (correct) but of a `byte` variable it is not the native
-  container.
-- A literal `Int` argument is accepted by a multi's `byte` candidate (`m(1, 0)` runs; rakudo refuses it). This is
-  looser than rakudo and unrelated to the symptom, and is left alone here.
+- **A List literal already stores each variable's own cell, with its declared type on it.** `($a, $b)` compiles to
+  `WrapVarRef` per element and `MakeArray`; `exec_make_array_op` (`src/vm/vm_data_ops.rs`) promotes the variable
+  through `capture_var_cell_inner` and calls `register_container_cell_constraint_for_name`, which copies the declared
+  type — `byte` included — onto the cell. Evidence: `my byte $t; my $l = ($t, 7); $l[0] = "x"` fails with
+  `expected byte ... in assignment to $t`, `$l[0] = 300` writes `44` into `$t`, and `sub g(@a) { @a[0] = 9 };
+  g(($x, 2))` writes `$x`. So the descriptor is already on the cell; the List is not the gap.
+  (The `declared_untyped` comment in `src/value/mod.rs` describes cells made at *other* sites; the List promotion site
+  registers the type.)
+- **An element argument is dereferenced at the call site.** `f(@a[0])` compiles to `IndexArgRef`;
+  `exec_index_arg_ref_op` hands the element's cell over only when the callee binds a container (`is rw`, `\x`, a bare
+  block's topic) and otherwise runs the plain `Index` op, which returns the value. So the dispatcher never sees the
+  cell for `n16(@a[0], @a[1])`.
+- **The dispatcher reads a declared type only from a `VarRef`.** Three sites decide a native candidate, and each
+  dereferences a `ContainerRef` argument without looking at its cell: the applicability filter
+  `native_dispatch_arg_matches`, the ranking `unwrap_arg_for_dispatch`, and the multi-dispatch cache key
+  `multi_arg_type_keys_impl` (which keys a `ContainerRef` by its contents only).
+- `.head` / `.first` already return the cell to the dispatcher (a prototype that only changed the dispatcher sites made
+  them pick `byte`); `$l[0]` with `$l` a scalar holding the List, `my \e = $l[0]` and `<->` do not.
+- A literal `Int` is accepted by a multi whose only candidate takes `byte` (`n(1)` runs; rakudo refuses it at compile
+  time). Unrelated to the symptom and left alone (§5).
 
-## 2. Decision (proposed)
+### 1.4 Prototype (2026-10-31, not committed)
 
-1. **State the rule, not a syntax case.** A call argument that is a container (a `ContainerRef`) is dispatched by
-   the container's `of`-type; a container argument is what a raw-returning accessor produces (§1.2 items 2-3). The
-   dispatcher change is in `unwrap_arg_for_dispatch` (`src/runtime/multi_type_walk.rs`): when the argument has no
-   `varref` type, take the type from the cell, and only then dereference it. Which accessors return the container
-   rather than the value is decided accessor by accessor against §1.2 (`[]`, `.head`, `.first`, `\e`, `<->`), never by
-   the call-site syntax.
-2. **Register the `of`-type on a native variable's cell.** Where a native variable (`my byte $b`) is promoted to a
-   shared cell (the `capture_var_cell` / list-item promotion sites), set its `CellConstraint` to the declared native
-   type, so the cell is distinguishable from an untyped variable's. This is the step that makes the cell, not the
-   `varref`, carry `byte`. `declared_untyped` stays as it is (it answers a different question: whether a cell may be an
-   atomic native-integer one).
-3. **A List literal stores each variable's own cell**, not a dereferenced copy, so the cell is what an accessor later
-   finds. Aliasing already works; this makes the descriptor ride on it.
-4. **Binding to a read-only parameter keeps unwrapping**, so `->`, a plain parameter and `id($b)` still see `Int`;
-   `<->`, `\e` and `is raw` keep the container (§1.2 rows 4-7).
-5. **Array copies keep losing it** (`my @arr = ($b, $b); @arr[0]` is `Int`).
+A 44-line prototype over four files — `exec_index_arg_ref_op` hands over a `List` slot's existing cell when that cell
+carries a native `of`-type, and the three dispatcher sites take the type from a `ContainerRef` argument's cell — made
+the §1.1 reduction print `256`, and turned the `($b, 5)[0]`, `@bound[0]`, `.head`, `.first` and `uint8` rows to
+`byte` while `($b, 5)[1]`, `@arr[0]`, `[$b][0]`, `%h<a>` and `id($b)` stayed `Int`. 150 `t/` files matching
+`multi|native|dispatch|alias` and the 20 whitelisted `S06-multi` / `S02-types/native` / `S09-typed-arrays/native`
+roast files stayed green.
 
-### 2.1 Acceptance
+Two findings from it shape the decision:
 
-`t/` regression pinning every row of the §1.2 table (including `.head`, `.first`, `my \e = $l[0]`, `<->` versus `->`,
-the `Array` copy, `id($b)` and `$l[1]` of `($b, 5)`), plus the Net::BGP `n16` reduction; Net::BGP's
-`t/00-conversions.t` matching `raku`. A verification item before the dispatcher change: `($t,)[0].VAR.of` for
-`my Int $t` and for `my byte $b` answers the declared type (it dies today for `Int`, §1.3).
+- **Without the cache-key change the answer depends on call order**: the first call through a call site caches its
+  winner under the contents' type `Int`, so `m(($b,5)[0]); m(($b,5)[1])` printed `byte byte` and the reverse order
+  printed `Int Int`.
+- The prototype read the type with `lookup_container_constraint`, which locks the cell's `constraint` mutex and
+  clones a `String`. The cache-key site runs for every `ContainerRef` argument of every cached multi call (the
+  Text::CSV hot path of #9494), so the real slice must not pay that.
 
-## 3. Alternatives considered
+## 2. Decision
+
+1. **The dispatcher reads the native `of`-type of a container argument.** The three sites in §1.3 treat a
+   `ContainerRef` argument whose cell carries a native `of-type` exactly like a `VarRef` of a variable declared with
+   that type: `native_dispatch_arg_matches` accepts it for a native candidate, `unwrap_arg_for_dispatch` returns the
+   type for ranking, and `multi_arg_type_keys_impl` keys it behind the existing `declared_type` marker. A
+   `ContainerRef` without a native type keeps today's behaviour (a typed non-native cell is not keyed or ranked
+   differently in this decision).
+2. **The cell answers "am I native?" without a lock.** `ContainerCell` gains a native marker (an atomic, like
+   `declared_untyped`), set where a native type is registered on the cell; the three sites test it first and read the
+   type name only when it is set. Untyped and boxed-typed cells pay one relaxed atomic load.
+3. **An element argument hands over its existing native-typed cell.** `exec_index_arg_ref_op` passes the slot's cell
+   when the receiver is a `List` (also as held by a scalar, the `$l[0]` row) and the slot already holds a
+   `ContainerRef` with the native marker. It never promotes a new cell, never touches `Array`/`Hash` receivers (their
+   slots are fresh `Scalar`s, the `@arr[0]` row), and does not depend on the callee; a read-only parameter
+   dereferences the cell at binding, as it already does for the cells `is rw` callees receive.
+4. **Raw bindings of a List item keep the cell**: `my \e = $l[0]` and `for ... <-> $x`, matching §1.2. `->` and plain
+   parameters keep unwrapping.
+5. **Array copies keep losing it** (`my @arr = ($b, $b); @arr[0]` is `Int`), and a sub's non-`is raw` return keeps
+   decontainerizing (`id($b)`).
+
+The List literal itself needs no change (§1.3, first bullet).
+
+## 3. Implementation slices
+
+### Slice 1 — dispatch on a List item's native cell (closes #15309)
+
+- `ContainerCell` native marker plus its setter, called from `register_container_constraint*` when the type's
+  `native_family` is `Some` (`src/value/mod.rs`, ~20 lines).
+- The three dispatcher sites (§2.1), each gated on the marker (~30 lines).
+- `exec_index_arg_ref_op`: the List-slot hand-over (§2.3), including the scalar-held List (~30 lines).
+- Test `t/routines/dispatch/multi-byte-list-item.t` (the path `scripts/migrate-t-layout.py --where` gives): every
+  §1.2 row except `\e` and `<->`, the `uint8` row, both call orders of `($b,5)[0]` / `($b,5)[1]` through one call site
+  (the cache), the §1.1 reduction, and a check that `id($l[0])` still sees a read-only `Int`.
+- Verify Net::BGP's `t/00-conversions.t` (and the other files #15309 names) against `raku`; file each new failure the
+  run exposes as its own issue.
+- Size: one PR, ~100 lines of `src/` plus the test. Focus for the gate: `t/routines/dispatch`, `roast/S06-multi`,
+  `roast/S02-types/native.t`, `roast/S09-typed-arrays`.
+
+### Slice 2 — raw bindings of a List item (`\e`, `<->`)
+
+- `my \e = $l[0]` and `for $l.list <-> $x` keep the item's cell (§2.4), so a later call dispatches on it.
+- Test rows added to the slice 1 file. Size: small; one PR. Filed as its own issue when slice 1 lands, since
+  Net::BGP does not need it.
+
+## 4. Alternatives considered
 
 - **A `byte`/`uint8` flag on the boxed `Int` value.** Rejected: rakudo's rows (`@arr[0]` is `Int`, `id($b)` is
   `Int`) show the property belongs to the container, not the value; a value-level tag would also survive copies that
   must drop it, and would need a `Value` variant on a hot path.
 - **Accept any in-range `Int` for a `byte` candidate** (making the symptom disappear). Rejected: it changes dispatch
   for `multi (byte)` / `multi (Int)` pairs (`m(5)` would stop choosing `Int`) and does not match rakudo.
+- **Pass every element argument as its container** (not only native-typed List cells). Rejected for now: it would
+  promote `Array` slots and hand cells to callees that never look at them, for no dispatch difference; the native
+  marker keeps the change to the rows rakudo actually distinguishes.
+- **A process-wide "some native cell exists" flag** as the cost gate. Rejected in favour of the per-cell marker: one
+  native variable anywhere would switch the lock-and-clone lookup on for every container argument in the program.
 - **Special-case Net::BGP's recursion.** Rejected (AGENTS.md: no distribution-specific code).
 
-## 4. Consequences and risks
+## 5. Consequences and risks
 
-- **Cost on the hot path.** Reading a cell's `of`-type today is `lookup_container_constraint`, which locks the
-  `constraint` mutex and clones a `String` (`src/value/mod.rs`). Calling it for every container argument would put a
-  lock and an allocation on every call that passes an element. The dispatch lookup therefore needs an early-out: gate it
-  on a process-wide flag that is set when a native variable's cell registers its `of`-type (the pattern of
-  `CELL_METADATA_SEEN` / `cell_metadata_possible()`, but a separate flag, so unrelated `is default` users do not
-  switch the lookup on), and have it return a borrowed/interned type rather than a `String`. A program that never
-  declares a native variable pays one relaxed atomic load per container argument.
-- Step 3 changes what a List literal holds for a variable argument; the existing aliasing tests are the guard.
-- Step 2 changes how a native variable's cell looks to every consumer of `constraint` (element type checks, `.VAR.of`),
-  so each consumer is audited for "native" meaning "no boxing check": a store through such a cell must still reject
-  an out-of-range value.
-- `.VAR.^name` for native variables (`UIntLexRef`) is out of scope.
-
-## 5. Open questions
-
-1. Does mutsu already store the cell for `($x, 7)` and only dereference it on `AT-POS`, or does the List hold a
-   `varref` resolved at read time? The implementation slice starts by answering this with `rust-gdb` on
-   `($t,)[0].VAR.of`; it decides whether step 3 is a change or already true.
-2. Which of mutsu's raw-returning accessors already hand the container on, and which dereference? The §1.2 rows are
-   the list to check them against.
-3. The literal `Int` accepted by a multi's `byte` candidate (`m(1, 0)` runs; rakudo refuses it) is looser than
-   rakudo. It is left alone here, because tightening it is a separate behaviour change; whether anything depends on it
-   has not been measured, and it should be measured before that issue is worked, not assumed.
+- The multi-dispatch cache gains a key for native-typed container arguments; a cache key that misses it gives an
+  order-dependent answer (§1.4), so the slice 1 test pins both orders through one call site.
+- A native-typed List cell now reaches callees that are not `is rw`. Read-only binding already dereferences a
+  `ContainerRef` (the prototype's `id($l[0])` still saw a read-only value, and builtins such as `sum` and `+` read
+  it), but any pure builtin that matches on the raw argument view is a place to check if slice 1's focused runs show a
+  regression.
+- Out of scope, each its own issue: the literal `Int` accepted by a byte-only multi (§1.3, last bullet; #15852), and `.VAR`
+  of a native variable (mutsu answers `Scalar` and `$b.VAR.of` gives `byte`, where rakudo answers `UIntLexRef` and has
+  no `.of`) together with `($t,)[0].VAR.of` dying for `my Int $t` (rakudo: `Int`; #15853).
