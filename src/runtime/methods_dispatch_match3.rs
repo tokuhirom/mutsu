@@ -670,11 +670,28 @@ impl Interpreter {
                 // `EXISTS-KEY` does NOT sigil-fallback (`Foo::.EXISTS-KEY('baz')` is
                 // False even when `$baz` exists). Dists query the full sigil'd name
                 // (`CORE::.EXISTS-KEY('&head')`).
-                let exists = matches!(
+                let key = args[0].to_string_value();
+                let mut exists = matches!(
                     attributes.as_map().get("symbols").map(Value::view),
-                    Some(ValueView::Hash(symbols))
-                        if symbols.contains_key(args[0].to_string_value().as_str())
+                    Some(ValueView::Hash(symbols)) if symbols.contains_key(key.as_str())
                 );
+                // CORE::/SETTING:: expose the core symbol table, which is not
+                // materialized into the stash: a core routine (`&head`, `&say`)
+                // exists there, found the way `AT-KEY` finds it.
+                if !exists
+                    && let Some(ValueView::Str(stash_name)) =
+                        attributes.as_map().get("name").map(Value::view)
+                    && (stash_name.as_str() == "CORE" || stash_name.as_str() == "SETTING")
+                    && let Some(bare) = key.strip_prefix('&')
+                {
+                    // A routine the program (or an import) declared is not a core
+                    // symbol, even though `CORE::name` resolves to it.
+                    exists = Self::is_builtin_function(bare)
+                        || (!self.user_declares_routine(bare)
+                            && !self
+                                .resolve_code_var(&format!("{}::{bare}", stash_name.as_str()))
+                                .is_nil());
+                }
                 return Some(Ok(Value::truth(exists)));
             }
         }
