@@ -791,6 +791,18 @@ impl Interpreter {
         self.try_native_method(inner, Symbol::intern(method_name), args)
     }
 
+    /// `value` itself when it is a plain `IO::Handle` instance (the inner value
+    /// of a mixin wrapper), else `None`.
+    // Cost: O(1).
+    fn plain_io_handle_instance(value: &Value) -> Option<Value> {
+        match value.view() {
+            ValueView::Instance { class_name, .. } if class_name.as_str() == "IO::Handle" => {
+                Some(value.clone())
+            }
+            _ => None,
+        }
+    }
+
     /// A plain `IO::Handle` view (same cell) of an instance whose class is
     /// `IO::Handle` with roles mixed in (`IO::Handle+{R}`), else `None`.
     // Cost: O(1).
@@ -1306,6 +1318,14 @@ impl Interpreter {
                         // An instance whose class has no storage bridge
                         // (`Storage` handled it above): the default rendering.
                         self.any_base_native_entry(&invocant, &name, &args)?
+                    } else if let ValueView::Mixin(inner, _) = invocant.view()
+                        && let Some(plain) = Self::plain_io_handle_instance(inner)
+                    {
+                        // A parameterized role mixed into an open handle
+                        // (`$*ARGFILES does R[:reset]`) stays a mixin wrapper
+                        // over the plain handle: the base behind its
+                        // `callsame` is the native method on that handle.
+                        self.call_method_with_values(plain, &name, args)?
                     } else if let ValueView::Mixin(inner, _) = invocant.view() {
                         // A role mixed into a container-subclass instance
                         // (`$dict but Info`): the instance's own storage is

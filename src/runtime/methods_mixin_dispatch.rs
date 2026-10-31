@@ -707,6 +707,20 @@ impl Interpreter {
                     base: super::NativeBase::Value,
                 }]
             };
+            // An open handle (`$*ARGFILES does R[:reset]`) is a native class
+            // instance with no `MethodDef`s either: the native `IO::Handle`
+            // method on the wrapped handle is the one candidate behind the
+            // role's method.
+            let base_remaining = if base_remaining.is_empty()
+                && base_class.as_deref() == Some("IO::Handle")
+            {
+                vec![super::DeferralEntry::Native {
+                    name: lookup_name.to_string(),
+                    base: super::NativeBase::Value,
+                }]
+            } else {
+                base_remaining
+            };
             let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
             if pushed_base_dispatch {
                 let rw_params =
