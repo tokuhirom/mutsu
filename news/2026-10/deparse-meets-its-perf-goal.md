@@ -1,4 +1,4 @@
-# `RakuAST::Deparse` dispatch meets its goal; the x3 test budget is gone
+# `RakuAST::Deparse` dispatch meets its goal
 
 Dispatching a `multi method` call copied every visible candidate that did not
 bind it (`RakuAST::Deparse`: ~265 of 267) into a `Vec<(Symbol, MethodDef)>`,
@@ -15,5 +15,5 @@ Callgrind, six DEPARSE snippets per round (profiling build, steady state):
 rakudo's (0.04 s vs 0.12-0.30 s, rakudo compiling `RakuAST::Deparse`).
 
 `t/rakuast/rakuast-deparse.t` on a debug binary alone: 121 s -> 27 s (GC-stress
-and JIT-stress settings 21 s each), so its x3 budget in
-`scripts/run-t-test.sh` is removed.
+and JIT-stress settings 21 s each), inside the base budget; its x3 entry in
+`scripts/run-t-test.sh` is no longer needed.
