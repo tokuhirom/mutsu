@@ -81,8 +81,9 @@ impl SeqBody {
         Ok(Some(items))
     }
 
-    /// Claim a not-yet-finished `.map`/`.grep` source for a `for` loop to
-    /// stream. Returns the elements an earlier prefix pull already stored
+    /// Claim a not-yet-finished `.map`/`.grep` source, or a `Seq.new($iterator)`
+    /// one (#15820: the iterator's `pull-one` must interleave with the loop
+    /// body), for a `for` loop to stream. Returns the elements an earlier prefix pull already stored
     /// (the loop iterates those first) and the source itself, leaving the body
     /// `Taken` until [`SeqBody::finish_map_grep_streaming`] puts it back:
     /// while the loop runs nothing else may pull the same source, as Rakudo
@@ -93,7 +94,12 @@ impl SeqBody {
     // Cost: O(1), or O(p) for p elements an earlier prefix pull stored.
     pub(crate) fn claim_map_grep_for_streaming(&self) -> Option<(Vec<Value>, SeqSource)> {
         let mut state = self.lock_state();
-        if state.cache_requested || !matches!(state.source, SeqSource::MapGrep { .. }) {
+        if state.cache_requested
+            || !matches!(
+                state.source,
+                SeqSource::MapGrep { .. } | SeqSource::Iterator(_)
+            )
+        {
             return None;
         }
         let source = std::mem::replace(&mut state.source, SeqSource::Taken);
