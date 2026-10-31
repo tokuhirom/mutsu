@@ -162,6 +162,15 @@ impl Interpreter {
         {
             return None;
         }
+        // A native renderer stands in for the per-element `.Str`/`.gist`/`.raku`
+        // call Rakudo would make, so a `Proxy` among the receiver's elements
+        // (`(a => @buf[0])` with a bound Proxy) owes its FETCH, which only the
+        // full path runs (ADR-0040 §9.2; #15772).
+        if Self::renders_receiver_elements(Self::const_str(code, name_idx))
+            && Self::holds_nested_proxy(&self.stack[base])
+        {
+            return None;
+        }
         // A row with effects is not re-run by the debug cross-check.
         let pure = method_table::row(row).handler.is_pure()
             && !method_table::row(row)

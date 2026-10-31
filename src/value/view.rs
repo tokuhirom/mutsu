@@ -874,6 +874,13 @@ impl Value {
         self.0.may_hide_a_stringifiable_list()
     }
 
+    /// Whether this is a `Pair` or a plain `Hash`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_pair_or_hash_value(&self) -> bool {
+        self.0.is_pair_or_hash()
+    }
+
     /// Whether this is a `LazyList`. A pure tag probe (see
     /// [`Self::is_junction_value`]).
     #[inline]
