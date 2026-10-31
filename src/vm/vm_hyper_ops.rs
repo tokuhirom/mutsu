@@ -206,7 +206,7 @@ impl Interpreter {
 
     /// Whether `v` is an instance that is `Positional` but not `Iterable`.
     // Cost: O(1) type checks.
-    fn is_positional_non_iterable_instance(&mut self, v: &Value) -> bool {
+    pub(crate) fn is_positional_non_iterable_instance(&mut self, v: &Value) -> bool {
         let v = v.deref_container();
         let v = v.descalarize();
         matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
@@ -229,9 +229,16 @@ impl Interpreter {
             return Ok((left, right));
         }
         if (lp && (rp || Self::is_listy(&right))) || (rp && Self::is_listy(&left)) {
-            let name = |v: &Value| match v.view() {
-                ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
-                _ => crate::value::type_name::value_type_name(v).to_string(),
+            let name = |v: &Value| {
+                let v = v.deref_container();
+                match v.view() {
+                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    ValueView::Mixin(inner, _) => match inner.view() {
+                        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                        _ => crate::value::types::what_type_name(&v),
+                    },
+                    _ => crate::value::types::what_type_name(&v),
+                }
             };
             let msg = format!(
                 "Ambiguous call to 'infix(Hyper: {}, {})'; these signatures all match:\n\
