@@ -1,6 +1,6 @@
 # ADR-15334: Stage 2 — the parser builds typed RakuAST nodes for every family, and the executing round trip and `convert` reverse paths are deleted
 
-- **Status**: Accepted (maintainer decision, 2026-10-28); amended by §7–§10 (2026-10-29)
+- **Status**: Accepted (maintainer decision, 2026-10-28); amended by §7–§11 (2026-10-29 – 2026-10-31); Stage 2 closed by §11
 - **Date**: 2026-10-28
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15334](https://github.com/tokuhirom/mutsu/issues/15334). Roadmap:
@@ -434,3 +434,36 @@ for it. The compiler keeps consuming the spelled form.
 
 §2.1.1 ("The parser stops desugaring that family: its `SyntheticBlock` producers and `__mutsu_*` call spellings
 go") is read the same way: they go from the parser, not from the lowered tree.
+
+## 11. Amendment 5 — Stage 2 is closed as reading (B) complete (2026-10-31)
+
+**Decision (maintainer, 2026-10-31; recorded on [#15334](https://github.com/tokuhirom/mutsu/issues/15334) and
+[#7564](https://github.com/tokuhirom/mutsu/issues/7564)).** Earlier sections are not rewritten; this section
+replaces their remaining open conditions.
+
+1. **Stage 2, read as (B) (Amendment 4), is complete.** Measured on `main` 2026-10-31:
+   - the parser has no `SyntheticBlock` producer ([#15621](https://github.com/tokuhirom/mutsu/issues/15621));
+   - `convert` has no recognizer left (no `SyntheticBlock` recognizer, no by-name recognizer of a `__mutsu_*`
+     call, no bareword guess);
+   - the executing path builds no `RakuAstNode` ([#15744](https://github.com/tokuhirom/mutsu/issues/15744));
+   - `frontend::round_trip*`, `passthrough` and `ParsedLeaf` are deleted;
+   - the frontend-cost target of §3.2 / Amendment 1 is met ([#15657](https://github.com/tokuhirom/mutsu/issues/15657)
+     closed; `Zef/CLI.rakumod` 104.3%, `grammar-cursor-attributes.t` 108.1% of the baseline).
+2. **§4's condition "the ratchet counts at zero" is replaced by pinning.** After Amendment 4 the three
+   `check-frontend-debt` counts measure executable IR and the `.AST` view, not debt: `Stmt::SyntheticBlock`
+   remains as lowering output, the `__mutsu_*` spellings remain as the compiler's input, and the T1 arms of
+   `convert.rs` remain as the view (§2.1.4–5). The check stays and its ceilings are pinned at the values
+   measured on `main` 2026-10-31: synthetic-block-sites 10, internal-name-literals 38, convert-lines 6761.
+   They may only fall; §3.3's "slice 9 deletes the check" no longer applies.
+3. **Two parts of §2.1 leave Stage 2 and become their own issues**, both `lane:rakuast`, sub-issues of #7564:
+   - §2.1.2, lowering each typed node at the point the parser builds it, which needs a decided scope owner
+     (§2.3) before the spelled executing parse, `unspell` and the second `qualify_type_names` pass can be
+     deleted — C2;
+   - §2.1.3 / §2.1.5, folding the `MUTSU_RAKUAST=convert` coverage mode into the `.AST` mode and renaming
+     `convert` to `view` — C1. It starts by making `scripts/ast-text-corpus.sh` a CI ratchet, and the convert
+     mode is not removed before that gate is in CI.
+4. **Reading (A) and Stage 4 are not part of this ADR or of the #7564 campaign.** Replacing a compiler-consumed
+   spelling by a typed `Expr` / `Stmt` / `ParamDef` shape (the `__subsig__` / `__literal__` placeholders,
+   `__mutsu_*` calls, `Stmt::SyntheticBlock`, the `"v6"` pseudo-module) and the Stage 4 items of ADR-10723 §2.2
+   (slangs by execution, RakuDoc v2, `.DEPARSE`) each continue under their own carrier issue and ADR.
+   ADR-14845 (`.DEPARSE`) stays `Proposed`.
