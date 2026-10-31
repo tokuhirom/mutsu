@@ -10,6 +10,7 @@
 //! so a node the parser made rather than read — `$x += 1`'s copy of `$x + 1`
 //! — fails the check and stays without an origin: exact or absent.
 
+use crate::scope::NameScope;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
 use crate::value::{Value, ValueView};
@@ -17,13 +18,13 @@ use crate::value::{Value, ValueView};
 /// Place `node`, a node just converted, and its operator / name / argument
 /// parts, from the origins its children carry.
 // Cost: O(f + n), f = fields of `node`, n = length of the source text read.
-pub(super) fn derive(node: &mut RakuAstNode) {
+pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(node);
-            super::decl_origins::derive(node);
+            super::decl_origins::derive(names, node);
         }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);

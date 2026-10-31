@@ -15,6 +15,7 @@
 //! The field is part of the model (an accessor answers it) but not of the
 //! node's constructor form: Rakudo's `.raku` shows no origin either.
 
+use crate::scope::NameScope;
 use std::cell::Cell;
 
 use super::{RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -73,7 +74,7 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 /// Give `node`, a statement that began on `line` and occupies `span` of the
 /// unit's source, its origin.
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
-pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
+pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     // The lowering reads only the line; the ranges are for `.AST`.
     if super::finalize::executing() {
         node.origin.0 = Some(Value::int(line));
@@ -96,7 +97,7 @@ pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) 
     {
         let mut expression = RakuAstNode::clone(expression);
         set_span(&mut expression, span);
-        super::infix_origins::derive(&mut expression);
+        super::infix_origins::derive(names, &mut expression);
         *held = Value::rakuast(Box::new(expression));
     }
 }

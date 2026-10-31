@@ -57,7 +57,7 @@ pub(super) fn statement_list_inner(names: &NameScope, stmts: &[Stmt]) -> Result<
                     node.fields.push(field);
                 }
                 if let Some((n, span)) = line.take() {
-                    origin::set(&mut node, n, span);
+                    origin::set(names, &mut node, n, span);
                 }
                 fields.push(node_field(None, node));
             }
@@ -74,7 +74,7 @@ pub(super) fn statement_list_inner(names: &NameScope, stmts: &[Stmt]) -> Result<
                 node.fields.push(field);
             }
             if let Some((n, span)) = line.take() {
-                origin::set(&mut node, n, span);
+                origin::set(names, &mut node, n, span);
             }
             fields.push(node_field(None, node));
         }

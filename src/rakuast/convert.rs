@@ -2418,7 +2418,7 @@ pub(super) fn convert_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
         origin::quoted_text(&mut node, span);
         super::call_origins::postfix_call(&mut node, span);
     }
-    super::infix_origins::derive(&mut node);
+    super::infix_origins::derive(names, &mut node);
     Ok(node)
 }
 
@@ -5732,7 +5732,7 @@ fn convert_chained_compare(names: &NameScope,
                 node_field(Some("right"), convert_expr(names, &operands[i + 1])?),
             ],
         };
-        super::infix_origins::derive(&mut infix);
+        super::infix_origins::derive(names, &mut infix);
         node = if *negated {
             RakuAstNode {
                 origin: Default::default(),
@@ -6353,7 +6353,7 @@ pub(super) fn comma_list_node(names: &NameScope, items: &[Expr]) -> Result<RakuA
             },
         ],
     };
-    super::infix_origins::derive(&mut node);
+    super::infix_origins::derive(names, &mut node);
     Ok(node)
 }
 

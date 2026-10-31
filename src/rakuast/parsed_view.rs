@@ -472,7 +472,7 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
     {
         let mut expression = RakuAstNode::clone(expression);
         super::origin::set_span(&mut expression, m.body);
-        super::infix_origins::derive(&mut expression);
+        super::infix_origins::derive(names, &mut expression);
         field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(expression)));
     }
     for modifier in m.modifiers() {

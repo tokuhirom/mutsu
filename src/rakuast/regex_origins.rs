@@ -244,8 +244,8 @@ impl Walk<'_> {
                     return None;
                 }
             }
-            RakuAstClass::RegexGroup => self.bracketed(node, "[", "]")?,
-            RakuAstClass::RegexCapturingGroup => self.bracketed(node, "(", ")")?,
+            RakuAstClass::RegexGroup => self.bracketed(names, node, "[", "]")?,
+            RakuAstClass::RegexCapturingGroup => self.bracketed(names, node, "(", ")")?,
             RakuAstClass::RegexQuantifiedAtom => self.quantified(names, node)?,
             RakuAstClass::RegexCharClass(_) => {
                 self.eat(&super::regex_char_class::written(node)?)?
@@ -254,7 +254,7 @@ impl Walk<'_> {
             RakuAstClass::RegexAnchorEndOfString => self.eat("$")?,
             RakuAstClass::RegexAnchorBeginningOfLine => self.eat("^^")?,
             RakuAstClass::RegexAnchorEndOfLine => self.eat("$$")?,
-            RakuAstClass::RegexNamedCapture => self.named_capture(node)?,
+            RakuAstClass::RegexNamedCapture => self.named_capture(names, node)?,
             RakuAstClass::RegexAssertionCharClass => self.char_class(node)?,
             RakuAstClass::RegexAssertionNamed => self.named_assertion(node)?,
             _ => return None,
@@ -302,7 +302,7 @@ impl Walk<'_> {
 
     /// `[ ... ]` / `( ... )`.
     // Cost: O(n), n = length of the group's text.
-    fn bracketed(&mut self, node: &mut RakuAstNode, open: &str, close: &str) -> Option<()> {
+    fn bracketed(&mut self, names: &NameScope, node: &mut RakuAstNode, open: &str, close: &str) -> Option<()> {
         self.eat(open)?;
         self.blank();
         self.child_at(names, node, 0)?;
@@ -447,7 +447,7 @@ impl Walk<'_> {
 
     /// `$<name>=atom` / `@<name>=atom`.
     // Cost: O(n), n = length of the capture's text.
-    fn named_capture(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn named_capture(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         let name = node.fields.iter().find_map(|f| match &f.value {
             RakuAstFieldValue::Node(v) if f.name == Some("name") => match v.view() {
                 ValueView::Str(s) => Some(s.to_string()),

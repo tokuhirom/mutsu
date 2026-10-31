@@ -77,7 +77,7 @@ fn contents_node(names: &NameScope, pairs: &[(String, Option<Expr>)]) -> Result<
                 node_field(Some("value"), convert_expr(names, value)?),
             ],
         };
-        super::infix_origins::derive(&mut pair);
+        super::infix_origins::derive(names, &mut pair);
         fatarrows.push(pair);
     }
     if fatarrows.len() <= 1 {
@@ -98,7 +98,7 @@ fn contents_node(names: &NameScope, pairs: &[(String, Option<Expr>)]) -> Result<
             },
         ],
     };
-    super::infix_origins::derive(&mut list);
+    super::infix_origins::derive(names, &mut list);
     Ok(Some(list))
 }
 
