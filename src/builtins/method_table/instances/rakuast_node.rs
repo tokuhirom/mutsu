@@ -378,7 +378,7 @@ fn sub_value(
         }
         // A block's value is its closure.
         K::Block | K::PointyBlock => {
-            return Some(interp.eval_rakuast_node(&crate::rakuast::as_item_call_statement(target)));
+            return Some(interp.eval_rakuast_node(&crate::rakuast::as_closure_statement(target)));
         }
         // `::T` is the generic type `T`: the same object a signature's
         // `--> T` returns, until a call binds it.
@@ -434,6 +434,13 @@ fn parameter_meta_object(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // A block's meta-object is its closure, as its `compile-time-value`.
+    if matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::Block | crate::rakuast::RakuAstClass::PointyBlock
+    ) {
+        return sub_value(interp, target, _args, _named);
+    }
     // A parameter of a routine the unit declares is that routine's own
     // `Parameter`, so the analysis can match it with the signature it dispatches
     // over (`$routine.signature.params[$i] === $node.meta-object`).

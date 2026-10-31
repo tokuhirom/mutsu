@@ -1565,6 +1565,130 @@ pub(crate) fn as_item_call_statement(node: &Value) -> Value {
     }))
 }
 
+/// The block `node`'s closure as a statement that can be evaluated away from
+/// its scope: the lexicals it uses but does not declare are declared first
+/// (`do { my $x; item(NODE) }`), as they are by the time the unit runs.
+// Cost: O(size of the block).
+pub(crate) fn as_closure_statement(node: &Value) -> Value {
+    let ValueView::RakuAst(held) = node.view() else {
+        return as_item_call_statement(node);
+    };
+    let mut used = Vec::new();
+    let mut declared = std::collections::HashSet::new();
+    collect_lexicals(held, &mut used, &mut declared);
+    let mut statements = Vec::new();
+    for name in used {
+        if declared.contains(&name) {
+            continue;
+        }
+        let (sigil, ident) = name.split_at(1);
+        if !matches!(sigil, "$" | "@" | "%" | "&")
+            || ident.is_empty()
+            || !ident
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            || ident == "_"
+        {
+            continue;
+        }
+        let decl = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::VarDeclarationSimple,
+            fields: vec![
+                RakuAstField {
+                    name: Some("sigil"),
+                    value: RakuAstFieldValue::Node(Value::str(sigil.to_string())),
+                },
+                RakuAstField {
+                    name: Some("desigilname"),
+                    value: RakuAstFieldValue::Node(Value::rakuast(Box::new(
+                        name_parts::name_from_parts(vec![name_parts::simple_part(ident)]),
+                    ))),
+                },
+            ],
+        };
+        statements.push(as_statement(&Value::rakuast(Box::new(decl))));
+    }
+    if statements.is_empty() {
+        return as_item_call_statement(node);
+    }
+    statements.push(as_item_call_statement(node));
+    let list = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementList,
+        fields: statements
+            .into_iter()
+            .map(|value| RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(value),
+            })
+            .collect(),
+    };
+    let blockoid = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Blockoid,
+        fields: vec![RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(list))),
+        }],
+    };
+    let block = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Block,
+        fields: vec![RakuAstField {
+            name: Some("body"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid))),
+        }],
+    };
+    as_statement(&Value::rakuast(Box::new(block)))
+}
+
+/// The lexical variables `node` uses (in first-use order) and those it declares.
+// Cost: O(size of the subtree).
+fn collect_lexicals(
+    node: &RakuAstNode,
+    used: &mut Vec<String>,
+    declared: &mut std::collections::HashSet<String>,
+) {
+    match node.class {
+        RakuAstClass::VarLexical => {
+            if let Some(name) = resolve::leaf_of(node, "name")
+                && !used.contains(&name)
+            {
+                used.push(name);
+            }
+        }
+        RakuAstClass::ParameterTargetVar => {
+            if let Some(name) = resolve::leaf_of(node, "name") {
+                declared.insert(name);
+            }
+        }
+        RakuAstClass::VarDeclarationSimple => {
+            if let Some(name) = resolve::declared_variable_name(node) {
+                declared.insert(name);
+            }
+        }
+        _ => {}
+    }
+    for field in &node.fields {
+        match &field.value {
+            RakuAstFieldValue::Node(v) => {
+                if let ValueView::RakuAst(n) = v.view() {
+                    collect_lexicals(n, used, declared);
+                }
+            }
+            RakuAstFieldValue::List(items) => {
+                for item in items {
+                    if let ValueView::RakuAst(n) = item.view() {
+                        collect_lexicals(n, used, declared);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// `node` as a statement of its own.
 // Cost: O(1).
 pub(crate) fn as_statement(node: &Value) -> Value {
@@ -3892,7 +4016,10 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         names.push("is-resolved");
         names.push("resolution");
     }
-    if class == RakuAstClass::Parameter {
+    if matches!(
+        class,
+        RakuAstClass::Parameter | RakuAstClass::Block | RakuAstClass::PointyBlock
+    ) {
         names.push("meta-object");
     }
     if class == RakuAstClass::StatementExpression {
