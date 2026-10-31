@@ -1942,7 +1942,10 @@ impl Interpreter {
                         && !pd.named
                         && !pd.slurpy
                         && !pd.name.starts_with(['@', '%', '&', '!', '.'])
-                        && !pd.traits.iter().any(|t| t == "rw" || t == "copy" || t == "raw")
+                        && !pd
+                            .traits
+                            .iter()
+                            .any(|t| t == "rw" || t == "copy" || t == "raw")
                 });
             if slot_only {
                 continue;
