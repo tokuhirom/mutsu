@@ -45,8 +45,21 @@ impl Interpreter {
     /// [`Self::resolve_all_multi_candidates_indexed`] wherever `&mut self` is
     /// available — this `&self` spelling exists only for the reflective
     /// `resolve_code_var` path, which cannot build the index.
+    // Cost: O(c) when the base-name key index already holds `name` (the
+    // steady state: a dispatcher call has resolved the name before); O(f)
+    // for the first call, f = registry functions.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
-        self.multi_candidates_over(name, None)
+        // Read the index without filling it: this `&self` spelling cannot build
+        // one, but a name resolved earlier is indexed, and the indexed gather
+        // is the same answer by construction (`indexed_gather_equivalence_tests`).
+        // `captured_candidates_are_live` runs it on every call of a dispatcher
+        // value, where the full walk was O(registry) per call.
+        let indexed = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
+            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        match indexed {
+            Some(keys) => self.multi_candidates_over(name, Some(&keys)),
+            None => self.multi_candidates_over(name, None),
+        }
     }
 
     /// Same answer as [`Self::resolve_all_multi_candidates`], gathered from the
@@ -89,11 +102,17 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> crate::runtime::MultiCandidateList {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
-        // A scoped family's candidate list depends on the executing compunit,
-        // which the memo key does not carry (#11004).
-        if self.operator_has_import_scope_sym(name_sym) {
-            return Arc::new(self.resolve_all_multi_candidates_indexed(name));
-        }
+        // A scoped family's candidate list depends on the executing compunit
+        // (#11004), so the units that decide it join the memo key (as they do
+        // the dispatch plan's, `BareMultiPlanKey`) instead of bypassing the
+        // memo: an exported multi paid the whole gather on every call.
+        let units = self.operator_has_import_scope_sym(name_sym).then(|| {
+            (
+                self.current_unit,
+                self.executing_unit_sym(),
+                self.module.operator_import_gen,
+            )
+        });
         let generation = (
             self.caches.fn_resolve_gen,
             self.registry().proto_generation(),
@@ -108,6 +127,7 @@ impl Interpreter {
             self.routine_stack()
                 .last()
                 .and_then(|frame| frame.lexical_package),
+            units,
         );
         if let Some(cached) = self.caches.multi_dispatch_candidates_memo.get(&key) {
             return cached.clone();
