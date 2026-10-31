@@ -662,6 +662,8 @@ impl Interpreter {
                 "Perl6::Metamodel::CoercionHOW".to_string()
             } else if self.class_is_grammar(&type_name) {
                 "Perl6::Metamodel::GrammarHOW".to_string()
+            } else if is_type_object && is_native_type_name(&type_name) {
+                "Perl6::Metamodel::NativeHOW".to_string()
             } else {
                 "Perl6::Metamodel::ClassHOW".to_string()
             };
@@ -1328,4 +1330,16 @@ impl Interpreter {
             .map(Value::to_string_value)
             .unwrap_or_else(|| base.to_string())
     }
+}
+
+/// The native types rakudo's `NativeHOW` governs (`int8`, `num32`, `str`, ...);
+/// not `bit` or the NativeCall aliases (`long`), which are ordinary classes.
+// Cost: O(1).
+fn is_native_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "int8" | "int16" | "int32" | "int64"
+            | "uint" | "uint8" | "uint16" | "uint32" | "uint64"
+            | "byte" | "atomicint" | "num" | "num32" | "num64" | "str"
+    )
 }

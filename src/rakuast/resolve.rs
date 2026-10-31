@@ -656,13 +656,43 @@ pub(super) fn return_type(node: &RakuAstNode) -> Value {
     let name = match (sigil, element) {
         (Some('@'), Some(t)) => format!("Positional[{t}]"),
         (Some('@'), None) => "Positional".to_string(),
-        (Some('%'), Some(t)) => format!("Associative[{t}]"),
-        (Some('%'), None) => "Associative".to_string(),
+        (Some('%'), element) => match hash_parameters(node, element) {
+            Some(parameters) => format!("Associative[{parameters}]"),
+            None => "Associative".to_string(),
+        },
         (Some('&'), _) => "Callable".to_string(),
         (_, Some(t)) => t,
         _ => "Mu".to_string(),
     };
     Value::package(crate::symbol::Symbol::intern(&name))
+}
+
+/// The key type a hash declaration's shape names: `Int` for `my Int %h{Int}`.
+// Cost: O(size of the shape).
+fn shape_key_name(node: &RakuAstNode) -> Option<String> {
+    let shape = held_node(node, "shape")?;
+    let statement = shape.fields.iter().find_map(|f| match &f.value {
+        RakuAstFieldValue::Node(v) => match v.view() {
+            ValueView::RakuAst(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    })?;
+    let expression = held_node(statement, "expression")?;
+    type_node_full_name(expression)
+}
+
+/// The parameters of a hash declaration's `Associative[..]` / `Hash[..]`:
+/// the element type, then the key type of a shape (`Any` stands in for an
+/// undeclared element type: `my %h{Int}` is `Hash[Any,Int]`).
+// Cost: O(size of the declaration's type and shape).
+fn hash_parameters(node: &RakuAstNode, element: Option<String>) -> Option<String> {
+    match (element, shape_key_name(node)) {
+        (Some(element), Some(key)) => Some(format!("{element},{key}")),
+        (None, Some(key)) => Some(format!("Any,{key}")),
+        (Some(element), None) => Some(element),
+        (None, None) => None,
+    }
 }
 
 /// The declared type of `node` including a definiteness smiley (`Str:D`).
@@ -708,8 +738,10 @@ pub(super) fn container_type(node: &RakuAstNode) -> Value {
     let name = match (leaf(node, "sigil").as_deref(), element) {
         (Some("@"), Some(t)) => format!("Array[{t}]"),
         (Some("@"), None) => "Array".to_string(),
-        (Some("%"), Some(t)) => format!("Hash[{t}]"),
-        (Some("%"), None) => "Hash".to_string(),
+        (Some("%"), element) => match hash_parameters(node, element) {
+            Some(parameters) => format!("Hash[{parameters}]"),
+            None => "Hash".to_string(),
+        },
         _ => "Scalar".to_string(),
     };
     Value::package(crate::symbol::Symbol::intern(&name))
