@@ -861,6 +861,19 @@ impl Interpreter {
         self.make_io_path_instance_with(path, true)
     }
 
+    /// The `Distribution::Resource` a `%?RESOURCES` key the distribution does
+    /// not declare answers: rakudo's `Distribution::Resources.AT-KEY` makes one
+    /// for every key, path-less when unknown, so the value is a defined,
+    /// truthy object whose `.IO` is `Empty` and whose `.Str` is `""`.
+    // Cost: O(1).
+    pub(crate) fn make_pathless_resource_instance(&self) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("resource".to_string(), Value::TRUE);
+        attrs.insert("pathless".to_string(), Value::TRUE);
+        attrs.insert("path".to_string(), Value::str(String::new()));
+        Value::make_instance(Symbol::intern("IO::Path"), attrs)
+    }
+
     fn make_io_path_instance_with(&self, path: &str, resource: bool) -> Value {
         let mut attrs = HashMap::new();
         if resource {

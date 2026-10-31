@@ -180,6 +180,9 @@ impl Interpreter {
         // constraints (`has Distribution::Resources $.resources`) see it.
         let mut data: crate::value::HashData = result.into();
         data.declared_type = Some("Distribution::Resources".to_string());
+        // ...whose `AT-KEY` answers a Resource for every key, path-less when
+        // the distribution declares none (#15816).
+        data.default = Some(Box::new(self.make_pathless_resource_instance()));
         Value::hash_with_data(Value::hash_arc(data))
     }
 

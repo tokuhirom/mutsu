@@ -128,10 +128,15 @@ fn gist_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     ))))
 }
 
-/// `IO::Path.IO`: the path itself.
+/// `IO::Path.IO`: the path itself (`Empty` for a path-less `Distribution::Resource`).
 // Cost: O(a), a = attributes of the instance.
 fn io_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
+    // A `%?RESOURCES` key the distribution does not declare has no path:
+    // its `.IO` is `Empty`, as rakudo's `Distribution::Resource.IO` is.
+    if ctx.attributes.contains_key("pathless") {
+        return Some(Ok(Value::slip(Vec::new())));
+    }
     Some(Ok(Value::make_instance(ctx.class, ctx.attributes)))
 }
 
