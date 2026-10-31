@@ -44,20 +44,41 @@ fn runs_in_declaration_order(kind: &PhaserKind) -> bool {
 impl Interpreter {
     /// A `Block` that runs `body` in `data`'s captured scope, with no
     /// signature: rakudo's phaser blocks take no parameters.
-    // TODO(#15473): a phaser body is not part of the block's compiled code, so
-    // a scalar it assigns is not a captured cell and the write is lost; the
-    // compiler should force the capture (`note_forced_outer_scalar_capture`).
+    // The compiler forces the capture of the enclosing variables a phaser body
+    // names (`Stmt::Phaser` in `compile_stmt`), so a write reaches them.
     // Cost: O(1) plus the clone of the captured `SubData` fields.
     fn phaser_block(data: &crate::value::SubData, body: Vec<Stmt>) -> Value {
         let mut phaser = data.clone();
         phaser.params = std::sync::Arc::new(Vec::new());
         phaser.param_defs = std::sync::Arc::new(Vec::new());
+        Self::compile_phaser_body(&mut phaser, body);
+        Value::sub_value(crate::gc::Gc::new(phaser))
+    }
+
+    /// Make `phaser` (a copy of its block's `SubData`) run `body`, a phaser
+    /// statement's body, as the shared compiled chunk for that text and
+    /// signature instead of an AST body the tree-walk carrier recompiles.
+    // Cost: O(1) after the first request for this body and signature; O(b)
+    // once, b = size of the body.
+    pub(crate) fn compile_phaser_body(phaser: &mut crate::value::SubData, body: Vec<Stmt>) {
         phaser.body = std::sync::Arc::new(body);
         phaser.is_bare_block = true;
-        phaser.compiled_code = None;
-        phaser.compiled_fns = None;
         phaser.compiled_routine = None;
-        Value::sub_value(crate::gc::Gc::new(phaser))
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("{:?}{:?}{:?}", phaser.body, phaser.params, phaser.param_defs)
+                .hash(&mut hasher);
+            format!("phaser:{:x}", hasher.finish())
+        };
+        let (code, fns) = crate::runtime::synthesized_closure_code(
+            &key,
+            &phaser.params,
+            &phaser.param_defs,
+            &phaser.body,
+        );
+        phaser.compiled_code = Some(code);
+        phaser.compiled_fns = Some(fns);
     }
 
     /// The `name` phasers of the block `data`, in the order rakudo runs them;

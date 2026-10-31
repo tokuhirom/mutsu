@@ -4079,7 +4079,34 @@ impl Compiler {
                     condition_idx,
                 });
             }
-            Stmt::Phaser { .. } => {}
+            Stmt::Phaser { body, .. } => {
+                // A phaser the block's loop runs from outside (`LAST`, `FIRST`,
+                // `NEXT`, ...) is no part of this chunk, so nothing here would
+                // capture the enclosing variables it names: probe-compile its
+                // body and force the capture of each free variable, written ones
+                // as written (#15473).
+                let mut probe = super::Compiler::new();
+                let probed = probe.compile_closure_body(&[], &[], body);
+                let written: std::collections::HashSet<_> = probed
+                    .free_var_writes
+                    .iter()
+                    .chain(probed.forced_free_var_writes.iter())
+                    .chain(probed.free_var_container_writes.iter())
+                    .copied()
+                    .collect();
+                let free: Vec<_> = probed
+                    .free_var_syms
+                    .iter()
+                    .chain(probed.forced_free_var_syms.iter())
+                    .copied()
+                    .collect();
+                for sym in free {
+                    let name = sym.resolve();
+                    if !self.local_map.contains_key(name.as_str()) {
+                        self.note_forced_outer_scalar_capture(&name, written.contains(&sym));
+                    }
+                }
+            }
 
             // --- SubDecl: delegate to interpreter AND compile body ---
             Stmt::SubDecl {
