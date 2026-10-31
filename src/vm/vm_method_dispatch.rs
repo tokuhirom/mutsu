@@ -1918,6 +1918,40 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::insert_fast_param_values`] for a frame whose body reads its
+    /// plain scalar parameters through their slots only: those are not
+    /// written to the env.
+    // Cost: O(p * q), p = bound parameters, q = the method's parameters.
+    fn insert_fast_param_values_by_name(
+        env: &mut crate::env::Env,
+        param_values: &super::vm_param_values::ParamValues<'_>,
+        method_def: &crate::runtime::MethodDef,
+    ) {
+        for (param_name, param_sym, param_val) in param_values.iter() {
+            if param_sym.is_frame_fixture() {
+                continue;
+            }
+            let slot_only = method_def
+                .param_storage_names()
+                .iter()
+                .position(|n| n.as_str() == *param_name)
+                .and_then(|i| method_def.param_defs.get(i))
+                .is_some_and(|pd| {
+                    !pd.sigilless
+                        && !pd.is_invocant
+                        && !pd.named
+                        && !pd.slurpy
+                        && !pd.name.starts_with(['@', '%', '&', '!', '.'])
+                        && !pd.traits.iter().any(|t| t == "rw" || t == "copy" || t == "raw")
+                });
+            if slot_only {
+                continue;
+            }
+            crate::env::note_env_key(param_name);
+            env.insert_sym(*param_sym, param_val.clone());
+        }
+    }
+
     /// The fast twin of [`Self::call_compiled_method`]; it enters the
     /// method's compilation unit the same way.
     // Cost: O(1) to enter and leave the unit, plus the body.
@@ -2431,9 +2465,13 @@ impl Interpreter {
         // the only home of `self`, `__ANON_STATE#`, `?CLASS` and `?ROLE`; the
         // frame writes none of the four keys.
         if skip_env_setup {
+            // A plain scalar parameter is read through its slot and nothing
+            // else names it (no closure, `skip_env_setup`); an aggregate,
+            // `rw`/`raw`/`copy` or sigilless parameter is shared by name with
+            // the caller's container and stays in the env.
             let env = self.env_mut();
             env.reserve(param_values.len());
-            Self::insert_fast_param_values(env, &param_values);
+            Self::insert_fast_param_values_by_name(env, &param_values, method_def);
         } else {
             let env = self.env_mut();
             env.reserve(3 + param_values.len());
