@@ -1264,6 +1264,18 @@ impl Compiler {
             .copied()
             .collect();
         self.record_type_body_written_lexicals(writes);
+        // The declaring frame boxes the outer scalars this body captures, as it
+        // does for a method (`compile_method_body`, ADR-0032).
+        let boxed: Vec<crate::symbol::Symbol> = cf
+            .container_ref_capture_syms
+            .iter()
+            .chain(cf.free_var_writes.iter())
+            .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+            .copied()
+            .collect();
+        if !boxed.is_empty() {
+            self.bubble_container_ref_capture_syms(&boxed);
+        }
         // Same reads fold `compile_method_body` performs on its own compile —
         // this body has no runtime closure-creation op either, so the enclosing
         // frame learns which outer lexicals it reads only through this channel

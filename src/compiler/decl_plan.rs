@@ -651,6 +651,21 @@ impl Compiler {
                 );
                 continue;
             }
+            // A `sub` / `my sub` of the type body is installed at run time like a
+            // method, with no closure-creation op: the frame lexicals it writes
+            // must be boxed at their declaration like a method's (#15782).
+            if let Stmt::SubDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } = stmt
+            {
+                if !is_hoisted_shell {
+                    self.record_type_body_captures_uncompiled(params, param_defs, body);
+                }
+                continue;
+            }
             let Stmt::MethodDecl {
                 name,
                 name_expr,
