@@ -236,8 +236,12 @@ fn method_decl_body_with_my(
             custom_traits: traits
                 .custom_traits
                 .iter()
-                .filter(|(t, _)| {
-                    t != "default" && t != "DEPRECATED" && !t.starts_with("DEPRECATED:")
+                .filter(|(t, arg)| {
+                    // A message evaluated at declaration time keeps its
+                    // expression: `("DEPRECATED", Some(expr))`.
+                    t != "default"
+                        && (t != "DEPRECATED" || arg.is_some())
+                        && !t.starts_with("DEPRECATED:")
                 })
                 .cloned()
                 .collect(),

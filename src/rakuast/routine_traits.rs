@@ -254,12 +254,18 @@ pub(super) fn lower_custom(
         // `DEPRECATED` / `DEPRECATED:message`, as the parser keeps it.
         return match named_child(t, "argument") {
             Err(_) if t.fields.len() == 1 => Ok(Some(("DEPRECATED".to_string(), None))),
-            Ok(argument) => match fold_constant_message(&lower_argument(owner, argument)?) {
-                Some(message) if !message.is_empty() => {
-                    Ok(Some((format!("DEPRECATED:{message}"), None)))
+            Ok(argument) => {
+                let expr = lower_argument(owner, argument)?;
+                match fold_constant_message(&expr) {
+                    Some(message) if !message.is_empty() => {
+                        Ok(Some((format!("DEPRECATED:{message}"), None)))
+                    }
+                    Some(_) => Ok(None),
+                    // Any other message is evaluated when the routine is
+                    // declared: the expression travels with the trait.
+                    None => Ok(Some(("DEPRECATED".to_string(), Some(expr)))),
                 }
-                _ => Ok(None),
-            },
+            }
             Err(_) => Ok(None),
         };
     }
@@ -283,8 +289,8 @@ pub(super) fn lower_custom(
 /// The string a `DEPRECATED` message argument statically evaluates to: a string
 /// literal, or an immediately invoked parameterless anonymous sub / block whose
 /// body is one such expression (`(sub { "a" })()`, rakudo's RT #120908 shape).
-/// Anything else needs declaration-time evaluation, which the static routine
-/// metadata cannot carry, so it is refused rather than silently reinterpreted.
+/// Anything else is evaluated when the routine is declared, and travels as
+/// `("DEPRECATED", Some(expr))`.
 // Cost: O(a), a = size of the argument.
 fn fold_constant_message(expr: &Expr) -> Option<String> {
     let mut current = expr;

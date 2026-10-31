@@ -4175,8 +4175,12 @@ impl Compiler {
                 };
                 let name_str = name.resolve();
                 // Extract deprecation info from custom_traits
-                let deprecated_info = custom_traits.iter().find_map(|(t, _)| {
-                    if t == "DEPRECATED" {
+                let deprecated_info = custom_traits.iter().find_map(|(t, arg)| {
+                    if t == "DEPRECATED" && arg.is_some() {
+                        // `is DEPRECATED($expr)`: the registered routine
+                        // carries the message once the expression has run.
+                        None
+                    } else if t == "DEPRECATED" {
                         Some((
                             "Sub".to_string(),
                             name_str.clone(),

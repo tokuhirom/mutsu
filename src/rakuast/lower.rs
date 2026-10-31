@@ -1893,8 +1893,12 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let deprecated_message = custom_traits
         .iter()
         .find_map(|(t, _)| super::routine_traits::deprecated_message(t).map(str::to_string));
-    custom_traits
-        .retain(|(t, _)| t != "default" && super::routine_traits::deprecated_message(t).is_none());
+    custom_traits.retain(|(t, arg)| {
+        t != "default"
+            && (super::routine_traits::deprecated_message(t).is_none()
+                // The expression of a message evaluated at declaration time.
+                || (t == "DEPRECATED" && arg.is_some()))
+    });
     if is_traits.assoc.is_some() || is_traits.precedence.is_some() {
         return Err(unsupported(node));
     }
