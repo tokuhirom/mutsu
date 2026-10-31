@@ -224,7 +224,10 @@ pub(crate) fn capture_never_keeps(key: Symbol) -> bool {
 /// the filter would have kept, i.e. a silently incomplete closure capture.
 #[inline]
 pub(crate) fn capture_never_keeps_resolved(key: Symbol, flags: u16) -> bool {
-    const DROP: u16 = flags::ATTR_TWIGIL_ENV_KEY | flags::CALLABLE_ID_META;
+    // A dynamic variable (`$*x`) belongs to the call stack: a closure that
+    // outlives the frame holding `my $*x` must not keep seeing it.
+    const DROP: u16 =
+        flags::ATTR_TWIGIL_ENV_KEY | flags::CALLABLE_ID_META | flags::DYNAMIC_VAR_ENV_KEY;
     flags & DROP != 0 || key == crate::symbol::well_known::callable_type()
 }
 
