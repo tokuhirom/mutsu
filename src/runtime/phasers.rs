@@ -711,7 +711,8 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
 }
 
 /// Whether `expr` is the literal a bare declaration (`my $x;`, `my @a;`,
-/// `my %h;`) is parsed with: `Nil`, an empty array or an empty hash.
+/// `my %h;`) is parsed with: `Nil`, an empty array or an empty hash, as a
+/// literal or (for a hash) an empty composer expression.
 // Cost: O(1).
 fn is_default_literal(expr: &Expr) -> bool {
     match expr {
@@ -720,6 +721,8 @@ fn is_default_literal(expr: &Expr) -> bool {
             crate::value::ValueView::Hash(map) => map.is_empty(),
             _ => true,
         },
+        // `my %h;` is parsed with an empty hash composer expression.
+        Expr::Hash(pairs, _) => pairs.is_empty(),
         // `Any`, `Int`, ... the type object a typed bare declaration holds.
         Expr::BareWord(_) => true,
         _ => false,
