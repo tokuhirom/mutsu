@@ -8,7 +8,8 @@
 #   internal-name-literals  distinct `"__...` literals in src/parser
 #   convert-lines           lines of src/rakuast/convert.rs
 #
-# Slice 9 deletes this check together with the last thing it counts.
+# ADR-15334 Amendment 5: the counts are executable IR and the .AST view, not debt; the ceilings are
+# pinned at their 2026-10-31 values and may only fall. The check stays.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -24,7 +25,7 @@ check_metric() {
     ceiling=$(tr -d '[:space:]' <"$D/$name.txt")
     if [ "$count" -gt "$ceiling" ]; then
         echo "check-frontend-debt: $name is $count, above its ceiling $ceiling ($D/$name.txt)" >&2
-        echo "  ADR-15334 retires this debt; a change must not add to it." >&2
+        echo "  ADR-15334 Amendment 5 pins this ceiling; a change must not raise it." >&2
         return 1
     fi
     if [ "$count" -lt "$ceiling" ]; then

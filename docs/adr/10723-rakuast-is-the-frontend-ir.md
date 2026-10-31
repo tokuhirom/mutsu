@@ -2660,3 +2660,23 @@ the module load (caching the lowered tree or bytecode of a bundled module), not 
 Stage 0 and roast did not regress: `scripts/dev gate --full` on `5a30c23e` passes (lint, `make test`
 on every `t/` file under the default frontend, roast whitelist with only the 4 known environment-only
 failures).
+
+### 6.130 Stage 2 and Stage 3 are complete; what moved out (2026-10-31, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+**Stage 3 (flip the default)** was §6.122 (2026-10-27) with its leftovers deleted in §6.123–§6.129.
+**Stage 2 (the parser emits RakuAST)** is complete under the reading the maintainer fixed in
+[ADR-15334](15334-stage-2-parser-builds-typed-rakuast-nodes.md) Amendment 4 (parser-side typing, "reading
+(B)") and closed in its Amendment 5: no `SyntheticBlock` producer in the parser, no `convert` recognizer, no
+`RakuAstNode` built on the executing path, `passthrough` and `ParsedLeaf` deleted, frontend cost within the
+target.
+
+**Reconciling §2.1 "`src/rakuast/convert.rs` is retired" with ADR-15334 §2.1.5.** §2.1 predates the typed-node
+decision of §4. It is read as ADR-15334 §2.1.5 says: the reverse paths (the T3 arms, the recognizers, the
+bareword guesses) are retired, and the T1 arms and the T2 view survive as the module's `view` half — "typed
+node in, `RakuAstNode` out". The module is renamed `view` when ADR-15334's issue C1 lands, not deleted.
+
+**What moved out of the campaign** (maintainer decision, 2026-10-31): reading (A) (typed IR instead of the
+compiler-consumed spellings) and Stage 4 (slangs by execution, RakuDoc v2, `.DEPARSE`) are independent carrier
+issues, not #7564 stages. What stays in #7564: user-visible RakuAST bugs and API gaps, C1 (`.AST` corpus gate,
+fold the convert coverage mode, rename to `view`) and C2 (a NameScope ADR, then lowering where the parser
+builds, deleting `unspell`, the second `qualify_type_names` and the spelled executing parse).
