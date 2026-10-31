@@ -732,7 +732,7 @@ fn walk_mro(
 /// a `Cool` subclass's own `Numeric`, a mixin's `flat`) comes first. An
 /// instance is asked of the interpreter's MRO, so without one it declines; a
 /// `Failure` must explode and is never answered.
-// Cost: O(m) to test the name, m = audited names, plus O(k) to find the row,
+// Cost: O(1) to classify the name (memoized per symbol, O(m) once, m = audited names), plus O(k) to find the row,
 // k = rows named `method`; for an instance one memoized MRO read and O(d * k)
 // to walk it, d = MRO depth; plus the handler's own cost.
 pub(crate) fn answer_shapeless(
@@ -798,7 +798,7 @@ pub(crate) fn answer_shapeless(
     // coercion that answers its invocant answers the subset's type object
     // (#14045). `UInt` and the subsets' bases are resolved the same way.
     if let crate::value::ValueView::Package(name) = target.view()
-        && COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+        && shapeless_name_bits(method) & name_bits::COERCE != 0
         && let Some(interp) = interp.as_deref()
     {
         let base = interp.resolve_subset_base_type(name.as_str());
@@ -817,7 +817,7 @@ pub(crate) fn answer_shapeless(
     let interp = interp.filter(|_| {
         row(id).owner == "Mu"
             || method == "ACCEPTS"
-            || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+            || shapeless_name_bits(method) & name_bits::COERCE != 0
             // An interpreter row has no answer without one (a count-taking
             // `pick`/`roll`, §9.165).
             || matches!(row(id).handler, Handler::Interp(_))
@@ -849,6 +849,87 @@ const COOL_SEARCH_FOR_SHAPELESS: [&str; 9] = [
     "indices",
 ];
 
+/// The names `shapeless_row` takes one positional argument for.
+const SHAPELESS_TAKES_ARG: [&str; 26] = [
+    "join",
+    "pick",
+    "roll",
+    "head",
+    "tail",
+    "combinations",
+    "batch",
+    "uniprop",
+    "uniprops",
+    "unimatch",
+    "samecase",
+    "samemark",
+    "indent",
+    "words",
+    "lines",
+    "chop",
+    "comb",
+    "flat",
+    "isa",
+    "lazy-if",
+    "AT-POS",
+    "EXISTS-POS",
+    "AT-KEY",
+    "EXISTS-KEY",
+    "ACCEPTS",
+    "WALK",
+];
+
+/// Which audited name lists a method name is on. Each is a linear scan of
+/// string arrays, so classifying per call cost thousands of instructions on
+/// every `.WHAT`/`.VAR`/`.^name` (ADR-15737 D2); the answer depends on the
+/// name alone, so it is computed once per symbol.
+mod name_bits {
+    pub(super) const TAKES_ARG: u16 = 1 << 0;
+    pub(super) const TEXT: u16 = 1 << 1;
+    pub(super) const LIST: u16 = 1 << 2;
+    pub(super) const MU: u16 = 1 << 3;
+    pub(super) const ITERABLE: u16 = 1 << 4;
+    pub(super) const COERCE: u16 = 1 << 5;
+    pub(super) const COOL_NUMERIC: u16 = 1 << 6;
+    pub(super) const CONTAINER: u16 = 1 << 7;
+}
+
+static SHAPELESS_NAMES: crate::symbol::SymbolMemo = crate::symbol::SymbolMemo::new();
+
+fn compute_shapeless_name_bits(m: &str) -> u16 {
+    let mut b = 0;
+    if SHAPELESS_TAKES_ARG.contains(&m) {
+        b |= name_bits::TAKES_ARG;
+    }
+    if cool_text_for_shapeless(m) {
+        b |= name_bits::TEXT;
+    }
+    if crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&m) {
+        b |= name_bits::LIST;
+    }
+    if crate::value::MU_FOR_CLOSED_SHAPES.contains(&m) {
+        b |= name_bits::MU;
+    }
+    if ITERABLE_FOR_SHAPELESS.contains(&m) {
+        b |= name_bits::ITERABLE;
+    }
+    if COOL_COERCE_FOR_SHAPELESS.contains(&m) {
+        b |= name_bits::COERCE;
+    }
+    if crate::value::cool_numeric_method(m) {
+        b |= name_bits::COOL_NUMERIC;
+    }
+    if CONTAINER_FOR_SHAPELESS.contains(&m) {
+        b |= name_bits::CONTAINER;
+    }
+    b
+}
+
+// Cost: O(1) after the first call for a name; O(m) once, m = audited names.
+fn shapeless_name_bits(method: Symbol) -> u16 {
+    SHAPELESS_NAMES.get(method, compute_shapeless_name_bits)
+}
+
 /// The row [`answer_shapeless`] answers a call with `arity` positional
 /// arguments from, without running it.
 // Cost: as [`answer_shapeless`], without the handler.
@@ -863,37 +944,8 @@ pub(crate) fn shapeless_row(
     // and the `Cool` text methods that read a property, a pattern, an
     // amount (§9.90) or a count (`words`, `lines`, `chop`) alone take an
     // argument.
-    if arity > 0
-        && (arity > 1
-            || !matches!(
-                method.as_str(),
-                "join"
-                    | "pick"
-                    | "roll"
-                    | "head"
-                    | "tail"
-                    | "combinations"
-                    | "batch"
-                    | "uniprop"
-                    | "uniprops"
-                    | "unimatch"
-                    | "samecase"
-                    | "samemark"
-                    | "indent"
-                    | "words"
-                    | "lines"
-                    | "chop"
-                    | "comb"
-                    | "flat"
-                    | "isa"
-                    | "lazy-if"
-                    | "AT-POS"
-                    | "EXISTS-POS"
-                    | "AT-KEY"
-                    | "EXISTS-KEY"
-                    | "ACCEPTS"
-                    | "WALK"
-            ))
+    let name = shapeless_name_bits(method);
+    if arity > 0 && (arity > 1 || name & name_bits::TAKES_ARG == 0)
         // `comb($pattern, $limit)` has no row of its own: only an instance
         // with a user `Str` takes it (`answer_shapeless`).
         && !(arity == 2 && method == "comb")
@@ -963,12 +1015,11 @@ pub(crate) fn shapeless_row(
     {
         return None;
     }
-    let text = cool_text_for_shapeless(method.as_str());
-    let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
-    let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
+    let text = name & name_bits::TEXT != 0;
+    let list = name & name_bits::LIST != 0;
+    let mu = name & name_bits::MU != 0;
     // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
-    let iterable =
-        ITERABLE_FOR_SHAPELESS.contains(&method.as_str()) || (arity == 1 && method == "flat");
+    let iterable = name & name_bits::ITERABLE != 0 || (arity == 1 && method == "flat");
     // `Cool.Complex` answers a lazy list's `X::Cannot::Lazy` and an unsettled
     // `Seq`'s element count (§9.110); an instance or a type object with no
     // shape is the interpreter's.
@@ -984,13 +1035,12 @@ pub(crate) fn shapeless_row(
     // `Cool`'s numeric methods (`self.Numeric.METHOD`) answer a `Seq` or `Slip`
     // with no settled shape on its element count, as they do a settled one
     // (§9.112).
-    let list_numeric = crate::value::cool_numeric_method(method.as_str())
+    let list_numeric = name & name_bits::COOL_NUMERIC != 0
         && matches!(
             target.view(),
             ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) | ValueView::Slip(_)
         );
-    let coerce =
-        COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex || list_numeric;
+    let coerce = name & name_bits::COERCE != 0 || lazy_complex || list_numeric;
     let text = text || coerce;
     // A shaped array's element type lives in the interpreter's registry, so
     // a pure entry leaves its `raku` to the interpreter's row below.
@@ -1007,7 +1057,7 @@ pub(crate) fn shapeless_row(
     // (a typed one as `Array[Int].new(...)`, §9.185), an interpreter row; a
     // pure entry keeps `Mu`'s rendering.
     let container = arity == 0
-        && (CONTAINER_FOR_SHAPELESS.contains(&method.as_str())
+        && (name & name_bits::CONTAINER != 0
             || (method == "raku"
                 && interp.is_some()
                 && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))));
