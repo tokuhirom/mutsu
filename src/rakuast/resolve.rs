@@ -781,7 +781,14 @@ fn declared_variable(node: &RakuAstNode) -> Option<String> {
 // Cost: O(d) for a variable, O(1) otherwise.
 fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
     match node.class {
-        C::VarLexical => scopes.find(&leaf(node, "name")?).cloned(),
+        C::VarLexical => {
+            let name = leaf(node, "name")?;
+            scopes.find(&name).cloned().or_else(|| match name.as_str() {
+                // Every block has its topic, match and exception variables.
+                "$_" | "$/" | "$!" => external("RakuAST::VarDeclaration::Implicit::Special", &name),
+                _ => None,
+            })
+        }
         C::Infix => external_setting(&format!("infix:<{}>", leaf(node, "operator")?)),
         C::Prefix => external_setting(&format!("prefix:<{}>", leaf(node, "operator")?)),
         C::Postfix => external_setting(&format!("postfix:<{}>", leaf(node, "operator")?)),
@@ -800,7 +807,13 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             if super::declared_routines::is_user_call(node) {
                 return external("RakuAST::Declaration::Import", &format!("&{name}"));
             }
-            if !crate::runtime::Interpreter::is_builtin_function(&name) {
+            // `take`, `emit` and `await` are routines of the setting that mutsu
+            // parses as statements.
+            let statement_routine = matches!(
+                name.as_str(),
+                "take" | "take-rw" | "emit" | "await" | "return" | "return-rw"
+            );
+            if !statement_routine && !crate::runtime::Interpreter::is_builtin_function(&name) {
                 return (scopes.imported)(&name)
                     .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
                     .flatten();
@@ -994,4 +1007,16 @@ fn add_implicit_role_statements(body: &mut RakuAstNode) {
     list.fields.push(unnamed(closing));
     list_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(list)));
     blockoid_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid)));
+}
+
+/// The variable (`$x`, `@a`) a declaration node declares.
+// Cost: O(f), f = fields of the node.
+pub(super) fn declared_variable_name(node: &RakuAstNode) -> Option<String> {
+    declared_variable(node)
+}
+
+/// A leaf string of `node` (see `leaf`).
+// Cost: O(f), f = fields of the node.
+pub(super) fn leaf_of(node: &RakuAstNode, name: &str) -> Option<String> {
+    leaf(node, name)
 }
