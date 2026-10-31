@@ -60,7 +60,7 @@ fn postfix_of(
         // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
         // identifier `Name.from-identifier` spells.
         Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
-            fields.push(node_field(Some("block"), convert_expr(name_expr)?));
+            fields.push(node_field(Some("block"), convert_expr(scope, name_expr)?));
             RakuAstClass::CallBlockMethod
         }
         Expr::CodeVar(name) if dispatch.is_none() && name_as_method => {
@@ -68,7 +68,7 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
-            fields.push(node_field(Some("callee"), convert_expr(other)?));
+            fields.push(node_field(Some("callee"), convert_expr(scope, other)?));
             RakuAstClass::CallTermAsMethod
         }
     };
@@ -103,7 +103,7 @@ pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeErr
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args, None),
+        } => super::convert::call_quoted_method_expr(convert_expr(scope, name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),

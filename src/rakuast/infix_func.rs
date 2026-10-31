@@ -142,14 +142,14 @@ pub(super) fn convert(
     };
     if right.len() == 1 && !is_list_assoc(name) {
         let mut fields = vec![
-            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("left"), convert_expr(scope, left)?),
             node_field(Some("infix"), infix),
-            node_field(Some("right"), convert_expr(&right[0])?),
+            node_field(Some("right"), convert_expr(scope, &right[0])?),
         ];
         if !adverbs.is_empty() {
             let mut colonpairs = Vec::with_capacity(adverbs.len());
             for adverb in adverbs {
-                colonpairs.push(Value::rakuast(Box::new(convert_expr(adverb)?)));
+                colonpairs.push(Value::rakuast(Box::new(convert_expr(scope, adverb)?)));
             }
             fields.push(RakuAstField {
                 name: Some("colonpairs"),
@@ -185,7 +185,7 @@ pub(super) fn convert(
     operands.extend(spine);
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(scope, operand)?)));
     }
     let mut node = RakuAstNode {
         origin: Default::default(),
@@ -199,7 +199,7 @@ pub(super) fn convert(
         ],
     };
     for adverb in adverbs {
-        add_colonpair(&mut node, Value::rakuast(Box::new(convert_expr(adverb)?)))?;
+        add_colonpair(&mut node, Value::rakuast(Box::new(convert_expr(scope, adverb)?)))?;
     }
     Ok(node)
 }

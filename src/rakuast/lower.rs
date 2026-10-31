@@ -4297,7 +4297,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         return meta;
     }
     // `$a minmax $b`, `$a foo $b`: the parser's `InfixFunc` call of the operator.
-    if let Some(call) = super::infix_func::lower(node) {
+    if let Some(call) = super::infix_func::lower(scope, node) {
         return call;
     }
     // `1 ==> foo()`: the parser's deferred feed node.

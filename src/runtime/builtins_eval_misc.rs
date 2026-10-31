@@ -370,7 +370,7 @@ impl Interpreter {
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
             let scope = crate::rakuast::frontend::lower_scope(&operators);
-            let stmts = crate::rakuast::lower(scope, scope, scope, &scope, node)?;
+            let stmts = crate::rakuast::lower(scope, scope, scope, scope, &scope, node)?;
             return self.eval_lowered_unit(stmts);
         }
         if let Some(first_arg) = Self::positional_value(args, 0)
@@ -382,7 +382,7 @@ impl Interpreter {
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
             let scope = crate::rakuast::frontend::lower_scope(&operators);
-            let stmts = crate::rakuast::lower(scope, scope, scope, &scope, node)?;
+            let stmts = crate::rakuast::lower(scope, scope, scope, scope, &scope, node)?;
             return self.eval_lowered_unit(stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks

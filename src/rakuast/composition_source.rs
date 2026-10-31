@@ -47,5 +47,5 @@ pub(super) fn convert(source: &Expr, executable: &Expr) -> Result<RakuAstNode, R
         }),
         form: *form,
     };
-    convert_expr(&restored)
+    convert_expr(scope, &restored)
 }

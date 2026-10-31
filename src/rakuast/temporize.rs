@@ -44,13 +44,13 @@ fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
 /// The lvalue under the prefix.
 fn operand_node(target: &Target) -> Result<RakuAstNode, RuntimeError> {
     match target {
-        Target::Variable(key) => convert_expr(&temporize::variable_expr(key)),
-        Target::Undefine(key) => convert_expr(&Expr::Call {
+        Target::Variable(key) => convert_expr(scope, &temporize::variable_expr(key)),
+        Target::Undefine(key) => convert_expr(scope, &Expr::Call {
             name: crate::symbol::Symbol::intern("undefine"),
             args: vec![temporize::variable_expr(key)],
             listop: false,
         }),
-        Target::Element(element) => convert_expr(element),
+        Target::Element(element) => convert_expr(scope, element),
     }
 }
 
@@ -65,7 +65,7 @@ fn is_scalar_variable(target: &Target) -> bool {
 pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(prefix_node(
         true,
-        convert_expr(&Expr::DoStmt(Box::new(decl.clone())))?,
+        convert_expr(scope, &Expr::DoStmt(Box::new(decl.clone())))?,
     ))
 }
 
@@ -125,7 +125,7 @@ fn convert_method_assign(
             Some(meta) if type_invocant => (meta, Some('^')),
             _ => (method_name, None),
         };
-        convert_expr(&Expr::MethodCall {
+        convert_expr(scope, &Expr::MethodCall {
             target: Box::new(invocant),
             name: crate::symbol::Symbol::intern(method_name),
             args: method_args.to_vec(),
@@ -168,7 +168,7 @@ pub(super) fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeE
         Assigned::Compound(Expr::CompoundAssign {
             target, op, rhs, ..
         }) => {
-            let left = prefix_node(t.is_temp, convert_expr(target)?);
+            let left = prefix_node(t.is_temp, convert_expr(scope, target)?);
             if op == crate::parser::DOTTY_ASSIGN_OP {
                 super::convert::dotty_assignment_with_left(left, rhs)
             } else {
@@ -179,11 +179,11 @@ pub(super) fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeE
             crate::ast::parsed::ParsedExpr::CompoundAssign(a)
                 if a.meta == crate::ast::parsed::CompoundMeta::Dotty =>
             {
-                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                let left = prefix_node(t.is_temp, convert_expr(scope, &a.target)?);
                 super::convert::dotty_assignment_with_left(left, &a.source)
             }
             crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
-                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                let left = prefix_node(t.is_temp, convert_expr(scope, &a.target)?);
                 super::parsed_view::with_compound_meta(
                     super::convert::compound_assignment_with_left(
                         left,

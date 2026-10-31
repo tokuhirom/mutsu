@@ -76,7 +76,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     }
     // The traits are the ones the source wrote; `is export` is folded into
     // `is_export` / `export_tags`, which are not read back.
-    if !super::routine_source::apply(&mut node, proto.body)? && proto.is_export {
+    if !super::routine_source::apply(scope, &mut node, proto.body)? && proto.is_export {
         return Err(unsupported(
             "proto with `is export` and no written-trait record",
         ));

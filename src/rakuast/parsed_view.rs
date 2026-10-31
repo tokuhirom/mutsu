@@ -25,7 +25,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             origin: Default::default(),
             class: RakuAstClass::StatementGiven,
             fields: vec![
-                node_field(Some("source"), convert_expr(topic)?),
+                node_field(Some("source"), convert_expr(scope, topic)?),
                 node_field(Some("body"), view_block(block, BlockKind::Topic)?),
             ],
         },
@@ -33,7 +33,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             origin: Default::default(),
             class: RakuAstClass::StatementWhen,
             fields: vec![
-                node_field(Some("condition"), convert_expr(condition)?),
+                node_field(Some("condition"), convert_expr(scope, condition)?),
                 node_field(Some("body"), view_block(block, BlockKind::Signature)?),
             ],
         },
@@ -47,7 +47,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         },
         ParsedStmt::WhileLoop(w) => {
             let mut fields = label_fields(&w.label);
-            fields.push(node_field(Some("condition"), convert_expr(&w.condition)?));
+            fields.push(node_field(Some("condition"), convert_expr(scope, &w.condition)?));
             fields.push(node_field(
                 Some("body"),
                 view_block(&w.block, BlockKind::Signature)?,
@@ -266,7 +266,7 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
                     },
                 },
             ),
-            node_field(Some("right"), convert_expr(&a.source)?),
+            node_field(Some("right"), convert_expr(scope, &a.source)?),
         ],
     })
 }
@@ -291,7 +291,7 @@ fn compound_assignment_node(
             kind,
             depth,
             target_node(&a.target)?,
-            convert_expr(&a.source)?,
+            convert_expr(scope, &a.source)?,
         );
     }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
@@ -445,12 +445,12 @@ fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
         crate::ast::Expr::Var(name) => ("$", name),
         crate::ast::Expr::ArrayVar(name) => ("@", name),
         crate::ast::Expr::HashVar(name) => ("%", name),
-        _ => return convert_expr(target),
+        _ => return convert_expr(scope, target),
     };
     if name.starts_with("__") {
         return Ok(super::convert::var_lexical(sigil, name));
     }
-    convert_expr(target)
+    convert_expr(scope, target)
 }
 
 /// The statement as written, with its modifiers as its `condition-modifier`
@@ -478,7 +478,7 @@ fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
-            fields: vec![node_field(None, convert_expr(&modifier.expr)?)],
+            fields: vec![node_field(None, convert_expr(scope, &modifier.expr)?)],
         };
         if modifier.span.is_some() {
             super::origin::set_span(&mut modifier_node, modifier.span);
@@ -519,10 +519,10 @@ fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("setup"), loop_setup_node(init)?));
         }
         if let Some(cond) = &l.condition {
-            fields.push(node_field(Some("condition"), convert_expr(cond)?));
+            fields.push(node_field(Some("condition"), convert_expr(scope, cond)?));
         }
         if let Some(step) = &l.step {
-            fields.push(node_field(Some("increment"), convert_expr(step)?));
+            fields.push(node_field(Some("increment"), convert_expr(scope, step)?));
         }
         fields.push(node_field(
             Some("body"),
@@ -539,7 +539,7 @@ fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
         view_block(&l.block, BlockKind::Signature)?,
     ));
     if let Some(cond) = &l.condition {
-        fields.push(node_field(Some("condition"), convert_expr(cond)?));
+        fields.push(node_field(Some("condition"), convert_expr(scope, cond)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -574,7 +574,7 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
         ConditionalKind::Without => (RakuAstClass::StatementWithout, "body"),
     };
     let mut fields = vec![
-        node_field(Some("condition"), convert_expr(&node.condition)?),
+        node_field(Some("condition"), convert_expr(scope, &node.condition)?),
         node_field(Some(block_name), clause_block(&node.then, topical)?),
     ];
     let mut elsifs = Vec::with_capacity(node.clauses.len());
@@ -591,7 +591,7 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
                 RakuAstClass::StatementElsif
             },
             fields: vec![
-                node_field(Some("condition"), convert_expr(&clause.condition)?),
+                node_field(Some("condition"), convert_expr(scope, &clause.condition)?),
                 node_field(Some("then"), clause_block(&clause.then, orwith)?),
             ],
         };

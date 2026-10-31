@@ -97,7 +97,7 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
-    convert_stmt_node(stmt)
+    convert_stmt_node(scope, stmt)
 }
 
 fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -126,7 +126,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             convert_stmt(inner)
         }
         Stmt::Expr(e) => {
-            let node = convert_expr(e)?;
+            let node = convert_expr(scope, e)?;
             if matches!(
                 node.class,
                 RakuAstClass::StatementRequire
@@ -302,7 +302,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
                     quoted: false,
                     sugar: false,
                 };
-                return Ok(Some(statement_expression(convert_expr(&method)?)));
+                return Ok(Some(statement_expression(convert_expr(scope, &method)?)));
             }
             let args = call_args_as_exprs(args)?;
             Ok(Some(statement_expression(call_name(
@@ -490,7 +490,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             // Field order matches raku: labels, mode, source, body.
             let mut fields = label_fields(label);
             fields.push(leaf_field(Some("mode"), Value::str(mode_name.to_string())));
-            fields.push(node_field(Some("source"), convert_expr(iterable)?));
+            fields.push(node_field(Some("source"), convert_expr(scope, iterable)?));
             fields.push(node_field(Some("body"), body_node));
             let for_node = RakuAstNode {
                 origin: Default::default(),
@@ -585,7 +585,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             // The traits are the ones the source wrote, in written order; the
             // execution fields the parser folded them into are not read back.
-            let written = super::routine_source::apply(&mut node, body)?;
+            let written = super::routine_source::apply(scope, &mut node, body)?;
             if !written
                 && (*is_rw
                     || *is_raw
@@ -677,7 +677,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             // The traits are the ones the source wrote, in written order; the
             // execution fields the parser folded them into are not read back.
-            let written = super::routine_source::apply(&mut node, body)?;
+            let written = super::routine_source::apply(scope, &mut node, body)?;
             if !written
                 && (*is_rw
                     || *is_raw
@@ -1088,7 +1088,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             ));
             // Field order matches raku: name, where, traits.
             if let Some(pred) = predicate {
-                fields.push(node_field(Some("where"), convert_expr(pred)?));
+                fields.push(node_field(Some("where"), convert_expr(scope, pred)?));
             }
             // `is export` comes before the `of` base type in the traits.
             let mut traits: Vec<Value> = super::package_header::export_trait_value(
@@ -1098,7 +1098,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             .into_iter()
             .collect();
             // `is foo` / `is foo(ARG)`; after `is export`, before the base.
-            traits.extend(super::decl_traits::convert(custom_traits)?);
+            traits.extend(super::decl_traits::convert(scope, custom_traits)?);
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
@@ -1175,7 +1175,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             custom_traits,
             marks,
             ..
-        } => Ok(Some(statement_expression(super::role::convert(
+        } => Ok(Some(statement_expression(super::role::convert(scope, 
             super::role::RoleDecl {
                 name: *name,
                 type_params,
@@ -1217,7 +1217,7 @@ fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
                         fields: Vec::new(),
                     },
                 ),
-                node_field(Some("right"), convert_expr(expr)?),
+                node_field(Some("right"), convert_expr(scope, expr)?),
             ],
         }))),
         // `$x := EXPR` — a plain `:=` infix (slice 9). `$x = EXPR` is the typed
@@ -1300,7 +1300,7 @@ pub(super) fn hyper_infix(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("left"), convert_expr(scope, left)?),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -1309,7 +1309,7 @@ pub(super) fn hyper_infix(
                     fields: hyper_fields,
                 },
             ),
-            node_field(Some("right"), convert_expr(right)?),
+            node_field(Some("right"), convert_expr(scope, right)?),
         ],
     })
 }
@@ -1339,7 +1339,7 @@ pub(super) fn assignment_around(
         fields: vec![
             node_field(Some("left"), left),
             node_field(Some("infix"), assignment),
-            node_field(Some("right"), convert_expr(rhs)?),
+            node_field(Some("right"), convert_expr(scope, rhs)?),
         ],
     })
 }
@@ -1354,7 +1354,7 @@ fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
         fields: vec![
             node_field(Some("left"), var_lexical(sigil, desigil)),
             node_field(Some("infix"), plain_infix(":=")),
-            node_field(Some("right"), convert_expr(rhs)?),
+            node_field(Some("right"), convert_expr(scope, rhs)?),
         ],
     })
 }
@@ -1412,7 +1412,7 @@ pub(super) fn compound_assignment_infix(
 ) -> Result<RakuAstNode, RuntimeError> {
     let left = match public_attribute_call(target) {
         Some(name) => var_lexical("$", &format!(".{name}")),
-        None => convert_expr(target)?,
+        None => convert_expr(scope, target)?,
     };
     compound_assignment_with_left(left, op, rhs)
 }
@@ -1455,7 +1455,7 @@ pub(super) fn declaration_compound_assign(
             crate::ast::parsed::BracketedMeta::Zip,
             0,
             decl,
-            convert_expr(rhs)?,
+            convert_expr(scope, rhs)?,
         );
     }
     compound_assignment_with_left(decl, &format!("{op}="), rhs)
@@ -1505,7 +1505,7 @@ pub(super) fn compound_assignment_with_left(
         fields: vec![
             node_field(Some("left"), left),
             node_field(Some("infix"), meta_assign),
-            node_field(Some("right"), convert_expr(rhs)?),
+            node_field(Some("right"), convert_expr(scope, rhs)?),
         ],
     })
 }
@@ -1515,7 +1515,7 @@ pub(super) fn compound_assignment_with_left(
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
 pub(super) fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    dotty_assignment_with_left(convert_expr(target)?, call)
+    dotty_assignment_with_left(convert_expr(scope, target)?, call)
 }
 
 /// [`dotty_assignment`] over an already converted left side.
@@ -1607,7 +1607,7 @@ fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
 /// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
 // Cost: O(n), n = size of the call.
 fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = convert_expr(call)?;
+    let mut node = convert_expr(scope, call)?;
     if node.class != RakuAstClass::ApplyPostfix {
         return Ok(node);
     }
@@ -1685,7 +1685,7 @@ pub(super) fn var_decl_statement(
     }
     let unrendered: Vec<&str> = custom_traits
         .iter()
-        .filter(|(n, arg)| !decl_traits::is_rendered(n, arg))
+        .filter(|(n, arg)| !decl_traits::is_rendered(scope, n, arg))
         .map(|(n, _)| n.as_str())
         .collect();
     if !unrendered.is_empty() {
@@ -1769,7 +1769,7 @@ pub(super) fn var_decl_statement(
     if let Some((dims, _)) = &shaped {
         super::keyed_hash::insert_dimensions(&mut decl, dims)?;
     }
-    let mut traits = decl_traits::convert(custom_traits)?;
+    let mut traits = decl_traits::convert(scope, custom_traits)?;
     if is_dynamic && !twigil_dynamic {
         // The parser keeps `is dynamic` as a flag, not in source order among
         // the other traits, so only a lone one renders faithfully.
@@ -1793,7 +1793,7 @@ pub(super) fn var_decl_statement(
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
         decl.fields
-            .push(node_field(Some("where"), convert_expr(constraint)?));
+            .push(node_field(Some("where"), convert_expr(scope, constraint)?));
     }
     Ok(Some(statement_expression(decl)))
 }
@@ -1821,7 +1821,7 @@ pub(super) fn does_declaration(
     let does = Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TraitDoes,
-        fields: vec![node_field(None, convert_expr(role)?)],
+        fields: vec![node_field(None, convert_expr(scope, role)?)],
     }));
     match declaration
         .fields
@@ -1966,7 +1966,7 @@ pub(super) fn var_declaration(
         let trait_node = RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitWillBuild,
-            fields: vec![node_field(None, convert_expr(wb)?)],
+            fields: vec![node_field(None, convert_expr(scope, wb)?)],
         };
         fields.push(RakuAstField {
             name: Some("traits"),
@@ -1978,12 +1978,12 @@ pub(super) fn var_declaration(
             Initializer::Assign(e) => RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::InitializerAssign,
-                fields: vec![node_field(None, convert_expr(e)?)],
+                fields: vec![node_field(None, convert_expr(scope, e)?)],
             },
             Initializer::Bind(e) => RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::InitializerBind,
-                fields: vec![node_field(None, convert_expr(e)?)],
+                fields: vec![node_field(None, convert_expr(scope, e)?)],
             },
             Initializer::CallAssignMarker(call) => RakuAstNode {
                 origin: Default::default(),
@@ -2101,7 +2101,7 @@ pub(super) fn term_declaration(
 fn term_initializer(
     decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    convert_expr(decl.expr)
+    convert_expr(scope, decl.expr)
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
@@ -2127,7 +2127,7 @@ fn parenthesized_expression(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
+        fields: vec![node_field(None, statement_expression(convert_expr(scope, expr)?))],
     };
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -2262,7 +2262,7 @@ pub(super) fn angle_subscript_node(
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let quote = if spelled_angle_text(index).is_some() {
-        convert_expr(index)?
+        convert_expr(scope, index)?
     } else {
         let text = angle_key_text(index).ok_or_else(|| unsupported("angle subscript key"))?;
         word_quote(&text)
@@ -2281,7 +2281,7 @@ pub(super) fn angle_subscript_node(
     if let Some(value) = assignee {
         index_node
             .fields
-            .push(node_field(Some("assignee"), convert_expr(value)?));
+            .push(node_field(Some("assignee"), convert_expr(scope, value)?));
     }
     super::postfix_grouping::convert(target, index_node)
 }
@@ -2320,13 +2320,13 @@ pub(super) fn subscript_dims_node(
         && colonpairs.is_empty()
         && let [dim] = dims
         && target.as_bare_word().is_some()
-        && let base = convert_expr(target)?
+        && let base = convert_expr(scope, target)?
         && base.class == RakuAstClass::TypeSimple
     {
         let items = dim.comma_items();
         let mut args = Vec::with_capacity(items.len());
         for item in items {
-            args.push(node_field(None, convert_expr(item)?));
+            args.push(node_field(None, convert_expr(scope, item)?));
         }
         return Ok(RakuAstNode {
             origin: Default::default(),
@@ -2346,7 +2346,7 @@ pub(super) fn subscript_dims_node(
     }
     let mut statements = Vec::with_capacity(dims.len());
     for dim in dims {
-        statements.push(node_field(None, statement_expression(convert_expr(dim)?)));
+        statements.push(node_field(None, statement_expression(convert_expr(scope, dim)?)));
     }
     let semilist = RakuAstNode {
         origin: Default::default(),
@@ -2371,7 +2371,7 @@ pub(super) fn subscript_dims_node(
     if let Some(value) = assignee {
         index_node
             .fields
-            .push(node_field(Some("assignee"), convert_expr(value)?));
+            .push(node_field(Some("assignee"), convert_expr(scope, value)?));
     }
     super::postfix_grouping::convert(target, index_node)
 }
@@ -2390,7 +2390,7 @@ pub(super) fn take_logical_tail_node(
                 control_call("take", std::slice::from_ref(value))?,
             ),
             node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
-            node_field(Some("right"), convert_expr(right)?),
+            node_field(Some("right"), convert_expr(scope, right)?),
         ],
     })
 }
@@ -2403,9 +2403,9 @@ pub(super) fn signature_bind_node(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(signature)?),
+            node_field(Some("left"), convert_expr(scope, signature)?),
             node_field(Some("infix"), plain_infix(":=")),
-            node_field(Some("right"), convert_expr(rhs)?),
+            node_field(Some("right"), convert_expr(scope, rhs)?),
         ],
     })
 }
@@ -2442,7 +2442,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             // A term the parser placed (ADR-10723 Stage 2): its node with the
             // origin the parser recorded.
             Spelling::Origin(span) => {
-                let mut node = convert_expr(&spelled.expr)?;
+                let mut node = convert_expr(scope, &spelled.expr)?;
                 origin::set_span(&mut node, *span);
                 origin::quoted_text(&mut node, *span);
                 super::call_origins::postfix_call(&mut node, *span);
@@ -2464,7 +2464,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                             ));
                         }
                         let expression = match items.as_slice() {
-                            [single] => convert_expr(single)?,
+                            [single] => convert_expr(scope, single)?,
                             _ => comma_list_node(items)?,
                         };
                         let statement = if expression.class == RakuAstClass::StatementExpression {
@@ -2522,7 +2522,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
             Spelling::BracketTraitArgument | Spelling::ParenSections(_) => {
-                convert_expr(&spelled.expr)
+                convert_expr(scope, &spelled.expr)
             }
             Spelling::Heredoc { stop, body } => heredoc_node(&spelled.expr, stop, *body),
             Spelling::EmptyStatement => Ok(RakuAstNode {
@@ -2589,9 +2589,9 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                     origin: Default::default(),
                     class: RakuAstClass::ApplyInfix,
                     fields: vec![
-                        node_field(Some("left"), convert_expr(left)?),
+                        node_field(Some("left"), convert_expr(scope, left)?),
                         node_field(Some("infix"), plain_infix(glyph)),
-                        node_field(Some("right"), convert_expr(right)?),
+                        node_field(Some("right"), convert_expr(scope, right)?),
                     ],
                 })
             }
@@ -2641,7 +2641,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             if matches!(v.view(), ValueView::Pair(..))
                 && let Some(pair) = crate::parser::colonpair_source_expr(src) =>
         {
-            convert_expr(&pair)
+            convert_expr(scope, &pair)
         }
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         // A CORE term keyword the parser left shadowable (#9047) is the same
@@ -2726,7 +2726,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             if let Some(op) = nqp_op(name.as_str()) {
                 let mut fields = vec![leaf_field(None, Value::str(op.to_string()))];
                 for arg in args.iter().filter(|a| !is_injected_named_arg(a)) {
-                    fields.push(node_field(None, convert_expr(arg)?));
+                    fields.push(node_field(None, convert_expr(scope, arg)?));
                 }
                 return Ok(RakuAstNode {
                     origin: Default::default(),
@@ -2789,7 +2789,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             let part = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
-                fields: vec![node_field(None, convert_expr(inner)?)],
+                fields: vec![node_field(None, convert_expr(scope, inner)?)],
             };
             let name = name_parts::name_from_parts(vec![
                 name_parts::leading_empty(),
@@ -2812,7 +2812,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             let part = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
-                fields: vec![node_field(None, convert_expr(head)?)],
+                fields: vec![node_field(None, convert_expr(scope, head)?)],
             };
             let mut parts = vec![name_parts::leading_empty(), Value::rakuast(Box::new(part))];
             parts.extend(name_parts::tail_parts(tail));
@@ -2885,7 +2885,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         // A `WhateverCurry` marker carries no RakuAST node of its own — Rakudo's
         // tree has no priming-scope wrapper (ADR-0033 §5); the scope is derived
         // structurally at lowering. Convert straight through to the body.
-        Expr::WhateverCurry(body) => Ok(super::thunk::mark(convert_expr(body)?)),
+        Expr::WhateverCurry(body) => Ok(super::thunk::mark(convert_expr(scope, body)?)),
         // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
         Expr::DoBlock {
             body,
@@ -2936,7 +2936,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         }),
         // `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`.
         Expr::Eager(inner) => {
-            let operand = convert_expr(inner)?;
+            let operand = convert_expr(scope, inner)?;
             if operand.class == RakuAstClass::Block {
                 return Err(unsupported("eager block"));
             }
@@ -2979,15 +2979,15 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
-                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(Some("left"), convert_expr(scope, left)?),
                     node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
-                    node_field(Some("right"), convert_expr(right)?),
+                    node_field(Some("right"), convert_expr(scope, right)?),
                 ],
             }),
             // Parenthesized (the paren parser's inner `Grouped` marker), or any
             // other shape: the parenthesization and the pair itself are what
             // raku renders, so let those arms decide.
-            other => convert_expr(other),
+            other => convert_expr(scope, other),
         },
         // A bareword the setting or the unit's own declarations resolve; any
         // other one stays the boundary (the catch-all arm below).
@@ -3048,7 +3048,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             let Stmt::Expr(expr) = stmt.as_ref() else {
                 unreachable!()
             };
-            convert_expr(expr)
+            convert_expr(scope, expr)
         }
         Expr::DoStmt(stmt)
             if matches!(
@@ -3180,7 +3180,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 .iter()
                 .map(|items| {
                     let expression = match items.as_slice() {
-                        [single] => convert_expr(single)?,
+                        [single] => convert_expr(scope, single)?,
                         _ => comma_list_node(items)?,
                     };
                     let statement = if expression.class == RakuAstClass::StatementExpression {
@@ -3214,7 +3214,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                     ))
                 })?,
                 other => {
-                    let node = convert_expr(other)?;
+                    let node = convert_expr(scope, other)?;
                     if node.class == RakuAstClass::StatementRequire {
                         node
                     } else {
@@ -3264,7 +3264,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                     fields: vec![
                         node_field(Some("left"), left),
                         node_field(Some("infix"), infix),
-                        node_field(Some("right"), convert_expr(expr)?),
+                        node_field(Some("right"), convert_expr(scope, expr)?),
                     ],
                 });
             }
@@ -3416,7 +3416,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 class: RakuAstClass::FatArrow,
                 fields: vec![
                     leaf_field(Some("key"), Value::str(key.to_string())),
-                    node_field(Some("value"), convert_expr(right)?),
+                    node_field(Some("value"), convert_expr(scope, right)?),
                 ],
             })
         }
@@ -3430,7 +3430,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             operands.push(right);
             let mut nodes = Vec::with_capacity(operands.len());
             for e in operands {
-                nodes.push(Value::rakuast(Box::new(convert_expr(e)?)));
+                nodes.push(Value::rakuast(Box::new(convert_expr(scope, e)?)));
             }
             Ok(RakuAstNode {
                 origin: Default::default(),
@@ -3459,7 +3459,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                         Some("prefix"),
                         operator_node(RakuAstClass::Prefix, &crate::token_kind::TokenKind::Caret),
                     ),
-                    node_field(Some("operand"), convert_expr(right)?),
+                    node_field(Some("operand"), convert_expr(scope, right)?),
                 ],
             })
         }
@@ -3470,7 +3470,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
-                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(Some("left"), convert_expr(scope, left)?),
                     node_field(
                         Some("infix"),
                         // `but` and `does` are `Mixin` infixes in raku.
@@ -3484,7 +3484,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                             op,
                         ),
                     ),
-                    node_field(Some("right"), convert_expr(right)?),
+                    node_field(Some("right"), convert_expr(scope, right)?),
                 ],
             })
         }
@@ -3537,7 +3537,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
-                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(Some("left"), convert_expr(scope, left)?),
                     node_field(
                         Some("infix"),
                         RakuAstNode {
@@ -3546,7 +3546,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                             fields: hyper_fields,
                         },
                     ),
-                    node_field(Some("right"), convert_expr(right)?),
+                    node_field(Some("right"), convert_expr(scope, right)?),
                 ],
             })
         }
@@ -3579,7 +3579,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                         _ => operator_node(RakuAstClass::Prefix, op),
                     },
                 ),
-                node_field(Some("operand"), convert_expr(expr)?),
+                node_field(Some("operand"), convert_expr(scope, expr)?),
             ],
         }),
         Expr::PostfixOp { op, expr } => super::postfix_grouping::convert(expr, postfix_node(op)),
@@ -3594,9 +3594,9 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             origin: Default::default(),
             class: RakuAstClass::Ternary,
             fields: vec![
-                node_field(Some("condition"), convert_expr(cond)?),
-                node_field(Some("then"), convert_expr(then_expr)?),
-                node_field(Some("else"), convert_expr(else_expr)?),
+                node_field(Some("condition"), convert_expr(scope, cond)?),
+                node_field(Some("then"), convert_expr(scope, then_expr)?),
+                node_field(Some("else"), convert_expr(scope, else_expr)?),
             ],
         }),
         Expr::MethodCall {
@@ -3651,7 +3651,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => {
             super::postfix_grouping::convert(
                 target,
-                call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
+                call_quoted_method_expr(convert_expr(scope, name_expr)?, args, *modifier)?,
             )
         }
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
@@ -3742,7 +3742,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                     .ok_or_else(|| unsupported("empty statement in an array composer"))?,
                 // `[$x]` holds the element itself; `[$x,]` a one-operand comma
                 // list (which is why it does not flatten).
-                [single] if !*trailing_comma => statement_expression(convert_expr(single)?),
+                [single] if !*trailing_comma => statement_expression(convert_expr(scope, single)?),
                 _ => statement_expression(comma_list_node(items)?),
             };
             let semilist = RakuAstNode {
@@ -3770,7 +3770,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             let arglist = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::ArgList,
-                fields: vec![node_field(None, convert_expr(expr)?)],
+                fields: vec![node_field(None, convert_expr(scope, expr)?)],
             };
             Ok(RakuAstNode {
                 origin: Default::default(),
@@ -3852,7 +3852,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 fields: vec![
                     node_field(Some("left"), left),
                     node_field(Some("infix"), plain_infix(":=")),
-                    node_field(Some("right"), convert_expr(rhs)?),
+                    node_field(Some("right"), convert_expr(scope, rhs)?),
                 ],
             })
         }
@@ -3882,10 +3882,10 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                 let mut node = RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::Sub,
-                    fields: vec![node_field(Some("body"), blockoid(body)?)],
+                    fields: vec![node_field(Some("body"), blockoid(scope, body)?)],
                 };
                 super::declarator_docs::attach(&mut node, doc.get());
-                if super::routine_source::apply(&mut node, body)? {
+                if super::routine_source::apply(scope, &mut node, body)? {
                     return Ok(node);
                 }
                 if *is_rw || *is_raw {
@@ -3958,7 +3958,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
                     None => anon_routine_node(param_defs, body, return_type.as_deref())?,
                 };
                 super::declarator_docs::attach(&mut node, custom_traits.doc());
-                if super::routine_source::apply(&mut node, body)? {
+                if super::routine_source::apply(scope, &mut node, body)? {
                     return Ok(node);
                 }
                 if *is_rw || *is_raw {
@@ -3986,7 +3986,7 @@ fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             // The interpolated code is parsed here, after the unit's own parse
             // ended: it keeps its typed nodes (a statement modifier inside a
             // `{ ... }`) the way the rest of the tree does.
-            convert_expr(&crate::parser::interpolate_heredoc_content(content)?)
+            convert_expr(scope, &crate::parser::interpolate_heredoc_content(content)?)
         }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
@@ -4027,7 +4027,7 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Stmt::Block(body) => block_node(body),
             // `"a$(1 + 2)b"`: the item contextualizer around the contents.
             Stmt::Expr(contents) => super::contextualizer::convert_segment(contents),
-            _ => convert_expr(expr),
+            _ => convert_expr(scope, expr),
         },
         // `"a$(my $x = 1; $x)b"`: several statements in the item contextualizer.
         Expr::DoBlock {
@@ -4037,7 +4037,7 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } if body.len() > 1 => super::contextualizer::convert_statements(body),
         other => match super::match_vars::convert_interpolated(other) {
             Some(capture) => Ok(capture),
-            None => convert_expr(other),
+            None => convert_expr(scope, other),
         },
     }
 }
@@ -4060,7 +4060,7 @@ pub(super) fn blockoid(scope: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, 
 /// ([`Expr::postfix_operand`]).
 // Cost: O(n), n = size of the operand.
 pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    convert_expr(operand.postfix_operand())
+    convert_expr(scope, operand.postfix_operand())
 }
 
 /// A `Block` that raku builds without a signature of its own: the body of a
@@ -4070,7 +4070,7 @@ pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Block,
-        fields: vec![node_field(Some("body"), blockoid(body)?)],
+        fields: vec![node_field(Some("body"), blockoid(scope, body)?)],
     })
 }
 
@@ -4084,7 +4084,7 @@ pub(super) fn signature_block_node(body: &[Stmt]) -> Result<RakuAstNode, Runtime
         class: RakuAstClass::Block,
         fields: vec![
             true_field("may-have-signature"),
-            node_field(Some("body"), blockoid(body)?),
+            node_field(Some("body"), blockoid(scope, body)?),
         ],
     })
 }
@@ -4272,7 +4272,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             let part = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
-                fields: vec![node_field(None, convert_expr(expr)?)],
+                fields: vec![node_field(None, convert_expr(scope, expr)?)],
             };
             let name = name_parts::name_from_parts(vec![
                 name_parts::leading_empty(),
@@ -4523,7 +4523,7 @@ pub(super) fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeErro
             true_field("implicit-topic"),
             true_field("required-topic"),
             true_field("may-have-signature"),
-            node_field(Some("body"), blockoid(body)?),
+            node_field(Some("body"), blockoid(scope, body)?),
         ],
     })
 }
@@ -4539,7 +4539,7 @@ fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             true_field("implicit-topic"),
             true_field("required-topic"),
             true_field("exception"),
-            node_field(Some("body"), blockoid(body)?),
+            node_field(Some("body"), blockoid(scope, body)?),
         ],
     })
 }
@@ -4604,7 +4604,7 @@ pub(super) fn pointy_block(
             signature(param_defs, false, returns)?,
         ));
     }
-    fields.push(node_field(Some("body"), blockoid(body)?));
+    fields.push(node_field(Some("body"), blockoid(scope, body)?));
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::PointyBlock,
@@ -4631,7 +4631,7 @@ fn anon_routine_node(
             signature(param_defs, true, returns)?,
         ));
     }
-    fields.push(node_field(Some("body"), blockoid(body)?));
+    fields.push(node_field(Some("body"), blockoid(scope, body)?));
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Sub,
@@ -4727,7 +4727,7 @@ fn declared_invocant_parameter(
         fields.push(node_field(Some("target"), target));
     }
     if let Some(default) = default {
-        fields.push(node_field(Some("default"), convert_expr(default)?));
+        fields.push(node_field(Some("default"), convert_expr(scope, default)?));
     } else {
         fields.push(RakuAstField {
             name: Some("optional"),
@@ -4805,7 +4805,7 @@ fn pointy_block_from_lambda(
         class: RakuAstClass::PointyBlock,
         fields: vec![
             node_field(Some("signature"), sig),
-            node_field(Some("body"), blockoid(body)?),
+            node_field(Some("body"), blockoid(scope, body)?),
         ],
     })
 }
@@ -4865,7 +4865,7 @@ fn constant_declaration(
         RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::InitializerAssign,
-            fields: vec![node_field(None, convert_expr(expr)?)],
+            fields: vec![node_field(None, convert_expr(scope, expr)?)],
         },
     ));
     Ok(Some(statement_expression(RakuAstNode {
@@ -4952,7 +4952,7 @@ fn header_trait_values(
     {
         return Err(unsupported("class traits without a written-trait record"));
     }
-    let mut traits = super::routine_source::header_traits(body)?;
+    let mut traits = super::routine_source::header_traits(scope, body)?;
     // `also is rw;` in the body sets the flag without a header spelling; it
     // renders as the trailing `is rw` trait, which lowers back to the flag.
     if fields.is_rw && !written.is_some_and(|w| has_is(w, "rw")) {
@@ -5096,7 +5096,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             fields.push(leaf_field(Some("capture-invocant"), Value::truth(true)));
         }
         match &pd.default {
-            Some(default) => fields.push(node_field(Some("default"), convert_expr(default)?)),
+            Some(default) => fields.push(node_field(Some("default"), convert_expr(scope, default)?)),
             None => fields.push(RakuAstField {
                 name: Some("optional"),
                 value: RakuAstFieldValue::Node(Value::truth(false)),
@@ -5137,11 +5137,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         if let Some(w) = pd.where_constraint.as_deref() {
             node.fields
-                .push(node_field(Some("where"), convert_expr(w)?));
+                .push(node_field(Some("where"), convert_expr(scope, w)?));
         }
         if let Some(d) = pd.default.as_ref() {
             node.fields
-                .push(node_field(Some("default"), convert_expr(d)?));
+                .push(node_field(Some("default"), convert_expr(scope, d)?));
         }
         node
     } else if pd.slurpy || pd.double_slurpy {
@@ -5165,7 +5165,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         if let Some(w) = pd.where_constraint.as_deref() {
             node.fields
-                .push(node_field(Some("where"), convert_expr(w)?));
+                .push(node_field(Some("where"), convert_expr(scope, w)?));
         }
         node
     } else if pd.onearg {
@@ -5196,7 +5196,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             && let Some(w) = pd.where_constraint.as_deref()
         {
             node.fields
-                .push(node_field(Some("where"), convert_expr(w)?));
+                .push(node_field(Some("where"), convert_expr(scope, w)?));
         }
         node
     } else if pd.named {
@@ -5549,7 +5549,7 @@ fn simple_parameter(
     }
     fields.push(node_field(Some("target"), target));
     match default {
-        Some(d) => fields.push(node_field(Some("default"), convert_expr(d)?)),
+        Some(d) => fields.push(node_field(Some("default"), convert_expr(scope, d)?)),
         None => fields.push(RakuAstField {
             name: Some("optional"),
             value: RakuAstFieldValue::Node(Value::truth(false)),
@@ -5559,7 +5559,7 @@ fn simple_parameter(
     // builds and `EVAL` already lowers and enforces. It follows `optional` /
     // `default` in the model's canonical accessor order.
     if let Some(w) = where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(w)?));
+        fields.push(node_field(Some("where"), convert_expr(scope, w)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -5721,7 +5721,7 @@ fn convert_chained_compare(
     operands: &[Expr],
     ops: &[(crate::token_kind::TokenKind, bool)],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = convert_expr(&operands[0])?;
+    let mut node = convert_expr(scope, &operands[0])?;
     for (i, (op, negated)) in ops.iter().enumerate() {
         let mut infix = RakuAstNode {
             origin: Default::default(),
@@ -5729,7 +5729,7 @@ fn convert_chained_compare(
             fields: vec![
                 node_field(Some("left"), node),
                 node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
-                node_field(Some("right"), convert_expr(&operands[i + 1])?),
+                node_field(Some("right"), convert_expr(scope, &operands[i + 1])?),
             ],
         };
         super::infix_origins::derive(&mut infix);
@@ -5796,7 +5796,7 @@ fn left_exclusive_sequence_node(
     operands.reverse();
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(scope, operand)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -6149,7 +6149,7 @@ fn heredoc_node(
     stop: &str,
     written: crate::ast::SrcSpan,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = convert_expr(body)?;
+    let mut node = convert_expr(scope, body)?;
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }
@@ -6340,7 +6340,7 @@ pub(super) fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNo
 pub(super) fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(items.len());
     for it in items {
-        operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
+        operands.push(Value::rakuast(Box::new(convert_expr(scope, it)?)));
     }
     let mut node = RakuAstNode {
         origin: Default::default(),
@@ -6368,7 +6368,7 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         if is_injected_named_arg(a) {
             continue;
         }
-        fields.push(node_field(None, convert_expr(a)?));
+        fields.push(node_field(None, convert_expr(scope, a)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -6407,7 +6407,7 @@ fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, 
                 {
                     literal_hash_index_expr(argument)?
                 } else {
-                    convert_expr(argument)?
+                    convert_expr(scope, argument)?
                 };
                 Ok(node_field(None, node))
             })
@@ -6539,7 +6539,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair variable key"));
     };
-    let value = convert_expr(right)?;
+    let value = convert_expr(scope, right)?;
     if !value.class.is_simple_variable() {
         return Err(unsupported("colonpair variable value"));
     }
@@ -6590,9 +6590,9 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
         // `:a<x y>` keeps the raw word text as one word-quote.
         Expr::Literal(_) | Expr::ArrayLiteral(_) if !parenthesize => match angle_key_text(right) {
             Some(text) => word_quote(&text),
-            None => convert_expr(right)?,
+            None => convert_expr(scope, right)?,
         },
-        _ => convert_expr(right)?,
+        _ => convert_expr(scope, right)?,
     };
     let is_direct_block = parenthesize
         && matches!(
@@ -6654,7 +6654,7 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::PostcircumfixLiteralHashIndex,
-            fields: vec![node_field(Some("index"), convert_expr(index)?)],
+            fields: vec![node_field(Some("index"), convert_expr(scope, index)?)],
         },
     )
 }

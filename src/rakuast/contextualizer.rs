@@ -46,10 +46,10 @@ pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, Ru
     };
     let target = match contents {
         Expr::Contextualizer { .. } if matches!(inner, Expr::Contextualizer { .. }) => {
-            convert_expr(contents)?
+            convert_expr(scope, contents)?
         }
         Expr::ArrayLiteral(items) if items.is_empty() => sequence(None),
-        other => sequence(Some(statement_expression(convert_expr(other)?))),
+        other => sequence(Some(statement_expression(convert_expr(scope, other)?))),
     };
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -67,7 +67,7 @@ pub(super) fn convert_segment(contents: &Expr) -> Result<RakuAstNode, RuntimeErr
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(
             None,
-            sequence(Some(statement_expression(convert_expr(contents)?))),
+            sequence(Some(statement_expression(convert_expr(scope, contents)?))),
         )],
     })
 }
@@ -95,7 +95,7 @@ pub(super) fn lower_segment(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeE
 /// `Contextualizer::Item(StatementSequence(Statement::*, ...))`.
 // Cost: O(n), n = nodes of the statements.
 pub(super) fn convert_statements(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let fields = super::convert::block_statements(stmts)?
+    let fields = super::convert::block_statements(scope, stmts)?
         .into_iter()
         .map(|statement| node_field(None, statement))
         .collect();
@@ -230,7 +230,7 @@ pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError>
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
-        fields: vec![node_field(None, convert_expr(inner)?)],
+        fields: vec![node_field(None, convert_expr(scope, inner)?)],
     })
 }
 
@@ -242,7 +242,7 @@ pub(super) fn convert_item_call(inner: &Expr) -> Result<RakuAstNode, RuntimeErro
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
-        fields: vec![node_field(None, convert_expr(inner)?)],
+        fields: vec![node_field(None, convert_expr(scope, inner)?)],
     })
 }
 
@@ -256,6 +256,6 @@ pub(super) fn convert_list_call(inner: &Expr) -> Result<RakuAstNode, RuntimeErro
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerList,
-        fields: vec![node_field(None, convert_expr(inner)?)],
+        fields: vec![node_field(None, convert_expr(scope, inner)?)],
     })
 }

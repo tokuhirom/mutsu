@@ -92,7 +92,7 @@ pub(super) fn insert_subset_shape(
     expression: &Expr,
     source: &str,
 ) -> Result<(), RuntimeError> {
-    let mut subset = convert_expr(expression)?;
+    let mut subset = convert_expr(scope, expression)?;
     if subset.class != RakuAstClass::TypeSubset {
         return Err(unsupported_source("inline subset hash key type"));
     }
@@ -157,7 +157,7 @@ pub(super) fn insert_dimensions(
         .map(|dim| {
             Ok(node_field(
                 None,
-                statement_expression(super::convert::convert_expr(dim)?),
+                statement_expression(super::convert::convert_expr(scope, dim)?),
             ))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;

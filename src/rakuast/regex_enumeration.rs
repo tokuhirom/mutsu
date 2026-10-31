@@ -102,7 +102,7 @@ fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeErro
         PropertyPredicate::Args(text) => {
             let expr = crate::parser::parse_adverb_argument(text)
                 .ok_or_else(|| super::convert::unsupported("property predicate"))?;
-            let value = super::convert::convert_expr(&expr)?;
+            let value = super::convert::convert_expr(scope, &expr)?;
             if crate::regex_tree::expression_argument_source(&expr).is_none() {
                 return Err(super::convert::unsupported("property predicate"));
             }

@@ -54,7 +54,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             ],
         },
         RegexExtension::Statement(code) => {
-            let mut statements = block_statements(&code.body)?;
+            let mut statements = block_statements(scope, &code.body)?;
             let (Some(statement), None) = (statements.pop(), statements.pop()) else {
                 return Err(unsupported("regex statement"));
             };
@@ -109,7 +109,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             let sequence = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::StatementSequence,
-                fields: block_statements(&code.body)?
+                fields: block_statements(scope, &code.body)?
                     .into_iter()
                     .map(|statement| node_field(None, statement))
                     .collect(),
@@ -221,7 +221,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             origin: Default::default(),
             class: RakuAstClass::RegexQuote,
             fields: vec![
-                node_field(None, convert_expr(expr)?),
+                node_field(None, convert_expr(scope, expr)?),
                 super::regex_code::source_field(source),
             ],
         },

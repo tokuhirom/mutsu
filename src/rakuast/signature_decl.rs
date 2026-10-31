@@ -107,7 +107,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     let mut fields = vec![node_field(Some("signature"), signature)];
     if let Some(default) = &decl.group_default {
         // Rakudo omits the group trait from .raku, but execution still needs it.
-        fields.push(node_field(Some("group-default"), convert_expr(default)?));
+        fields.push(node_field(Some("group-default"), convert_expr(scope, default)?));
     }
     if decl.is_our || decl.is_state {
         let scope = if decl.is_our { "our" } else { "state" };
@@ -131,7 +131,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
             RakuAstNode {
                 origin: Default::default(),
                 class,
-                fields: vec![node_field(None, convert_expr(&init.rhs)?)],
+                fields: vec![node_field(None, convert_expr(scope, &init.rhs)?)],
             },
         ));
     }
@@ -244,7 +244,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         fields.push(leaf_field(Some("optional"), Value::truth(var.is_optional)));
     }
     if let Some(default) = &var.default {
-        fields.push(node_field(Some("default"), convert_expr(default)?));
+        fields.push(node_field(Some("default"), convert_expr(scope, default)?));
     }
     if var.is_slurpy {
         fields.push(leaf_field(
@@ -253,7 +253,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         ));
     }
     if let Some(constraint) = &var.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(constraint)?));
+        fields.push(node_field(Some("where"), convert_expr(scope, constraint)?));
     }
     if let Some(param_trait) = var.param_trait {
         fields.push(RakuAstField {

@@ -40,7 +40,7 @@ pub(super) fn convert_react(body: &[Stmt], blorst: bool) -> Result<RakuAstNode, 
                 },
             ],
         ) => convert_whenever(supply, params, param_defs, body)?,
-        (true, [Stmt::Expr(expr)]) => convert_expr(expr)?,
+        (true, [Stmt::Expr(expr)]) => convert_expr(scope, expr)?,
         (true, _) => return Err(super::convert::unsupported("react with a statement body")),
     };
     Ok(RakuAstNode {
@@ -91,17 +91,17 @@ pub(super) fn convert_whenever(
                 true_field("implicit-topic"),
                 true_field("required-topic"),
                 true_field("may-have-signature"),
-                node_field(Some("body"), blockoid(body)?),
+                node_field(Some("body"), blockoid(scope, body)?),
             ],
         }
     } else {
-        convert_expr(&whenever_block(params, param_defs, body))?
+        convert_expr(scope, &whenever_block(params, param_defs, body))?
     };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementWhenever,
         fields: vec![
-            node_field(Some("trigger"), convert_expr(supply)?),
+            node_field(Some("trigger"), convert_expr(scope, supply)?),
             node_field(Some("body"), block),
         ],
     })

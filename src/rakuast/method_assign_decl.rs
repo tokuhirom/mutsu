@@ -13,7 +13,7 @@ pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeErr
         || form
             .custom_traits
             .iter()
-            .any(|(name, arg)| !decl_traits::is_rendered(name, arg))
+            .any(|(name, arg)| !decl_traits::is_rendered(scope, name, arg))
     {
         return Err(unsupported("method-assignment declaration with traits"));
     }
@@ -40,14 +40,14 @@ pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeErr
         None,
         form.anonymous,
     )?;
-    decl_traits::insert(&mut decl, decl_traits::convert(&form.custom_traits)?);
+    decl_traits::insert(&mut decl, decl_traits::convert(scope, &form.custom_traits)?);
     if let Some(dims) = &form.shape {
         super::keyed_hash::insert_dimensions(&mut decl, dims)?;
     }
     match &form.chain {
         // `my $o .= $m.uc`: the declaration is the operand of the chain
         // (`ApplyPostfix(operand => VarDeclaration, …)`, rakudo 2026.09).
-        Some(chain) => with_innermost_operand(&super::convert::convert_expr(chain)?, decl),
+        Some(chain) => with_innermost_operand(&super::convert::convert_expr(scope, chain)?, decl),
         None => Ok(decl),
     }
 }

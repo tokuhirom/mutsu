@@ -15,11 +15,11 @@ pub(super) fn convert(pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError
         return Ok(None);
     };
     let dims = if dimensions.len() == 1 {
-        convert_expr(&dimensions[0])?
+        convert_expr(scope, &dimensions[0])?
     } else {
         let mut operands = Vec::with_capacity(dimensions.len());
         for dim in dimensions {
-            operands.push(Value::rakuast(Box::new(convert_expr(dim)?)));
+            operands.push(Value::rakuast(Box::new(convert_expr(scope, dim)?)));
         }
         RakuAstNode {
             origin: Default::default(),

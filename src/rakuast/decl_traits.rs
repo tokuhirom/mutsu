@@ -84,7 +84,7 @@ pub(super) fn convert(scope: &NameScope,
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut items = Vec::new();
     for (name, arg) in custom_traits {
-        if !is_rendered(name, arg) {
+        if !is_rendered(scope, name, arg) {
             continue;
         }
         let Some(arg) = arg else {

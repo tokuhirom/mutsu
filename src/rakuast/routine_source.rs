@@ -135,7 +135,7 @@ pub(super) fn trait_node(scope: &NameScope, item: &RoutineTrait) -> Result<RakuA
         RoutineTrait::Handles(term) => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitHandles,
-            fields: vec![node_field(None, super::convert::convert_expr(term)?)],
+            fields: vec![node_field(None, super::convert::convert_expr(scope, term)?)],
         },
         RoutineTrait::Parent { kind, name, args } => {
             // `is NAME` names a parent only when NAME is a type; any other name
@@ -357,7 +357,7 @@ pub(super) fn routine_node(
             signature(param_defs, true, returns)?,
         ));
     }
-    fields.push(node_field(Some("body"), blockoid(body)?));
+    fields.push(node_field(Some("body"), blockoid(scope, body)?));
     Ok(RakuAstNode {
         origin: Default::default(),
         class,

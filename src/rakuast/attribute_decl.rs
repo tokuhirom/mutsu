@@ -134,7 +134,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
     )?;
     if let Some(constraint) = where_constraint {
         decl.fields
-            .push(node_field(Some("where"), convert_expr(constraint)?));
+            .push(node_field(Some("where"), convert_expr(scope, constraint)?));
     }
     Ok(Some(statement_expression(decl)))
 }

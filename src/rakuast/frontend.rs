@@ -48,7 +48,7 @@ pub(crate) fn cache_tag() -> &'static str {
 /// the lowering hands the compiler the same tree it would have had without
 /// them.
 pub(crate) fn round_trip_unit(scope: &NameScope, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(scope, scope, scope, &NameScope::default(), stmts).map_err(refusal)
+    round_trip_owned(scope, scope, scope, scope, &NameScope::default(), stmts).map_err(refusal)
 }
 
 /// A refusal of the round trip as the mode reports it. An error that already
@@ -68,7 +68,7 @@ fn refusal(err: RuntimeError) -> RuntimeError {
 /// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
 /// parser's tree with.
 pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(stmts.to_vec())
+    round_trip_owned(scope, stmts.to_vec())
 }
 
 /// [`round_trip`] for a unit the caller owns: the origins come off the tree
@@ -95,7 +95,7 @@ pub(crate) fn round_trip_eval(
     stmts: &[Stmt],
     scope: crate::scope::NameScope,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip(scope, scope, scope, &scope, stmts).map_err(refusal)
+    round_trip(scope, scope, scope, scope, &scope, stmts).map_err(refusal)
 }
 
 /// The scope an `EVAL` string's calling scope makes: the names it declares,

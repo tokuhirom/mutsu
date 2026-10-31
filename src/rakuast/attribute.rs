@@ -161,7 +161,7 @@ impl AttributeTraits {
                         .ok_or_else(|| unsupported("attribute trait list out of step"))?;
                     match kind.as_str() {
                         "is" => match argument {
-                            None => trait_is_name_or_type(name),
+                            None => trait_is_name_or_type(scope, name),
                             Some(argument) => trait_is(name, Some(trait_argument(argument)?)),
                         },
                         "does" => Value::rakuast(Box::new(RakuAstNode {
@@ -237,7 +237,7 @@ fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
     let mut term = term.clone();
     MethodNames.visit_expr_mut(&mut term);
-    convert_expr(&term)
+    convert_expr(scope, &term)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,

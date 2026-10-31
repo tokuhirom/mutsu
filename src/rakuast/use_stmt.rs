@@ -126,7 +126,7 @@ pub(super) fn convert_use(
     if let Some(condition) = condition {
         node.fields.push(node_field(
             Some("source-if-condition"),
-            convert_expr(condition)?,
+            convert_expr(scope, condition)?,
         ));
     }
     if !if_imports.is_empty() {
@@ -291,7 +291,7 @@ pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, Runt
         [] => {}
         [import_list] => node
             .fields
-            .push(node_field(Some("argument"), convert_expr(import_list)?)),
+            .push(node_field(Some("argument"), convert_expr(scope, import_list)?)),
         _ => return Ok(None),
     }
     Ok(Some(node))
@@ -411,7 +411,7 @@ fn from_language(name: &RakuAstNode) -> Option<String> {
 fn use_argument(arg: Option<&Expr>, tags: &[String]) -> Result<Option<RakuAstNode>, RuntimeError> {
     match (arg, tags) {
         (None, []) => Ok(None),
-        (Some(arg), []) => Ok(Some(convert_expr(arg)?)),
+        (Some(arg), []) => Ok(Some(convert_expr(scope, arg)?)),
         (None, tags) => Ok(tag_argument(tags)),
         (Some(_), _) => Err(super::convert::unsupported(
             "use with both an argument and import tags",

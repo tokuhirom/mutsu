@@ -28,7 +28,7 @@ pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(expr)?)],
+        fields: vec![node_field(None, convert_expr(scope, expr)?)],
     };
     Ok(name_parts::name_from_parts(vec![
         name_parts::leading_empty(),
@@ -65,7 +65,7 @@ pub(super) fn convert_indirect_code(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(package)?)],
+        fields: vec![node_field(None, convert_expr(scope, package)?)],
     })));
     parts.push(name_parts::simple_part(name));
     Ok(RakuAstNode {
@@ -222,7 +222,7 @@ pub(super) fn convert_package_indirect(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(key)?)],
+        fields: vec![node_field(None, convert_expr(scope, key)?)],
     })));
     let name = name_parts::name_from_parts(parts);
     let lexical = name_parts::identifier_segments(package)

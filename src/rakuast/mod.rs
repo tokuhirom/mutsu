@@ -1810,7 +1810,7 @@ pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast(source)?;
+    let statement_list = str_dot_ast(scope, source)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1852,7 +1852,7 @@ pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
 /// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
 pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
-        return str_dot_ast(source);
+        return str_dot_ast(scope, source);
     };
     let module = format!("L10N::{slang}");
     let activation = crate::runtime::slang_activation::run_slang_activation(
@@ -1867,7 +1867,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
     let result = (|| {
         crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
-        str_dot_ast(source)
+        str_dot_ast(scope, source)
     })();
     crate::parser::set_l10n_preseed(None);
     crate::parser::restore_slang_state(saved_modes, saved_vocabulary);

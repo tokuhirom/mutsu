@@ -44,7 +44,7 @@ pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("prefix"), prefix_op("⚛")),
                 node_field(
                     Some("operand"),
-                    convert_expr(&temporize::variable_expr(name))?,
+                    convert_expr(scope, &temporize::variable_expr(name))?,
                 ),
             ],
         }),
@@ -52,9 +52,9 @@ pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(&temporize::variable_expr(name))?),
+                node_field(Some("left"), convert_expr(scope, &temporize::variable_expr(name))?),
                 node_field(Some("infix"), plain_infix("⚛=")),
-                node_field(Some("right"), convert_expr(value)?),
+                node_field(Some("right"), convert_expr(scope, value)?),
             ],
         }),
     }
@@ -75,7 +75,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op(operator)),
-                node_field(Some("operand"), convert_expr(operand)?),
+                node_field(Some("operand"), convert_expr(scope, operand)?),
             ],
         }),
         Atomic::Unary {
@@ -98,9 +98,9 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(left)?),
+                node_field(Some("left"), convert_expr(scope, left)?),
                 node_field(Some("infix"), plain_infix(operator)),
-                node_field(Some("right"), convert_expr(right)?),
+                node_field(Some("right"), convert_expr(scope, right)?),
             ],
         }),
     })())

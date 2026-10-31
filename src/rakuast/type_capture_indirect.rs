@@ -26,7 +26,7 @@ pub(super) fn capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(&expr)?)],
+        fields: vec![node_field(None, convert_expr(scope, &expr)?)],
     };
     Ok(RakuAstNode {
         origin: Default::default(),

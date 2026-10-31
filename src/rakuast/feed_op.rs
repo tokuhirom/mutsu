@@ -91,7 +91,7 @@ pub(super) fn convert(
                 "feed sink must be a routine call or appendable variable",
             ));
         }
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(scope, operand)?)));
     }
     let feed = RakuAstNode {
         origin: Default::default(),

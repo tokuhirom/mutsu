@@ -57,7 +57,7 @@ pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeE
                     fields: vec![node_field(None, prefix)],
                 },
             ),
-            node_field(Some("operand"), convert_expr(operand)?),
+            node_field(Some("operand"), convert_expr(scope, operand)?),
         ],
     })
 }

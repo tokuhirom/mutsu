@@ -33,7 +33,7 @@ pub(super) fn bare_statement_node(inner: &Expr) -> Result<RakuAstNode, RuntimeEr
             fields: vec![super::convert::node_field(None, statement)],
         });
     }
-    let mut node = super::convert::convert_expr(inner)?;
+    let mut node = super::convert::convert_expr(scope, inner)?;
     let Some(field) = node.fields.first_mut() else {
         return Ok(node);
     };

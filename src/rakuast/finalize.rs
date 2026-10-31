@@ -185,7 +185,7 @@ impl VisitMut for Finalize<'_> {
             inner = &spelled.expr;
         }
         if !carried::expr_carried(inner) {
-            match super::convert::convert_expr(expr)
+            match super::convert::convert_expr(scope, expr)
                 .and_then(|node| super::lower::lower_expr(&node))
             {
                 Ok(lowered) => *expr = lowered,

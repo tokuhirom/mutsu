@@ -69,7 +69,7 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
                 Expr::Literal(value) if let ValueView::Str(text) = value.view() => {
                     node_field(Some("value"), words_value(&text))
                 }
-                value => node_field(Some("value"), super::convert::convert_expr(value)?),
+                value => node_field(Some("value"), super::convert::convert_expr(scope, value)?),
             };
             pairs.push(Value::rakuast(Box::new(RakuAstNode {
                 origin: Default::default(),

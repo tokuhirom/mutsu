@@ -113,7 +113,7 @@ fn substitution(
                     fields: Vec::new(),
                 },
             ));
-            convert_expr(expr)?
+            convert_expr(scope, expr)?
         }
         Some(SubstThunk {
             expr,
@@ -129,9 +129,9 @@ fn substitution(
             ));
             let rhs = crate::parser::subst_compound_rhs(expr)
                 .ok_or_else(|| unsupported_what("compound substitution replacement"))?;
-            convert_expr(rhs)?
+            convert_expr(scope, rhs)?
         }
-        None => convert_expr(&crate::parser::interpolate_qq_content(replacement)?)?,
+        None => convert_expr(scope, &crate::parser::interpolate_qq_content(replacement)?)?,
     };
     fields.push(node_field(Some("pattern"), regex_node(&tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));
@@ -226,7 +226,7 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
     };
     let expr = crate::parser::parse_adverb_argument(argument)
         .ok_or_else(|| unsupported_what("regex adverb argument"))?;
-    let value = convert_expr(&expr)?;
+    let value = convert_expr(scope, &expr)?;
     let dynamic_position = matches!(adverb.name.as_str(), "p" | "pos" | "c" | "continue");
     if crate::regex_tree::expression_argument_source(&expr).is_none() && !dynamic_position {
         return Err(unsupported_what("regex adverb argument"));

@@ -92,7 +92,7 @@ pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
             "role header the written-trait record does not account for",
         ));
     }
-    let mut traits = super::routine_source::header_traits(role.body)?;
+    let mut traits = super::routine_source::header_traits(scope, role.body)?;
     // What follows the written clauses is `also is Parent;` / `also is rw;`
     // lifted out of the body: a parent without a header spelling renders as
     // a trailing `is` trait, which lowers back to the same clause.
@@ -142,7 +142,7 @@ pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
         super::role_implicit::add(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RoleBody,
-            fields: vec![node_field(Some("body"), blockoid(&body)?)],
+            fields: vec![node_field(Some("body"), blockoid(scope, &body)?)],
         }),
     ));
     if !role.type_param_defs.is_empty() {
