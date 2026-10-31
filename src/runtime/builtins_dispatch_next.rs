@@ -803,8 +803,9 @@ impl Interpreter {
         }
     }
 
-    /// A plain `IO::Handle` view (same cell) of an instance whose class is
-    /// `IO::Handle` with roles mixed in (`IO::Handle+{R}`), else `None`.
+    /// A plain view (same cell) of an instance whose class is an `IO::*` handle
+    /// class with roles mixed in (`IO::Handle+{R}`, `IO::CatHandle+{R}`): the
+    /// view has the base class, without the mixin. `None` for anything else.
     // Cost: O(1).
     pub(crate) fn plain_io_handle_view(value: &Value) -> Option<Value> {
         let ValueView::Instance {
@@ -815,16 +816,15 @@ impl Interpreter {
         else {
             return None;
         };
-        class_name
-            .as_str()
-            .starts_with("IO::Handle+{")
-            .then(|| {
-                Value::instance_sharing_cell(
-                    &attributes,
-                    Symbol::intern("IO::Handle"),
-                    attributes.instance_id(),
-                )
-            })
+        let name = class_name.as_str();
+        let (base, _) = name.split_once("+{")?;
+        base.starts_with("IO::").then(|| {
+            Value::instance_sharing_cell(
+                &attributes,
+                Symbol::intern(base),
+                attributes.instance_id(),
+            )
+        })
     }
 
     /// The default `gist`/`raku`/`Str` of an instance, the last candidate of a
