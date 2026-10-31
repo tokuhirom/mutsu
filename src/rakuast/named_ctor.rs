@@ -412,6 +412,9 @@ fn build(
     for &(name, kind, missing) in schema {
         let given = super::named_arg(args, name)
             .filter(|v| !v.is_nil())
+            // An empty `ArgList` is the default `args`; rakudo's `.raku` leaves
+            // it out as it does when the argument is not passed.
+            .filter(|v| !(name == "args" && matches!(missing, Omit) && is_empty_arg_list(v)))
             .filter(|v| {
                 name != "scope"
                     || !DEFAULT_SCOPES
@@ -458,4 +461,11 @@ fn build(
         class,
         fields,
     })))
+}
+
+/// Whether `value` is a `RakuAST::ArgList` with no arguments.
+// Cost: O(1).
+pub(super) fn is_empty_arg_list(value: &Value) -> bool {
+    matches!(value.view(), ValueView::RakuAst(node)
+        if node.class == RakuAstClass::ArgList && node.fields.is_empty())
 }
