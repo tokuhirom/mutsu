@@ -991,9 +991,7 @@ impl NanBox {
     pub(in crate::value) fn is_pair_or_hash(&self) -> bool {
         matches!(
             classify(self.0.get()),
-            Classified::Kind(
-                Kind::Pair | Kind::ValuePair | Kind::HashPlain | Kind::HashItemized
-            )
+            Classified::Kind(Kind::Pair | Kind::ValuePair | Kind::HashPlain | Kind::HashItemized)
         )
     }
 
