@@ -306,6 +306,20 @@ fn junction_of(
     target: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     let target = target.clone().deitemize_for_sigil_bind();
+    // An `Iterable` object is iterated, not listed: `Any.all` reads its
+    // `.iterator` (the `.list` of an `Iterable`-only object is itself).
+    if matches!(
+        target.view(),
+        ValueView::Instance { .. } | ValueView::Mixin(..)
+    ) && i.type_matches_value("Iterable", &target)
+        && matches!(target.view(), ValueView::Instance { class_name, .. }
+            if i.has_user_method_including_role(&class_name.resolve(), "iterator"))
+    {
+        return Some(
+            i.drive_user_iterator_items(&target)
+                .map(|items| Value::junction(kind, items)),
+        );
+    }
     let target = if matches!(
         target.view(),
         ValueView::Instance { .. } | ValueView::Mixin(..)
