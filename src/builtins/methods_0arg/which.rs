@@ -243,10 +243,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
         }
         // Never-reused id, like the Array/Hash arms below.
         ValueView::Seq(items) => {
-            format!(
-                "Seq|{}",
-                crate::value::which_id::shown(items.which_id())
-            )
+            format!("Seq|{}", crate::value::which_id::shown(items.which_id()))
         }
         // A lazy Seq is a reference type: its identity is the one list object,
         // stable across reads while it is alive (#12972).
@@ -332,16 +329,10 @@ pub(crate) fn which_of(target: &Value) -> Value {
         // whenever the second temporary landed on the first's freed
         // block.
         ValueView::Promise(p) => {
-            format!(
-                "Promise|{}",
-                crate::value::which_id::shown(p.which_id())
-            )
+            format!("Promise|{}", crate::value::which_id::shown(p.which_id()))
         }
         ValueView::Channel(c) => {
-            format!(
-                "Channel|{}",
-                crate::value::which_id::shown(c.which_id())
-            )
+            format!("Channel|{}", crate::value::which_id::shown(c.which_id()))
         }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
