@@ -79,13 +79,10 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
     };
     // `has $!g //= 5`: the attribute's own expansion.
     if let Stmt::HasDecl {
-        name,
-        is_public,
-        ..
+        name, is_public, ..
     } = &decl
     {
-        let assign =
-            attribute_compound_assign(&name.resolve(), *is_public, compound, source);
+        let assign = attribute_compound_assign(&name.resolve(), *is_public, compound, source);
         // One flat block: the class-body attribute discovery flattens only
         // one level.
         return Ok(Stmt::SyntheticBlock(vec![decl, assign]));
@@ -106,12 +103,7 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
 /// (`Expr::AssignExpr`) for a public `$.g`, so a non-`rw` one dies as
 /// rakudo's does; as a `Stmt::Assign` of `$!g` otherwise.
 // Cost: O(n), n = size of `rhs`.
-fn attribute_compound_assign(
-    name: &str,
-    is_public: bool,
-    op: CompoundAssignOp,
-    rhs: Expr,
-) -> Stmt {
+fn attribute_compound_assign(name: &str, is_public: bool, op: CompoundAssignOp, rhs: Expr) -> Stmt {
     if is_public {
         let var_name = format!(".{name}");
         let read = Expr::Var(var_name.clone());
