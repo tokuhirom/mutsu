@@ -85,6 +85,18 @@ fn baked_param_name_sym(baked: &[Symbol], idx: usize, pd: &ParamDef) -> Option<S
     Some(sym)
 }
 
+fn legacy_has_positional_placeholder(params: &[String]) -> bool {
+    params.iter().any(|p| {
+        p.starts_with('^') || p.starts_with("@^") || p.starts_with("%^") || p.starts_with("&^")
+    })
+}
+
+fn legacy_has_named_placeholder(params: &[String]) -> bool {
+    params.iter().any(|p| {
+        p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:") || p.starts_with("&:")
+    })
+}
+
 fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     params.iter().any(|p| {
         !p.starts_with(':')
@@ -1341,7 +1353,12 @@ impl Interpreter {
             // must bind to `$p` positionally. So when the param list has a plain
             // positional name, treat `ValuePair(Str, _)` as positional (and not
             // as a named arg) — otherwise the pair is dropped and `$p` is unbound.
-            let promote_valuepair_positional = legacy_has_plain_positional_param(params);
+            // Likewise for positional placeholders (`sub f { $^x.key }`) when no
+            // `$:name` placeholder exists to receive a colonpair: a Pair held in a
+            // variable is then an ordinary positional (`f($pair)`).
+            let promote_valuepair_positional = legacy_has_plain_positional_param(params)
+                || (legacy_has_positional_placeholder(params)
+                    && !legacy_has_named_placeholder(params));
             let positional_args: Vec<Value> = plain_args
                 .iter()
                 .filter(|a| match a.view() {

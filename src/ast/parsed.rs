@@ -768,10 +768,12 @@ impl ParsedStmt {
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
-            | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::Temporize(_)
             | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
+            // `my ($a, $b) = EXPR`: the initializer runs in the enclosing scope
+            // (a `$^a` in it is that block's placeholder).
+            ParsedStmt::SignatureDecl(d) => d.init.iter().map(|init| &init.rhs).collect(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::DoneValue(value) => vec![value],
             ParsedStmt::InlineProtoUse { .. } => Vec::new(),
