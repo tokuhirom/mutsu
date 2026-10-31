@@ -75,7 +75,7 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
 pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
-    if super::passthrough::executing() {
+    if super::finalize::executing() {
         return;
     }
     let stmt = match stmt {

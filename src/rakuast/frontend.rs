@@ -1,16 +1,14 @@
 //! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
-//! The frontend is `parse -> RakuAST -> lower`: every compilation unit (the
-//! main program, every `EVAL` string, every `use`d module and `require`d file)
-//! is converted to its RakuAST tree and lowered back before it is compiled. The
-//! result is what the RakuAST frontend will produce once the parser emits
-//! RakuAST directly (Stage 2). There is no opt-out.
+//! Every compilation unit (the main program, every `EVAL` string, every `use`d
+//! module and `require`d file) is parsed with its spellings kept and finalized
+//! in place before it is compiled ([`super::finalize`]): the typed nodes of the
+//! migrated families are lowered where they stand. There is no opt-out.
 //!
-//! `MUTSU_RAKUAST=convert` is the one test level that is left: no subtree
-//! crosses as the parser's own tree ([`super::passthrough`]), every node goes
-//! through `convert` and `lower`, as `.AST` and `EVAL($ast)` do. The default is
-//! the cost-measured level; `convert` keeps the coverage of the `convert` and
-//! `lower` arms of the carried families (`scripts/rakuast-frontend.sh check`).
+//! `MUTSU_RAKUAST=convert` is the one test level that is left: the whole unit
+//! is converted to a `RakuAstNode` tree and lowered back, as `.AST` and
+//! `EVAL($ast)` do. It keeps the coverage of the `convert` and `lower` arms
+//! (`scripts/rakuast-frontend.sh check`).
 //!
 //! A construct the converter or the lowerer refuses is a compile error, never a
 //! silent fallback to the parser's own tree: a fallback would count a file as
@@ -75,20 +73,13 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 /// [`round_trip`] for a unit the caller owns: the origins come off the tree
 /// in place, with no copy of it.
 // Cost: O(n), n = size of the unit.
-pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-    // An executing parse records no term origins (`term_origins::Wanted` is
-    // entered only by `Str.AST`), so there is no wrapper to take off.
-    let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
-    // The unit's declarations also classify the barewords a kept tree
-    // converts where it stands, while it is lowered.
-    let _declared = (!convert_level()).then(|| super::bareword::DeclaredNames::collect(&stmts));
-    let _top = (!convert_level()).then(|| super::bareword::BlockScope::enter(&stmts));
-    let node = if convert_level() {
-        super::convert::statement_list(&stmts)?
+pub(crate) fn round_trip_owned(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    let mut lowered = if convert_level() {
+        let node = super::convert::statement_list(&stmts)?;
+        super::lower::lower_converted(&node)?
     } else {
-        super::convert::statement_list_owned(&mut stmts)?
+        super::finalize::finalize_unit(stmts)?
     };
-    let mut lowered = super::lower::lower_converted(&node)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);

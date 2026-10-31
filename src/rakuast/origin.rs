@@ -75,7 +75,7 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
 pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     // The lowering reads only the line; the ranges are for `.AST`.
-    if super::passthrough::executing() {
+    if super::finalize::executing() {
         node.origin.0 = Some(Value::int(line));
         return;
     }
