@@ -109,10 +109,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode, kind: PhaserKind) -> 
         });
     let positional = named_child_or_positional(node)?;
     let body = match positional.class {
-        RakuAstClass::Block => lower_block(positional)?,
+        RakuAstClass::Block => lower_block(names, positional)?,
         // `PRE { COND }`: the statement calls the block; the body is the block's.
         RakuAstClass::StatementExpression if let Some(block) = called_block(positional) => {
-            lower_block(block)?
+            lower_block(names, block)?
         }
         _ => vec![super::lower::lower_stmt(names, positional)?],
     };

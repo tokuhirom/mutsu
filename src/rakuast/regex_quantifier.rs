@@ -145,7 +145,7 @@ pub(super) fn backtrack(value: &Value) -> Option<RegexBacktrack> {
 
 /// The tree quantifier for a quantifier node, without its separator.
 // Cost: O(1).
-pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
+pub(super) fn lower_quantifier(names: &NameScope, node: &RakuAstNode) -> Option<RegexQuantifier> {
     let kind = match node.class {
         RakuAstClass::RegexQuantifierZeroOrMore => QuantifierKind::ZeroOrMore,
         RakuAstClass::RegexQuantifierOneOrMore => QuantifierKind::OneOrMore,
@@ -173,7 +173,7 @@ pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
             };
             QuantifierKind::Block(Box::new(crate::regex_tree::RegexCode {
                 code: super::regex_code::source_of(node),
-                body: super::lower::lower_block(block).ok()?,
+                body: super::lower::lower_block(names, block).ok()?,
             }))
         }
         _ => return None,

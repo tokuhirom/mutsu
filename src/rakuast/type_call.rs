@@ -65,7 +65,7 @@ pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Result<Op
 /// The coercion call `Type(EXPR)` a marked `Call::Term` on `operand` spells;
 /// `None` for an unmarked one or an operand that is not a type name.
 // Cost: O(n), n = size of the arguments.
-pub(super) fn lower(operand: &Expr, postfix: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower(names: &NameScope, operand: &Expr, postfix: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     if !postfix.fields.iter().any(is_marker) {
         return Ok(None);
     }
@@ -74,7 +74,7 @@ pub(super) fn lower(operand: &Expr, postfix: &RakuAstNode) -> Result<Option<Expr
     };
     Ok(Some(Expr::Call {
         name: crate::symbol::Symbol::intern(type_name),
-        args: arg_exprs(postfix)?,
+        args: arg_exprs(names, postfix)?,
         listop: false,
     }))
 }

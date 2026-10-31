@@ -219,14 +219,14 @@ pub(super) fn lower(names: &NameScope,
             [_] if name == DYNAMIC => dynamic = Some(None),
             [_, _] if name == DYNAMIC => {
                 let argument = named_child(t, "argument")?;
-                dynamic = Some(Some(super::attribute::lower_paren_argument(t, argument)?));
+                dynamic = Some(Some(super::attribute::lower_paren_argument(names, t, argument)?));
             }
             // `is marked`.
             [_] => traits.push((name, None)),
             // `is default(EXPR)` / `is marked(ARGS)`.
             [_, _] => {
                 let argument = named_child(t, "argument")?;
-                let value = super::attribute::lower_paren_argument(t, argument)?;
+                let value = super::attribute::lower_paren_argument(names, t, argument)?;
                 // A list `(a, b)` is the parser's grouped array literal.
                 let value = match value {
                     Expr::ArrayLiteral(_) if name != DEFAULT => Expr::Grouped(Box::new(value)),

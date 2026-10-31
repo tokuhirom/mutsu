@@ -310,7 +310,7 @@ pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<Attr
             // `handles TERM`: the specs come from the term, as the parser
             // builds them.
             RakuAstClass::TraitHandles => {
-                let term = lower_expr(named_child_or_positional(t)?)?;
+                let term = lower_expr(names, named_child_or_positional(t)?)?;
                 let specs = crate::parser::handle_specs_from_term(&term).ok_or_else(refuse)?;
                 traits.handles.extend(specs);
                 traits.handles_terms.push(term);
@@ -326,7 +326,7 @@ pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<Attr
             // Callable, as the parser keeps it.
             RakuAstClass::TraitWill => {
                 let phase = super::lower::leaf_str(t, "phase")?;
-                let body = super::lower::lower_block(named_child(t, "block")?)?;
+                let body = super::lower::lower_block(names, named_child(t, "block")?)?;
                 traits.unknown_traits.push((
                     "will".to_string(),
                     phase,
@@ -385,7 +385,7 @@ fn lower_trait_is(names: &NameScope,
         Ok(argument) => Some(if argument.class == RakuAstClass::CircumfixArrayComposer {
             lower_expr(names, argument)?
         } else {
-            lower_paren_argument(node, argument)?
+            lower_paren_argument(names, node, argument)?
         }),
         Err(_) if t.fields.len() == 1 => None,
         Err(_) => return Err(refuse()),

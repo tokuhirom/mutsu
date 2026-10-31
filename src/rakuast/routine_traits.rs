@@ -322,6 +322,6 @@ fn lower_argument(names: &NameScope, owner: &RakuAstNode, argument: &RakuAstNode
     if argument.class == RakuAstClass::QuotedString {
         super::lower::lower_expr(names, argument)
     } else {
-        super::attribute::lower_paren_argument(owner, argument)
+        super::attribute::lower_paren_argument(names, owner, argument)
     }
 }

@@ -66,7 +66,7 @@ pub(super) fn node(names: &NameScope, symbol: &str, operand: &Expr) -> Result<Ra
 /// The call for an `ApplyPrefix` over a `MetaPrefix::Hyper`, or `None` for any
 /// other prefix.
 // Cost: O(n), n = size of the operand.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     let prefix = named_child(node, "prefix").ok()?;
     if prefix.class != RakuAstClass::MetaPrefixHyper {
         return None;
@@ -78,7 +78,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
             _ => return Err(super::lower::unsupported(prefix)),
         };
         // Only the prefixes the parser itself hypers have a runtime form.
-        lower_hyper_prefix(&symbol, lower_expr(named_child(node, "operand")?)?)
+        lower_hyper_prefix(&symbol, lower_expr(names, named_child(node, "operand")?)?)
             .ok_or_else(|| super::lower::unsupported(prefix))
     })())
 }

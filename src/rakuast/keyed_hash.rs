@@ -240,7 +240,7 @@ pub(super) fn lower_key_type(names: &NameScope,
 /// The dimensions of a shaped array declaration's `shape`, or `None` when the
 /// declaration has no shape or is not an array.
 // Cost: O(d), d = size of the dimensions.
-pub(super) fn lower_dimensions(
+pub(super) fn lower_dimensions(names: &NameScope, 
     node: &RakuAstNode,
     sigil: &str,
 ) -> Result<Option<Vec<Expr>>, RuntimeError> {
@@ -270,7 +270,7 @@ pub(super) fn lower_dimensions(
         if statement.class != RakuAstClass::StatementExpression {
             return Err(unsupported(node));
         }
-        dims.push(super::lower::lower_expr(super::lower::named_child(
+        dims.push(super::lower::lower_expr(names, super::lower::named_child(
             statement,
             "expression",
         )?)?);

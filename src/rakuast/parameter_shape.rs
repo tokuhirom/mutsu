@@ -147,7 +147,7 @@ pub(super) fn lower(names: &NameScope, block: &RakuAstNode) -> Result<Vec<Expr>,
         };
         return values
             .iter()
-            .map(|v| lower_expr(nested_value_field(v)?))
+            .map(|v| lower_expr(names, nested_value_field(v)?))
             .collect();
     }
     Ok(vec![lower_expr(names, dimensions)?])

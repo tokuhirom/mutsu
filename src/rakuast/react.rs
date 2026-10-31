@@ -120,12 +120,12 @@ pub(super) fn convert_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAst
 
 /// `StatementPrefix::Supply(Block)` -> the parser's expansion of the block.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_supply(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_supply(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let block = named_child_or_positional(node)?;
     if block.class != RakuAstClass::Block {
         return Err(super::lower::unsupported(node));
     }
-    super::lower::with_block_scope(block, |body| {
+    super::lower::with_block_scope(names, block, |body| {
         Ok(super::supply_lower::supply_method_call(body))
     })
 }
@@ -144,7 +144,7 @@ pub(super) fn convert_done() -> RakuAstNode {
 pub(super) fn lower_react(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let blorst = named_child_or_positional(node)?;
     let (body, is_blorst) = match blorst.class {
-        RakuAstClass::Block => (lower_block(blorst)?, false),
+        RakuAstClass::Block => (lower_block(names, blorst)?, false),
         RakuAstClass::StatementWhenever => (vec![lower_whenever(names, blorst)?], true),
         _ => (vec![Stmt::Expr(lower_expr(names, blorst)?)], true),
     };
@@ -157,14 +157,14 @@ pub(super) fn lower_react(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
 /// `Statement::Whenever` -> `Stmt::Whenever`.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower_whenever(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let supply = lower_expr(named_child(node, "trigger")?)?;
+    let supply = lower_expr(names, named_child(node, "trigger")?)?;
     let block = named_child(node, "body")?;
     if block.class == RakuAstClass::Block {
         return Ok(Stmt::Whenever {
             supply,
             params: Vec::new(),
             param_defs: Vec::new(),
-            body: lower_block(block)?,
+            body: lower_block(names, block)?,
         });
     }
     let (params, param_defs, body) = match lower_expr(names, block)? {

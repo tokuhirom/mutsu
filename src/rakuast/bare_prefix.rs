@@ -78,7 +78,7 @@ fn sole_statement(block: &RakuAstFieldValue) -> Option<Value> {
 // Cost: O(n), n = size of the child.
 pub(super) fn lower_body(names: &NameScope, child: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     if child.class == RakuAstClass::Block {
-        lower_block(child)
+        lower_block(names, child)
     } else {
         Ok(vec![lower_stmt(names, child)?])
     }

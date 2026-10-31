@@ -34,7 +34,7 @@ pub(in crate::rakuast) fn paren_argument(names: &NameScope, expr: &Expr) -> Resu
 
 /// The expression inside a `(EXPR)` trait argument.
 // Cost: O(e), e = size of the expression.
-pub(in crate::rakuast) fn lower_paren_argument(
+pub(in crate::rakuast) fn lower_paren_argument(names: &NameScope, 
     owner: &RakuAstNode,
     argument: &RakuAstNode,
 ) -> Result<Expr, RuntimeError> {
@@ -55,5 +55,5 @@ pub(in crate::rakuast) fn lower_paren_argument(
     if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
         return Err(refuse());
     }
-    lower_expr(named_child(statement, "expression")?)
+    lower_expr(names, named_child(statement, "expression")?)
 }

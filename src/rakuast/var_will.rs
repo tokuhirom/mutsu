@@ -53,7 +53,7 @@ type LoweredPhaser = (PhaserKind, Vec<Stmt>);
 /// A declaration node without its `Trait::Will` entries, and the phasers they
 /// declare (kind and lowered body); `None` when it has none.
 // Cost: O(n), n = size of the phaser bodies.
-pub(super) fn split(
+pub(super) fn split(names: &NameScope, 
     node: &RakuAstNode,
 ) -> Result<Option<(RakuAstNode, Vec<LoweredPhaser>)>, RuntimeError> {
     let Some(RakuAstField {
@@ -70,7 +70,7 @@ pub(super) fn split(
             Some(t) if t.class == RakuAstClass::TraitWill => {
                 let kind = crate::ast::var_will::phase_kind(&leaf_str(t, "phase")?)
                     .ok_or_else(|| super::lower::unsupported(t))?;
-                phasers.push((kind, lower_block(named_child(t, "block")?)?));
+                phasers.push((kind, lower_block(names, named_child(t, "block")?)?));
             }
             _ => kept.push(item.clone()),
         }

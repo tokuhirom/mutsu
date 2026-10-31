@@ -124,7 +124,7 @@ pub(super) fn lower_chained(names: &NameScope, node: &RakuAstNode) -> Result<Stm
         return Err(unsupported("a `.=` declaration chain"));
     }
     let variable = super::convert::var_lexical("$", &form.name);
-    let chain = super::lower::lower_expr(&with_innermost_operand(node, variable)?)?;
+    let chain = super::lower::lower_expr(names, &with_innermost_operand(node, variable)?)?;
     let mut form = form.clone();
     form.chain = Some(Box::new(chain));
     super::lower_parsed_stmt(ParsedStmt::MethodAssignDecl(form))

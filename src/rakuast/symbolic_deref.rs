@@ -159,7 +159,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
 // Cost: O(n), n = nodes of the name expression and the value.
 pub(super) fn lower_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
-    let value = || lower_expr(named_child(node, "right")?).map(Box::new);
+    let value = || lower_expr(names, named_child(node, "right")?).map(Box::new);
     match left.class {
         RakuAstClass::VarPackage => {
             let Some(Ok(Expr::SymbolicDeref { sigil, expr })) = lower(names, left) else {

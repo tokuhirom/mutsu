@@ -124,7 +124,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Vec<(String
                 if argument.class == RakuAstClass::QuotedString {
                     super::lower::lower_expr(names, argument)
                 } else {
-                    super::attribute::lower_paren_argument(node, argument)
+                    super::attribute::lower_paren_argument(names, node, argument)
                 }
             })
             .transpose()?;

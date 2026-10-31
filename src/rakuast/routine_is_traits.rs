@@ -1,4 +1,5 @@
 //! Execution flags read from written routine traits.
+use crate::scope::NameScope;
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::routine_traits::export_tags;
 use super::{RakuAstClass, RakuAstNode};
@@ -26,7 +27,7 @@ impl IsTraits {
     /// Read one `Trait::Is` into the flags; `false` for a trait this set does
     /// not model.
     // Cost: O(a), a = size of the trait's argument.
-    pub(super) fn read(&mut self, t: &RakuAstNode) -> Result<bool, RuntimeError> {
+    pub(super) fn read(&mut self, names: &NameScope, t: &RakuAstNode) -> Result<bool, RuntimeError> {
         let Ok(name_node) = named_child(t, "name") else {
             // `Trait::Is(type => TYPE)` is a user type trait, lowered through
             // the routine's custom-trait path.
@@ -39,13 +40,13 @@ impl IsTraits {
         let argument = named_child(t, "argument").ok();
         match (name.as_str(), argument) {
             ("assoc", Some(argument)) if t.fields.len() == 2 => {
-                let Some(value) = assoc_value(argument)? else {
+                let Some(value) = assoc_value(names, argument)? else {
                     return Ok(false);
                 };
                 self.assoc = Some(value);
             }
             (kind @ ("tighter" | "looser" | "equiv"), Some(argument)) if t.fields.len() == 2 => {
-                let Some(reference) = precedence_reference(argument)? else {
+                let Some(reference) = precedence_reference(names, argument)? else {
                     return Ok(false);
                 };
                 self.precedence = Some((kind.to_string(), reference));
@@ -98,10 +99,10 @@ fn is_operator_reference(reference: &str) -> bool {
 }
 
 /// The word of an `is assoc<word>` argument (`QuotedString(<words val>)`).
-fn assoc_value(argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+fn assoc_value(names: &NameScope, argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     if argument.class == RakuAstClass::CircumfixParentheses {
         return Ok(
-            match super::attribute::lower_paren_argument(argument, argument)? {
+            match super::attribute::lower_paren_argument(names, argument, argument)? {
                 Expr::Literal(value) => value.as_str().map(str::to_string),
                 _ => None,
             },
@@ -125,9 +126,9 @@ fn assoc_value(argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
 }
 
 /// The `&infix:<+>` of an `is tighter(&infix:<+>)` argument.
-fn precedence_reference(argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+fn precedence_reference(names: &NameScope, argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     if argument.class == RakuAstClass::QuotedString {
-        return assoc_value(argument);
+        return assoc_value(names, argument);
     }
     if argument.class != RakuAstClass::CircumfixParentheses {
         return Ok(None);

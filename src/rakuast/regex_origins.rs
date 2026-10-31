@@ -11,6 +11,7 @@
 //! not read here, ends the walk: it and every node after it stay without a
 //! range. Exact or absent.
 
+use crate::scope::NameScope;
 use super::infix_origins::{byte_range, leaf_text};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
@@ -18,7 +19,7 @@ use crate::value::{Value, ValueView};
 
 /// Place the body of `node`, a `QuotedRegex` with a range, and its adverbs.
 // Cost: O(n), n = length of the regex's source.
-pub(super) fn quoted(node: &mut RakuAstNode) {
+pub(super) fn quoted(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -39,13 +40,13 @@ pub(super) fn quoted(node: &mut RakuAstNode) {
     }
     let body = SrcSpan::new(from + open, to - close.len_utf8());
     place_adverbs(node, &adverbs);
-    super::infix_origins::with_child(node, "body", |regex| walk_body(regex, body));
+    super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
 }
 
 /// Place the body of a `token` / `rule` / `regex` declaration written at its
 /// range: the text between the braces after its name.
 // Cost: O(n), n = length of the declaration's source.
-pub(super) fn declaration(node: &mut RakuAstNode) {
+pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -73,13 +74,13 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
     });
     if let Some((name_at, body)) = body {
         super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, name_at));
-        super::infix_origins::with_child(node, "body", |regex| walk_body(regex, body));
+        super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
     }
 }
 
 /// Lay `regex` over the body text at `body`.
 // Cost: O(n), n = length of the body.
-fn walk_body(regex: &mut RakuAstNode, body: SrcSpan) {
+fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpan) {
     let Some(text) = super::unit_source::with_text(body, |t| Some(t.to_string())) else {
         return;
     };
@@ -89,7 +90,7 @@ fn walk_body(regex: &mut RakuAstNode, body: SrcSpan) {
         at: 0,
     };
     walk.blank();
-    walk.place(regex);
+    walk.place(names, regex);
 }
 
 /// What a quoted regex's text says before its body.
@@ -202,7 +203,7 @@ impl Walk<'_> {
     /// Lay `node`, which starts at the cursor, over the text, giving it and
     /// the nodes in it their ranges; `None` ends the walk.
     // Cost: O(n), n = length of the node's text.
-    fn place(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn place(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         let start = self.at;
         match node.class {
             RakuAstClass::RegexLiteral => self.literal(&leaf_text(node)?)?,
@@ -213,7 +214,7 @@ impl Walk<'_> {
                     if i > 0 {
                         self.blank();
                     }
-                    self.child_at(node, i)?;
+                    self.child_at(names, node, i)?;
                 }
             }
             RakuAstClass::RegexAlternation | RakuAstClass::RegexSequentialAlternation => {
@@ -232,11 +233,11 @@ impl Walk<'_> {
                         }
                         self.blank();
                     }
-                    self.child_at(node, i)?;
+                    self.child_at(names, node, i)?;
                 }
             }
             RakuAstClass::RegexWithWhitespace => {
-                self.child_at(node, 0)?;
+                self.child_at(names, node, 0)?;
                 self.blank();
                 // A comment would be part of the whitespace.
                 if self.text[self.at..].starts_with('#') {
@@ -245,7 +246,7 @@ impl Walk<'_> {
             }
             RakuAstClass::RegexGroup => self.bracketed(node, "[", "]")?,
             RakuAstClass::RegexCapturingGroup => self.bracketed(node, "(", ")")?,
-            RakuAstClass::RegexQuantifiedAtom => self.quantified(node)?,
+            RakuAstClass::RegexQuantifiedAtom => self.quantified(names, node)?,
             RakuAstClass::RegexCharClass(_) => {
                 self.eat(&super::regex_char_class::written(node)?)?
             }
@@ -273,20 +274,20 @@ impl Walk<'_> {
 
     /// Place the `index`-th field of `node`, a node.
     // Cost: O(n), n = length of the child's text.
-    fn child_at(&mut self, node: &mut RakuAstNode, index: usize) -> Option<()> {
+    fn child_at(&mut self, names: &NameScope, node: &mut RakuAstNode, index: usize) -> Option<()> {
         let field = node.fields.get_mut(index)?;
-        self.held(&mut field.value)
+        self.held(names, &mut field.value)
     }
 
     /// Place the node held by the field `name` of `node`.
     // Cost: O(n), n = length of the child's text.
-    fn child(&mut self, node: &mut RakuAstNode, name: &str) -> Option<()> {
+    fn child(&mut self, names: &NameScope, node: &mut RakuAstNode, name: &str) -> Option<()> {
         let field = node.fields.iter_mut().find(|f| f.name == Some(name))?;
-        self.held(&mut field.value)
+        self.held(names, &mut field.value)
     }
 
     // Cost: O(n), n = length of the node's text.
-    fn held(&mut self, value: &mut RakuAstFieldValue) -> Option<()> {
+    fn held(&mut self, names: &NameScope, value: &mut RakuAstFieldValue) -> Option<()> {
         let RakuAstFieldValue::Node(held) = value else {
             return None;
         };
@@ -294,7 +295,7 @@ impl Walk<'_> {
             return None;
         };
         let mut inner = RakuAstNode::clone(inner);
-        let placed = self.place(&mut inner);
+        let placed = self.place(names, &mut inner);
         *held = Value::rakuast(Box::new(inner));
         placed
     }
@@ -304,7 +305,7 @@ impl Walk<'_> {
     fn bracketed(&mut self, node: &mut RakuAstNode, open: &str, close: &str) -> Option<()> {
         self.eat(open)?;
         self.blank();
-        self.child_at(node, 0)?;
+        self.child_at(names, node, 0)?;
         self.blank();
         self.eat(close)
     }
@@ -312,7 +313,7 @@ impl Walk<'_> {
     /// `atom` then its quantifier (`*`, `+`, `?`, with `?` / `!` / `:` after
     /// it), then a `% separator`.
     // Cost: O(n), n = length of the quantified text.
-    fn quantified(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn quantified(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         // `b ** 1..3`: the atom of a spaced quantifier is a `WithWhitespace`
         // that Rakudo places over the atom alone.
         if super::infix_origins::child(node, "atom")
@@ -327,7 +328,7 @@ impl Walk<'_> {
             };
             let mut spaced = RakuAstNode::clone(spaced);
             let start = self.at;
-            let placed = self.child_at(&mut spaced, 0);
+            let placed = self.child_at(names, &mut spaced, 0);
             if placed.is_some() {
                 super::origin::set_span(
                     &mut spaced,
@@ -338,10 +339,10 @@ impl Walk<'_> {
             placed?;
             self.blank();
         } else {
-            self.child(node, "atom")?;
+            self.child(names, node, "atom")?;
         }
         let quantifier = super::infix_origins::child(node, "quantifier")?;
-        let lowered = super::regex_quantifier::lower_quantifier(quantifier)?;
+        let lowered = super::regex_quantifier::lower_quantifier(names, quantifier)?;
         let range;
         let spelling = match lowered.kind {
             crate::regex_tree::QuantifierKind::ZeroOrMore => "*",
@@ -379,7 +380,7 @@ impl Walk<'_> {
                 return None;
             }
             self.blank();
-            self.child(node, "separator")?;
+            self.child(names, node, "separator")?;
         }
         Some(())
     }
@@ -464,7 +465,7 @@ impl Walk<'_> {
         };
         self.eat(&format!("{sigil}<{name}>="))?;
         self.blank();
-        self.child(node, "regex")
+        self.child(names, node, "regex")
     }
 
     /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`: each enumeration runs from

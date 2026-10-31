@@ -576,7 +576,7 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
     };
     let mut fields = vec![
         node_field(Some("condition"), convert_expr(names, &node.condition)?),
-        node_field(Some(block_name), clause_block(&node.then, topical)?),
+        node_field(Some(block_name), clause_block(names, &node.then, topical)?),
     ];
     let mut elsifs = Vec::with_capacity(node.clauses.len());
     // An `else` topicalizes the value the clause before it tested, when that
@@ -593,7 +593,7 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
             },
             fields: vec![
                 node_field(Some("condition"), convert_expr(names, &clause.condition)?),
-                node_field(Some("then"), clause_block(&clause.then, orwith)?),
+                node_field(Some("then"), clause_block(names, &clause.then, orwith)?),
             ],
         };
         elsifs.push(Value::rakuast(Box::new(clause_node)));
@@ -606,7 +606,7 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
         });
     }
     if let Some(block) = &node.else_block {
-        fields.push(node_field(Some("else"), clause_block(block, else_topical)?));
+        fields.push(node_field(Some("else"), clause_block(names, block, else_topical)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -618,8 +618,8 @@ pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<
 /// A clause's `Block` (`implicit-topic` when the clause topicalizes) or
 /// `PointyBlock`.
 // Cost: O(n), n = size of the block.
-fn clause_block(block: &ParsedBlock, topical: bool) -> Result<RakuAstNode, RuntimeError> {
-    view_block(
+fn clause_block(names: &NameScope, block: &ParsedBlock, topical: bool) -> Result<RakuAstNode, RuntimeError> {
+    view_block(names, 
         block,
         if topical {
             BlockKind::Topic

@@ -54,11 +54,11 @@ pub(super) fn is_immediate_call(node: &RakuAstNode) -> bool {
 
 /// The parser's expansion of an [`is_immediate_call`] node.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let sub_decl = lower_stmt(named_child(node, "operand")?)?;
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let sub_decl = lower_stmt(names, named_child(node, "operand")?)?;
     if !matches!(sub_decl, Stmt::SubDecl { .. }) {
         return Err(unsupported(node));
     }
-    let args = arg_exprs(named_child(node, "postfix")?)?;
+    let args = arg_exprs(names, named_child(node, "postfix")?)?;
     Ok(crate::ast::immediate_call::expand(sub_decl, args))
 }

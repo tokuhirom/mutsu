@@ -364,7 +364,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             std::slice::from_ref(expr),
         )?))),
         // `take EXPR` / `take-rw EXPR` are bare calls too.
-        Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(
+        Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(names, 
             if *is_rw { "take-rw" } else { "take" },
             std::slice::from_ref(expr),
         )?))),
@@ -374,7 +374,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
         Stmt::TempMethodAssign { .. } => Ok(Some(statement_expression(
             super::temporize::convert_method_assign_stmt(names, stmt)?,
         ))),
-        Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
+        Stmt::VarDecl { .. } => var_decl_statement(names, var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(names, inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(names, body)?))),
@@ -662,7 +662,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
                 return Err(unsupported(what));
             }
-            let mut node = routine_node(
+            let mut node = routine_node(names, 
                 if *is_submethod {
                     RakuAstClass::Submethod
                 } else {
@@ -1515,7 +1515,7 @@ pub(super) fn compound_assignment_with_left(names: &NameScope,
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
 pub(super) fn dotty_assignment(names: &NameScope, target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    dotty_assignment_with_left(convert_expr(names, target)?, call)
+    dotty_assignment_with_left(names, convert_expr(names, target)?, call)
 }
 
 /// [`dotty_assignment`] over an already converted left side.
@@ -3649,9 +3649,9 @@ fn convert_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             modifier,
             quoted: true,
         } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => {
-            super::postfix_grouping::convert(
+            super::postfix_grouping::convert(names, 
                 target,
-                call_quoted_method_expr(convert_expr(names, name_expr)?, args, *modifier)?,
+                call_quoted_method_expr(names, convert_expr(names, name_expr)?, args, *modifier)?,
             )
         }
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
@@ -3981,12 +3981,12 @@ fn convert_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         // interpolation would lose.
         Expr::HeredocInterpolation(content, closes_block_same_line) => {
             if *closes_block_same_line {
-                return super::quoted_string::convert_closed_block_heredoc(content);
+                return super::quoted_string::convert_closed_block_heredoc(names, content);
             }
             // The interpolated code is parsed here, after the unit's own parse
             // ended: it keeps its typed nodes (a statement modifier inside a
             // `{ ... }`) the way the rest of the tree does.
-            convert_expr(&crate::parser::interpolate_heredoc_content(content)?)
+            convert_expr(names, &crate::parser::interpolate_heredoc_content(content)?)
         }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
@@ -4378,7 +4378,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 .as_ref()
                 .map(|separator| regex_node(names, &separator.node))
                 .transpose()?;
-            return super::regex_quantifier::convert(regex_node(names, atom)?, quantifier, separator);
+            return super::regex_quantifier::convert(names, regex_node(names, atom)?, quantifier, separator);
         }
         RegexNode::AnchorBeginningOfString => {
             (RakuAstClass::RegexAnchorBeginningOfString, Vec::new())
@@ -4429,7 +4429,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 RegexNode::Extension(RegexExtension::VariableAlias { .. })
             ) =>
         {
-            return super::regex_variable_alias::convert_spaced(child);
+            return super::regex_variable_alias::convert_spaced(names, child);
         }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,

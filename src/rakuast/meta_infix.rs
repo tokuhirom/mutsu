@@ -375,7 +375,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
         return Some(lower_eq_meta_assignment(names, node, kind, depth));
     }
     if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
-        return lower_assign(node, infix);
+        return lower_assign(names, node, infix);
     }
     let (meta, op) = match spelling(infix) {
         Ok(Some(found)) => found,
@@ -388,7 +388,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
 /// `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross|Zip(Infix(OP))), right)`
 /// as the parser's `MetaOp` over `OP=`, or `None` for a plain `OP=`.
 // Cost: O(n), n = nodes of the operands.
-fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+fn lower_assign(names: &NameScope, node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     let inner = super::lower::named_child_or_positional(assign).ok()?;
     let meta = meta_of(inner.class).filter(|m| *m != "R")?;
     Some((|| {
@@ -396,8 +396,8 @@ fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr,
         Ok(Expr::MetaOp {
             meta: meta.to_string(),
             op: format!("{base}="),
-            left: Box::new(lower_expr(named_child(node, "left")?)?),
-            right: Box::new(lower_expr(named_child(node, "right")?)?),
+            left: Box::new(lower_expr(names, named_child(node, "left")?)?),
+            right: Box::new(lower_expr(names, named_child(node, "right")?)?),
         })
     })())
 }
@@ -405,8 +405,8 @@ fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr,
 fn fold(names: &NameScope, node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError> {
     let operands = if node.class == RakuAstClass::ApplyInfix {
         vec![
-            lower_expr(named_child(node, "left")?)?,
-            lower_expr(named_child(node, "right")?)?,
+            lower_expr(names, named_child(node, "left")?)?,
+            lower_expr(names, named_child(node, "right")?)?,
         ]
     } else {
         let mut items = Vec::new();

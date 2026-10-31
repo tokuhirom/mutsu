@@ -283,7 +283,7 @@ pub(super) fn retain(names: &NameScope, node: &RakuAstNode, body: &mut Vec<Stmt>
                 }
             }
             RakuAstClass::TraitHandles => {
-                RoutineTrait::Handles(super::lower::lower_expr(named_child_or_positional(item)?)?)
+                RoutineTrait::Handles(super::lower::lower_expr(names, named_child_or_positional(item)?)?)
             }
             RakuAstClass::TraitIs => {
                 if named_child(item, "type").is_ok() {
@@ -320,7 +320,7 @@ pub(super) fn retain(names: &NameScope, node: &RakuAstNode, body: &mut Vec<Stmt>
                             Some(TraitArgument::Words(text.to_string()))
                         }
                         Ok(argument) => Some(TraitArgument::Parentheses(
-                            super::attribute::lower_paren_argument(node, argument)?,
+                            super::attribute::lower_paren_argument(names, node, argument)?,
                         )),
                     };
                     RoutineTrait::Is {

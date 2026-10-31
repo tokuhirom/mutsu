@@ -260,7 +260,7 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
                 variants.extend(text.split_whitespace().map(|name| (name.to_string(), None)));
             }
             RakuAstClass::QuoteWordsAtom if form == EnumVariantForm::QuoteWords => {
-                variants.push(lower_atom_pair(term, segment)?);
+                variants.push(lower_atom_pair(names, term, segment)?);
             }
             _ => return Err(unsupported(term)),
         }
@@ -274,7 +274,7 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
 }
 
 /// A `:key(value)` / `:key` colonpair word of a `«…»` body.
-fn lower_atom_pair(
+fn lower_atom_pair(names: &NameScope, 
     term: &RakuAstNode,
     atom: &RakuAstNode,
 ) -> Result<(String, Option<Expr>), RuntimeError> {
@@ -285,7 +285,7 @@ fn lower_atom_pair(
     match pair.class {
         RakuAstClass::ColonPairValue => {
             let key = super::lower::leaf_str(pair, "key")?;
-            let value = lower_expr(named_child(pair, "value")?)?;
+            let value = lower_expr(names, named_child(pair, "value")?)?;
             Ok((key, Some(value)))
         }
         RakuAstClass::ColonPairTrue => match positional_leaf(pair)?.view() {

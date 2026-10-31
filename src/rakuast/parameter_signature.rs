@@ -38,7 +38,7 @@ pub(super) fn lower_pointy(names: &NameScope, node: &RakuAstNode) -> Result<crat
     use super::lower::{lower_block, signature_positional_params};
     use crate::ast::Expr;
     let (params, mut param_defs) = signature_positional_params(names, node)?;
-    let body = lower_block(node)?;
+    let body = lower_block(names, node)?;
     crate::ast::does_target::mark_does_targets("", &mut param_defs, &body);
     let return_type = match named_child(node, "signature") {
         Ok(signature)

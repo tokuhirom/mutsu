@@ -30,7 +30,7 @@ pub(super) fn convert(names: &NameScope, items: &[Expr], parenthesized: bool) ->
 pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let source = named_child_or_positional(node)?;
     if source.class == RakuAstClass::ArgList {
-        return Ok(Expr::CaptureLiteral(arg_list_exprs(source)?, true));
+        return Ok(Expr::CaptureLiteral(arg_list_exprs(names, source)?, true));
     }
     Ok(Expr::CaptureLiteral(vec![lower_expr(names, source)?], false))
 }

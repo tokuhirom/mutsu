@@ -9,7 +9,7 @@ use crate::value::RuntimeError;
 /// parameters are handled; typed/named/slurpy/defaulted parameters and anonymous
 /// subs in expression position are the current coverage boundary.
 pub(super) fn lower_sub(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let (name, name_expr) = declarator_name(node)?;
+    let (name, name_expr) = declarator_name(names, node)?;
     let (params, param_defs) = signature_positional_params(names, node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, mut custom_traits) = routine_return_type(names, node, Some(&mut is_traits))?;
@@ -24,7 +24,7 @@ pub(super) fn lower_sub(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         },
     };
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let mut body = lower_routine_stmts(names, named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(names, node, &mut body)?;
     // A sub with no signature of its own takes its placeholder variables.
     let (params, mut param_defs) =
@@ -70,10 +70,10 @@ pub(super) fn lower_sub(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
 
 /// A declarator's name and, for `::(EXPR)`, its name expression.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn declarator_name(
+pub(super) fn declarator_name(names: &NameScope, 
     node: &RakuAstNode,
 ) -> Result<(String, Option<crate::ast::Expr>), RuntimeError> {
-    match super::symbolic_deref::lower_declarator_name(named_child(node, "name")?)? {
+    match super::symbolic_deref::lower_declarator_name(names, named_child(node, "name")?)? {
         Some((name, expr)) => Ok((name, Some(expr))),
         None => Ok((call_name_str(node)?, None)),
     }

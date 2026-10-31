@@ -165,7 +165,7 @@ fn lower_parts(names: &NameScope,
             }
             RakuAstClass::QuoteWordsAtom => {
                 flush(&mut words, &mut current);
-                words.push((true, lower_expr(named_child_or_positional(seg)?)?));
+                words.push((true, lower_expr(names, named_child_or_positional(seg)?)?));
             }
             RakuAstClass::QuotedString if is_nested_quotewords(seg, val) => {
                 flush(&mut words, &mut current);
@@ -174,7 +174,7 @@ fn lower_parts(names: &NameScope,
             // An interpolated block is evaluated, not a closure value.
             RakuAstClass::Block => {
                 current.push(Expr::DoStmt(Box::new(Stmt::Block(
-                    super::lower::lower_block(seg)?,
+                    super::lower::lower_block(names, seg)?,
                 ))));
             }
             _ => current.push(lower_expr(names, seg)?),

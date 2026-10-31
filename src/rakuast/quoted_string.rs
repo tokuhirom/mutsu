@@ -13,9 +13,9 @@ const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
 /// Keep the parser's lexical-scope diagnostic while exposing the public
 /// interpolated string tree.
 // Cost: O(n), n = heredoc content size.
-pub(super) fn convert_closed_block_heredoc(content: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_closed_block_heredoc(names: &NameScope, content: &str) -> Result<RakuAstNode, RuntimeError> {
     let mut quoted =
-        super::convert::convert_expr(&crate::parser::interpolate_heredoc_content(content)?)?;
+        super::convert::convert_expr(names, &crate::parser::interpolate_heredoc_content(content)?)?;
     if quoted.class != RakuAstClass::QuotedString {
         return Err(super::convert::unsupported("closed-block heredoc contents"));
     }
@@ -207,7 +207,7 @@ fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runtime
         // the ordinary expression path would build a closure and
         // interpolate its stringification instead of its result.
         if seg.class == RakuAstClass::Block {
-            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(seg)?))));
+            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(names, seg)?))));
             continue;
         }
         // `"a$(EXPR)b"` is the parser's `DoStmt(Expr(EXPR))`.

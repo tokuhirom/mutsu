@@ -162,7 +162,7 @@ pub(super) fn strip(names: &NameScope,
             let mut flags = IsTraits::default();
             if item_node.class == RakuAstClass::TraitIs
                 && item_node.fields.iter().any(|f| f.name == Some("name"))
-                && flags.read(item_node)?
+                && flags.read(names, item_node)?
                 && !flags.export_tags.is_empty()
             {
                 header.export_tags = Some(flags.export_tags);

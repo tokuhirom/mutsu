@@ -12,15 +12,15 @@ use crate::ast::parsed::{
 /// that, so a hand-built or round-tripped conditional runs exactly as a parsed
 /// one (ADR-10723 Stage 2, one lowering per family).
 // Cost: O(n), n = size of the conditional.
-pub(super) fn lower_conditional(
+pub(super) fn lower_conditional(names: &NameScope, 
     node: &RakuAstNode,
     kind: ConditionalKind,
 ) -> Result<Stmt, RuntimeError> {
-    super::super::conditional_lower::lower(read_conditional(node, kind)?)
+    super::super::conditional_lower::lower(read_conditional(names, node, kind)?)
 }
 
 // Cost: O(n), n = size of the conditional.
-fn read_conditional(
+fn read_conditional(names: &NameScope, 
     node: &RakuAstNode,
     kind: ConditionalKind,
 ) -> Result<Conditional, RuntimeError> {
@@ -38,8 +38,8 @@ fn read_conditional(
         return Err(unsupported(node));
     }
     let topical = matches!(kind, ConditionalKind::With | ConditionalKind::Without);
-    let condition = lower_expr(named_child(node, "condition")?)?;
-    let then = read_block(named_child(node, block_name)?, topical)?;
+    let condition = lower_expr(names, named_child(node, "condition")?)?;
+    let then = read_block(names, named_child(node, block_name)?, topical)?;
     let items = match node.fields.iter().find(|f| f.name == Some("elsifs")) {
         Some(field) => match &field.value {
             RakuAstFieldValue::List(items) => items.as_slice(),
@@ -59,14 +59,14 @@ fn read_conditional(
         };
         clauses.push(ConditionalClause {
             kind,
-            condition: lower_expr(named_child(clause, "condition")?)?,
-            then: read_block(named_child(clause, "then")?, kind == ClauseKind::Orwith)?,
+            condition: lower_expr(names, named_child(clause, "condition")?)?,
+            then: read_block(names, named_child(clause, "then")?, kind == ClauseKind::Orwith)?,
         });
     }
     let else_block = match node.fields.iter().find(|f| f.name == Some("else")) {
         // The parser reads the `else` of a clause-less `with` with the `with`
         // block's own parameter rules, and every other `else` with `if`'s.
-        Some(_) => Some(read_block(
+        Some(_) => Some(read_block(names, 
             named_child(node, "else")?,
             topical && clauses.is_empty(),
         )?),
@@ -105,7 +105,7 @@ fn read_block(names: &NameScope, block: &RakuAstNode, topic: bool) -> Result<Par
     };
     Ok(ParsedBlock {
         params,
-        body: lower_block(block)?,
+        body: lower_block(names, block)?,
         span: SrcSpan::NONE,
         blockoid: SrcSpan::NONE,
         list: SrcSpan::NONE,
@@ -116,28 +116,28 @@ fn read_block(names: &NameScope, block: &RakuAstNode, topic: bool) -> Result<Par
 /// `repeat` loops: read the node into the [`ParsedStmt`] the parser builds for
 /// the same source and lower that (ADR-10723 Stage 2).
 // Cost: O(n), n = size of the statement.
-pub(super) fn lower_block_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    super::super::conditional_lower::lower_parsed(read_block_statement(node)?)
+pub(super) fn lower_block_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    super::super::conditional_lower::lower_parsed(read_block_statement(names, node)?)
 }
 
 // Cost: O(n), n = size of the statement.
-fn read_block_statement(node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> {
+fn read_block_statement(names: &NameScope, node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> {
     let body = || named_child(node, "body");
     Ok(match node.class {
         RakuAstClass::StatementGiven => ParsedStmt::Given {
-            topic: lower_expr(named_child(node, "source")?)?,
-            block: read_block(body()?, true)?,
+            topic: lower_expr(names, named_child(node, "source")?)?,
+            block: read_block(names, body()?, true)?,
         },
         RakuAstClass::StatementWhen => ParsedStmt::When {
-            condition: lower_expr(named_child(node, "condition")?)?,
-            block: read_block(body()?, false)?,
+            condition: lower_expr(names, named_child(node, "condition")?)?,
+            block: read_block(names, body()?, false)?,
         },
-        RakuAstClass::StatementDefault => ParsedStmt::Default(read_block(body()?, false)?),
+        RakuAstClass::StatementDefault => ParsedStmt::Default(read_block(names, body()?, false)?),
         RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => {
             ParsedStmt::WhileLoop(WhileLoop {
                 until: node.class == RakuAstClass::StatementLoopUntil,
-                condition: lower_expr(named_child(node, "condition")?)?,
-                block: read_block(body()?, true)?,
+                condition: lower_expr(names, named_child(node, "condition")?)?,
+                block: read_block(names, body()?, true)?,
                 label: node_label(node)?,
                 bare_term: false,
             })
@@ -150,9 +150,9 @@ fn read_block_statement(node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> 
                     LoopKind::RepeatWhile
                 },
                 init: None,
-                condition: Some(lower_expr(named_child(node, "condition")?)?),
+                condition: Some(lower_expr(names, named_child(node, "condition")?)?),
                 step: None,
-                block: read_block(body()?, true)?,
+                block: read_block(names, body()?, true)?,
                 label: node_label(node)?,
                 bare_term: false,
             })
@@ -160,18 +160,18 @@ fn read_block_statement(node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> 
         RakuAstClass::StatementLoop => ParsedStmt::Loop(LoopStmt {
             kind: LoopKind::Loop,
             init: match node.fields.iter().any(|f| f.name == Some("setup")) {
-                true => Some(Box::new(lower_stmt_inner(named_child(node, "setup")?)?)),
+                true => Some(Box::new(lower_stmt_inner(names, named_child(node, "setup")?)?)),
                 false => None,
             },
             condition: match node.fields.iter().any(|f| f.name == Some("condition")) {
-                true => Some(lower_expr(named_child(node, "condition")?)?),
+                true => Some(lower_expr(names, named_child(node, "condition")?)?),
                 false => None,
             },
             step: match node.fields.iter().any(|f| f.name == Some("increment")) {
-                true => Some(loop_increment(named_child(node, "increment")?)?),
+                true => Some(loop_increment(names, named_child(node, "increment")?)?),
                 false => None,
             },
-            block: read_block(body()?, false)?,
+            block: read_block(names, body()?, false)?,
             label: node_label(node)?,
             bare_term: false,
         }),

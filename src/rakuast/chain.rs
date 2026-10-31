@@ -88,7 +88,7 @@ pub(super) fn lower_chain(names: &NameScope, node: &RakuAstNode) -> Result<Optio
     let mut operands = vec![lower_expr(names, cursor)?];
     let mut ops = Vec::with_capacity(links.len());
     for l in links.iter().rev() {
-        operands.push(lower_expr(named_child(l.operands, "right")?)?);
+        operands.push(lower_expr(names, named_child(l.operands, "right")?)?);
         ops.push((l.op.clone(), l.negated));
     }
     Ok(Some(Expr::ChainedCompare { operands, ops }))

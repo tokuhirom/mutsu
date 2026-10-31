@@ -122,7 +122,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     let mut body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
     } else {
-        lower_routine_stmts(named_child_or_positional(body_node)?)?
+        lower_routine_stmts(names, named_child_or_positional(body_node)?)?
     };
     super::routine_source::retain(names, node, &mut body)?;
     Ok(Stmt::ProtoDecl {

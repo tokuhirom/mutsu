@@ -205,7 +205,7 @@ pub(super) fn convert(names: &NameScope, extension: &RegexExtension) -> Result<R
             array,
             gaps,
             regex,
-        } => super::regex_variable_alias::convert(
+        } => super::regex_variable_alias::convert(names, 
             (name, *sequential, *array),
             gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
             regex,

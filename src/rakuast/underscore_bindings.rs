@@ -4,6 +4,7 @@
 //! blocks, reference that lexical. Explicit parameters bind the name before
 //! conversion; a method's implicit named slurpy is resolved during lowering.
 
+use crate::scope::NameScope;
 use std::cell::Cell;
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
@@ -98,8 +99,8 @@ fn name_bit(name: &str) -> u8 {
 /// but declare fresh empty aggregates for its own slurpy placeholders rather
 /// than reading the caller's arguments. Ordinary lexical reads stay captures.
 // Cost: O(n), n = nodes in the block's own placeholder scope.
-pub(super) fn lower_statement_block(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let mut body = super::lower::lower_block(node)?;
+pub(super) fn lower_statement_block(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let mut body = super::lower::lower_block(names, node)?;
     let mut declared = declarations(super::lower::named_child(node, "body")?, 0)?;
     if IN_METHOD.get() {
         declared &= !HASH;

@@ -132,7 +132,7 @@ fn substitution(names: &NameScope,
                 .ok_or_else(|| unsupported_what("compound substitution replacement"))?;
             convert_expr(names, rhs)?
         }
-        None => convert_expr(&crate::parser::interpolate_qq_content(replacement)?)?,
+        None => convert_expr(names, &crate::parser::interpolate_qq_content(replacement)?)?,
     };
     fields.push(node_field(Some("pattern"), regex_node(names, &tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));
@@ -442,7 +442,7 @@ pub(super) fn lower_substitution(names: &NameScope, node: &RakuAstNode) -> Resul
         }
     }
     let regex = RegexTree {
-        body: lower_regex_node(named_child(node, "pattern")?)?,
+        body: lower_regex_node(names, named_child(node, "pattern")?)?,
         match_immediately: false,
         adverbs: Vec::new(),
         declaration_kind: None,
@@ -450,7 +450,7 @@ pub(super) fn lower_substitution(names: &NameScope, node: &RakuAstNode) -> Resul
     let (pattern, flags) =
         crate::parser::subst_pattern_source(regex.to_source(), &adverbs, samespace)
             .ok_or_else(|| unsupported(node))?;
-    let replacement = lower_expr(named_child(node, "replacement")?)?;
+    let replacement = lower_expr(names, named_child(node, "replacement")?)?;
     let thunk = Some(Box::new(match compound_op {
         Some(op) => SubstThunk {
             expr: crate::parser::subst_compound_thunk(&op, replacement),
@@ -531,8 +531,8 @@ pub(super) fn lower_transliteration(names: &NameScope, node: &RakuAstNode) -> Re
         written.push(adverb.name);
     }
     Ok(Expr::Transliterate {
-        from: table_text(named_child(node, "left")?)?,
-        to: table_text(named_child(node, "right")?)?,
+        from: table_text(names, named_child(node, "left")?)?,
+        to: table_text(names, named_child(node, "right")?)?,
         delete,
         complement,
         squash,

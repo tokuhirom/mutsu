@@ -82,7 +82,7 @@ pub(super) fn convert(names: &NameScope, decl: &SignatureDecl) -> Result<RakuAst
     let parameters = if let Some(shape) = &decl.group_shape {
         shape
             .iter()
-            .map(|item| convert_group(item, &decl.vars, is_binding, 0))
+            .map(|item| convert_group(names, item, &decl.vars, is_binding, 0))
             .collect::<Result<Vec<_>, _>>()?
     } else {
         decl.vars
@@ -145,7 +145,7 @@ pub(super) fn convert(names: &NameScope, decl: &SignatureDecl) -> Result<RakuAst
 
 /// A source group into a parameter with a nested sub-signature.
 // Cost: O(n), n = leaves in the group, with nesting bounded at 128.
-fn convert_group(
+fn convert_group(names: &NameScope, 
     item: &SignatureGroup,
     vars: &[SignatureVar],
     is_binding: bool,
@@ -157,7 +157,7 @@ fn convert_group(
         ));
     }
     let node = match item {
-        SignatureGroup::Var(index) => parameter(
+        SignatureGroup::Var(index) => parameter(names, 
             vars.get(*index)
                 .ok_or_else(|| unsupported("signature declaration group index"))?,
             is_binding,
@@ -165,7 +165,7 @@ fn convert_group(
         SignatureGroup::Group(members) => {
             let parameters = members
                 .iter()
-                .map(|member| convert_group(member, vars, is_binding, depth + 1))
+                .map(|member| convert_group(names, member, vars, is_binding, depth + 1))
                 .collect::<Result<Vec<_>, _>>()?;
             RakuAstNode {
                 origin: Default::default(),
@@ -307,7 +307,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         let ValueView::RakuAst(param) = param.view() else {
             return Err(super::lower::unsupported(node));
         };
-        shape.push(lower_group_parameter(param, &mut vars, 0)?);
+        shape.push(lower_group_parameter(names, param, &mut vars, 0)?);
     }
     let has_nested_group = shape
         .iter()
@@ -338,7 +338,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
                 RakuAstClass::InitializerBind => true,
                 _ => return Err(super::lower::unsupported(init)),
             },
-            rhs: lower_expr(named_child_or_positional(init)?)?,
+            rhs: lower_expr(names, named_child_or_positional(init)?)?,
         }),
     };
     super::signature_expand::pending(SignatureDecl {
@@ -351,7 +351,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
             .fields
             .iter()
             .any(|f| f.name == Some("group-default"))
-            .then(|| lower_expr(named_child(node, "group-default")?))
+            .then(|| lower_expr(names, named_child(node, "group-default")?))
             .transpose()?,
         has_nested_group,
         init,
@@ -378,7 +378,7 @@ fn lower_group_parameter(names: &NameScope,
             let ValueView::RakuAst(member) = value.view() else {
                 return Err(super::lower::unsupported(param));
             };
-            members.push(lower_group_parameter(member, vars, depth + 1)?);
+            members.push(lower_group_parameter(names, member, vars, depth + 1)?);
         }
         return Ok(SignatureGroup::Group(members));
     }
@@ -405,7 +405,7 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
             Some("optional") => {
                 var.is_optional = super::lower::bool_field(param, "optional")?;
             }
-            Some("default") => var.default = Some(lower_expr(named_child(param, "default")?)?),
+            Some("default") => var.default = Some(lower_expr(names, named_child(param, "default")?)?),
             Some("type") => {
                 let type_node = named_child(param, "type")?;
                 var.per_var_type_constraint =
@@ -436,7 +436,7 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
                 slurpy = true;
             }
             Some("where") => {
-                var.where_constraint = Some(lower_expr(named_child(param, "where")?)?);
+                var.where_constraint = Some(lower_expr(names, named_child(param, "where")?)?);
             }
             Some("traits") => {
                 let [item] = list_field(param, "traits")? else {

@@ -160,12 +160,12 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
                 return Err(unsupported(node));
             }
             default_is_bind = init.class == RakuAstClass::InitializerBind;
-            Some(lower_expr(named_child_or_positional(init)?)?)
+            Some(lower_expr(names, named_child_or_positional(init)?)?)
         }
     };
     let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
         None => None,
-        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+        Some(f) => Some(Box::new(lower_expr(names, child_node(&f.value)?)?)),
     };
     let sigil = leaf_str(node, "sigil")?;
     let mut chars = sigil.chars();

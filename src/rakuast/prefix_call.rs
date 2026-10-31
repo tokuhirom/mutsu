@@ -83,7 +83,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
     let blorst = named_child_or_positional(node)?;
     let arg = match blorst.class {
         RakuAstClass::Block => {
-            let body = lower_block(blorst)?;
+            let body = lower_block(names, blorst)?;
             if node.class == RakuAstClass::StatementPrefixStart
                 && crate::ast::collect_unattached_placeholders(&body)
                     .into_iter()
@@ -99,7 +99,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
             make_anon_sub(vec![super::lower::lower_stmt(names, blorst)?])
         }
         // `quietly EXPR` / `sink EXPR` take the expression itself.
-        RakuAstClass::StatementExpression => lower_expr(named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Call {
@@ -139,7 +139,7 @@ pub(super) fn convert_method(names: &NameScope,
 /// `StatementPrefix::Lazy` / `::Hyper` / `::Race` -> the `sugar` method call
 /// the parser spells it as.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_method(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_method(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = match node.class {
         RakuAstClass::StatementPrefixLazy => "lazy",
         RakuAstClass::StatementPrefixHyper => "hyper",
@@ -150,11 +150,11 @@ pub(super) fn lower_method(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = match blorst.class {
         // `lazy { ... }` runs its own block inline.
         RakuAstClass::Block => Expr::DoBlock {
-            body: lower_block(blorst)?,
+            body: lower_block(names, blorst)?,
             label: None,
             origin: crate::ast::DoBlockOrigin::SourceBlock,
         },
-        RakuAstClass::StatementExpression => lower_expr(named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::MethodCall {

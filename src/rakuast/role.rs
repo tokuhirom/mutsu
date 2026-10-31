@@ -181,7 +181,7 @@ fn parent_clause(names: &NameScope,
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let retained = super::role_header::retained_name(node)?;
-    let head = package_head(node, || {
+    let head = package_head(names, node, || {
         retained.unwrap_or_else(crate::parser::next_anon_role_name)
     })?;
     if head.is_unit {
@@ -222,7 +222,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
                         custom_traits.push(entry);
                         continue;
                     }
-                    if !flags.read(t)? || flags.is_raw || flags.is_hidden_from_backtrace {
+                    if !flags.read(names, t)? || flags.is_raw || flags.is_hidden_from_backtrace {
                         return Err(unsupported_node(node));
                     }
                 }
@@ -254,7 +254,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     }
     let stripped = super::role_implicit::shown(role_body);
     let role_body = stripped.as_ref().unwrap_or(role_body);
-    let body = lower_package_body(lower_stmts(named_child_or_positional(named_child(
+    let body = lower_package_body(lower_stmts(names, named_child_or_positional(named_child(
         role_body, "body",
     )?)?)?);
     header.extend(body);

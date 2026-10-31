@@ -104,7 +104,7 @@ pub(super) fn call_assign_postfix(names: &NameScope, call: &Expr) -> Result<Raku
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(convert_expr(names, name_expr)?, args, None),
+        } => super::convert::call_quoted_method_expr(names, convert_expr(names, name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),
@@ -121,15 +121,15 @@ pub(super) fn callee_postfix(names: &NameScope, callee: &Expr, args: &[Expr]) ->
 /// pieces: the method name, or the term called as the method, and the
 /// arguments. A dispatch modifier is not a declaration form.
 // Cost: O(n), n = nodes of the call.
-pub(super) fn call_assign_initializer(
+pub(super) fn call_assign_initializer(names: &NameScope, 
     call: &RakuAstNode,
 ) -> Result<(String, Option<Expr>, Vec<Expr>), RuntimeError> {
     match call.class {
         RakuAstClass::CallMethod if dispatch_modifier(call)?.is_none() => {
-            Ok((call_name_str(call)?, None, arg_exprs(call)?))
+            Ok((call_name_str(call)?, None, arg_exprs(names, call)?))
         }
         _ if is_dynamic(call) && modifier(call)?.is_none() => {
-            Ok((String::new(), Some(name_expr(call)?), args(call)?))
+            Ok((String::new(), Some(name_expr(names, call)?), args(names, call)?))
         }
         _ => Err(unsupported(call)),
     }
@@ -188,11 +188,11 @@ pub(super) fn is_dynamic(postfix: &RakuAstNode) -> bool {
 }
 
 /// The name expression of a dynamic call node.
-fn name_expr(postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+fn name_expr(names: &NameScope, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match postfix.class {
         RakuAstClass::CallNameAsMethod => Ok(Expr::CodeVar(call_name_str(postfix)?)),
-        RakuAstClass::CallBlockMethod => lower_expr(named_child(postfix, "block")?),
-        _ => lower_expr(named_child(postfix, "callee")?),
+        RakuAstClass::CallBlockMethod => lower_expr(names, named_child(postfix, "block")?),
+        _ => lower_expr(names, named_child(postfix, "callee")?),
     }
 }
 
@@ -216,20 +216,20 @@ fn modifier(postfix: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
     }
 }
 
-fn args(postfix: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+fn args(names: &NameScope, postfix: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     match postfix.fields.iter().find(|f| f.name == Some("args")) {
-        Some(_) => arg_list_exprs(named_child(postfix, "args")?),
+        Some(_) => arg_list_exprs(names, named_child(postfix, "args")?),
         None => Ok(Vec::new()),
     }
 }
 
 /// The parser's [`Expr::DynamicMethodCall`] over `operand`.
 // Cost: O(n), n = nodes of the name and arguments.
-pub(super) fn lower(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(names: &NameScope, operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
     Ok(Expr::DynamicMethodCall {
         target: Box::new(operand),
-        name_expr: Box::new(name_expr(postfix)?),
-        args: args(postfix)?,
+        name_expr: Box::new(name_expr(names, postfix)?),
+        args: args(names, postfix)?,
         modifier: modifier(postfix)?,
         quoted: false,
     })
@@ -237,11 +237,11 @@ pub(super) fn lower(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Runtim
 
 /// The parser's [`Expr::HyperMethodCallDynamic`] over `operand`.
 // Cost: O(n), n = nodes of the name and arguments.
-pub(super) fn lower_hyper(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_hyper(names: &NameScope, operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
     Ok(Expr::HyperMethodCallDynamic {
         target: Box::new(operand),
-        name_expr: Box::new(name_expr(postfix)?),
-        args: args(postfix)?,
+        name_expr: Box::new(name_expr(names, postfix)?),
+        args: args(names, postfix)?,
         modifier: modifier(postfix)?,
     })
 }

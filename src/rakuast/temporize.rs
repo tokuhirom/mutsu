@@ -268,7 +268,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     let after = match wrapper {
         None => After::Nothing,
         Some(w) if w.class == RakuAstClass::ApplyDottyInfix => After::Dotty(w),
-        Some(w) if infix_is_assignment(w) => After::Value(lower_expr(named_child(w, "right")?)?),
+        Some(w) if infix_is_assignment(w) => After::Value(lower_expr(names, named_child(w, "right")?)?),
         Some(w) if infix_is_compound_assignment(w) => After::Compound(w),
         Some(_) => return Err(unsupported(node)),
     };
@@ -313,8 +313,8 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     // A compound or dotty assignment re-parses from the variable on: lower the
     // assignment node over the bare lvalue and run it after the save.
     let compound = match &after {
-        After::Compound(w) => Some(lower_compound_assign_expr(&with_left(w, operand))?),
-        After::Dotty(w) => Some(lower_dotty_assign(&with_left(w, operand), true)?),
+        After::Compound(w) => Some(lower_compound_assign_expr(names, &with_left(w, operand))?),
+        After::Dotty(w) => Some(lower_dotty_assign(names, &with_left(w, operand), true)?),
         _ => None,
     };
     if let Some(assignment) = compound {
@@ -398,7 +398,7 @@ fn lower_method_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<S
     let value = match wrapper {
         None => return Ok(None),
         Some(wrapper) if infix_is_assignment(wrapper) => {
-            lower_expr(named_child(wrapper, "right")?)?
+            lower_expr(names, named_child(wrapper, "right")?)?
         }
         Some(wrapper) if infix_is_compound_assignment(wrapper) => {
             let left = lower_expr(names, operand)?;
@@ -409,7 +409,7 @@ fn lower_method_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<S
             };
             let compound = super::compound::op::compound_assign_op_from_name(&base)
                 .ok_or_else(|| unsupported(node))?;
-            let right = lower_expr(named_child(wrapper, "right")?)?;
+            let right = lower_expr(names, named_child(wrapper, "right")?)?;
             super::compound::op::compound_assigned_value_expr(left, compound, right)
         }
         Some(_) => return Ok(None),

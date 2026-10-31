@@ -35,7 +35,7 @@ pub(super) fn convert(names: &NameScope,
     regex: &RegexNode,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (name, sequential) = (name.to_string(), sequential);
-    let mut node = regex_node(&if array {
+    let mut node = regex_node(names, &if array {
         RegexNode::ArrayInterpolation { name, sequential }
     } else {
         RegexNode::Interpolation { name, sequential }
@@ -53,7 +53,7 @@ pub(super) fn convert(names: &NameScope,
 
 /// `WithWhitespace(alias)`: the wrapper moves onto the hidden atom.
 // Cost: O(n), n = size of the aliased atom.
-pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_spaced(names: &NameScope, alias: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     let RegexNode::Extension(RegexExtension::VariableAlias {
         name,
         sequential,
@@ -64,7 +64,7 @@ pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeEr
     else {
         return Err(super::convert::unsupported("spaced regex variable alias"));
     };
-    convert(
+    convert(names, 
         (name, *sequential, *array),
         gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
         &RegexNode::WithWhitespace(regex.clone()),
@@ -88,7 +88,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Rege
         return None;
     }
     Some((|| {
-        let regex = lower_regex_node(named_child(node, FIELD)?)?;
+        let regex = lower_regex_node(names, named_child(node, FIELD)?)?;
         let interpolation = RakuAstNode {
             origin: Default::default(),
             class: node.class,

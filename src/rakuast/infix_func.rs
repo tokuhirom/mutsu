@@ -358,8 +358,8 @@ fn fold(names: &NameScope, node: &RakuAstNode, name: String) -> Result<Expr, Run
         modifier: None,
     };
     if node.class == RakuAstClass::ApplyInfix {
-        let left = lower_expr(named_child(node, "left")?)?;
-        let right = lower_expr(named_child(node, "right")?)?;
+        let left = lower_expr(names, named_child(node, "left")?)?;
+        let right = lower_expr(names, named_child(node, "right")?)?;
         return Ok(call(left, vec![right]));
     }
     let mut operands = Vec::new();

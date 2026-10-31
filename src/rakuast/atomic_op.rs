@@ -124,7 +124,7 @@ fn atomic_operator(node: &RakuAstNode) -> Option<String> {
 /// The call the parser builds for the atomic operator `node` is, or `None`
 /// when `node` is not one.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     let (category, operator) = match node.class {
         RakuAstClass::ApplyPrefix => (
             Category::Prefix,
@@ -146,10 +146,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         } else {
             "operand"
         };
-        let first = lower_expr(named_child(node, operand_name)?)?;
+        let first = lower_expr(names, named_child(node, operand_name)?)?;
         match category {
             Category::Infix => {
-                let right = lower_expr(named_child(node, "right")?)?;
+                let right = lower_expr(names, named_child(node, "right")?)?;
                 // `$x ⚛= v` writes the variable by name.
                 if operator == "⚛="
                     && let Some(name) = first.container_var_key()
