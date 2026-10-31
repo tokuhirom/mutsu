@@ -1,6 +1,6 @@
 # ADR-14843: `self`, `::?CLASS` and `::?ROLE` live in the frame record only
 
-- **Status**: Proposed (2026-10-29). Supersedes
+- **Status**: Accepted (user decision 2026-10-31; proposed 2026-10-29). Supersedes
   [ADR-14792](14792-fixed-frame-names-are-env-first-with-record-fallback.md), and restores the
   record-first rule of [ADR-14633](14633-call-frame-materializes-no-name-keyed-env.md) §2.1 with
   the converted helpers and closure records ADR-14792 found missing; every other decision of
