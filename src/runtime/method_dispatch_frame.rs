@@ -269,7 +269,11 @@ impl Interpreter {
                 Some(super::NativeBase::GrammarRule)
             } else if container_protocol_override {
                 Some(super::NativeBase::Storage)
-            } else if core_type_override || any_base_override {
+            } else if core_type_override
+                || any_base_override
+                || (Self::plain_io_handle_view(&invocant).is_some()
+                    && self.has_user_method(receiver_class, method_name))
+            {
                 Some(super::NativeBase::Value)
             } else if builtin_ancestor_override {
                 Some(super::NativeBase::BuiltinAncestor)

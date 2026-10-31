@@ -4,7 +4,7 @@ use Test;
 # parameterized `does` mixin saw `self` as Nil, and a `return` in it escaped
 # with "Attempt to return outside of immediately-enclosing Routine", aborting
 # the composition.
-plan 10;
+plan 12;
 
 role Plain { submethod TWEAK { $*seen = self.^name } }
 role Param[::T = Any, :$flag = True] { submethod TWEAK { $*seen = self.^name } }
@@ -54,4 +54,18 @@ $path.unlink;
     print "captured";
     $*OUT = $saved;
     is @lines.join, "captured", "a role mixed into \$*OUT overrides print";
+}
+
+# `callsame` in a role method mixed into a handle reaches the native method
+# (LN's AutoLines).
+{
+    my $path = $*TMPDIR.add("mixin-callsame-{$*PID}.txt");
+    $path.spurt("a\nb\n");
+    my $fh = $path.open;
+    my @seen;
+    $fh does role { method get { @seen.push("get"); callsame } };
+    is $fh.get, "a", "callsame in a mixed-in get reaches IO::Handle.get";
+    is @seen.join(","), "get", "the override ran once";
+    $fh.close;
+    $path.unlink;
 }
