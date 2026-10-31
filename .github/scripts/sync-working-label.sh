@@ -66,7 +66,12 @@ live_claims() {
       sub(/\r$/, "", line)
       sub(/^[ \t]+/, "", line)
       n = split(line, f, /[ \t]+/)
-      if (n < 2 || f[2] == "") next
+      if (n < 2) next
+      # A git branch name cannot contain a backslash, so one in the field is the
+      # start of a literal `\n` (or other escape) an agent typed into the comment
+      # instead of a line break ("br\n\nTaking ..."). It is not part of the branch.
+      sub(/\\.*$/, "", f[2])
+      if (f[2] == "") next
       # A claim names a work branch. One naming a long-lived branch could never
       # go stale (the stale test below is "no such branch on origin").
       if (f[2] ~ /^(main|master|HEAD|bench-data|gh-pages)$/) next
@@ -281,6 +286,14 @@ self_test() {
     "$ts	Claiming: feat/issue-8033-shared-regex-tree" \
     "$ts	Releasing: feat/issue-8033-shared-regex-tree" \
     "$ts	Claiming: feat/issue-8033-execution-tree-lowering"
+  check 'a literal backslash-n after the branch is not part of it' 'br-a' \
+    "$ts	Claiming: br-a\\n\\nTaking the slice"
+  check 'a release with a literal backslash-n matches its clean claim' '' \
+    "$ts	Claiming: br-a" \
+    "$ts	Releasing: br-a\\n\\nMerged"
+  check 'a claim with a literal backslash-n is released by the clean name' '' \
+    "$ts	Claiming: br-a\\n\\nTaking" \
+    "$ts	Releasing: br-a"
   check '#8094: claim and release both carry a footer' '' \
     "$ts	Claiming: claude/laughing-clarke-6i0912" \
     "$ts	Releasing: claude/laughing-clarke-6i0912 - fixed in https://github.com/tokuhirom/mutsu/pull/8114."
