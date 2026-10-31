@@ -944,32 +944,35 @@ pub(crate) fn shapeless_row(
     // and the `Cool` text methods that read a property, a pattern, an
     // amount (§9.90) or a count (`words`, `lines`, `chop`) alone take an
     // argument.
+    // One string read for the many name tests below: `Symbol::as_str` is a
+    // table read each time, and this runs once per shapeless call (ADR-15737).
+    let method_str = method.as_str();
     let name = shapeless_name_bits(method);
     if arity > 0 && (arity > 1 || name & name_bits::TAKES_ARG == 0)
         // `comb($pattern, $limit)` has no row of its own: only an instance
         // with a user `Str` takes it (`answer_shapeless`).
-        && !(arity == 2 && method == "comb")
+        && !(arity == 2 && method_str == "comb")
         // `Mu.rakuseen($id, &code)` takes two, `Mu.WALK` any number.
-        && !(arity == 2 && method == "rakuseen")
-        && method != "WALK"
+        && !(arity == 2 && method_str == "rakuseen")
+        && method_str != "WALK"
     {
         return None;
     }
     // A type object with no closer candidate answers `Mu.ACCEPTS`'s type
     // check (§9.164).
-    if method == "ACCEPTS" && matches!(target.view(), ValueView::Package(_)) {
+    if method_str == "ACCEPTS" && matches!(target.view(), ValueView::Package(_)) {
         return super::owner_row(Symbol::intern("Mu"), method, arity);
     }
     // `Any.ACCEPTS` answers an instance whose MRO declares nothing closer
     // (§9.108). A code object, a regex, an enum or a mixin has its own
     // `ACCEPTS`, which the interpreter answers.
-    if method == "ACCEPTS" && !matches!(target.view(), ValueView::Instance { .. }) {
+    if method_str == "ACCEPTS" && !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
     // A class composing `Real` has `Numeric.ACCEPTS` (`a == self`) ahead of
     // `Any`'s identity (#13894).
     let mut interp = interp;
-    if method == "ACCEPTS"
+    if method_str == "ACCEPTS"
         && arity == 1
         && let Some(interp) = interp.as_deref_mut()
         && super::is_user_real_instance(interp, target)
@@ -980,8 +983,8 @@ pub(crate) fn shapeless_row(
     // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
     // indexes its elements through the interpreter, though it has no keys
     // either (§9.106).
-    let positional = matches!(method.as_str(), "AT-POS" | "EXISTS-POS");
-    if (positional || matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY"))
+    let positional = matches!(method_str, "AT-POS" | "EXISTS-POS");
+    if (positional || matches!(method_str, "AT-KEY" | "EXISTS-KEY"))
         && match target.descalarize().view() {
             ValueView::Array(..)
             | ValueView::BufStorage(..)
@@ -1011,7 +1014,7 @@ pub(crate) fn shapeless_row(
     // An `is Pair` or quant-hash subclass answers its base's methods on the
     // value it carries (`native_base::redirect`), not `Any`'s on itself.
     if crate::builtins::native_base::has_collection_payload(target)
-        && crate::builtins::native_base::redirect(target, method.as_str()).is_some()
+        && crate::builtins::native_base::redirect(target, method_str).is_some()
     {
         return None;
     }
@@ -1019,11 +1022,11 @@ pub(crate) fn shapeless_row(
     let list = name & name_bits::LIST != 0;
     let mu = name & name_bits::MU != 0;
     // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
-    let iterable = name & name_bits::ITERABLE != 0 || (arity == 1 && method == "flat");
+    let iterable = name & name_bits::ITERABLE != 0 || (arity == 1 && method_str == "flat");
     // `Cool.Complex` answers a lazy list's `X::Cannot::Lazy` and an unsettled
     // `Seq`'s element count (§9.110); an instance or a type object with no
     // shape is the interpreter's.
-    let lazy_complex = method == "Complex"
+    let lazy_complex = method_str == "Complex"
         && matches!(
             target.view(),
             ValueView::LazyList(_)
@@ -1044,7 +1047,7 @@ pub(crate) fn shapeless_row(
     let text = text || coerce;
     // A shaped array's element type lives in the interpreter's registry, so
     // a pure entry leaves its `raku` to the interpreter's row below.
-    if method == "raku"
+    if method_str == "raku"
         && interp.is_none()
         && matches!(
             target.view(),
@@ -1058,7 +1061,7 @@ pub(crate) fn shapeless_row(
     // pure entry keeps `Mu`'s rendering.
     let container = arity == 0
         && (name & name_bits::CONTAINER != 0
-            || (method == "raku"
+            || (method_str == "raku"
                 && interp.is_some()
                 && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))));
     // An opaque instance (`DispatchShape::is_opaque`) is shapeless here: only its
@@ -1071,7 +1074,7 @@ pub(crate) fn shapeless_row(
     // A `.VAR` descriptor asks the value its container holds (ADR-0064), which
     // only `Interpreter::try_var_meta_delegate` can read: `$u.VAR.Bool` is the
     // truth of the undefined value, not of the descriptor.
-    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method.as_str()) {
+    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method_str) {
         return None;
     }
     let (cool, any) = (Symbol::intern("Cool"), Symbol::intern("Any"));
@@ -1104,7 +1107,7 @@ pub(crate) fn shapeless_row(
         // the built-in classes' instances they know (a `Signature`, a `Stash`)
         // and decline every other instance, whose class may declare its own.
         ValueView::Instance { .. }
-            if mu && interp.is_none() && matches!(method.as_str(), "gist" | "raku") =>
+            if mu && interp.is_none() && matches!(method_str, "gist" | "raku") =>
         {
             mu_owner
         }
@@ -1130,7 +1133,7 @@ pub(crate) fn shapeless_row(
             // subclass's: an `Exception` subclass renders its own `message`,
             // a `Str` subclass keeps its type. The interpreter answers those
             // (§9.93).
-            if matches!(method.as_str(), "Str" | "Stringy" | "gist" | "raku") && owner != mu_owner {
+            if matches!(method_str, "Str" | "Stringy" | "gist" | "raku") && owner != mu_owner {
                 return None;
             }
             owner
@@ -1152,7 +1155,7 @@ pub(crate) fn shapeless_row(
         // `pairs`, `hash` and `elems` read as such (`any_views`, §9.109,
         // §9.163); its MRO has no row that does.
         ValueView::Instance { class_name, .. }
-            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list" | "elems")
+            if matches!(method_str, "kv" | "pairs" | "hash" | "list" | "elems")
                 && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
             any
@@ -1170,12 +1173,12 @@ pub(crate) fn shapeless_row(
             let interp = interp?;
             // A class with its own `iterator` or `list` is listed through it,
             // which the interpreter does (§9.148).
-            if list && interp.own_iteration_reads(class_name.as_str(), method.as_str()) {
+            if list && interp.own_iteration_reads(class_name.as_str(), method_str) {
                 return None;
             }
             let mut owner = None;
             let subscript = matches!(
-                method.as_str(),
+                method_str,
                 "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
             );
             let mro = interp.class_mro(class_name.as_str());
@@ -1205,7 +1208,7 @@ pub(crate) fn shapeless_row(
                     // that has no shape (`Supply.list`, §9.110).
                     // An instance with no subscript protocol of its own is
                     // the one-element list holding itself (`Any`'s, §9.154).
-                    if method == "ACCEPTS" || class == class_name || (subscript && class == any) {
+                    if method_str == "ACCEPTS" || class == class_name || (subscript && class == any) {
                         owner = Some(class);
                     }
                     break;
@@ -1279,7 +1282,7 @@ pub(crate) fn shapeless_row(
         // A hash or a quant hash with no settled shape (a `Map` subclass's raw
         // storage) answers its type's associative rows (§9.154).
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
-            if matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY") =>
+            if matches!(method_str, "AT-KEY" | "EXISTS-KEY") =>
         {
             match target.view() {
                 ValueView::Hash(_) => Symbol::intern("Hash"),
@@ -1293,7 +1296,7 @@ pub(crate) fn shapeless_row(
         _ => return None,
     };
     // `Int` and `Numeric` are `Mu`'s, not `Cool`'s (§9.92).
-    let arity = if method == "comb" {
+    let arity = if method_str == "comb" {
         arity.min(1)
     } else {
         arity
