@@ -47,8 +47,8 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
     }
 }
 
-use super::statements::{Statements, statement_list_inner};
-pub(super) use super::statements::{block_statements, statement_list, statement_list_owned};
+use super::statements::statement_list_inner;
+pub(super) use super::statements::{block_statements, statement_list};
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
 /// `unit` for `unit class` / `unit module`; `our` is the default and renders
@@ -96,11 +96,6 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let _guards = super::passthrough::stmt_guards(stmt);
-    convert_stmt_node(stmt)
-}
-
-fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
@@ -1607,7 +1602,6 @@ fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
 /// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
 // Cost: O(n), n = size of the call.
 fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let _inspected = super::passthrough::Inspecting::enter();
     let mut node = convert_expr(call)?;
     if node.class != RakuAstClass::ApplyPostfix {
         return Ok(node);
@@ -2424,23 +2418,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    if let Some(leaf) = super::passthrough::expr_leaf(expr) {
-        return Ok(leaf);
-    }
-    let _guards = super::passthrough::expr_guards(expr);
-    convert_expr_node(expr)
-}
-
-fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
     // The adverbs of a subscript lower from the class of the subscript.
-    let adverbs = {
-        let _inspected = super::passthrough::Inspecting::enter();
-        subscript_adverb::convert_hyper_slice(expr)
-    };
-    if let Some(node) = adverbs {
+    if let Some(node) = subscript_adverb::convert_hyper_slice(expr) {
         return node;
     }
     match expr {
@@ -3479,8 +3461,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Binary {
             left, op, right, ..
         } => {
-            // `lower` reads the operands of an infix by their node class.
-            let _inspected = super::passthrough::Inspecting::enter();
             Ok(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
@@ -4066,10 +4046,7 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(
-            None,
-            statement_list_inner(Statements::Shared(body))?,
-        )],
+        fields: vec![node_field(None, statement_list_inner(body)?)],
     })
 }
 
@@ -6167,10 +6144,7 @@ fn heredoc_node(
     stop: &str,
     written: crate::ast::SrcSpan,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = {
-        let _inspected = super::passthrough::Inspecting::enter();
-        convert_expr(body)?
-    };
+    let mut node = convert_expr(body)?;
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }
@@ -6389,10 +6363,6 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         if is_injected_named_arg(a) {
             continue;
         }
-        if let Some(leaf) = super::passthrough::arg_leaf(a) {
-            fields.push(node_field(None, leaf));
-            continue;
-        }
         fields.push(node_field(None, convert_expr(a)?));
     }
     Ok(RakuAstNode {
@@ -6564,10 +6534,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair variable key"));
     };
-    let value = {
-        let _inspected = super::passthrough::Inspecting::enter();
-        convert_expr(right)?
-    };
+    let value = convert_expr(right)?;
     if !value.class.is_simple_variable() {
         return Err(unsupported("colonpair variable value"));
     }

@@ -80,6 +80,8 @@ mod immediate_call;
 mod infix_func;
 pub(crate) use infix_func::{add_colonpair, with_caller_operators};
 mod assign_ro;
+mod carried;
+mod finalize;
 mod infix_origins;
 mod infix_spelling;
 mod inherited_fields;
@@ -107,7 +109,6 @@ mod package_traits;
 mod parameter_destructure;
 mod parameter_shape;
 mod parameter_signature;
-mod passthrough;
 mod phaser_condition;
 mod placeholder;
 mod postfix_grouping;
@@ -231,9 +232,6 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     StatementEmpty,
-    // Internal: a subtree the executing round trip passes through untouched
-    // (`passthrough`); never rendered, never reachable from user code.
-    ParsedLeaf,
     StatementAlso,
     StatementPrefixReact,
     StatementPrefixSupply,
@@ -630,7 +628,6 @@ impl RakuAstClass {
         match self {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
-            ParsedLeaf => "RakuAST::Internal::ParsedLeaf",
             StatementExpression => "RakuAST::Statement::Expression",
             StatementEmpty => "RakuAST::Statement::Empty",
             StatementAlso => "RakuAST::Statement::Also",

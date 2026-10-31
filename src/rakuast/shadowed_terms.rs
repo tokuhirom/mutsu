@@ -11,6 +11,9 @@ use std::collections::HashSet;
 use super::lower::{leaf_str, named_child, named_child_or_positional};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
+use crate::ast::Stmt;
+use crate::ast::parsed::ParsedStmt;
+use crate::ast_visit::Visit;
 use crate::value::ValueView;
 
 thread_local! {
@@ -97,6 +100,92 @@ pub(super) fn scan(root: &RakuAstNode) {
     super::declared_routines::set(found.routines);
 }
 
+/// [`scan`] for an executing unit, which is the parser's own statements: the
+/// same four facts, read from the statements themselves.
+// Cost: O(n), n = nodes in the unit.
+pub(super) fn scan_stmts(stmts: &[Stmt]) {
+    KEYWORD_SCOPES.with(|s| s.borrow_mut().clear());
+    let mut facts = Facts::default();
+    crate::ast_visit::walk_stmts(&mut facts, stmts);
+    let Facts {
+        terms,
+        shadowed,
+        packages,
+        routines,
+    } = facts;
+    let mut all_shadowed = terms.clone();
+    all_shadowed.extend(shadowed);
+    SHADOWED.with(|s| *s.borrow_mut() = all_shadowed);
+    TERMS.with(|t| *t.borrow_mut() = terms);
+    PACKAGES.with(|p| *p.borrow_mut() = packages);
+    super::declared_routines::set(routines);
+}
+
+/// What the parser's statements declare that lowering resolves names against:
+/// sigilless terms, the names a constant or an enum makes the unit's own, the
+/// packages, and the routines (`sub`, `my &name`, a `&name` parameter).
+#[derive(Default)]
+struct Facts {
+    terms: HashSet<String>,
+    shadowed: HashSet<String>,
+    packages: HashSet<String>,
+    routines: HashSet<String>,
+}
+
+impl<'ast> Visit<'ast> for Facts {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        match stmt {
+            Stmt::Ast(node) => {
+                if let ParsedStmt::SigillessDecl(source) = node.as_ref() {
+                    self.terms.insert(source.name.clone());
+                }
+            }
+            Stmt::SubDecl { name, .. } => {
+                self.routines.insert(name.resolve());
+            }
+            // `my &name` declares a routine of the unit.
+            Stmt::VarDecl { name, constant, .. } => {
+                if let Some(code) = name.strip_prefix('&') {
+                    self.routines.insert(code.to_string());
+                }
+                if let Some(sigil) = constant {
+                    // `constant term:<$box> = ...` declares the term `$box`.
+                    // A sigiled constant is the term `term:<$x>`, as the
+                    // conversion spells it; the parser stores the bare name.
+                    if matches!(sigil, crate::ast::ConstantSigil::Term) {
+                        self.terms.insert(name.clone());
+                    }
+                    self.shadowed.insert(name.clone());
+                }
+            }
+            Stmt::EnumDecl { name, variants, .. } => {
+                self.shadowed.insert(name.resolve());
+                self.shadowed
+                    .extend(variants.iter().map(|(variant, _)| variant.clone()));
+            }
+            Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::Package { name, .. } => {
+                self.packages.insert(name.resolve());
+            }
+            _ => {}
+        }
+        crate::ast_visit::walk_stmt(self, stmt);
+    }
+
+    fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {
+        // `-> \p { ... }`: a sigilless parameter is a term of its body.
+        if param.sigilless {
+            self.terms.insert(param.name.clone());
+        }
+        // A `&name` parameter is a routine of the unit.
+        if let Some(name) = param.name.strip_prefix('&') {
+            self.routines.insert(name.to_string());
+        }
+        crate::ast_visit::walk_param(self, param);
+    }
+}
+
 /// Whether the unit last passed to [`scan`] declares a package named `name`.
 /// A declared `class Nil` makes `Nil` that type, not the setting's `Nil` term.
 // Cost: O(1).
@@ -142,16 +231,6 @@ struct Found {
 }
 
 fn walk(node: &RakuAstNode, in_decl: bool, found: &mut Found) {
-    if super::passthrough::is_leaf(node) {
-        let mut facts = super::passthrough::ScopeFacts::default();
-        super::passthrough::scope_facts_of(node, &mut facts);
-        found.shadowed.extend(facts.terms.iter().cloned());
-        found.shadowed.extend(facts.shadowed);
-        found.terms.extend(facts.terms);
-        found.packages.extend(facts.packages);
-        super::passthrough::declared_routines_of(node, &mut found.routines);
-        return;
-    }
     if let Some(name) = super::declared_routines::declared_by(node) {
         found.routines.insert(name);
     }

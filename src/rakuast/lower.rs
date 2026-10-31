@@ -46,7 +46,16 @@ fn lower_normalized(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::shadowed_terms::scan(node);
     super::infix_func::reset();
     let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(node))?;
-    super::unspell::strip(&mut stmts);
+    finish_unit(&mut stmts)?;
+    Ok(stmts)
+}
+
+/// The passes a lowered unit goes through before the compiler sees it: the
+/// spellings come off, the priming scopes of a `*` are planted and the scope
+/// diagnostics are reported.
+// Cost: O(n), n = size of the unit.
+pub(super) fn finish_unit(stmts: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
+    super::unspell::strip(stmts);
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
     // positions, and there is no parser here. Run the same scope authority the
@@ -54,16 +63,14 @@ fn lower_normalized(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     // than only the thunk-barrier ones, so a `WhateverCode::Argument` tree —
     // hand-built or read back from `.AST` — becomes the same closure the
     // equivalent source does.
-    crate::whatever_curry::with_all_scopes(|| {
-        crate::whatever_curry::mark::mark_program(&mut stmts)
-    });
+    crate::whatever_curry::with_all_scopes(|| crate::whatever_curry::mark::mark_program(stmts));
     // The scope pass the parser runs after a unit: it marks each declaration
     // whose initializer reads the binding it declares (`__init_sees_self`),
     // and reports the compile-time errors of a redeclaration or of `my $x = $x`.
-    if let Some(diagnostic) = crate::parser::find_scope_diagnostic(&mut stmts) {
+    if let Some(diagnostic) = crate::parser::find_scope_diagnostic(stmts) {
         return Err(crate::parser::scope_diagnostic_error(diagnostic));
     }
-    Ok(stmts)
+    Ok(())
 }
 
 /// The statements of a block body. Each body is a frame for the anonymous
@@ -112,15 +119,6 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     continue;
                 }
                 let child = child_node(&f.value)?;
-                if super::passthrough::is_leaf(child) {
-                    if let Some(line) = super::passthrough::line_of(child) {
-                        stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
-                    }
-                    let stmt = super::passthrough::lower_stmt(child)?;
-                    crate::parser::register_rakuast_user_sub_binding(&stmt);
-                    stmts.push(stmt);
-                    continue;
-                }
                 // An empty statement runs nothing and is no block's value.
                 if child.class == RakuAstClass::StatementEmpty {
                     continue;
@@ -149,9 +147,6 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 }
 
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if super::passthrough::is_leaf(node) {
-        return super::passthrough::lower_stmt(node);
-    }
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;
     if let Some(doc) = super::doc_phaser::lower(node) {
@@ -4284,9 +4279,6 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     // A leaf carries the parser's own tree (`passthrough`); a deferred term
     // wraps one, so it is read first.
-    if super::passthrough::is_leaf(node) {
-        return super::passthrough::lower_expr(node);
-    }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
