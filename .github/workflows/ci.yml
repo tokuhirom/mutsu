@@ -648,6 +648,22 @@ jobs:
           MUTSU_T_TIMEOUT: "45"
           JOBS: "4"
 
+      - name: RakuAST .AST text ratchet
+        # RakuAST C1 (#15759): the `.AST` text of a pinned sample of roast
+        # files (ci/ast-text-corpus/rakudo.tsv, rakudo 2026.09's text hashed;
+        # the runner has no raku) must still equal rakudo's for every
+        # statement listed in ci/ast-text-corpus/identical.tsv. The list only
+        # grows (`scripts/ast-text-corpus.sh update`); a listed statement that
+        # stops matching is a regression in the renderer, fixed in the same PR
+        # rather than dropped from the list. A re-vendored roast file is
+        # skipped until `scripts/ast-text-corpus.sh golden` is run again.
+        run: |
+          mkdir -p tmp
+          scripts/ast-text-corpus.sh check
+        env:
+          MUTSU_BIN: target/release/mutsu
+          JOBS: "4"
+
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the site (landing highlights +
         # tutorial lessons) runs under mutsu here and must match the output

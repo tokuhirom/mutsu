@@ -12,6 +12,13 @@
 #   scripts/ast-text-corpus.sh compare            # identical share and differing classes
 #   scripts/ast-text-corpus.sh show CLASS [N]     # N example hunks of one class
 #
+# The CI ratchet (C1, #15759) uses a pinned sample of roast files instead, since CI has no `raku`:
+#   scripts/ast-text-corpus.sh golden [N]         # rakudo's text of every Nth roast file, hashed
+#                                                 #   -> ci/ast-text-corpus/rakudo.tsv (needs raku)
+#   scripts/ast-text-corpus.sh check              # fail if a statement listed in
+#                                                 #   ci/ast-text-corpus/identical.tsv stopped matching
+#   scripts/ast-text-corpus.sh update             # add the statements that match now (never removes)
+#
 #   MUTSU_BIN  interpreter to run (default target/debug/mutsu)
 #   JOBS       parallel jobs (default: nproc)
 #
@@ -46,7 +53,38 @@ run_one() {
   fi
 }
 
+RATCHET_DIR=ci/ast-text-corpus
+GOLDEN="$RATCHET_DIR/rakudo.tsv"
+IDENTICAL="$RATCHET_DIR/identical.tsv"
+
+# Run mutsu's dump over the golden's files into tmp/ast-text-ratchet/mutsu.
+ratchet_run() {
+  local list="$OUT/ratchet-files.txt"
+  mkdir -p "$OUT"
+  grep '^F' "$GOLDEN" | cut -f2 | LC_ALL=C sort -u > "$list"
+  rm -rf "$OUT/ratchet-root/mutsu"
+  export -f run_one
+  export TOOLS MUTSU_BIN
+  OUT="$OUT/ratchet-root" xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' mutsu {} < "$list"
+  echo "$OUT/ratchet-root/mutsu"
+}
+
 case "${1:-}" in
+  golden)
+    command -v raku >/dev/null || { echo "ast-text-corpus: golden needs raku" >&2; exit 1; }
+    mkdir -p "$OUT" "$RATCHET_DIR"
+    list="$OUT/golden-files.txt"
+    find roast -name '*.t' | LC_ALL=C sort | awk -v n="${2:-12}" 'NR % n == 0' > "$list"
+    export -f run_one
+    export TOOLS MUTSU_BIN
+    OUT="$OUT/golden-root" xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' rakudo {} < "$list"
+    python3 -I "$TOOLS/ratchet.py" golden "$OUT/golden-root/rakudo" "$list" "$GOLDEN"
+    ;;
+  check|update)
+    [ -e "$GOLDEN" ] || { echo "ast-text-corpus: $GOLDEN is missing; run golden" >&2; exit 1; }
+    dir=$(ratchet_run)
+    python3 -I "$TOOLS/ratchet.py" "$1" "$dir" "$GOLDEN" "$IDENTICAL"
+    ;;
   sample)
     mkdir -p "$OUT"
     find t -name '*.t' | LC_ALL=C sort | awk -v n="${2:-8}" 'NR % n == 0' > "$SAMPLE"
