@@ -41,7 +41,10 @@ impl MapGrepStream {
     }
 
     fn exhausted(&self) -> bool {
-        !matches!(self.source, SeqSource::MapGrep { .. })
+        !matches!(
+            self.source,
+            SeqSource::MapGrep { .. } | SeqSource::Iterator(_)
+        )
     }
 
     /// Give the body back what the loop pulled and what is left.
@@ -75,7 +78,18 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         while stream.buf.len() < want && !stream.exhausted() {
             let needed = want - stream.buf.len();
-            match self.pull_map_grep_prefix(&mut stream.source, needed) {
+            let pulled = match &stream.source {
+                // `Seq.new($iterator)`: exactly `needed` `pull-one` calls, so
+                // the iterator's side effects interleave with the loop body.
+                SeqSource::Iterator(iterator) => self
+                    .pull_iterator_prefix_to_vec(&iterator.clone(), needed)
+                    .map(|items| {
+                        let ended = items.len() < needed;
+                        (items, ended)
+                    }),
+                _ => self.pull_map_grep_prefix(&mut stream.source, needed),
+            };
+            match pulled {
                 Ok((items, exhausted)) => {
                     stream.buf.extend(items);
                     if exhausted {
@@ -103,7 +117,13 @@ impl Interpreter {
         stream: &mut MapGrepStream,
     ) -> Result<Vec<Value>, RuntimeError> {
         if !stream.exhausted() {
-            match self.pull_map_grep_rest(&stream.source) {
+            let rest = match &stream.source {
+                SeqSource::Iterator(iterator) => {
+                    self.pull_iterator_prefix_to_vec(&iterator.clone(), usize::MAX)
+                }
+                _ => self.pull_map_grep_rest(&stream.source),
+            };
+            match rest {
                 Ok(items) => {
                     stream.buf.extend(items);
                     stream.source = SeqSource::Reified;
