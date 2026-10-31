@@ -4,7 +4,7 @@ use Test;
 # parameterized `does` mixin saw `self` as Nil, and a `return` in it escaped
 # with "Attempt to return outside of immediately-enclosing Routine", aborting
 # the composition.
-plan 9;
+plan 10;
 
 role Plain { submethod TWEAK { $*seen = self.^name } }
 role Param[::T = Any, :$flag = True] { submethod TWEAK { $*seen = self.^name } }
@@ -45,3 +45,13 @@ is $fh.marker, "m", "role mixed into an open handle";
 is $fh.get, "first", "and the handle still reads";
 $fh.close;
 $path.unlink;
+
+# The mixin's own `print` still wins over the handle's native one (Terminal::ANSI).
+{
+    my @lines;
+    my $saved = $*OUT;
+    $*OUT = $*OUT but role { method print($l) { @lines.push($l) } };
+    print "captured";
+    $*OUT = $saved;
+    is @lines.join, "captured", "a role mixed into \$*OUT overrides print";
+}

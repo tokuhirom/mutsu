@@ -157,6 +157,23 @@ impl Interpreter {
             .first()
             .cloned()
             .or_else(|| self.default_input_handle());
+        // A default input handle with roles mixed in (`$*ARGFILES does R`) is
+        // still the open handle: read through a plain `IO::Handle` view of the
+        // same cell. (Not done in `handle_id_from_value`: a mixin of `$*OUT`
+        // that overrides `print` must keep seeing its own method.)
+        let handle = handle.map(|h| match h.view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name.as_str().starts_with("IO::Handle+{") => Value::instance_sharing_cell(
+                &attributes,
+                crate::symbol::Symbol::intern("IO::Handle"),
+                attributes.instance_id(),
+            ),
+            _ => h,
+        });
         if let Some(handle) = handle {
             let mut limit: Option<usize> = None;
             let mut close_after = false;
