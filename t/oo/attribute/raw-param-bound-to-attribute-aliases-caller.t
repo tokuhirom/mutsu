@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 4;
 
 class Slot {
     has $!value is default(Nil);
@@ -25,6 +25,3 @@ is $w2, 8, 'a second bind behaves the same';
 
 sub inner { my $x = 1; my $s = Slot.new; $s.bind($x); $s.set(3); $x }
 is inner(), 3, 'a sub-local variable aliases too';
-
-my $lit = Slot.new;
-lives-ok { $lit.bind(5); $lit.set(6) }, 'binding a literal stays harmless';

@@ -236,21 +236,19 @@ impl Interpreter {
         self.call_sub_value(idx.clone(), vec![Value::int(len)])
     }
 
-    /// How many positions `$obj[*]:exists` / `$obj[Inf]:exists` visits. A
-    /// `Positional` object answers its `.elems`; any other object is, as for
-    /// every `Any`, a one-element list holding itself, whatever `elems` it
-    /// happens to declare (rakudo: `Any.EXISTS-POS` through `.list`).
-    // Cost: O(1) plus the object's own `elems` for a Positional.
+    /// How many positions `$obj[*]:exists` / `$obj[Inf]:exists` visits: the
+    /// length of `$obj.list`, as in Rakudo -- a one-element list holding the
+    /// object itself unless the class overrides `list`, whatever `elems` it
+    /// declares.
+    // Cost: O(n) for the object's own `list`, n = its length.
     fn whatever_exists_len(&mut self, instance: &Value) -> usize {
-        if let ValueView::Instance { class_name, .. } = instance.view()
-            && !self.class_does_role(class_name.resolve().as_str(), "Positional")
-        {
-            return 1;
+        match self.try_compiled_method_or_interpret(instance.clone(), "list", vec![]) {
+            Ok(list) => match self.try_compiled_method_or_interpret(list, "elems", vec![]) {
+                Ok(n) => crate::runtime::to_int(&n).max(0) as usize,
+                Err(_) => 0,
+            },
+            Err(_) => 0,
         }
-        let elems = self
-            .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
-            .unwrap_or(Value::int(0));
-        crate::runtime::to_int(&elems).max(0) as usize
     }
 
     pub(super) fn instance_exists_pos_result(
