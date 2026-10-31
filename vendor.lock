@@ -21,4 +21,4 @@
 roast	roast	https://github.com/Raku/roast.git	master	1f749e338c8af8b9066c94c9f670539882a4c2d3	2026-09-29
 raku-doc	raku-doc	https://github.com/Raku/doc.git	main	24107bd0d77ba53310c7fef8a4286aaa4d0845e7	2026-08-31
 old-design-docs	old-design-docs	https://github.com/Raku/old-design-docs.git	master	1c4e6039a116421c7dbd36c56c34d3f774dcaf8f	2025-06-08
-rakudo	vendor/rakudo	https://github.com/rakudo/rakudo.git	main	9a94801c154543573d926e6258e062f3c3782635	2026-09-28	src/core.c/RakuAST/Deparse.rakumod
+rakudo	vendor/rakudo	https://github.com/rakudo/rakudo.git	main	9a94801c154543573d926e6258e062f3c3782635	2026-09-28	src/core.c/RakuAST/Deparse.rakumod,lib/RakuAST/Deparse/Highlight.rakumod,lib/RakuAST/Deparse/Highlight/CORE.rakumod
