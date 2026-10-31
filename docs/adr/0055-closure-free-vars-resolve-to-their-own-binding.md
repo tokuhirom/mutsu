@@ -772,3 +772,36 @@ per-synthesizer compile pipeline.
   its exited enclosing `whenever` body; the `substr-rw` window follows each
   STORE; a wrapper's and a `cas` block's captured-lexical writes reach the
   caller.
+
+## 9. Amendment: the carrier is deleted (2026-10-31, #14572)
+
+§8.2 chose to keep a thin carrier for `compiled_code == None` `Sub` values and
+§8.3 declined to build bytecode for each synthesizer as part of that slice.
+#14572 did the second afterwards, one population at a time, and the carrier
+(the `eval_block_value` branch of `call_sub_value`, about 650 lines) is gone.
+
+What replaced each runner, for the next reader of this ADR:
+
+- Synthesized closures with a fixed shape share one compiled chunk per body
+  text (`synthesized_closure_code`, `Value::make_sub_compiled`); what differs
+  per instance (the `substr-rw` target cell and window, the `Promise::Vow` of a
+  scheduler cue thunk) rides in the captured env, as `ContainerRef` cells or
+  `authoritative_captures`, the rule §8.2 already states. The value layer gets
+  the compiler through an installed function pointer (`install_synth_compile`),
+  not by naming it.
+- A method's own compiled chunk runs as the callable `.^find_method` returns
+  and as a class-body `my method` / `sub` form (compiled once at
+  registration). `^add_method` keeps the table of the subs nested in the body,
+  so a missing table means none.
+- A phaser run from outside its block compiles as its own chunk, and the
+  compiler forces the capture of the enclosing variables its body names
+  (#15473).
+- A routine the class body registers at run time writes a file-scope lexical
+  through a cell the declaring frame boxes at its declaration, the way a
+  method's writes always did (#15782).
+
+A `Sub` without `compiled_routine` or `compiled_code` now fails with "Code
+object has no compiled body". §8.4's acceptance still holds, and the census
+that justified the deletion (every `t/` file and every whitelisted roast file
+reaching no call to the carrier) is the check to repeat if a new synthesizer is
+added: a `Sub` built from an AST body without bytecode is a bug, not a shape.
