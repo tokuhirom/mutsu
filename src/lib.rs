@@ -184,7 +184,7 @@ pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
     // The dump is the tree the unit would run as: the RakuAST round trip's
     // result.
-    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
+    let stmts = rakuast::frontend::round_trip_unit(scope, stmts)?;
     Ok(format!("{:#?}", stmts))
 }
 
@@ -200,7 +200,7 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
     let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
-    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
+    let stmts = rakuast::frontend::round_trip_unit(scope, stmts)?;
     let _unit_file = unit_source_file::UnitSourceFileGuard::enter(
         source_file.map(crate::symbol::Symbol::intern),
     );

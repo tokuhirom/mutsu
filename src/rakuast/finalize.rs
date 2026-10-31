@@ -11,6 +11,7 @@
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
 //! nodes themselves (`convert`, `lower`).
 
+use crate::scope::NameScope;
 use std::cell::Cell;
 
 use crate::ast::parsed::{Assign, ParsedExpr, ParsedStmt};
@@ -52,11 +53,11 @@ impl Drop for Executing {
 /// Finalize the spelled compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn finalize_unit(scope: &NameScope, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     let _executing = Executing::enter();
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    let _declared = super::bareword::DeclaredNames::collect(&stmts);
+    let _declared = super::bareword::DeclaredNames::collect(scope, &stmts);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan_stmts(&stmts);
     super::infix_func::reset();
@@ -157,7 +158,7 @@ impl VisitMut for Finalize {
         let line = self.line.take();
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(body);
+        let _scope = super::bareword::BlockScope::enter(scope, body);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in

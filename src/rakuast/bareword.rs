@@ -43,69 +43,42 @@ mod package_alias;
 /// rakudo 2026.07.
 use crate::scope::{DeclaredKind, NameScope};
 
-thread_local! {
-    /// The scope the conversion or lowering in progress reads names from: the
-    /// calling scope's names, installed by [`install_scope`], and the names the
-    /// unit being converted declares, filled in by [`DeclaredNames::collect`].
-    /// Empty outside a conversion, so a nested/re-entrant conversion that never
-    /// ran `statement_list` simply sees no declarations and keeps the old
-    /// bareword boundary.
-    static CURRENT: RefCell<NameScope> = RefCell::new(NameScope::default());
-}
-
-/// RAII guard installing a [`NameScope`] for the duration of a conversion or
-/// lowering, restoring the one that was there before.
-pub(crate) struct InstalledScope(NameScope);
-
-/// Install `scope` as the one the frontend reads names from.
-// Cost: O(1).
-pub(crate) fn install_scope(scope: NameScope) -> InstalledScope {
-    InstalledScope(CURRENT.with(|c| std::mem::replace(&mut *c.borrow_mut(), scope)))
-}
-
-impl Drop for InstalledScope {
-    fn drop(&mut self) {
-        let previous = std::mem::take(&mut self.0);
-        CURRENT.with(|c| *c.borrow_mut() = previous);
-    }
-}
-
 /// RAII guard installing the unit's declared names for the duration of a
 /// conversion, restoring whatever was there before (so a nested conversion
 /// cannot leak its names into the outer one).
-pub(super) struct DeclaredNames(HashMap<String, DeclaredKind>);
+pub(super) struct DeclaredNames<'s> {
+    scope: &'s NameScope,
+    previous: HashMap<String, DeclaredKind>,
+}
 
-impl DeclaredNames {
+impl<'s> DeclaredNames<'s> {
     // Cost: O(n), n = size of the unit's AST (one `collect_declared_names` scan).
-    pub(super) fn collect(stmts: &[Stmt]) -> Self {
+    pub(super) fn collect(scope: &'s NameScope, stmts: &[Stmt]) -> Self {
         let mut names = HashMap::new();
         names.extend(
             crate::parser::imported_value_term_names()
                 .into_iter()
                 .map(|name| (name, DeclaredKind::Term)),
         );
-        collect_declared_names(stmts, &mut names);
-        Self(CURRENT.with(|c| {
-            let mut scope = c.borrow_mut();
-            let previous = scope.take_declared();
-            scope.set_declared(names);
-            previous
-        }))
+        collect_declared_names(scope, stmts, &mut names);
+        Self {
+            scope,
+            previous: scope.replace_declared(names),
+        }
     }
 }
 
-impl Drop for DeclaredNames {
+impl Drop for DeclaredNames<'_> {
     fn drop(&mut self) {
-        let previous = std::mem::take(&mut self.0);
-        CURRENT.with(|c| c.borrow_mut().set_declared(previous));
+        self.scope.replace_declared(std::mem::take(&mut self.previous));
     }
 }
 
 /// Whether the calling scope of the `EVAL` being lowered declares the operator
 /// routine `routine` (`infix:<…>`).
 // Cost: O(k), k = length of `routine`.
-pub(super) fn caller_declares_operator(routine: &str) -> bool {
-    CURRENT.with(|c| c.borrow().caller_declares_operator(routine))
+pub(super) fn caller_declares_operator(scope: &NameScope, routine: &str) -> bool {
+    scope.caller_declares_operator(routine)
 }
 
 /// What a `constant` renders as when named later. Rakudo evaluates the
@@ -113,11 +86,11 @@ pub(super) fn caller_declares_operator(routine: &str) -> bool {
 /// (`my constant E = Metamodel::EnumHOW.new_type(...)`, `constant T = Int`) and
 /// any other constant a term. Only the initializers whose value is visibly a
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
-fn constant_kind(init: &Expr) -> DeclaredKind {
+fn constant_kind(scope: &NameScope, init: &Expr) -> DeclaredKind {
     let type_valued = match init {
         // A type the unit declares too (`constant E = Outer::Inner`); while
         // the unit's own scan runs, `package_alias` settles those instead.
-        Expr::BareWord(n) => setting_type(n) || declared_kind(n) == Some(DeclaredKind::Type),
+        Expr::BareWord(n) => setting_type(n) || declared_kind(scope, n) == Some(DeclaredKind::Type),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -132,23 +105,12 @@ fn constant_kind(init: &Expr) -> DeclaredKind {
     }
 }
 
-/// The declarations of the blocks being converted, innermost last. Each holds
-/// only the names its own statement list declares: a lexical enum variable
-/// shadows a class of the same name declared further out, which the unit-wide
-/// the unit-wide declared names (one entry per name) cannot express.
-#[derive(Default)]
-struct Scopes(Vec<HashMap<String, DeclaredKind>>);
+/// RAII guard for one block's own declarations ([`NameScope::push_block`]).
+pub(super) struct BlockScope<'s>(&'s NameScope);
 
-thread_local! {
-    static SCOPES: RefCell<Scopes> = RefCell::new(Scopes::default());
-}
-
-/// RAII guard for one block's own declarations (see [`SCOPES`]).
-pub(super) struct BlockScope;
-
-impl BlockScope {
+impl<'s> BlockScope<'s> {
     // Cost: O(m), m = number of statements in the list (direct children only).
-    pub(super) fn enter(stmts: &[Stmt]) -> Self {
+    pub(super) fn enter(scope: &'s NameScope, stmts: &[Stmt]) -> Self {
         let mut own = HashMap::new();
         for stmt in stmts {
             match stmt {
@@ -171,50 +133,48 @@ impl BlockScope {
                     expr,
                     ..
                 } if constant.is_some() => {
-                    own.insert(name.clone(), constant_kind(expr));
+                    own.insert(name.clone(), constant_kind(scope, expr));
                 }
                 _ => {}
             }
         }
-        SCOPES.with(|s| s.borrow_mut().0.push(own));
-        Self
+        scope.push_block(own);
+        Self(scope)
     }
 }
 
-impl Drop for BlockScope {
+impl Drop for BlockScope<'_> {
     fn drop(&mut self) {
-        SCOPES.with(|s| {
-            s.borrow_mut().0.pop();
-        });
+        self.0.pop_block();
     }
 }
 
-fn scoped_kind(name: &str) -> Option<DeclaredKind> {
-    SCOPES.with(|s| s.borrow().0.iter().rev().find_map(|m| m.get(name).copied()))
+fn scoped_kind(scope: &NameScope, name: &str) -> Option<DeclaredKind> {
+    scope.block_kind(name)
 }
 
-fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    scoped_kind(name).or_else(|| CURRENT.with(|c| c.borrow().kind(name)))
+fn declared_kind(scope: &NameScope, name: &str) -> Option<DeclaredKind> {
+    scoped_kind(scope, name).or_else(|| scope.kind(name))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
 /// declares or imports (the parser's user-type registry). Rakudo's `is NAME` trait takes
 /// this test to choose between a container type (`Trait::Is(type => …)`) and a named trait.
 // Cost: O(k), k = length of `name`.
-pub(super) fn names_type(name: &str) -> bool {
+pub(super) fn names_type(scope: &NameScope, name: &str) -> bool {
     setting_type(name)
-        || declared_kind(name) == Some(DeclaredKind::Type)
+        || declared_kind(scope, name) == Some(DeclaredKind::Type)
         || crate::parser::is_user_declared_type(name)
-        || CURRENT.with(|c| c.borrow().declares_trait_type(name))
+        || scope.declares_trait_type(name)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of
 /// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
 /// declares (including the stub `A` a `class A::B { }` creates).
-pub(super) fn package_resolves(stem: &str) -> bool {
+pub(super) fn package_resolves(scope: &NameScope, stem: &str) -> bool {
     name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
         || setting_type(stem)
-        || declared_kind(stem) == Some(DeclaredKind::Type)
+        || declared_kind(scope, stem) == Some(DeclaredKind::Type)
 }
 
 /// Record a declared type name, together with the stub packages a qualified
@@ -250,7 +210,11 @@ fn insert_term(out: &mut HashMap<String, DeclaredKind>, name: String) {
 /// every child -- a declaration in an `if` or loop body, a closure or a `do`
 /// block counts as well as one in a class, routine or bare block.
 // Cost: O(n), n = size of the AST.
-fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind>) {
+fn collect_declared_names(
+    scope: &NameScope,
+    stmts: &[Stmt],
+    out: &mut HashMap<String, DeclaredKind>,
+) {
     /// The names collected so far, and the packages whose body is being scanned
     /// (outermost first): a declaration nested in `class Outer { class Inner }`
     /// is also `Outer::Inner`.
@@ -258,6 +222,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         &'o mut HashMap<String, DeclaredKind>,
         Vec<Symbol>,
         Vec<package_alias::PackageAlias>,
+        &'o NameScope,
     );
 
     impl Scan<'_> {
@@ -365,7 +330,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     expr,
                     ..
                 } if constant.is_some() => {
-                    self.0.insert(name.clone(), constant_kind(expr));
+                    self.0.insert(name.clone(), constant_kind(self.3, expr));
                     if let Expr::BareWord(target) = expr {
                         self.2.push(package_alias::PackageAlias {
                             spellings: self.compositions(Symbol::intern(name)),
@@ -470,7 +435,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         }
     }
 
-    let mut scan = Scan(out, Vec::new(), Vec::new());
+    let mut scan = Scan(out, Vec::new(), Vec::new(), scope);
     walk_stmts(&mut scan, stmts);
     package_alias::apply(&scan.2, scan.0);
 }
@@ -484,7 +449,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
 // Cost: O(k + d), k = length of `name`, d = parser scope depth.
-pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
+pub(super) fn convert(scope: &NameScope, name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
@@ -494,7 +459,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         });
     }
     // The innermost block's own declaration wins over everything outside it.
-    match scoped_kind(name) {
+    match scoped_kind(scope, name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
         Some(DeclaredKind::Routine) | None => {}
@@ -504,7 +469,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         return Some(simple_type_node(name));
     }
     // A name the same compilation unit declared shadows a setting one.
-    match declared_kind(name) {
+    match declared_kind(scope, name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
         Some(DeclaredKind::Routine) => return Some(call_name(name)),
@@ -514,8 +479,8 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     // name and referenced by the bare symbol; rakudo renders the reference as
     // `Term::Name` of the declared name.
     let term = format!("term:<{name}>");
-    if scoped_kind(&term) == Some(DeclaredKind::Term)
-        || declared_kind(&term) == Some(DeclaredKind::Term)
+    if scoped_kind(scope, &term) == Some(DeclaredKind::Term)
+        || declared_kind(scope, &term) == Some(DeclaredKind::Term)
     {
         return Some(term_name(&term));
     }
@@ -529,7 +494,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         .strip_suffix(":D")
         .or_else(|| name.strip_suffix(":U"))
         .or_else(|| name.strip_suffix(":_"))
-        && convert(base).is_some_and(|node| {
+        && convert(scope, base).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
@@ -547,7 +512,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("GLOBAL::")
         .or_else(|| name.strip_prefix("CORE::"))
-        && let Some(node) = convert(rest)
+        && let Some(node) = convert(scope, rest)
     {
         match node.class {
             RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
@@ -560,7 +525,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && convert(rest).is_some_and(|node| {
+        && convert(scope, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName

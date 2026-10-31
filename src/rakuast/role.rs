@@ -10,6 +10,7 @@
 //! is a `DoesDecl` too, told apart by its `also` flag. Lowering rebuilds the
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
+use crate::scope::NameScope;
 use super::convert::{
     blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
 };
@@ -39,7 +40,7 @@ pub(super) struct RoleDecl<'a> {
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
-pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(scope: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
     // Any plain trait name is a trait of the program's own (`is array_type(T)`),
     // rendered by name.
@@ -112,7 +113,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             name: name.resolve(),
             args: args.clone(),
         };
-        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
+        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(scope, 
             &parent,
         )?)));
     }

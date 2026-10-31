@@ -24,6 +24,7 @@
 //! list is a scope, and an `infix:<…>` sub or `&infix:<…>` variable declared in
 //! it counts for the rest of that list and for what is nested in it.
 
+use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, unsupported as unsupported_expr,
 };
@@ -298,16 +299,16 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
 /// Whether an enclosing scope, or the scope that runs the `EVAL`, declares
 /// the operator `name` (`infix:<name>`).
 // Cost: O(s), s = open scopes.
-fn is_declared(name: &str) -> bool {
+fn is_declared(scope: &NameScope, name: &str) -> bool {
     let routine = format!("infix:<{name}>");
     SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
-        || super::bareword::caller_declares_operator(&routine)
+        || super::bareword::caller_declares_operator(scope, &routine)
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`
 /// when `node` lowers as a plain `Expr::Binary` (or is not an infix at all).
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(scope: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     match node.class {
         RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix => {}
         _ => return None,
@@ -342,7 +343,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
             Ok(call)
         }));
     }
-    let overloaded = is_declared(&name) && !keeps_native_dispatch(&name);
+    let overloaded = is_declared(scope, &name) && !keeps_native_dispatch(&name);
     if !is_flip_flop(&name) && !overloaded {
         return None;
     }

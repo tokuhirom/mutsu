@@ -30,6 +30,7 @@
 //! message `something else`).
 
 mod argument;
+use crate::scope::NameScope;
 use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -82,8 +83,8 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
 }
 
 /// `is NAME`, which is a container type when `NAME` names one at parse time.
-fn trait_is_name_or_type(name: &str) -> Value {
-    if super::decl_traits::is_container_type(name) {
+fn trait_is_name_or_type(scope: &NameScope, name: &str) -> Value {
+    if super::decl_traits::is_container_type(scope, name) {
         return Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitIs,

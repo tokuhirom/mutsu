@@ -19,6 +19,7 @@
 //! parse time, and the parser records it as a bare `(NAME, None)` entry. Any
 //! other trait stays refused.
 
+use crate::scope::NameScope;
 use super::convert::{name_from_identifier, node_field};
 use super::lower::{named_child, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -35,10 +36,10 @@ type CustomTraits = Vec<(String, Option<Expr>)>;
 const DYNAMIC: &str = "dynamic";
 
 /// Whether the converter renders `custom_traits` entry `(name, arg)`.
-pub(super) fn is_rendered(name: &str, arg: &Option<Expr>) -> bool {
+pub(super) fn is_rendered(scope: &NameScope, name: &str, arg: &Option<Expr>) -> bool {
     match arg {
         Some(_) => name == DEFAULT || is_custom_name(name),
-        None => is_container_type(name) || is_custom_name(name),
+        None => is_container_type(scope, name) || is_custom_name(name),
     }
 }
 
@@ -59,9 +60,9 @@ fn is_custom_name(name: &str) -> bool {
 }
 
 /// Whether a bare `is NAME` entry is a container type (`is SetHash`).
-pub(super) fn is_container_type(name: &str) -> bool {
+pub(super) fn is_container_type(scope: &NameScope, name: &str) -> bool {
     let base = name.split_once('[').map_or(name, |(base, _)| base);
-    !base.starts_with("__") && super::bareword::names_type(base)
+    !base.starts_with("__") && super::bareword::names_type(scope, base)
 }
 
 /// The type node for an `is NAME` declaration trait. Bracketed applications
@@ -78,7 +79,7 @@ pub(super) fn type_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
 /// The `traits` items for a declaration's rendered custom traits, in source
 /// order.
 // Cost: O(t), t = custom traits of the declaration.
-pub(super) fn convert(
+pub(super) fn convert(scope: &NameScope, 
     custom_traits: &[(String, Option<Expr>)],
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut items = Vec::new();
@@ -89,7 +90,7 @@ pub(super) fn convert(
         let Some(arg) = arg else {
             // `is NAME`: a type when it names one at parse time, else a trait
             // name.
-            let field = if is_container_type(name) {
+            let field = if is_container_type(scope, name) {
                 node_field(Some("type"), type_node(name)?)
             } else {
                 node_field(

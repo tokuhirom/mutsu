@@ -46,6 +46,7 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
+use crate::scope::NameScope;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
@@ -1770,13 +1771,13 @@ pub(crate) fn parameter_param_def(
 }
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
-pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast(scope: &NameScope, source: &str) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let mut node = convert::statement_list(&stmts)?;
+    let mut node = convert::statement_list(scope, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }

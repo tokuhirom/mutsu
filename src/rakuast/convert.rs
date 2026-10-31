@@ -6,6 +6,7 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
+use crate::scope::NameScope;
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::nested_methods::unhoist;
@@ -99,7 +100,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
     convert_stmt_node(stmt)
 }
 
-fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+fn convert_stmt_node(scope: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
@@ -774,7 +775,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         header_parents.remove(at);
                     }
                     let node =
-                        super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                        super::routine_source::trait_node(scope, &also_parent(parent, parent_args))?;
                     also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
                         node,
                     ))));
@@ -865,7 +866,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                     header_parents.remove(at);
                 }
-                let node = super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                let node = super::routine_source::trait_node(scope, &also_parent(parent, parent_args))?;
                 also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
                     node,
                 ))));
@@ -2409,8 +2410,8 @@ pub(super) fn signature_bind_node(
     })
 }
 
-pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = convert_expr_at(expr)?;
+pub(super) fn convert_expr(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = convert_expr_at(scope, expr)?;
     // A term the parser placed (ADR-10723 Stage 2).
     if let Some(span) = super::expr_origins::of(expr) {
         origin::set_span(&mut node, span);
@@ -2421,7 +2422,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(node)
 }
 
-fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn convert_expr_at(scope: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
@@ -2516,7 +2517,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let Expr::BareWord(name) = &spelled.expr else {
                     return Err(unsupported("imported term spelling without a value lookup"));
                 };
-                Ok(super::term_name::imported(name))
+                Ok(super::term_name::imported(scope, name))
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
@@ -2719,7 +2720,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
             }
-            if let Some(coercion) = super::type_call::convert(name.as_str(), args)? {
+            if let Some(coercion) = super::type_call::convert(scope, name.as_str(), args)? {
                 return Ok(coercion);
             }
             if let Some(op) = nqp_op(name.as_str()) {
@@ -2833,7 +2834,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 .ok_or_else(|| unsupported("stash lookup without its trailing `::`"))?;
             let name = name_parts::stash_name(stem)
                 .ok_or_else(|| unsupported("stash lookup with an empty name segment"))?;
-            if stem.is_empty() || bareword::package_resolves(stem) {
+            if stem.is_empty() || bareword::package_resolves(scope, stem) {
                 Ok(RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::TermName,
@@ -2990,8 +2991,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         },
         // A bareword the setting or the unit's own declarations resolve; any
         // other one stays the boundary (the catch-all arm below).
-        Expr::BareWord(name) if bareword::convert(name).is_some() => {
-            let mut node = bareword::convert(name).expect("just checked");
+        Expr::BareWord(name) if bareword::convert(scope, name).is_some() => {
+            let mut node = bareword::convert(scope, name).expect("just checked");
             if matches!(
                 node.class,
                 RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
@@ -4046,11 +4047,11 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// The body keeps the enclosing unit's declared names: the unit-level scan
 /// already entered every block, and re-collecting here would *replace* them
 /// with the block's own, hiding `class C { }` from a closure `{ C.new }`.
-pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn blockoid(scope: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, statement_list_inner(body)?)],
+        fields: vec![node_field(None, statement_list_inner(scope, body)?)],
     })
 }
 
