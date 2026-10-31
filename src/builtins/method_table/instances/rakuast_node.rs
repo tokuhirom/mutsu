@@ -291,6 +291,19 @@ fn method_value(
         return None;
     };
     let (owner, name) = crate::rakuast::declared_method(node)?;
+    // A private method is in its class's private method table.
+    if crate::rakuast::node_accessor(node, "private").is_some_and(|v| v.truthy()) {
+        let class = Value::package(Symbol::intern(&owner));
+        let how = match interp.call_method_with_values(class.clone(), "HOW", Vec::new()) {
+            Ok(how) => how,
+            Err(err) => return Some(Err(err)),
+        };
+        let table = match interp.call_method_with_values(how, "private_method_table", vec![class]) {
+            Ok(table) => table,
+            Err(err) => return Some(Err(err)),
+        };
+        return Some(interp.call_method_with_values(table, "AT-KEY", vec![Value::str(name)]));
+    }
     Some(interp.call_method_with_values(
         Value::package(Symbol::intern(&owner)),
         "^find_method",
@@ -314,6 +327,11 @@ fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A package declaration is its type object.
+        K::Class | K::Role | K::Grammar | K::Module | K::Package => {
+            let name = crate::rakuast::declared_package_qualified_name(node)?;
+            return Some(Ok(Value::package(Symbol::intern(&name))));
+        }
         // A subset's type: declared now when it is an anonymous one.
         K::TypeSubset => {
             if let Some((statement, name)) = crate::rakuast::anonymous_subset_declaration(node) {

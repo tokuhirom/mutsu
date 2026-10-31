@@ -11,4 +11,12 @@ For `static` 0.0.1 (#15610), measured against rakudo 2026.09:
   type and parameterization (`Array[Int]`, `Hash[Str:D]`, `Array[Int]` as a
   parameter type).
 
-`static` 0.0.1 `t/09-signature-coverage` goes from 26 to 5 `not ok` (rakudo: 0).
+`static` 0.0.1 `t/09-signature-coverage` goes from 26 to 0 `not ok` (rakudo: 0).
+
+Also for `static`: a class, role, grammar, module or package declaration answers
+`compile-time-value` (its type object, so `self` has a known type inside its
+methods); a private method's value is the entry of the class's private method
+table -- one stable object, its own sole candidate, no longer mixed up with a
+public method of the same name; and `Array[T]` with a `::T` capture among its
+arguments reports `^archetypes.generic`. `t/09-signature-coverage` is now 0
+`not ok`.

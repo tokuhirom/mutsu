@@ -130,6 +130,8 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let named_package = package.is_some();
     if let Some(name) = package {
         scopes.packages.push(name);
+        // A package remembers its qualified name, for `compile-time-value`.
+        node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
     // `*` arguments are numbered within one thunk: a statement, a parameter's
     // `where`, or a side of a short-circuit operator.
@@ -822,4 +824,15 @@ pub(super) fn multi_candidate_index(node: &RakuAstNode) -> Option<usize> {
         .strip_prefix("multi:")?
         .parse()
         .ok()
+}
+
+/// The qualified name of a package declaration of the unit tree `$*CU` answers.
+// Cost: O(1).
+pub(super) fn package_qualified_name(node: &RakuAstNode) -> Option<String> {
+    matches!(
+        node.class,
+        C::Class | C::Role | C::Grammar | C::Module | C::Package
+    )
+    .then(|| node.origin.2.as_ref().map(|n| n.to_string_value()))
+    .flatten()
 }

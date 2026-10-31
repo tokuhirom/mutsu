@@ -1500,6 +1500,12 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// The qualified name of a package declaration of the unit tree `$*CU` answers.
+// Cost: O(1).
+pub(crate) fn declared_package_qualified_name(node: &RakuAstNode) -> Option<String> {
+    resolve::package_qualified_name(node)
+}
+
 /// Which candidate of its name's dispatcher a `multi sub` of the unit tree `$*CU`
 /// answers declares.
 // Cost: O(1).
@@ -3829,6 +3835,11 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::Block
             | RakuAstClass::PointyBlock
             | RakuAstClass::TypeSubset
+            | RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
     ) {
         names.push("compile-time-value");
     }

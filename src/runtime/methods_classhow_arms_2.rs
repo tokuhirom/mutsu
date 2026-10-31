@@ -327,7 +327,9 @@ impl Interpreter {
             let is_generic = !is_role
                 && !is_subset
                 && !self.registry().classes.contains_key(base_name)
-                && crate::type_captures::is_capture(base_name);
+                && crate::type_captures::is_capture(base_name)
+                || (invocant_name.len() > base_name.len()
+                    && crate::type_captures::mentions_capture(&invocant_name));
             attrs.insert("generic".to_string(), Value::truth(is_generic));
             attrs.insert("coercive".to_string(), Value::truth(is_coercive));
             attrs.insert("definite".to_string(), Value::truth(is_definite));
