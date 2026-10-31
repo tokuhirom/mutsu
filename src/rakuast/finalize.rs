@@ -351,7 +351,7 @@ mod tests {
         format!("{stmts:?}")
     }
 
-    fn finalized(names: &NameScope, source: &str) -> String {
+    fn finalized(names: &crate::scope::NameScope, source: &str) -> String {
         let (spelled, _) = crate::parse_dispatch::parse_source_spelled(source).unwrap();
         shape(crate::rakuast::frontend::round_trip(names, &spelled).unwrap())
     }
