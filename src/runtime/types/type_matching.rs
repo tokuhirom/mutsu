@@ -897,12 +897,26 @@ impl Interpreter {
     ) -> bool {
         // A parameterized role's named arguments are no part of the type
         // (#15504).
-        let constraint = &*crate::value::constraint_without_named_args(constraint);
+        //
+        // A pun class of a role with named parameters is registered under the
+        // spelling that carries them (`R\0default[Any,:c(5)]`, the `::?CLASS`
+        // of its methods), so that very spelling is the type, not a
+        // parameterization to be trimmed.
+        let constraint = if self.registry().classes.contains_key(
+            crate::runtime::types::strip_type_smiley(constraint).0,
+        ) {
+            constraint
+        } else {
+            &*crate::value::constraint_without_named_args(constraint)
+        };
         // A type object spelled the same way (an attribute's `NT[Int,
         // :coerce(&cf)]` default) is named without them too.
         if let ValueView::Package(name) = value.view() {
             let spelled = name.resolve();
-            if let std::borrow::Cow::Owned(plain) = crate::value::constraint_without_named_args(&spelled) {
+            if !self.registry().classes.contains_key(&*spelled)
+                && let std::borrow::Cow::Owned(plain) =
+                    crate::value::constraint_without_named_args(&spelled)
+            {
                 let plain = Value::package(crate::symbol::Symbol::intern(&plain));
                 return self.type_matches_value_unviewed_why(constraint, &plain, why);
             }
