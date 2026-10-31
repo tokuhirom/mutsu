@@ -58,6 +58,13 @@ pub(crate) fn without_pending_prefix<T>(f: impl FnOnce() -> T) -> T {
     with_pending_prefix_level(None, f)
 }
 
+/// `race(5)` where the program declares its own `sub race`: a call of that routine,
+/// not the statement prefix (`lazy`, `hyper`, `race` and `eager` are not core routines).
+// Cost: O(1) registry lookup.
+fn user_sub_called_with_parens(input: &str, name: &str) -> bool {
+    input[name.len()..].starts_with('(') && crate::parser::stmt::simple::is_user_declared_sub(name)
+}
+
 /// Parse the operand of a `lazy`/`eager`/`hyper` statement prefix: like
 /// `return`'s `parse_comma_or_expr`, these bind looser than the comma
 /// operator, so `lazy 3,4,5` must wrap the *entire* list `(3,4,5)` rather
@@ -465,6 +472,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if !names_a_pair_key
         && input.starts_with("lazy")
         && !is_ident_char(input.as_bytes().get(4).copied())
+        && !user_sub_called_with_parens(input, "lazy")
     {
         let r = &input[4..];
         let (r, _) = ws(r)?;
@@ -511,6 +519,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if !names_a_pair_key
         && input.starts_with("hyper")
         && !is_ident_char(input.as_bytes().get(5).copied())
+        && !user_sub_called_with_parens(input, "hyper")
     {
         let r = &input[5..];
         let (r, _) = ws(r)?;
@@ -535,6 +544,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if !names_a_pair_key
         && input.starts_with("race")
         && !is_ident_char(input.as_bytes().get(4).copied())
+        && !user_sub_called_with_parens(input, "race")
     {
         let r = &input[4..];
         let (r, _) = ws(r)?;
@@ -558,6 +568,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if !names_a_pair_key
         && input.starts_with("eager")
         && !is_ident_char(input.as_bytes().get(5).copied())
+        && !user_sub_called_with_parens(input, "eager")
     {
         let r = &input[5..];
         let (r, _) = ws(r)?;
