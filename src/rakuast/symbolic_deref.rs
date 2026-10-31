@@ -21,14 +21,15 @@ use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
-pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(expr)?)],
+        fields: vec![node_field(None, convert_expr(names, expr)?)],
     };
     Ok(name_parts::name_from_parts(vec![
         name_parts::leading_empty(),
@@ -38,12 +39,16 @@ pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 
 /// `$::($n)` as `Var::Package`.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn convert(sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    sigil: &str,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarPackage,
         fields: vec![
-            node_field(Some("name"), indirect_name(expr)?),
+            node_field(Some("name"), indirect_name(names, expr)?),
             leaf_field(Some("sigil"), Value::str(sigil.to_string())),
         ],
     })
@@ -52,6 +57,7 @@ pub(super) fn convert(sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
 /// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
 // Cost: O(n), n = nodes of the package expression plus the static name.
 pub(super) fn convert_indirect_code(
+    names: &NameScope,
     package: &Expr,
     name: &str,
     caller: bool,
@@ -65,7 +71,7 @@ pub(super) fn convert_indirect_code(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(package)?)],
+        fields: vec![node_field(None, convert_expr(names, package)?)],
     })));
     parts.push(name_parts::simple_part(name));
     Ok(RakuAstNode {
@@ -80,7 +86,10 @@ pub(super) fn convert_indirect_code(
 
 /// Recognize the two measured dynamic code-variable name shapes.
 // Cost: O(n), n = name parts.
-pub(super) fn lower_indirect_code(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower_indirect_code(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     if node.class != RakuAstClass::VarPackage
         || super::lower::leaf_str(node, "sigil").ok()?.as_str() != "&"
     {
@@ -116,11 +125,13 @@ pub(super) fn lower_indirect_code(node: &RakuAstNode) -> Option<Result<Expr, Run
         return None;
     };
     let name = name_parts::part_identifier(last)?;
-    Some(lower_expr(package).map(|package| Expr::IndirectCodeLookup {
-        package: Box::new(package),
-        name,
-        caller,
-    }))
+    Some(
+        lower_expr(names, package).map(|package| Expr::IndirectCodeLookup {
+            package: Box::new(package),
+            name,
+            caller,
+        }),
+    )
 }
 
 /// The name expression of a plain `::(EXPR)` name (no static tail).
@@ -138,7 +149,7 @@ fn plain_indirect(name: &RakuAstNode) -> Option<&RakuAstNode> {
 /// A `Var::Package` over a dynamic name as the parser's [`Expr::SymbolicDeref`],
 /// or `None` when `node` is not one.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if node.class != RakuAstClass::VarPackage {
         return None;
     }
@@ -147,7 +158,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if !matches!(sigil.as_str(), "$" | "@" | "%" | "&") {
         return None;
     }
-    Some(lower_expr(expr).map(|expr| Expr::SymbolicDeref {
+    Some(lower_expr(names, expr).map(|expr| Expr::SymbolicDeref {
         sigil,
         expr: Box::new(expr),
     }))
@@ -156,12 +167,15 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
 /// `ApplyInfix(Var::Package(dynamic) | Term::Name(dynamic), Assignment, v)` as
 /// the parser's assignment node, or `None` for any other assignment.
 // Cost: O(n), n = nodes of the name expression and the value.
-pub(super) fn lower_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
-    let value = || lower_expr(named_child(node, "right")?).map(Box::new);
+    let value = || lower_expr(names, named_child(node, "right")?).map(Box::new);
     match left.class {
         RakuAstClass::VarPackage => {
-            let Some(Ok(Expr::SymbolicDeref { sigil, expr })) = lower(left) else {
+            let Some(Ok(Expr::SymbolicDeref { sigil, expr })) = lower(names, left) else {
                 return Ok(None);
             };
             Ok(Some(Expr::SymbolicDerefAssign {
@@ -181,7 +195,7 @@ pub(super) fn lower_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeEr
                 return Ok(None);
             };
             Ok(Some(Expr::IndirectTypeLookupAssign {
-                expr: Box::new(lower_expr(expr)?),
+                expr: Box::new(lower_expr(names, expr)?),
                 value: value()?,
             }))
         }
@@ -213,6 +227,7 @@ fn is_lexical_pseudo_package(segment: &str) -> bool {
 /// `Name::Part::Expression`.
 // Cost: O(n), n = nodes of the key, plus the package's segments.
 pub(super) fn convert_package_indirect(
+    names: &NameScope,
     package: &str,
     key: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -222,7 +237,7 @@ pub(super) fn convert_package_indirect(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(key)?)],
+        fields: vec![node_field(None, convert_expr(names, key)?)],
     })));
     let name = name_parts::name_from_parts(parts);
     let lexical = name_parts::identifier_segments(package)
@@ -260,9 +275,12 @@ pub(super) fn package_indirect(node: &RakuAstNode) -> Option<(String, &RakuAstNo
 /// [`package_indirect`] as the parser's lookup: the symbolic dereference of
 /// `"PKG::" ~ EXPR`.
 // Cost: O(n), n = nodes of the key.
-pub(super) fn lower_package_indirect(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower_package_indirect(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     let (package, key) = package_indirect(node)?;
-    Some(lower_expr(key).map(|key| Expr::SymbolicDeref {
+    Some(lower_expr(names, key).map(|key| Expr::SymbolicDeref {
         sigil: String::new(),
         expr: Box::new(Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(format!("{package}::")))),
@@ -279,6 +297,7 @@ pub(super) fn lower_package_indirect(node: &RakuAstNode) -> Option<Result<Expr, 
 /// its text as the name, anything else the parser's placeholder.
 // Cost: O(n), n = nodes of the name expression.
 pub(super) fn lower_declarator_name(
+    names: &NameScope,
     name: &RakuAstNode,
 ) -> Result<Option<(String, Expr)>, RuntimeError> {
     let Some(NameShape::Indirect {
@@ -292,7 +311,7 @@ pub(super) fn lower_declarator_name(
     if !tail.is_empty() {
         return Ok(None);
     }
-    let lowered = lower_expr(expr)?;
+    let lowered = lower_expr(names, expr)?;
     let text = match &lowered {
         Expr::Literal(v) => match v.view() {
             crate::value::ValueView::Str(s) => Some(s.to_string()),
@@ -311,11 +330,12 @@ pub(super) fn lower_declarator_name(
 /// had a computed name.
 // Cost: O(n), n = nodes of the name expression.
 pub(super) fn replace_declarator_name(
+    names: &NameScope,
     node: &mut RakuAstNode,
     name_expr: Option<&Expr>,
 ) -> Result<(), RuntimeError> {
     if let Some(expr) = name_expr {
-        let field = node_field(Some("name"), indirect_name(expr)?);
+        let field = node_field(Some("name"), indirect_name(names, expr)?);
         match node.fields.iter_mut().find(|f| f.name == Some("name")) {
             Some(slot) => *slot = field,
             None => node.fields.insert(0, field),

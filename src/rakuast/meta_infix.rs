@@ -22,6 +22,7 @@ use super::lower::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Whether the base operator `op` is list-associative, which makes a reversed
@@ -126,6 +127,7 @@ fn assign_base(op: &str) -> Option<&str> {
 /// `@a X+= @b` -> `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross(Infix("+"))), right)`.
 // Cost: O(n), n = nodes of the operands.
 fn convert_assign(
+    names: &NameScope,
     meta: &str,
     base: &str,
     left: &Expr,
@@ -150,9 +152,9 @@ fn convert_assign(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("left"), convert_expr(names, left)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(right)?),
+            node_field(Some("right"), convert_expr(names, right)?),
         ],
     })
 }
@@ -160,6 +162,7 @@ fn convert_assign(
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
 pub(super) fn convert(
+    names: &NameScope,
     meta: &str,
     op: &str,
     left: &Expr,
@@ -170,7 +173,7 @@ pub(super) fn convert(
         return Err(unsupported_expr(&format!("{whole:?}")));
     };
     if let Some(base) = assign_base(op) {
-        return convert_assign(meta, base, left, right, whole);
+        return convert_assign(names, meta, base, left, right, whole);
     }
     let infix = if op.is_empty() {
         // The bare `Z` / `X` operator.
@@ -191,9 +194,9 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(left)?),
+                node_field(Some("left"), convert_expr(names, left)?),
                 node_field(Some("infix"), infix),
-                node_field(Some("right"), convert_expr(right)?),
+                node_field(Some("right"), convert_expr(names, right)?),
             ],
         });
     }
@@ -201,7 +204,7 @@ pub(super) fn convert(
     operands.push(right);
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(names, operand)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -220,6 +223,7 @@ pub(super) fn convert(
 /// bracket pairs. `depth` is the number of pairs inside `MetaInfix::Assign`.
 // Cost: O(n + d), n = operand nodes, d = bracket depth (bounded at 128).
 pub(super) fn convert_bracketed_assignment(
+    names: &NameScope,
     expr: &Expr,
     depth: usize,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -279,9 +283,9 @@ pub(super) fn convert_bracketed_assignment(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("left"), convert_expr(names, target)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(rhs)?),
+            node_field(Some("right"), convert_expr(names, rhs)?),
         ],
     })
 }
@@ -340,6 +344,7 @@ pub(super) fn eq_meta_assignment(
 /// parser's one lowering of the compound-assignment family.
 // Cost: O(n), n = nodes of the operands.
 fn lower_eq_meta_assignment(
+    names: &NameScope,
     node: &RakuAstNode,
     kind: crate::ast::parsed::BracketedMeta,
     depth: u8,
@@ -351,10 +356,10 @@ fn lower_eq_meta_assignment(
     let target = rakuast_node_of(&operands[0]).ok_or_else(|| unsupported(node))?;
     let source = rakuast_node_of(&operands[1]).ok_or_else(|| unsupported(node))?;
     super::compound::lower::lower_compound_expression(crate::ast::parsed::CompoundAssign {
-        target: lower_expr(target)?,
+        target: lower_expr(names, target)?,
         op: "=".to_string(),
         meta: crate::ast::parsed::CompoundMeta::BracketedMeta(kind, depth),
-        source: lower_expr(source)?,
+        source: lower_expr(names, source)?,
     })
     .map_err(super::compound::runtime_error)
 }
@@ -362,7 +367,7 @@ fn lower_eq_meta_assignment(
 /// A metaoperator application node as the parser's [`Expr::MetaOp`] chain, or
 /// `None` when `node` is not one.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     match node.class {
         RakuAstClass::ApplyListInfix | RakuAstClass::ApplyInfix => {}
         _ => return None,
@@ -371,23 +376,27 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if node.class == RakuAstClass::ApplyListInfix
         && let Some((kind, depth)) = eq_meta_assignment(infix)
     {
-        return Some(lower_eq_meta_assignment(node, kind, depth));
+        return Some(lower_eq_meta_assignment(names, node, kind, depth));
     }
     if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
-        return lower_assign(node, infix);
+        return lower_assign(names, node, infix);
     }
     let (meta, op) = match spelling(infix) {
         Ok(Some(found)) => found,
         Ok(None) => return None,
         Err(e) => return Some(Err(e)),
     };
-    Some(fold(node, meta, op))
+    Some(fold(names, node, meta, op))
 }
 
 /// `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross|Zip(Infix(OP))), right)`
 /// as the parser's `MetaOp` over `OP=`, or `None` for a plain `OP=`.
 // Cost: O(n), n = nodes of the operands.
-fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+fn lower_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+    assign: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
     let inner = super::lower::named_child_or_positional(assign).ok()?;
     let meta = meta_of(inner.class).filter(|m| *m != "R")?;
     Some((|| {
@@ -395,17 +404,22 @@ fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr,
         Ok(Expr::MetaOp {
             meta: meta.to_string(),
             op: format!("{base}="),
-            left: Box::new(lower_expr(named_child(node, "left")?)?),
-            right: Box::new(lower_expr(named_child(node, "right")?)?),
+            left: Box::new(lower_expr(names, named_child(node, "left")?)?),
+            right: Box::new(lower_expr(names, named_child(node, "right")?)?),
         })
     })())
 }
 
-fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError> {
+fn fold(
+    names: &NameScope,
+    node: &RakuAstNode,
+    meta: &str,
+    op: String,
+) -> Result<Expr, RuntimeError> {
     let operands = if node.class == RakuAstClass::ApplyInfix {
         vec![
-            lower_expr(named_child(node, "left")?)?,
-            lower_expr(named_child(node, "right")?)?,
+            lower_expr(names, named_child(node, "left")?)?,
+            lower_expr(names, named_child(node, "right")?)?,
         ]
     } else {
         let mut items = Vec::new();
@@ -413,7 +427,7 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
             let Some(child) = rakuast_node_of(v) else {
                 return Err(unsupported(node));
             };
-            items.push(lower_expr(child)?);
+            items.push(lower_expr(names, child)?);
         }
         items
     };

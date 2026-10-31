@@ -163,7 +163,12 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
     match step {
         Step::Built(cu) => Some(cu),
         Step::Build(source) => {
-            let cu = crate::rakuast::compile_time_compunit(&source, imported).ok()?;
+            let cu = crate::rakuast::compile_time_compunit(
+                &crate::scope::NameScope::default(),
+                &source,
+                imported,
+            )
+            .ok()?;
             UNITS.with(|units| {
                 let mut units = units.borrow_mut();
                 if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {

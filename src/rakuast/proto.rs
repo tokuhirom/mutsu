@@ -15,6 +15,7 @@ use super::lower::{
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
@@ -44,7 +45,10 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    proto: ProtoDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
     if proto.has_traits && crate::ast::routine_trait::get(proto.body).is_none() {
         return Err(unsupported("proto with traits"));
     }
@@ -56,6 +60,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     let onlystar = is_onlystar_body(proto.body);
     let body: &[Stmt] = if onlystar { &[] } else { proto.body };
     let mut node = routine_node(
+        names,
         class,
         &proto.name.resolve(),
         proto.param_defs,
@@ -76,7 +81,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     }
     // The traits are the ones the source wrote; `is export` is folded into
     // `is_export` / `export_tags`, which are not read back.
-    if !super::routine_source::apply(&mut node, proto.body)? && proto.is_export {
+    if !super::routine_source::apply(names, &mut node, proto.body)? && proto.is_export {
         return Err(unsupported(
             "proto with `is export` and no written-trait record",
         ));
@@ -102,7 +107,7 @@ pub(super) fn is_proto(node: &RakuAstNode) -> bool {
 
 /// A `proto` `Sub` / `Method` -> `Stmt::ProtoDecl`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => false,
         Some(_) => match super::lower::leaf_str(node, "scope")?.as_str() {
@@ -111,9 +116,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         },
     };
     let name = call_name_str(node)?;
-    let (params, param_defs) = signature_positional_params(node)?;
+    let (params, param_defs) = signature_positional_params(names, node)?;
     let mut is_traits = IsTraits::default();
-    let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
+    let (return_type, custom_traits) = routine_return_type(names, node, Some(&mut is_traits))?;
     // ProtoDecl has no rw/raw execution flags, matching the parser's proto
     // construction. Retain those annotations in the source record below;
     // candidate declarations determine the returned container contract.
@@ -121,9 +126,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
     } else {
-        lower_routine_stmts(named_child_or_positional(body_node)?)?
+        lower_routine_stmts(names, named_child_or_positional(body_node)?)?
     };
-    super::routine_source::retain(node, &mut body)?;
+    super::routine_source::retain(names, node, &mut body)?;
     Ok(Stmt::ProtoDecl {
         is_hidden_from_backtrace: is_traits.is_hidden_from_backtrace,
         is_hoisted_copy: false,

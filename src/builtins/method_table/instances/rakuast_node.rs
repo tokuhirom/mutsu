@@ -464,9 +464,11 @@ fn parameter_meta_object(
     if let Some(own) = routine_parameter(interp, node) {
         return Some(Ok(own));
     }
-    Some(crate::rakuast::parameter_param_def(node).map(|def| {
-        crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
-    }))
+    Some(
+        crate::rakuast::parameter_param_def(&crate::scope::NameScope::default(), node).map(|def| {
+            crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
+        }),
+    )
 }
 
 /// The `Parameter` the declared routine holds for the node's position.

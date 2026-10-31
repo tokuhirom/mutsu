@@ -11,6 +11,7 @@ use super::compound::op::{CompoundAssignOp, compound_assigned_value_expr};
 use super::lower::{lower_expr, lower_stmt, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
 /// Whether `node` is a compound assignment whose left side is a variable
@@ -28,14 +29,14 @@ pub(super) fn is_declaration_compound_assign(node: &RakuAstNode) -> bool {
 /// An [`is_declaration_compound_assign`] node as the parser's
 /// `ParsedStmt::DeclCompound`, lowered.
 // Cost: O(n), n = size of the declaration and the right-hand side.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let decl = lower_stmt(named_child(node, "left")?)?;
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let decl = lower_stmt(names, named_child(node, "left")?)?;
     let infix = named_child_or_positional(named_child(node, "infix")?)?;
     let op = match super::lower::positional_leaf(infix)?.view() {
         ValueView::Str(op) => op.to_string(),
         _ => return Err(unsupported(node)),
     };
-    let source = lower_expr(named_child(node, "right")?)?;
+    let source = lower_expr(names, named_child(node, "right")?)?;
     lower_parsed(decl, op, source)
 }
 

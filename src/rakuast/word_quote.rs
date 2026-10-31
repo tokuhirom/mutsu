@@ -16,20 +16,23 @@ use super::lower::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::parser::QuoteWordsPart;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for the interpolating `quotewords` quote written as `text`.
 // Cost: O(n), n = length of `text`.
 pub(super) fn convert(
+    names: &NameScope,
     val: bool,
     text: &str,
     delimiter: Option<char>,
     interpolates: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    convert_nested(val, text, delimiter, interpolates, 0)
+    convert_nested(names, val, text, delimiter, interpolates, 0)
 }
 
 fn convert_nested(
+    names: &NameScope,
     val: bool,
     text: &str,
     delimiter: Option<char>,
@@ -48,21 +51,22 @@ fn convert_nested(
         match part {
             QuoteWordsPart::Text(Expr::StringInterpolation(items)) => {
                 for item in items {
-                    segments.push(Value::rakuast(Box::new(interp_segment(item)?)));
+                    segments.push(Value::rakuast(Box::new(interp_segment(names, item)?)));
                 }
             }
             QuoteWordsPart::Text(expr) => {
-                segments.push(Value::rakuast(Box::new(interp_segment(expr)?)));
+                segments.push(Value::rakuast(Box::new(interp_segment(names, expr)?)));
             }
             QuoteWordsPart::Atom(expr) => {
                 segments.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::QuoteWordsAtom,
-                    fields: vec![node_field(None, convert_expr(expr)?)],
+                    fields: vec![node_field(None, convert_expr(names, expr)?)],
                 })));
             }
             QuoteWordsPart::Nested(inner) => {
                 segments.push(Value::rakuast(Box::new(convert_nested(
+                    names,
                     val,
                     inner,
                     delimiter,
@@ -112,14 +116,19 @@ pub(super) fn interpolating_plain_words(node: &RakuAstNode, segments: &[Value]) 
 /// spell: runs split at whitespace, a variable or block joins the word it
 /// touches, a `QuoteWordsAtom` is a word of its own.
 // Cost: O(s + n), s = segments, n = their text.
-pub(super) fn lower(node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+    val: bool,
+) -> Result<Expr, RuntimeError> {
     Ok(super::word_list::lower_quotewords(
         val,
-        lower_parts(node, val, 0)?,
+        lower_parts(names, node, val, 0)?,
     ))
 }
 
 fn lower_parts(
+    names: &NameScope,
     node: &RakuAstNode,
     val: bool,
     depth: usize,
@@ -164,19 +173,19 @@ fn lower_parts(
             }
             RakuAstClass::QuoteWordsAtom => {
                 flush(&mut words, &mut current);
-                words.push((true, lower_expr(named_child_or_positional(seg)?)?));
+                words.push((true, lower_expr(names, named_child_or_positional(seg)?)?));
             }
             RakuAstClass::QuotedString if is_nested_quotewords(seg, val) => {
                 flush(&mut words, &mut current);
-                words.extend(lower_parts(seg, val, depth + 1)?);
+                words.extend(lower_parts(names, seg, val, depth + 1)?);
             }
             // An interpolated block is evaluated, not a closure value.
             RakuAstClass::Block => {
                 current.push(Expr::DoStmt(Box::new(Stmt::Block(
-                    super::lower::lower_block(seg)?,
+                    super::lower::lower_block(names, seg)?,
                 ))));
             }
-            _ => current.push(lower_expr(seg)?),
+            _ => current.push(lower_expr(names, seg)?),
         }
     }
     flush(&mut words, &mut current);

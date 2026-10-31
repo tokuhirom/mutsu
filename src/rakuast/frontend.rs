@@ -17,6 +17,7 @@
 use std::sync::OnceLock;
 
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 /// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
@@ -47,7 +48,7 @@ pub(crate) fn cache_tag() -> &'static str {
 /// the lowering hands the compiler the same tree it would have had without
 /// them.
 pub(crate) fn round_trip_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(stmts).map_err(refusal)
+    round_trip_owned(&NameScope::default(), stmts).map_err(refusal)
 }
 
 /// A refusal of the round trip as the mode reports it. An error that already
@@ -66,19 +67,22 @@ fn refusal(err: RuntimeError) -> RuntimeError {
 
 /// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
 /// parser's tree with.
-pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(stmts.to_vec())
+pub(crate) fn round_trip(names: &NameScope, stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
+    round_trip_owned(names, stmts.to_vec())
 }
 
 /// [`round_trip`] for a unit the caller owns: the origins come off the tree
 /// in place, with no copy of it.
 // Cost: O(n), n = size of the unit.
-pub(crate) fn round_trip_owned(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(crate) fn round_trip_owned(
+    names: &NameScope,
+    stmts: Vec<Stmt>,
+) -> Result<Vec<Stmt>, RuntimeError> {
     let mut lowered = if convert_level() {
-        let node = super::convert::statement_list(&stmts)?;
-        super::lower::lower_converted(&node)?
+        let node = super::convert::statement_list(names, &stmts)?;
+        super::lower::lower_converted(names, &node)?
     } else {
-        super::finalize::finalize_unit(stmts)?
+        super::finalize::finalize_unit(names, stmts)?
     };
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
@@ -88,24 +92,10 @@ pub(crate) fn round_trip_owned(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeErr
 }
 
 /// [`round_trip_unit`] for an `EVAL` string, whose bare names may be declared
-/// by the scope that called it: `scope` holds those names and the operator
+/// by the scope that called it: `names` holds those names and the operator
 /// routines the calling scope makes visible.
-pub(crate) fn round_trip_eval(
-    stmts: &[Stmt],
-    scope: crate::scope::NameScope,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    with_scope(scope, || round_trip(stmts)).map_err(refusal)
-}
-
-/// Run `body` with `scope` installed as the names the calling scope declares
-/// (an `EVAL` string, a `Str.AST`, a lowered `EVAL($ast)`): rakudo resolves the
-/// bare names of those against the scope that runs them (`constant b = 1;
-/// q[b].AST` is a `Term::Name`), so the unit's own declarations cannot say what
-/// they are.
-// Cost: O(1) to install, plus `body`.
-pub(crate) fn with_scope<T>(scope: crate::scope::NameScope, body: impl FnOnce() -> T) -> T {
-    let _installed = super::bareword::install_scope(scope);
-    body()
+pub(crate) fn round_trip_eval(stmts: &[Stmt], names: NameScope) -> Result<Vec<Stmt>, RuntimeError> {
+    round_trip(&names, stmts).map_err(refusal)
 }
 
 /// The scope an `EVAL` string's calling scope makes: the names it declares,
@@ -157,10 +147,12 @@ mod tests {
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {
+        let names = &crate::scope::NameScope::default();
         let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
             crate::value::Value::regex("a".to_owned()),
         ))];
-        let error = round_trip(&stmts).expect_err("a regex value without source tree must refuse");
+        let error =
+            round_trip(names, &stmts).expect_err("a regex value without source tree must refuse");
         let reported = refusal(error);
         assert!(reported.message.contains("MUTSU_RAKUAST"));
         assert!(

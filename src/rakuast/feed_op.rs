@@ -14,6 +14,7 @@ use super::convert::{convert_expr, node_field, unsupported as unsupported_expr};
 use super::lower::{list_field, lower_expr, positional_leaf, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(1), apart from the parenthesization wrappers of the operand.
@@ -70,6 +71,7 @@ fn written_operands<'a>(source: &'a Expr, sink: &'a Expr, to_right: bool) -> Vec
 /// An [`Expr::Feed`] as its `ApplyListInfix` over a `Feed`.
 // Cost: O(n), n = nodes of the operands.
 pub(super) fn convert(
+    names: &NameScope,
     source: &Expr,
     sink: &Expr,
     append: bool,
@@ -91,7 +93,7 @@ pub(super) fn convert(
                 "feed sink must be a routine call or appendable variable",
             ));
         }
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(names, operand)?)));
     }
     let feed = RakuAstNode {
         origin: Default::default(),
@@ -117,7 +119,7 @@ pub(super) fn convert(
 /// A feed chain node as the parser's [`Expr::Feed`] nesting, or `None` when
 /// `node` is not one.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if node.class != RakuAstClass::ApplyListInfix {
         return None;
     }
@@ -125,10 +127,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if infix.class != RakuAstClass::Feed {
         return None;
     }
-    Some(fold(node, infix))
+    Some(fold(names, node, infix))
 }
 
-fn fold(node: &RakuAstNode, infix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+fn fold(names: &NameScope, node: &RakuAstNode, infix: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let leaf = positional_leaf(infix)?;
     let ValueView::Str(op) = leaf.view() else {
         return Err(unsupported(node));
@@ -143,7 +145,7 @@ fn fold(node: &RakuAstNode, infix: &RakuAstNode) -> Result<Expr, RuntimeError> {
         let Some(child) = rakuast_node_of(v) else {
             return Err(unsupported(node));
         };
-        operands.push(lower_expr(child)?);
+        operands.push(lower_expr(names, child)?);
     }
     if operands.len() < 2 {
         return Err(unsupported(node));

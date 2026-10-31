@@ -6,6 +6,7 @@
 use super::lower::{lower_expr, named_child_or_positional, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// A declaration node without its `Trait::Does` entries, and the role types
@@ -60,6 +61,7 @@ pub(super) fn split(
 /// with `roles`.
 // Cost: O(n), n = size of the declaration and the role.
 pub(super) fn lower_expansion(
+    names: &NameScope,
     node: &RakuAstNode,
     declaration: Stmt,
     roles: &[RakuAstNode],
@@ -108,7 +110,7 @@ pub(super) fn lower_expansion(
     } else {
         (expr, None)
     };
-    let role = lower_expr(role)?;
+    let role = lower_expr(names, role)?;
     let declared = Stmt::VarDecl {
         anonymous,
         name: name.clone(),

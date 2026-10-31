@@ -19,6 +19,7 @@ use super::convert::{
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The operand an expression node starts with: the left of an infix, the first
@@ -119,9 +120,13 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 
 /// A head and its loose tail as the one expression they were written as.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    head: &Stmt,
+    tail: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     (|| {
-        let converted = convert_expr(tail)?;
+        let converted = convert_expr(names, tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
             let (bottom, depth) = leftmost(&converted, true);
             // The tail must start with a re-read of the variable the head declares.
@@ -134,9 +139,9 @@ pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeEr
                 return Err(unsupported_statement());
             }
             let operand = if let Some(expr) = compound_assignment_expr(head) {
-                convert_expr(expr)?
+                convert_expr(names, expr)?
             } else {
-                let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
+                let statement = convert_stmt(names, head)?.ok_or_else(unsupported_statement)?;
                 super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
             };
             return Ok(replace_leftmost(&converted, &operand));
@@ -144,7 +149,7 @@ pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeEr
 
         let decl =
             crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
-        let declaration = super::signature_decl::convert(decl)?;
+        let declaration = super::signature_decl::convert(names, decl)?;
         replace_group_seed(&converted, &declaration).ok_or_else(unsupported_statement)
     })()
 }
@@ -154,6 +159,7 @@ pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeEr
 /// operand is the declaration.
 // Cost: O(n), n = size of the statement.
 pub(super) fn convert_call_assign_list(
+    names: &NameScope,
     head: &Stmt,
     items: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -161,17 +167,17 @@ pub(super) fn convert_call_assign_list(
     let [first_item, rest @ ..] = items else {
         return Err(unsupported_statement());
     };
-    let first = convert_expr(first_item)?;
+    let first = convert_expr(names, first_item)?;
     if leftmost(&first, true).0 == &var_lexical(sigil, name) {
         // A postfix chain over the declared variable, not a list item.
         return Err(unsupported_statement());
     }
-    let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
+    let statement = convert_stmt(names, head)?.ok_or_else(unsupported_statement)?;
     let declaration = expression_of(&statement).ok_or_else(unsupported_statement)?;
     let mut operands = vec![Value::rakuast(Box::new(declaration))];
     operands.push(Value::rakuast(Box::new(first)));
     for item in rest {
-        operands.push(Value::rakuast(Box::new(convert_expr(item)?)));
+        operands.push(Value::rakuast(Box::new(convert_expr(names, item)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -279,7 +285,7 @@ fn unsupported_statement() -> RuntimeError {
 /// An expression node whose leading operand is a declaration or an assignment
 /// to a variable, as the parser's `SyntheticBlock([declaration, Expr(tail)])`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     let (bottom, depth) = leftmost(node, false);
     let is_declaration = bottom.class == RakuAstClass::VarDeclarationSimple;
     let is_compound_assignment = bottom.class == RakuAstClass::ApplyInfix
@@ -290,31 +296,31 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     }
     let head = if is_signature_declaration {
         // The declaration as written: the seed reads its variables.
-        match super::lower::lower_stmt_kept(bottom) {
+        match super::lower::lower_stmt_kept(names, bottom) {
             Ok(head) => head,
             Err(error) => return Some(Err(error)),
         }
     } else if is_declaration {
-        match lower_stmt(bottom) {
+        match lower_stmt(names, bottom) {
             Ok(head) => head,
             Err(error) => return Some(Err(error)),
         }
     } else {
-        match lower_expr(bottom) {
+        match lower_expr(names, bottom) {
             Ok(expr) => Stmt::Expr(expr),
             Err(error) => return Some(Err(error)),
         }
     };
     if is_signature_declaration {
         let seed = signature_seed(&head)?;
-        let seed_node = match convert_expr(&seed) {
+        let seed_node = match convert_expr(names, &seed) {
             Ok(node) => node,
             Err(error) => return Some(Err(error)),
         };
         let Some(tail_node) = replace_signature_operand(node, &seed_node) else {
             return Some(Err(unsupported_statement()));
         };
-        let tail = match lower_expr(&tail_node) {
+        let tail = match lower_expr(names, &tail_node) {
             Ok(tail) => tail,
             Err(error) => return Some(Err(error)),
         };
@@ -322,7 +328,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     }
     let (sigil, name) = declared_variable(&head)?;
     let seed = var_lexical(sigil, name);
-    let tail = match lower_expr(&replace_leftmost(node, &seed)) {
+    let tail = match lower_expr(names, &replace_leftmost(node, &seed)) {
         Ok(tail) => tail,
         Err(error) => return Some(Err(error)),
     };

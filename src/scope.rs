@@ -6,8 +6,11 @@
 //! unit's own `DECLARED_NAMES`). The entry points that are not a plain parse
 //! (string `EVAL`, `Str.AST`, `EVAL($ast)`) build one from the calling scope and
 //! hand it to the frontend; the frontend installs it for the duration of the
-//! conversion or lowering (`rakuast::frontend::with_scope`).
+//! conversion or lowering as an explicit parameter. Its block stack and the unit's
+//! own names use interior mutability, so one `&NameScope` is shared down the
+//! whole walk.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 /// What a declared name renders as when it is named later.
@@ -29,7 +32,12 @@ pub(crate) enum DeclaredKind {
 pub(crate) struct NameScope {
     /// The names the unit itself declares, filled by the frontend from the
     /// finished unit (ADR-15760 slice 1 replaces this with source order).
-    declared: HashMap<String, DeclaredKind>,
+    declared: RefCell<HashMap<String, DeclaredKind>>,
+    /// The declarations of the blocks being converted, innermost last. Each
+    /// holds only the names its own statement list declares: a lexical enum
+    /// variable shadows a class of the same name declared further out, which the
+    /// unit-wide names (one entry per name) cannot express.
+    blocks: RefCell<Vec<HashMap<String, DeclaredKind>>>,
     /// The names the calling scope of an `EVAL` string or a `Str.AST` declares:
     /// the unit being converted is only the string, so its own declarations
     /// cannot say what `aa` of `enum E <aa bb>; EVAL "aa"` is.
@@ -81,20 +89,42 @@ impl NameScope {
         self
     }
 
-    /// Replace the unit's own declared names.
-    pub(crate) fn set_declared(&mut self, declared: HashMap<String, DeclaredKind>) {
-        self.declared = declared;
+    /// Replace the unit's own declared names, returning the previous ones.
+    // Cost: O(1).
+    pub(crate) fn replace_declared(
+        &self,
+        declared: HashMap<String, DeclaredKind>,
+    ) -> HashMap<String, DeclaredKind> {
+        std::mem::replace(&mut *self.declared.borrow_mut(), declared)
     }
 
-    /// Take the unit's own declared names out, leaving none.
-    pub(crate) fn take_declared(&mut self) -> HashMap<String, DeclaredKind> {
-        std::mem::take(&mut self.declared)
+    /// Open a block that declares `own`; [`Self::pop_block`] closes it.
+    // Cost: O(1).
+    pub(crate) fn push_block(&self, own: HashMap<String, DeclaredKind>) {
+        self.blocks.borrow_mut().push(own);
+    }
+
+    /// Close the innermost block opened by [`Self::push_block`].
+    // Cost: O(1).
+    pub(crate) fn pop_block(&self) {
+        self.blocks.borrow_mut().pop();
+    }
+
+    /// What the innermost block that declares `name` says it is.
+    // Cost: O(k + d), k = length of `name`, d = block depth.
+    pub(crate) fn block_kind(&self, name: &str) -> Option<DeclaredKind> {
+        self.blocks
+            .borrow()
+            .iter()
+            .rev()
+            .find_map(|m| m.get(name).copied())
     }
 
     /// What the unit declares `name` as, then what the calling scope does.
     // Cost: O(k), k = length of `name`.
     pub(crate) fn kind(&self, name: &str) -> Option<DeclaredKind> {
         self.declared
+            .borrow()
             .get(name)
             .or_else(|| self.caller_names.get(name))
             .copied()
@@ -131,11 +161,11 @@ mod tests {
 
     #[test]
     fn the_unit_declares_before_the_caller() {
-        let mut scope =
+        let scope =
             NameScope::default().with_caller_names(vec!["N".to_string()], Vec::new(), |_| false);
-        scope.set_declared(HashMap::from([("N".to_string(), DeclaredKind::Term)]));
+        scope.replace_declared(HashMap::from([("N".to_string(), DeclaredKind::Term)]));
         assert_eq!(scope.kind("N"), Some(DeclaredKind::Term));
-        scope.take_declared();
+        scope.replace_declared(HashMap::new());
         assert_eq!(scope.kind("N"), Some(DeclaredKind::Type));
     }
 

@@ -33,6 +33,7 @@ use super::lower::{
 use super::meta_infix::is_list_assoc;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -108,6 +109,7 @@ fn is_adverb(expr: &Expr) -> bool {
 /// An [`Expr::InfixFunc`] as its `ApplyInfix` / `ApplyListInfix`.
 // Cost: O(n), n = nodes of the operands.
 pub(super) fn convert(
+    names: &NameScope,
     name: &str,
     left: &Expr,
     right: &[Expr],
@@ -141,14 +143,14 @@ pub(super) fn convert(
     };
     if right.len() == 1 && !is_list_assoc(name) {
         let mut fields = vec![
-            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("left"), convert_expr(names, left)?),
             node_field(Some("infix"), infix),
-            node_field(Some("right"), convert_expr(&right[0])?),
+            node_field(Some("right"), convert_expr(names, &right[0])?),
         ];
         if !adverbs.is_empty() {
             let mut colonpairs = Vec::with_capacity(adverbs.len());
             for adverb in adverbs {
-                colonpairs.push(Value::rakuast(Box::new(convert_expr(adverb)?)));
+                colonpairs.push(Value::rakuast(Box::new(convert_expr(names, adverb)?)));
             }
             fields.push(RakuAstField {
                 name: Some("colonpairs"),
@@ -184,7 +186,7 @@ pub(super) fn convert(
     operands.extend(spine);
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+        nodes.push(Value::rakuast(Box::new(convert_expr(names, operand)?)));
     }
     let mut node = RakuAstNode {
         origin: Default::default(),
@@ -198,7 +200,10 @@ pub(super) fn convert(
         ],
     };
     for adverb in adverbs {
-        add_colonpair(&mut node, Value::rakuast(Box::new(convert_expr(adverb)?)))?;
+        add_colonpair(
+            &mut node,
+            Value::rakuast(Box::new(convert_expr(names, adverb)?)),
+        )?;
     }
     Ok(node)
 }
@@ -298,16 +303,16 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
 /// Whether an enclosing scope, or the scope that runs the `EVAL`, declares
 /// the operator `name` (`infix:<name>`).
 // Cost: O(s), s = open scopes.
-fn is_declared(name: &str) -> bool {
+fn is_declared(names: &NameScope, name: &str) -> bool {
     let routine = format!("infix:<{name}>");
     SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
-        || super::bareword::caller_declares_operator(&routine)
+        || super::bareword::caller_declares_operator(names, &routine)
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`
 /// when `node` lowers as a plain `Expr::Binary` (or is not an infix at all).
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     match node.class {
         RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix => {}
         _ => return None,
@@ -332,24 +337,24 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         // The adverbs go to the outermost call, as the parser attaches them. A
         // core operator is called too: it declares no named parameter, so the
         // call is rejected at run time exactly as on the ordinary frontend.
-        return Some(fold(node, name).and_then(|mut call| {
+        return Some(fold(names, node, name).and_then(|mut call| {
             if let Expr::InfixFunc { right, .. } = &mut call {
                 for adverb in adverbs {
                     let child = rakuast_node_of(adverb).ok_or_else(|| unsupported(node))?;
-                    right.push(lower_expr(child)?);
+                    right.push(lower_expr(names, child)?);
                 }
             }
             Ok(call)
         }));
     }
-    let overloaded = is_declared(&name) && !keeps_native_dispatch(&name);
+    let overloaded = is_declared(names, &name) && !keeps_native_dispatch(&name);
     if !is_flip_flop(&name) && !overloaded {
         return None;
     }
-    Some(fold(node, name))
+    Some(fold(names, node, name))
 }
 
-fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
+fn fold(names: &NameScope, node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
     let call = |left: Expr, right: Vec<Expr>| Expr::InfixFunc {
         name: name.clone(),
         left: Box::new(left),
@@ -357,8 +362,8 @@ fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
         modifier: None,
     };
     if node.class == RakuAstClass::ApplyInfix {
-        let left = lower_expr(named_child(node, "left")?)?;
-        let right = lower_expr(named_child(node, "right")?)?;
+        let left = lower_expr(names, named_child(node, "left")?)?;
+        let right = lower_expr(names, named_child(node, "right")?)?;
         return Ok(call(left, vec![right]));
     }
     let mut operands = Vec::new();
@@ -366,7 +371,7 @@ fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
         let Some(child) = rakuast_node_of(v) else {
             return Err(unsupported(node));
         };
-        operands.push(lower_expr(child)?);
+        operands.push(lower_expr(names, child)?);
     }
     let mut items = operands.into_iter();
     let first = items.next().ok_or_else(|| unsupported(node))?;

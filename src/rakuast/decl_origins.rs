@@ -13,6 +13,7 @@
 use super::infix_origins::{byte_range, child, with_child};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::source_comments::trivia_len;
 use crate::value::{Value, ValueView};
 
@@ -22,7 +23,7 @@ const SCOPES: [&str; 6] = ["my", "our", "has", "HAS", "state", "anon"];
 /// Place the type and the traits of `node`, a `VarDeclaration::Simple` with
 /// a range.
 // Cost: O(n + t), n = length of the declaration's source, t = its traits.
-pub(super) fn derive(node: &mut RakuAstNode) {
+pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -42,7 +43,7 @@ pub(super) fn derive(node: &mut RakuAstNode) {
     if let Some(at) = parts.type_at {
         with_child(node, "type", |ty| type_origin(ty, at));
     }
-    traits(node, &parts.traits);
+    traits(names, node, &parts.traits);
 }
 
 /// What the text of a declaration says about where its parts are.
@@ -205,7 +206,7 @@ fn child_name(ty: &RakuAstNode) -> Option<String> {
 /// Give `node`'s `Trait::Is` nodes the clauses in `at`, when there is one
 /// clause per trait and each names its trait.
 // Cost: O(t), t = traits.
-fn traits(node: &mut RakuAstNode, at: &[TraitAt]) {
+fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("traits")) else {
         return;
     };
@@ -246,7 +247,7 @@ fn traits(node: &mut RakuAstNode, at: &[TraitAt]) {
             with_child(&mut trait_node, "argument", |argument| {
                 if argument.class == RakuAstClass::CircumfixParentheses {
                     super::origin::set_span(argument, SrcSpan::new(from, to));
-                    super::infix_origins::derive(argument);
+                    super::infix_origins::derive(names, argument);
                 }
             });
         }

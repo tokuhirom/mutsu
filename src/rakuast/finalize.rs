@@ -11,6 +11,7 @@
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
 //! nodes themselves (`convert`, `lower`).
 
+use crate::scope::NameScope;
 use std::cell::Cell;
 
 use crate::ast::parsed::{Assign, ParsedExpr, ParsedStmt};
@@ -52,17 +53,21 @@ impl Drop for Executing {
 /// Finalize the spelled compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn finalize_unit(
+    names: &NameScope,
+    mut stmts: Vec<Stmt>,
+) -> Result<Vec<Stmt>, RuntimeError> {
     let _executing = Executing::enter();
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    let _declared = super::bareword::DeclaredNames::collect(&stmts);
+    let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan_stmts(&stmts);
     super::infix_func::reset();
     let _operators = super::infix_func::enter_scope();
     let _keywords = super::shadowed_terms::enter_scope();
     let mut finalize = Finalize {
+        names,
         failed: None,
         line: None,
         top: true,
@@ -90,7 +95,8 @@ fn declares_routine(stmt: &Stmt) -> bool {
 
 /// Lowers every typed node and spelling of a tree where it stands, innermost
 /// first.
-struct Finalize {
+struct Finalize<'s> {
+    names: &'s NameScope,
     failed: Option<RuntimeError>,
     /// The line of the last `SetLine` of the list being finalized.
     line: Option<i64>,
@@ -98,7 +104,7 @@ struct Finalize {
     top: bool,
 }
 
-impl Finalize {
+impl Finalize<'_> {
     /// The operands of a compound assignment lowered as the conversion reads
     /// them: `* *= 2` curries to `{ $_ *= 2 }`, so a priming argument target is
     /// the bare `*`, and a conditional target is restored.
@@ -128,12 +134,13 @@ impl Finalize {
     /// A statement the parser's own tree cannot stand for, converted and
     /// lowered on its own.
     fn convert_statement(&mut self, stmt: &mut Stmt) {
+        let names = self.names;
         let line = self.line;
-        let converted = super::convert::convert_stmt(stmt).and_then(|node| match node {
+        let converted = super::convert::convert_stmt(names, stmt).and_then(|node| match node {
             Some(node) => {
                 super::infix_func::note_declaration(&node);
                 super::shadowed_terms::note_keyword_declaration(&node);
-                super::origin::with_line(line, || super::lower::lower_stmt(&node)).map(Some)
+                super::origin::with_line(line, || super::lower::lower_stmt(names, &node)).map(Some)
             }
             None => Ok(None),
         });
@@ -146,7 +153,7 @@ impl Finalize {
     }
 }
 
-impl VisitMut for Finalize {
+impl VisitMut for Finalize<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         body.retain(|s| match s {
             // A `;` that ends no statement runs nothing and is no block's value.
@@ -157,7 +164,7 @@ impl VisitMut for Finalize {
         let line = self.line.take();
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(body);
+        let _scope = super::bareword::BlockScope::enter(self.names, body);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in
@@ -175,6 +182,7 @@ impl VisitMut for Finalize {
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        let names = self.names;
         // An expression the parser's tree cannot stand for (a bareword to
         // classify, a regex with code, ...) is converted and lowered on its own.
         let mut inner = &*expr;
@@ -182,8 +190,8 @@ impl VisitMut for Finalize {
             inner = &spelled.expr;
         }
         if !carried::expr_carried(inner) {
-            match super::convert::convert_expr(expr)
-                .and_then(|node| super::lower::lower_expr(&node))
+            match super::convert::convert_expr(names, expr)
+                .and_then(|node| super::lower::lower_expr(names, &node))
             {
                 Ok(lowered) => *expr = lowered,
                 Err(err) => self.fail(err),
@@ -311,7 +319,7 @@ impl VisitMut for Finalize {
     }
 }
 
-impl Finalize {
+impl Finalize<'_> {
     /// The statements of a list in order, each registered as a routine of the
     /// scope when `register` is set.
     fn visit_listed_all(&mut self, body: &mut [Stmt], register: bool) {
@@ -348,9 +356,9 @@ mod tests {
         format!("{stmts:?}")
     }
 
-    fn finalized(source: &str) -> String {
+    fn finalized(names: &crate::scope::NameScope, source: &str) -> String {
         let (spelled, _) = crate::parse_dispatch::parse_source_spelled(source).unwrap();
-        shape(crate::rakuast::frontend::round_trip(&spelled).unwrap())
+        shape(crate::rakuast::frontend::round_trip(names, &spelled).unwrap())
     }
 
     fn ordinary(source: &str) -> String {
@@ -360,6 +368,7 @@ mod tests {
     /// A unit finalizes to the tree an ordinary parse builds.
     #[test]
     fn finalization_is_the_ordinary_tree() {
+        let names = &crate::scope::NameScope::default();
         for source in [
             "say 1 + 2;",
             "my $x = 5; say $x * 2;",
@@ -370,15 +379,16 @@ mod tests {
             "my %h = a => 1; say %h<a>;",
             "my $s = 'abc'; say \"v: $s\";",
         ] {
-            assert_eq!(finalized(source), ordinary(source), "{source}");
+            assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }
     }
 
     /// A regex with code is converted where it stands, not carried.
     #[test]
     fn a_regex_with_code_is_converted_where_it_stands() {
+        let names = &crate::scope::NameScope::default();
         let (spelled, _) =
             crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
-        let _ = crate::rakuast::frontend::round_trip(&spelled).expect("it lowers");
+        let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");
     }
 }

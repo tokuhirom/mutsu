@@ -12,6 +12,7 @@
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn named(name: &'static str, value: Value) -> RakuAstField {
@@ -38,18 +39,21 @@ fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
 
 /// The `Assertion::CharClass` node for a tree assertion.
 // Cost: O(n), n = total number of entries.
-pub(super) fn convert(elements: &[CharClassElement]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    elements: &[CharClassElement],
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::RegexAssertionCharClass,
         fields: elements
             .iter()
-            .map(|element| convert_element(element).map(positional))
+            .map(|element| convert_element(names, element).map(positional))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn convert_element(element: &CharClassElement) -> Result<Value, RuntimeError> {
+fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Value, RuntimeError> {
     Ok(match element {
         CharClassElement::Enumeration { negated, elements } => {
             let mut fields = Vec::new();
@@ -85,7 +89,7 @@ fn convert_element(element: &CharClassElement) -> Result<Value, RuntimeError> {
             }
             fields.push(named("property", Value::str(name.clone())));
             if let Some(predicate) = predicate {
-                fields.push(named("predicate", convert_predicate(predicate)?));
+                fields.push(named("predicate", convert_predicate(names, predicate)?));
             }
             node(RakuAstClass::RegexCharClassElementProperty, fields)
         }
@@ -94,7 +98,10 @@ fn convert_element(element: &CharClassElement) -> Result<Value, RuntimeError> {
 
 /// `<Latin>` as a words `QuotedString`, `(1)` as a parenthesised expression.
 // Cost: O(|predicate|).
-fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeError> {
+fn convert_predicate(
+    names: &NameScope,
+    predicate: &PropertyPredicate,
+) -> Result<Value, RuntimeError> {
     match predicate {
         PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::convert::word_quote(
             text.trim(),
@@ -102,7 +109,7 @@ fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeErro
         PropertyPredicate::Args(text) => {
             let expr = crate::parser::parse_adverb_argument(text)
                 .ok_or_else(|| super::convert::unsupported("property predicate"))?;
-            let value = super::convert::convert_expr(&expr)?;
+            let value = super::convert::convert_expr(names, &expr)?;
             if crate::regex_tree::expression_argument_source(&expr).is_none() {
                 return Err(super::convert::unsupported("property predicate"));
             }
@@ -161,13 +168,13 @@ fn codepoint(value: Option<&Value>) -> Option<char> {
 /// The tree assertion for an `Assertion::CharClass` node, or `None` when an
 /// entry is malformed.
 // Cost: O(n), n = total number of entries.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Vec<CharClassElement>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Vec<CharClassElement>> {
     let elements: Vec<CharClassElement> = node
         .fields
         .iter()
         .map(|f| match &f.value {
             RakuAstFieldValue::Node(v) if f.name.is_none() => match v.view() {
-                ValueView::RakuAst(element) => lower_element(element),
+                ValueView::RakuAst(element) => lower_element(names, element),
                 _ => None,
             },
             _ => None,
@@ -176,7 +183,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Vec<CharClassElement>> {
     (!elements.is_empty()).then_some(elements)
 }
 
-fn lower_element(node: &RakuAstNode) -> Option<CharClassElement> {
+fn lower_element(names: &NameScope, node: &RakuAstNode) -> Option<CharClassElement> {
     match node.class {
         RakuAstClass::RegexCharClassElementEnumeration => {
             let entries = node.fields.iter().find_map(|f| match &f.value {
@@ -211,7 +218,7 @@ fn lower_element(node: &RakuAstNode) -> Option<CharClassElement> {
             let name = field(node, Some("property"))?.to_string_value();
             let predicate = match field(node, Some("predicate")) {
                 None => None,
-                Some(value) => Some(lower_predicate(value)?),
+                Some(value) => Some(lower_predicate(names, value)?),
             };
             let identifier = crate::regex_tree::is_class_name(&name);
             identifier.then(|| CharClassElement::Property {
@@ -369,7 +376,7 @@ pub(super) fn construct(
 
 /// A property's `predicate` node as the text written after its name.
 // Cost: O(|predicate|).
-fn lower_predicate(value: &Value) -> Option<PropertyPredicate> {
+fn lower_predicate(names: &NameScope, value: &Value) -> Option<PropertyPredicate> {
     let ValueView::RakuAst(node) = value.view() else {
         return None;
     };
@@ -405,7 +412,7 @@ fn lower_predicate(value: &Value) -> Option<PropertyPredicate> {
                 return None;
             };
             let expression = super::lower::named_child(statement, "expression").ok()?;
-            let expression = super::lower::lower_expr(expression).ok()?;
+            let expression = super::lower::lower_expr(names, expression).ok()?;
             Some(PropertyPredicate::Args(
                 crate::regex_tree::expression_argument_source(&expression)?,
             ))

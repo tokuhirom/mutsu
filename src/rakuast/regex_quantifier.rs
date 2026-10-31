@@ -8,6 +8,7 @@
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{QuantifierKind, RegexBacktrack, RegexNode, RegexQuantifier};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const BACKTRACKS: [(RegexBacktrack, RakuAstClass); 3] = [
@@ -27,6 +28,7 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 /// the already converted separator node.
 // Cost: O(1).
 pub(super) fn convert(
+    names: &NameScope,
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,
     separator: Option<RakuAstNode>,
@@ -35,7 +37,7 @@ pub(super) fn convert(
         field("atom", Value::rakuast(Box::new(atom))),
         field(
             "quantifier",
-            Value::rakuast(Box::new(quantifier_node(quantifier)?)),
+            Value::rakuast(Box::new(quantifier_node(names, quantifier)?)),
         ),
     ];
     if let Some(separator) = separator {
@@ -52,7 +54,10 @@ pub(super) fn convert(
 }
 
 // Cost: O(n), n = size of a block.
-fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeError> {
+fn quantifier_node(
+    names: &NameScope,
+    quantifier: &RegexQuantifier,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     let class = match &quantifier.kind {
         QuantifierKind::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
@@ -81,7 +86,7 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeE
         QuantifierKind::Block(code) => {
             fields.push(field(
                 "block",
-                Value::rakuast(Box::new(super::convert::block_node(&code.body)?)),
+                Value::rakuast(Box::new(super::convert::block_node(names, &code.body)?)),
             ));
             fields.push(super::regex_code::source_field(&code.code));
             RakuAstClass::RegexQuantifierBlockRange
@@ -144,7 +149,7 @@ pub(super) fn backtrack(value: &Value) -> Option<RegexBacktrack> {
 
 /// The tree quantifier for a quantifier node, without its separator.
 // Cost: O(1).
-pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
+pub(super) fn lower_quantifier(names: &NameScope, node: &RakuAstNode) -> Option<RegexQuantifier> {
     let kind = match node.class {
         RakuAstClass::RegexQuantifierZeroOrMore => QuantifierKind::ZeroOrMore,
         RakuAstClass::RegexQuantifierOneOrMore => QuantifierKind::OneOrMore,
@@ -172,7 +177,7 @@ pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
             };
             QuantifierKind::Block(Box::new(crate::regex_tree::RegexCode {
                 code: super::regex_code::source_of(node),
-                body: super::lower::lower_block(block).ok()?,
+                body: super::lower::lower_block(names, block).ok()?,
             }))
         }
         _ => return None,

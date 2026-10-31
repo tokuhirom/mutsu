@@ -15,6 +15,7 @@ use super::routine_traits::{IsTraits, export_argument, trait_is};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::package_header::Header;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn words_value(text: &str) -> RakuAstNode {
@@ -43,7 +44,11 @@ pub(super) fn words_value(text: &str) -> RakuAstNode {
 
 /// The header's fields added to the declaration expression `node`.
 // Cost: O(n), n = size of the adverbs and the node's field list.
-pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn apply(
+    names: &NameScope,
+    node: &RakuAstNode,
+    header: &Header,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut node = node.clone();
     if !header.adverbs.is_empty() {
         let field = node
@@ -69,7 +74,7 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
                 Expr::Literal(value) if let ValueView::Str(text) = value.view() => {
                     node_field(Some("value"), words_value(&text))
                 }
-                value => node_field(Some("value"), super::convert::convert_expr(value)?),
+                value => node_field(Some("value"), super::convert::convert_expr(names, value)?),
             };
             pairs.push(Value::rakuast(Box::new(RakuAstNode {
                 origin: Default::default(),
@@ -117,6 +122,7 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
 /// said.
 // Cost: O(n), n = size of the node's field list and traits.
 pub(super) fn strip(
+    names: &NameScope,
     node: &RakuAstNode,
     strip_export: bool,
 ) -> Result<(RakuAstNode, Header), RuntimeError> {
@@ -138,7 +144,9 @@ pub(super) fn strip(
             }
             let key = super::lower::leaf_str(pair, "key")?;
             let value = named_child(pair, "value")?;
-            header.adverbs.push((key, super::lower::lower_expr(value)?));
+            header
+                .adverbs
+                .push((key, super::lower::lower_expr(names, value)?));
         }
         let mut bare = name.clone();
         bare.fields.retain(|f| f.name != Some("colonpairs"));
@@ -161,7 +169,7 @@ pub(super) fn strip(
             let mut flags = IsTraits::default();
             if item_node.class == RakuAstClass::TraitIs
                 && item_node.fields.iter().any(|f| f.name == Some("name"))
-                && flags.read(item_node)?
+                && flags.read(names, item_node)?
                 && !flags.export_tags.is_empty()
             {
                 header.export_tags = Some(flags.export_tags);
@@ -183,12 +191,13 @@ pub(super) fn strip(
 /// the declaration, or, for a lexical class, the marker in its traits.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower_with_header(
+    names: &NameScope,
     node: &RakuAstNode,
-    lower: impl FnOnce(&RakuAstNode) -> Result<crate::ast::Stmt, RuntimeError>,
+    lower: impl FnOnce(&NameScope, &RakuAstNode) -> Result<crate::ast::Stmt, RuntimeError>,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
     use crate::ast::Stmt;
-    let (stripped, mut header) = strip(node, node.class != RakuAstClass::Role)?;
-    let mut stmt = lower(&stripped)?;
+    let (stripped, mut header) = strip(names, node, node.class != RakuAstClass::Role)?;
+    let mut stmt = lower(names, &stripped)?;
     if super::routine_source::has_supersede(node) {
         match &mut stmt {
             Stmt::ClassDecl { marks, .. } => marks.declarator = Some("class".to_string()),
@@ -197,7 +206,7 @@ pub(super) fn lower_with_header(
         }
     }
     if let Stmt::Package { body, .. } = &mut stmt {
-        super::routine_source::retain(node, body)?;
+        super::routine_source::retain(names, node, body)?;
     }
     let name = match &stmt {
         Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } | Stmt::RoleDecl { name, .. } => {
@@ -254,6 +263,7 @@ pub(super) fn my_scope_field(is_my: bool) -> Option<RakuAstField> {
 /// the lowering reads it: the `traits` of its `is export` taken off.
 // Cost: O(n), n = size of the node's field list and traits.
 pub(super) fn strip_scope_and_export(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(RakuAstNode, bool, bool, Vec<String>), RuntimeError> {
     let is_my = match node.fields.iter().find(|f| f.name == Some("scope")) {
@@ -264,7 +274,7 @@ pub(super) fn strip_scope_and_export(
             _ => return Err(super::lower::unsupported(node)),
         },
     };
-    let (stripped, header) = strip(node, true)?;
+    let (stripped, header) = strip(names, node, true)?;
     let (is_export, tags) = match header.export_tags {
         None => (false, Vec::new()),
         // The parser keeps a bare `is export` as an empty tag list.

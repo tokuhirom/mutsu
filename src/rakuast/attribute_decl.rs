@@ -10,9 +10,10 @@ use super::lower::{
 };
 use super::{RakuAstClass, RakuAstNode, attribute};
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
-pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Stmt::HasDecl {
         name,
         is_public,
@@ -91,6 +92,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         format!("{}{}", sigil, name.resolve())
     };
     let mut decl = var_declaration(
+        names,
         &full_name,
         explicit_default.map(|value| {
             if *default_is_bind {
@@ -100,8 +102,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
             }
         }),
         scope,
-        type_name,
-        twigil,
+        (type_name, twigil),
         if *default_is_bind {
             None
         } else {
@@ -111,12 +112,13 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
     )?;
     if let Some(key) = hash_key_type {
         if let Some(expression) = hash_key_type_expr {
-            super::keyed_hash::insert_subset_shape(&mut decl, expression, key)?;
+            super::keyed_hash::insert_subset_shape(names, &mut decl, expression, key)?;
         } else {
-            super::keyed_hash::insert_shape(&mut decl, key)?;
+            super::keyed_hash::insert_shape(names, &mut decl, key)?;
         }
     }
     attribute::add_traits(
+        names,
         &mut decl,
         &attribute::AttributeTraits {
             order: trait_order.clone(),
@@ -134,7 +136,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
     )?;
     if let Some(constraint) = where_constraint {
         decl.fields
-            .push(node_field(Some("where"), convert_expr(constraint)?));
+            .push(node_field(Some("where"), convert_expr(names, constraint)?));
     }
     Ok(Some(statement_expression(decl)))
 }
@@ -145,8 +147,8 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
 /// has the `our` scope and `my $.x` none. Its traits are read by
 /// `rakuast::attribute`, and an `Initializer::Assign` is the default (the
 /// implicit `WillBuild` beside it carries the same expression).
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let traits = super::attribute::lower_traits(node)?;
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let traits = super::attribute::lower_traits(names, node)?;
     let mut default_is_bind = false;
     let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         None => None,
@@ -159,12 +161,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 return Err(unsupported(node));
             }
             default_is_bind = init.class == RakuAstClass::InitializerBind;
-            Some(lower_expr(named_child_or_positional(init)?)?)
+            Some(lower_expr(names, named_child_or_positional(init)?)?)
         }
     };
     let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
         None => None,
-        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+        Some(f) => Some(Box::new(lower_expr(names, child_node(&f.value)?)?)),
     };
     let sigil = leaf_str(node, "sigil")?;
     let mut chars = sigil.chars();
@@ -207,7 +209,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => return Err(unsupported(node)),
     };
     let type_name = match node.fields.iter().find(|f| f.name == Some("type")) {
-        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        Some(f) => Some(simple_type_name(names, node, child_node(&f.value)?)?),
         None => None,
     };
     // `Int:D` comes back as the parser's base type plus its smiley.
@@ -257,7 +259,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: traits.is_rw || !is_has,
         is_readonly: traits.is_readonly,
         type_constraint,
-        hash_key_type: super::keyed_hash::lower_key_type(node, &sigil)?,
+        hash_key_type: super::keyed_hash::lower_key_type(names, node, &sigil)?,
         hash_key_type_expr: None,
         type_smiley,
         is_required: traits.is_required,

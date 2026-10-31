@@ -17,6 +17,7 @@
 use super::lower::{infix_token, lower_expr, named_child, prefix_token};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::token_kind::TokenKind;
 use crate::value::RuntimeError;
 
@@ -60,7 +61,10 @@ fn link(node: &RakuAstNode) -> Option<Link<'_>> {
 /// `a < b < c` -> `Expr::ChainedCompare`, or `None` when `node` is not a chain
 /// of at least two comparisons.
 // Cost: O(n), n = size of the chain's operands.
-pub(super) fn lower_chain(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+pub(super) fn lower_chain(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
     let mut links = Vec::new();
     let mut cursor = node;
     while let Some(l) = link(cursor) {
@@ -84,10 +88,10 @@ pub(super) fn lower_chain(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeErr
     }
     // `links` runs from the last comparison back to the first; `cursor` is the
     // chain's first operand.
-    let mut operands = vec![lower_expr(cursor)?];
+    let mut operands = vec![lower_expr(names, cursor)?];
     let mut ops = Vec::with_capacity(links.len());
     for l in links.iter().rev() {
-        operands.push(lower_expr(named_child(l.operands, "right")?)?);
+        operands.push(lower_expr(names, named_child(l.operands, "right")?)?);
         ops.push((l.op.clone(), l.negated));
     }
     Ok(Some(Expr::ChainedCompare { operands, ops }))

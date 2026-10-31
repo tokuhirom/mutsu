@@ -1836,7 +1836,7 @@ impl Interpreter {
                     .iter()
                     .map(Symbol::resolve)
                     .find(|name| name.starts_with("RakuAST::"))
-                    && let Some(node) = crate::rakuast::construct(&native_parent, "new", &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &native_parent, "new", &args)?
                 {
                     inv_cell.set_rakuast_base(node);
                 }
@@ -2421,7 +2421,7 @@ impl Interpreter {
                 // RakuAST construction (Phase 4): `RakuAST::IntLiteral.new(42)`.
                 let resolved = name.resolve();
                 if resolved.starts_with("RakuAST::")
-                    && let Some(node) = crate::rakuast::construct(&resolved, "new", &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &resolved, "new", &args)?
                 {
                     return Ok(node);
                 }

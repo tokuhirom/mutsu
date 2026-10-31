@@ -10,12 +10,14 @@ use super::convert::{node_field, signature};
 use super::lower::{lower_signature_parameters, named_child};
 use super::{RakuAstField, RakuAstNode};
 use crate::ast::ParamDef;
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 const CONSTRAINT: &str = "code-signature";
 
 // Cost: O(s), s = size of the callable signature.
 pub(super) fn attach_constraint(
+    names: &NameScope,
     node: &mut RakuAstNode,
     def: &ParamDef,
     type_setting: bool,
@@ -25,7 +27,7 @@ pub(super) fn attach_constraint(
     {
         node.fields.push(node_field(
             Some(CONSTRAINT),
-            signature(params, type_setting, returns.as_deref())?,
+            signature(names, params, type_setting, returns.as_deref())?,
         ));
     }
     Ok(())
@@ -33,11 +35,14 @@ pub(super) fn attach_constraint(
 
 /// Lower a pointy block without discarding its binding or return constraints.
 // Cost: O(n), n = size of the block and signature.
-pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, RuntimeError> {
+pub(super) fn lower_pointy(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<crate::ast::Expr, RuntimeError> {
     use super::lower::{lower_block, signature_positional_params};
     use crate::ast::Expr;
-    let (params, mut param_defs) = signature_positional_params(node)?;
-    let body = lower_block(node)?;
+    let (params, mut param_defs) = signature_positional_params(names, node)?;
+    let body = lower_block(names, node)?;
     crate::ast::does_target::mark_does_targets("", &mut param_defs, &body);
     let return_type = match named_child(node, "signature") {
         Ok(signature)
@@ -47,6 +52,7 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
                 .any(|field| field.name == Some("returns")) =>
         {
             Some(super::type_lower::return_constraint(
+                names,
                 node,
                 named_child(signature, "returns")?,
             )?)
@@ -119,7 +125,11 @@ pub(super) fn is_metadata(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(s), s = size of the callable signature.
-pub(super) fn lower_constraint(node: &RakuAstNode, def: &mut ParamDef) -> Result<(), RuntimeError> {
+pub(super) fn lower_constraint(
+    names: &NameScope,
+    node: &RakuAstNode,
+    def: &mut ParamDef,
+) -> Result<(), RuntimeError> {
     let constraint = if node
         .fields
         .iter()
@@ -132,13 +142,14 @@ pub(super) fn lower_constraint(node: &RakuAstNode, def: &mut ParamDef) -> Result
         None
     };
     if let Some(signature) = constraint {
-        let params = lower_signature_parameters(signature, node)?;
+        let params = lower_signature_parameters(names, signature, node)?;
         let returns = if signature
             .fields
             .iter()
             .any(|field| field.name == Some("returns"))
         {
             Some(super::type_lower::return_constraint(
+                names,
                 node,
                 named_child(signature, "returns")?,
             )?)

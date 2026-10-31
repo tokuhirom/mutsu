@@ -5,6 +5,7 @@ use super::lower::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
@@ -12,9 +13,12 @@ const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
 /// Keep the parser's lexical-scope diagnostic while exposing the public
 /// interpolated string tree.
 // Cost: O(n), n = heredoc content size.
-pub(super) fn convert_closed_block_heredoc(content: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_closed_block_heredoc(
+    names: &NameScope,
+    content: &str,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut quoted =
-        super::convert::convert_expr(&crate::parser::interpolate_heredoc_content(content)?)?;
+        super::convert::convert_expr(names, &crate::parser::interpolate_heredoc_content(content)?)?;
     if quoted.class != RakuAstClass::QuotedString {
         return Err(super::convert::unsupported("closed-block heredoc contents"));
     }
@@ -31,11 +35,14 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(n), n = quoted-string expression size.
-pub(super) fn convert_format(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_format(
+    names: &NameScope,
+    args: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
         return Err(super::convert::unsupported("format quote arguments"));
     };
-    let mut quoted = super::convert::convert_expr(string)?;
+    let mut quoted = super::convert::convert_expr(names, string)?;
     if quoted.class != RakuAstClass::QuotedString {
         return Err(super::convert::unsupported("format quote contents"));
     }
@@ -121,7 +128,7 @@ fn interpolating_words(
 }
 
 // Cost: O(n), n = quoted-string node size.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(field) = node
         .fields
         .iter()
@@ -157,18 +164,18 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             // The first processor was checked above; take only its own list.
             *processors = processors.iter().skip(1).cloned().collect();
             return Ok(crate::ast::quote_processing::format(lower_contents(
-                &contents,
+                names, &contents,
             )?));
         }
     }
-    lower_contents(node)
+    lower_contents(names, node)
 }
 
 // Cost: O(n), n = segments and their expression sizes.
-fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let segments = list_field(node, "segments")?;
     if let Some(val) = interpolating_words(node, segments)? {
-        return super::word_quote::lower(node, val);
+        return super::word_quote::lower(names, node, val);
     }
     // `qqw/a $x/`: the interpolated string, split into words at run time.
     if node.fields.iter().any(|f| f.name == Some("processors"))
@@ -176,7 +183,10 @@ fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     {
         let mut plain = node.clone();
         plain.fields.retain(|f| f.name != Some("processors"));
-        return Ok(super::word_list::lower_words_atom(lower_expr(&plain)?, val));
+        return Ok(super::word_list::lower_words_atom(
+            lower_expr(names, &plain)?,
+            val,
+        ));
     }
     if let Some((quotewords, val, content)) = word_quote_content(node)? {
         // `<…>` keeps its own lowering (a lone numeric word is a
@@ -206,12 +216,14 @@ fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // the ordinary expression path would build a closure and
         // interpolate its stringification instead of its result.
         if seg.class == RakuAstClass::Block {
-            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(seg)?))));
+            parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(
+                names, seg,
+            )?))));
             continue;
         }
         // `"a$(EXPR)b"` is the parser's `DoStmt(Expr(EXPR))`.
         if seg.class == RakuAstClass::ContextualizerItem
-            && let Some(contents) = super::contextualizer::lower_segment(seg)?
+            && let Some(contents) = super::contextualizer::lower_segment(names, seg)?
         {
             parts.push(Expr::DoStmt(Box::new(Stmt::Expr(contents))));
             continue;
@@ -222,10 +234,12 @@ fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             && sequence.class == RakuAstClass::StatementSequence
             && sequence.fields.len() > 1
         {
-            parts.push(Expr::desugar_block(lower_statement_sequence(sequence)?));
+            parts.push(Expr::desugar_block(lower_statement_sequence(
+                names, sequence,
+            )?));
             continue;
         }
-        parts.push(lower_expr(seg)?);
+        parts.push(lower_expr(names, seg)?);
     }
     Ok(Expr::StringInterpolation(parts))
 }

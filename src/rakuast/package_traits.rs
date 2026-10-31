@@ -4,10 +4,15 @@ use super::convert::unsupported;
 use super::lower::{list_field, named_child};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(a + t), a = constructor arguments, t = traits.
-pub(super) fn construct(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(super) fn construct(
+    names: &NameScope,
+    name: &str,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     let class = match name {
         "RakuAST::Module" => RakuAstClass::Module,
         "RakuAST::Package" => RakuAstClass::Package,
@@ -55,7 +60,7 @@ pub(super) fn construct(name: &str, args: &[Value]) -> Option<Result<Value, Runt
         }
         let body = super::named_arg(args, "body").unwrap_or_else(|| {
             Value::rakuast(Box::new(
-                super::convert::block_node(&[]).expect("empty block is supported"),
+                super::convert::block_node(names, &[]).expect("empty block is supported"),
             ))
         });
         super::require_rakuast_class(&body, RakuAstClass::Block, name)?;
@@ -72,11 +77,12 @@ pub(super) fn construct(name: &str, args: &[Value]) -> Option<Result<Value, Runt
 }
 
 pub(super) fn apply(
+    names: &NameScope,
     node: &mut RakuAstNode,
     traits: &[(String, Option<Expr>)],
     body: &[Stmt],
 ) -> Result<(), RuntimeError> {
-    if super::routine_source::apply(node, body)? || traits.is_empty() {
+    if super::routine_source::apply(names, node, body)? || traits.is_empty() {
         return Ok(());
     }
     // The traits are the ones the source wrote, in written order; the custom
@@ -94,7 +100,10 @@ pub(super) fn has_export(node: &RakuAstNode) -> bool {
     })
 }
 
-pub(super) fn lower(node: &RakuAstNode) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+pub(super) fn lower(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
     if !node.fields.iter().any(|field| field.name == Some("traits")) {
         return Ok(Vec::new());
     }
@@ -107,7 +116,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Vec<(String, Option<Expr>)>, R
             return Err(unsupported("non-is package trait"));
         }
         let name = if let Ok(ty) = named_child(item, "type") {
-            super::type_lower::type_constraint(node, ty)?
+            super::type_lower::type_constraint(names, node, ty)?
         } else {
             let name = named_child(item, "name")?;
             let Some(super::name_parts::NameShape::Identifier(name)) =
@@ -121,9 +130,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Vec<(String, Option<Expr>)>, R
             .ok()
             .map(|argument| {
                 if argument.class == RakuAstClass::QuotedString {
-                    super::lower::lower_expr(argument)
+                    super::lower::lower_expr(names, argument)
                 } else {
-                    super::attribute::lower_paren_argument(node, argument)
+                    super::attribute::lower_paren_argument(names, node, argument)
                 }
             })
             .transpose()?;

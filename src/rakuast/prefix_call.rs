@@ -20,6 +20,7 @@ use super::convert::{block_node, convert_expr, node_field, statement_expression}
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, make_anon_sub};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 fn prefix_class(name: &str) -> Option<RakuAstClass> {
@@ -34,12 +35,16 @@ fn prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a call named `name` with `args` spells, or `None` for
 /// any other call.
 // Cost: O(n), n = size of the argument.
-pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn convert(
+    names: &NameScope,
+    name: &str,
+    args: &[Expr],
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     let class = prefix_class(name)?;
     let [arg] = args else {
         return None;
     };
-    Some(blorst(arg).map(|blorst| RakuAstNode {
+    Some(blorst(names, arg).map(|blorst| RakuAstNode {
         origin: Default::default(),
         class,
         fields: vec![node_field(None, blorst)],
@@ -47,7 +52,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
 }
 
 /// The block (`{ ... }`) or the statement a prefix holds.
-fn blorst(arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn blorst(names: &NameScope, arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match arg {
         Expr::AnonSub {
             body,
@@ -55,24 +60,24 @@ fn blorst(arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw: false,
             is_raw: false,
             ..
-        } => block_node(body),
+        } => block_node(names, body),
         Expr::DoBlock {
             body,
             origin: crate::ast::DoBlockOrigin::SourceBlock,
             ..
-        } => block_node(body),
+        } => block_node(names, body),
         Expr::Ast(node) => match node.as_ref() {
-            crate::ast::parsed::ParsedExpr::StartBody(body) => block_node(body),
-            _ => Ok(statement_expression(convert_expr(arg)?)),
+            crate::ast::parsed::ParsedExpr::StartBody(body) => block_node(names, body),
+            _ => Ok(statement_expression(convert_expr(names, arg)?)),
         },
-        other => Ok(statement_expression(convert_expr(other)?)),
+        other => Ok(statement_expression(convert_expr(names, other)?)),
     }
 }
 
 /// `StatementPrefix::Start` / `::Quietly` / `::Sink` -> the call the parser
 /// spells it as.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = match node.class {
         RakuAstClass::StatementPrefixStart => "start",
         RakuAstClass::StatementPrefixQuietly => "quietly",
@@ -82,7 +87,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let blorst = named_child_or_positional(node)?;
     let arg = match blorst.class {
         RakuAstClass::Block => {
-            let body = lower_block(blorst)?;
+            let body = lower_block(names, blorst)?;
             if node.class == RakuAstClass::StatementPrefixStart
                 && crate::ast::collect_unattached_placeholders(&body)
                     .into_iter()
@@ -95,10 +100,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // `start STATEMENT` (`start react { ... }`, a loop): the statement is the body.
         _ if node.class == RakuAstClass::StatementPrefixStart => {
-            make_anon_sub(vec![super::lower::lower_stmt(blorst)?])
+            make_anon_sub(vec![super::lower::lower_stmt(names, blorst)?])
         }
         // `quietly EXPR` / `sink EXPR` take the expression itself.
-        RakuAstClass::StatementExpression => lower_expr(named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Call {
@@ -124,11 +129,12 @@ fn method_prefix_class(name: &str) -> Option<RakuAstClass> {
 /// or `None` for any other call.
 // Cost: O(n), n = size of the operand.
 pub(super) fn convert_method(
+    names: &NameScope,
     name: &str,
     target: &Expr,
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
     let class = method_prefix_class(name)?;
-    Some(blorst(target).map(|blorst| RakuAstNode {
+    Some(blorst(names, target).map(|blorst| RakuAstNode {
         origin: Default::default(),
         class,
         fields: vec![node_field(None, blorst)],
@@ -138,7 +144,7 @@ pub(super) fn convert_method(
 /// `StatementPrefix::Lazy` / `::Hyper` / `::Race` -> the `sugar` method call
 /// the parser spells it as.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_method(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_method(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = match node.class {
         RakuAstClass::StatementPrefixLazy => "lazy",
         RakuAstClass::StatementPrefixHyper => "hyper",
@@ -149,11 +155,11 @@ pub(super) fn lower_method(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = match blorst.class {
         // `lazy { ... }` runs its own block inline.
         RakuAstClass::Block => Expr::DoBlock {
-            body: lower_block(blorst)?,
+            body: lower_block(names, blorst)?,
             label: None,
             origin: crate::ast::DoBlockOrigin::SourceBlock,
         },
-        RakuAstClass::StatementExpression => lower_expr(named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::MethodCall {

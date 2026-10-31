@@ -20,6 +20,7 @@ use super::lower::{
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamDef, Stmt};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -39,7 +40,7 @@ pub(super) struct RoleDecl<'a> {
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
-pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
     // Any plain trait name is a trait of the program's own (`is array_type(T)`),
     // rendered by name.
@@ -91,7 +92,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             "role header the written-trait record does not account for",
         ));
     }
-    let mut traits = super::routine_source::header_traits(role.body)?;
+    let mut traits = super::routine_source::header_traits(names, role.body)?;
     // What follows the written clauses is `also is Parent;` / `also is rw;`
     // lifted out of the body: a parent without a header spelling renders as
     // a trailing `is` trait, which lowers back to the same clause.
@@ -113,7 +114,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             args: args.clone(),
         };
         traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
-            &parent,
+            names, &parent,
         )?)));
     }
     if role.is_rw && !super::convert::has_is(written, "rw") {
@@ -141,13 +142,13 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         super::role_implicit::add(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RoleBody,
-            fields: vec![node_field(Some("body"), blockoid(&body)?)],
+            fields: vec![node_field(Some("body"), blockoid(names, &body)?)],
         }),
     ));
     if !role.type_param_defs.is_empty() {
         fields.push(node_field(
             Some("parameterization"),
-            signature(role.type_param_defs, false, None)?,
+            signature(names, role.type_param_defs, false, None)?,
         ));
     }
     Ok(RakuAstNode {
@@ -161,12 +162,13 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
 /// parser builds for it.
 // Cost: O(k), k = length of the type's spelling.
 fn parent_clause(
+    names: &NameScope,
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
     from_is: bool,
 ) -> Result<Stmt, RuntimeError> {
-    let name = super::type_lower::parent_type_constraint(owner, type_node)?;
-    let args = super::type_lower::type_application_args(owner, type_node)?;
+    let name = super::type_lower::parent_type_constraint(names, owner, type_node)?;
+    let args = super::type_lower::type_application_args(names, owner, type_node)?;
     Ok(Stmt::DoesDecl {
         name: Symbol::intern(&name),
         args,
@@ -178,9 +180,9 @@ fn parent_clause(
 /// `RakuAST::Role` -> `Stmt::RoleDecl`, with the header clauses back at the
 /// front of the body.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let retained = super::role_header::retained_name(node)?;
-    let head = package_head(node, || {
+    let head = package_head(names, node, || {
         retained.unwrap_or_else(crate::parser::next_anon_role_name)
     })?;
     if head.is_unit {
@@ -199,11 +201,16 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             };
             match t.class {
                 RakuAstClass::TraitDoes => {
-                    header.push(parent_clause(node, named_child_or_positional(t)?, false)?);
+                    header.push(parent_clause(
+                        names,
+                        node,
+                        named_child_or_positional(t)?,
+                        false,
+                    )?);
                 }
                 RakuAstClass::TraitIs => {
                     if let Ok(type_node) = named_child(t, "type") {
-                        header.push(parent_clause(node, type_node, true)?);
+                        header.push(parent_clause(names, node, type_node, true)?);
                         continue;
                     }
                     if let Ok(name) = named_child(t, "name")
@@ -217,17 +224,17 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         });
                         continue;
                     }
-                    if let Some(entry) = super::routine_traits::lower_custom(node, t)? {
+                    if let Some(entry) = super::routine_traits::lower_custom(names, node, t)? {
                         custom_traits.push(entry);
                         continue;
                     }
-                    if !flags.read(t)? || flags.is_raw || flags.is_hidden_from_backtrace {
+                    if !flags.read(names, t)? || flags.is_raw || flags.is_hidden_from_backtrace {
                         return Err(unsupported_node(node));
                     }
                 }
                 RakuAstClass::TraitHides => {
                     let hidden_type = named_child_or_positional(t)?;
-                    let hidden_name = super::type_lower::type_constraint(node, hidden_type)?;
+                    let hidden_name = super::type_lower::type_constraint(names, node, hidden_type)?;
                     header.push(Stmt::DoesDecl {
                         name: Symbol::intern(&hidden_name),
                         args: None,
@@ -253,12 +260,13 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     let stripped = super::role_implicit::shown(role_body);
     let role_body = stripped.as_ref().unwrap_or(role_body);
-    let body = lower_package_body(lower_stmts(named_child_or_positional(named_child(
-        role_body, "body",
-    )?)?)?);
+    let body = lower_package_body(lower_stmts(
+        names,
+        named_child_or_positional(named_child(role_body, "body")?)?,
+    )?);
     header.extend(body);
     let type_param_defs = match named_child(node, "parameterization") {
-        Ok(sig) => lower_signature_parameters(sig, node)?,
+        Ok(sig) => lower_signature_parameters(names, sig, node)?,
         Err(_) => Vec::new(),
     };
     Ok(head.finish(Stmt::RoleDecl {
@@ -281,6 +289,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// `also does R[ARGS];` -> `Statement::Also(traits => (Trait::Does(R[ARGS]),))`.
 // Cost: O(k + a), k = role spelling length; a = number of arguments.
 pub(super) fn also_statement(
+    names: &NameScope,
     role: &str,
     args: Option<&[crate::ast::Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -290,9 +299,9 @@ pub(super) fn also_statement(
         fields: vec![node_field(
             None,
             if let Some(args) = args {
-                super::type_args::parameterized_type_node(role, Some(args))?
+                super::type_args::parameterized_type_node(names, role, Some(args))?
             } else {
-                build_type_node(role)?
+                build_type_node(names, role)?
             },
         )],
     };
@@ -308,7 +317,7 @@ pub(super) fn also_statement(
 
 /// `Statement::Also` with one `Trait::Does` -> the `also`-flagged `DoesDecl`.
 // Cost: O(k), k = length of the role's spelling.
-pub(super) fn lower_also(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_also(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let Some(RakuAstField {
         value: RakuAstFieldValue::List(items),
         ..
@@ -322,7 +331,7 @@ pub(super) fn lower_also(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match item.view() {
         ValueView::RakuAst(t) if t.class == RakuAstClass::TraitDoes => {
             let Stmt::DoesDecl { name, args, .. } =
-                parent_clause(node, named_child_or_positional(t)?, false)?
+                parent_clause(names, node, named_child_or_positional(t)?, false)?
             else {
                 unreachable!("parent_clause builds a DoesDecl");
             };
@@ -340,7 +349,8 @@ pub(super) fn lower_also(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             // `name` when it is not (declared outside this unit).
             let (name, args) = match named_child(t, "type") {
                 Ok(type_node) => {
-                    let Stmt::DoesDecl { name, args, .. } = parent_clause(node, type_node, true)?
+                    let Stmt::DoesDecl { name, args, .. } =
+                        parent_clause(names, node, type_node, true)?
                     else {
                         unreachable!("parent_clause builds a DoesDecl");
                     };

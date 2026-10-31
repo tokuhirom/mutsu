@@ -27,6 +27,7 @@ use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Construct the same declaring signature shape produced by the parser.
@@ -76,17 +77,20 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    decl: &SignatureDecl,
+) -> Result<RakuAstNode, RuntimeError> {
     let is_binding = decl.init.as_ref().is_some_and(|init| init.is_binding);
     let parameters = if let Some(shape) = &decl.group_shape {
         shape
             .iter()
-            .map(|item| convert_group(item, &decl.vars, is_binding, 0))
+            .map(|item| convert_group(names, item, &decl.vars, is_binding, 0))
             .collect::<Result<Vec<_>, _>>()?
     } else {
         decl.vars
             .iter()
-            .map(|var| parameter(var, is_binding).map(|node| Value::rakuast(Box::new(node))))
+            .map(|var| parameter(names, var, is_binding).map(|node| Value::rakuast(Box::new(node))))
             .collect::<Result<Vec<_>, _>>()?
     };
     let mut signature_fields = vec![RakuAstField {
@@ -96,7 +100,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     if let Some(type_name) = &decl.type_constraint {
         signature_fields.push(node_field(
             Some("returns"),
-            super::convert::build_type_node(type_name)?,
+            super::convert::build_type_node(names, type_name)?,
         ));
     }
     let signature = RakuAstNode {
@@ -107,7 +111,10 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     let mut fields = vec![node_field(Some("signature"), signature)];
     if let Some(default) = &decl.group_default {
         // Rakudo omits the group trait from .raku, but execution still needs it.
-        fields.push(node_field(Some("group-default"), convert_expr(default)?));
+        fields.push(node_field(
+            Some("group-default"),
+            convert_expr(names, default)?,
+        ));
     }
     if decl.is_our || decl.is_state {
         let scope = if decl.is_our { "our" } else { "state" };
@@ -117,7 +124,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     if let Some(type_name) = &decl.type_constraint {
         fields.push(node_field(
             Some("type"),
-            super::convert::build_type_node(type_name)?,
+            super::convert::build_type_node(names, type_name)?,
         ));
     }
     if let Some(init) = &decl.init {
@@ -131,7 +138,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
             RakuAstNode {
                 origin: Default::default(),
                 class,
-                fields: vec![node_field(None, convert_expr(&init.rhs)?)],
+                fields: vec![node_field(None, convert_expr(names, &init.rhs)?)],
             },
         ));
     }
@@ -145,6 +152,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
 /// A source group into a parameter with a nested sub-signature.
 // Cost: O(n), n = leaves in the group, with nesting bounded at 128.
 fn convert_group(
+    names: &NameScope,
     item: &SignatureGroup,
     vars: &[SignatureVar],
     is_binding: bool,
@@ -157,6 +165,7 @@ fn convert_group(
     }
     let node = match item {
         SignatureGroup::Var(index) => parameter(
+            names,
             vars.get(*index)
                 .ok_or_else(|| unsupported("signature declaration group index"))?,
             is_binding,
@@ -164,7 +173,7 @@ fn convert_group(
         SignatureGroup::Group(members) => {
             let parameters = members
                 .iter()
-                .map(|member| convert_group(member, vars, is_binding, depth + 1))
+                .map(|member| convert_group(names, member, vars, is_binding, depth + 1))
                 .collect::<Result<Vec<_>, _>>()?;
             RakuAstNode {
                 origin: Default::default(),
@@ -195,9 +204,13 @@ fn convert_group(
 /// writable container (unless the declaration binds with `:=`). A named or
 /// slurpy element has no `optional`.
 // Cost: O(e), e = size of the element's `where` expression.
-fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, RuntimeError> {
+fn parameter(
+    names: &NameScope,
+    var: &SignatureVar,
+    is_binding: bool,
+) -> Result<RakuAstNode, RuntimeError> {
     if let Some(literal) = &var.literal_value {
-        return super::signature_literal::convert(literal);
+        return super::signature_literal::convert(names, literal);
     }
     let target = if var.sigilless {
         RakuAstNode {
@@ -225,7 +238,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
     if let Some(type_name) = &var.per_var_type_constraint {
         fields.push(node_field(
             Some("type"),
-            super::type_build::declaration_type_node(type_name)?,
+            super::type_build::declaration_type_node(names, type_name)?,
         ));
     }
     if var.is_named {
@@ -244,7 +257,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         fields.push(leaf_field(Some("optional"), Value::truth(var.is_optional)));
     }
     if let Some(default) = &var.default {
-        fields.push(node_field(Some("default"), convert_expr(default)?));
+        fields.push(node_field(Some("default"), convert_expr(names, default)?));
     }
     if var.is_slurpy {
         fields.push(leaf_field(
@@ -253,7 +266,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         ));
     }
     if let Some(constraint) = &var.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(constraint)?));
+        fields.push(node_field(Some("where"), convert_expr(names, constraint)?));
     }
     if let Some(param_trait) = var.param_trait {
         fields.push(RakuAstField {
@@ -281,7 +294,7 @@ fn trait_name(param_trait: ParamTrait) -> &'static str {
 
 /// `VarDeclaration::Signature` -> the declaration as the parser holds it
 /// (`Stmt::Ast`), which the caller lowers.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let signature = named_child(node, "signature")?;
     let type_constraint = match signature
         .fields
@@ -293,7 +306,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(field) => match &field.value {
             RakuAstFieldValue::Node(v) => match v.view() {
                 ValueView::RakuAst(type_node) => {
-                    Some(super::lower::simple_type_name(node, type_node)?)
+                    Some(super::lower::simple_type_name(names, node, type_node)?)
                 }
                 _ => return Err(super::lower::unsupported(node)),
             },
@@ -306,7 +319,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         let ValueView::RakuAst(param) = param.view() else {
             return Err(super::lower::unsupported(node));
         };
-        shape.push(lower_group_parameter(param, &mut vars, 0)?);
+        shape.push(lower_group_parameter(names, param, &mut vars, 0)?);
     }
     let has_nested_group = shape
         .iter()
@@ -337,7 +350,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 RakuAstClass::InitializerBind => true,
                 _ => return Err(super::lower::unsupported(init)),
             },
-            rhs: lower_expr(named_child_or_positional(init)?)?,
+            rhs: lower_expr(names, named_child_or_positional(init)?)?,
         }),
     };
     super::signature_expand::pending(SignatureDecl {
@@ -350,7 +363,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             .fields
             .iter()
             .any(|f| f.name == Some("group-default"))
-            .then(|| lower_expr(named_child(node, "group-default")?))
+            .then(|| lower_expr(names, named_child(node, "group-default")?))
             .transpose()?,
         has_nested_group,
         init,
@@ -360,6 +373,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// Collect flattened declaration leaves while retaining sub-signature groups.
 // Cost: O(n), n = parameter nodes, with nesting bounded at 128.
 fn lower_group_parameter(
+    names: &NameScope,
     param: &RakuAstNode,
     vars: &mut Vec<SignatureVar>,
     depth: usize,
@@ -377,24 +391,24 @@ fn lower_group_parameter(
             let ValueView::RakuAst(member) = value.view() else {
                 return Err(super::lower::unsupported(param));
             };
-            members.push(lower_group_parameter(member, vars, depth + 1)?);
+            members.push(lower_group_parameter(names, member, vars, depth + 1)?);
         }
         return Ok(SignatureGroup::Group(members));
     }
     let index = vars.len();
-    vars.push(lower_parameter(param)?);
+    vars.push(lower_parameter(names, param)?);
     Ok(SignatureGroup::Var(index))
 }
 
 /// A declarator-list element, back from its `Parameter`.
-fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
+fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
     let unsupported = || super::lower::unsupported(param);
     if param.class != RakuAstClass::Parameter {
         return Err(unsupported());
     }
     let mut var = SignatureVar::plain("$x");
     if param.fields.iter().any(|f| f.name == Some("value")) {
-        return super::signature_literal::lower(param);
+        return super::signature_literal::lower(names, param);
     }
     let mut named = false;
     let mut slurpy = false;
@@ -404,11 +418,13 @@ fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
             Some("optional") => {
                 var.is_optional = super::lower::bool_field(param, "optional")?;
             }
-            Some("default") => var.default = Some(lower_expr(named_child(param, "default")?)?),
+            Some("default") => {
+                var.default = Some(lower_expr(names, named_child(param, "default")?)?)
+            }
             Some("type") => {
                 let type_node = named_child(param, "type")?;
                 var.per_var_type_constraint =
-                    Some(super::lower::simple_type_name(param, type_node)?);
+                    Some(super::lower::simple_type_name(names, param, type_node)?);
             }
             Some("names") => {
                 let RakuAstFieldValue::List(names) = &field.value else {
@@ -435,7 +451,7 @@ fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
                 slurpy = true;
             }
             Some("where") => {
-                var.where_constraint = Some(lower_expr(named_child(param, "where")?)?);
+                var.where_constraint = Some(lower_expr(names, named_child(param, "where")?)?);
             }
             Some("traits") => {
                 let [item] = list_field(param, "traits")? else {

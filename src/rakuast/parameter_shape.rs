@@ -6,20 +6,24 @@ use super::convert::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Build Rakudo's `array-shape` predicate block from the parser's dimensions.
 // Cost: O(d), d = number of dimensions and their expression trees.
-pub(super) fn convert(pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    pd: &ParamDef,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Some(dimensions) = &pd.shape_constraints else {
         return Ok(None);
     };
     let dims = if dimensions.len() == 1 {
-        convert_expr(&dimensions[0])?
+        convert_expr(names, &dimensions[0])?
     } else {
         let mut operands = Vec::with_capacity(dimensions.len());
         for dim in dimensions {
-            operands.push(Value::rakuast(Box::new(convert_expr(dim)?)));
+            operands.push(Value::rakuast(Box::new(convert_expr(names, dim)?)));
         }
         RakuAstNode {
             origin: Default::default(),
@@ -97,7 +101,7 @@ fn apply_method(operand: RakuAstNode, name: &str, arg: Option<RakuAstNode>) -> R
 
 /// Decode the generated `.list.ACCEPTS($_.shape).Bool` predicate back to dimensions.
 // Cost: O(d), d = number of dimensions and their expression trees.
-pub(super) fn lower(block: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+pub(super) fn lower(names: &NameScope, block: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     let blockoid = named(block, "body")?;
     let statement_list = nested_value(
         &blockoid
@@ -146,14 +150,14 @@ pub(super) fn lower(block: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
         };
         return values
             .iter()
-            .map(|v| lower_expr(nested_value_field(v)?))
+            .map(|v| lower_expr(names, nested_value_field(v)?))
             .collect();
     }
-    Ok(vec![lower_expr(dimensions)?])
+    Ok(vec![lower_expr(names, dimensions)?])
 }
 
-fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    super::lower::lower_expr(node)
+fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    super::lower::lower_expr(names, node)
 }
 fn named<'a>(node: &'a RakuAstNode, name: &str) -> Result<&'a RakuAstNode, RuntimeError> {
     let field = node

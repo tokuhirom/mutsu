@@ -17,6 +17,7 @@ use super::lower::{leaf_str, list_field, lower_expr, named_child, positional_lea
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -45,6 +46,7 @@ pub(super) fn is_pragma_name(name: &str) -> bool {
 /// `use MODULE [ARG | :TAG...]` -> `Pragma`, `Statement::LanguageVersion` or
 /// `Statement::Use`.
 pub(super) fn convert_use(
+    names: &NameScope,
     module: &str,
     arg: Option<&Expr>,
     tags: &[String],
@@ -104,7 +106,7 @@ pub(super) fn convert_use(
     } else {
         (arg, tags)
     };
-    let argument = use_argument(arg, tags)?;
+    let argument = use_argument(names, arg, tags)?;
     let mut node = if is_pragma_name(module) {
         pragma_node(module)
     } else {
@@ -126,7 +128,7 @@ pub(super) fn convert_use(
     if let Some(condition) = condition {
         node.fields.push(node_field(
             Some("source-if-condition"),
-            convert_expr(condition)?,
+            convert_expr(names, condition)?,
         ));
     }
     if !if_imports.is_empty() {
@@ -148,6 +150,7 @@ pub(super) fn convert_use(
 /// replace that block with the public `Statement::Use` shape.
 // Cost: O(a), a = direct import arguments.
 pub(super) fn convert_inline_proto(
+    names: &NameScope,
     proto: &Stmt,
     use_stmt: &Stmt,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -164,8 +167,15 @@ pub(super) fn convert_inline_proto(
     else {
         return Err(super::convert::unsupported("inline proto use statement"));
     };
-    let mut node = convert_use(module, arg.as_ref(), tags, condition.as_deref(), if_imports)?;
-    let declaration = super::convert::convert_stmt(proto)?
+    let mut node = convert_use(
+        names,
+        module,
+        arg.as_ref(),
+        tags,
+        condition.as_deref(),
+        if_imports,
+    )?;
+    let declaration = super::convert::convert_stmt(names, proto)?
         .ok_or_else(|| super::convert::unsupported("inline proto declaration"))?;
     let proto_node = named_child(&declaration, "expression")?.clone();
     let argument = node
@@ -226,12 +236,15 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(i), i = imported names recorded by the `if` adverb.
-fn lower_source_if(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
+fn lower_source_if(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
     let condition = node
         .fields
         .iter()
         .find(|field| field.name == Some("source-if-condition"))
-        .map(|_| named_child(node, "source-if-condition").and_then(lower_expr))
+        .map(|_| named_child(node, "source-if-condition").and_then(|node| lower_expr(names, node)))
         .transpose()?;
     let imports = match node
         .fields
@@ -269,7 +282,10 @@ pub(super) fn convert_need(module: &str) -> RakuAstNode {
 
 /// A statically named `require` keeps its package target through the round trip.
 // Cost: O(1).
-pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert_require(
+    names: &NameScope,
+    args: &[Expr],
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     let (Expr::Literal(target), rest) = (match args {
         [first, rest @ ..] => (first, rest),
         [] => return Ok(None),
@@ -289,9 +305,10 @@ pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, Runt
     };
     match rest {
         [] => {}
-        [import_list] => node
-            .fields
-            .push(node_field(Some("argument"), convert_expr(import_list)?)),
+        [import_list] => node.fields.push(node_field(
+            Some("argument"),
+            convert_expr(names, import_list)?,
+        )),
         _ => return Ok(None),
     }
     Ok(Some(node))
@@ -299,7 +316,7 @@ pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, Runt
 
 /// Lower `Statement::Require` to the parser's package-valued call operand.
 // Cost: O(1).
-pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_require(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if node
         .fields
         .iter()
@@ -313,7 +330,7 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     };
     let mut args = vec![Expr::Literal(Value::package(Symbol::intern(&module)))];
     if let Ok(import_list) = named_child(node, "argument") {
-        args.push(lower_expr(import_list)?);
+        args.push(lower_expr(names, import_list)?);
     }
     Ok(Expr::Call {
         name: Symbol::intern("require"),
@@ -408,10 +425,14 @@ fn from_language(name: &RakuAstNode) -> Option<String> {
 
 /// The `argument` of a `use` statement. Both an argument and tags at once
 /// (`use Foo :tag<x>`) is a shape the parser does not keep distinct.
-fn use_argument(arg: Option<&Expr>, tags: &[String]) -> Result<Option<RakuAstNode>, RuntimeError> {
+fn use_argument(
+    names: &NameScope,
+    arg: Option<&Expr>,
+    tags: &[String],
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     match (arg, tags) {
         (None, []) => Ok(None),
-        (Some(arg), []) => Ok(Some(convert_expr(arg)?)),
+        (Some(arg), []) => Ok(Some(convert_expr(names, arg)?)),
         (None, tags) => Ok(tag_argument(tags)),
         (Some(_), _) => Err(super::convert::unsupported(
             "use with both an argument and import tags",
@@ -458,12 +479,12 @@ fn is_smiley_pragma(name: &str) -> bool {
 }
 
 /// `RakuAST::Pragma` -> `Stmt::Use`, or `Stmt::No` when it is switched off.
-pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_pragma(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let module = leaf_str(node, "name")?;
     let off = node.fields.iter().any(|f| {
         f.name == Some("off") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
-    let (mut arg, mut tags) = lower_argument(node)?;
+    let (mut arg, mut tags) = lower_argument(names, node)?;
     // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
     if let Some(language) = node
         .fields
@@ -479,7 +500,7 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         arg = Some(Expr::Literal(Value::str(language)));
         tags.push("from".to_string());
     }
-    let (condition, if_imports) = lower_source_if(node)?;
+    let (condition, if_imports) = lower_source_if(names, node)?;
     // `use variables :D`: the parser's `":D"` argument, not an import tag.
     if is_smiley_pragma(&module) {
         let [smiley] = tags.as_slice() else {
@@ -507,15 +528,15 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 }
 
 /// `RakuAST::Statement::Use` -> `Stmt::Use`.
-pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_use(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut node = node.clone();
-    let inline_proto = take_inline_proto(&mut node)?;
+    let inline_proto = take_inline_proto(names, &mut node)?;
     let node = &node;
     let module = match name_parts::name_shape(named_child(node, "module-name")?) {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
     };
-    let (mut arg, mut tags) = lower_argument(node)?;
+    let (mut arg, mut tags) = lower_argument(names, node)?;
     // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
     if let Some(language) = from_language(named_child(node, "module-name")?) {
         if arg.is_some() || !tags.is_empty() {
@@ -524,7 +545,7 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         arg = Some(Expr::Literal(Value::str(language)));
         tags.push("from".to_string());
     }
-    let (condition, if_imports) = lower_source_if(node)?;
+    let (condition, if_imports) = lower_source_if(names, node)?;
     // `use newline :crlf` keeps its pair as the argument, where any other
     // module's `:tag` is an import tag.
     if module == "newline"
@@ -555,7 +576,10 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-fn take_inline_proto(node: &mut RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+fn take_inline_proto(
+    names: &NameScope,
+    node: &mut RakuAstNode,
+) -> Result<Option<Stmt>, RuntimeError> {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("argument")) else {
         return Ok(None);
     };
@@ -566,18 +590,21 @@ fn take_inline_proto(node: &mut RakuAstNode) -> Result<Option<Stmt>, RuntimeErro
         return Err(super::lower::unsupported(node));
     };
     let mut argument = argument.clone();
-    let proto = take_proto_operand(&mut argument)?;
+    let proto = take_proto_operand(names, &mut argument)?;
     if proto.is_some() {
         *value = Value::rakuast(Box::new(argument));
     }
     Ok(proto)
 }
 
-fn take_proto_operand(argument: &mut RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+fn take_proto_operand(
+    names: &NameScope,
+    argument: &mut RakuAstNode,
+) -> Result<Option<Stmt>, RuntimeError> {
     let is_proto =
         |node: &RakuAstNode| node.class == RakuAstClass::Sub && super::proto::is_proto(node);
     if is_proto(argument) {
-        let proto = super::proto::lower(argument)?;
+        let proto = super::proto::lower(names, argument)?;
         let Stmt::ProtoDecl { name, .. } = &proto else {
             unreachable!("proto lowerer")
         };
@@ -597,7 +624,7 @@ fn take_proto_operand(argument: &mut RakuAstNode) -> Result<Option<Stmt>, Runtim
             if let ValueView::RakuAst(candidate) = operand.view()
                 && is_proto(candidate)
             {
-                let proto = super::proto::lower(candidate)?;
+                let proto = super::proto::lower(names, candidate)?;
                 let Stmt::ProtoDecl { name, .. } = &proto else {
                     unreachable!("proto lowerer")
                 };
@@ -627,12 +654,12 @@ pub(super) fn lower_need(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 }
 
 /// `RakuAST::Statement::Import` -> `Stmt::Import`.
-pub(super) fn lower_import(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_import(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let module = match name_parts::name_shape(named_child(node, "module-name")?) {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
     };
-    let (arg, tags) = lower_argument(node)?;
+    let (arg, tags) = lower_argument(names, node)?;
     if arg.is_some() {
         return Err(super::lower::unsupported(node));
     }
@@ -657,7 +684,10 @@ pub(super) fn lower_language_version(node: &RakuAstNode) -> Result<Stmt, Runtime
 /// Split a `use` statement's `argument` back into the parser's argument and
 /// import tags: a `ColonPair::True`, or a comma list made only of them, is a
 /// tag list; anything else is the argument.
-fn lower_argument(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
+fn lower_argument(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
     let Ok(argument) = named_child(node, "argument") else {
         return Ok((None, Vec::new()));
     };
@@ -679,7 +709,7 @@ fn lower_argument(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), Run
             return Ok((None, tags));
         }
     }
-    let lowered = lower_expr(argument)?;
+    let lowered = lower_expr(names, argument)?;
     // The parser keeps the parentheses of an import list (`use Foo ()`, `use Foo
     // (1, 2)`); an empty one is what suppresses the module's default exports.
     let lowered = if argument.class == RakuAstClass::CircumfixParentheses

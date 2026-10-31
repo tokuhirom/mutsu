@@ -29,6 +29,7 @@ use super::convert::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, ParamTarget};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// The parts of a named parameter, read off the parser's alias chain.
@@ -127,6 +128,7 @@ fn set_once<'a, T: ?Sized>(slot: &mut Option<&'a T>, value: &'a T) -> Result<(),
 /// The `RakuAST::Parameter` of the named parameter `pd`, every field but
 /// `sub-signature` and `traits` (the caller appends those after it).
 pub(super) fn named_parameter(
+    names: &NameScope,
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -147,7 +149,7 @@ pub(super) fn named_parameter(
     ) && flat.target.sub_signature.is_some();
     let mut fields = Vec::with_capacity(7);
     match flat.type_constraint {
-        Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
+        Some(t) => fields.push(node_field(Some("type"), build_type_node(names, t)?)),
         None => {
             if !(anonymous
                 && (flat.target.target == ParamTarget::Brackets || pd.named && !pd.named_alias))
@@ -162,7 +164,7 @@ pub(super) fn named_parameter(
         value: RakuAstFieldValue::List(flat.names.into_iter().map(Value::str).collect()),
     });
     if let Some(name) = type_capture_name(pd) {
-        fields.push(type_captures_field(type_capture_node(name)?));
+        fields.push(type_captures_field(type_capture_node(names, name)?));
     }
     if !anonymous {
         fields.push(node_field(
@@ -180,7 +182,7 @@ pub(super) fn named_parameter(
     // A named parameter is optional unless marked `!`; rakudo writes the
     // field only when the source spelled a marker.
     match flat.default {
-        Some(d) => fields.push(node_field(Some("default"), convert_expr(d)?)),
+        Some(d) => fields.push(node_field(Some("default"), convert_expr(names, d)?)),
         None if pd.required || pd.optional_marker => fields.push(RakuAstField {
             name: Some("optional"),
             value: RakuAstFieldValue::Node(Value::truth(!pd.required)),
@@ -188,7 +190,7 @@ pub(super) fn named_parameter(
         None => {}
     }
     if let Some(w) = flat.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(w)?));
+        fields.push(node_field(Some("where"), convert_expr(names, w)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),

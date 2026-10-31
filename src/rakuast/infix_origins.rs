@@ -12,18 +12,19 @@
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::value::{Value, ValueView};
 
 /// Place `node`, a node just converted, and its operator / name / argument
 /// parts, from the origins its children carry.
 // Cost: O(f + n), f = fields of `node`, n = length of the source text read.
-pub(super) fn derive(node: &mut RakuAstNode) {
+pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(node);
-            super::decl_origins::derive(node);
+            super::decl_origins::derive(names, node);
         }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);
@@ -39,11 +40,11 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
-            super::regex_origins::quoted(node)
+            super::regex_origins::quoted(names, node)
         }
         RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration
-        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(node),
+        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(names, node),
         RakuAstClass::Block
         | RakuAstClass::Sub
         | RakuAstClass::PointyBlock

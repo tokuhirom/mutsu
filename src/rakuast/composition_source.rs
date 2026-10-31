@@ -6,10 +6,15 @@
 use super::RakuAstNode;
 use super::convert::{convert_expr, unsupported};
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 // Cost: O(n), n = nodes in the two composition operands.
-pub(super) fn convert(source: &Expr, executable: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(
+    names: &NameScope,
+    source: &Expr,
+    executable: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
         op,
@@ -47,5 +52,5 @@ pub(super) fn convert(source: &Expr, executable: &Expr) -> Result<RakuAstNode, R
         }),
         form: *form,
     };
-    convert_expr(&restored)
+    convert_expr(names, &restored)
 }

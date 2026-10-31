@@ -12,6 +12,7 @@ use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
 use crate::ast::parsed::AtomicVar;
 use crate::ast::{Expr, temporize};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn prefix_op(operator: &str) -> RakuAstNode {
@@ -35,7 +36,7 @@ fn postfix_op(operator: &str) -> RakuAstNode {
 
 /// The node of `⚛$x` / `$x ⚛= VALUE`, the parser's [`AtomicVar`].
 // Cost: O(n), n = size of the stored value.
-pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
     match var {
         AtomicVar::Fetch { name } => Ok(RakuAstNode {
             origin: Default::default(),
@@ -44,7 +45,7 @@ pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("prefix"), prefix_op("⚛")),
                 node_field(
                     Some("operand"),
-                    convert_expr(&temporize::variable_expr(name))?,
+                    convert_expr(names, &temporize::variable_expr(name))?,
                 ),
             ],
         }),
@@ -52,9 +53,12 @@ pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(&temporize::variable_expr(name))?),
+                node_field(
+                    Some("left"),
+                    convert_expr(names, &temporize::variable_expr(name))?,
+                ),
                 node_field(Some("infix"), plain_infix("⚛=")),
-                node_field(Some("right"), convert_expr(value)?),
+                node_field(Some("right"), convert_expr(names, value)?),
             ],
         }),
     }
@@ -63,7 +67,11 @@ pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
 /// The node of the atomic operator the call `name(args)` is, or `None` when it
 /// is not one.
 // Cost: O(n), n = size of the operands.
-pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn convert(
+    names: &NameScope,
+    name: &str,
+    args: &[Expr],
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     let atomic = atomic_op::recognize(name, args)?;
     Some((|| match atomic {
         Atomic::Unary {
@@ -75,7 +83,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op(operator)),
-                node_field(Some("operand"), convert_expr(operand)?),
+                node_field(Some("operand"), convert_expr(names, operand)?),
             ],
         }),
         Atomic::Unary {
@@ -86,7 +94,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             origin: Default::default(),
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
-                node_field(Some("operand"), postfix_operand(operand)?),
+                node_field(Some("operand"), postfix_operand(names, operand)?),
                 node_field(Some("postfix"), postfix_op(operator)),
             ],
         }),
@@ -98,9 +106,9 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(left)?),
+                node_field(Some("left"), convert_expr(names, left)?),
                 node_field(Some("infix"), plain_infix(operator)),
-                node_field(Some("right"), convert_expr(right)?),
+                node_field(Some("right"), convert_expr(names, right)?),
             ],
         }),
     })())
@@ -123,7 +131,7 @@ fn atomic_operator(node: &RakuAstNode) -> Option<String> {
 /// The call the parser builds for the atomic operator `node` is, or `None`
 /// when `node` is not one.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     let (category, operator) = match node.class {
         RakuAstClass::ApplyPrefix => (
             Category::Prefix,
@@ -145,10 +153,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         } else {
             "operand"
         };
-        let first = lower_expr(named_child(node, operand_name)?)?;
+        let first = lower_expr(names, named_child(node, operand_name)?)?;
         match category {
             Category::Infix => {
-                let right = lower_expr(named_child(node, "right")?)?;
+                let right = lower_expr(names, named_child(node, "right")?)?;
                 // `$x ⚛= v` writes the variable by name.
                 if operator == "⚛="
                     && let Some(name) = first.container_var_key()

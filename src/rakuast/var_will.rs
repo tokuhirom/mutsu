@@ -10,15 +10,17 @@ use super::convert::{
 use super::lower::{leaf_str, lower_block, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// The declaration statement with its `will` phasers as its traits.
 // Cost: O(n), n = size of the declaration and the phaser bodies.
 pub(super) fn convert(
+    names: &NameScope,
     decl: &Stmt,
     phasers: &[(PhaserKind, Vec<Stmt>)],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let statement = convert_stmt(decl)?.ok_or_else(|| unsupported("will trait"))?;
+    let statement = convert_stmt(names, decl)?.ok_or_else(|| unsupported("will trait"))?;
     let mut declaration = expression_of(&statement)
         .filter(|d| d.class == RakuAstClass::VarDeclarationSimple)
         .ok_or_else(|| unsupported("will trait"))?;
@@ -33,7 +35,7 @@ pub(super) fn convert(
                     Some("phase"),
                     Value::str_from(crate::ast::var_will::phase_name(kind)),
                 ),
-                node_field(Some("block"), signature_block_node(body)?),
+                node_field(Some("block"), signature_block_node(names, body)?),
             ],
         })));
     }
@@ -53,6 +55,7 @@ type LoweredPhaser = (PhaserKind, Vec<Stmt>);
 /// declare (kind and lowered body); `None` when it has none.
 // Cost: O(n), n = size of the phaser bodies.
 pub(super) fn split(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<Option<(RakuAstNode, Vec<LoweredPhaser>)>, RuntimeError> {
     let Some(RakuAstField {
@@ -69,7 +72,7 @@ pub(super) fn split(
             Some(t) if t.class == RakuAstClass::TraitWill => {
                 let kind = crate::ast::var_will::phase_kind(&leaf_str(t, "phase")?)
                     .ok_or_else(|| super::lower::unsupported(t))?;
-                phasers.push((kind, lower_block(named_child(t, "block")?)?));
+                phasers.push((kind, lower_block(names, named_child(t, "block")?)?));
             }
             _ => kept.push(item.clone()),
         }

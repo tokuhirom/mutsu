@@ -22,13 +22,11 @@ impl Interpreter {
             self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
         );
-        let result = crate::rakuast::frontend::with_scope(scope, || {
-            if compunit {
-                crate::rakuast::str_dot_ast_compunit(source)
-            } else {
-                crate::rakuast::str_dot_ast(source)
-            }
-        });
+        let result = if compunit {
+            crate::rakuast::str_dot_ast_compunit(&scope, source)
+        } else {
+            crate::rakuast::str_dot_ast(&scope, source)
+        };
         crate::parser::clear_parser_lib_paths();
         result
     }
@@ -53,9 +51,7 @@ impl Interpreter {
             self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
         );
-        let result = crate::rakuast::frontend::with_scope(scope, || {
-            crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
-        });
+        let result = crate::rakuast::str_dot_ast_with_slang(&scope, source, slang.as_deref());
         crate::parser::clear_parser_lib_paths();
         result
     }
