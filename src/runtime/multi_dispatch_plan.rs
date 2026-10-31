@@ -46,6 +46,10 @@ pub(crate) struct PlanEntry {
 /// call's argument types, unique by fingerprint, in gather order.
 pub(crate) type PlanStage = Vec<PlanEntry>;
 
+/// A captured dispatcher's winner and its deferral chain
+/// ([`Interpreter::captured_multi_plan_winner`]).
+pub(crate) type CapturedWinner = (Arc<FunctionDef>, Vec<Arc<FunctionDef>>);
+
 /// The type-keyed half of a bare-name multi resolution. See the module docs.
 pub(crate) struct BareMultiPlan {
     stage: PlanStage,
@@ -468,7 +472,7 @@ impl Interpreter {
         family: &str,
         candidates: &[Value],
         args: &[Value],
-    ) -> Option<Result<Option<(Arc<FunctionDef>, Vec<Arc<FunctionDef>>)>, RuntimeError>> {
+    ) -> Option<Result<Option<CapturedWinner>, RuntimeError>> {
         let arg_keys = self.multi_arg_type_keys_with_named(args)?;
         // `visibility` (an imported name) stays in the key; the captured
         // candidates need no visibility filter, they are the dispatcher's own.
