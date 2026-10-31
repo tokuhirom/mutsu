@@ -40,7 +40,7 @@ MOOISH_URL=https://360.zef.pm/A/TT/ATTRX_MOOISH/9f8227d0681bf87ccfb0771db4f35dd8
 counts() { # $1=input -> "N1 N2 W1 W2"
     case "$1" in
         plain-call)  echo "100 300 20000 60000" ;;
-        mooish-lazy) echo "5 15 100 300" ;;
+        mooish-lazy) echo "10 50 100 300" ;;
         *)           echo "${CALLPATH_COUNTS:-100 300 2000 6000}" ;;
     esac
 }
