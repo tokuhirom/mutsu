@@ -384,6 +384,13 @@ impl Compiler {
                     self.code.emit(OpCode::GetGlobal(name_idx));
                     return;
                 }
+                // A name this scope's `use X` declared as the package `X`
+                // (#15806): the package, past a sigilless `\X` of an outer scope.
+                if self.use_declared_names.contains(name.as_str()) {
+                    let idx = self.code.add_constant(Value::package(Symbol::intern(name)));
+                    self.code.emit(OpCode::LoadConst(idx));
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.

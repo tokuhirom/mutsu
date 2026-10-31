@@ -4707,6 +4707,16 @@ impl Compiler {
                 ) {
                     self.unit_use_ctx.note_use(name);
                 }
+                // `use X` declares the package `X` in this scope: a bareword `X`
+                // after it names that package, not a sigilless `\X` of an
+                // outer scope (#15806). Only where such a binding is visible
+                // does it need to say so; every other `X` keeps `GetBareWord`.
+                if condition.is_none()
+                    && !module.contains("::")
+                    && (self.names_sigilless_binding(module) || self.in_eval_unit)
+                {
+                    self.use_declared_names.insert(module.clone());
+                }
                 // A `use` below the unit's top level binds its routines in the
                 // enclosing block (ADR-8751): the call sites the block encloses
                 // read them from its lexical import set.
