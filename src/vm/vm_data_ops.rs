@@ -496,7 +496,7 @@ impl Interpreter {
     /// binding sites ask for it, and only for a `$`-shaped name: an `@`/`%`
     /// variable IS its aggregate and has no Scalar to alias.
     // Cost: O(l), l = locals of the frame (the by-name slot fallback).
-    pub(super) fn capture_rw_arg_cell(
+    pub(crate) fn capture_rw_arg_cell(
         &mut self,
         code: &CompiledCode,
         name: &str,
@@ -511,6 +511,22 @@ impl Interpreter {
         // the caller's variable: `$x.VAR.name` in the callee is `$a` (#11196).
         crate::value::name_container_cell(&cell, &self.resolve_alias_root(name));
         cell
+    }
+
+    /// The shared cell of the scalar `name`, for a variable that is not a local
+    /// of the running frame (a captured outer lexical `substr-rw` is called
+    /// on inside a routine): the env entry is promoted to a `ContainerRef` in
+    /// place, so the caller's other holders of the name read the same cell.
+    /// `None` when the name is not bound in the env.
+    // Cost: O(1) env lookup plus one write.
+    pub(crate) fn capture_outer_scalar_cell(&mut self, name: &str) -> Option<Value> {
+        let current = self.get_env_with_main_alias(name)?;
+        if current.is_container_ref() {
+            return Some(current);
+        }
+        let cell = current.into_container_ref();
+        self.set_env_with_main_alias(name, cell.clone());
+        Some(cell)
     }
 
     // Cost: O(l), l = locals of the frame (the by-name slot fallback).

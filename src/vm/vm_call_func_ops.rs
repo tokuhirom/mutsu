@@ -2908,6 +2908,29 @@ impl Interpreter {
         args: Vec<Value>,
         arg_sources: Option<Vec<Option<String>>>,
     ) -> Result<Value, RuntimeError> {
+        // `substr-rw($s, ...)` outside an assignment hands back a Proxy that
+        // reads and writes `$s`: pass the variable's shared cell, as an `is rw`
+        // parameter binds it, so the Proxy aliases the container instead of
+        // naming the variable (#14572).
+        let mut args = args;
+        if name == "substr-rw"
+            && let Some(Some(var_name)) = arg_sources.as_ref().and_then(|s| s.first())
+            && !var_name.starts_with(['@', '%', '&'])
+            && !crate::qualified::is_qualified(crate::symbol::Symbol::intern(var_name))
+            && let Some(first) = args.first().cloned()
+            && matches!(first.deref_container().view(), ValueView::Str(_))
+        {
+            let mut cell =
+                self.capture_rw_arg_cell(code, var_name, first.deref_container().clone(), None);
+            if !cell.is_container_ref()
+                && let Some(outer) = self.capture_outer_scalar_cell(var_name)
+            {
+                cell = outer;
+            }
+            if cell.is_container_ref() {
+                args[0] = cell;
+            }
+        }
         // Sync Interpreter locals to env before spawning threads so closures capture them
         if name == "start" {
             self.sync_env_from_locals_needed(code);
