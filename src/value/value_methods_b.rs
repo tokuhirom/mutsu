@@ -663,8 +663,7 @@ impl Value {
             std::sync::Arc<crate::opcode::CompiledFns>,
         ),
     ) -> Self {
-        let mut data =
-            Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
         data.is_bare_block = true;
         data.compiled_code = Some(code);
         data.compiled_fns = Some(fns);
