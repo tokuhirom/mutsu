@@ -148,7 +148,8 @@ fn substr_rw_row(
     if let Some(code) = place.code()
         && !name.starts_with(['@', '%', '&'])
     {
-        let cell = interp.capture_rw_arg_cell(code, &name, place.value().descalarize().clone(), None);
+        let cell =
+            interp.capture_rw_arg_cell(code, &name, place.value().descalarize().clone(), None);
         if cell.is_container_ref() {
             return Some(interp.make_substr_rw_proxy_cell(cell, args));
         }
