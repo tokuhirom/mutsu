@@ -453,16 +453,41 @@ impl Interpreter {
                     ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                         let resolved_args: Vec<Value> =
                             args.iter().map(Self::unwrap_junction_deep).collect();
-                        match self.resolve_method_with_owner(
-                            &class_name.resolve(),
-                            method,
-                            &resolved_args,
-                        ) {
-                            Some((_, def)) => self.autothread_indices_for_params(
-                                args,
-                                &junction_indices,
-                                &def.param_defs,
-                            ),
+                        // A private call (`self!m($j)`) carries the `!` in its name:
+                        // its candidates are the private methods, which the public
+                        // lookup never finds, so it would thread every junction even
+                        // when the parameter is `Mu` (#15842).
+                        let resolved = if method.starts_with('!') {
+                            self.resolve_private_method_for_vm_sym(
+                                class_name,
+                                Symbol::intern(method),
+                                &resolved_args,
+                            )
+                            .map(|(owner, def)| (owner, (*def).clone()))
+                        } else {
+                            self.resolve_method_with_owner(
+                                &class_name.resolve(),
+                                method,
+                                &resolved_args,
+                            )
+                        };
+                        match resolved {
+                            Some((_, def)) => {
+                                let mut indices = self.autothread_indices_for_params(
+                                    args,
+                                    &junction_indices,
+                                    &def.param_defs,
+                                );
+                                if def.is_multi {
+                                    self.retain_indices_no_candidate_takes_whole(
+                                        &class_name.resolve(),
+                                        method,
+                                        args,
+                                        &mut indices,
+                                    );
+                                }
+                                indices
+                            }
                             std::option::Option::None => junction_indices,
                         }
                     }
@@ -531,6 +556,49 @@ impl Interpreter {
         }
 
         Ok(Some(Value::junction(kind, results)))
+    }
+
+    /// A Junction argument is dispatched whole when ANY candidate of a multi
+    /// method takes it as `Mu`/`Junction` at that position (rakudo tries the
+    /// candidates with the Junction as it is and threads it only when none
+    /// accepts): drop those indices from `indices`. The candidate chosen by the
+    /// eigenstate (an `Any` one) must not decide for the others (#15842,
+    /// Data::Dump::Tree's `multi method get_header (Junction $j)`).
+    // Cost: O(c * p), c = candidates in the MRO, p = their parameters.
+    fn retain_indices_no_candidate_takes_whole(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+        indices: &mut Vec<usize>,
+    ) {
+        if indices.is_empty() {
+            return;
+        }
+        let bare = method.strip_prefix('!').unwrap_or(method);
+        let mut overloads = Vec::new();
+        for cn in self.class_mro(class_name).iter() {
+            if let Some(found) = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn.as_str(), bare)
+            {
+                overloads.extend(found.iter().cloned());
+            }
+        }
+        let is_private = method.starts_with('!');
+        let mut keep = Vec::with_capacity(indices.len());
+        for &idx in indices.iter() {
+            let whole = overloads.iter().any(|def| {
+                def.is_private == is_private
+                    && self
+                        .autothread_indices_for_params(args, &[idx], &def.param_defs)
+                        .is_empty()
+            });
+            if !whole {
+                keep.push(idx);
+            }
+        }
+        *indices = keep;
     }
 
     /// Whether the proto parameter at positional `idx` is declared `Mu` /
