@@ -66,17 +66,7 @@ impl Interpreter {
     /// (`mark_vowed`), so the user-facing `.keep` on it is X::Promise::Vowed
     /// by design. Rakudo's own cued closure closes over the vow the same way.
     fn promise_keeper_block(promise: &SharedPromise) -> Value {
-        let mut vow_attrs = std::collections::HashMap::new();
-        vow_attrs.insert("promise".to_string(), Value::promise(promise.clone()));
-        let vow = Value::make_instance(Symbol::intern("Promise::Vow"), vow_attrs);
-        let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(crate::ast::Expr::Literal(vow)),
-            name: Symbol::intern("keep"),
-            args: vec![crate::ast::Expr::Literal(Value::TRUE)],
-            modifier: None,
-            quoted: false, sugar: false,
-        })];
-        Self::synthesized_thunk(body)
+        Self::vow_method_thunk(promise, "keep", Value::TRUE)
     }
 
     /// Promise.in dispatch
