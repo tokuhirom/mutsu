@@ -266,7 +266,6 @@ fn sample_sub() -> Gc<SubData> {
         compiled_fns: None,
         compiled_routine: None,
         is_decl_expr_thunk: false,
-        deprecated_message: None,
         source_line: None,
         source_file: None,
         owned_captures: vec![],
