@@ -232,7 +232,7 @@ fn lower_source_if(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), Ru
         .fields
         .iter()
         .find(|field| field.name == Some("source-if-condition"))
-        .map(|_| named_child(node, "source-if-condition").and_then(lower_expr))
+        .map(|_| named_child(node, "source-if-condition").and_then(|node| lower_expr(names, node)))
         .transpose()?;
     let imports = match node
         .fields

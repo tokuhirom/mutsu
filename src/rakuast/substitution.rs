@@ -101,7 +101,7 @@ fn substitution(names: &NameScope,
         leaf_field(Some("immutable"), Value::truth(!destructive)),
         leaf_field(Some("samespace"), Value::truth(samespace && !written_ss)),
     ];
-    push_adverbs(&mut fields, tree.adverbs.iter().map(adverb_node))?;
+    push_adverbs(&mut fields, tree.adverbs.iter().map(|adverb| adverb_node(names, adverb)))?;
     // `s[a] = EXPR` is `infix => Assignment`, `s[a] OP= EXPR`
     // `infix => MetaInfix::Assign(Infix(OP))` with EXPR as the replacement.
     let replacement = match thunk {

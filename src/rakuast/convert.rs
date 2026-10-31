@@ -2694,7 +2694,7 @@ fn convert_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         Expr::MatchRegexDynamicAdverbs { value, .. } => value
             .regex_source_tree()
             .ok_or_else(|| unsupported("dynamic match regex without a source tree"))
-            .and_then(quoted_regex_node),
+            .and_then(|node| quoted_regex_node(names, node)),
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
             if name.as_str() == "require"
                 && let Some(require) = super::use_stmt::convert_require(names, args)?
@@ -4453,7 +4453,7 @@ fn quoted_regex_node(names: &NameScope, tree: &RegexTree) -> Result<RakuAstNode,
         let adverbs = tree
             .adverbs
             .iter()
-            .map(super::substitution::adverb_node)
+            .map(|adverb| super::substitution::adverb_node(names, adverb))
             .collect::<Result<Vec<_>, _>>()?;
         fields.push(RakuAstField {
             name: Some("adverbs"),

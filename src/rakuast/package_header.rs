@@ -185,11 +185,11 @@ pub(super) fn strip(names: &NameScope,
 // Cost: O(n), n = size of the node.
 pub(super) fn lower_with_header(names: &NameScope, 
     node: &RakuAstNode,
-    lower: impl FnOnce(&RakuAstNode) -> Result<crate::ast::Stmt, RuntimeError>,
+    lower: impl FnOnce(&NameScope, &RakuAstNode) -> Result<crate::ast::Stmt, RuntimeError>,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
     use crate::ast::Stmt;
     let (stripped, mut header) = strip(names, node, node.class != RakuAstClass::Role)?;
-    let mut stmt = lower(&stripped)?;
+    let mut stmt = lower(names, &stripped)?;
     if super::routine_source::has_supersede(node) {
         match &mut stmt {
             Stmt::ClassDecl { marks, .. } => marks.declarator = Some("class".to_string()),

@@ -37,7 +37,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
         .find(|field| field.name == Some(SOURCE_DOC_PHASER))?;
     Some(
         child_node(&field.value)
-            .and_then(lower_stmt)
+            .and_then(|node| lower_stmt(names, node))
             .map(|stmt| Stmt::DocPhaser(Box::new(stmt))),
     )
 }

@@ -2242,7 +2242,7 @@ impl Interpreter {
                 // e.g. `RakuAST::Name.from-identifier("x")` (`.new` is handled
                 // earlier in methods_object_dispatch_new).
                 if type_name.starts_with("RakuAST::")
-                    && let Some(node) = crate::rakuast::construct(names, &type_name, method, &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &type_name, method, &args)?
                 {
                     return Ok(node);
                 }

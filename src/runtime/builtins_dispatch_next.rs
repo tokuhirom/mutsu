@@ -852,7 +852,7 @@ impl Interpreter {
                 return Some(self.construct_proxy_subclass(&class_name, args));
             }
             if name.starts_with("RakuAST::") && name != class_name {
-                match crate::rakuast::construct(names, &name, "new", args) {
+                match crate::rakuast::construct(&crate::scope::NameScope::default(), &name, "new", args) {
                     Ok(Some(node)) => {
                         return Some(self.dispatch_bless(invocant, args.to_vec()).and_then(
                             |instance| {
