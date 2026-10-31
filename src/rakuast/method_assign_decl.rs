@@ -40,8 +40,7 @@ pub(super) fn convert(
         name,
         Some(Initializer::CallAssign(form)),
         scope,
-        form.type_constraint.as_deref(),
-        twigil,
+        (form.type_constraint.as_deref(), twigil),
         None,
         form.anonymous,
     )?;

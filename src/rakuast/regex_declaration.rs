@@ -9,14 +9,12 @@ use crate::value::{RuntimeError, Value};
 /// `[my|our] token NAME(SIG) { … }`: scope precedes the method-style signature
 /// and body; the default `has` scope is omitted.
 // Cost: O(r + p), r = size of the regex, p = size of the parameters.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn convert(
     names: &NameScope,
     class: RakuAstClass,
     name: &str,
     tree: &RegexTree,
-    scope: Option<&str>,
-    multiness: Option<&str>,
+    placement: (Option<&str>, Option<&str>),
     param_defs: &[ParamDef],
     export_trait: Option<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -25,8 +23,7 @@ pub(super) fn convert(
         names,
         class,
         Some(name),
-        scope,
-        multiness,
+        placement,
         param_defs,
         regex_node(names, &tree.body)?,
         export_trait.into_iter().collect(),
@@ -35,17 +32,16 @@ pub(super) fn convert(
 
 /// [`convert`] over an already converted body (the `{*}` of a proto).
 // Cost: O(p), p = size of the parameters.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn with_body(
     names: &NameScope,
     class: RakuAstClass,
     name: Option<&str>,
-    scope: Option<&str>,
-    multiness: Option<&str>,
+    placement: (Option<&str>, Option<&str>),
     param_defs: &[ParamDef],
     body: RakuAstNode,
     traits: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let (scope, multiness) = placement;
     let mut fields = Vec::with_capacity(6);
     if let Some(scope) = scope {
         fields.push(leaf_field(Some("scope"), Value::str_from(scope)));

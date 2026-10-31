@@ -182,8 +182,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
                 class,
                 &name.resolve(),
                 tree,
-                scope,
-                multi.then_some("multi"),
+                (scope, multi.then_some("multi")),
                 param_defs,
                 super::package_header::export_trait_value(
                     *is_export || !export_tags.is_empty(),
@@ -217,8 +216,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
                 names,
                 class,
                 Some(&name.resolve()),
-                scope,
-                Some("proto"),
+                (scope, Some("proto")),
                 param_defs,
                 RakuAstNode {
                     origin: Default::default(),
@@ -252,8 +250,7 @@ fn convert_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNod
                 RakuAstClass::RuleDeclaration,
                 &name.resolve(),
                 tree,
-                None,
-                multi.then_some("multi"),
+                (None, multi.then_some("multi")),
                 param_defs,
                 super::package_header::export_trait_value(
                     *is_export || !export_tags.is_empty(),
@@ -1758,8 +1755,7 @@ pub(super) fn var_decl_statement(
             sigil,
             custom_traits,
             type_constraint,
-            is_our,
-            export_trait,
+            (is_our, export_trait),
         );
     }
     let unrendered: Vec<&str> = custom_traits
@@ -1841,7 +1837,15 @@ pub(super) fn var_decl_statement(
     } else {
         (name, None)
     };
-    let mut decl = var_declaration(names, name, init, scope, type_name, twigil, None, anonymous)?;
+    let mut decl = var_declaration(
+        names,
+        name,
+        init,
+        scope,
+        (type_name, twigil),
+        None,
+        anonymous,
+    )?;
     if let Some((_, key)) = keyed {
         super::keyed_hash::insert_shape(names, &mut decl, key)?;
     }
@@ -1995,14 +1999,12 @@ pub(super) enum Initializer<'a> {
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
 /// implicit (`$`) when mutsu already stripped it from the name; otherwise the
 /// name carries its `@`/`%`/`&` sigil.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn var_declaration(
     names: &NameScope,
     name: &str,
     init: Option<Initializer<'_>>,
     scope: Option<&'static str>,
-    type_name: Option<&str>,
-    twigil: Option<&str>,
+    (type_name, twigil): (Option<&str>, Option<&str>),
     will_build: Option<&Expr>,
     anonymous: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -4606,7 +4608,6 @@ fn pointy_block_from_lambda(
 /// A sigilled constant (`constant @a = 1, 2`) keeps its sigil in `name`. A
 /// typed one (`our Mu constant X = 1`) has the `type` between `scope` and
 /// `name`.
-#[allow(clippy::too_many_arguments)]
 fn constant_declaration(
     names: &NameScope,
     name: &str,
@@ -4614,8 +4615,7 @@ fn constant_declaration(
     constant: crate::ast::ConstantSigil,
     custom_traits: &[(String, Option<Expr>)],
     type_constraint: &Option<String>,
-    is_our: bool,
-    export_trait: Option<Value>,
+    (is_our, export_trait): (bool, Option<Value>),
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     let sigil = constant.as_str();
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
@@ -5875,8 +5875,7 @@ fn anon_regex_declaration(
         names,
         class,
         None,
-        None,
-        None,
+        (None, None),
         &params,
         regex_node(names, &tree.body)?,
         Vec::new(),

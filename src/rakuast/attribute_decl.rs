@@ -102,8 +102,7 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
             }
         }),
         scope,
-        type_name,
-        twigil,
+        (type_name, twigil),
         if *default_is_bind {
             None
         } else {
