@@ -76,10 +76,9 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 /// in place, with no copy of it.
 // Cost: O(n), n = size of the unit.
 pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-    // The conversion matches expressions by shape, so the term origins the
-    // spelled parse kept come off first (`expr_origins`).
+    // An executing parse records no term origins (`term_origins::Wanted` is
+    // entered only by `Str.AST`), so there is no wrapper to take off.
     let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
-    let _origins = super::expr_origins::strip(&mut stmts);
     // The unit's declarations also classify the barewords a kept tree
     // converts where it stands, while it is lowered.
     let _declared = (!convert_level()).then(|| super::bareword::DeclaredNames::collect(&stmts));
