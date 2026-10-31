@@ -24,7 +24,7 @@ use super::{
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
 use crate::ast::{AssignOp, Expr, ForMode, ParamDef, ParamTarget, Stmt};
-use crate::compiler::helpers_ops::token_kind_to_op_name;
+use crate::op_names::token_kind_to_op_name;
 use crate::regex_tree::RegexTree;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -3355,7 +3355,7 @@ fn convert_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
             // A bareword target is a term (spelled by its term key,
             // ADR-12441): rakudo's left side is the `Term::Name`, and `=` is
             // a list assignment (no `:item`).
-            if let Some(term) = crate::runtime::term_names::term_spelling(name) {
+            if let Some(term) = crate::term_names::term_spelling(name) {
                 let left = RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::TermName,

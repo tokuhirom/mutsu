@@ -30,7 +30,7 @@ pub(crate) fn hyper_prefix_expr(symbol: impl ToString, operand: Expr) -> Expr {
 /// not a prefix the parser itself hypers.
 // Cost: O(1).
 pub(crate) fn lower_hyper_prefix(symbol: &str, operand: Expr) -> Option<Expr> {
-    crate::compiler::helpers_ops::prefix_op_name_to_token_kind(symbol)?;
+    crate::op_names::prefix_op_name_to_token_kind(symbol)?;
     Some(Expr::Call {
         name: Symbol::intern(HYPER_PREFIX),
         args: vec![Expr::Literal(Value::str(symbol.to_string())), operand],

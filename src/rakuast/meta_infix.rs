@@ -441,7 +441,7 @@ fn fold(
     // value, and a priming `*` is found by the same walk as for the plain op).
     if meta == "!"
         && items.as_slice().is_empty()
-        && let Some(token) = crate::compiler::helpers_ops::op_name_to_token_kind(&op)
+        && let Some(token) = crate::op_names::op_name_to_token_kind(&op)
     {
         return Ok(Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,

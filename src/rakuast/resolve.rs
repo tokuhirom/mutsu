@@ -820,7 +820,7 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 name.as_str(),
                 "take" | "take-rw" | "emit" | "await" | "return" | "return-rw"
             );
-            if !statement_routine && !crate::runtime::Interpreter::is_builtin_function(&name) {
+            if !statement_routine && !crate::builtin_functions::is_builtin_function(&name) {
                 return (scopes.imported)(&name)
                     .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
                     .flatten();

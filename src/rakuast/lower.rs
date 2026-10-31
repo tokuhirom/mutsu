@@ -2672,7 +2672,7 @@ fn term_target_key(left: &RakuAstNode) -> Option<String> {
         return None;
     }
     match name_parts::name_shape(named_child_or_positional(left).ok()?) {
-        Some(NameShape::Identifier(name)) => Some(crate::runtime::term_names::term_key(&name)),
+        Some(NameShape::Identifier(name)) => Some(crate::term_names::term_key(&name)),
         _ => None,
     }
 }
@@ -5423,7 +5423,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             // junction constructors, `min`/`max` — is an ordinary left-nested
             // `Expr::Binary` internally, so the operator name maps straight back
             // to its token.
-            let Some(token) = crate::compiler::helpers_ops::op_name_to_token_kind(&op) else {
+            let Some(token) = crate::op_names::op_name_to_token_kind(&op) else {
                 return Err(unsupported(node));
             };
             // These chain left-associatively: `a andthen b andthen c` is
@@ -5833,7 +5833,7 @@ fn quoted_method_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
 /// `Postfix` carries its operator in a NAMED `operator` field.
 fn postfix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
     let name = leaf_str(node, "operator")?;
-    crate::compiler::helpers_ops::op_name_to_token_kind(&name).ok_or_else(|| unsupported(node))
+    crate::op_names::op_name_to_token_kind(&name).ok_or_else(|| unsupported(node))
 }
 
 /// The `TokenKind` for an `Infix`/`Prefix` operator node (its positional operator
@@ -5845,7 +5845,7 @@ pub(super) fn infix_token(
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
     };
-    crate::compiler::helpers_ops::op_name_to_token_kind(super::infix_spelling::lowered_name(&s))
+    crate::op_names::op_name_to_token_kind(super::infix_spelling::lowered_name(&s))
         .ok_or_else(|| unsupported(node))
 }
 
@@ -5857,7 +5857,7 @@ pub(super) fn prefix_token(
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
     };
-    crate::compiler::helpers_ops::prefix_op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
+    crate::op_names::prefix_op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
 }
 
 /// An optional boolean-valued named field (an omitted field is `False`, which
