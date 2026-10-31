@@ -138,11 +138,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let body = super::nested_methods::unhoist(&role.body[header_len..]);
     fields.push(node_field(
         Some("body"),
-        RakuAstNode {
+        super::role_implicit::add(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RoleBody,
             fields: vec![node_field(Some("body"), blockoid(&body)?)],
-        },
+        }),
     ));
     if !role.type_param_defs.is_empty() {
         fields.push(node_field(
@@ -251,6 +251,8 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if role_body.class != RakuAstClass::RoleBody {
         return Err(unsupported_node(node));
     }
+    let stripped = super::role_implicit::shown(role_body);
+    let role_body = stripped.as_ref().unwrap_or(role_body);
     let body = lower_package_body(lower_stmts(named_child_or_positional(named_child(
         role_body, "body",
     )?)?)?);

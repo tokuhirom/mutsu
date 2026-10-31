@@ -129,6 +129,7 @@ mod render;
 mod resolve;
 mod role;
 mod role_header;
+mod role_implicit;
 mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;

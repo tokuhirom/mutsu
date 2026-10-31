@@ -943,77 +943,10 @@ fn move_role_header_into_body(role: &mut RakuAstNode) {
         name: Some("signature"),
         value,
     });
-    add_implicit_role_statements(&mut body_node);
+    body_node = super::role_implicit::add(body_node);
     header.append(&mut body_node.fields);
     body_node.fields = header;
     body_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(body_node)));
-}
-
-/// Bracket a role body's statements with the ones rakudo's tree adds:
-/// `Role::ResolveInstantiations` first and `nqp::list(MetaObject, nqp::curlexpad())`
-/// last.
-// Cost: O(s), s = statements of the body.
-fn add_implicit_role_statements(body: &mut RakuAstNode) {
-    let Some(blockoid_field) = body.fields.iter_mut().find(|f| f.name == Some("body")) else {
-        return;
-    };
-    let RakuAstFieldValue::Node(blockoid) = &blockoid_field.value else {
-        return;
-    };
-    let ValueView::RakuAst(blockoid) = blockoid.view() else {
-        return;
-    };
-    let mut blockoid = RakuAstNode::clone(blockoid);
-    let Some(list_field) = blockoid.fields.iter_mut().find_map(|f| match &f.value {
-        RakuAstFieldValue::Node(v) => {
-            matches!(v.view(), ValueView::RakuAst(n) if n.class == C::StatementList).then_some(f)
-        }
-        _ => None,
-    }) else {
-        return;
-    };
-    let RakuAstFieldValue::Node(list) = &list_field.value else {
-        return;
-    };
-    let ValueView::RakuAst(list) = list.view() else {
-        return;
-    };
-    let mut list = RakuAstNode::clone(list);
-    let plain = |class, fields| {
-        Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class,
-            fields,
-        }))
-    };
-    let unnamed = |value: Value| RakuAstField {
-        name: None,
-        value: RakuAstFieldValue::Node(value),
-    };
-    let nqp = |op: &str, args: Vec<Value>| {
-        let mut fields = vec![unnamed(Value::str(op.to_string()))];
-        fields.extend(args.into_iter().map(unnamed));
-        plain(C::Nqp, fields)
-    };
-    let closing = nqp(
-        "list",
-        vec![
-            plain(C::RoleMetaObject, Vec::new()),
-            nqp("curlexpad", Vec::new()),
-        ],
-    );
-    let closing = plain(
-        C::StatementExpression,
-        vec![RakuAstField {
-            name: Some("expression"),
-            value: RakuAstFieldValue::Node(closing),
-        }],
-    );
-    list.fields
-        .insert(0, unnamed(plain(C::RoleResolveInstantiations, Vec::new())));
-    list.fields.push(unnamed(closing));
-    list_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(list)));
-    blockoid_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid)));
 }
 
 /// The variable (`$x`, `@a`) a declaration node declares.
