@@ -94,6 +94,7 @@ mod parse_result;
 mod primary;
 mod quote_shadow;
 pub(crate) mod sink_warn;
+pub(crate) mod soft_sorry;
 mod stmt;
 
 /// Validate one complete identifier using the parser's lexical grammar.
@@ -1061,6 +1062,7 @@ pub(crate) fn parse_program_spelled(
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());
+    soft_sorry::clear();
     // Consume the EVAL value-tail flag up front so any nested parse this
     // program triggers (module loads, ...) uses plain mainline semantics.
     let eval_value_tail = take_eval_value_tail();
@@ -1125,6 +1127,10 @@ pub(crate) fn parse_program_spelled(
                 // same scope (X::Redeclaration::Outer), or `my $x = $x`
                 // (X::Syntax::Variable::Initializer), is a compile-time error.
                 Err(outer_redecl::scope_diagnostic_error(diag))
+            } else if let Some(error) = settle_soft_sorries(source, &stmts) {
+                // A "sorry" of the grammar no compile-phase code can observe
+                // is the answer outright, as it always was.
+                Err(render_parse_error(source, error))
             } else {
                 if suppress_sink {
                     // An internal fragment re-parse (see `parse_fragment`).
@@ -1181,6 +1187,45 @@ pub(crate) fn parse_program_spelled(
     }
 
     result
+}
+
+/// The grammar's "sorries" found by a parse that otherwise succeeded
+/// (`soft_sorry`). A unit with a `CHECK` phaser that is being compiled queues
+/// them on the unit, where its compile phase reports them after the phaser ran,
+/// as rakudo does; for any other parse the first is returned, to be raised at
+/// once.
+// Cost: O(p + l), p = sorries found, l = length of the line each is on.
+fn settle_soft_sorries(source: &str, stmts: &[Stmt]) -> Option<PError> {
+    let mut pending = soft_sorry::take();
+    if pending.is_empty() {
+        return None;
+    }
+    let has_check = stmts.iter().any(|stmt| {
+        matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Check,
+                ..
+            }
+        )
+    });
+    if !has_check {
+        return pending.into_iter().next();
+    }
+    let mut queued = Vec::new();
+    for error in &pending {
+        let (Some(exception), Some(remaining)) = (&error.exception, error.remaining_len) else {
+            return pending.into_iter().next();
+        };
+        let at = source.len().saturating_sub(remaining);
+        queued.push(((**exception).clone(), at));
+    }
+    for (exception, at) in queued {
+        if !crate::unit_diagnostics::add_parse_sorry(&exception, source, at) {
+            return pending.drain(..).next();
+        }
+    }
+    None
 }
 
 /// Like `parse_program`, but pre-registers operator sub names so the parser
