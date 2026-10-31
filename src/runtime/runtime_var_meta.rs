@@ -432,6 +432,31 @@ impl Interpreter {
         }
     }
 
+    /// A sigilless parameter `\x` bound as an alias of the caller's variable
+    /// `source` is that variable, so the declared type of the variable applies
+    /// to it: record `declared` (the type the argument's `WrapVarRef` site
+    /// resolved in the caller's own frame, `VarRef::declared`) under the
+    /// parameter's own name and under the variable's, which is the name a store
+    /// through the alias resolves to. The record walk does not enter the
+    /// caller's frames for either any more (ADR-13757 step 4).
+    // Cost: O(1) expected.
+    pub(crate) fn alias_param_declared_type(
+        &mut self,
+        param: &str,
+        source: &str,
+        declared: &Value,
+    ) {
+        if !matches!(declared.view(), ValueView::Str(_)) {
+            return;
+        }
+        for name in [param, source] {
+            let sym = Symbol::intern(name);
+            self.env
+                .insert_sym(Self::type_meta_key_for_sym(sym), declared.clone());
+            Self::mark_env_type_constraint_seen_for(sym);
+        }
+    }
+
     /// Register the type constraint of a *bound routine parameter*. For scalar
     /// parameters the constraint is written to the `env`-keyed
     /// `__mutsu_type::name` metadata, which is scoped — dropped when the
