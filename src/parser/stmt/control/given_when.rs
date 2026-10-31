@@ -81,6 +81,11 @@ fn bareword_names_known_term(name: &str) -> bool {
     if name == "self" || name == "X" {
         return true;
     }
+    // `nqp::const::NAME` is a compile-time integer constant (see
+    // `compiler::nqp_forms::nqp_const_value`), a complete term.
+    if name.starts_with("nqp::const::") {
+        return true;
+    }
     // A RakuAST model class is a CORE type object (`when RakuAST::Infix { }`),
     // abstract ones such as `RakuAST::Literal` included.
     if name.starts_with("RakuAST::")
