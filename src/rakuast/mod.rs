@@ -1500,6 +1500,13 @@ pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
         .flatten()
 }
 
+/// Which candidate of its name's dispatcher a `multi sub` of the unit tree `$*CU`
+/// answers declares.
+// Cost: O(1).
+pub(crate) fn declared_multi_candidate(node: &RakuAstNode) -> Option<usize> {
+    resolve::multi_candidate_index(node)
+}
+
 /// The `(package, name)` of a `Method` of the unit tree `$*CU` answers.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {

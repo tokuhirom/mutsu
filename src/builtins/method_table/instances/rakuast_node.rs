@@ -373,6 +373,15 @@ fn sub_value(
     {
         return Some(Ok(interp.sub_value_from_function_def(def)));
     }
+    // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
+    if let Some(index) = crate::rakuast::declared_multi_candidate(node)
+        && let Ok(candidates) =
+            interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
+        && let ValueView::Array(items, _) = candidates.view()
+        && let Some(candidate) = items.as_slice().get(index)
+    {
+        return Some(Ok(candidate.clone()));
+    }
     Some(Ok(routine))
 }
 
@@ -410,11 +419,25 @@ fn routine_parameter(
         "sub" => {
             let name = tag.get(1)?;
             let routine = interp.resolve_code_var(name);
-            if matches!(routine.view(), ValueView::Sub(_)) {
+            let routine = if matches!(routine.view(), ValueView::Sub(_)) {
                 routine
             } else {
                 let def = interp.resolve_function(name).map(|a| (*a).clone())?;
                 interp.sub_value_from_function_def(def)
+            };
+            // A `multi` parameter belongs to its own candidate.
+            match tag.get(2).and_then(|t| t.strip_prefix("multi:")) {
+                Some(candidate) => {
+                    let candidate: usize = candidate.parse().ok()?;
+                    let candidates = interp
+                        .call_method_with_values(routine, "candidates", Vec::new())
+                        .ok()?;
+                    let ValueView::Array(items, _) = candidates.view() else {
+                        return None;
+                    };
+                    items.as_slice().get(candidate)?.clone()
+                }
+                None => routine,
             }
         }
         "method" => interp
