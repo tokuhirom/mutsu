@@ -1175,6 +1175,15 @@ impl Interpreter {
         Ok(current_target)
     }
 
+    /// Put back the env `self` binding [`Self::run_role_submethod`] replaced.
+    // Cost: O(1).
+    fn restore_env_self(&mut self, saved: Option<Value>) {
+        match saved {
+            Some(v) => self.env.insert("self".to_string(), v),
+            None => self.env.remove("self"),
+        };
+    }
+
     /// Run a single BUILD or TWEAK submethod from a role on a mixin value,
     /// properly propagating attribute modifications back to the mixin map.
     fn run_role_submethod(
@@ -1244,7 +1253,11 @@ impl Interpreter {
                 }
             }
         }
-        // Set self for the body
+        // Set self for the body. The compiled body reads `self` from the local
+        // slot `run_nested` seeds from env by name, so env has to carry it too
+        // (otherwise the body saw `Nil` for a mixin over an instance).
+        let saved_self = self.env.get("self").cloned();
+        self.env.insert("self".to_string(), target.clone());
         let fixtures_mark = self.begin_scoped_invocant(target.clone());
         // Execute the body directly in current scope so closure variable
         // mutations propagate to the outer scope. `$!attr` reads/writes
@@ -1260,12 +1273,20 @@ impl Interpreter {
         if let Some(cc) = &def.compiled_code {
             let empty_fns = crate::opcode::CompiledFns::default();
             let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-            if let Err(e) = self.run_compiled_block_raw(cc, fns_ref) {
+            // A `return` ends the submethod, as it does when the role is
+            // composed into a class; it is not an error of the composition.
+            if let Err(e) = self.run_compiled_block_raw(cc, fns_ref)
+                && !e.is_return()
+            {
                 self.end_scoped_fixtures(fixtures_mark);
+                self.restore_env_self(saved_self);
                 return Err(e);
             }
-        } else if let Err(e) = self.eval_block_value(&def.body) {
+        } else if let Err(e) = self.eval_block_value(&def.body)
+            && !e.is_return()
+        {
             self.end_scoped_fixtures(fixtures_mark);
+            self.restore_env_self(saved_self);
             return Err(e);
         }
         // Read back modified attribute values from env into the mixin map
@@ -1287,6 +1308,7 @@ impl Interpreter {
             target
         };
         self.end_scoped_fixtures(fixtures_mark);
+        self.restore_env_self(saved_self);
         // Restore any outer binding the role's own params seeding shadowed.
         for (param_name, prev) in saved_role_params {
             match prev {

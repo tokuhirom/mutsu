@@ -80,12 +80,19 @@ impl Interpreter {
     }
 
     pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
+        // A handle with roles mixed in (`$*ARGFILES does R`) is the same open
+        // handle: look through the wrapper.
+        if let ValueView::Mixin(inner, _) = value.view() {
+            return Self::handle_id_from_value(inner);
+        }
         if let ValueView::Instance {
             class_name,
             attributes,
             ..
         } = value.view()
-            && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
+            && (class_name == "IO::Handle"
+                || class_name == "IO::Socket::INET"
+                || class_name.as_str().starts_with("IO::Handle+{"))
             && let Some(ValueView::Int(id)) = attributes.as_map().get("handle").map(Value::view)
             && id >= 0
         {
