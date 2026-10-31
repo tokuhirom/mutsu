@@ -2512,23 +2512,35 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             && r[next.len_utf8()..].chars().next().is_none_or(|c| {
                 c.is_whitespace() || matches!(c, ']' | ')' | '}' | '>' | ',' | ';')
             });
-        // A package-qualified name no known or declared type matches
+        // A package-qualified name that is no declared type
         // (`SDL::GetTextureBlendMode ($!texture, $mode)`, a routine of a
         // package that may not be loaded here) followed by a spaced
-        // parenthesized list is a call of that routine, as in raku. Only a
-        // name that IS a known/declared type keeps `Int (elem) @types` an
-        // infix, and the set-operator spellings (`(elem)`, `(-)`, ...) are
-        // never an argument list.
+        // parenthesized list is a call of that routine, as in raku. The
+        // set-operator spellings (`IO::Path (elem) @types`, `(-)`, ...) are
+        // never an argument list, which keeps a qualified type an infix operand.
         let unknown_qualified_call_paren = next == '('
             && name.contains("::")
-            && !crate::runtime::utils::is_known_type_constraint(&name)
-            && !crate::runtime::utils::is_known_compound_type(&name)
             && !name_is_declared_type
             && r.find(')').is_some_and(|close| {
                 !matches!(
                     r[1..close].trim(),
-                    "elem" | "cont" | "-" | "|" | "&" | "^" | "+" | "." | "<" | ">" | "<=" | ">="
-                        | "<+" | "<-" | "<." | ">." | "(<=)"
+                    "elem"
+                        | "cont"
+                        | "-"
+                        | "|"
+                        | "&"
+                        | "^"
+                        | "+"
+                        | "."
+                        | "<"
+                        | ">"
+                        | "<="
+                        | ">="
+                        | "<+"
+                        | "<-"
+                        | "<."
+                        | ">."
+                        | "(<=)"
                 )
             });
         // Only trigger if next token starts a term (not an operator)
