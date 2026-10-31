@@ -289,6 +289,14 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
 
 /// Boolean bitwise / junction: ?| ?& ?^ | & ^
 pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    junctive_level(input, mode, false)
+}
+
+/// One level of the junction operators. Raku's junctive `&` binds TIGHTER than
+/// `|` and `^` (`1 | 2 & 3` is `any(1, all(2, 3))`), so `&` is parsed by the
+/// inner level (`and_level`) and the outer level, which handles `|`, `^` and
+/// the boolean-bitwise `?|`-style operators, takes the `&` chains as operands.
+fn junctive_level(input: &str, mode: ExprMode, and_level: bool) -> PResult<'_, Expr> {
     // The list-infix operators (`Z`/`X`/meta/`...`/feed) are LOOSER than the
     // comma operator and thus looser than the junctions / comparison / range
     // chain reached here; they are handled by the `list_infix_top` layer that
@@ -307,7 +315,19 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
         ExprMode::NoSequenceNoFeed => sequence_only_expr,
         ExprMode::ListopArg => range_expr,
     };
-    let (mut rest, mut left) = next_fn(input)?;
+    fn operand_of<'a>(
+        s: &'a str,
+        mode: ExprMode,
+        and_level: bool,
+        next_fn: fn(&str) -> PResult<'_, Expr>,
+    ) -> PResult<'a, Expr> {
+        if and_level {
+            next_fn(s)
+        } else {
+            junctive_level(s, mode, true)
+        }
+    }
+    let (mut rest, mut left) = operand_of(input, mode, and_level, next_fn)?;
     let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
@@ -354,7 +374,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                next_fn(r).map_err(|err| {
+                operand_of(r, mode, and_level, next_fn).map_err(|err| {
                     enrich_expected_error(
                         err,
                         "expected expression after junctive operator",
@@ -362,7 +382,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
                     )
                 })?
             } else {
-                next_fn(r)?
+                operand_of(r, mode, and_level, next_fn)?
             };
             left = Expr::Binary {
                 left: Box::new(left),
@@ -374,7 +394,9 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
             continue;
         }
         // Junction infix operators: |, &, ^
-        if let Some((op, len)) = parse_junction_infix_op_after(r, glued_left) {
+        if let Some((op, len)) = parse_junction_infix_op_after(r, glued_left)
+            && (op == JunctionInfixOp::All) == and_level
+        {
             if let Some(prev) = last_junction
                 && matches!(
                     (prev, op),
@@ -398,7 +420,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                next_fn(r).map_err(|err| {
+                operand_of(r, mode, and_level, next_fn).map_err(|err| {
                     enrich_expected_error(
                         err,
                         "expected expression after junction operator",
@@ -406,7 +428,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
                     )
                 })?
             } else {
-                next_fn(r)?
+                operand_of(r, mode, and_level, next_fn)?
             };
             left = Expr::Binary {
                 left: Box::new(left),
