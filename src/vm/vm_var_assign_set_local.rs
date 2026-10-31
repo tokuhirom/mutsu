@@ -2918,10 +2918,27 @@ impl Interpreter {
                     .env()
                     .get(&resolved_source)
                     .is_some_and(Value::is_container_ref);
+            // A raw/rw parameter bound to a caller variable that no saved frame
+            // env vouches for (a mainline lexical on the call that first reaches
+            // it): the binder already minted the shared cell for the caller's
+            // variable and installed it under its name, and the parameter is a
+            // sigilless alias of that name. Binding something to the parameter
+            // (`$!attr := $param`) must join that cell, or the bound name keeps
+            // a snapshot the caller's variable never sees (#15708).
+            let param_alias_cell = !source_in_same_scope
+                && val_is_simple_scalar
+                && !is_percall_pseudo_var
+                && !synthetic_index_source
+                && resolved_source != source_name
+                && self
+                    .env()
+                    .get(&resolved_source)
+                    .is_some_and(Value::is_container_ref);
             if (source_in_outer_frame
                 || (is_rebind && source_in_same_scope && val_is_simple_scalar)
                 || decl_bind_same_scope_scalar
-                || env_source_cell)
+                || env_source_cell
+                || param_alias_cell)
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')

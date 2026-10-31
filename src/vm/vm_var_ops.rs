@@ -236,6 +236,21 @@ impl Interpreter {
         self.call_sub_value(idx.clone(), vec![Value::int(len)])
     }
 
+    /// How many positions `$obj[*]:exists` / `$obj[Inf]:exists` visits: the
+    /// length of `$obj.list`, as in Rakudo -- a one-element list holding the
+    /// object itself unless the class overrides `list`, whatever `elems` it
+    /// declares.
+    // Cost: O(n) for the object's own `list`, n = its length.
+    fn whatever_exists_len(&mut self, instance: &Value) -> usize {
+        match self.try_compiled_method_or_interpret(instance.clone(), "list", vec![]) {
+            Ok(list) => match self.try_compiled_method_or_interpret(list, "elems", vec![]) {
+                Ok(n) => crate::runtime::to_int(&n).max(0) as usize,
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        }
+    }
+
     pub(super) fn instance_exists_pos_result(
         &mut self,
         instance: &Value,
@@ -253,10 +268,7 @@ impl Interpreter {
                 if let [only] = items.as_slice()
                     && matches!(only.view(), ValueView::Whatever)
                 {
-                    let elems = self
-                        .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
-                        .unwrap_or(Value::int(0));
-                    let len = crate::runtime::to_int(&elems).max(0) as usize;
+                    let len = self.whatever_exists_len(instance);
                     let mut pairs = Vec::with_capacity(len);
                     for i in 0..len {
                         let key = Value::int(i as i64);
@@ -267,10 +279,7 @@ impl Interpreter {
                     && let ValueView::Num(f) = only.view()
                 {
                     if f.is_infinite() && f.is_sign_positive() {
-                        let elems = self
-                            .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
-                            .unwrap_or(Value::int(0));
-                        let len = crate::runtime::to_int(&elems).max(0) as usize;
+                        let len = self.whatever_exists_len(instance);
                         let mut pairs = Vec::with_capacity(len);
                         for i in 0..len {
                             let key = Value::int(i as i64);
@@ -299,10 +308,7 @@ impl Interpreter {
                 }
             }
             ValueView::Whatever => {
-                let elems = self
-                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
-                    .unwrap_or(Value::int(0));
-                let len = crate::runtime::to_int(&elems).max(0) as usize;
+                let len = self.whatever_exists_len(instance);
                 let mut pairs = Vec::with_capacity(len);
                 for i in 0..len {
                     let key = Value::int(i as i64);
@@ -311,10 +317,7 @@ impl Interpreter {
                 pairs
             }
             ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                let elems = self
-                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
-                    .unwrap_or(Value::int(0));
-                let len = crate::runtime::to_int(&elems).max(0) as usize;
+                let len = self.whatever_exists_len(instance);
                 let mut pairs = Vec::with_capacity(len);
                 for i in 0..len {
                     let key = Value::int(i as i64);
