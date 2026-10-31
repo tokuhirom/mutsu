@@ -28,6 +28,9 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
         };
         return render_node(&shown, indent);
     }
+    if let Some(shown) = super::role_implicit::shown(node) {
+        return render_node(&shown, indent);
+    }
     if node.class == RakuAstClass::VarDeclarationSimple
         && let Some(shown) = super::attribute::without_implicit_traits(node)
     {

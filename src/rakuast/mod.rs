@@ -128,6 +128,7 @@ mod regex_variable_alias;
 mod render;
 mod resolve;
 mod role;
+mod role_implicit;
 mod role_header;
 mod routine_ctor;
 mod routine_is_traits;
