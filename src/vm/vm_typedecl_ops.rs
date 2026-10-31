@@ -951,8 +951,7 @@ impl Interpreter {
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     // As in rakudo, an `is foo(...)` no candidate accepts is
                     // an unknown parent, whichever candidates exist.
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
@@ -980,8 +979,7 @@ impl Interpreter {
                     let spelling =
                         parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
@@ -1601,8 +1599,7 @@ impl Interpreter {
                         None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             return Err(self.unknown_parent_error(&qualified_name, trait_name));
@@ -1616,8 +1613,7 @@ impl Interpreter {
                 // comment on the class-registration site above).
                 for trait_name in &role_deferred {
                     let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             return Err(self.unknown_parent_error(&qualified_name, trait_name));
