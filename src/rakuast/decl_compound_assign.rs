@@ -81,12 +81,11 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
     if let Stmt::HasDecl {
         name,
         is_public,
-        is_alias,
         ..
     } = &decl
     {
         let assign =
-            attribute_compound_assign(&name.resolve(), *is_public, *is_alias, compound, source);
+            attribute_compound_assign(&name.resolve(), *is_public, compound, source);
         // One flat block: the class-body attribute discovery flattens only
         // one level.
         return Ok(Stmt::SyntheticBlock(vec![decl, assign]));
@@ -105,13 +104,11 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
 /// compound assignment written right after it. This is the assignment of
 /// `name OP rhs` back to the attribute: through the accessor
 /// (`Expr::AssignExpr`) for a public `$.g`, so a non-`rw` one dies as
-/// rakudo's does; as a `Stmt::Assign` of `$!g` (or of the alias `$g`)
-/// otherwise.
+/// rakudo's does; as a `Stmt::Assign` of `$!g` otherwise.
 // Cost: O(n), n = size of `rhs`.
 fn attribute_compound_assign(
     name: &str,
     is_public: bool,
-    is_alias: bool,
     op: CompoundAssignOp,
     rhs: Expr,
 ) -> Stmt {
@@ -124,11 +121,10 @@ fn attribute_compound_assign(
             is_bind: false,
         });
     }
-    let var_name = if is_alias {
-        name.to_string()
-    } else {
-        format!("!{name}")
-    };
+    // The alias attribute (`has $g`, no twigil) is the attribute `$!g`: its bare
+    // lexical alias is not visible where the assignment is compiled (a method
+    // body), so every spelling assigns to `$!g`.
+    let var_name = format!("!{name}");
     let read = Expr::Var(var_name.clone());
     Stmt::Assign {
         name: var_name,
