@@ -1994,6 +1994,7 @@ pub(super) enum Initializer<'a> {
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
 /// implicit (`$`) when mutsu already stripped it from the name; otherwise the
 /// name carries its `@`/`%`/`&` sigil.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn var_declaration(
     names: &NameScope,
     name: &str,
@@ -4957,6 +4958,7 @@ fn pointy_block_from_lambda(
 /// A sigilled constant (`constant @a = 1, 2`) keeps its sigil in `name`. A
 /// typed one (`our Mu constant X = 1`) has the `type` between `scope` and
 /// `name`.
+#[allow(clippy::too_many_arguments)]
 fn constant_declaration(
     names: &NameScope,
     name: &str,

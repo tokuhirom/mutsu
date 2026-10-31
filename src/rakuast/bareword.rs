@@ -9,7 +9,6 @@
 //! from the compilation unit's own declarations. A bareword none of those
 //! resolves stays the conversion boundary: guessing would render a wrong node.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::convert::{leaf_field, name_from_identifier, node_field};

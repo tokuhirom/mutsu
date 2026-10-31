@@ -1,7 +1,6 @@
 use super::RakuAstClass;
 use super::convert::convert_expr;
 use crate::ast::Expr;
-use crate::scope::NameScope;
 use crate::symbol::Symbol;
 
 fn call(name: &str, args: Vec<Expr>) -> Expr {
