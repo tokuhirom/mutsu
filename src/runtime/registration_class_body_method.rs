@@ -475,21 +475,12 @@ impl Interpreter {
             };
             // The sub form compiles like any routine, so a call of the value
             // runs bytecode instead of recompiling the AST (#14572).
-            // TODO: a method that writes a variable of an enclosing scope keeps
-            // the carrier: the class body registers at run time, outside the
-            // frame whose locals that variable lives in, so a compiled call has
-            // no cell to write through (`t/vm/writeback/proxy-subclass-new-
-            // lvalue-assign.t`).
             let compiled = self.otf_compile_function_def_in_sets(&func_def, &[]);
-            if compiled.code.free_var_writes.is_empty()
-                && compiled.code.free_var_container_writes.is_empty()
-            {
-                func_def.compiled = Some(std::sync::Arc::new(
-                    crate::compiled_lazy::RoutineBody::plain(crate::compiled_lazy::LazyFn::owned(
-                        compiled,
-                    )),
-                ));
-            }
+            func_def.compiled = Some(std::sync::Arc::new(
+                crate::compiled_lazy::RoutineBody::plain(crate::compiled_lazy::LazyFn::owned(
+                    compiled,
+                )),
+            ));
             // The class body's registry restore drops the short name, but the
             // methods of the class are closures over this scope: carry the
             // routine in the env under the reserved block-lexical key, the way

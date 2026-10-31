@@ -261,6 +261,18 @@ impl Compiler {
             .copied()
             .collect();
         if !type_body_writes.is_empty() {
+            // The declaring frame boxes what the method writes, so a code
+            // object of the method (a `my method` value, `.^find_method`) that
+            // writes it reaches the same cell (#15782).
+            let boxed: Vec<Symbol> = cc
+                .free_var_writes
+                .iter()
+                .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+                .copied()
+                .collect();
+            if !boxed.is_empty() {
+                self.bubble_container_ref_capture_syms(&boxed);
+            }
             self.record_type_body_written_lexicals(type_body_writes);
         }
 
