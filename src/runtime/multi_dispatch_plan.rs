@@ -58,6 +58,9 @@ pub(crate) struct BareMultiPlan {
     found_multi_candidates: bool,
     /// Whether the plan was built for a cacheable argument-type key.
     keyed: bool,
+    /// For a captured-dispatcher plan: the candidates in deferral order (the
+    /// `callsame` / `nextsame` chain), which do not depend on the arguments.
+    captured_remaining: Vec<Arc<FunctionDef>>,
 }
 
 /// What a [`BareMultiPlan`] is computed from, besides the functions map
@@ -81,6 +84,10 @@ pub(crate) struct BareMultiPlanKey {
     /// never planned and every call re-gathered and re-ranked all its
     /// candidates (ADR-15737; #15786).
     units: Option<(Symbol, Symbol, Symbol)>,
+    /// For a captured multi dispatcher (`my proto sub f(|) {*}` called through
+    /// its value): the ids of the captured candidate `Sub`s, which fix the
+    /// candidate set the plan was built over. `None` for a by-name plan.
+    captured: Option<Vec<u64>>,
     arg_keys: Vec<Symbol>,
 }
 
@@ -204,6 +211,7 @@ impl Interpreter {
             subsets: self.registry().subsets.len(),
             visibility,
             units,
+            captured: None,
             arg_keys,
         })
     }
@@ -251,6 +259,7 @@ impl Interpreter {
             program: std::sync::OnceLock::new(),
             found_multi_candidates,
             keyed: false,
+            captured_remaining: Vec::new(),
         }
     }
 
@@ -429,6 +438,105 @@ impl Interpreter {
         match plan.program.get() {
             Some(Some(program)) => program.candidates().cloned().collect(),
             _ => Vec::new(),
+        }
+    }
+}
+
+impl Interpreter {
+    /// The winner of a captured multi dispatcher's `family` candidates for
+    /// `args`, through a plan cached per (candidate set, argument types):
+    /// the winner and the deferral chain `callsame` / `nextsame` walk. `None`
+    /// when the call cannot be keyed (a Proxy, a Junction, an imported
+    /// operator, ...), which leaves it to the by-value walk. Behaviorally the
+    /// walk [`Self::pick_captured_multi_candidate`] does per call: build a
+    /// `FunctionDef` per candidate, fingerprint, rank, sort and bind.
+    // Cost: O(c) for the candidate-set key plus the bind attempts on a hit,
+    // c = captured candidates; O(c * p + c log c) on a miss.
+    pub(super) fn captured_multi_plan_winner(
+        &mut self,
+        family: &str,
+        candidates: &[Value],
+        args: &[Value],
+    ) -> Option<Result<Option<(Arc<FunctionDef>, Vec<Arc<FunctionDef>>)>, RuntimeError>> {
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        let mut key = self.bare_multi_plan_key(family, args, Some(&arg_keys))?;
+        if key.visibility.is_some() {
+            return None;
+        }
+        let mut ids = Vec::with_capacity(candidates.len());
+        for code in candidates {
+            let ValueView::Sub(data) = code.view() else {
+                return None;
+            };
+            ids.push(data.id);
+        }
+        key.captured = Some(ids);
+        let generation = self.caches.fn_resolve_gen;
+        let plan = match self
+            .caches
+            .bare_multi_plan_cache
+            .get(generation, &key, || self.dispatch.fn_family_gens.of_name(key.name))
+        {
+            Some(plan) => plan.clone(),
+            None => {
+                let plan = Arc::new(self.build_captured_multi_plan(family, candidates, args));
+                debug_assert_eq!(generation, self.caches.fn_resolve_gen);
+                let name = key.name;
+                self.caches.bare_multi_plan_cache.insert(
+                    generation,
+                    self.caches.fn_resolve_gen,
+                    || self.dispatch.fn_family_gens.of_name(name),
+                    key,
+                    plan.clone(),
+                );
+                plan
+            }
+        };
+        Some(
+            self.choose_from_plan_stage(family, args, &plan.stage)
+                .map(|winner| winner.map(|w| (w, plan.captured_remaining.clone()))),
+        )
+    }
+
+    /// The plan of a captured dispatcher's candidates against `args`' types.
+    // Cost: O(c * p + c log c), c = candidates, p = parameters per candidate.
+    fn build_captured_multi_plan(
+        &mut self,
+        family: &str,
+        candidates: &[Value],
+        args: &[Value],
+    ) -> BareMultiPlan {
+        // One declared `multi` can be captured more than once (it sits under
+        // several registry keys), each copy a distinct Sub value: keep the
+        // first copy of each declaration.
+        let mut seen = std::collections::HashSet::new();
+        let rows: Vec<(String, Arc<FunctionDef>)> = candidates
+            .iter()
+            .filter(|code| match code.view() {
+                ValueView::Sub(data) => seen.insert(crate::ast::function_body_fingerprint(
+                    &data.params,
+                    &data.param_defs,
+                    &data.body,
+                )),
+                _ => false,
+            })
+            .filter_map(|code| {
+                let mut def = Self::dispatchee_function_def(code, family)?;
+                // Its `where` clauses and defaults run in its declaring unit.
+                if let ValueView::Sub(data) = code.view() {
+                    def.source_file = data.source_file.clone();
+                }
+                Some((family.to_string(), Arc::new(def)))
+            })
+            .collect();
+        let mut ordered = rows.clone();
+        self.sort_candidates_by_specificity(&mut ordered);
+        BareMultiPlan {
+            stage: self.rank_candidates_for_plan(family, args, rows),
+            program: std::sync::OnceLock::new(),
+            found_multi_candidates: true,
+            keyed: true,
+            captured_remaining: ordered.into_iter().map(|(_, def)| def).collect(),
         }
     }
 }

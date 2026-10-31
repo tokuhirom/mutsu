@@ -213,6 +213,21 @@ impl Interpreter {
         candidates: &[Value],
         args: &[Value],
     ) -> Result<Option<(Value, super::MultiRemaining)>, RuntimeError> {
+        // A keyable call is answered from a plan cached per candidate set and
+        // argument types (`captured_multi_plan_winner`); the walk below is the
+        // miss tail for calls that cannot be keyed.
+        if let Some(answer) = self.captured_multi_plan_winner(family, candidates, args) {
+            let Some((winner, remaining)) = answer? else {
+                return Ok(None);
+            };
+            let Some(code) = winner.dispatchee.clone() else {
+                return Ok(None);
+            };
+            return Ok(Some((
+                code,
+                super::MultiRemaining::from_vec(remaining, Some(winner.body_fingerprint())),
+            )));
+        }
         // One declared `multi` can be captured more than once (it sits under
         // several registry keys), each copy a distinct Sub value: keep the
         // first copy of each declaration, as the by-name gather's dedup does.
