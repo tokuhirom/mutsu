@@ -691,6 +691,14 @@ impl Interpreter {
                     is_unit: true,
                     ..
                 } => return Some(name.resolve()),
+                // `unit module Widgets:ver<0.1>:auth<...>;` lowers to a
+                // synthetic block holding the version/auth metadata call and
+                // the package itself.
+                crate::ast::Stmt::SyntheticBlock(inner) => {
+                    if let Some(name) = Self::detect_unit_package_name(inner) {
+                        return Some(name);
+                    }
+                }
                 _ => {}
             }
         }
