@@ -1895,32 +1895,16 @@ impl Interpreter {
     /// profiles); the returned map is `Some` only when the `:=` reconcile
     /// adjusted it beyond the cell contents.
     #[allow(clippy::too_many_arguments)]
-    /// Insert the fast path's bound parameters into `env`.
+    /// Insert the fast path's bound parameters into `env`, except the plain
+    /// scalar parameters the body reads through their slots only.
     ///
     /// Symbol-keyed so a call does not allocate a `String` per parameter just
-    /// to hand it to `Symbol::intern` (the name is already a `&str` borrowed
-    /// from the method def). A parameter name IS name-derived, so unlike the
-    /// fixed well-known keys around it this must still run
-    /// [`crate::env::note_env_key`] — a placeholder parameter (`$^a`) is stored
-    /// under a `^`-prefixed key, and dropping that latch would leave
-    /// `placeholder_var_possible()` reading false while such a key is live.
-    fn insert_fast_param_values(
-        env: &mut crate::env::Env,
-        param_values: &super::vm_param_values::ParamValues<'_>,
-    ) {
-        for (param_name, param_sym, param_val) in param_values.iter() {
-            // The invocant parameter is the frame record's (ADR-14843).
-            if param_sym.is_frame_fixture() {
-                continue;
-            }
-            crate::env::note_env_key(param_name);
-            env.insert_sym(*param_sym, param_val.clone());
-        }
-    }
-
-    /// [`Self::insert_fast_param_values`] for a frame whose body reads its
-    /// plain scalar parameters through their slots only: those are not
-    /// written to the env. `names_by_string` is a body that looks a lexical
+    /// to hand it to `Symbol::intern`. A parameter name IS name-derived, so
+    /// this must still run [`crate::env::note_env_key`] -- a placeholder
+    /// parameter (`$^a`) is stored under a `^`-prefixed key, and dropping that
+    /// latch would leave `placeholder_var_possible()` reading false while such
+    /// a key is live. The invocant is the frame record's (ADR-14843).
+    /// `names_by_string` is a body that looks a lexical
     /// up by a run-time name (`EVAL`, `::('$x')`, `MY::`): it keeps every
     /// parameter in the env. A parameter whose name the env already holds
     /// (a class-body static injected for the method) is written too, so it
