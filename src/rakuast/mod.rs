@@ -1569,7 +1569,7 @@ pub(crate) fn as_item_call_statement(node: &Value) -> Value {
 /// its scope: the lexicals it uses but does not declare are declared first
 /// (`do { my $x; item(NODE) }`), as they are by the time the unit runs.
 // Cost: O(size of the block).
-pub(crate) fn as_closure_statement(node: &Value) -> Value {
+pub(crate) fn as_closure_statement(node: &Value, exists: &dyn Fn(&str) -> bool) -> Value {
     let ValueView::RakuAst(held) = node.view() else {
         return as_item_call_statement(node);
     };
@@ -1578,7 +1578,8 @@ pub(crate) fn as_closure_statement(node: &Value) -> Value {
     collect_lexicals(held, &mut used, &mut declared);
     let mut statements = Vec::new();
     for name in used {
-        if declared.contains(&name) {
+        // A variable the running code already has must keep its value.
+        if declared.contains(&name) || exists(&name) {
             continue;
         }
         let (sigil, ident) = name.split_at(1);

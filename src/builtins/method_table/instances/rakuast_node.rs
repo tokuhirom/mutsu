@@ -378,7 +378,16 @@ fn sub_value(
         }
         // A block's value is its closure.
         K::Block | K::PointyBlock => {
-            return Some(interp.eval_rakuast_node(&crate::rakuast::as_closure_statement(target)));
+            let statement = {
+                let env = interp.env();
+                crate::rakuast::as_closure_statement(target, &|name: &str| {
+                    env.contains_key(name)
+                        || name
+                            .strip_prefix('$')
+                            .is_some_and(|bare| env.contains_key(bare))
+                })
+            };
+            return Some(interp.eval_rakuast_node(&statement));
         }
         // `::T` is the generic type `T`: the same object a signature's
         // `--> T` returns, until a call binds it.
