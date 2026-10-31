@@ -1372,6 +1372,16 @@ impl Interpreter {
             return true;
         }
 
+        // A container argument whose cell is native (a `my byte` variable's
+        // cell reached through a List item, ADR-15309) is a native source just
+        // as a `VarRef` to that variable is.
+        if arg_idx
+            .and_then(|idx| args.get(idx))
+            .is_some_and(|arg| arg.native_container_type().is_some())
+        {
+            return true;
+        }
+
         let source_name = arg_idx
             .and_then(|idx| args.get(idx))
             .and_then(varref_from_value)

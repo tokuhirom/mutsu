@@ -222,10 +222,56 @@ impl Interpreter {
             self.stack.push(cell);
             return Ok(());
         }
+        // A List item that is the cell of a native variable stays a container
+        // argument whatever the callee binds, so a multi dispatch sees the
+        // `byte` of `($b, $b)[0]` as rakudo does; any other element is read as
+        // a value (ADR-15309).
+        if mark.is_positional
+            && let Some(cell) = self.list_native_item_cell()
+        {
+            self.stack.pop();
+            self.stack.pop();
+            self.stack.push(cell);
+            return Ok(());
+        }
         // A callee that does not bind the container reads the value, exactly
         // as the plain `Index` op does.
         self.exec_index_op_with_positional(mark.is_positional)?;
         self.decont_native_pos_ref_on_top()
+    }
+
+    /// The cell a `List` (or a scalar holding one) already stores at the
+    /// integer index on top of the stack, when that cell is native-typed;
+    /// `None` for every other shape. Never promotes a slot: an `Array`'s slots
+    /// are fresh `Scalar`s, which rakudo does not dispatch as native.
+    /// Leaves the stack alone.
+    // Cost: O(1): two tag probes and one slot read.
+    fn list_native_item_cell(&self) -> Option<Value> {
+        let n = self.stack.len();
+        if n < 2 {
+            return None;
+        }
+        let ValueView::Int(i) = self.stack[n - 1].view() else {
+            return None;
+        };
+        let i = usize::try_from(i).ok()?;
+        let target = &self.stack[n - 2];
+        let held;
+        let target = if target.is_container_ref() {
+            held = target.deref_container();
+            &held
+        } else {
+            target
+        };
+        let ValueView::Array(
+            items,
+            crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+        ) = target.view()
+        else {
+            return None;
+        };
+        let slot = items.get(i)?;
+        slot.native_container_type().is_some().then(|| slot.clone())
     }
 
     /// `$native-array[$i]` answers the element's reference (`IntPosRef`, what

@@ -1062,6 +1062,12 @@ pub struct ContainerCell {
     /// variable's cell and a native variable's cell both look like. Only the
     /// integer atomics read it ([`ContainerCell::is_declared_untyped`]).
     declared_untyped: std::sync::atomic::AtomicBool,
+    /// Set when the cell's `of`-type is a native one (`byte`, `int`, `num`,
+    /// `str`, ...): a native variable's container is distinguishable from a
+    /// boxed one for multi dispatch (ADR-15309). Read without taking the
+    /// `constraint` lock, so the dispatcher's per-argument probe is one relaxed
+    /// atomic load for every cell that is not native.
+    native_typed: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1120,6 +1126,7 @@ impl ContainerCell {
             default: Mutex::new(None),
             name: std::sync::OnceLock::new(),
             declared_untyped: std::sync::atomic::AtomicBool::new(false),
+            native_typed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -1137,6 +1144,30 @@ impl ContainerCell {
     pub fn is_declared_untyped(&self) -> bool {
         self.declared_untyped
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether this cell's `of`-type is a native type (ADR-15309).
+    // Cost: O(1), one relaxed atomic load.
+    #[inline]
+    pub fn is_native_typed(&self) -> bool {
+        self.native_typed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The native `of`-type name of this cell, `None` unless it is native.
+    // Cost: O(1) for a non-native cell; one lock and a clone otherwise.
+    pub fn native_type_name(&self) -> Option<String> {
+        if !self.is_native_typed() {
+            return None;
+        }
+        self.constraint.lock().unwrap().as_ref().map(|c| c.ty.clone())
+    }
+
+    /// Record the native marker for the `of`-type just stored on this cell.
+    fn note_constraint_type(&self, type_name: &str) {
+        self.native_typed.store(
+            crate::native_types::native_family(type_name).is_some(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     /// Record the declared name of the variable this cell is the container of,
@@ -1327,6 +1358,7 @@ pub fn register_container_constraint(
     type_name: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1344,6 +1376,7 @@ pub fn register_container_where(
     check: CellWhere,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1360,6 +1393,7 @@ pub fn register_container_constraint_named(
     name: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1377,6 +1411,7 @@ pub fn register_element_constraint(
     owner: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),

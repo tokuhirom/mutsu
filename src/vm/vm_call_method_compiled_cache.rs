@@ -241,6 +241,13 @@ impl Interpreter {
             // Refusing to key it made a Text::CSV field push (`$!csv-row.push:
             // $f` with `$f` captured by the parser's `keep` closure) re-run the
             // whole candidate walk on every call (#9494).
+            // A native-typed cell dispatches as the native variable it is the
+            // container of (ADR-15309), so it is keyed behind the same
+            // declared-type marker a native `VarRef` gets.
+            if let Some(native) = a.native_container_type() {
+                keys.push(key_syms::declared_type());
+                keys.push(crate::symbol::Symbol::intern(&native));
+            }
             let contents: Option<Value> = a.is_container_ref().then(|| a.deref_container());
             let a: &Value = contents.as_ref().unwrap_or(a);
             // The call-site mask also describes declared-native variables.
