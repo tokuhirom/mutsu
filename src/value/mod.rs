@@ -1159,7 +1159,11 @@ impl ContainerCell {
         if !self.is_native_typed() {
             return None;
         }
-        self.constraint.lock().unwrap().as_ref().map(|c| c.ty.clone())
+        self.constraint
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.ty.clone())
     }
 
     /// Record the native marker for the `of`-type just stored on this cell.
