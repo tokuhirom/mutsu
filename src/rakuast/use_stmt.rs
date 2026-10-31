@@ -480,7 +480,7 @@ pub(super) fn lower_pragma(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
         arg = Some(Expr::Literal(Value::str(language)));
         tags.push("from".to_string());
     }
-    let (condition, if_imports) = lower_source_if(node)?;
+    let (condition, if_imports) = lower_source_if(names, node)?;
     // `use variables :D`: the parser's `":D"` argument, not an import tag.
     if is_smiley_pragma(&module) {
         let [smiley] = tags.as_slice() else {
@@ -525,7 +525,7 @@ pub(super) fn lower_use(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         arg = Some(Expr::Literal(Value::str(language)));
         tags.push("from".to_string());
     }
-    let (condition, if_imports) = lower_source_if(node)?;
+    let (condition, if_imports) = lower_source_if(names, node)?;
     // `use newline :crlf` keeps its pair as the argument, where any other
     // module's `:tag` is an import tag.
     if module == "newline"

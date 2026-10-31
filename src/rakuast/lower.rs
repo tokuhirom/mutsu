@@ -150,7 +150,7 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
 pub(super) fn lower_stmt(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;
-    if let Some(doc) = super::doc_phaser::lower(node) {
+    if let Some(doc) = super::doc_phaser::lower(names, node) {
         return doc;
     }
     if node.class == RakuAstClass::StatementExpression
