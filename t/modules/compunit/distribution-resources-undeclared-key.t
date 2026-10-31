@@ -1,5 +1,5 @@
 use Test;
-use lib $*PROGRAM.parent(2).add('fixtures/resources-undeclared-key/lib');
+use lib $*PROGRAM.parent(3).add('fixtures/resources-undeclared-key/lib');
 use ResUndeclared;
 plan 9;
 
