@@ -5,7 +5,7 @@ use NativeCall;
 # for two CArray arguments: a CArray is Positional but not Iterable, so rakudo's three
 # `Hyper` candidates tie (X::Multi::Ambiguous). mutsu answered 0.
 
-plan 9;
+plan 12;
 
 class P does Positional {
     method list { (1, 2) }
@@ -29,3 +29,9 @@ is-deeply ($p >>*>> 2), $(2, 4), 'a user Positional object and a scalar';
 
 is-deeply ($a.list <<*>> $b.list), $(3e0, 8e0), 'the explicit lists work';
 is-deeply (@l <<*>> @l), [1e0, 4e0], 'plain arrays are unchanged';
+
+# The prefix form has no second operand to tie on: it expands the object's list.
+is-deeply (-« $a), (-1e0, -2e0), 'a prefix hyper over a CArray';
+is-deeply (-« $p), (-1, -2), 'and over a user Positional object';
+throws-like { $a <<*>> $b }, X::Multi::Ambiguous, message => /CArray/,
+    'the ambiguity message names the operand type';

@@ -685,6 +685,20 @@ impl Interpreter {
         if args.len() < 2 {
             return Ok(Value::array(vec![]));
         }
+        // A `Positional`-but-not-`Iterable` object (a NativeCall `CArray`) hypers as
+        // its `.list`: a unary hyper has no second operand for the candidates to tie on.
+        let mut expanded;
+        let args = if self.is_positional_non_iterable_instance(&args[1]) {
+            expanded = args.to_vec();
+            expanded[1] = self.try_compiled_method_or_interpret(
+                args[1].deref_container(),
+                "list",
+                vec![],
+            )?;
+            &expanded[..]
+        } else {
+            args
+        };
         let op = args[0].to_string_value();
         let routine = format!("prefix:<{}>", op);
         fn apply_hyper_prefix(
