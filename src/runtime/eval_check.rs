@@ -385,9 +385,7 @@ impl Interpreter {
                 let (types, terms) = caller_names;
                 let stmts = crate::rakuast::frontend::round_trip_eval(
                     &stmts,
-                    || types,
-                    || terms,
-                    op_names,
+                    crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 )?;
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;

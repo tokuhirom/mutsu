@@ -87,42 +87,59 @@ pub(crate) fn round_trip_owned(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeErr
     Ok(lowered)
 }
 
-/// [`round_trip_unit`] for an `EVAL` string, whose bare names may be
-/// declared by the scope that called it: `types` and `terms` are those names,
-/// and `operators` the operator routines it makes visible.
+/// [`round_trip_unit`] for an `EVAL` string, whose bare names may be declared
+/// by the scope that called it: `scope` holds those names and the operator
+/// routines the calling scope makes visible.
 pub(crate) fn round_trip_eval(
     stmts: &[Stmt],
-    types: impl FnOnce() -> Vec<String>,
-    terms: impl FnOnce() -> Vec<String>,
-    operators: &[String],
+    scope: crate::scope::NameScope,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    with_caller_names(types(), terms(), || {
-        super::with_caller_operators(operators, || round_trip(stmts))
-    })
-    .map_err(refusal)
+    with_scope(scope, || round_trip(stmts)).map_err(refusal)
 }
 
-/// Run `convert` with `types` installed as the type names the calling scope of a
-/// `Str.AST` declares, for the `is NAME` traits of the declarations in its
-/// source (a bare class name is still a `Term::Name`: see [`with_caller_names`]).
-// Cost: O(n) to install, n = number of caller type names, plus `convert`.
-pub(crate) fn with_caller_trait_types<T>(types: Vec<String>, convert: impl FnOnce() -> T) -> T {
-    let _caller = super::bareword::CallerTraitTypes::install(types);
-    convert()
+/// Run `body` with `scope` installed as the names the calling scope declares
+/// (an `EVAL` string, a `Str.AST`, a lowered `EVAL($ast)`): rakudo resolves the
+/// bare names of those against the scope that runs them (`constant b = 1;
+/// q[b].AST` is a `Term::Name`), so the unit's own declarations cannot say what
+/// they are.
+// Cost: O(1) to install, plus `body`.
+pub(crate) fn with_scope<T>(scope: crate::scope::NameScope, body: impl FnOnce() -> T) -> T {
+    let _installed = super::bareword::install_scope(scope);
+    body()
 }
 
-/// Run `convert` with `types` and `terms` installed as the names the calling
-/// scope declares: rakudo resolves the bare names of an `EVAL` string or of a
-/// `Str.AST` against the scope that runs it (`constant b = 1; q[b].AST` is a
-/// `Term::Name`), so the unit's own declarations cannot say what they are.
-// Cost: O(n) to install, n = number of caller names, plus `convert`.
-pub(crate) fn with_caller_names<T>(
+/// The scope an `EVAL` string's calling scope makes: the names it declares,
+/// and the operator routines it makes visible.
+// Cost: O(n), n = number of caller names and operators.
+pub(crate) fn eval_scope(
     types: Vec<String>,
     terms: Vec<String>,
-    convert: impl FnOnce() -> T,
-) -> T {
-    let _caller = super::bareword::CallerNames::install(types, terms);
-    convert()
+    operators: &[String],
+) -> crate::scope::NameScope {
+    crate::scope::NameScope::default()
+        .with_caller_names(types, terms, |n| super::core_term_names::kind(n).is_some())
+        .with_caller_operators(operators)
+}
+
+/// The scope a `Str.AST` runs in: the terms its calling scope declares, and the
+/// type names that `is NAME` traits in its source may name.
+// Cost: O(n), n = number of caller names.
+pub(crate) fn str_ast_scope(
+    terms: Vec<String>,
+    trait_types: Vec<String>,
+) -> crate::scope::NameScope {
+    crate::scope::NameScope::default()
+        .with_caller_names(Vec::new(), terms, |n| {
+            super::core_term_names::kind(n).is_some()
+        })
+        .with_caller_trait_types(trait_types)
+}
+
+/// The scope a lowered `EVAL($ast)` runs in: the operator routines its calling
+/// scope declares.
+// Cost: O(n), n = number of operator names.
+pub(crate) fn lower_scope(operators: &[String]) -> crate::scope::NameScope {
+    crate::scope::NameScope::default().with_caller_operators(operators)
 }
 
 #[cfg(test)]

@@ -8,8 +8,8 @@
 
 use std::collections::HashMap;
 
-use super::DeclaredKind;
 use crate::qualified::qualified;
+use crate::scope::DeclaredKind;
 use crate::symbol::Symbol;
 
 /// A constant the unit declares over a bare package name, in every spelling
