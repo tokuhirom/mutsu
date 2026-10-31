@@ -1920,12 +1920,17 @@ impl Interpreter {
 
     /// [`Self::insert_fast_param_values`] for a frame whose body reads its
     /// plain scalar parameters through their slots only: those are not
-    /// written to the env.
+    /// written to the env. `names_by_string` is a body that looks a lexical
+    /// up by a run-time name (`EVAL`, `::('$x')`, `MY::`): it keeps every
+    /// parameter in the env. A parameter whose name the env already holds
+    /// (a class-body static injected for the method) is written too, so it
+    /// shadows that entry as the slot does.
     // Cost: O(p * q), p = bound parameters, q = the method's parameters.
     fn insert_fast_param_values_by_name(
         env: &mut crate::env::Env,
         param_values: &super::vm_param_values::ParamValues<'_>,
         method_def: &crate::runtime::MethodDef,
+        names_by_string: bool,
     ) {
         for (param_name, param_sym, param_val) in param_values.iter() {
             if param_sym.is_frame_fixture() {
@@ -1947,7 +1952,7 @@ impl Interpreter {
                             .iter()
                             .any(|t| t == "rw" || t == "copy" || t == "raw")
                 });
-            if slot_only {
+            if slot_only && !names_by_string && !env.contains_key_sym(*param_sym) {
                 continue;
             }
             crate::env::note_env_key(param_name);
@@ -2474,7 +2479,12 @@ impl Interpreter {
             // the caller's container and stays in the env.
             let env = self.env_mut();
             env.reserve(param_values.len());
-            Self::insert_fast_param_values_by_name(env, &param_values, method_def);
+            Self::insert_fast_param_values_by_name(
+                env,
+                &param_values,
+                method_def,
+                cc.static_name_lookup || cc.needs_reflective_capture,
+            );
         } else {
             let env = self.env_mut();
             env.reserve(3 + param_values.len());
