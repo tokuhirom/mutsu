@@ -315,17 +315,6 @@ pub(crate) fn is_dynamic_var_env_key(key: &str) -> bool {
         .starts_with('*')
 }
 
-/// Whether `key` names the match state a regex operation publishes into the
-/// calling scope: `$/` and the positional captures `$0`, `$1`, ... (stored
-/// sigil-less). A closure a native routine runs against a fresh match (`trans`
-/// with `/(\W)/ => { ord($0) }`) reads these from its caller, never from the
-/// copy it captured when it was created.
-// Cost: O(k), k = key.len().
-#[inline]
-pub(crate) fn is_match_var_env_key(key: &str) -> bool {
-    key == "/" || (!key.is_empty() && key.bytes().all(|b| b.is_ascii_digit()))
-}
-
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,

@@ -95,7 +95,6 @@ pub(in crate::runtime) fn native_method_shim(
         compiled_fns: Some(fns),
         compiled_routine: None,
         is_decl_expr_thunk: false,
-        deprecated_message: None,
         source_line: None,
         source_file: None,
         owned_captures: Vec::new(),
@@ -105,7 +104,7 @@ pub(in crate::runtime) fn native_method_shim(
         captured_fatal_mode: false,
         param_name_syms_cache: std::sync::OnceLock::new(),
         source_file_sym_cache: std::sync::OnceLock::new(),
-        state_scope_guard: None,
+        _state_scope_guard: None,
         captured_readonly: None,
         routine_cell: Default::default(),
     }))

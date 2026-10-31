@@ -191,7 +191,6 @@ impl Interpreter {
             compiled_fns,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            deprecated_message: None,
             source_line,
             // Not `current_source_file()`: that reads the dynamically-scoped
             // `?FILE` env var, which only tracks the unit currently being
@@ -208,7 +207,7 @@ impl Interpreter {
             captured_fatal_mode: self.module.lexical_fatal_mode,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard,
+            _state_scope_guard: state_scope_guard,
             captured_readonly,
             routine_cell: spec.routine_cell.unwrap_or_default(),
         }))

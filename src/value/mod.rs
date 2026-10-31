@@ -1696,8 +1696,6 @@ pub struct SubData {
     /// bind its (possibly typed) parameters — an early `t/exception-types.t`
     /// regression from trusting that signal caught this.
     pub(crate) is_decl_expr_thunk: bool,
-    /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
-    pub(crate) deprecated_message: Option<String>,
     /// Source line number (1-based) where this block/sub was defined.
     pub(crate) source_line: Option<u32>,
     /// Source file path where this block/sub was defined.
@@ -1768,7 +1766,7 @@ pub struct SubData {
     /// guard (shared by every Rust-level copy of this `SubData`) reports the
     /// id as dead when the last copy is dropped, so the store can release the
     /// clone's entries instead of keeping one per clone forever (#9504).
-    pub(crate) state_scope_guard: Option<Arc<crate::value::state_scope_reaper::StateScopeGuard>>,
+    pub(crate) _state_scope_guard: Option<Arc<crate::value::state_scope_reaper::StateScopeGuard>>,
     /// The readonly state, at creation, of the scalar free variables this code
     /// object WRITES: `Some` holds exactly those marked readonly then (a
     /// non-`is rw` parameter of the creating routine, a `:=`-bound alias) with
