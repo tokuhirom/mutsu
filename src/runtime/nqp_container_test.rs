@@ -42,8 +42,9 @@ fn classify_container(v: &Value) -> (bool, Option<char>) {
         }
         ValueView::Package(name) => (name == "Scalar", None),
         // A shared element cell handed out as a value (an Array slot read
-        // through `$!reified`, `atposref`) is that element's Scalar.
-        ValueView::ContainerRef(_) => (true, None),
+        // through `$!reified`, `atposref`) is that element's Scalar, and so is the
+        // `.VAR` view of a cell (`@raw-slurpy[0].VAR`).
+        ValueView::ContainerRef(_) | ValueView::ContainerView(_) => (true, None),
         _ => (false, None),
     }
 }
