@@ -1193,20 +1193,25 @@ impl Interpreter {
     /// Call `trait_mod:<is>` the way a class or role declaration does. The
     /// by-name search misses a candidate that a module's own `use` imported
     /// into that module's compunit (the import lives in the module-scope
-    /// lexicals, which `&trait_mod:<is>` resolves through): fall back to that
-    /// code object, so `class X is Singleton` inside a module that `use`s the
-    /// trait's provider reaches the provider's `trait_mod:<is>` (Pop, #15827).
-    // Cost: the dispatch of the trait candidates; O(1) extra on the fallback.
+    /// lexicals, which `&trait_mod:<is>` resolves through), and when other
+    /// candidates ARE visible (a `use NativeCall` in a method body brings its
+    /// own) it finds those and none matches: on a no-candidate answer, try
+    /// that code object, so `class X is Singleton` inside a module that
+    /// `use`s the trait's provider reaches the provider's `trait_mod:<is>`
+    /// (Pop, #15827). A second no-candidate answer returns the first error.
+    // Cost: the dispatch of the trait candidates, twice on the fallback.
     pub(crate) fn vm_call_trait_mod_is(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         match self.vm_call_function("trait_mod:<is>", args.clone()) {
-            Err(err) if err.message.contains("Unknown function: trait_mod:<is>") => {
+            Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                 // The same resolution `&trait_mod:<is>` gets (module-scope
                 // lexicals included).
                 let code = self.resolve_code_var_unshadowed("trait_mod:<is>");
                 if code.is_nil() {
-                    Err(err)
-                } else {
-                    self.vm_call_sub_value(code, args)
+                    return Err(err);
+                }
+                match self.vm_call_sub_value(code, args) {
+                    Err(second) if Self::is_trait_mod_no_candidate(&second) => Err(err),
+                    other => other,
                 }
             }
             other => other,
