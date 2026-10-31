@@ -2671,13 +2671,10 @@ impl Env {
     }
 
     /// [`Self::get_sym_with_fallback`]'s walk. With `follow`, `key` is the
-    /// record of the variable `follow` and the walk ends at a caller frame
-    /// that binds that variable (see `env::record_lookup`).
+    /// record of the variable `follow` and the walk ends at the running
+    /// routine's frame root (see `env::record_lookup`).
     fn walk_with_fallback(&self, key: Symbol, follow: Option<Symbol>) -> Option<&Value> {
         let mut cur = self;
-        // The variable `follow`'s binding in the frame the walk is in, once
-        // past the origin frame's root.
-        let mut bound_here: Option<&Value> = None;
         // Tail-most wins, so keep overwriting: a closure created inside another
         // closure's body chains over it, and the outer capture is the enclosing
         // lexical scope of the inner one.
@@ -2706,19 +2703,6 @@ impl Env {
                 }
                 if let Some(v) = fb.get_below_base(&key) {
                     found = Some(v);
-                }
-            }
-            if let Some(subject) = follow
-                && origin_root_seen
-            {
-                if bound_here.is_none() {
-                    bound_here = cur.inner.get(&subject);
-                }
-                if cur.frame_root
-                    && let Some(mine) = bound_here.take()
-                    && record_lookup::leaves_variable(cur, subject, mine)
-                {
-                    return found;
                 }
             }
             if cur.frame_root && !origin_root_seen {
