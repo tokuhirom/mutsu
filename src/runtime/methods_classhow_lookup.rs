@@ -567,6 +567,38 @@ impl Interpreter {
         Value::make_instance(class_name, attrs)
     }
 
+    /// The callable of `def` that runs its compiled body, when it has one that
+    /// can run on its own: a method that carries its compiled chunk and nests
+    /// no subs runs as bytecode, like a declared routine, instead of
+    /// recompiling the AST through the tree-walk carrier at every call
+    /// (#14572). `env` is what the callable closes over and `param_defs` the
+    /// signature including the invocant.
+    // TODO: also compile a method that nests subs. A monitor method
+    // (`OO::Monitors` wraps it from a metaclass `add_method`) loses its
+    // nested sub when run as bytecode here, and the cause is not yet known.
+    // Cost: O(1).
+    pub(super) fn method_def_compiled_callable(
+        owner: &str,
+        name: &str,
+        def: &MethodDef,
+        param_defs: &[crate::ast::ParamDef],
+        env: &crate::env::Env,
+    ) -> Option<Value> {
+        let (Some(code), Some(fns)) = (&def.compiled_code, &def.compiled_fns) else {
+            return None;
+        };
+        if !fns.is_empty() {
+            return None;
+        }
+        Some(Value::make_sub_compiled_in(
+            (Symbol::intern(owner), Symbol::intern(name)),
+            (def.params.clone(), param_defs.to_vec(), (*def.body).clone()),
+            def.is_rw,
+            env.clone(),
+            (code.clone(), fns.clone()),
+        ))
+    }
+
     /// Build the callable `Sub` value for a single (non-dispatcher) method
     /// candidate -- shared by `.^lookup`/`.^find_method`
     /// (`classhow_lookup_impl`) and the Method `Instance` object's
@@ -598,22 +630,8 @@ impl Interpreter {
         if let Some(rt) = &def.return_type {
             env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
         }
-        // A method that carries its compiled body and nests no subs runs as
-        // bytecode, like a declared routine, instead of recompiling the AST
-        // through the tree-walk carrier at every call (#14572).
-        // TODO: also compile a method that nests subs. A monitor method
-        // (`OO::Monitors` wraps it from a metaclass `add_method`) loses its
-        // nested sub when run as bytecode here, and the cause is not yet known.
-        if let (Some(code), Some(fns)) = (&def.compiled_code, &def.compiled_fns)
-            && fns.is_empty()
-        {
-            return Value::make_sub_compiled_in(
-                (Symbol::intern(owner), Symbol::intern(name)),
-                (def.params.clone(), full_param_defs, (*def.body).clone()),
-                def.is_rw,
-                env,
-                (code.clone(), fns.clone()),
-            );
+        if let Some(sub) = Self::method_def_compiled_callable(owner, name, def, &full_param_defs, &env) {
+            return sub;
         }
         Value::make_sub(
             Symbol::intern(owner),
