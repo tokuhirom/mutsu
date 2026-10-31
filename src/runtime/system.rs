@@ -302,6 +302,13 @@ impl Interpreter {
                 // The hook maps the pre-run recorded are replayed by the
                 // unit's own `use`s and end with the unit.
                 let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
+                // The pre-run's imports (a `sub EXPORT` hook's terms, whose
+                // `use` is dropped from the unit and so leaves the unit no
+                // region of its own) are the EVAL's own: they bind in an env
+                // import region that ends with it, or the next EVAL would
+                // read them (`Logic::Ternary`'s `True`, #15770).
+                let prerun_region = crate::compiler::Compiler::has_use_stmt(&stmts)
+                    .then(|| self.open_import_region());
                 let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
                     let validated = self.validate_eval_source(&stmts);
                     self.module.eval_prerun_modules.clear();
@@ -309,6 +316,9 @@ impl Interpreter {
                     validated?;
                     self.run_eval_unit_stmts(stmts)
                 });
+                if let Some(region) = prerun_region {
+                    self.close_import_region(region);
+                }
                 self.module.eval_hook_results = outer_hook_results;
                 ran
             }
