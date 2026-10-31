@@ -53,6 +53,12 @@ LOWER = [
     # Platform shims: thread/clock abstraction and the wasm32 cooperative
     # scheduler.
     "thread_compat.rs", "wasm_sched.rs",
+    # Tables the RakuAST frontend reads, moved below it (ADR-15760 slice P).
+    "op_names.rs", "known_types.rs", "builtin_functions.rs",
+    # The RakuAST frontend: the parser builds its nodes and lowers them where
+    # they are built (ADR-15760), so it is a lower layer too. It sits above the
+    # parser, which it may name.
+    "rakuast",
 ]
 # Modules above every lower layer. `crate::Interpreter` is lib.rs's re-export.
 UPPER = ["runtime", "vm", "compiler", "builtins", "trir", "interpreter", "Interpreter"]
@@ -88,7 +94,7 @@ def current_counts() -> dict[str, int]:
     for path in lower_files():
         if path.resolve() in skip:
             continue
-        in_parser = (SRC / "parser") in path.parents
+        in_parser = (SRC / "parser") in path.parents or (SRC / "rakuast") in path.parents
         n = count_masked(path.read_text(encoding="utf-8"), in_parser)
         if n:
             counts[path.relative_to(ROOT).as_posix()] = n

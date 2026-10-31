@@ -164,7 +164,7 @@ fn convert_method_assign(
             }
         )
     {
-        let operator = crate::compiler::helpers_ops::token_kind_to_op_name(op);
+        let operator = crate::op_names::token_kind_to_op_name(op);
         return super::convert::compound_assignment_with_left(
             names,
             left,

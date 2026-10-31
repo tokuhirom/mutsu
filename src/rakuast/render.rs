@@ -445,7 +445,7 @@ fn render_leaf(v: &Value) -> String {
         // which is its `.gist`, not its `.Str` (`6.d`).
         ValueView::Version { .. } => format!("v{}", v.to_string_value()),
         // A Num leaf renders as its literal (`NumLiteral.new(1e0)`, `Inf`).
-        ValueView::Num(f) => crate::builtins::methods_0arg::raku_repr::format_num_raku(f),
+        ValueView::Num(f) => crate::value::raku_repr::format_num_raku(f),
         // A complex leaf renders as the angle-bracket literal that is its
         // `.raku` (`ComplexLiteral.new(<1+2i>)`).
         ValueView::Complex(..) => format!("<{}>", v.to_string_value()),
