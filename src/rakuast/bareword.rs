@@ -16,8 +16,8 @@ use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_pa
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
-use crate::qualified::qualified;
 use crate::known_types::is_known_type_constraint;
+use crate::qualified::qualified;
 
 /// Setting types and the finite RakuAST model registry share one classifier.
 // Cost: O(k + c), k = name length, c = number of registered model classes.
