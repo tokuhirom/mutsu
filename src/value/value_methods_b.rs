@@ -621,10 +621,11 @@ impl Value {
         )))
     }
 
-    /// [`Self::make_sub`] for a synthesized closure whose body is compiled once
-    /// and shared (`runtime::synthesized_closure_code`): the code object runs
-    /// that chunk instead of recompiling its AST body through the tree-walk
-    /// carrier. Everything that differs per instance rides in `env`.
+    /// [`Self::make_sub`] for a body that is already compiled (a synthesized
+    /// closure compiled once by `runtime::synthesized_closure_code`, or a
+    /// method's own `compiled_code`): the code object runs that chunk instead
+    /// of recompiling its AST body through the tree-walk carrier. Everything
+    /// that differs per instance rides in `env`.
     // Cost: O(1).
     pub(crate) fn make_sub_compiled(
         name: Symbol,
@@ -632,20 +633,37 @@ impl Value {
         param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         env: Env,
+        chunk: (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            std::sync::Arc<crate::opcode::CompiledFns>,
+        ),
+    ) -> Self {
+        Self::make_sub_compiled_in(
+            (Symbol::intern(""), name),
+            (params, param_defs, body),
+            false,
+            env,
+            chunk,
+        )
+    }
+
+    /// [`Self::make_sub_compiled`] with the declaring package and `is rw`.
+    // Cost: O(1).
+    pub(crate) fn make_sub_compiled_in(
+        (package, name): (Symbol, Symbol),
+        (params, param_defs, body): (
+            impl Into<std::sync::Arc<Vec<String>>>,
+            impl Into<std::sync::Arc<Vec<ParamDef>>>,
+            impl Into<std::sync::Arc<Vec<Stmt>>>,
+        ),
+        is_rw: bool,
+        env: Env,
         (code, fns): (
             std::sync::Arc<crate::opcode::CompiledCode>,
             std::sync::Arc<crate::opcode::CompiledFns>,
         ),
     ) -> Self {
-        let mut data = Self::new_code_object(
-            Symbol::intern(""),
-            name,
-            params,
-            param_defs,
-            body,
-            false,
-            env,
-        );
+        let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
         data.is_bare_block = true;
         data.compiled_code = Some(code);
         data.compiled_fns = Some(fns);
