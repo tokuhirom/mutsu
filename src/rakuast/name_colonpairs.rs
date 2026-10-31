@@ -12,6 +12,7 @@
 //! turns the nodes into the canonical name again by the same rule the parser
 //! applies to the source.
 
+use crate::scope::NameScope;
 use super::convert::{convert_expr, node_field};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -20,7 +21,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// Put the written colonpairs of the declared name onto `decl`'s
 /// `desigilname`, when the parse recorded them.
 // Cost: O(n), n = length of the written colonpairs.
-pub(super) fn apply(
+pub(super) fn apply(names: &NameScope, 
     decl: &mut RakuAstNode,
     marks: &crate::ast::var_marks::VarMarks,
 ) -> Result<(), RuntimeError> {
@@ -54,7 +55,7 @@ pub(super) fn apply(
         .ok_or_else(|| super::convert::unsupported("a variable name's colonpairs"))?;
     let pairs = exprs
         .iter()
-        .map(|e| convert_expr(e).map(|n| Value::rakuast(Box::new(n))))
+        .map(|e| convert_expr(names, e).map(|n| Value::rakuast(Box::new(n))))
         .collect::<Result<Vec<_>, _>>()?;
     let mut named = super::convert::name_from_identifier(stem);
     named.fields.push(RakuAstField {
@@ -81,7 +82,7 @@ fn identifier(name: &RakuAstNode) -> Option<String> {
 /// the identifier, then each colonpair as the parser canonicalizes its source
 /// (`:foo<g h>`, `:bar`, `:<home>`). `None` for a name without colonpairs.
 // Cost: O(n), n = size of the colonpairs.
-pub(super) fn lower(name: &RakuAstNode) -> Option<Result<String, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, name: &RakuAstNode) -> Option<Result<String, RuntimeError>> {
     let pairs = name.fields.iter().find(|f| f.name == Some("colonpairs"))?;
     let RakuAstFieldValue::List(pairs) = &pairs.value else {
         return None;
@@ -96,7 +97,7 @@ pub(super) fn lower(name: &RakuAstNode) -> Option<Result<String, RuntimeError>> 
         let ValueView::RakuAst(pair) = pair.view() else {
             return Some(Err(unsupported()));
         };
-        match colonpair_source(pair) {
+        match colonpair_source(names, pair) {
             Some(text) => source.push_str(&text),
             None => return Some(Err(unsupported())),
         }
@@ -111,7 +112,7 @@ pub(super) fn lower(name: &RakuAstNode) -> Option<Result<String, RuntimeError>> 
 /// Source text for one colonpair node of a name, which the parser's name
 /// rule canonicalizes back.
 // Cost: O(n), n = size of the pair.
-fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
+fn colonpair_source(names: &NameScope, pair: &RakuAstNode) -> Option<String> {
     let key = || match pair
         .fields
         .iter()
@@ -133,10 +134,10 @@ fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
             let ValueView::RakuAst(value) = value.view() else {
                 return None;
             };
-            Some(format!(":{}{}", key()?, value_source(value)?))
+            Some(format!(":{}{}", key()?, value_source(names, value)?))
         }
         // A key-less colonpair is the quote alone.
-        _ => Some(format!(":{}", value_source(pair)?)),
+        _ => Some(format!(":{}", value_source(names, pair)?)),
     }
 }
 
@@ -145,7 +146,7 @@ fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
 /// its brackets, a list of strings is a `[…]` of quoted items, anything else
 /// is its expression in `(…)`.
 // Cost: O(n), n = size of the value.
-fn value_source(value: &RakuAstNode) -> Option<String> {
+fn value_source(names: &NameScope, value: &RakuAstNode) -> Option<String> {
     if let Some((processors, text)) = quoted_words(value) {
         if text.contains(['<', '>', '\u{00AB}', '\u{00BB}']) {
             return None;
@@ -155,7 +156,7 @@ fn value_source(value: &RakuAstNode) -> Option<String> {
             QuoteWords::QuoteWords => Some(format!("\u{00AB}{text}\u{00BB}")),
         };
     }
-    let expr = super::lower::lower_expr(circumfix_content(value).unwrap_or(value)).ok()?;
+    let expr = super::lower::lower_expr(names, circumfix_content(value).unwrap_or(value)).ok()?;
     let quoted = |s: &str| (!s.contains(['\'', '\\'])).then(|| format!("'{s}'"));
     match &expr {
         Expr::Literal(v) if v.as_str().is_some() => Some(format!("[{}]", quoted(v.as_str()?)?)),

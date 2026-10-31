@@ -1,5 +1,6 @@
 //! Preserve parser parentheses that Rakudo omits from a postfix operand.
 
+use crate::scope::NameScope;
 use super::convert::{node_field, postfix_operand};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -11,7 +12,7 @@ const MAX_GROUPING: usize = 128;
 /// Build an ApplyPostfix while retaining the parser's parentheses as hidden
 /// provenance. Rakudo omits one layer from the visible operand node.
 // Cost: O(p + n), p = parentheses around the operand, n = operand node size.
-pub(super) fn convert(operand: &Expr, postfix: RakuAstNode) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(names: &NameScope, operand: &Expr, postfix: RakuAstNode) -> Result<RakuAstNode, RuntimeError> {
     let mut depth = 0;
     let mut inner = operand;
     while let Expr::Grouped(next) = inner {
@@ -24,7 +25,7 @@ pub(super) fn convert(operand: &Expr, postfix: RakuAstNode) -> Result<RakuAstNod
         inner = next;
     }
     let mut fields = vec![
-        node_field(Some("operand"), postfix_operand(operand)?),
+        node_field(Some("operand"), postfix_operand(names, operand)?),
         node_field(Some("postfix"), postfix),
     ];
     if depth != 0 {

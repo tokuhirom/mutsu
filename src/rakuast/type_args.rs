@@ -1,5 +1,6 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
+use crate::scope::NameScope;
 use super::convert::{convert_expr, is_simple_type, node_field, unsupported};
 use super::type_build::{MAX_TYPE_DEPTH, application_open, build_type_node_at};
 use super::{RakuAstClass, RakuAstNode};
@@ -79,27 +80,27 @@ fn is_type_spelling(source: &str) -> bool {
 /// A colonpair argument (`:coerce(&f)`, `:!flag`) of a type application that
 /// only survives as source text: parse it as the expression it is.
 // Cost: O(n), n = argument spelling length.
-fn colonpair_argument(source: &str) -> Result<RakuAstNode, RuntimeError> {
+fn colonpair_argument(names: &NameScope, source: &str) -> Result<RakuAstNode, RuntimeError> {
     let (statements, _) = crate::parser::parse_program(source)?;
     let mut expressions = statements
         .iter()
         .filter(|statement| !matches!(statement, crate::ast::Stmt::SetLine(..)));
     match (expressions.next(), expressions.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(names, expr),
         _ => Err(unsupported(&format!("type argument `{source}`"))),
     }
 }
 
 /// Convert a type application using its parsed argument expressions. Only a
 /// type-only constraint without parsed arguments needs the spelling scanner.
-pub(super) fn parameterized_type_node(
+pub(super) fn parameterized_type_node(names: &NameScope, 
     spelling: &str,
     parsed: Option<&[Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    parameterized_type_node_at(spelling, parsed, 0)
+    parameterized_type_node_at(names, spelling, parsed, 0)
 }
 
-pub(super) fn parameterized_type_node_at(
+pub(super) fn parameterized_type_node_at(names: &NameScope, 
     spelling: &str,
     parsed: Option<&[Expr]>,
     depth: usize,
@@ -116,7 +117,7 @@ pub(super) fn parameterized_type_node_at(
         .strip_suffix(']')
         .ok_or_else(|| unsupported("malformed parameterised type"))?;
     let base = &spelling[..open];
-    let base = build_type_node_at(base, depth + 1)?;
+    let base = build_type_node_at(names, base, depth + 1)?;
     let sources = type_sources(&inner[open + 1..], ',');
     // Role-to-role forwarding keeps its ::T spelling even though the parser
     // represents the executable argument as the bare name T.
@@ -151,26 +152,26 @@ pub(super) fn parameterized_type_node_at(
             } else if let Expr::BareWord(name) = expr
                 && is_type_spelling(name)
             {
-                build_type_node_at(name, depth + 1)?
+                build_type_node_at(names, name, depth + 1)?
             } else {
-                convert_expr(expr)?
+                convert_expr(names, expr)?
             };
             fields.push(node_field(None, node));
         }
     } else {
         for source in sources {
             let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
-                super::convert::convert_literal(&value)?
+                super::convert::convert_literal(names, &value)?
             } else if let Some(value) = super::type_build::string_literal_value(source) {
                 super::convert::quoted_string(crate::value::Value::str(value))
             } else if source.starts_with(':') {
-                colonpair_argument(source)?
+                colonpair_argument(names, source)?
             } else {
-                match build_type_node_at(source, depth + 1) {
+                match build_type_node_at(names, source, depth + 1) {
                     Ok(node) => node,
                     // Not a type spelling: a colonpair (`:coerce(&f)`) or other
                     // term argument of the application.
-                    Err(err) => term_argument(source).ok_or(err)?,
+                    Err(err) => term_argument(names, source).ok_or(err)?,
                 }
             };
             fields.push(node_field(None, node));
@@ -198,13 +199,13 @@ pub(super) fn parameterized_type_node_at(
 /// A non-type argument of a type application, parsed from its spelling as a
 /// single expression statement. `None` when it is not exactly one expression.
 // Cost: O(n), n = spelling length.
-fn term_argument(source: &str) -> Option<RakuAstNode> {
+fn term_argument(names: &NameScope, source: &str) -> Option<RakuAstNode> {
     let (stmts, _) = crate::parser::parse_program_spelled(source).ok()?;
     let mut exprs = stmts
         .iter()
         .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
     match (exprs.next(), exprs.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr).ok(),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(names, expr).ok(),
         _ => None,
     }
 }

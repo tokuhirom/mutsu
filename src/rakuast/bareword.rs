@@ -502,7 +502,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
             )
         })
     {
-        return super::convert::build_type_node(name).ok();
+        return super::convert::build_type_node(names, name).ok();
     }
     // `GLOBAL` and a pseudo-package prefix on a name that resolves
     // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
@@ -526,7 +526,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && convert(rest).is_some_and(|node| {
+        && convert(names, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName

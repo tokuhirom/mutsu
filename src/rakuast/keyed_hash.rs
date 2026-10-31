@@ -14,6 +14,7 @@
 //! records `crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE` when it supplied the
 //! `Any` value type itself, so `my %h{Str}` and `my Any %h{Str}` stay apart.
 
+use crate::scope::NameScope;
 use super::convert::{
     build_type_node, convert_expr, node_field, statement_expression,
     unsupported as unsupported_source,
@@ -62,7 +63,7 @@ pub(super) fn split<'a>(
 /// Put the key type `key` into `decl` as its `shape`, after its `type` and
 /// ahead of its `sigil`.
 // Cost: O(f), f = fields of `decl`.
-pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), RuntimeError> {
+pub(super) fn insert_shape(names: &NameScope, decl: &mut RakuAstNode, key: &str) -> Result<(), RuntimeError> {
     let shape = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
@@ -70,7 +71,7 @@ pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), Runt
             .map(|key| {
                 Ok(node_field(
                     None,
-                    statement_expression(build_type_node(key)?),
+                    statement_expression(build_type_node(names, key)?),
                 ))
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?,
@@ -87,12 +88,12 @@ pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), Runt
 /// Preserve an anonymous subset's structured `Type::Subset` tree in a hash
 /// key shape, retaining the parser spelling for the existing key-type binder.
 // Cost: O(n), n = size of the subset expression and source spelling.
-pub(super) fn insert_subset_shape(
+pub(super) fn insert_subset_shape(names: &NameScope, 
     decl: &mut RakuAstNode,
     expression: &Expr,
     source: &str,
 ) -> Result<(), RuntimeError> {
-    let mut subset = convert_expr(expression)?;
+    let mut subset = convert_expr(names, expression)?;
     if subset.class != RakuAstClass::TypeSubset {
         return Err(unsupported_source("inline subset hash key type"));
     }
@@ -148,7 +149,7 @@ pub(super) fn insert_subset_shape(
 
 /// The `shape` of a shaped array declaration: one statement per dimension.
 // Cost: O(d), d = size of the dimensions.
-pub(super) fn insert_dimensions(
+pub(super) fn insert_dimensions(names: &NameScope, 
     decl: &mut RakuAstNode,
     dims: &[crate::ast::Expr],
 ) -> Result<(), RuntimeError> {
@@ -157,7 +158,7 @@ pub(super) fn insert_dimensions(
         .map(|dim| {
             Ok(node_field(
                 None,
-                statement_expression(super::convert::convert_expr(dim)?),
+                statement_expression(super::convert::convert_expr(names, dim)?),
             ))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;
@@ -180,13 +181,13 @@ pub(super) fn insert_dimensions(
 /// has no `type`. A declaration without a `shape` keeps
 /// `type_constraint`; each type statement on a `%` shape names one key dimension.
 // Cost: O(n), n = size of the shape.
-pub(super) fn lower(
+pub(super) fn lower(names: &NameScope, 
     node: &RakuAstNode,
     sigil: &str,
     type_constraint: Option<String>,
     marks: &mut VarMarks,
 ) -> Result<Option<String>, RuntimeError> {
-    let Some(key) = lower_key_type(node, sigil)? else {
+    let Some(key) = lower_key_type(names, node, sigil)? else {
         return Ok(type_constraint);
     };
     marks.implicit_value_type = type_constraint.is_none();
@@ -195,7 +196,7 @@ pub(super) fn lower(
 
 /// The source key type shared by variable and attribute declarations.
 // Cost: O(n), n = size of the shape.
-pub(super) fn lower_key_type(
+pub(super) fn lower_key_type(names: &NameScope, 
     node: &RakuAstNode,
     sigil: &str,
 ) -> Result<Option<String>, RuntimeError> {
@@ -230,7 +231,7 @@ pub(super) fn lower_key_type(
         {
             keys.push(source);
         } else {
-            keys.push(super::type_lower::type_constraint(node, key_node)?);
+            keys.push(super::type_lower::type_constraint(names, node, key_node)?);
         }
     }
     Ok(Some(keys.join("; ")))

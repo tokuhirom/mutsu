@@ -30,6 +30,7 @@
 //! message `something else`).
 
 mod argument;
+use crate::scope::NameScope;
 use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -82,8 +83,8 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
 }
 
 /// `is NAME`, which is a container type when `NAME` names one at parse time.
-fn trait_is_name_or_type(name: &str) -> Value {
-    if super::decl_traits::is_container_type(name) {
+fn trait_is_name_or_type(names: &NameScope, name: &str) -> Value {
+    if super::decl_traits::is_container_type(names, name) {
         return Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitIs,
@@ -99,7 +100,7 @@ fn trait_is_name_or_type(name: &str) -> Value {
 impl AttributeTraits {
     /// The `Trait::*` nodes of the written traits, in written order.
     // Cost: O(t + a), t = traits, a = size of their arguments.
-    fn items(&self) -> Result<Vec<Value>, RuntimeError> {
+    fn items(&self, names: &NameScope) -> Result<Vec<Value>, RuntimeError> {
         let mut custom = self.unknown_traits.iter();
         let mut handles = self.handles_terms.iter();
         let mut items = Vec::with_capacity(self.order.len());
@@ -110,7 +111,7 @@ impl AttributeTraits {
                 AttrTrait::Required => match &self.is_required {
                     Some(Some(reason)) => trait_is(
                         "required",
-                        Some(paren_argument(&Expr::Literal(Value::str(reason.clone())))?),
+                        Some(paren_argument(names, &Expr::Literal(Value::str(reason.clone())))?),
                     ),
                     _ => trait_is("required", None),
                 },
@@ -119,15 +120,15 @@ impl AttributeTraits {
                         .is_default
                         .as_ref()
                         .ok_or_else(|| unsupported("attribute `is default` without a value"))?;
-                    trait_is("default", Some(trait_argument(value)?))
+                    trait_is("default", Some(trait_argument(names, value)?))
                 }
                 AttrTrait::Built => match self.is_built {
                     Some(crate::ast::BuiltTrait::No) => trait_is(
                         "built",
-                        Some(paren_argument(&Expr::Literal(Value::truth(false)))?),
+                        Some(paren_argument(names, &Expr::Literal(Value::truth(false)))?),
                     ),
                     Some(crate::ast::BuiltTrait::Bind) => {
-                        trait_is("built", Some(paren_argument(&bind_adverb_expr())?))
+                        trait_is("built", Some(paren_argument(names, &bind_adverb_expr())?))
                     }
                     _ => trait_is("built", None),
                 },
@@ -135,7 +136,7 @@ impl AttributeTraits {
                     Some(DEPRECATED_DEFAULT) | None => trait_is("DEPRECATED", None),
                     Some(message) => trait_is(
                         "DEPRECATED",
-                        Some(paren_argument(&Expr::Literal(Value::str(
+                        Some(paren_argument(names, &Expr::Literal(Value::str(
                             message.to_string(),
                         )))?),
                     ),
@@ -150,7 +151,7 @@ impl AttributeTraits {
                         class: RakuAstClass::TraitIs,
                         fields: vec![node_field(
                             Some("type"),
-                            super::decl_traits::type_node(name)?,
+                            super::decl_traits::type_node(names, name)?,
                         )],
                     }))
                 }
@@ -160,8 +161,8 @@ impl AttributeTraits {
                         .ok_or_else(|| unsupported("attribute trait list out of step"))?;
                     match kind.as_str() {
                         "is" => match argument {
-                            None => trait_is_name_or_type(name),
-                            Some(argument) => trait_is(name, Some(trait_argument(argument)?)),
+                            None => trait_is_name_or_type(names, name),
+                            Some(argument) => trait_is(name, Some(trait_argument(names, argument)?)),
                         },
                         "does" => Value::rakuast(Box::new(RakuAstNode {
                             origin: Default::default(),
@@ -185,7 +186,7 @@ impl AttributeTraits {
                                     ),
                                     node_field(
                                         Some("block"),
-                                        super::convert::signature_block_node(body)?,
+                                        super::convert::signature_block_node(names, body)?,
                                     ),
                                 ],
                             })),
@@ -201,7 +202,7 @@ impl AttributeTraits {
                     Value::rakuast(Box::new(RakuAstNode {
                         origin: Default::default(),
                         class: RakuAstClass::TraitHandles,
-                        fields: vec![node_field(None, convert_handles_term(term)?)],
+                        fields: vec![node_field(None, convert_handles_term(names, term)?)],
                     }))
                 }
             };
@@ -214,7 +215,7 @@ impl AttributeTraits {
 /// Bare identifiers in a `handles(...)` list name delegated methods, so their
 /// term value is the method name string rather than a lexical bareword.
 // Cost: O(e), e = size of the handles term.
-fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn convert_handles_term(names: &NameScope, term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     struct MethodNames;
     impl VisitMut for MethodNames {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
@@ -236,18 +237,18 @@ fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
     let mut term = term.clone();
     MethodNames.visit_expr_mut(&mut term);
-    convert_expr(&term)
+    convert_expr(names, &term)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,
 /// ahead of an implicit `WillBuild`, creating the field (after `desigilname`)
 /// when the declaration has no default.
 // Cost: O(f + t), f = fields of `decl`, t = traits.
-pub(super) fn add_traits(
+pub(super) fn add_traits(names: &NameScope, 
     decl: &mut RakuAstNode,
     traits: &AttributeTraits,
 ) -> Result<(), RuntimeError> {
-    let mut items = traits.items()?;
+    let mut items = traits.items(names, )?;
     if items.is_empty() {
         return Ok(());
     }
@@ -287,7 +288,7 @@ fn string_argument(argument: &Expr) -> Option<String> {
 /// fields and their written order. An implicit `WillBuild` is accepted only
 /// alongside an `initializer`, which carries the same default.
 // Cost: O(t + a), t = traits of the declaration, a = size of their arguments.
-pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, RuntimeError> {
+pub(super) fn lower_traits(names: &NameScope, node: &RakuAstNode) -> Result<AttributeTraits, RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let mut traits = AttributeTraits::default();
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
@@ -317,7 +318,7 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
             }
             // `does ROLE`.
             RakuAstClass::TraitDoes => {
-                let role = super::lower::simple_type_name(node, named_child_or_positional(t)?)?;
+                let role = super::lower::simple_type_name(names, node, named_child_or_positional(t)?)?;
                 traits.unknown_traits.push(("does".to_string(), role, None));
                 traits.order.push(AttrTrait::Custom);
             }
@@ -339,7 +340,7 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
                 ));
                 traits.order.push(AttrTrait::Custom);
             }
-            RakuAstClass::TraitIs => lower_trait_is(node, t, is_aggregate, &mut traits)?,
+            RakuAstClass::TraitIs => lower_trait_is(names, node, t, is_aggregate, &mut traits)?,
             _ => return Err(refuse()),
         }
     }
@@ -347,7 +348,7 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
 }
 
 /// One `Trait::Is` of an attribute.
-fn lower_trait_is(
+fn lower_trait_is(names: &NameScope, 
     node: &RakuAstNode,
     t: &RakuAstNode,
     is_aggregate: bool,
@@ -365,7 +366,7 @@ fn lower_trait_is(
         ) {
             return Err(refuse());
         }
-        let name = super::type_lower::type_constraint(t, type_node)?;
+        let name = super::type_lower::type_constraint(names, t, type_node)?;
         if is_aggregate {
             traits.is_type = Some(name);
             traits.order.push(AttrTrait::Type);
@@ -382,7 +383,7 @@ fn lower_trait_is(
     let name = name.to_string();
     let argument = match named_child(t, "argument") {
         Ok(argument) => Some(if argument.class == RakuAstClass::CircumfixArrayComposer {
-            lower_expr(argument)?
+            lower_expr(names, argument)?
         } else {
             lower_paren_argument(node, argument)?
         }),

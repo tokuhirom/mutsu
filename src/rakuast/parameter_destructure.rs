@@ -1,5 +1,6 @@
 //! Anonymous positional and slurpy destructuring parameters.
 
+use crate::scope::NameScope;
 use super::convert::{
     build_type_node, leaf_field, node_field, signature, type_setting_any, unsupported,
 };
@@ -14,7 +15,7 @@ use crate::value::{RuntimeError, Value};
 /// parameter's (measured on rakudo 2026.09). Defaults, where constraints and
 /// traits remain fields on the outer parameter.
 // Cost: O(s), s = size of the sub-signature.
-pub(super) fn anonymous_destructuring(
+pub(super) fn anonymous_destructuring(names: &NameScope, 
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -35,7 +36,7 @@ pub(super) fn anonymous_destructuring(
             "anonymous sub-signature with an optional marker or type capture",
         ));
     }
-    let mut sub = signature(sub_params, type_setting, None)?;
+    let mut sub = signature(names, sub_params, type_setting, None)?;
     if is_array && !pd.onearg && !pd.slurpy {
         sub.fields
             .push(leaf_field(Some("is-array"), Value::truth(true)));
@@ -43,7 +44,7 @@ pub(super) fn anonymous_destructuring(
     let mut fields = Vec::with_capacity(6);
     // `Pair (…)` / `Positional […]` carry the written type.
     match pd.type_constraint.as_deref() {
-        Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
+        Some(t) => fields.push(node_field(Some("type"), build_type_node(names, t)?)),
         None if type_setting && !is_array => {
             fields.push(node_field(Some("type"), type_setting_any()));
         }
@@ -52,7 +53,7 @@ pub(super) fn anonymous_destructuring(
     if let Some(default) = &pd.default {
         fields.push(node_field(
             Some("default"),
-            super::convert::convert_expr(default)?,
+            super::convert::convert_expr(names, default)?,
         ));
     } else if pd.onearg || pd.slurpy {
         let marker = if pd.onearg {
@@ -72,10 +73,10 @@ pub(super) fn anonymous_destructuring(
     if let Some(where_constraint) = &pd.where_constraint {
         fields.push(node_field(
             Some("where"),
-            super::convert::convert_expr(where_constraint)?,
+            super::convert::convert_expr(names, where_constraint)?,
         ));
     }
-    if let Some(traits) = super::convert::parameter_traits(pd)? {
+    if let Some(traits) = super::convert::parameter_traits(names, pd)? {
         fields.push(traits);
     }
     fields.push(node_field(Some("sub-signature"), sub));

@@ -31,6 +31,7 @@
 //! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too: the
 //! parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`.
 
+use crate::scope::NameScope;
 use super::convert::{leaf_field, name_from_identifier, node_field, statement_expression};
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -56,13 +57,13 @@ pub(super) fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode
 
 /// Build an `is TYPE` trait, whose AST stores a type node rather than a name.
 // Cost: O(n + a), n = type name length, a = argument node size.
-pub(super) fn trait_is_type(
+pub(super) fn trait_is_type(names: &NameScope, 
     name: &str,
     argument: Option<RakuAstNode>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(
         Some("type"),
-        super::type_build::build_type_node(name)?,
+        super::type_build::build_type_node(names, name)?,
     )];
     if let Some(argument) = argument {
         fields.push(node_field(Some("argument"), argument));
@@ -232,13 +233,13 @@ pub(super) fn deprecated_message(name: &str) -> Option<&str> {
 /// Lower a `Trait::Is` that names a plain custom trait into the parser's
 /// `custom_traits` entry; `None` for a name the parser would not leave there.
 // Cost: O(n + a), n = type name length, a = size of the argument.
-pub(super) fn lower_custom(
+pub(super) fn lower_custom(names: &NameScope, 
     owner: &RakuAstNode,
     t: &RakuAstNode,
 ) -> Result<Option<(String, Option<Expr>)>, RuntimeError> {
     let type_name = named_child(t, "type")
         .ok()
-        .map(|type_node| super::type_lower::type_constraint(owner, type_node))
+        .map(|type_node| super::type_lower::type_constraint(names, owner, type_node))
         .transpose()?;
     let is_type = type_name.is_some();
     let name = if let Some(type_name) = type_name {
@@ -255,7 +256,7 @@ pub(super) fn lower_custom(
         return match named_child(t, "argument") {
             Err(_) if t.fields.len() == 1 => Ok(Some(("DEPRECATED".to_string(), None))),
             Ok(argument) => {
-                let expr = lower_argument(owner, argument)?;
+                let expr = lower_argument(names, owner, argument)?;
                 match fold_constant_message(&expr) {
                     Some(message) if !message.is_empty() => {
                         Ok(Some((format!("DEPRECATED:{message}"), None)))
@@ -274,7 +275,7 @@ pub(super) fn lower_custom(
     }
     let argument = match named_child(t, "argument") {
         Ok(argument) => {
-            let expr = lower_argument(owner, argument)?;
+            let expr = lower_argument(names, owner, argument)?;
             Some(match expr {
                 list @ Expr::ArrayLiteral(_) => Expr::Grouped(Box::new(list)),
                 other => other,
@@ -317,9 +318,9 @@ fn fold_constant_message(expr: &Expr) -> Option<String> {
 }
 
 // Cost: O(a), a = size of the argument.
-fn lower_argument(owner: &RakuAstNode, argument: &RakuAstNode) -> Result<Expr, RuntimeError> {
+fn lower_argument(names: &NameScope, owner: &RakuAstNode, argument: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if argument.class == RakuAstClass::QuotedString {
-        super::lower::lower_expr(argument)
+        super::lower::lower_expr(names, argument)
     } else {
         super::attribute::lower_paren_argument(owner, argument)
     }

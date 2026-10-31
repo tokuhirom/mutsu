@@ -1,5 +1,6 @@
 //! Written control signatures and their shared parser expansions.
 
+use crate::scope::NameScope;
 use super::lower::{name_for_unpack_params, signature_positional_params};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::ParamDef;
@@ -98,8 +99,8 @@ pub(super) fn construct(
 }
 
 // Cost: O(p), p = size of the signature.
-pub(super) fn params(block: &RakuAstNode) -> Result<Vec<ParamDef>, RuntimeError> {
-    let (mut names, mut defs) = signature_positional_params(block)?;
+pub(super) fn params(names: &NameScope, block: &RakuAstNode) -> Result<Vec<ParamDef>, RuntimeError> {
+    let (mut names, mut defs) = signature_positional_params(names, block)?;
     name_for_unpack_params(&mut names, &mut defs);
     Ok(defs)
 }

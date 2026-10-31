@@ -18,6 +18,7 @@
 //! ([`enum_variants_from_body`]), so a round-tripped enum takes the same path
 //! the parsed one did.
 
+use crate::scope::NameScope;
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
 };
@@ -35,12 +36,12 @@ const DYNAMIC: &str = "__DYNAMIC__";
 /// The `term` of an enum declaration, from the parser's variants and the
 /// spelling it recorded.
 // Cost: O(v), v = variants.
-pub(super) fn enum_term_node(
+pub(super) fn enum_term_node(names: &NameScope, 
     variants: &[(String, Option<Expr>)],
     form: &EnumVariantForm,
 ) -> Result<RakuAstNode, RuntimeError> {
     match form {
-        EnumVariantForm::Words => word_term(variants, "words"),
+        EnumVariantForm::Words => word_term(names, variants, "words"),
         EnumVariantForm::EmptyWords(raw) => Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::QuotedString,
@@ -58,18 +59,18 @@ pub(super) fn enum_term_node(
                 },
             ],
         }),
-        EnumVariantForm::QuoteWords => word_term(variants, "quotewords"),
-        EnumVariantForm::PairList => pair_list_term(variants),
+        EnumVariantForm::QuoteWords => word_term(names, variants, "quotewords"),
+        EnumVariantForm::PairList => pair_list_term(names, variants),
         EnumVariantForm::Computed => match variants {
-            [(name, Some(body))] if name == DYNAMIC => computed_term(body),
+            [(name, Some(body))] if name == DYNAMIC => computed_term(names, body),
             _ => Err(super::convert::unsupported("enum with a computed body")),
         },
     }
 }
 
 /// A computed body is the parenthesized term itself.
-fn computed_term(body: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let node = convert_expr(body)?;
+fn computed_term(names: &NameScope, body: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let node = convert_expr(names, body)?;
     if node.class == RakuAstClass::CircumfixParentheses {
         return Ok(node);
     }
@@ -93,7 +94,7 @@ fn parenthesized(expr: RakuAstNode) -> RakuAstNode {
 /// contract: omitting it would turn `Red Green` into one enum member named
 /// "Red Green" when the node is evaluated. A `«…»` body may hold colonpair
 /// variants; each is a `QuoteWordsAtom` segment between the literal words.
-fn word_term(
+fn word_term(names: &NameScope, 
     variants: &[(String, Option<Expr>)],
     processor: &'static str,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -120,7 +121,7 @@ fn word_term(
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(name.clone())),
-                node_field(Some("value"), convert_expr(value)?),
+                node_field(Some("value"), convert_expr(names, value)?),
             ],
         };
         segments.push(Value::rakuast(Box::new(RakuAstNode {
@@ -160,7 +161,7 @@ fn str_literal(text: String) -> Value {
 }
 
 /// The parenthesized pair-list term.
-fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
+fn pair_list_term(names: &NameScope, variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
     if variants.is_empty() {
         return Ok(RakuAstNode {
             origin: Default::default(),
@@ -179,7 +180,7 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
         .iter()
         .map(|(name, value)| {
             let value = match value {
-                Some(value) => convert_expr(value)?,
+                Some(value) => convert_expr(names, value)?,
                 // A bare `'name'` element: the parser keeps no value for it.
                 None => {
                     return Ok(Value::rakuast(Box::new(quoted_string(Value::str(
@@ -213,14 +214,14 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
 
 /// The variants and spelling of an enum's `term` (the lowering direction).
 // Cost: O(v), v = variants.
-pub(super) fn lower_enum_term(
+pub(super) fn lower_enum_term(names: &NameScope, 
     node: &RakuAstNode,
 ) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let term = named_child(node, "term")?;
     match term.class {
         RakuAstClass::QuotedString => lower_word_term(term),
         RakuAstClass::CircumfixParentheses => {
-            let body = lower_expr(term)?;
+            let body = lower_expr(names, term)?;
             Ok(match enum_variants_from_body(&body) {
                 Some(variants) => (variants, EnumVariantForm::PairList),
                 None => (

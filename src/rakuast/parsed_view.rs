@@ -4,6 +4,7 @@
 //! the statement's own origin is added by the statement list, as for every
 //! statement.
 
+use crate::scope::NameScope;
 use super::convert::{
     block_node, convert_expr, label_fields, loop_setup_node, node_field, pointy_block,
     signature_block_node, statement_expression, topic_block_node,
@@ -18,23 +19,23 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
 // Cost: O(n), n = size of the construct.
-pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_node(names: &NameScope, node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(match node {
-        ParsedStmt::Conditional(c) => conditional_node(c)?,
+        ParsedStmt::Conditional(c) => conditional_node(names, c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::StatementGiven,
             fields: vec![
-                node_field(Some("source"), convert_expr(topic)?),
-                node_field(Some("body"), view_block(block, BlockKind::Topic)?),
+                node_field(Some("source"), convert_expr(names, topic)?),
+                node_field(Some("body"), view_block(names, block, BlockKind::Topic)?),
             ],
         },
         ParsedStmt::When { condition, block } => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::StatementWhen,
             fields: vec![
-                node_field(Some("condition"), convert_expr(condition)?),
-                node_field(Some("body"), view_block(block, BlockKind::Signature)?),
+                node_field(Some("condition"), convert_expr(names, condition)?),
+                node_field(Some("body"), view_block(names, block, BlockKind::Signature)?),
             ],
         },
         ParsedStmt::Default(block) => RakuAstNode {
@@ -42,15 +43,15 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             class: RakuAstClass::StatementDefault,
             fields: vec![node_field(
                 Some("body"),
-                view_block(block, BlockKind::Plain)?,
+                view_block(names, block, BlockKind::Plain)?,
             )],
         },
         ParsedStmt::WhileLoop(w) => {
             let mut fields = label_fields(&w.label);
-            fields.push(node_field(Some("condition"), convert_expr(&w.condition)?));
+            fields.push(node_field(Some("condition"), convert_expr(names, &w.condition)?));
             fields.push(node_field(
                 Some("body"),
-                view_block(&w.block, BlockKind::Signature)?,
+                view_block(names, &w.block, BlockKind::Signature)?,
             ));
             RakuAstNode {
                 origin: Default::default(),
@@ -63,68 +64,68 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             }
         }
         ParsedStmt::BareBlock(block) => {
-            statement_expression(view_block(block, BlockKind::Signature)?)
+            statement_expression(view_block(names, block, BlockKind::Signature)?)
         }
-        ParsedStmt::Loop(l) => loop_node(l)?,
+        ParsedStmt::Loop(l) => loop_node(names, l)?,
         ParsedStmt::BindDecl(decl) => {
             let parts = super::convert::var_decl_parts(decl)?;
-            super::convert::var_decl_statement(parts, true)?
+            super::convert::var_decl_statement(names, parts, true)?
                 .ok_or_else(|| super::convert::unsupported("binding declaration"))?
         }
         ParsedStmt::DeclTail { head, tail } => {
-            statement_expression(super::decl_tail::convert(head, tail)?)
+            statement_expression(super::decl_tail::convert(names, head, tail)?)
         }
         ParsedStmt::DeclCompound { decl, op, source } => statement_expression(
-            super::convert::declaration_compound_assign(decl, op, source)?,
+            super::convert::declaration_compound_assign(names, decl, op, source)?,
         ),
         ParsedStmt::PackageHeader { decl, header, .. } => {
-            let statement = super::convert::convert_stmt(decl)?
+            let statement = super::convert::convert_stmt(names, decl)?
                 .ok_or_else(|| super::convert::unsupported("a declaration with a header"))?;
             let expression = super::convert::expression_of(&statement)
                 .ok_or_else(|| super::convert::unsupported("a declaration with a header"))?;
-            statement_expression(super::package_header::apply(&expression, header)?)
+            statement_expression(super::package_header::apply(names, &expression, header)?)
         }
         ParsedStmt::TempDecl(decl) => {
-            statement_expression(super::temporize::convert_declaration(decl)?)
+            statement_expression(super::temporize::convert_declaration(names, decl)?)
         }
         ParsedStmt::RoutineTraits(_) => {
             return Err(super::convert::unsupported("routine traits outside a body"));
         }
         ParsedStmt::TakeLogicalTail { value, op, right } => {
-            statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
+            statement_expression(super::convert::take_logical_tail_node(names, value, op, right)?)
         }
         ParsedStmt::InlineProtoUse { proto, use_stmt } => {
-            super::use_stmt::convert_inline_proto(proto, use_stmt)?
+            super::use_stmt::convert_inline_proto(names, proto, use_stmt)?
         }
         // Rakudo keeps `done VALUE` as the one call with its payload.
-        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(
+        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(names, 
             "done",
             std::slice::from_ref(value),
         )?),
         ParsedStmt::CallAssignList { head, items } => {
-            statement_expression(super::decl_tail::convert_call_assign_list(head, items)?)
+            statement_expression(super::decl_tail::convert_call_assign_list(names, head, items)?)
         }
         ParsedStmt::CommaDecls(declarations) => {
-            statement_expression(super::convert::comma_declarations_node(declarations)?)
+            statement_expression(super::convert::comma_declarations_node(names, declarations)?)
         }
         ParsedStmt::ImmediateCall { decl, args } => {
-            statement_expression(super::immediate_call::convert(decl, args)?)
+            statement_expression(super::immediate_call::convert(names, decl, args)?)
         }
         ParsedStmt::AttributeGroup(attributes) => {
-            statement_expression(super::attribute_group::to_signature(attributes)?)
+            statement_expression(super::attribute_group::to_signature(names, attributes)?)
         }
         ParsedStmt::AttributeColonArglist(attributes) => {
-            statement_expression(super::attribute_group::convert_colon(attributes)?)
+            statement_expression(super::attribute_group::convert_colon(names, attributes)?)
         }
-        ParsedStmt::Temporize(t) => statement_expression(super::temporize::convert_temporized(t)?),
+        ParsedStmt::Temporize(t) => statement_expression(super::temporize::convert_temporized(names, t)?),
         ParsedStmt::SignatureDecl(decl) => {
-            statement_expression(super::signature_decl::convert(decl)?)
+            statement_expression(super::signature_decl::convert(names, decl)?)
         }
         ParsedStmt::SignatureBind { signature, rhs } => {
-            statement_expression(super::convert::signature_bind_node(signature, rhs)?)
+            statement_expression(super::convert::signature_bind_node(names, signature, rhs)?)
         }
         ParsedStmt::MethodAssignDecl(form) => {
-            statement_expression(super::method_assign_decl::convert(form)?)
+            statement_expression(super::method_assign_decl::convert(names, form)?)
         }
         ParsedStmt::SigillessDecl(d) => {
             let call_assign = match (&d.form, &d.expr) {
@@ -134,7 +135,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 ) => Some((name, args.as_slice())),
                 _ => None,
             };
-            statement_expression(super::convert::term_declaration(
+            statement_expression(super::convert::term_declaration(names, 
                 &crate::ast::sigilless_decl::SigillessDecl {
                     name: &d.name,
                     expr: &d.expr,
@@ -146,14 +147,14 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 },
             )?)
         }
-        ParsedStmt::WillDecl { decl, phasers, .. } => super::var_will::convert(decl, phasers)?,
+        ParsedStmt::WillDecl { decl, phasers, .. } => super::var_will::convert(names, decl, phasers)?,
         ParsedStmt::DoesDecl { decl, role, init } => {
-            super::convert::does_declaration(decl, role, init.as_ref())?
+            super::convert::does_declaration(names, decl, role, init.as_ref())?
                 .ok_or_else(|| super::convert::unsupported("does declaration"))?
         }
-        ParsedStmt::Modified(m) => modified_node(m)?,
+        ParsedStmt::Modified(m) => modified_node(names, m)?,
         ParsedStmt::For { stmt, block } => {
-            let mut node = super::convert::convert_stmt(stmt)?
+            let mut node = super::convert::convert_stmt(names, stmt)?
                 .ok_or_else(|| super::convert::unsupported("empty for loop"))?;
             if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("body"))
                 && let RakuAstFieldValue::Node(value) = &field.value
@@ -173,7 +174,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
 /// folds an assignment to a positional or a literal hash subscript into the
 /// subscript's `assignee` (`@a[0] = 1`, `%h<k> = 1`; measured on 2026.09).
 // Cost: O(n), n = size of the expression.
-pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn parsed_expr_node(names: &NameScope, node: &ParsedExpr) -> Result<RakuAstNode, RuntimeError> {
     match node {
         ParsedExpr::Assign(a) => match &a.target {
             crate::ast::Expr::Index {
@@ -181,7 +182,7 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
                 index,
                 is_positional: true,
                 ..
-            } => super::convert::subscript_node(target, index, true, Some(&a.source), Vec::new()),
+            } => super::convert::subscript_node(names, target, index, true, Some(&a.source), Vec::new()),
             crate::ast::Expr::Index {
                 target,
                 index,
@@ -189,36 +190,36 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
                 spelling: crate::ast::IndexSpelling::Angle,
                 ..
             } if super::convert::angle_key_text(index).is_some() => {
-                super::convert::angle_subscript_node(target, index, Some(&a.source), Vec::new())
+                super::convert::angle_subscript_node(names, target, index, Some(&a.source), Vec::new())
             }
             // `@a[|| @i] = 7`: one (spread) dimension folds the same way.
             crate::ast::Expr::MultiDimIndex {
                 target,
                 dimensions,
                 is_positional,
-            } if dimensions.len() == 1 => super::convert::subscript_dims_node(
+            } if dimensions.len() == 1 => super::convert::subscript_dims_node(names, 
                 target,
                 &super::convert::splat_dimensions(dimensions),
                 *is_positional,
                 Some(&a.source),
                 Vec::new(),
             ),
-            _ => assignment_node(a),
+            _ => assignment_node(names, a),
         },
-        ParsedExpr::CompoundAssign(a) => compound_assignment_node(a),
-        ParsedExpr::Supply(body) => super::react::convert_supply(body),
-        ParsedExpr::StartBody(body) => block_node(body),
+        ParsedExpr::CompoundAssign(a) => compound_assignment_node(names, a),
+        ParsedExpr::Supply(body) => super::react::convert_supply(names, body),
+        ParsedExpr::StartBody(body) => block_node(names, body),
         ParsedExpr::HyperAssign(a) => {
-            super::convert::hyper_infix(&a.target, "=", &a.value, a.dwim_left, a.dwim_right)
+            super::convert::hyper_infix(names, &a.target, "=", &a.value, a.dwim_left, a.dwim_right)
         }
-        ParsedExpr::InlineSubset(declaration) => inline_subset_node(declaration),
-        ParsedExpr::HyperPrefix(p) => super::hyper_prefix::node(&p.symbol, &p.operand),
-        ParsedExpr::AtomicVar(a) => super::atomic_op::var_node(a),
-        ParsedExpr::ObjectHash(entries) => super::hash_literal::object_hash_node(entries),
-        ParsedExpr::WordList(list) => super::word_list::list_node(list),
-        ParsedExpr::WordsAtom(atom) => super::word_list::atom_node(atom),
+        ParsedExpr::InlineSubset(declaration) => inline_subset_node(names, declaration),
+        ParsedExpr::HyperPrefix(p) => super::hyper_prefix::node(names, &p.symbol, &p.operand),
+        ParsedExpr::AtomicVar(a) => super::atomic_op::var_node(names, a),
+        ParsedExpr::ObjectHash(entries) => super::hash_literal::object_hash_node(names, entries),
+        ParsedExpr::WordList(list) => super::word_list::list_node(names, list),
+        ParsedExpr::WordsAtom(atom) => super::word_list::atom_node(names, atom),
         ParsedExpr::SubscriptAdverbs(s) => {
-            super::subscript_adverb::postcircumfix_node(&s.subscript, &s.pairs)
+            super::subscript_adverb::postcircumfix_node(names, &s.subscript, &s.pairs)
         }
     }
 }
@@ -226,8 +227,8 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
 /// An inline `subset` term: the `Type::Subset` expression of the declaration
 /// as written.
 // Cost: O(n), n = size of the declaration.
-fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let statement = super::convert::convert_stmt(declaration)?
+fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let statement = super::convert::convert_stmt(names, declaration)?
         .ok_or_else(|| super::convert::unsupported("inline subset declaration"))?;
     statement
         .fields
@@ -245,12 +246,12 @@ fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
 // Cost: O(n), n = size of the target and source.
-fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
+fn assignment_node(names: &NameScope, a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), target_node(&a.target)?),
+            node_field(Some("left"), target_node(names, &a.target)?),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -266,7 +267,7 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
                     },
                 },
             ),
-            node_field(Some("right"), convert_expr(&a.source)?),
+            node_field(Some("right"), convert_expr(names, &a.source)?),
         ],
     })
 }
@@ -275,14 +276,14 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
 /// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
 /// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
 // Cost: O(n + d), n = size of the target and source, d = bracket depth.
-fn compound_assignment_node(
+fn compound_assignment_node(names: &NameScope, 
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
     if a.meta == CompoundMeta::Dotty {
-        return super::convert::dotty_assignment(&a.target, &a.source);
+        return super::convert::dotty_assignment(names, &a.target, &a.source);
     }
     if a.meta == CompoundMeta::TopicDotty {
-        return super::convert::topic_dotty_assignment(&a.source);
+        return super::convert::topic_dotty_assignment(names, &a.source);
     }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta
         && a.op == "="
@@ -290,8 +291,8 @@ fn compound_assignment_node(
         return meta_assignment_eq_node(
             kind,
             depth,
-            target_node(&a.target)?,
-            convert_expr(&a.source)?,
+            target_node(names, &a.target)?,
+            convert_expr(names, &a.source)?,
         );
     }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
@@ -301,10 +302,10 @@ fn compound_assignment_node(
             left: Box::new(a.target.clone()),
             right: Box::new(a.source.clone()),
         };
-        return super::meta_infix::convert_bracketed_assignment(&written, usize::from(depth));
+        return super::meta_infix::convert_bracketed_assignment(names, &written, usize::from(depth));
     }
     let node =
-        super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
+        super::convert::compound_assignment_infix(names, &a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
 }
 
@@ -440,25 +441,25 @@ pub(super) fn with_compound_meta(
 /// double-underscore name (a user's `$__c`, or an anonymous `$`'s minted name)
 /// that an expression read refuses as an internal marker.
 // Cost: O(n), n = size of the target.
-fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
+fn target_node(names: &NameScope, target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, name) = match target {
         crate::ast::Expr::Var(name) => ("$", name),
         crate::ast::Expr::ArrayVar(name) => ("@", name),
         crate::ast::Expr::HashVar(name) => ("%", name),
-        _ => return convert_expr(target),
+        _ => return convert_expr(names, target),
     };
     if name.starts_with("__") {
         return Ok(super::convert::var_lexical(sigil, name));
     }
-    convert_expr(target)
+    convert_expr(names, target)
 }
 
 /// The statement as written, with its modifiers as its `condition-modifier`
 /// and `loop-modifier`, and the positions the parser recorded for the
 /// modified expression and each modifier.
 // Cost: O(n), n = size of the statement and its modifiers' operands.
-fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = super::convert::convert_stmt(&m.stmt)?
+fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = super::convert::convert_stmt(names, &m.stmt)?
         .ok_or_else(|| super::convert::unsupported("empty modified statement"))?;
     if m.body.is_some()
         && m.body.from < m.body.to
@@ -478,7 +479,7 @@ fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
-            fields: vec![node_field(None, convert_expr(&modifier.expr)?)],
+            fields: vec![node_field(None, convert_expr(names, &modifier.expr)?)],
         };
         if modifier.span.is_some() {
             super::origin::set_span(&mut modifier_node, modifier.span);
@@ -512,21 +513,21 @@ fn modifier_class(kind: ModifierKind) -> RakuAstClass {
 /// `Statement::Loop` (C-style or bare) or `Statement::Loop::RepeatWhile` /
 /// `::RepeatUntil`.
 // Cost: O(n), n = size of the loop.
-fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
+fn loop_node(names: &NameScope, l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = label_fields(&l.label);
     if l.kind == LoopKind::Loop {
         if let Some(init) = l.init.as_deref() {
-            fields.push(node_field(Some("setup"), loop_setup_node(init)?));
+            fields.push(node_field(Some("setup"), loop_setup_node(names, init)?));
         }
         if let Some(cond) = &l.condition {
-            fields.push(node_field(Some("condition"), convert_expr(cond)?));
+            fields.push(node_field(Some("condition"), convert_expr(names, cond)?));
         }
         if let Some(step) = &l.step {
-            fields.push(node_field(Some("increment"), convert_expr(step)?));
+            fields.push(node_field(Some("increment"), convert_expr(names, step)?));
         }
         fields.push(node_field(
             Some("body"),
-            view_block(&l.block, BlockKind::Plain)?,
+            view_block(names, &l.block, BlockKind::Plain)?,
         ));
         return Ok(RakuAstNode {
             origin: Default::default(),
@@ -536,10 +537,10 @@ fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
     }
     fields.push(node_field(
         Some("body"),
-        view_block(&l.block, BlockKind::Signature)?,
+        view_block(names, &l.block, BlockKind::Signature)?,
     ));
     if let Some(cond) = &l.condition {
-        fields.push(node_field(Some("condition"), convert_expr(cond)?));
+        fields.push(node_field(Some("condition"), convert_expr(names, cond)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -565,7 +566,7 @@ enum BlockKind {
 
 /// `Statement::If` / `::Unless` / `::With` / `::Without` for `node`.
 // Cost: O(n), n = size of the conditional.
-pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn conditional_node(names: &NameScope, node: &Conditional) -> Result<RakuAstNode, RuntimeError> {
     let topical = matches!(node.kind, ConditionalKind::With | ConditionalKind::Without);
     let (class, block_name) = match node.kind {
         ConditionalKind::If => (RakuAstClass::StatementIf, "then"),
@@ -574,7 +575,7 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
         ConditionalKind::Without => (RakuAstClass::StatementWithout, "body"),
     };
     let mut fields = vec![
-        node_field(Some("condition"), convert_expr(&node.condition)?),
+        node_field(Some("condition"), convert_expr(names, &node.condition)?),
         node_field(Some(block_name), clause_block(&node.then, topical)?),
     ];
     let mut elsifs = Vec::with_capacity(node.clauses.len());
@@ -591,7 +592,7 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
                 RakuAstClass::StatementElsif
             },
             fields: vec![
-                node_field(Some("condition"), convert_expr(&clause.condition)?),
+                node_field(Some("condition"), convert_expr(names, &clause.condition)?),
                 node_field(Some("then"), clause_block(&clause.then, orwith)?),
             ],
         };
@@ -631,15 +632,15 @@ fn clause_block(block: &ParsedBlock, topical: bool) -> Result<RakuAstNode, Runti
 /// `block` as a `PointyBlock` when it has parameters, else as `kind`, with the
 /// origins of the block, its `Blockoid` and its `StatementList`.
 // Cost: O(n), n = size of the block.
-fn view_block(block: &ParsedBlock, kind: BlockKind) -> Result<RakuAstNode, RuntimeError> {
+fn view_block(names: &NameScope, block: &ParsedBlock, kind: BlockKind) -> Result<RakuAstNode, RuntimeError> {
     let node = match &block.params {
         BlockParams::None => match kind {
-            BlockKind::Signature => signature_block_node(&block.body)?,
-            BlockKind::Topic => topic_block_node(&block.body)?,
-            BlockKind::Plain => block_node(&block.body)?,
+            BlockKind::Signature => signature_block_node(names, &block.body)?,
+            BlockKind::Topic => topic_block_node(names, &block.body)?,
+            BlockKind::Plain => block_node(names, &block.body)?,
         },
-        BlockParams::List(defs) => pointy_block(defs, &block.body, None)?,
-        BlockParams::Topic { def, .. } => pointy_block(
+        BlockParams::List(defs) => pointy_block(names, defs, &block.body, None)?,
+        BlockParams::Topic { def, .. } => pointy_block(names, 
             def.as_deref().map_or(&[], std::slice::from_ref),
             &block.body,
             None,

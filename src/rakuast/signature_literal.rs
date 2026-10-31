@@ -1,6 +1,7 @@
 //! Literal postconstraints in a declaring signature. The generated `where`
 //! refers to the parameter's value through Term::Declaration, as Rakudo does.
 
+use crate::scope::NameScope;
 use super::convert::{build_type_node, leaf_field, name_from_identifier, node_field, unsupported};
 use super::lower::named_child;
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -83,7 +84,7 @@ fn constraint() -> RakuAstNode {
 }
 
 // Cost: O(s), s = size of the literal value.
-pub(super) fn convert(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = expr else {
         return Err(unsupported("nonconstant signature literal postconstraint"));
     };
@@ -92,7 +93,7 @@ pub(super) fn convert(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(node(
         C::Parameter,
         vec![
-            node_field(Some("type"), build_type_node(type_name)?),
+            node_field(Some("type"), build_type_node(names, type_name)?),
             node_field(
                 Some("target"),
                 node(
@@ -108,7 +109,7 @@ pub(super) fn convert(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 // Cost: O(s), s = size of the parameter tree.
-pub(super) fn lower(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
+pub(super) fn lower(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
     if let Ok(target) = named_child(param, "target")
         && (target.class != C::ParameterTargetVar || super::lower::leaf_str(target, "name")? != "$")
     {
@@ -143,9 +144,9 @@ pub(super) fn lower(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
     let mut var = SignatureVar::plain("$__literal_match");
     var.literal_value = Some(Expr::Literal(value.clone()));
     if let Ok(ty) = named_child(param, "type") {
-        var.per_var_type_constraint = Some(super::type_lower::type_constraint(param, ty)?);
+        var.per_var_type_constraint = Some(super::type_lower::type_constraint(names, param, ty)?);
     }
     // Validate the value through the same conversion used by the read side.
-    convert(var.literal_value.as_ref().unwrap())?;
+    convert(names, var.literal_value.as_ref().unwrap())?;
     Ok(var)
 }

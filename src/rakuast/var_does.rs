@@ -3,6 +3,7 @@
 //! spells as a declaration, an in-place mixin and the initializer
 //! ([`crate::ast::var_does`]).
 
+use crate::scope::NameScope;
 use super::lower::{lower_expr, named_child_or_positional, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{AssignOp, Expr, Stmt};
@@ -59,7 +60,7 @@ pub(super) fn split(
 /// The parser's expansion of `declaration` (lowered without its role) mixed
 /// with `roles`.
 // Cost: O(n), n = size of the declaration and the role.
-pub(super) fn lower_expansion(
+pub(super) fn lower_expansion(names: &NameScope, 
     node: &RakuAstNode,
     declaration: Stmt,
     roles: &[RakuAstNode],
@@ -108,7 +109,7 @@ pub(super) fn lower_expansion(
     } else {
         (expr, None)
     };
-    let role = lower_expr(role)?;
+    let role = lower_expr(names, role)?;
     let declared = Stmt::VarDecl {
         anonymous,
         name: name.clone(),

@@ -6,6 +6,7 @@
 //! `Range` keeps only the bounds and exclusions that were written; the
 //! quantified atom holds the `separator` and a `trailing-separator` flag.
 
+use crate::scope::NameScope;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{QuantifierKind, RegexBacktrack, RegexNode, RegexQuantifier};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -26,7 +27,7 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 /// The `QuantifiedAtom` node for `atom` under `quantifier`. `separator` is
 /// the already converted separator node.
 // Cost: O(1).
-pub(super) fn convert(
+pub(super) fn convert(names: &NameScope, 
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,
     separator: Option<RakuAstNode>,
@@ -35,7 +36,7 @@ pub(super) fn convert(
         field("atom", Value::rakuast(Box::new(atom))),
         field(
             "quantifier",
-            Value::rakuast(Box::new(quantifier_node(quantifier)?)),
+            Value::rakuast(Box::new(quantifier_node(names, quantifier)?)),
         ),
     ];
     if let Some(separator) = separator {
@@ -52,7 +53,7 @@ pub(super) fn convert(
 }
 
 // Cost: O(n), n = size of a block.
-fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeError> {
+fn quantifier_node(names: &NameScope, quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     let class = match &quantifier.kind {
         QuantifierKind::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
@@ -81,7 +82,7 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeE
         QuantifierKind::Block(code) => {
             fields.push(field(
                 "block",
-                Value::rakuast(Box::new(super::convert::block_node(&code.body)?)),
+                Value::rakuast(Box::new(super::convert::block_node(names, &code.body)?)),
             ));
             fields.push(super::regex_code::source_field(&code.code));
             RakuAstClass::RegexQuantifierBlockRange

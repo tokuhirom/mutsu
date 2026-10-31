@@ -7,6 +7,7 @@
 //! an `OnlyStar`. The parser keeps the first as the `Whatever` term and the
 //! second as the onlystar dispatch call (`Expr::onlystar_dispatch`).
 
+use crate::scope::NameScope;
 use super::convert::{leaf_field, routine_node, unsupported};
 use super::lower::{
     call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
@@ -44,7 +45,7 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert(names: &NameScope, proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     if proto.has_traits && crate::ast::routine_trait::get(proto.body).is_none() {
         return Err(unsupported("proto with traits"));
     }
@@ -55,7 +56,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     };
     let onlystar = is_onlystar_body(proto.body);
     let body: &[Stmt] = if onlystar { &[] } else { proto.body };
-    let mut node = routine_node(
+    let mut node = routine_node(names, 
         class,
         &proto.name.resolve(),
         proto.param_defs,
@@ -76,7 +77,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     }
     // The traits are the ones the source wrote; `is export` is folded into
     // `is_export` / `export_tags`, which are not read back.
-    if !super::routine_source::apply(&mut node, proto.body)? && proto.is_export {
+    if !super::routine_source::apply(names, &mut node, proto.body)? && proto.is_export {
         return Err(unsupported(
             "proto with `is export` and no written-trait record",
         ));
@@ -102,7 +103,7 @@ pub(super) fn is_proto(node: &RakuAstNode) -> bool {
 
 /// A `proto` `Sub` / `Method` -> `Stmt::ProtoDecl`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => false,
         Some(_) => match super::lower::leaf_str(node, "scope")?.as_str() {
@@ -111,9 +112,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         },
     };
     let name = call_name_str(node)?;
-    let (params, param_defs) = signature_positional_params(node)?;
+    let (params, param_defs) = signature_positional_params(names, node)?;
     let mut is_traits = IsTraits::default();
-    let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
+    let (return_type, custom_traits) = routine_return_type(names, node, Some(&mut is_traits))?;
     // ProtoDecl has no rw/raw execution flags, matching the parser's proto
     // construction. Retain those annotations in the source record below;
     // candidate declarations determine the returned container contract.
@@ -123,7 +124,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     } else {
         lower_routine_stmts(named_child_or_positional(body_node)?)?
     };
-    super::routine_source::retain(node, &mut body)?;
+    super::routine_source::retain(names, node, &mut body)?;
     Ok(Stmt::ProtoDecl {
         is_hidden_from_backtrace: is_traits.is_hidden_from_backtrace,
         is_hoisted_copy: false,

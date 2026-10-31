@@ -8,6 +8,7 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
+use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
@@ -42,15 +43,15 @@ fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
 }
 
 /// The lvalue under the prefix.
-fn operand_node(target: &Target) -> Result<RakuAstNode, RuntimeError> {
+fn operand_node(names: &NameScope, target: &Target) -> Result<RakuAstNode, RuntimeError> {
     match target {
-        Target::Variable(key) => convert_expr(&temporize::variable_expr(key)),
-        Target::Undefine(key) => convert_expr(&Expr::Call {
+        Target::Variable(key) => convert_expr(names, &temporize::variable_expr(key)),
+        Target::Undefine(key) => convert_expr(names, &Expr::Call {
             name: crate::symbol::Symbol::intern("undefine"),
             args: vec![temporize::variable_expr(key)],
             listop: false,
         }),
-        Target::Element(element) => convert_expr(element),
+        Target::Element(element) => convert_expr(names, element),
     }
 }
 
@@ -62,10 +63,10 @@ fn is_scalar_variable(target: &Target) -> bool {
 
 /// `temp my $x`: the declaration under a `temp` prefix.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_declaration(names: &NameScope, decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(prefix_node(
         true,
-        convert_expr(&Expr::DoStmt(Box::new(decl.clone())))?,
+        convert_expr(names, &Expr::DoStmt(Box::new(decl.clone())))?,
     ))
 }
 
@@ -74,7 +75,7 @@ pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeErr
 /// already-expanded writeback value for the compiler; its identity marker
 /// preserves the compound operator and original left operand for this model.
 // Cost: O(e), e = size of the assignment value and method arguments.
-pub(super) fn convert_method_assign_stmt(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_method_assign_stmt(names: &NameScope, stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     let Stmt::TempMethodAssign {
         var_name,
         method_name,
@@ -86,7 +87,7 @@ pub(super) fn convert_method_assign_stmt(stmt: &Stmt) -> Result<RakuAstNode, Run
     else {
         return Err(super::convert::unsupported("temp method assignment"));
     };
-    convert_method_assign(
+    convert_method_assign(names, 
         var_name,
         method_name,
         method_args,
@@ -97,7 +98,7 @@ pub(super) fn convert_method_assign_stmt(stmt: &Stmt) -> Result<RakuAstNode, Run
 }
 
 // Cost: O(e), e = size of the assignment value and method arguments.
-fn convert_method_assign(
+fn convert_method_assign(names: &NameScope, 
     var_name: &str,
     method_name: &str,
     method_args: &[Expr],
@@ -125,7 +126,7 @@ fn convert_method_assign(
             Some(meta) if type_invocant => (meta, Some('^')),
             _ => (method_name, None),
         };
-        convert_expr(&Expr::MethodCall {
+        convert_expr(names, &Expr::MethodCall {
             target: Box::new(invocant),
             name: crate::symbol::Symbol::intern(method_name),
             args: method_args.to_vec(),
@@ -150,42 +151,42 @@ fn convert_method_assign(
         )
     {
         let operator = crate::compiler::helpers_ops::token_kind_to_op_name(op);
-        return super::convert::compound_assignment_with_left(left, &format!("{operator}="), right);
+        return super::convert::compound_assignment_with_left(names, left, &format!("{operator}="), right);
     }
-    super::convert::assignment_around(left, is_attribute, value)
+    super::convert::assignment_around(names, left, is_attribute, value)
 }
 
 /// The prefix over the lvalue, with the assignment around it.
 // Cost: O(n), n = size of the lvalue and the assigned expression.
-pub(super) fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_temporized(names: &NameScope, t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
     match &t.assigned {
-        Assigned::No => Ok(prefix_node(t.is_temp, operand_node(&t.target)?)),
-        Assigned::Plain(value) => super::convert::assignment_around(
-            prefix_node(t.is_temp, operand_node(&t.target)?),
+        Assigned::No => Ok(prefix_node(t.is_temp, operand_node(names, &t.target)?)),
+        Assigned::Plain(value) => super::convert::assignment_around(names, 
+            prefix_node(t.is_temp, operand_node(names, &t.target)?),
             is_scalar_variable(&t.target),
             value,
         ),
         Assigned::Compound(Expr::CompoundAssign {
             target, op, rhs, ..
         }) => {
-            let left = prefix_node(t.is_temp, convert_expr(target)?);
+            let left = prefix_node(t.is_temp, convert_expr(names, target)?);
             if op == crate::parser::DOTTY_ASSIGN_OP {
-                super::convert::dotty_assignment_with_left(left, rhs)
+                super::convert::dotty_assignment_with_left(names, left, rhs)
             } else {
-                super::convert::compound_assignment_with_left(left, op, rhs)
+                super::convert::compound_assignment_with_left(names, left, op, rhs)
             }
         }
         Assigned::Compound(Expr::Ast(node)) => match node.as_ref() {
             crate::ast::parsed::ParsedExpr::CompoundAssign(a)
                 if a.meta == crate::ast::parsed::CompoundMeta::Dotty =>
             {
-                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
-                super::convert::dotty_assignment_with_left(left, &a.source)
+                let left = prefix_node(t.is_temp, convert_expr(names, &a.target)?);
+                super::convert::dotty_assignment_with_left(names, left, &a.source)
             }
             crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
-                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                let left = prefix_node(t.is_temp, convert_expr(names, &a.target)?);
                 super::parsed_view::with_compound_meta(
-                    super::convert::compound_assignment_with_left(
+                    super::convert::compound_assignment_with_left(names, 
                         left,
                         &super::parsed_view::compound_spelling(a),
                         &a.source,
@@ -247,8 +248,8 @@ fn with_left(node: &RakuAstNode, left: &RakuAstNode) -> RakuAstNode {
 
 /// The `temp` / `let` statement the parser builds for `node`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if let Some(statement) = lower_method_assign(node)? {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if let Some(statement) = lower_method_assign(names, node)? {
         return Ok(statement);
     }
     let (prefix, wrapper) = match node.class {
@@ -276,14 +277,14 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         if !matches!(after, After::Nothing) {
             return Err(unsupported(node));
         }
-        let decl = lower_var_decl(operand)?;
+        let decl = lower_var_decl(names, operand)?;
         let Stmt::VarDecl { name, .. } = &decl else {
             return Err(unsupported(node));
         };
         let saved = temporize::save(name, None, None, true);
         return Ok(Stmt::SyntheticBlock(vec![decl, saved]));
     }
-    let lvalue = lower_expr(operand)?;
+    let lvalue = lower_expr(names, operand)?;
     let lower_temporized = |temporized: Temporized| {
         super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::Temporize(Box::new(
             temporized,
@@ -340,7 +341,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// A temporary method/attribute lvalue is already represented as the source
 /// prefix plus assignment. Recover its shared save/restore statement directly.
 // Cost: O(e), e = size of the lvalue and assignment expression.
-fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+fn lower_method_assign(names: &NameScope, node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
     let (prefix, wrapper) = match node.class {
         RakuAstClass::ApplyPrefix => (node, None),
         RakuAstClass::ApplyInfix => (named_child(node, "left")?, Some(node)),
@@ -375,7 +376,7 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
             args,
             modifier,
             ..
-        } = lower_expr(operand)?
+        } = lower_expr(names, operand)?
         else {
             return Ok(None);
         };
@@ -400,7 +401,7 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
             lower_expr(named_child(wrapper, "right")?)?
         }
         Some(wrapper) if infix_is_compound_assignment(wrapper) => {
-            let left = lower_expr(operand)?;
+            let left = lower_expr(names, operand)?;
             let meta = named_child(wrapper, "infix")?;
             let base = match positional_leaf(named_child_or_positional(meta)?)?.view() {
                 ValueView::Str(operator) => operator.to_string(),

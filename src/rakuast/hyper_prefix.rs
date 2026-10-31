@@ -5,6 +5,7 @@
 //! [`node`] is its view and [`lower_hyper_prefix`] the one lowering to the call
 //! the runtime executes, shared by the parser's node and a hand-built tree.
 
+use crate::scope::NameScope;
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstNode};
@@ -39,7 +40,7 @@ pub(crate) fn lower_hyper_prefix(symbol: &str, operand: Expr) -> Option<Expr> {
 
 /// The `ApplyPrefix` of a hyper prefix `symbol` over `operand`.
 // Cost: O(n), n = size of the operand.
-pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn node(names: &NameScope, symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let prefix = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Prefix,
@@ -57,7 +58,7 @@ pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeE
                     fields: vec![node_field(None, prefix)],
                 },
             ),
-            node_field(Some("operand"), convert_expr(operand)?),
+            node_field(Some("operand"), convert_expr(names, operand)?),
         ],
     })
 }

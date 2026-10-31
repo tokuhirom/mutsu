@@ -1,3 +1,4 @@
+use crate::scope::NameScope;
 use super::super::control_signature;
 use super::*;
 use crate::ast::SrcSpan;
@@ -88,7 +89,7 @@ fn read_block(block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeEr
     let params = if block.class != RakuAstClass::PointyBlock {
         BlockParams::None
     } else if topic {
-        let mut defs = control_signature::params(block)?;
+        let mut defs = control_signature::params(names, block)?;
         if defs.len() > 1 {
             return Err(RuntimeError::new(
                 "RakuAST: with-family pointy block requires one parameter",
@@ -100,7 +101,7 @@ fn read_block(block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeEr
             def: def.map(Box::new),
         }
     } else {
-        BlockParams::List(control_signature::params(block)?)
+        BlockParams::List(control_signature::params(names, block)?)
     };
     Ok(ParsedBlock {
         params,
@@ -181,7 +182,7 @@ fn read_block_statement(node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> 
 /// A C-style loop's increment: a comma list of expressions runs them in turn,
 /// as the parser's `do` block of the written expressions does.
 // Cost: O(n), n = size of the increment.
-fn loop_increment(increment: &RakuAstNode) -> Result<Expr, RuntimeError> {
+fn loop_increment(names: &NameScope, increment: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if increment.class == RakuAstClass::ApplyListInfix
         && matches!(positional_leaf(named_child(increment, "infix")?)?.view(), ValueView::Str(op) if op.as_str() == ",")
     {
@@ -190,9 +191,9 @@ fn loop_increment(increment: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let ValueView::RakuAst(operand) = operand.view() else {
                 return Err(unsupported(increment));
             };
-            statements.push(Stmt::Expr(lower_expr(operand)?));
+            statements.push(Stmt::Expr(lower_expr(names, operand)?));
         }
         return Ok(Expr::desugar_block(statements));
     }
-    lower_expr(increment)
+    lower_expr(names, increment)
 }

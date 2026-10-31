@@ -7,6 +7,7 @@
 //! block's top, and a body nested below a routine body gets the per-call
 //! spelling, exactly as `parser::stmt::simple::anon_state_is_per_call` decides.
 
+use crate::scope::NameScope;
 use std::cell::RefCell;
 
 use super::lower::{leaf_str, unsupported};
@@ -115,11 +116,11 @@ fn parts(node: &RakuAstNode) -> Result<(String, bool), RuntimeError> {
 
 /// An anonymous variable in expression position: `$++`, `@.push`, `state $ = 0`.
 // Cost: O(n), n = size of the initializer.
-pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_term(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let (sigil, explicit) = parts(node)?;
     if is_my(node)? || explicit {
         return if sigil == "$" {
-            Ok(Expr::DoStmt(Box::new(super::lower::lower_var_decl(node)?)))
+            Ok(Expr::DoStmt(Box::new(super::lower::lower_var_decl(names, node)?)))
         } else {
             Err(unsupported(node))
         };
@@ -134,12 +135,12 @@ pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 
 /// An anonymous variable as a statement of its own: `state $ = 0;`.
 // Cost: O(n), n = size of the initializer.
-pub(super) fn lower_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (sigil, explicit) = parts(node)?;
     if sigil == "$" && (is_my(node)? || explicit) {
-        super::lower::lower_var_decl(node)
+        super::lower::lower_var_decl(names, node)
     } else {
-        Ok(Stmt::Expr(lower_term(node)?))
+        Ok(Stmt::Expr(lower_term(names, node)?))
     }
 }
 

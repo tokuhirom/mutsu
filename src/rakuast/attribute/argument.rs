@@ -1,28 +1,29 @@
 //! Written delimiters of attribute trait arguments.
 
+use crate::scope::NameScope;
 use super::super::convert::{convert_expr, node_field, statement_expression};
 use super::super::lower::{lower_expr, named_child, named_child_or_positional};
 use super::super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, spelled::Spelling};
 use crate::value::{RuntimeError, ValueView};
 
-pub(super) fn trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn trait_argument(names: &NameScope, argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match argument {
         Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::BracketTraitArgument) => {
-            convert_expr(&spelled.expr)
+            convert_expr(names, &spelled.expr)
         }
-        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => paren_argument(inner),
-        other => paren_argument(other),
+        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => paren_argument(names, inner),
+        other => paren_argument(names, other),
     }
 }
 
 /// `(EXPR)` as a trait argument.
 // Cost: O(e), e = size of the expression.
-pub(in crate::rakuast) fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(in crate::rakuast) fn paren_argument(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
+        fields: vec![node_field(None, statement_expression(convert_expr(names, expr)?))],
     };
     Ok(RakuAstNode {
         origin: Default::default(),

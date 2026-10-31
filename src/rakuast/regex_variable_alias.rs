@@ -14,6 +14,7 @@
 //! grammar, so its `WithWhitespace` disappears with the atom: the public node
 //! is the bare interpolation and the hidden atom carries the wrapper.
 
+use crate::scope::NameScope;
 use super::convert::{leaf_field, node_field, regex_node};
 use super::lower::{lower_regex_node, named_child};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
@@ -28,7 +29,7 @@ const GAP_AFTER: &str = "source-alias-gap-after";
 
 /// `$name=regex` as the node rakudo renders, with the aliased atom hidden.
 // Cost: O(n), n = size of the aliased atom.
-pub(super) fn convert(
+pub(super) fn convert(names: &NameScope, 
     (name, sequential, array): (&str, bool, bool),
     gap: (&str, &str),
     regex: &RegexNode,
@@ -40,7 +41,7 @@ pub(super) fn convert(
         RegexNode::Interpolation { name, sequential }
     })?;
     node.fields
-        .push(node_field(Some(FIELD), regex_node(regex)?));
+        .push(node_field(Some(FIELD), regex_node(names, regex)?));
     for (field, text) in [(GAP_BEFORE, gap.0), (GAP_AFTER, gap.1)] {
         if !text.is_empty() {
             node.fields
@@ -80,7 +81,7 @@ pub(super) fn is_source_field(node: &RakuAstNode, field: &RakuAstField) -> bool 
 /// A `Regex::Interpolation` carrying an aliased atom, as the alias again;
 /// `None` for any other node.
 // Cost: O(n), n = size of the aliased atom.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
     if node.class != RakuAstClass::RegexInterpolation
         || !node.fields.iter().any(|field| field.name == Some(FIELD))
     {
@@ -98,7 +99,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
                 .cloned()
                 .collect(),
         };
-        let (name, sequential, array) = match lower_regex_node(&interpolation)? {
+        let (name, sequential, array) = match lower_regex_node(names, &interpolation)? {
             RegexNode::Interpolation { name, sequential } => (name, sequential, false),
             RegexNode::ArrayInterpolation { name, sequential } => (name, sequential, true),
             _ => return Err(super::lower::unsupported(node)),

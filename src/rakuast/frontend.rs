@@ -76,10 +76,10 @@ pub(crate) fn round_trip(names: &NameScope, stmts: &[Stmt]) -> Result<Vec<Stmt>,
 // Cost: O(n), n = size of the unit.
 pub(crate) fn round_trip_owned(names: &NameScope, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     let mut lowered = if convert_level() {
-        let node = super::convert::statement_list(&stmts)?;
+        let node = super::convert::statement_list(names, &stmts)?;
         super::lower::lower_converted(&node)?
     } else {
-        super::finalize::finalize_unit(stmts)?
+        super::finalize::finalize_unit(names, stmts)?
     };
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.

@@ -7,6 +7,7 @@
 //! (`ast::immediate_call::expand`), so the routine is declared in the
 //! enclosing scope as the parsed program declares it.
 
+use crate::scope::NameScope;
 use super::convert::{arg_list, convert_stmt, expression_of, node_field};
 use super::lower::{arg_exprs, lower_stmt, named_child, unsupported};
 use super::{RakuAstClass, RakuAstNode};
@@ -16,8 +17,8 @@ use crate::value::RuntimeError;
 /// The `ApplyPostfix` node of an immediate call: the routine `sub_decl` and the
 /// arguments of the call.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn convert(sub_decl: &Stmt, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
-    let statement = convert_stmt(sub_decl)?
+pub(super) fn convert(names: &NameScope, sub_decl: &Stmt, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let statement = convert_stmt(names, sub_decl)?
         .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
     let routine = expression_of(&statement)
         .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
@@ -28,7 +29,7 @@ pub(super) fn convert(sub_decl: &Stmt, args: &[Expr]) -> Result<RakuAstNode, Run
         fields: Vec::new(),
     };
     if !args.is_empty() {
-        call.fields.push(node_field(Some("args"), arg_list(args)?));
+        call.fields.push(node_field(Some("args"), arg_list(names, args)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),

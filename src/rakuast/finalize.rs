@@ -130,13 +130,13 @@ impl Finalize<'_> {
 
     /// A statement the parser's own tree cannot stand for, converted and
     /// lowered on its own.
-    fn convert_statement(&mut self, stmt: &mut Stmt) {
+    fn convert_statement(&mut self, stmt: &mut Stmt) { let names = self.names;
         let line = self.line;
-        let converted = super::convert::convert_stmt(stmt).and_then(|node| match node {
+        let converted = super::convert::convert_stmt(names, stmt).and_then(|node| match node {
             Some(node) => {
                 super::infix_func::note_declaration(&node);
                 super::shadowed_terms::note_keyword_declaration(&node);
-                super::origin::with_line(line, || super::lower::lower_stmt(&node)).map(Some)
+                super::origin::with_line(line, || super::lower::lower_stmt(names, &node)).map(Some)
             }
             None => Ok(None),
         });
@@ -177,7 +177,7 @@ impl VisitMut for Finalize<'_> {
 
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
-    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+    fn visit_expr_mut(&mut self, expr: &mut Expr) { let names = self.names;
         // An expression the parser's tree cannot stand for (a bareword to
         // classify, a regex with code, ...) is converted and lowered on its own.
         let mut inner = &*expr;
@@ -185,8 +185,8 @@ impl VisitMut for Finalize<'_> {
             inner = &spelled.expr;
         }
         if !carried::expr_carried(inner) {
-            match super::convert::convert_expr(expr)
-                .and_then(|node| super::lower::lower_expr(&node))
+            match super::convert::convert_expr(names, expr)
+                .and_then(|node| super::lower::lower_expr(names, &node))
             {
                 Ok(lowered) => *expr = lowered,
                 Err(err) => self.fail(err),

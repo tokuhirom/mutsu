@@ -16,6 +16,7 @@
 //! The field is part of the model but not of the constructor form: Rakudo's
 //! `.raku` shows no source text either.
 
+use crate::scope::NameScope;
 use super::convert::{block_node, node_field, statement_expression};
 use super::lower::{lower_block, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -39,7 +40,7 @@ pub(super) fn is_source(node: &RakuAstNode, field: &RakuAstField) -> bool {
 /// The node of a `PRE` / `POST` phaser whose body is `body` and whose argument
 /// was written `condition`.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert(
+pub(super) fn convert(names: &NameScope, 
     kind: &PhaserKind,
     body: &[Stmt],
     condition: &Symbol,
@@ -51,7 +52,7 @@ pub(super) fn convert(
     };
     let text = condition.resolve();
     let positional = if text.trim_start().starts_with('{') {
-        let block = block_node(body)?;
+        let block = block_node(names, body)?;
         if is_pre {
             statement_expression(RakuAstNode {
                 origin: Default::default(),
@@ -74,7 +75,7 @@ pub(super) fn convert(
     } else {
         // The bare form `PRE COND`: the written statement.
         let [stmt] = body else { return Ok(None) };
-        let Some(node) = super::convert::convert_stmt(stmt)? else {
+        let Some(node) = super::convert::convert_stmt(names, stmt)? else {
             return Ok(None);
         };
         node
@@ -94,7 +95,7 @@ pub(super) fn convert(
 
 /// The statement a `PRE` / `POST` node lowers to.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower(node: &RakuAstNode, kind: PhaserKind) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode, kind: PhaserKind) -> Result<Stmt, RuntimeError> {
     let condition = node
         .fields
         .iter()
@@ -113,7 +114,7 @@ pub(super) fn lower(node: &RakuAstNode, kind: PhaserKind) -> Result<Stmt, Runtim
         RakuAstClass::StatementExpression if let Some(block) = called_block(positional) => {
             lower_block(block)?
         }
-        _ => vec![super::lower::lower_stmt(positional)?],
+        _ => vec![super::lower::lower_stmt(names, positional)?],
     };
     Ok(Stmt::Phaser {
         spans: Default::default(),

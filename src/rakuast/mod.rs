@@ -1764,10 +1764,10 @@ pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> 
 /// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
-pub(crate) fn parameter_param_def(
+pub(crate) fn parameter_param_def(names: &NameScope, 
     node: &RakuAstNode,
 ) -> Result<crate::ast::ParamDef, RuntimeError> {
-    lower::lower_parameter_def(node)
+    lower::lower_parameter_def(names, node)
 }
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
@@ -1777,7 +1777,7 @@ pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeErro
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let mut node = convert::statement_list(&stmts)?;
+    let mut node = convert::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }
@@ -1785,11 +1785,11 @@ pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeErro
 /// The `RakuAST::CompUnit` of the unit being compiled, as `$*CU` answers it:
 /// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub fn compile_time_compunit(
+pub fn compile_time_compunit(names: &NameScope, 
     source: &str,
     imported: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
-    let cu = str_dot_ast_compunit(source)?;
+    let cu = str_dot_ast_compunit(names, source)?;
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
@@ -1810,7 +1810,7 @@ pub fn str_dot_ast_compunit(names: &NameScope, source: &str) -> Result<Value, Ru
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast(source)?;
+    let statement_list = str_dot_ast(names, source)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1852,7 +1852,7 @@ pub fn str_dot_ast_compunit(names: &NameScope, source: &str) -> Result<Value, Ru
 /// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
 pub fn str_dot_ast_with_slang(names: &NameScope, source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
-        return str_dot_ast(source);
+        return str_dot_ast(names, source);
     };
     let module = format!("L10N::{slang}");
     let activation = crate::runtime::slang_activation::run_slang_activation(
@@ -1867,7 +1867,7 @@ pub fn str_dot_ast_with_slang(names: &NameScope, source: &str, slang: Option<&st
     let result = (|| {
         crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
-        str_dot_ast(source)
+        str_dot_ast(names, source)
     })();
     crate::parser::set_l10n_preseed(None);
     crate::parser::restore_slang_state(saved_modes, saved_vocabulary);
@@ -1885,7 +1885,7 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// single-positional-argument constructors such as literals, names, and
 /// return-type traits, plus the supported named-field constructors.
 // Cost: O(n), n = arguments and contained list elements or identifier bytes.
-pub fn construct(
+pub fn construct(names: &NameScope, 
     class_name: &str,
     method: &str,
     args: &[Value],
@@ -1897,12 +1897,12 @@ pub fn construct(
         .any(|arg| matches!(arg.view(), ValueView::ContainerRef(_)))
     {
         let read: Vec<Value> = args.iter().map(Value::deref_container).collect();
-        return construct_values(class_name, method, &read);
+        return construct_values(names, class_name, method, &read);
     }
-    construct_values(class_name, method, args)
+    construct_values(names, class_name, method, args)
 }
 
-fn construct_values(
+fn construct_values(names: &NameScope, 
     class_name: &str,
     method: &str,
     args: &[Value],
@@ -1918,7 +1918,7 @@ fn construct_values(
         return result.map(Some);
     }
     if method == "new"
-        && let Some(result) = package_traits::construct(class_name, args)
+        && let Some(result) = package_traits::construct(names, class_name, args)
     {
         return result.map(Some);
     }

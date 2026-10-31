@@ -1,4 +1,5 @@
 //! Regex declaration nodes and their parser-owned reflection provenance.
+use crate::scope::NameScope;
 use super::convert::{leaf_field, name_from_identifier, node_field, regex_node, signature};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
@@ -8,7 +9,7 @@ use crate::value::{RuntimeError, Value};
 /// `[my|our] token NAME(SIG) { … }`: scope precedes the method-style signature
 /// and body; the default `has` scope is omitted.
 // Cost: O(r + p), r = size of the regex, p = size of the parameters.
-pub(super) fn convert(
+pub(super) fn convert(names: &NameScope, 
     class: RakuAstClass,
     name: &str,
     tree: &RegexTree,
@@ -18,20 +19,20 @@ pub(super) fn convert(
     export_trait: Option<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
-    with_body(
+    with_body(names, 
         class,
         Some(name),
         scope,
         multiness,
         param_defs,
-        regex_node(&tree.body)?,
+        regex_node(names, &tree.body)?,
         export_trait.into_iter().collect(),
     )
 }
 
 /// [`convert`] over an already converted body (the `{*}` of a proto).
 // Cost: O(p), p = size of the parameters.
-pub(super) fn with_body(
+pub(super) fn with_body(names: &NameScope, 
     class: RakuAstClass,
     name: Option<&str>,
     scope: Option<&str>,
@@ -53,7 +54,7 @@ pub(super) fn with_body(
     if !param_defs.is_empty() {
         fields.push(node_field(
             Some("signature"),
-            signature(param_defs, true, None)?,
+            signature(names, param_defs, true, None)?,
         ));
     }
     if !traits.is_empty() {

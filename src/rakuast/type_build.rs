@@ -1,5 +1,6 @@
 //! Bounded composition of the parser's type spellings into source nodes.
 
+use crate::scope::NameScope;
 use super::bareword::simple_type_node;
 use super::convert::{is_pseudo_type, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
@@ -17,34 +18,34 @@ pub(super) fn is_simple_type(t: &str) -> bool {
     }
 }
 
-pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
-    build_type_node_at(t, 0)
+pub(super) fn build_type_node(names: &NameScope, t: &str) -> Result<RakuAstNode, RuntimeError> {
+    build_type_node_at(names, t, 0)
 }
 
 /// A declaration's capture type is a `Type::Capture`; other type positions
 /// retain their existing interpretation of a leading `::`.
-pub(super) fn declaration_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn declaration_type_node(names: &NameScope, t: &str) -> Result<RakuAstNode, RuntimeError> {
     if let Some(name) = crate::qualified::type_capture_name(t)
         && !name.is_empty()
         && name
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
     {
-        return super::convert::type_capture_node(name);
+        return super::convert::type_capture_node(names, name);
     }
-    build_type_node(t)
+    build_type_node(names, t)
 }
 
 /// A return constraint may pin a numeric value instead of naming a type.
 // Cost: O(n), n = constraint spelling length.
-pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn return_constraint_node(names: &NameScope, t: &str) -> Result<RakuAstNode, RuntimeError> {
     if let Some(value) = crate::parser::numeric_literal_value(t) {
-        return super::convert::convert_literal(&value);
+        return super::convert::convert_literal(names, &value);
     }
     if let Some(text) = string_literal_value(t) {
         return Ok(super::convert::quoted_string(Value::str(text)));
     }
-    build_type_node(t)
+    build_type_node(names, t)
 }
 
 /// The text of a `'…'` / `"…"` return-value literal that needs no
@@ -90,7 +91,7 @@ pub(super) fn strip_smiley<'a>(t: &'a str, smiley: &str) -> Option<&'a str> {
     t.strip_suffix(smiley).filter(|base| !base.ends_with(':'))
 }
 
-pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn build_type_node_at(names: &NameScope, t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
     if depth >= MAX_TYPE_DEPTH {
         return Err(unsupported("type composition exceeds 128 levels"));
     }
@@ -100,7 +101,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             class: RakuAstClass::TypeAnyDefinedness,
             fields: vec![node_field(
                 Some("base-type"),
-                build_type_node_at(base, depth + 1)?,
+                build_type_node_at(names, base, depth + 1)?,
             )],
         });
     }
@@ -109,7 +110,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             origin: Default::default(),
             class: RakuAstClass::TypeDefinedness,
             fields: vec![
-                node_field(Some("base-type"), build_type_node_at(base, depth + 1)?),
+                node_field(Some("base-type"), build_type_node_at(names, base, depth + 1)?),
                 RakuAstField {
                     name: Some("definite"),
                     value: RakuAstFieldValue::Node(Value::truth(t.ends_with(":D"))),
@@ -119,17 +120,17 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
     }
     if let Some((open, delimiter)) = application_open(t)? {
         if delimiter == '[' {
-            return super::type_args::parameterized_type_node_at(t, None, depth);
+            return super::type_args::parameterized_type_node_at(names, t, None, depth);
         }
         let inner = &t[open + 1..t.len() - 1];
         let mut fields = vec![node_field(
             Some("base-type"),
-            build_type_node_at(&t[..open], depth + 1)?,
+            build_type_node_at(names, &t[..open], depth + 1)?,
         )];
         if !inner.is_empty() {
             fields.push(node_field(
                 Some("constraint"),
-                build_type_node_at(inner, depth + 1)?,
+                build_type_node_at(names, inner, depth + 1)?,
             ));
         }
         return Ok(RakuAstNode {

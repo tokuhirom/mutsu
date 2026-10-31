@@ -9,6 +9,7 @@
 //! marker on its `Call::Term`, which the lowering reads back; a hand-built
 //! `Call::Term` has none and stays a call on the type object.
 
+use crate::scope::NameScope;
 use super::convert::{arg_list, node_field};
 use super::lower::arg_exprs;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword};
@@ -27,7 +28,7 @@ pub(super) fn is_marker(field: &RakuAstField) -> bool {
 /// `Num(EXPR)` -> the call on the type term; `None` when `name` is not a type
 /// name. `args` is absent for `Int()`.
 // Cost: O(k + n), k = length of `name`, n = size of the arguments.
-pub(super) fn convert(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert(names: &NameScope, name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
     if !name.starts_with(char::is_uppercase) {
         return Ok(None);
     }
@@ -45,7 +46,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, 
     if !args.is_empty() {
         call_term
             .fields
-            .push(node_field(Some("args"), arg_list(args)?));
+            .push(node_field(Some("args"), arg_list(names, args)?));
     }
     call_term.fields.push(RakuAstField {
         name: Some(FIELD),

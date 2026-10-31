@@ -16,6 +16,7 @@
 //! [`Expr::HyperMethodCallDynamic`]. A `.^$n()` loses its `^` in rakudo's tree,
 //! and a quoted name is a `Call::QuotedMethod` (see `convert.rs`).
 
+use crate::scope::NameScope;
 use super::convert::{
     arg_list, convert_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
     unsupported as unsupported_expr,
@@ -30,19 +31,19 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Call::TermAsMethod` / `Call::NameAsMethod` postfix of a dynamic call.
 // Cost: O(n), n = nodes of the name and arguments.
-fn postfix(
+fn postfix(names: &NameScope, 
     name_expr: &Expr,
     args: &[Expr],
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    postfix_of(name_expr, args, modifier, true)
+    postfix_of(names, name_expr, args, modifier, true)
 }
 
 /// [`postfix`]; `name_as_method` is false for the method of a `.=`, where
 /// rakudo 2026.09 has even `&f` as the callee of a `Call::TermAsMethod`
 /// (`$x .= &f`, `my $x .= &f`).
 // Cost: O(n), n = nodes of the name and arguments.
-fn postfix_of(
+fn postfix_of(names: &NameScope, 
     name_expr: &Expr,
     args: &[Expr],
     modifier: Option<char>,
@@ -60,7 +61,7 @@ fn postfix_of(
         // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
         // identifier `Name.from-identifier` spells.
         Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
-            fields.push(node_field(Some("block"), convert_expr(name_expr)?));
+            fields.push(node_field(Some("block"), convert_expr(names, name_expr)?));
             RakuAstClass::CallBlockMethod
         }
         Expr::CodeVar(name) if dispatch.is_none() && name_as_method => {
@@ -68,12 +69,12 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
-            fields.push(node_field(Some("callee"), convert_expr(other)?));
+            fields.push(node_field(Some("callee"), convert_expr(names, other)?));
             RakuAstClass::CallTermAsMethod
         }
     };
     if !args.is_empty() {
-        fields.push(node_field(Some("args"), arg_list(args)?));
+        fields.push(node_field(Some("args"), arg_list(names, args)?));
     }
     fields.extend(dispatch);
     Ok(RakuAstNode {
@@ -88,7 +89,7 @@ fn postfix_of(
 /// name, `$x .= "{...}"()` (`Call::QuotedMethod`). `call` is the marker's
 /// call applied to the target; only its method part is rendered.
 // Cost: O(n), n = nodes of the name and arguments.
-pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn call_assign_postfix(names: &NameScope, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match call {
         Expr::DynamicMethodCall {
             name_expr,
@@ -96,14 +97,14 @@ pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeErr
             modifier,
             quoted: false,
             ..
-        } => postfix_of(name_expr, args, *modifier, false),
+        } => postfix_of(names, name_expr, args, *modifier, false),
         Expr::DynamicMethodCall {
             name_expr,
             args,
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args, None),
+        } => super::convert::call_quoted_method_expr(convert_expr(names, name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),
@@ -112,8 +113,8 @@ pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeErr
 
 /// The `Initializer::CallAssign` call of `my $x .= &f(args)` / `my $x .= $m`.
 // Cost: O(n), n = nodes of the callee and arguments.
-pub(super) fn callee_postfix(callee: &Expr, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
-    postfix_of(callee, args, None, false)
+pub(super) fn callee_postfix(names: &NameScope, callee: &Expr, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    postfix_of(names, callee, args, None, false)
 }
 
 /// A declaration's `Initializer::CallAssign` call, lowered to the parser's
@@ -136,7 +137,7 @@ pub(super) fn call_assign_initializer(
 
 /// `$o.$name(args)` / `$o.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert(
+pub(super) fn convert(names: &NameScope, 
     target: &Expr,
     name_expr: &Expr,
     args: &[Expr],
@@ -146,15 +147,15 @@ pub(super) fn convert(
         origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), postfix_operand(target)?),
-            node_field(Some("postfix"), postfix(name_expr, args, modifier)?),
+            node_field(Some("operand"), postfix_operand(names, target)?),
+            node_field(Some("postfix"), postfix(names, name_expr, args, modifier)?),
         ],
     })
 }
 
 /// `@a>>.$name(args)` / `@a>>.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert_hyper(
+pub(super) fn convert_hyper(names: &NameScope, 
     target: &Expr,
     name_expr: &Expr,
     args: &[Expr],
@@ -163,13 +164,13 @@ pub(super) fn convert_hyper(
     let hyper = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::MetaPostfixHyper,
-        fields: vec![node_field(None, postfix(name_expr, args, modifier)?)],
+        fields: vec![node_field(None, postfix(names, name_expr, args, modifier)?)],
     };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), postfix_operand(target)?),
+            node_field(Some("operand"), postfix_operand(names, target)?),
             node_field(Some("postfix"), hyper),
         ],
     })
