@@ -770,6 +770,11 @@ impl Interpreter {
             // result is discarded once the chain reaches the real one.
             return Ok(target);
         }
+        // `Seq.Seq` is the receiver itself: converting a Seq to a Seq runs and
+        // consumes nothing, so an unpulled map/grep/gather stays unpulled.
+        if method == "Seq" {
+            return Ok(target);
+        }
         if method == "iterator" {
             if let Some(iterator) = body.take_iterator_source()? {
                 return Ok(iterator);
