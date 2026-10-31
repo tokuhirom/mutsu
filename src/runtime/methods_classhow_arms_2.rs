@@ -323,6 +323,12 @@ impl Interpreter {
                 "nominalizable".to_string(),
                 Value::truth(is_subset || is_coercive || is_definite),
             );
+            // `T` of a `::T` capture stands for a type nobody has bound yet.
+            let is_generic = !is_role
+                && !is_subset
+                && !self.registry().classes.contains_key(base_name)
+                && crate::type_captures::is_capture(base_name);
+            attrs.insert("generic".to_string(), Value::truth(is_generic));
             attrs.insert("coercive".to_string(), Value::truth(is_coercive));
             attrs.insert("definite".to_string(), Value::truth(is_definite));
             Ok(Value::make_instance(

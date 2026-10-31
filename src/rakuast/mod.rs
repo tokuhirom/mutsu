@@ -1598,7 +1598,7 @@ pub(crate) fn anonymous_subset_declaration(node: &RakuAstNode) -> Option<(Value,
 /// The identifier a package-like declaration (`class Bar`, `subset Pos`) is named by.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_package_name(node: &RakuAstNode) -> Option<String> {
-    resolve::package_name(node)
+    resolve::package_name(node).or_else(|| resolve::type_node_name(node))
 }
 
 /// `[kind, owner.., name, index]` of a `Parameter` of the unit tree `$*CU` answers.
@@ -3479,6 +3479,13 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 // Cost: O(1).
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
     infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
+}
+
+/// Whether Rakudo's `visit-children` skips `field` although the accessor
+/// answers it: `Parameter.type-captures`.
+// Cost: O(1).
+pub(crate) fn is_unwalked_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
+    node.class == RakuAstClass::Parameter && field.name == Some("type-captures")
 }
 
 /// The line `node`'s origin begins on, if it has one.

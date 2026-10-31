@@ -461,7 +461,7 @@ fn type_name_of(node: &RakuAstNode) -> Option<String> {
 /// The identifier a `Type::Simple`/`Type::Setting` node names; a `Str:D`
 /// (`Type::Definedness`) names its base type.
 // Cost: O(f), f = fields of the node.
-fn type_node_name(node: &RakuAstNode) -> Option<String> {
+pub(super) fn type_node_name(node: &RakuAstNode) -> Option<String> {
     // An anonymous subset made by [`refine_with_anonymous_subset`].
     if node.class == C::TypeSubset
         && let Some(name) = node.origin.2.as_ref()
@@ -701,6 +701,11 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             }
             external_setting(&name)
         }
+        // `True`, `Inf`, ... : a core enum value, constant of the setting.
+        C::TermEnum => external(
+            "RakuAST::Declaration::External::Constant",
+            &type_node_name(node).or_else(|| leaf(node, "name"))?,
+        ),
         C::TypeSimple | C::TypeSetting => {
             let name = type_node_name(node)?;
             if let Some(package) = scopes.find(&name) {
