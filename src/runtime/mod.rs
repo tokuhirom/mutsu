@@ -41,7 +41,12 @@ type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<Func
 /// `(current unit, executing unit, import-table generation)` for a family with
 /// import records, whose list depends on the asking unit (#11004), else `None`.
 pub(crate) type MultiDispatchCandidatesMemo = rustc_hash::FxHashMap<
-    (Symbol, Symbol, Option<Symbol>, Option<(Symbol, Symbol, u64)>),
+    (
+        Symbol,
+        Symbol,
+        Option<Symbol>,
+        Option<(Symbol, Symbol, u64)>,
+    ),
     MultiCandidateList,
 >;
 use std::env;
