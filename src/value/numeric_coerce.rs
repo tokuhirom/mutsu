@@ -77,6 +77,14 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             }
         }
         ValueView::Enum { value, .. } => Some(value.as_i64() as f64),
+        // A `Duration` is a `Real` holding its seconds (`sleep($deadline - now)`).
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name.as_str() == "Duration" => {
+            attributes.as_map().get("value").and_then(to_float_value)
+        }
         ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
         ValueView::Str(s) => {
             let t = s.trim();

@@ -1250,6 +1250,7 @@ impl Interpreter {
                     let nominal = self.nominal_type_object_name_for_constraint(tc);
                     Value::package(crate::symbol::Symbol::intern(&nominal))
                 }
+                None if attr.sigil == '&' => Value::package(crate::symbol::Symbol::intern("Callable")),
                 None => Value::package(crate::symbol::wk::any()),
             };
             attributes.insert(attr_name, val);

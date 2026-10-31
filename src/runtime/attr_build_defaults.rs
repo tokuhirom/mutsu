@@ -358,6 +358,8 @@ impl Interpreter {
                     let nominal = self.nominal_type_object_name_for_constraint(tc);
                     Value::package(Symbol::intern(&nominal))
                 }
+                // A `&`-sigil attribute with no type holds the `Callable` type object.
+                None if sigil == '&' => Value::package(Symbol::intern("Callable")),
                 None => Value::package(crate::symbol::wk::any()),
             },
         }

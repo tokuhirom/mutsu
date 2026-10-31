@@ -535,6 +535,11 @@ impl Interpreter {
                             let nominal = self.nominal_type_object_name_for_constraint(tc);
                             super::AttrSeed::TypeObject(crate::symbol::Symbol::intern(&nominal))
                         }
+                        // A `&`-sigil attribute with no type holds the `Callable`
+                        // type object, which a `&param` accepts (`has &.cb`).
+                        None if a.sigil == '&' => {
+                            super::AttrSeed::TypeObject(crate::symbol::Symbol::intern("Callable"))
+                        }
                         None => super::AttrSeed::TypeObject(crate::symbol::wk::any()),
                     }
                 })
