@@ -30,7 +30,7 @@ pub(super) fn convert(names: &NameScope, inner: &Stmt) -> Result<RakuAstNode, Ru
 }
 
 // Cost: O(n), n = nodes in the phaser body.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     let field = node
         .fields
         .iter()

@@ -236,8 +236,8 @@ pub(super) fn lower_enum_term(names: &NameScope,
 
 fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let processors = list_field(term, "processors")?;
-    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
-    let form = match names.as_slice() {
+    let processor_names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    let form = match processor_names.as_slice() {
         ["words", "val"] => EnumVariantForm::Words,
         ["quotewords", "val"] => EnumVariantForm::QuoteWords,
         _ => return Err(unsupported(term)),

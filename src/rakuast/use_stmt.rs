@@ -227,7 +227,7 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(i), i = imported names recorded by the `if` adverb.
-fn lower_source_if(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
+fn lower_source_if(names: &NameScope, node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
     let condition = node
         .fields
         .iter()

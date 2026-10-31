@@ -2249,21 +2249,21 @@ fn lower_parameter(names: &NameScope, parameter: &RakuAstNode, owner: &RakuAstNo
     // A named parameter `:$x` carries a `names` list; it binds by name and is
     // optional by default. More than one name is an alias chain, rebuilt once
     // the parameter's own fields are read (`named_param::wrap_aliases`).
-    let names = match parameter.fields.iter().find(|f| f.name == Some("names")) {
+    let param_names = match parameter.fields.iter().find(|f| f.name == Some("names")) {
         Some(field) => {
             let RakuAstFieldValue::List(items) = &field.value else {
                 return Err(unsupported(owner));
             };
-            let mut names = Vec::with_capacity(items.len());
+            let mut param_names = Vec::with_capacity(items.len());
             for item in items {
                 let ValueView::Str(name) = item.view() else {
                     return Err(unsupported(owner));
                 };
-                names.push(name.to_string());
+                param_names.push(name.to_string());
             }
             def.named = true;
             def.required = false;
-            Some(names)
+            Some(param_names)
         }
         None => None,
     };
@@ -2441,7 +2441,7 @@ fn lower_parameter(names: &NameScope, parameter: &RakuAstNode, owner: &RakuAstNo
             def.block_param = true;
         }
     }
-    match names {
+    match param_names {
         Some(names) => super::named_param::wrap_aliases(def, &names, parameter),
         None => Ok(def),
     }
