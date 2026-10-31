@@ -930,7 +930,8 @@ impl Interpreter {
             // repeated on every entry of the enclosing code, must not.
             let has_trait_mod = !traits_ran_in_shell
                 && (self.has_proto("trait_mod:<is>")
-                    || self.has_multi_candidates("trait_mod:<is>"));
+                    || self.has_multi_candidates("trait_mod:<is>")
+                    || self.has_any_trait_mod_is());
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
@@ -950,7 +951,7 @@ impl Interpreter {
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     // As in rakudo, an `is foo(...)` no candidate accepts is
                     // an unknown parent, whichever candidates exist.
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
@@ -979,7 +980,7 @@ impl Interpreter {
                     let spelling =
                         parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
@@ -1600,7 +1601,7 @@ impl Interpreter {
                         None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
@@ -1615,7 +1616,7 @@ impl Interpreter {
                 // comment on the class-registration site above).
                 for trait_name in &role_deferred {
                     let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg])
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
