@@ -23,8 +23,8 @@ is $c, 2, 'a my method of the class body writes it';
 
 my $log = '';
 class D {
-    my method note($x) { $log ~= $x }
-    method add($x) { note(self, $x) }
+    my method record($x) { $log ~= $x }
+    method add($x) { record(self, $x) }
 }
 D.new.add('x');
 D.new.add('y');
