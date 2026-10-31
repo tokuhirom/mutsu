@@ -47,6 +47,76 @@ pub(crate) fn add(exception: &Value, worry: bool) {
     });
 }
 
+/// Queue a sorry the parser found at byte `at` of `source`, the text of the unit
+/// being compiled, stamped with that position (`pre`/`post` around it). `false`
+/// when no unit is in its compile phase to report it.
+// Cost: O(l + p), l = length of the line, p = POST_CHARS.
+pub(crate) fn add_parse_sorry(exception: &Value, source: &str, at: usize) -> bool {
+    let file = crate::unit_source_file::current()
+        .map(|file| file.resolve().to_string())
+        .unwrap_or_default();
+    let at = at.min(source.len());
+    let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+    let line = 1 + source[..at].matches('\n').count() as i64;
+    let before = &source[line_start..at];
+    let pre = if before.is_empty() {
+        "<BOL>".to_string()
+    } else {
+        let chars: Vec<char> = before.chars().collect();
+        chars[chars.len().saturating_sub(POST_CHARS)..]
+            .iter()
+            .collect()
+    };
+    let post: String = source[at..]
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(POST_CHARS)
+        .collect();
+    UNITS.with(|units| {
+        let mut units = units.borrow_mut();
+        let Some(unit) = active_index(&units)
+            .and_then(|i| units.get_mut(i))
+            .filter(|unit| !unit.compiled)
+        else {
+            return false;
+        };
+        // `$*CU` parses the unit's text once more: the same sorry is found again.
+        let same = |other: &Value| match (other.view(), exception.view()) {
+            (
+                ValueView::Instance { attributes: a, .. },
+                ValueView::Instance { attributes: b, .. },
+            ) => {
+                let (a, b) = (a.as_map(), b.as_map());
+                a.contains_key(PARSE_SORRY)
+                    && a.get("message").map(|m| m.to_string_value())
+                        == b.get("message").map(|m| m.to_string_value())
+                    && a.get("line").map(|m| m.to_string_value()) == Some(line.to_string())
+                    && a.get("pre").map(|m| m.to_string_value()) == Some(pre.clone())
+            }
+            _ => false,
+        };
+        if unit.sorries.iter().any(same) {
+            return true;
+        }
+        if let ValueView::Instance { attributes, .. } = exception.view() {
+            attributes.store_through_container("filename", Value::str(file));
+            attributes.store_through_container("line", Value::int(line));
+            attributes.store_through_container("pre", Value::str(pre));
+            attributes.store_through_container("post", Value::str(post));
+            attributes.store_through_container("is-compile-time", Value::TRUE);
+            attributes.store_through_container(PARSE_SORRY, Value::TRUE);
+        }
+        unit.sorries.push(exception.clone());
+        true
+    })
+}
+
+/// Marks a sorry the parser queued: it is not an `X::Comp` of the program's own,
+/// so the report renders its position itself.
+pub(crate) const PARSE_SORRY: &str = "__mutsu_parse_sorry";
+
 /// The innermost unit's queued `(sorries, worries)`; both queues are emptied.
 // Cost: O(d), d = queued diagnostics.
 pub(crate) fn take() -> (Vec<Value>, Vec<Value>) {

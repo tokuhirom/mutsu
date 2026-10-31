@@ -2003,12 +2003,20 @@ fn postfix_expr_loop_from<'a>(
                 ParsedBracketIndex::Single(ref index) => {
                     // Raku forbids explicit negative integer subscripts like @a[-1].
                     // Users must use *-1 instead.
+                    // rakudo's grammar `sorry`s it: the parse goes on and the
+                    // compile phase reports it (see `soft_sorry`).
                     if let Some(neg_val) = extract_negative_literal(index) {
-                        return Err(make_negative_subscript_error(&neg_val));
+                        crate::parser::soft_sorry::push(
+                            make_negative_subscript_error(&neg_val),
+                            rest.len(),
+                        );
                     }
                     // Also forbid ranges ending in negative literals: @a[0..-1]
                     if let Some(neg_val) = extract_range_negative_end(index) {
-                        return Err(make_negative_subscript_error(&neg_val));
+                        crate::parser::soft_sorry::push(
+                            make_negative_subscript_error(&neg_val),
+                            rest.len(),
+                        );
                     }
                     let ParsedBracketIndex::Single(index) = parsed else {
                         unreachable!()
