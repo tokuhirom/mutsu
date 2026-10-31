@@ -33,9 +33,9 @@ pub(crate) fn value_which_key(value: &Value) -> String {
             format!("{}|{}/{}", flavour, n, d)
         }
         ValueView::Complex(r, i) => format!("Complex|{}|{}", r, i),
-        ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
-        ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
-        ValueView::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
+        ValueView::Nil => format!("Nil|U{}", crate::value::which_id::shown(Symbol::intern("Nil").id() as u64)),
+        ValueView::Package(name) => format!("{}|U{}", name.resolve(), crate::value::which_id::shown(name.id() as u64)),
+        ValueView::CustomType(c) => format!("{}|U{}", c.name.resolve(), crate::value::which_id::shown(c.id as u64)),
         // A class may override `WHICH` to give its instances value semantics
         // (`Set(A.new(a=>5)) eqv Set(A.new(a=>5))`). Running that user method
         // needs the interpreter, so it deposits the answer on the instance and
@@ -86,23 +86,23 @@ pub(crate) fn value_which_key(value: &Value) -> String {
                         .map(Value::to_string_value)
                         .unwrap_or_default()
                 ),
-                _ => format!("{}|{}", value_type_name(value), id),
+                _ => format!("{}|{}", value_type_name(value), crate::value::which_id::shown(id as u64)),
             },
         },
         // Same never-reused id as the `.WHICH` twin in
         // `builtins::methods_0arg::dispatch_core_coerce` -- an address is
         // unique only among LIVE objects, and this string outlives them.
-        ValueView::Array(items, ..) => format!("Array|{}", items.which_id.get()),
-        ValueView::Hash(map) => format!("Hash|{}", map.which_id.get()),
+        ValueView::Array(items, ..) => format!("Array|{}", crate::value::which_id::shown(items.which_id.get())),
+        ValueView::Hash(map) => format!("Hash|{}", crate::value::which_id::shown(map.which_id.get())),
         // A code object is a reference type: its identity is its id, exactly
         // as its `.WHICH` (`Block|16`) reports. The text fallback below renders
         // every Block alike, so two different closures collided as one
         // object-hash key and as one curried-role argument.
-        ValueView::Sub(sub_data) => format!("{}|{}", value_type_name(value), sub_data.id),
+        ValueView::Sub(sub_data) => format!("{}|{}", value_type_name(value), crate::value::which_id::shown(sub_data.id as u64)),
         // A regex is a code object too; its payload is shared by every alias
         // and minted afresh by every evaluation of its literal.
         ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
-            format!("Regex|{}", value.regex_which_id().unwrap_or_default())
+            format!("Regex|{}", crate::value::which_id::shown(value.regex_which_id().unwrap_or_default() as u64))
         }
         // A Pair with a plain string key and a ValuePair holding a Str key are
         // the same identity (`("x" => 1) === (:x(1))`), so both render the key

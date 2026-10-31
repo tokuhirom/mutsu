@@ -100,13 +100,13 @@ pub(crate) fn which_of(target: &Value) -> Value {
         ValueView::Package(name) => format!(
             "{}|U{}",
             crate::value::user_facing_type_name(&name.resolve()),
-            name.id()
+            crate::value::which_id::shown(name.id() as u64)
         ),
         ValueView::CustomType(c) => {
             format!(
                 "{}|U{}",
                 crate::value::user_facing_type_name(&c.name.resolve()),
-                c.id
+                crate::value::which_id::shown(c.id as u64)
             )
         }
         ValueView::Int(n) => format!("Int|{}", n),
@@ -135,7 +135,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
         ValueView::Enum {
             enum_type, index, ..
         } => format!("{}|{}", enum_type.resolve(), index),
-        ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+        ValueView::Nil => format!("Nil|U{}", crate::value::which_id::shown(Symbol::intern("Nil").id() as u64)),
         // A Version's identity is its canonical string (raku:
         // `v1.02.3.WHICH` is `Version|1.02.3`), so two versions
         // spelled differently are NOT `===` even when they `==`.
@@ -204,7 +204,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
             format!(
                 "{}|{}",
                 runtime::utils::value_type_name(target),
-                sub_data.id
+                crate::value::which_id::shown(sub_data.id as u64)
             )
         }
         // One identity with the object-hash key (`value_which_key`):
@@ -219,7 +219,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
             format!(
                 "{}|{}",
                 crate::value::user_facing_type_name(&class_name.resolve()),
-                id
+                crate::value::which_id::shown(id as u64)
             )
         }
         ValueView::Junction { kind, values } => {
@@ -240,7 +240,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
         }
         // Never-reused id, like the Array/Hash arms below.
         ValueView::Seq(items) => {
-            format!("Seq|{}", items.which_id())
+            format!("Seq|{}", crate::value::which_id::shown(items.which_id() as u64))
         }
         // A lazy Seq is a reference type: its identity is the one list object,
         // stable across reads while it is alive (#12972).
@@ -251,7 +251,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
         // to embed the id the other containers carry, so its
         // never-reused id comes from the weak-checked side table.
         ValueView::Slip(items) => {
-            format!("Slip|{}", crate::value::which_id::slip_which_id(&items))
+            format!("Slip|{}", crate::value::which_id::shown(crate::value::which_id::slip_which_id(&items)))
         }
         ValueView::RakuAst(node) => {
             // RakuAST nodes are reference-like model objects. The
@@ -281,10 +281,10 @@ pub(crate) fn which_of(target: &Value) -> Value {
             } else {
                 "Array"
             };
-            format!("{}|{}", name, items.which_id.get())
+            format!("{}|{}", name, crate::value::which_id::shown(items.which_id.get()))
         }
         ValueView::Hash(map) => {
-            format!("Hash|{}", map.which_id.get())
+            format!("Hash|{}", crate::value::which_id::shown(map.which_id.get()))
         }
         // A `but`-mixed object keeps the identity of the object it wraps under
         // the mixin's own type name (`G+{R}|<id>`, rakudo's format).
@@ -319,10 +319,10 @@ pub(crate) fn which_of(target: &Value) -> Value {
         // whenever the second temporary landed on the first's freed
         // block.
         ValueView::Promise(p) => {
-            format!("Promise|{}", p.which_id())
+            format!("Promise|{}", crate::value::which_id::shown(p.which_id() as u64))
         }
         ValueView::Channel(c) => {
-            format!("Channel|{}", c.which_id())
+            format!("Channel|{}", crate::value::which_id::shown(c.which_id() as u64))
         }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
