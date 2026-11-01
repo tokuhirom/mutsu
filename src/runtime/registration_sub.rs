@@ -222,7 +222,6 @@ impl Interpreter {
         };
         (flag("__mutsu_in_eval") || flag("__mutsu_eval_wrapped_decls"))
             && self.block_scope_depth <= self.module.eval_unit_block_depth
-            && self.routine_stack.len() <= self.module.eval_unit_routine_depth
             && !self.in_inlined_block_frame()
     }
 
@@ -709,7 +708,6 @@ impl Interpreter {
             || is_lexical_hoist
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || is_lexical_hoist
                 || !self.eval_blocks_lexical_shadow());
         if allow_lexical_shadow {
             return false;
@@ -1422,7 +1420,6 @@ impl Interpreter {
             || in_nested_scope
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || in_nested_scope
                 || !self.eval_blocks_lexical_shadow());
         let code_var_key = format!("&{}", name);
         // The same declaration re-executing is no redeclaration: a role body's
