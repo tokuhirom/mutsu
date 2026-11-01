@@ -249,12 +249,29 @@ impl Interpreter {
         self.decont_native_pos_ref_on_top()?;
         if let Some(native) = buf_native
             && let Some(top) = self.stack.last()
-            && matches!(top.view(), ValueView::Int(_))
         {
-            let value = self.stack.pop().unwrap_or(Value::NIL);
-            let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
-            crate::value::register_container_constraint(&cell, native);
-            self.stack.push(Value::container_ref(cell));
+            let native_cell = |value: Value| {
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
+                crate::value::register_container_constraint(&cell, native);
+                Value::container_ref(cell)
+            };
+            match top.view() {
+                ValueView::Int(_) => {
+                    let value = self.stack.pop().unwrap_or(Value::NIL);
+                    self.stack.push(native_cell(value));
+                }
+                // A slice (`$buf[2..5]`) is a List of the selected elements,
+                // each a native container (#15858): the callee's `@a[0]` then
+                // hands the cell on, as for a List literal of native variables.
+                ValueView::Array(items, crate::value::ArrayKind::List)
+                    if items.iter().all(|v| matches!(v.view(), ValueView::Int(_))) =>
+                {
+                    let cells: Vec<Value> = items.iter().cloned().map(native_cell).collect();
+                    self.stack.pop();
+                    self.stack.push(Value::array(cells));
+                }
+                _ => {}
+            }
         }
         Ok(())
     }

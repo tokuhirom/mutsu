@@ -6,3 +6,8 @@ boxed `Int`). When a named routine has a native-typed parameter at the argument'
 position, a `Buf` subscript argument is now boxed in a native-typed cell, which
 the multi dispatcher already reads (ADR-15309). Net::BGP `t/02-as-list.t` gets
 past `nuint16($!raw[2+$i*2], $!raw[3+$i*2])` (#15856).
+
+A `Buf` slice argument (`$buf[2..5]`) is likewise a List of native elements, so
+`nuint32($.raw[2..5])` re-dispatches element-wise like rakudo; Net::BGP's
+`t/52-bgp-messages-raw.t` and `t/53-Open-With-Multiple-CapOpts.t` match rakudo
+(#15858). `.list` and `.AT-POS` on a `Buf` are still plain `Int`s.
