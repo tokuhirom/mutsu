@@ -6,7 +6,7 @@ use Test;
 # and `=` on it is its STORE); an Int still dies X::Assignment::RO.
 # Net::BGP's `self.buffer = buf8.new` on `has buf8:D $.buffer`.
 
-plan 13;
+plan 12;
 
 class C {
     has buf8:D $.buffer = buf8.new(1);
