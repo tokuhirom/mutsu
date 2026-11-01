@@ -474,7 +474,43 @@ impl Interpreter {
             // A `Proxy` argument is FETCHed by the general binder; the light
             // binders would type-check the Proxy itself.
             && !args.iter().any(|a| a.unwrap_varref().is_proxy_value())
-            && cf.code.state_locals.is_empty()
+            && if where_verified {
+                Self::light_signature_static_ok(cf, true)
+            } else {
+                *cf.light_signature_cache
+                    .get_or_init(|| Self::light_signature_static_ok(cf, false))
+            }
+            // A call that may OMIT a defaulted / `?`-optional positional is
+            // admitted only when the precompute could reduce every one of them
+            // to a constant fill and they form a suffix
+            // (`light_required_positionals`) — an omitted parameter otherwise
+            // needs `eval_param_default`, an arbitrary expression evaluated
+            // with the parameter shadowed, which only the general binder
+            // performs. A call that supplies every positional omits nothing and
+            // so is admitted regardless (`positional_light_full_arity_call`).
+            && (cf.light_required_positionals.is_some()
+                || Self::positional_light_full_arity_call(cf, argc, args))
+            // ADR-0109 (#8686 Phase 2): a signature with an `is rw` positional
+            // parameter is admitted only when this specific call's argument at
+            // that position is actually alias-capable AND a caller `CompiledCode`
+            // is on hand to promote it -- see `positional_light_rw_args_admitted`
+            // and `Interpreter::capture_var_cell`, which indexes the CALLER's own
+            // locals and so needs the caller's compiled code, not the callee's.
+            // Cheap no-op for the overwhelming majority of routines, which carry
+            // no `is rw` positional parameter at all (`has_rw_positional_param`).
+            && (!cf.has_rw_positional_param
+                || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
+            && Self::positional_light_aggregate_args_admitted(cf, args)
+    }
+
+    /// The signature-level half of [`Self::is_positional_light_call_eligible_where`]:
+    /// every condition that reads only the routine itself (flags, return type,
+    /// parameter shapes), none that looks at this call's arguments. Memoized per
+    /// routine for `where_verified == false` (`CompiledFunction::light_signature_cache`),
+    /// which is what every call but a verified-`where` multi winner asks.
+    // Cost: O(p), p = parameters; O(1) once memoized.
+    fn light_signature_static_ok(cf: &CompiledFunction, where_verified: bool) -> bool {
+        cf.code.state_locals.is_empty()
             && !cf.is_cached
             && !cf.is_rw
             && !cf.is_raw
@@ -499,27 +535,6 @@ impl Interpreter {
                 .is_none_or(Self::is_fast_type_name)
                 || cf.return_definite_const.is_some())
             && !cf.param_defs.is_empty()
-            // A call that may OMIT a defaulted / `?`-optional positional is
-            // admitted only when the precompute could reduce every one of them
-            // to a constant fill and they form a suffix
-            // (`light_required_positionals`) — an omitted parameter otherwise
-            // needs `eval_param_default`, an arbitrary expression evaluated
-            // with the parameter shadowed, which only the general binder
-            // performs. A call that supplies every positional omits nothing and
-            // so is admitted regardless (`positional_light_full_arity_call`).
-            && (cf.light_required_positionals.is_some()
-                || Self::positional_light_full_arity_call(cf, argc, args))
-            // ADR-0109 (#8686 Phase 2): a signature with an `is rw` positional
-            // parameter is admitted only when this specific call's argument at
-            // that position is actually alias-capable AND a caller `CompiledCode`
-            // is on hand to promote it -- see `positional_light_rw_args_admitted`
-            // and `Interpreter::capture_var_cell`, which indexes the CALLER's own
-            // locals and so needs the caller's compiled code, not the callee's.
-            // Cheap no-op for the overwhelming majority of routines, which carry
-            // no `is rw` positional parameter at all (`has_rw_positional_param`).
-            && (!cf.has_rw_positional_param
-                || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
-            && Self::positional_light_aggregate_args_admitted(cf, args)
             && cf.param_defs.iter().enumerate().all(|(i, pd)| {
                 !pd.named
                     && (pd.where_constraint.is_none()
