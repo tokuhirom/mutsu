@@ -17,5 +17,7 @@ frame's slots through a `HashMap<&str, usize>` rebuilt per call from all of the 
 routine.
 
 Measured with callgrind (profiling build, warm, slope 100 -> 300 iterations of
-`$l.protect: { $x++ }`): 25.4k -> see the PR for the final figure; the leak is gone (a
-200,000-call loop no longer adds 200,000 cache entries).
+`$l.protect: { $x++ }`): 25.4k -> 23.1k Ir per call (-9%); `$l.protect: { 1 }` 19.5k -> 17.8k.
+The 300,000-call loop of #15530 runs in ~1.35 s on a profiling build against rakudo's 0.61 s
+(2.2x; the issue's goal is <= 1.5x, so it is not met). The leak is gone: a 200,000-call loop no
+longer adds 200,000 cache entries.
