@@ -708,6 +708,11 @@ impl DispatchShape {
         if const_str_eq(owner, "Capture") {
             return const_list_contains(&CAPTURE_FOR_MATCH, method);
         }
+        // The native integer coercion rows already handle every Cool receiver:
+        // ranges read their count and paths read their string representation.
+        if const_list_contains(crate::native_types::NATIVE_INT_COERCE_METHODS, method) {
+            return true;
+        }
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
                 || const_list_contains(&COOL_TEXT_FOR_MATCH, method)
