@@ -275,6 +275,11 @@ impl Interpreter {
             .ancestors
             .get_or_insert_with(|| self.compute_conformance_ancestors(sub));
         let ancestors = ancestors.as_deref()?;
+        // The role-parent walk compares a reduced name (`R[Int]` -> `R`), which
+        // the id lookup below cannot do: the general walk answers it.
+        if sup.with_str(|n| n.contains('[')) {
+            return None;
+        }
         let id = sup.raw();
         // An MRO is a handful of names: a scan beats a binary search.
         Some(if ancestors.len() <= 16 {
@@ -299,11 +304,19 @@ impl Interpreter {
         {
             return None;
         }
-        {
+        let (is_class, is_role) = {
             let registry = self.registry();
-            if !registry.classes.contains_key(name) || registry.roles.contains_key(name) {
-                return None;
-            }
+            (
+                registry.classes.contains_key(name),
+                registry.roles.contains_key(name),
+            )
+        };
+        // A name that is both (or neither) is not one of the two shapes below.
+        if is_class == is_role {
+            return None;
+        }
+        if is_role {
+            return self.compute_role_conformance_ancestors(name);
         }
         let mut ids: Vec<u32> = self
             .mro_readonly(name)
@@ -314,6 +327,57 @@ impl Interpreter {
             ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
         }
         // Sorted for the binary search; an MRO is a handful of names.
+        ids.sort_unstable();
+        ids.dedup();
+        Some(Arc::from(ids))
+    }
+
+    /// The names a registered role `name` conforms to, as the general walk
+    /// finds them for the role's type object: everything reachable through the
+    /// role-parent graph (`role_type_object_distance`, parent names reduced
+    /// with `role_base_name`), the role's own class MRO (empty or itself for a
+    /// role) and the roles it composes. A built-in role keeps the catalog's
+    /// answer, so `None` for it. Reads the registry only, so it lasts as long
+    /// as the registry stamp, like a class's.
+    // Cost: O(g), g = roles reachable through the role-parent graph.
+    fn compute_role_conformance_ancestors(&self, name: &str) -> Option<Ancestors> {
+        if !crate::builtin_types::ancestry::builtin_role_ancestors(name).is_empty() {
+            return None;
+        }
+        let mut ids: Vec<u32> = Vec::new();
+        {
+            let registry = self.registry();
+            let mut seen = std::collections::HashSet::new();
+            seen.insert(name.to_string());
+            let mut layer = vec![name.to_string()];
+            while !layer.is_empty() {
+                let mut next = Vec::new();
+                for role in &layer {
+                    let Some(parents) = registry.role_parents.get(role) else {
+                        continue;
+                    };
+                    for parent in parents {
+                        let parent = Self::role_base_name(parent);
+                        if !seen.insert(parent.to_string()) {
+                            continue;
+                        }
+                        ids.push(Symbol::intern(parent).raw());
+                        if registry.roles.contains_key(parent) {
+                            next.push(parent.to_string());
+                        }
+                    }
+                }
+                layer = next;
+            }
+            if let Some(roles) = registry.class_composed_roles.get(name) {
+                ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
+            }
+        }
+        ids.extend(
+            self.mro_readonly(name)
+                .iter()
+                .map(|ancestor| Symbol::intern(ancestor).raw()),
+        );
         ids.sort_unstable();
         ids.dedup();
         Some(Arc::from(ids))
