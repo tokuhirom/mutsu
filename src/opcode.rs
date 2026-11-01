@@ -10035,6 +10035,17 @@ impl CompiledCode {
         )
     }
 
+    /// Whether the local named `name` is mirrored into `env` on store
+    /// (`needs_env_sync`): some by-name reader of this frame can read it.
+    // Cost: O(l), l = locals of the chunk.
+    pub(crate) fn local_needs_env_sync(&self, name: &str) -> bool {
+        self.locals
+            .iter()
+            .position(|l| l == name)
+            .and_then(|slot| self.needs_env_sync.get(slot).copied())
+            .unwrap_or(false)
+    }
+
     /// Whether this routine's parameters -- and the stores to its slot-only
     /// locals -- must be mirrored into `env` by name: a reflective op that can reach another frame's lexical exists
     /// somewhere, or this chunk (or a closure nested in it) looks one up by a
