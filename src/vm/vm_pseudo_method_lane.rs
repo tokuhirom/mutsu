@@ -61,6 +61,12 @@ impl Interpreter {
         ) {
             return None;
         }
+        // A `BOOT*` type object (and a raw VM collection) answers its meta
+        // questions itself (`vm_collection_method`: `nqp::bootint().HOW` is
+        // `KnowHOW`), ahead of `dispatch_how`.
+        if crate::runtime::boot_collection::is_boot_collection_invocant(target) {
+            return None;
+        }
         // A wrapped method could intercept the call on the generic path.
         if self.has_any_wrap_chains() {
             return None;
