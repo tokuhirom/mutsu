@@ -1895,56 +1895,88 @@ impl Interpreter {
     /// profiles); the returned map is `Some` only when the `:=` reconcile
     /// adjusted it beyond the cell contents.
     #[allow(clippy::too_many_arguments)]
-    /// Insert the fast path's bound parameters into `env`, except the plain
-    /// scalar parameters the body reads through their slots only.
+    /// Whether the fast path writes the bound parameter `param_name` into the
+    /// frame env: not a plain scalar parameter the body reads through its slot
+    /// only. `names_by_string` is a body that looks a lexical up by a run-time
+    /// name (`EVAL`, `::('$x')`, `MY::`): it keeps every parameter in the env.
+    /// A parameter whose name the env already holds (a class-body static
+    /// injected for the method) is written too, so it shadows that entry as
+    /// the slot does. The invocant is the frame record's (ADR-14843).
+    // Cost: O(q), q = the method's parameters.
+    fn fast_param_in_env(
+        env: &crate::env::Env,
+        param_name: &str,
+        param_sym: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
+        names_by_string: bool,
+    ) -> bool {
+        if param_sym.is_frame_fixture() {
+            return false;
+        }
+        let slot_only = method_def
+            .param_storage_names()
+            .iter()
+            .position(|n| n.as_str() == param_name)
+            .and_then(|i| method_def.param_defs.get(i))
+            .is_some_and(|pd| {
+                !pd.sigilless
+                    && !pd.is_invocant
+                    && !pd.named
+                    && !pd.slurpy
+                    && pd.name.starts_with(|c: char| c.is_alphabetic())
+                    && !pd
+                        .traits
+                        .iter()
+                        .any(|t| t == "rw" || t == "copy" || t == "raw")
+            });
+        // A parameter some by-name reader of this frame reads (`needs_env_sync`:
+        // a grammar's token code block, an attribute default or a nested
+        // routine declared in the body) is in the env as well (#15863).
+        !(slot_only
+            && !names_by_string
+            && !cc.local_needs_env_sync(param_name)
+            && !env.contains_key_sym(param_sym))
+    }
+
+    /// Insert the fast path's bound parameters into the current frame env,
+    /// except those [`Self::fast_param_in_env`] leaves to their slots. A frame
+    /// with nothing to write never asks for the env mutably: the fresh
+    /// overlay shares the process-wide empty tier until its first insert, so
+    /// that ask alone copies it (one allocation per call).
     ///
     /// Symbol-keyed so a call does not allocate a `String` per parameter just
     /// to hand it to `Symbol::intern`. A parameter name IS name-derived, so
     /// this must still run [`crate::env::note_env_key`] -- a placeholder
     /// parameter (`$^a`) is stored under a `^`-prefixed key, and dropping that
     /// latch would leave `placeholder_var_possible()` reading false while such
-    /// a key is live. The invocant is the frame record's (ADR-14843).
-    /// `names_by_string` is a body that looks a lexical
-    /// up by a run-time name (`EVAL`, `::('$x')`, `MY::`): it keeps every
-    /// parameter in the env. A parameter whose name the env already holds
-    /// (a class-body static injected for the method) is written too, so it
-    /// shadows that entry as the slot does.
+    /// a key is live.
     // Cost: O(p * q), p = bound parameters, q = the method's parameters.
     fn insert_fast_param_values_by_name(
-        env: &mut crate::env::Env,
+        &mut self,
         param_values: &super::vm_param_values::ParamValues<'_>,
         method_def: &crate::runtime::MethodDef,
         cc: &crate::opcode::CompiledCode,
         names_by_string: bool,
     ) {
+        let env = self.env();
+        let any = param_values.iter().any(|(name, sym, _)| {
+            Self::fast_param_in_env(env, name, *sym, method_def, cc, names_by_string)
+        });
+        if !any {
+            return;
+        }
+        let env = self.env_mut();
+        env.reserve(param_values.len());
         for (param_name, param_sym, param_val) in param_values.iter() {
-            if param_sym.is_frame_fixture() {
-                continue;
-            }
-            let slot_only = method_def
-                .param_storage_names()
-                .iter()
-                .position(|n| n.as_str() == *param_name)
-                .and_then(|i| method_def.param_defs.get(i))
-                .is_some_and(|pd| {
-                    !pd.sigilless
-                        && !pd.is_invocant
-                        && !pd.named
-                        && !pd.slurpy
-                        && pd.name.starts_with(|c: char| c.is_alphabetic())
-                        && !pd
-                            .traits
-                            .iter()
-                            .any(|t| t == "rw" || t == "copy" || t == "raw")
-                });
-            // A parameter some by-name reader of this frame reads (`needs_env_sync`:
-            // a grammar's token code block, an attribute default or a nested
-            // routine declared in the body) is in the env as well (#15863).
-            if slot_only
-                && !names_by_string
-                && !cc.local_needs_env_sync(param_name)
-                && !env.contains_key_sym(*param_sym)
-            {
+            if !Self::fast_param_in_env(
+                env,
+                param_name,
+                *param_sym,
+                method_def,
+                cc,
+                names_by_string,
+            ) {
                 continue;
             }
             crate::env::note_env_key(param_name);
@@ -2469,10 +2501,7 @@ impl Interpreter {
             // else names it (no closure, `skip_env_setup`); an aggregate,
             // `rw`/`raw`/`copy` or sigilless parameter is shared by name with
             // the caller's container and stays in the env.
-            let env = self.env_mut();
-            env.reserve(param_values.len());
-            Self::insert_fast_param_values_by_name(
-                env,
+            self.insert_fast_param_values_by_name(
                 &param_values,
                 method_def,
                 cc,
@@ -2488,8 +2517,7 @@ impl Interpreter {
             // env/locals from the live cell pre-op (`array_hash_attr_env_snapshot`),
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
-            Self::insert_fast_param_values_by_name(
-                env,
+            self.insert_fast_param_values_by_name(
                 &param_values,
                 method_def,
                 cc,
