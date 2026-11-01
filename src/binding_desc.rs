@@ -109,6 +109,13 @@ pub(crate) enum DeclaredConstraint {
     /// widths wrap, everything else type-checks), so the fast path can decline
     /// without asking the env, which is what the probe concluded anyway.
     NonNative,
+    /// This chunk declares the variable (a typed parameter, a typed `@`/`%`
+    /// declaration) without settling a constraint the store fast paths can
+    /// use. Only the compile-time fold sees it: it makes a later *untyped*
+    /// declaration of the same slot [`Self::Conflicting`] instead of letting
+    /// the first-recorded `Unrecorded` give way to `Untyped`, and it is
+    /// folded to [`Self::Unrecorded`] on the slot, so no reader sees it.
+    Declared,
     /// Two *different* constraints were recorded for the same slot, or a trait
     /// that can rewrite the constraint at run time was applied to it. The
     /// default build gives a nested `my $x` the **outer** slot

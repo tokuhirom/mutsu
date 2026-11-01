@@ -9249,6 +9249,19 @@ impl CompiledCode {
     /// `declared_here`) and `compute_free_vars`.
     // Cost: O(l), l = locals; once per compiled chunk.
     fn compute_fresh_locals(&mut self) {
+        // An `@`/`%` slot whose binding a `:=` rebinds after its declaration
+        // (here or in a nested closure) can carry a typed container's
+        // constraint by name from then on (`runtime_var_bind_meta`): it is not
+        // an untyped slot, whatever its declaration said. Slots rebound this
+        // way are final only now (`compute_free_vars` folds the closures').
+        for &slot in &self.rebound_slots {
+            if let Some(desc) = self.binding_descs.get_mut(slot as usize)
+                && !desc.flags.simple_scalar_local()
+                && desc.declared_constraint == crate::binding_desc::DeclaredConstraint::Untyped
+            {
+                desc.declared_constraint = crate::binding_desc::DeclaredConstraint::Unrecorded;
+            }
+        }
         for (desc, sym) in self.binding_descs.iter_mut().zip(self.locals_sym.iter()) {
             // The "initialize once per declaration site" marker of an
             // expression-position container declaration (`==> my @v`,
@@ -9284,7 +9297,7 @@ impl CompiledCode {
     /// variable): only [`crate::binding_desc::BindingDesc::declared_here`]
     /// follows from it.
     pub(crate) fn note_declared_local(&mut self, name: &str) {
-        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Unrecorded);
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Declared);
     }
 
     /// Record that `name` is out of the bake's reach — a trait was applied to
@@ -9355,6 +9368,17 @@ impl CompiledCode {
                 if let Some(&c) = pending.get(name.as_str()) {
                     desc.declared_here = true;
                     if desc.flags.simple_scalar_local() {
+                        desc.declared_constraint = match c {
+                            crate::binding_desc::DeclaredConstraint::Declared => {
+                                crate::binding_desc::DeclaredConstraint::Unrecorded
+                            }
+                            other => other,
+                        };
+                    } else if c == crate::binding_desc::DeclaredConstraint::Untyped {
+                        // An `@`/`%` declared without a constraint, in every
+                        // declaration of its slot (a typed one would have
+                        // folded this to `Conflicting`): a store has none to
+                        // check, so it skips the by-name record probe.
                         desc.declared_constraint = c;
                     }
                 }
