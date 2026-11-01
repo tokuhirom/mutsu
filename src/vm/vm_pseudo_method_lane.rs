@@ -21,6 +21,13 @@
 
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PseudoKind {
+    What,
+    How,
+    Var,
+}
+
 impl Interpreter {
     /// Answer an unquoted, argument-less `.WHAT` / `.HOW` on a plain scalar or
     /// a type object, popping the receiver off the stack. `None` leaves the
@@ -44,12 +51,27 @@ impl Interpreter {
         {
             return None;
         }
-        let is_what = match method {
-            "WHAT" => true,
-            "HOW" => false,
+        let kind = match method {
+            "WHAT" => PseudoKind::What,
+            "HOW" => PseudoKind::How,
+            "VAR" => PseudoKind::Var,
             _ => return None,
         };
         let target = self.stack.last()?;
+        // `.VAR` on a `Proxy` (or a subclass of it): the Proxy itself,
+        // decontainerized, so the next method call does not FETCH. Rakudo
+        // compiles `.VAR` itself, so a `method VAR` a Proxy subclass declares is
+        // never called there either.
+        if kind == PseudoKind::Var {
+            if !matches!(target.view(), ValueView::Proxy { .. }) || self.has_any_wrap_chains() {
+                return None;
+            }
+            let target = self.stack.pop()?;
+            self.pending_call_arg_source_slots.clear();
+            self.set_pending_call_arg_sources(None);
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "pseudo-lane");
+            return Some(Ok(Value::proxy_var_object(target, String::new())));
+        }
         if !matches!(
             target.view(),
             ValueView::Int(_)
@@ -78,7 +100,7 @@ impl Interpreter {
         self.set_pending_call_arg_sources(None);
         self.stack.pop();
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "pseudo-lane");
-        Some(if is_what {
+        Some(if kind == PseudoKind::What {
             self.dispatch_what(&target, Vec::new())
         } else {
             self.dispatch_how(&target, &[])
