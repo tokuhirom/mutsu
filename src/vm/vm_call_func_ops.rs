@@ -316,15 +316,23 @@ impl Interpreter {
     }
 
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
-        let imported_alias = self.env_key_imported_here(Symbol::intern(&format!("&{name}")));
-        !(Self::is_control_flow_function_name(name)
+        if Self::is_control_flow_function_name(name)
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
-            || (!imported_alias
-                && (crate::runtime::Interpreter::is_builtin_function(name)
-                    || self.has_function(name)
-                    || self.has_proto_cached(name)
-                    || self.has_multi_candidates_cached(name))))
+        {
+            return false;
+        }
+        // A same-named builtin or registered routine makes the lexical
+        // ineligible unless the `&name` key was imported here. The name-only
+        // probes go first: for the common case of a plain `my &b` none of them
+        // holds, and then the imported-alias test (a `format!`, an intern and an
+        // env read -- ~1.5k Ir per call) is never needed. It is a pure read, so
+        // the order does not change the answer.
+        let name_collides = crate::runtime::Interpreter::is_builtin_function(name)
+            || self.has_function(name)
+            || self.has_proto_cached(name)
+            || self.has_multi_candidates_cached(name);
+        !name_collides || self.env_key_imported_here(Symbol::intern(&format!("&{name}")))
     }
 
     /// The value shapes [`Self::lexical_amp_var_callable`] dispatches
