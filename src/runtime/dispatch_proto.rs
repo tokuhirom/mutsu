@@ -91,12 +91,26 @@ impl Interpreter {
     // Cost: O(k) with the index filled, k = registered keys sharing `name`'s
     // base; else O(n), n = registered routines.
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
+        // The registry half is the memo the `&mut` probes fill (see
+        // `has_multi_candidates`): read it, so `resolve_function` -- ~250 of
+        // these per Red model create -- does not walk the family again.
+        // `Symbol::lookup`: a name never interned has no memo.
+        let memo = Symbol::lookup(name).and_then(|sym| {
+            self.caches.multi_candidates_cache.peek(
+                self.caches.fn_resolve_gen,
+                &self.bare_name_ctx_key(sym),
+                || self.dispatch.fn_family_gens.of_name(sym),
+            )
+        });
         let packages = self.bare_name_packages_syms();
         let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
             .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
         let base_keys = base_keys.as_deref();
-        self.registry()
-            .has_multi_candidates(base_keys, &packages, name)
+        let in_registry = memo.unwrap_or_else(|| {
+            self.registry()
+                .has_multi_candidates(base_keys, &packages, name)
+        });
+        in_registry
             && (!self.operator_has_import_scope(name)
                 || self.any_visible_candidate_of(base_keys, &packages, name))
     }
