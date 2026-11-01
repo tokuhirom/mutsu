@@ -632,7 +632,9 @@ impl Compiler {
                             c.compile_expr(left);
                             c.compile_expr(right);
                             c.emit_wrap_var_ref(name);
-                            c.code.emit(OpCode::MakeNamedArg);
+                            c.code.emit(OpCode::MakeNamedArg {
+                                readonly: c.is_readonly_param_operand(right),
+                            });
                             continue;
                         }
                         // A named element whose value isn't a bare variable

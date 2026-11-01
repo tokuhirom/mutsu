@@ -1286,6 +1286,8 @@ pub(crate) struct NativeCtorPlan {
     /// Pure class shape; re-derived per named argument it was a registry
     /// probe plus an attribute scan per MRO level.
     pub(crate) attr_buildable: Arc<[bool]>,
+    /// Object attributes whose construction binds the supplied container.
+    pub(crate) attr_binds: Arc<[bool]>,
     /// Which user-defined whole-object build hook this class's MRO declares —
     /// `Some("BUILDALL")`, `Some("POPULATE")`, or `None` (the overwhelmingly
     /// common case). `run_user_buildall_hook` probed this per construction with

@@ -141,7 +141,7 @@ impl Interpreter {
     /// container of its own (the shapes `bind_marks_type_object` and
     /// `bind_marks_immutable` mark at a declaration), else none.
     // Cost: O(1).
-    pub(super) fn rebound_value_kind(v: &Value) -> Option<crate::ast::ReadonlyKind> {
+    pub(crate) fn rebound_value_kind(v: &Value) -> Option<crate::ast::ReadonlyKind> {
         if Self::bind_source_is_type_object(v) {
             Some(crate::ast::ReadonlyKind::TypeObject)
         } else if Self::bind_source_has_no_container(v) {

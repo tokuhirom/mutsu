@@ -140,7 +140,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MakeRealArrayNoFlatten(_)
             | OpCode::MakeHash(_)
             | OpCode::MakePair
-            | OpCode::MakeNamedArg
+            | OpCode::MakeNamedArg { .. }
             | OpCode::CoerceToList
             | OpCode::SeqToList
             | OpCode::ListToSeq

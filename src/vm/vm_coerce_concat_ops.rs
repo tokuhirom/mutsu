@@ -250,7 +250,7 @@ impl Interpreter {
                         if typed {
                             Self::namify_pair_item(map.typed_pair(k, v.clone()))
                         } else {
-                            Value::pair(k.clone(), v.deref_container())
+                            Value::pair(k.clone(), v.clone())
                         }
                     })
                     .collect()

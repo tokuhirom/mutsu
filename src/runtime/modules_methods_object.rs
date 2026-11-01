@@ -1,4 +1,7 @@
 mod methods_object_default_ctor;
+mod constructor_binding;
+mod constructor_assignment;
+mod constructor_named_attrs;
 mod methods_object_dispatch_new;
 mod methods_object_native_ctors_buf_num;
 mod methods_object_native_ctors_io;

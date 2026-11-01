@@ -143,7 +143,7 @@ impl Interpreter {
             | OpCode::Lcm
             | OpCode::Leg
             | OpCode::ListRepeat
-            | OpCode::MakeNamedArg
+            | OpCode::MakeNamedArg { .. }
             | OpCode::MakePair
             | OpCode::MakeRoleInit
             | OpCode::NotDivisibleBy
