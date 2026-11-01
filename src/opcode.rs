@@ -14228,6 +14228,11 @@ pub(crate) struct CompiledFunction {
     pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
     /// Memoized [`Self::package_is_routine_scoped`].
     pub(crate) package_routine_scoped_cache: std::sync::OnceLock<bool>,
+    /// Memoized signature-level half of the positional-light eligibility
+    /// (`Interpreter::light_signature_static_ok` with no `where` verified): it
+    /// reads only this routine's own fields, so it cannot change after the
+    /// routine is built.
+    pub(crate) light_signature_cache: std::sync::OnceLock<bool>,
 }
 
 impl CompiledFunction {
@@ -14839,6 +14844,7 @@ mod compiled_fns_identity {
             package_sym_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             package_routine_scoped_cache: std::sync::OnceLock::new(),
+            light_signature_cache: std::sync::OnceLock::new(),
         }
     }
 
