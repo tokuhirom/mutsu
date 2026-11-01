@@ -7880,6 +7880,10 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// #14371: one memo per string constant, remembering the routine a
+    /// `LexImportCall` site naming that constant resolved to, for one
+    /// lexical-import-set generation (see `exec_lex_import_call_site`).
+    pub(crate) lex_import_sites: crate::value::LexImportSiteCaches,
     /// Per-string-constant memo for `SetVarType*`'s constraint resolution
     /// (see [`crate::value::TypeDeclSiteCaches`]).
     pub(crate) type_decl_sites: crate::value::TypeDeclSiteCaches,
@@ -8544,6 +8548,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),

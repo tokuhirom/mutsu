@@ -452,6 +452,8 @@ impl Interpreter {
         self.module
             .lexical_import_sets
             .insert(id, std::sync::Arc::new(set));
+        // Every `LexImportCall` site memo read under the old sets is stale.
+        self.module.lexical_import_gen = self.module.lexical_import_gen.wrapping_add(1);
     }
 
     /// Record the definition of each captured candidate of `dispatcher`,
