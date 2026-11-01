@@ -3598,7 +3598,15 @@ impl Compiler {
             return;
         }
         if pd.type_constraint.is_none() && pd.type_capture.is_none() {
-            self.note_untyped_local_declaration(&name);
+            if Self::is_simple_scalar_store_name(&name) {
+                self.code.note_untyped_declaration(&name);
+            } else {
+                // An untyped `@`/`%` PARAMETER is not an untyped slot: the
+                // binder carries a typed argument's constraint into this frame
+                // by name (`sub f(%p)` called with a `my Int %h`), which a store
+                // must still check. Only a `my` declaration is untyped.
+                self.note_declared_local(&name);
+            }
         } else if Self::is_simple_scalar_store_name(&name) {
             self.code.note_declared_local(&name);
         } else {
