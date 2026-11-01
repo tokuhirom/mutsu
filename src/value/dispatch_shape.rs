@@ -780,13 +780,20 @@ impl DispatchShape {
     // miss).
     #[inline]
     pub(crate) fn from_instance_class(class: Symbol) -> Option<DispatchShape> {
-        instance_shapes().get(&class).copied().or_else(|| {
+        if instances::is_known_shapeless(class) {
+            return None;
+        }
+        let shape = instance_shapes().get(&class).copied().or_else(|| {
             // An `Attribute` reblessed by `$attr does R` keeps answering the
             // meta-object's own methods; the mixin type's role methods win
             // over them through the user-override check every row entry makes.
             crate::value::attribute_class::is_attribute_class(class)
                 .then_some(DispatchShape::Attribute)
-        })
+        });
+        if shape.is_none() {
+            instances::note_shapeless(class);
+        }
+        shape
     }
 }
 

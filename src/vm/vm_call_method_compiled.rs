@@ -321,6 +321,11 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // Nothing is wrapped anywhere: no invocant clone for the entry, which
+        // would take and drop one per method call.
+        if !self.has_any_wrap_chains() {
+            return None;
+        }
         let outermost =
             self.enter_method_wrap_chain(cn, method, owner_sym, method_def, args, target.clone())?;
         let mut call_args = vec![target.clone()];
