@@ -1916,6 +1916,7 @@ t/exceptions/malformed-elsif.t
 t/exceptions/method-arity-error-counts-invocant.t
 t/exceptions/method-name-in-concreteness-error.t
 t/exceptions/missing-block-exception.t
+t/exceptions/mro-builtin-exception-second-parent.t
 t/exceptions/my-signature-bind-and-when-exception-type.t
 t/exceptions/negative-subscript-soft-sorry.t
 t/exceptions/no-such-symbol.t
@@ -2475,6 +2476,7 @@ t/lang/eval-private-and-stubs.t
 t/lang/eval-repeated-use-runs-hook-each-time.t
 t/lang/eval-sigilless-uppercase-scoped.t
 t/lang/eval-smiley-type-object-term.t
+t/lang/eval-stub-sub-then-definition.t
 t/lang/eval-tail-output-statement-value.t
 t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
@@ -3260,6 +3262,7 @@ t/modules/import-export/use-in-block-hides-qualified-packages-from-callees.t
 t/modules/import-export/use-in-block-hides-types-and-constants-from-callees.t
 t/modules/import-export/use-in-block-hook-type-key-in-signature.t
 t/modules/import-export/use-in-block-import-layer-drops-with-region.t
+t/modules/import-export/use-in-block-imported-call-site-memo.t
 t/modules/import-export/use-in-block-nested-sub-sees-every-import-kind.t
 t/modules/import-export/use-in-block-nested-sub-sees-import.t
 t/modules/import-export/use-in-block-preload-imports-nothing.t
@@ -3627,6 +3630,7 @@ t/nativecall/native-int-attr-incdec-wraps.t
 t/nativecall/native-int-classhow-nativesize-unsigned.t
 t/nativecall/native-int-coerce-aggregate-count.t
 t/nativecall/native-int-coerce-methods-are-cool-only.t
+t/nativecall/native-int-coercer-entry-rows.t
 t/nativecall/native-int-num-str-slip-construct.t
 t/nativecall/native-int-optional-default-multi.t
 t/nativecall/native-int-param-binding.t
@@ -3825,6 +3829,7 @@ t/oo/attribute/attr-alias-arg-not-adopted-as-bind.t
 t/oo/attribute/attr-array-drops-source-element-type.t
 t/oo/attribute/attr-array-hash-whole-assign.t
 t/oo/attribute/attr-bind-alias-keeps-nested-rebind.t
+t/oo/attribute/attr-bind-container-ref-method-exit.t
 t/oo/attribute/attr-bind-list.t
 t/oo/attribute/attr-bind-local-visible-to-accessor.t
 t/oo/attribute/attr-bind-reconcile-many-attrs.t
@@ -4343,6 +4348,7 @@ t/oo/method/closure-capture-class-in-block-method.t
 t/oo/method/closure-captures-method-arg-decl.t
 t/oo/method/closure-method-fixed-names-without-env-keys.t
 t/oo/method/closure-named-arg-method-escape.t
+t/oo/method/code-pure-method-row-lookup.t
 t/oo/method/code-set-name-and-add-method-sub.t
 t/oo/method/code-str-method-rows.t
 t/oo/method/code-unknown-method-not-found.t
@@ -4485,6 +4491,7 @@ t/oo/method/method-assign-decl-fresh-invocant.t
 t/oo/method/method-assigns-outer-callable-lexical.t
 t/oo/method/method-bare-array-attr-index-assign.t
 t/oo/method/method-call-adverb-after-newline-chain.t
+t/oo/method/method-call-after-class-churn.t
 t/oo/method/method-call-assign-untyped-decl.t
 t/oo/method/method-call-attrs-lazy.t
 t/oo/method/method-call-colon-empty-args.t
@@ -4699,6 +4706,7 @@ t/oo/method/proto-method-sees-imported-routines.t
 t/oo/method/proto-method-visible-to-find-method.t
 t/oo/method/proxy-invocant-user-method.t
 t/oo/method/proxy-var-method-call.t
+t/oo/method/pseudo-method-what-how-lane.t
 t/oo/method/q-adverb-array-method-interp.t
 t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
@@ -6919,6 +6927,7 @@ t/routines/dispatch/multi-otf-dispatch.t
 t/routines/dispatch/multi-plain-positional-candidates.t
 t/routines/dispatch/multi-pointy-for-shadowing.t
 t/routines/dispatch/multi-positional-light-dispatch.t
+t/routines/dispatch/multi-probe-memo-invalidation.t
 t/routines/dispatch/multi-ranking-type-relation-memo.t
 t/routines/dispatch/multi-ranks-proxy-argument-by-fetched-value.t
 t/routines/dispatch/multi-redispatch-compiled-candidate.t
@@ -8731,6 +8740,7 @@ t/vm/scope/stash-missing-key-default.t
 t/vm/scope/stash-opaque-shape-rows.t
 t/vm/scope/stash-slip-pairs.t
 t/vm/scope/stash-values.t
+t/vm/scope/stash-who-members.t
 t/vm/scope/state-aggregate-shared-cell.t
 t/vm/scope/state-array-nil-decay.t
 t/vm/scope/state-block-loop-body.t
@@ -8875,6 +8885,7 @@ t/vm/writeback/proxy-subclass-lexical-name.t
 t/vm/writeback/proxy-subclass-new-lvalue-assign.t
 t/vm/writeback/proxy-subclass-user-methods.t
 t/vm/writeback/proxy-subclass-var-renders-fetched-value.t
+t/vm/writeback/proxy-var-lane.t
 t/vm/writeback/proxy-what-fetch.t
 t/vm/writeback/raw-invocant-arrives-as-container.t
 t/vm/writeback/raw-invocant-immutable-write.t

@@ -18,6 +18,8 @@ impl Interpreter {
         // Routine declarations (`sub`) share a separate namespace; a routine may
         // only be redeclared if every declaration of that name is `multi`.
         let mut seen_routines: HashMap<String, bool> = HashMap::new();
+        // Routines declared so far only as a `{...}` stub.
+        let mut stubbed_routines: HashSet<String> = HashSet::new();
         // Nested type names declared directly inside each top-level class body,
         // so that `augment class C { class Nested {} }` can detect redeclaring a
         // nested type that the original `class C { class Nested {} }` declared.
@@ -206,13 +208,25 @@ impl Interpreter {
             prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
 
             // Routine redeclaration (sub a {}; sub a {} / sub a {}; multi sub a {}).
-            if let Stmt::SubDecl { name, multi, .. } = stmt {
+            if let Stmt::SubDecl {
+                name, multi, body, ..
+            } = stmt
+            {
                 if was_anon {
                     continue;
                 }
                 let name = name.resolve().to_string();
                 if name.is_empty() {
                     continue;
+                }
+                // `sub f {...}` forward-declares `f`; the definition that follows
+                // completes it instead of redeclaring it.
+                if stubbed_routines.contains(&name) && !body_is_stub(body) {
+                    stubbed_routines.remove(&name);
+                    continue;
+                }
+                if body_is_stub(body) && !seen_routines.contains_key(&name) {
+                    stubbed_routines.insert(name.clone());
                 }
                 match seen_routines.get(&name) {
                     None => {
