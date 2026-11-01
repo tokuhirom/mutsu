@@ -517,7 +517,10 @@ pub(crate) fn replace_buf_elems(attrs: &InstanceAttrs, class_name: Symbol, elems
         && let Some(new) = elems.take()
     {
         let (width, kind) = elem_type(&class_name.resolve());
-        attrs.insert(elems_key(), storage_value(encode_elems(&new, width, kind), width, kind));
+        attrs.insert(
+            elems_key(),
+            storage_value(encode_elems(&new, width, kind), width, kind),
+        );
     }
 }
 
