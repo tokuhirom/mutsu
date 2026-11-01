@@ -10,8 +10,15 @@
 #   goes through `convert` and `lower` (what `.AST` and `EVAL($ast)` do). The
 #   list may only grow.
 #
+# - `eval-check` runs ci/rakuast-ast-eval-passing.txt through
+#   scripts/run-t-ast-eval.sh: each file runs as `EVAL(slurp($file).AST)`, the
+#   write direction of the RakuAST layer through the public API (RakuAST C1,
+#   #15759). It replaces the lowering coverage of the convert mode.
+#
 # Usage:
 #   scripts/rakuast-frontend.sh check    # run the listed files in the mode; fail if any fails
+#   scripts/rakuast-frontend.sh eval-check   # run the files of the EVAL($ast) list; fail if any fails
+#   scripts/rakuast-frontend.sh eval-update  # run every t/ file as EVAL($ast); add the new passes to the list
 #   scripts/rakuast-frontend.sh survey   # run every t/ file in the mode; print the count
 #   scripts/rakuast-frontend.sh update   # survey, then rewrite the list (only ever adds files)
 #   scripts/rakuast-frontend.sh causes   # why the files outside the list do not pass (see below)
@@ -32,6 +39,7 @@ cd "$(dirname "$0")/.."
 MUTSU_BIN="${MUTSU_BIN:-target/release/mutsu}"
 JOBS="${JOBS:-$(nproc)}"
 LIST=ci/rakuast-frontend-passing.txt
+EVAL_LIST=ci/rakuast-ast-eval-passing.txt
 export MUTSU_BIN MUTSU_RAKUAST="${MUTSU_RAKUAST:-convert}"
 
 # Prints the files among "$@" that pass in the mode.
@@ -42,6 +50,10 @@ passing_files() {
 
 listed_files() {
   grep -v -e '^#' -e '^$' "$LIST" || true
+}
+
+eval_listed_files() {
+  grep -v -e '^#' -e '^$' "$EVAL_LIST" || true
 }
 
 case "${1:-check}" in
@@ -58,6 +70,33 @@ case "${1:-check}" in
     mapfile -t files < <(listed_files)
     echo "rakuast-frontend: ${#files[@]} files must pass under MUTSU_RAKUAST=$MUTSU_RAKUAST"
     prove -j"$JOBS" --merge -e scripts/run-t-test.sh "${files[@]}"
+    ;;
+  eval-check)
+    missing=0
+    while read -r f; do
+      if [ ! -f "$f" ]; then
+        echo "rakuast-frontend: $f is listed in $EVAL_LIST but does not exist; remove it" >&2
+        missing=1
+      fi
+    done < <(eval_listed_files)
+    [ "$missing" -eq 0 ] || exit 1
+    mapfile -t files < <(eval_listed_files)
+    echo "rakuast-frontend: ${#files[@]} files must pass as EVAL(slurp(\$file).AST)"
+    prove -j"$JOBS" --merge -e scripts/run-t-ast-eval.sh "${files[@]}"
+    ;;
+  eval-update)
+    mapfile -t all < <(find t -name '*.t' | LC_ALL=C sort)
+    pass=$(printf '%s\n' "${all[@]}" | xargs -P "$JOBS" -I{} sh -c \
+      'if scripts/run-t-ast-eval.sh "$1" >/dev/null 2>&1; then echo "$1"; fi' _ {} | LC_ALL=C sort)
+    echo "rakuast-frontend: $(printf '%s\n' "$pass" | grep -c . || true) / ${#all[@]} t/ files pass as EVAL(slurp(\$file).AST)"
+    # A ratchet only grows: keep every file already listed that still exists.
+    {
+      sed -n '/^#/p' "$EVAL_LIST"
+      { eval_listed_files | while read -r f; do [ -f "$f" ] && echo "$f"; done; printf '%s\n' "$pass"; } |
+        grep . | LC_ALL=C sort -u
+    } > "$EVAL_LIST.new"
+    mv "$EVAL_LIST.new" "$EVAL_LIST"
+    echo "rakuast-frontend: $EVAL_LIST now lists $(eval_listed_files | wc -l) files"
     ;;
   survey | update)
     mapfile -t all < <(find t -name '*.t' | LC_ALL=C sort)
@@ -115,7 +154,7 @@ case "${1:-check}" in
     fi
     ;;
   *)
-    echo "usage: $0 check|survey|update|causes" >&2
+    echo "usage: $0 check|survey|update|causes|eval-check|eval-update" >&2
     exit 2
     ;;
 esac

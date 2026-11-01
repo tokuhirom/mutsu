@@ -648,6 +648,23 @@ jobs:
           MUTSU_T_TIMEOUT: "45"
           JOBS: "4"
 
+      - name: RakuAST EVAL($ast) ratchet
+        # RakuAST C1 (#15759): every t/ file listed in
+        # ci/rakuast-ast-eval-passing.txt must still pass when it runs as
+        # `EVAL(slurp($file).AST)` (scripts/ast-eval-driver.raku): the typed
+        # nodes `.AST` builds, lowered back and executed. This is the write
+        # direction of the RakuAST layer through the public API, and the
+        # replacement for the lowering coverage of MUTSU_RAKUAST=convert. The
+        # list only grows (`scripts/rakuast-frontend.sh eval-update`); a listed
+        # file that fails is a regression, fixed in the same PR.
+        run: |
+          mkdir -p tmp
+          scripts/rakuast-frontend.sh eval-check
+        env:
+          MUTSU_BIN: target/release/mutsu
+          MUTSU_T_TIMEOUT: "45"
+          JOBS: "4"
+
       - name: RakuAST .AST text ratchet
         # RakuAST C1 (#15759): the `.AST` text of a pinned sample of roast
         # files (ci/ast-text-corpus/rakudo.tsv, rakudo 2026.09's text hashed;

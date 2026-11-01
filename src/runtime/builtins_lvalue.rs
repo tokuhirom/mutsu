@@ -463,6 +463,22 @@ impl Interpreter {
                     .replace_container_contents(&coerced)
                     .then(|| result.clone())
             }
+            // `Buf.STORE`: assigning to the `Buf` an accessor hands back
+            // (`self.buffer = buf8.new` on a `has buf8 $.buffer`) replaces its
+            // contents in place. A `Blob` is immutable and has no STORE.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::value::value_buf::has_buf_elems(&attributes)
+                && !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) =>
+            {
+                // The source is another Buf, a list of elements or one element
+                // (`Buf.STORE(Blob)`, `(Iterable)`, `(Any:D)`).
+                let elems = Self::flatten_buf_args(vec![value]);
+                crate::value::value_buf::replace_buf_elems(&attributes, class_name, elems);
+                Some(result.clone())
+            }
             _ => None,
         }
     }

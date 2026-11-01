@@ -367,7 +367,6 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &mut Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let method = method_sym.as_str();
         let class_sym = match target.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Package(name) => Some(name),
@@ -398,9 +397,9 @@ impl Interpreter {
                     let invocant_for_dispatch = target.clone();
                     let pushed_dispatch = loan_env!(
                         self,
-                        push_method_dispatch_frame(
+                        push_method_dispatch_frame_sym(
                             cn,
-                            method,
+                            method_sym,
                             args,
                             invocant_for_dispatch,
                             Some((owner_class.as_str(), &method_def))

@@ -5603,11 +5603,17 @@ fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
 
 /// Names a class (or role) body `my`/`state`-declares at its own top level (ADR-0019
 /// D6-1), mirroring `persist_class_body_statics`'s `declared_statics` scan:
-/// a top-level (unflattened) `Stmt::VarDecl` that is neither `our` nor
-/// `dynamic`. Precomputed once at plan lowering instead of re-walked on
-/// every registration.
+/// a top-level `Stmt::VarDecl` that is neither `our` nor `dynamic`. A bound
+/// `@`/`%` declaration (`my %h := ...`) is wrapped in a parser
+/// `SyntheticBlock`, which is not a scope: its declaration is the body's own,
+/// so the synthetic blocks are opened (a missed one left the name out of the
+/// class's statics and its methods read a same-named lexical of whichever
+/// module was loaded first). Precomputed once at plan lowering instead of
+/// re-walked on every registration.
+// Cost: O(n), n = statements of the body plus those in its synthetic blocks.
 fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
-    body.iter()
+    crate::ast::scope_statements(body)
+        .into_iter()
         .filter_map(|stmt| match stmt {
             Stmt::VarDecl {
                 name,

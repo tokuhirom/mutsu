@@ -13,3 +13,10 @@ mainline check does.
 Found by the `EVAL(slurp($f).AST)` ratchet (#15759): of the 91 `t/` files that failed with
 `Undeclared routine` or `Undeclared name` through it, 34 now pass. The rest are other causes, mostly
 files that read `$?FILE`, which names the driver, not the test.
+
+Sharing the string-EVAL pipeline exposed four gaps that a warm precompile cache hid, and CI
+(always cold) caught them through the `EVAL($ast)` ratchet: an exported type of a pre-run module
+in a signature (`use NativeCall; sub f(Pointer $p)`), a bareword bound in the unit's own import
+set (`use Telemetry; T<wallclock>`), a nested `use lib` ahead of a later `use`, and
+`array[uint8].new` read as a routine call. All four are fixed for string `EVAL` as well.
+`t/modules/compunit/lib-nested-use-begin-time.t` leaves the ratchet list until #15882.

@@ -128,7 +128,7 @@ pub(crate) fn imports_follow_use_lib(stmts: &[Stmt]) -> bool {
     let mut after_lib = false;
     for stmt in stmts {
         match stmt {
-            Stmt::Use { module, .. } if module == "lib" => after_lib = true,
+            _ if contains_use_lib(std::slice::from_ref(stmt)) => after_lib = true,
             Stmt::Use { module, .. } if after_lib && !conditional::imports_no_routines(module) => {
                 return true;
             }
@@ -136,6 +136,32 @@ pub(crate) fn imports_follow_use_lib(stmts: &[Stmt]) -> bool {
         }
     }
     false
+}
+
+/// Whether a `use lib` appears anywhere in the unit, nested blocks included.
+/// A `use` that follows one imports from a path nothing has added yet when the
+/// EVAL's pre-run looks at it, so the pre-run leaves such a unit to run in
+/// position.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn contains_use_lib(stmts: &[Stmt]) -> bool {
+    use crate::ast_visit::{Visit, walk_stmt};
+    #[derive(Default)]
+    struct UseLib(bool);
+    impl<'ast> Visit<'ast> for UseLib {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if matches!(stmt, Stmt::Use { module, .. } if module == "lib") {
+                self.0 = true;
+            }
+            if !self.0 {
+                walk_stmt(self, stmt);
+            }
+        }
+    }
+    let mut found = UseLib::default();
+    for stmt in stmts {
+        found.visit_stmt(stmt);
+    }
+    found.0
 }
 
 /// The AST half of the mainline undeclared-routine check, recorded with a
@@ -449,6 +475,11 @@ impl Interpreter {
                 // A capitalised callee (only judged in `EVAL`) is a coercion
                 // when a type of that name exists, and a core term (`IterationEnd`)
                 // is not a routine call at all.
+                // A parameterized type used as an invocant (`array[uint8].new`)
+                // is a type, whatever the case of its base.
+                || name.split_once('[').is_some_and(|(base, _)| {
+                    base == "array" || self.has_type(base) || Self::is_builtin_type(base)
+                })
                 || (name.starts_with(|c: char| c.is_ascii_uppercase())
                     && (self.has_type(name)
                         || self.has_class(name)

@@ -1364,6 +1364,14 @@ impl Interpreter {
                         // An attribute bound to a Proxy hands back what the
                         // Proxy FETCHes.
                         let held = self.fetch_proxy_for_store(held)?;
+                        // The accessor hands back the stored object, and an
+                        // assignment to an object that has a STORE (Array,
+                        // Hash, Buf) is that STORE -- the contents are replaced
+                        // in place, as rakudo's `infix:<=>` does.
+                        if let Some(stored) = self.store_into_aggregate_lvalue(&held, value.clone())
+                        {
+                            return Ok(stored);
+                        }
                         return Err(match held.view() {
                             ValueView::Nil | ValueView::Package(_) => {
                                 let type_name = match held.view() {
