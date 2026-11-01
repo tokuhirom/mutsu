@@ -126,10 +126,7 @@ impl Interpreter {
                     .then(|| self.types.method_class_stack.split_off(method_depth))
             };
             if installing_package != throw_package {
-                self.set_current_package_with_sym(
-                    installing_package.resolve().to_string(),
-                    installing_package,
-                );
+                self.set_current_package_sym(installing_package);
             }
             let outcome = self.run_catch_handler_inline(
                 &code,
@@ -145,10 +142,7 @@ impl Interpreter {
                 self.types.method_class_stack.extend(tail);
             }
             if installing_package != throw_package {
-                self.set_current_package_with_sym(
-                    throw_package.resolve().to_string(),
-                    throw_package,
-                );
+                self.set_current_package_sym(throw_package);
             }
             match outcome {
                 CatchRunOutcome::Resumed => return Ok(Value::package(crate::symbol::wk::any())),

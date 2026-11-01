@@ -56,7 +56,7 @@ impl Interpreter {
         );
         let target = cf.package_sym();
         if target != saved {
-            self.set_current_package_with_sym(cf.package.clone(), target);
+            self.set_current_package_sym(target);
         }
         // A class-body `my` static is the whole scope of its name for the
         // class's routines, a class-scoped `sub` included: a same-named

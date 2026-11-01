@@ -1500,17 +1500,6 @@ impl Interpreter {
 
     pub(crate) fn set_current_package(&mut self, pkg: String) {
         let sym = Symbol::intern(&pkg);
-        self.set_current_package_with_sym(pkg, sym);
-    }
-
-    /// [`Self::set_current_package`] for a caller that already holds the
-    /// package's `Symbol` (a `CompiledFunction`'s cached `package_sym`). The
-    /// by-name entry point re-hashed the package name on every named call
-    /// (#7736).
-    pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
-        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
-        debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
-        let _ = pkg;
         self.set_current_package_sym(sym);
     }
 

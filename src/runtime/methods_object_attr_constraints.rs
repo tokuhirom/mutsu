@@ -60,9 +60,8 @@ impl Interpreter {
         if let Some(unit) = scope.unit {
             self.current_unit = unit;
         }
-        let saved_package = self.current_package();
         let saved_package_sym = self.current_package_sym();
-        self.set_current_package_with_sym(scope.package.as_str().to_string(), scope.package);
+        self.set_current_package_sym(scope.package);
         // The predicate's names (`Term` in `has @.t where { all($_) ~~ Term }`)
         // resolve relative to the declaring class, not to the method that
         // happens to be constructing the object: anchor the running-package
@@ -88,7 +87,7 @@ impl Interpreter {
         let ok = self.check_attribute_where_constraint_in_scope(pred, value);
         self.pop_routine();
         self.pop_method_class();
-        self.set_current_package_with_sym(saved_package, saved_package_sym);
+        self.set_current_package_sym(saved_package_sym);
         self.current_unit = saved_unit;
         ok
     }
