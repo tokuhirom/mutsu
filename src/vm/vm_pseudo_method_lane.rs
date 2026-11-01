@@ -63,9 +63,7 @@ impl Interpreter {
         // compiles `.VAR` itself, so a `method VAR` a Proxy subclass declares is
         // never called there either.
         if kind == PseudoKind::Var {
-            if !matches!(target.view(), ValueView::Proxy { .. })
-                || self.has_any_wrap_chains()
-            {
+            if !matches!(target.view(), ValueView::Proxy { .. }) || self.has_any_wrap_chains() {
                 return None;
             }
             let target = self.stack.pop()?;
