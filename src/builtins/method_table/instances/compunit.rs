@@ -44,6 +44,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         "globalish-package",
         Handler::Interp(globalish_package)
     ),
+    row!("CompUnit::Handle", "unit", Handler::Interp(unit_pad)),
+    row!(
+        "CompUnit::Handle",
+        "export-sub",
+        Handler::Interp(export_sub)
+    ),
     row!("CompUnit", "short-name", Handler::Narrow(short_name)),
     row!("CompUnit", "Str", Handler::Narrow(short_name)),
     row!("CompUnit", "gist", Handler::Narrow(short_name)),
@@ -55,6 +61,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("CompUnit", "repo-id", Handler::Narrow(repo_id)),
     row!("CompUnit", "distribution", Handler::Narrow(distribution)),
     row!("CompUnit", "precompiled", Handler::Narrow(precompiled)),
+    // `CompUnit.unit` is its handle's pad (`$!handle.unit`).
+    row!("CompUnit", "unit", Handler::Interp(compunit_unit)),
     // A new `CompUnit::Handle` each call: an identity of its own.
     MethodRow {
         owner: "CompUnit",
@@ -201,4 +209,55 @@ fn globalish_package(
 ) -> Answer {
     let symbols = attr(target, "globalish-symbols")?;
     Some(Ok(interp.make_globalish_package(symbols.as_ref())))
+}
+
+/// `CompUnit::Handle.unit`: the unit's lexical pad. A handle built over a pad
+/// (`CompUnit::Handle.new($pad)`) answers that pad; the handle of a loaded unit
+/// answers the pad built for it (`Interpreter::loaded_unit_pad`).
+// Cost: O(1) once built; the first ask is `loaded_unit_pad`'s.
+fn unit_pad(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    if let Some(Some(pad)) = attr(target, "unit") {
+        // The pad is a lexpad (`nqp::iterator` / `nqp::atkey` take it); a
+        // `Hash` a unit was built over answers a lexpad of its entries.
+        return Some(Ok(match pad.view() {
+            ValueView::Hash(data) => Interpreter::lexical_pad_value(data.map.clone()),
+            _ => pad,
+        }));
+    }
+    let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
+    Some(Ok(interp.loaded_unit_pad(&unit)))
+}
+
+/// `CompUnit::Handle.export-sub`: the unit's `sub EXPORT` hook, `Nil` when it
+/// declares none. A handle over a pad answers the pad's `&EXPORT`.
+// Cost: O(1).
+fn export_sub(
+    _interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    if let Some(Some(pad)) = attr(target, "unit") {
+        return Some(Ok(pad.hash_get_str("&EXPORT").unwrap_or(Value::NIL)));
+    }
+    attr(target, "unit-name")?;
+    Some(Ok(Value::NIL))
+}
+
+/// `CompUnit.unit`: the pad of the unit's handle (`CompUnit::Util::unit-to-hash`
+/// is handed a `CompUnit` and asks it directly).
+// Cost: as `unit_pad`.
+fn compunit_unit(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Answer {
+    let handle = handle(target, args)?.ok()?;
+    unit_pad(interp, &handle, args, named)
 }

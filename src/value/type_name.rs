@@ -61,6 +61,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Distribution::Resources") => {
             "Distribution::Resources"
         }
+        // The lexical pad of a unit (`CompUnit::Handle.unit`, `nqp::ctxlexpad`)
+        // is an MVMContext lexpad in raku, not a `Hash`: `nqp::iterator`,
+        // `existskey` and `atkey` take it. mutsu keeps the pad as a hash and
+        // carries the type as its declared type.
+        ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("BOOTContext") => {
+            "BOOTContext"
+        }
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
         | ValueView::RangeExcl(_, _)
