@@ -214,9 +214,9 @@ impl Interpreter {
     /// - a positional subscript on an `@`-sigiled name that is not itself named
     ///   by a `:=` bind pair recorded in this frame, and no pending `=`-element
     ///   share;
-    /// - a plain non-negative `Int` index that is already **in range** (an
-    ///   autovivifying store needs the full path's native-fill and hole
-    ///   bookkeeping);
+    /// - a plain non-negative `Int` index that is **in range or exactly one past
+    ///   the end** (an append); a store that leaves a gap sizes the array by
+    ///   the subscript and needs the full path's bound and hole bookkeeping;
     /// - a plain rvalue (not a bind marker, not `Nil`);
     /// - the variable resolves, in env, to a plain mutable `Array`/`ItemArray`
     ///   with no embedded type metadata, no declared shape, no `is default`,
@@ -227,8 +227,8 @@ impl Interpreter {
     ///   mean the store must write *through* it;
     /// - no per-element index metadata and no shaped-array declaration exists
     ///   anywhere in the program (the two monotonic latches).
-    // Cost: O(1) (an in-range slot write through `ArrayData::live_mut`, which leaves
-    // a pending front head offset in place).
+    // Cost: O(1) amortized (an in-range slot write through `ArrayData::live_mut`, which
+    // leaves a pending front head offset in place, or an append one past the end).
     pub(crate) fn try_fast_array_element_assign(
         &mut self,
         code: &CompiledCode,
@@ -393,27 +393,33 @@ impl Interpreter {
         if typed_decl {
             return None;
         }
-        // In-range only: an autovivifying store must resize with the right
-        // native fill and materialize the hole set, which is the slow path's job.
-        if i >= items.len() {
+        // In range, or exactly one past the end (the append idiom
+        // `@a[$i] = $v` building an array element by element). A store that
+        // leaves a gap sizes the array by the subscript, which is the slow
+        // path's job (it owns the bound on that); an append creates no hole,
+        // and `ArrayData::store_element` (the body `ASSIGN-POS` shares) grows
+        // by one element and records it.
+        if i > items.len() {
             return None;
         }
         // The destination slot must be a plain value. Anything container-shaped
         // there means the store writes THROUGH it (a `:=`-bound cell, a `Proxy`,
         // an itemized `Scalar` element, a varref back-reference) and the slow
-        // path owns every one of those rules.
-        match items.items().get(i).map(Value::view) {
-            Some(
-                ValueView::ContainerRef(_)
-                | ValueView::Scalar(_)
-                | ValueView::Proxy { .. }
-                | ValueView::VarRef { .. },
-            ) => return None,
-            Some(ValueView::Pair(name, _)) if name.as_str().starts_with("__mutsu_bound") => {
-                return None;
+        // path owns every one of those rules. An append has no slot yet.
+        if i < items.len() {
+            match items.items().get(i).map(Value::view) {
+                Some(
+                    ValueView::ContainerRef(_)
+                    | ValueView::Scalar(_)
+                    | ValueView::Proxy { .. }
+                    | ValueView::VarRef { .. },
+                ) => return None,
+                Some(ValueView::Pair(name, _)) if name.as_str().starts_with("__mutsu_bound") => {
+                    return None;
+                }
+                None => return None,
+                Some(_) => {}
             }
-            None => return None,
-            Some(_) => {}
         }
         // `@a[0] = @a` stores the array *itself* (a genuinely circular
         // structure, as in rakudo) rather than an itemized copy -- a distinction
