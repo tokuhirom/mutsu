@@ -57,6 +57,35 @@ plain_infix_table!(
 );
 
 impl Interpreter {
+    /// A plain two-operand builtin operator called through its routine value
+    /// (`my $c = &[cmp]; $c(1, 2)`): the result, or `None` when the call has to
+    /// take the full ladder -- another arity or operator, a Junction operand
+    /// (autothreaded there), a non-CORE package, or any user routine or `proto`
+    /// carrying the name.
+    // Cost: O(1) probes plus the operator body.
+    pub(crate) fn try_plain_infix_routine_value(
+        &mut self,
+        package: Symbol,
+        name: Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if args.len() != 2 || !crate::qualified::is_global_package(package) {
+            return None;
+        }
+        let name_str = name.as_str();
+        let op = name_str.strip_prefix("infix:<")?.strip_suffix('>')?;
+        plain_infix(op)?;
+        if args
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Junction { .. }))
+            || self.fn_base_name_registered_sym(name_str, name)
+            || self.has_proto_cached_sym(name_str, name)
+        {
+            return None;
+        }
+        Some(self.call_infix_routine(op, args))
+    }
+
     /// `acc op rhs` for the built-in operator `op`: a user candidate, a
     /// routine or a lexical `&infix:<op>` callable in scope wins, else the
     /// operator's own body. `plain` carries the pre-built keys of a plain

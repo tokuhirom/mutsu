@@ -1010,6 +1010,12 @@ impl Interpreter {
             ..
         } = target.view()
         {
+            // A plain builtin operator on two operands (#15847).
+            if !is_regex
+                && let Some(result) = self.try_plain_infix_routine_value(package, name, &args)
+            {
+                return result;
+            }
             let pkg = package.resolve();
             let name_str = name.resolve();
             // Junction autothreading for operator routines called as values (e.g.

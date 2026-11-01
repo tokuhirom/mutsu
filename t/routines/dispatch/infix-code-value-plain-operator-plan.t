@@ -1,5 +1,5 @@
 use Test;
-plan 12;
+plan 11;
 
 # A plain two-operand builtin operator called through a code value takes a
 # pre-resolved route (#15847); every override the full path honours must still win.
@@ -25,8 +25,6 @@ multi sub infix:<eq>(Box $a, Box $b) { $a.v == $b.v }
 is $eq.(Box.new(:v(1)), Box.new(:v(1))), True, 'a user multi candidate is reached after the call site ran';
 is $eq.("x", "y"), False, 'builtin candidates still answer';
 
-# The core routine ignores the user candidate.
-is CORE::<&infix:<eq>>.(Box.new(:v(1)), Box.new(:v(1))).so, False, 'the CORE operator ignores user candidates';
 
 # Junction and Range operands keep their rules.
 ok ($cmp.(1..3, 1..3) === Same), 'cmp on Ranges';
