@@ -117,6 +117,27 @@ struct Unexplained {
     body_scoped: HashSet<String>,
 }
 
+/// Whether a unit's imports cannot be seen before it runs: a `use` of a module
+/// that may import routines or types, after a `use lib` that its module search
+/// depends on. The unit's `use`s are pre-run only up to the first `use lib`
+/// (`run_eval_hook_uses`), so whatever the later ones import is unknown to the
+/// CHECK-time name checks, and judging any bareword would risk a false positive,
+/// exactly as the mainline check gives up on a unit with such a `use`.
+// Cost: O(s), s = statements of the unit.
+pub(crate) fn imports_follow_use_lib(stmts: &[Stmt]) -> bool {
+    let mut after_lib = false;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Use { module, .. } if module == "lib" => after_lib = true,
+            Stmt::Use { module, .. } if after_lib && !conditional::imports_no_routines(module) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// The AST half of the mainline undeclared-routine check, recorded with a
 /// precompiled unit (ADR-12026 §2.1): every call that the unit's own
 /// declarations and the static tables leave unexplained. The parser's import

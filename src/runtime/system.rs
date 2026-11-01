@@ -73,14 +73,27 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
 
 impl Interpreter {
     pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.validate_eval_source_with(stmts, false)
+    }
+
+    /// [`Self::validate_eval_source`]; `imports_unseen` skips the two checks that
+    /// judge a bareword against the unit's imports, for a unit whose imports
+    /// are not known before it runs ([`undeclared_routines::imports_follow_use_lib`]).
+    fn validate_eval_source_with(
+        &self,
+        stmts: &[Stmt],
+        imports_unseen: bool,
+    ) -> Result<(), RuntimeError> {
         self.check_eval_mainline_placeholders(stmts)?;
         self.check_eval_class_redeclarations(stmts)?;
         self.check_eval_undeclared_trusts(stmts)?;
         self.check_eval_undeclared_type_args(stmts)?;
         self.check_eval_undeclared_vars(stmts)?;
         self.check_eval_outer_binds(stmts)?;
-        self.check_eval_undeclared_names(stmts)?;
-        self.check_eval_undeclared_routines(stmts)?;
+        if !imports_unseen {
+            self.check_eval_undeclared_names(stmts)?;
+            self.check_eval_undeclared_routines(stmts)?;
+        }
         Self::check_eval_routine_magicals(stmts)?;
         self.check_eval_post_declared_types(stmts)?;
         self.check_eval_begin_forward_calls(stmts)?;
@@ -299,7 +312,7 @@ impl Interpreter {
                         return Err(refusal);
                     }
                 };
-                self.validate_and_run_eval_unit(stmts)
+                self.validate_and_run_eval_unit(stmts, false)
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
@@ -323,7 +336,11 @@ impl Interpreter {
     pub(super) fn validate_and_run_eval_unit(
         &mut self,
         stmts: Vec<Stmt>,
+        lowered: bool,
     ) -> Result<Value, RuntimeError> {
+        // A lowered tree was not parsed here: when its imports follow a
+        // `use lib` they are unknown until it runs.
+        let imports_unseen = lowered && super::undeclared_routines::imports_follow_use_lib(&stmts);
         // The hook maps the pre-run recorded are replayed by the
         // unit's own `use`s and end with the unit.
         let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
@@ -335,7 +352,7 @@ impl Interpreter {
         let prerun_region =
             crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
         let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
-            let validated = self.validate_eval_source(&stmts);
+            let validated = self.validate_eval_source_with(&stmts, imports_unseen);
             self.module.eval_prerun_modules.clear();
             self.module.eval_prerun_sets.clear();
             validated?;

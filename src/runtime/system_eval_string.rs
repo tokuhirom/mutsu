@@ -46,7 +46,7 @@ impl Interpreter {
             Self::register_lowered_unit_imports(&stmts);
             self.with_eval_import_scope(|interp| {
                 interp.run_compunit(|interp| {
-                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts))
+                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts, true))
                 })
             })
         });
