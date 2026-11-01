@@ -1128,117 +1128,140 @@ impl Interpreter {
         ProtectBlockWritebackBindings,
         ProtectBlockCapturedNames,
     ) {
-        let entry = self
-            .caches
-            .protect_block_cache
-            .entry(data.id)
-            .or_insert_with(|| {
-                let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
-                    // The block's own nested `sub` declarations resolve their
-                    // `RegisterSub` bodies through the functions table the code
-                    // carries; an empty table left such a sub with no body
-                    // (calling it returned Nil).
+        let (compiled, compiled_fns, stable) = if let Some(ref cc) = data.compiled_code {
+            // The block's own nested `sub` declarations resolve their
+            // `RegisterSub` bodies through the functions table the code
+            // carries; an empty table left such a sub with no body
+            // (calling it returned Nil).
+            (
+                cc.clone(),
+                cc.compiled_fns.clone().unwrap_or_else(|| {
+                    std::sync::Arc::new(crate::opcode::CompiledFns::default())
+                }),
+                true,
+            )
+        } else if data.body.is_empty()
+            && let Some(ref cf) = data.compiled_routine
+        {
+            // A body-less routine Sub (plan-derived, ADR-0019 C6e-3 -- e.g.
+            // File::Temp's `$lock.protect(&clean-roster)`) has nothing to
+            // compile; run the routine's own bytecode. Like the compiled
+            // paths above, it executes in the CURRENT env -- the semantics
+            // this fast path is defined by (a captured-env install would
+            // read the phaser-creation-time snapshot, not the live state).
+            // Its own nested-sub table (if any) travels with it rather
+            // than substituting an empty one (ADR-0019 C6e-3c).
+            (
+                cf.code.clone(),
+                cf.compiled_fns.clone().unwrap_or_else(|| {
+                    std::sync::Arc::new(crate::opcode::CompiledFns::default())
+                }),
+                true,
+            )
+        } else {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                false,
+            )
+        };
+        // The env-independent scan of the bytecode, shared by every closure
+        // instance of this body. A body compiled just now has no stable
+        // identity, so it is scanned and not remembered.
+        let ops = if stable {
+            let key = std::sync::Arc::as_ptr(&compiled) as usize;
+            self.caches
+                .protect_block_ops
+                .entry(key)
+                .or_insert_with(|| {
                     (
-                        cc.clone(),
-                        cc.compiled_fns.clone().unwrap_or_else(|| {
-                            std::sync::Arc::new(crate::opcode::CompiledFns::default())
-                        }),
+                        compiled.clone(),
+                        std::sync::Arc::new(Self::scan_protect_block_ops(&compiled)),
                     )
-                } else if data.body.is_empty()
-                    && let Some(ref cf) = data.compiled_routine
-                {
-                    // A body-less routine Sub (plan-derived, ADR-0019 C6e-3 — e.g.
-                    // File::Temp's `$lock.protect(&clean-roster)`) has nothing to
-                    // compile; run the routine's own bytecode. Like the compiled
-                    // paths above, it executes in the CURRENT env — the semantics
-                    // this fast path is defined by (a captured-env install would
-                    // read the phaser-creation-time snapshot, not the live state).
-                    // Its own nested-sub table (if any) travels with it rather
-                    // than substituting an empty one (ADR-0019 C6e-3c).
-                    (
-                        cf.code.clone(),
-                        cf.compiled_fns.clone().unwrap_or_else(|| {
-                            std::sync::Arc::new(crate::opcode::CompiledFns::default())
-                        }),
-                    )
-                } else {
-                    let compiler = crate::compiler::Compiler::new();
-                    let (compiled, compiled_fns) = compiler.compile(&data.body);
-                    (
-                        std::sync::Arc::new(compiled),
-                        std::sync::Arc::new(compiled_fns),
-                    )
-                };
-                let captured_bindings: Vec<(usize, String)> = compiled
-                    .locals
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, name)| data.env.contains_key(name))
-                    .map(|(idx, name)| (idx, name.clone()))
-                    .collect();
-                let mut assigned_slots = std::collections::HashSet::new();
-                for op in &compiled.ops {
-                    match op {
-                        crate::opcode::OpCode::SetLocal(slot)
-                        | crate::opcode::OpCode::AssignExprLocal(slot) => {
-                            assigned_slots.insert(*slot as usize);
-                        }
-                        // Inc/dec carry (name_idx, slot); keep the pre-existing field-0
-                        // behavior for this EVAL-writeback detection (unchanged by the
-                        // §1.5 inc/dec slot-baking slices).
-                        crate::opcode::OpCode::PreIncrement(name_idx, _)
-                        | crate::opcode::OpCode::PreDecrement(name_idx, _)
-                        | crate::opcode::OpCode::PostIncrement(name_idx, _)
-                        | crate::opcode::OpCode::PostDecrement(name_idx, _) => {
-                            assigned_slots.insert(*name_idx as usize);
-                        }
-                        _ => {}
-                    }
-                }
-                let writeback_bindings: Vec<(usize, String)> = captured_bindings
-                    .iter()
-                    .filter(|(slot, _)| assigned_slots.contains(slot))
-                    .cloned()
-                    .collect();
-                let mut captured_names: Vec<String> = captured_bindings
-                    .iter()
-                    .map(|(_, name)| name.clone())
-                    .collect();
-                for op in &compiled.ops {
-                    let name_idx = match op {
-                        crate::opcode::OpCode::GetGlobal(idx)
-                        | crate::opcode::OpCode::SetGlobal(idx)
-                        | crate::opcode::OpCode::GetArrayVar(idx)
-                        | crate::opcode::OpCode::GetHashVar(idx)
-                        | crate::opcode::OpCode::CheckReadOnly(idx) => Some(*idx as usize),
-                        _ => None,
-                    };
-                    let Some(idx) = name_idx else {
-                        continue;
-                    };
-                    let Some(ValueView::Str(name)) = compiled.constants.get(idx).map(Value::view)
-                    else {
-                        continue;
-                    };
-                    if data.env.contains_key(name.as_str()) && !captured_names.contains(&name) {
-                        captured_names.push(name.to_string());
-                    }
-                }
-                (
-                    compiled,
-                    compiled_fns,
-                    std::sync::Arc::new(captured_bindings),
-                    std::sync::Arc::new(writeback_bindings),
-                    std::sync::Arc::new(captured_names),
-                )
-            });
+                })
+                .1
+                .clone()
+        } else {
+            std::sync::Arc::new(Self::scan_protect_block_ops(&compiled))
+        };
+        // The part that does depend on this closure: which of those names its
+        // captured env holds.
+        let captured_bindings: Vec<(usize, String)> = compiled
+            .locals
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| data.env.contains_key(name))
+            .map(|(idx, name)| (idx, name.clone()))
+            .collect();
+        let writeback_bindings: Vec<(usize, String)> = captured_bindings
+            .iter()
+            .filter(|(slot, _)| ops.assigned_slots.contains(slot))
+            .cloned()
+            .collect();
+        let mut captured_names: Vec<String> = captured_bindings
+            .iter()
+            .map(|(_, name)| name.clone())
+            .collect();
+        for name in &ops.global_names {
+            if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
+                captured_names.push(name.clone());
+            }
+        }
         (
-            entry.0.clone(),
-            entry.1.clone(),
-            entry.2.clone(),
-            entry.3.clone(),
-            entry.4.clone(),
+            compiled,
+            compiled_fns,
+            std::sync::Arc::new(captured_bindings),
+            std::sync::Arc::new(writeback_bindings),
+            std::sync::Arc::new(captured_names),
         )
+    }
+
+    /// See [`ProtectBlockOps`].
+    // Cost: O(n), n = ops of the block.
+    fn scan_protect_block_ops(compiled: &crate::opcode::CompiledCode) -> ProtectBlockOps {
+        let mut assigned_slots = std::collections::HashSet::new();
+        let mut global_names: Vec<String> = Vec::new();
+        for op in &compiled.ops {
+            match op {
+                crate::opcode::OpCode::SetLocal(slot)
+                | crate::opcode::OpCode::AssignExprLocal(slot) => {
+                    assigned_slots.insert(*slot as usize);
+                }
+                // Inc/dec carry (name_idx, slot); keep the pre-existing field-0
+                // behavior for this EVAL-writeback detection (unchanged by the
+                // 1.5 inc/dec slot-baking slices).
+                crate::opcode::OpCode::PreIncrement(name_idx, _)
+                | crate::opcode::OpCode::PreDecrement(name_idx, _)
+                | crate::opcode::OpCode::PostIncrement(name_idx, _)
+                | crate::opcode::OpCode::PostDecrement(name_idx, _) => {
+                    assigned_slots.insert(*name_idx as usize);
+                }
+                _ => {}
+            }
+            let name_idx = match op {
+                crate::opcode::OpCode::GetGlobal(idx)
+                | crate::opcode::OpCode::SetGlobal(idx)
+                | crate::opcode::OpCode::GetArrayVar(idx)
+                | crate::opcode::OpCode::GetHashVar(idx)
+                | crate::opcode::OpCode::CheckReadOnly(idx) => Some(*idx as usize),
+                _ => None,
+            };
+            let Some(idx) = name_idx else {
+                continue;
+            };
+            let Some(ValueView::Str(name)) = compiled.constants.get(idx).map(Value::view) else {
+                continue;
+            };
+            if !global_names.iter().any(|seen| seen == name.as_str()) {
+                global_names.push(name.to_string());
+            }
+        }
+        ProtectBlockOps {
+            assigned_slots,
+            global_names,
+        }
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.

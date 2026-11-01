@@ -33,7 +33,16 @@ pub(crate) struct MultiPlanLight {
 
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
-    pub(super) protect_block_cache: ProtectBlockCache,
+    /// The env-independent half of a `protect` block's analysis, by the body's
+    /// compiled code (see [`ProtectBlockOps`]). Holds the `Arc` so the address
+    /// cannot be reused while the entry lives.
+    pub(super) protect_block_ops: HashMap<
+        usize,
+        (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            std::sync::Arc<super::ProtectBlockOps>,
+        ),
+    >,
     /// The type object a `C[T]` type constraint stands for when `C` declares
     /// its own `method ^parameterize`, keyed by the constraint's spelling
     /// (`types::meta_parameterized`). Rakudo evaluates such a constraint once,
