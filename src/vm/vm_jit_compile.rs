@@ -585,7 +585,7 @@ fn build(
                 )?;
                 // SKIP: the shim ran the op at i + 1 itself; continue at i + 2
                 // (a target registered by the pre-pass).
-                let skip = b.ins().icmp_imm(
+                let skip = b.ins().icmp_imm_u(
                     cranelift_codegen::ir::condcodes::IntCC::Equal,
                     status,
                     super::vm_jit::JIT_STATUS_SKIP as i64,
