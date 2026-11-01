@@ -1449,6 +1449,7 @@ pub(crate) fn setbagmix_raku_named(v: &Value, type_override: Option<&str>) -> Op
 
 /// Coerce a value to a native integer type (e.g. `.byte()`, `.int8()`, `.uint32()`).
 /// Wraps out-of-range values using modular arithmetic.
+// Cost: O(n + b), n = chars parsed from a string representation, b = integer bits.
 pub(crate) fn native_int_coerce_method(
     target: &Value,
     type_name: &str,
@@ -1457,6 +1458,11 @@ pub(crate) fn native_int_coerce_method(
     use num_traits::ToPrimitive;
 
     let big_val: NumBigInt = match target.view() {
+        ValueView::Package(_) if target.isa_check("Int") => {
+            return Err(RuntimeError::new(
+                "Can only perform big integer operations on concrete objects",
+            ));
+        }
         ValueView::Int(i) => NumBigInt::from(i),
         ValueView::BigInt(n) => (**n).clone(),
         ValueView::Num(f) => {

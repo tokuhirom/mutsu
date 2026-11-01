@@ -221,20 +221,6 @@ pub(crate) fn native_method_0arg_cascade(
             MixinStep::Delegate(inner) => native_method_0arg(&inner, method_sym),
         };
     }
-    // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
-    // declares these on `Cool`, so a `Pair` — which is not Cool — has no such
-    // method; answering one here made `.^can('bool')` true for every value and
-    // broke callers that probe `.^can($field)` before trying the next
-    // candidate. `bool` and the C-width aliases are not coercion methods at all
-    // (see `is_native_int_coerce_method`).
-    if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
-        // `Range.Numeric` is its element count.
-        let elems = crate::builtins::method_table::scalars::numify::numeric_range_elems(target);
-        return Some(raku_repr::native_int_coerce_method(
-            elems.as_ref().unwrap_or(target),
-            method,
-        ));
-    }
     dispatch_core(target, method_sym)
 }
 

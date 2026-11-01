@@ -56,17 +56,17 @@ macro_rules! row1 {
 macro_rules! native_int_rows {
     ($owner:literal) => {
         &[
-            row!($owner, "int", int),
-            row!($owner, "int8", int8),
-            row!($owner, "int16", int16),
-            row!($owner, "int32", int32),
-            row!($owner, "int64", int64),
-            row!($owner, "uint", uint),
-            row!($owner, "uint8", uint8),
-            row!($owner, "uint16", uint16),
-            row!($owner, "uint32", uint32),
-            row!($owner, "uint64", uint64),
-            row!($owner, "byte", byte),
+            row!($owner, "int", int, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int8", int8, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int16", int16, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int32", int32, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int64", int64, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint", uint, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint8", uint8, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint16", uint16, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint32", uint32, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint64", uint64, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "byte", byte, RowFlags::TYPE_OBJECT_OK),
         ]
     };
 }

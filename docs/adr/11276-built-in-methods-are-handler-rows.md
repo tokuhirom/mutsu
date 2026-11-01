@@ -5772,21 +5772,6 @@ question that justified the decline ("does a bridge resolve this receiver furthe
 - **Found, not fixed**: `Exception`/`X::AdHoc` instances and `utf8` still answer `X::Method::NotFound` for `.splice` (an earlier path intercepts them before
   `invoke_mut`); a `Mixin` and a cell reference still decline.
 
-### 9.199 Slice 5 inventory: native integer coercer entry (2026-11-01)
-
-`refactor/11276-native-int-coercer-entry` audits the remaining native integer
-coercer branch in `native_method_0arg_cascade`. All eleven coercion names already
-have `Cool` and `Int` rows in `scalars::real_misc` (22 rows). The cascade still
-recognizes the names separately and calls the primitive directly. Narrow-width
-names are absent from the audited `Cool` numeric names of closed collection
-shapes, so the existing rows cannot replace that branch for those receivers yet.
-
-The deletion unit is the entire native integer coercer branch, with admission
-of the existing rows driven by the shared native coercion-name list. The initial
-`scripts/method-rows-report.py --arms` inventory is 4 pure-cascade arms, 216
-runtime arms and 3 VM mutation-helper arms (223 total); these counts do not
-measure this branch, which uses a predicate rather than quoted-name arms.
-
 ### 9.69 `Any.splice` sees through a cell, a variable reference and a mixin (2026-10-11)
 
 `refactor/12653-unwrap-mixin-ref-receivers` (issue #12653). The remainder of #12647: the row no longer carries a `ContainerRef | VarRef | Mixin` decline list.
@@ -5798,3 +5783,27 @@ measure this branch, which uses a predicate rather than quoted-name arms.
   `Array` reaches `Any` and must be declined here), an `is Array` instance, a user `splice`, a `Mu`-rooted user class. A wrapper alone is never a reason to decline.
 - Behaviour change toward Rakudo: the mixin's type name in the message. The instance and cell cases already matched.
 - **Found, not fixed**: Rakudo answers `(my @a = 1,2,3; @a but Tag).splice(1,1)` with `[1, 3, Mu]` (a length quirk of its mixin copy); mutsu answers `[1, 3]`. Not pinned by a test.
+
+### 9.199 Slice 5: native integer coercer entry (2026-11-01)
+
+`refactor/11276-native-int-coercer-entry` removes the entire native integer
+coercer branch from `native_method_0arg_cascade`. All eleven coercion names
+already have `Cool` and `Int` rows in `scalars::real_misc` (22 rows). The
+cascade had recognized the names separately and called the primitive directly:
+narrow-width names were absent from the audited `Cool` numeric names of closed
+collection shapes, so those receivers could not reach the existing rows.
+
+The initial `scripts/method-rows-report.py --arms` inventory was 4 pure-cascade
+arms, 216 runtime arms and 3 VM mutation-helper arms (223 total). These counts
+do not measure this branch, which used a predicate rather than quoted-name arms.
+
+Admission now reads `native_types::NATIVE_INT_COERCE_METHODS`: closed shapes
+reach the existing `Cool` rows, and the shapeless resolver admits only `Cool`
+receivers. This preserves the exclusion of `Pair` and ordinary user instances.
+The rows accept type objects too: `Cool` coerces to zero, while the shared
+primitive now refuses the undefined `Int` with Rakudo's concrete-integer error.
+The latter is a behavior correction toward Rakudo, pinned alongside the
+collection, IO path, native-array and shaped-array cases in
+`t/nativecall/native-int-coercer-entry-rows.t`. A Rust test additionally pins
+that the closed Range and IO path receivers are answered by rows themselves,
+before any cascade can run. No other cascade guard is removed in this slice.

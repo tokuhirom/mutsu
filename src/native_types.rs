@@ -87,7 +87,7 @@ pub(crate) fn is_narrow_atomic_int_type(name: &str) -> bool {
 /// `$obj.^can($field)` before falling back — the shape
 /// `Template::Mustache`'s context lookup has — then calls a method that
 /// silently answers 0 instead of moving on to the next candidate.
-const NATIVE_INT_COERCE_METHODS: &[&str] = &[
+pub(crate) const NATIVE_INT_COERCE_METHODS: &[&str] = &[
     "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
 ];
 

@@ -891,6 +891,7 @@ mod name_bits {
     pub(super) const ITERABLE: u16 = 1 << 4;
     pub(super) const COERCE: u16 = 1 << 5;
     pub(super) const COOL_NUMERIC: u16 = 1 << 6;
+    pub(super) const NATIVE_INT: u16 = 1 << 8;
     pub(super) const CONTAINER: u16 = 1 << 7;
 }
 
@@ -915,6 +916,9 @@ fn compute_shapeless_name_bits(m: &str) -> u16 {
     }
     if COOL_COERCE_FOR_SHAPELESS.contains(&m) {
         b |= name_bits::COERCE;
+    }
+    if crate::native_types::is_native_int_coerce_method(m) {
+        b |= name_bits::COERCE | name_bits::NATIVE_INT;
     }
     if crate::value::cool_numeric_method(m) {
         b |= name_bits::COOL_NUMERIC;
@@ -945,6 +949,12 @@ pub(crate) fn shapeless_row(
     // amount (§9.90) or a count (`words`, `lines`, `chop`) alone take an
     // argument.
     let name = shapeless_name_bits(method);
+    // Native integer coercers belong to Cool, not to Any. In particular a
+    // plain instance and Pair must not acquire them through the coercion
+    // fallback used for unsettled collection receivers.
+    if name & name_bits::NATIVE_INT != 0 && !target.isa_check("Cool") {
+        return None;
+    }
     if arity > 0 && (arity > 1 || name & name_bits::TAKES_ARG == 0)
         // `comb($pattern, $limit)` has no row of its own: only an instance
         // with a user `Str` takes it (`answer_shapeless`).
