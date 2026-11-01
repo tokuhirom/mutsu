@@ -723,6 +723,7 @@ impl Compiler {
             package_sym_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             package_routine_scoped_cache: std::sync::OnceLock::new(),
+            light_signature_cache: std::sync::OnceLock::new(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan(crate::runtime::named_fast_fill);
