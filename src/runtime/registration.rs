@@ -843,12 +843,37 @@ impl Interpreter {
     /// `&mut self` for the same reason as [`Self::has_multi_candidates`]: the
     /// probe is narrowed to the lazily-filled base-name key index.
     pub(crate) fn has_multi_function(&mut self, name: &str) -> bool {
-        let base_keys = self.fn_keys_for_base(name);
-        let packages = self.bare_name_packages_syms();
-        self.registry()
-            .has_multi_function(Some(&base_keys), &packages, name)
-            && (!self.operator_has_import_scope(name)
-                || self.any_visible_candidate_of(Some(&base_keys), &packages, name))
+        // The registry half of the answer (is there a candidate key of `name`
+        // in the bare-name packages?) does not depend on the running compunit,
+        // so it is memoised under the same generation and key as
+        // `has_multi_function_cached_sym` (which stores exactly this half for
+        // an unscoped name). Only the visibility half is per call: a name an
+        // import scoped (Red's operators) walks every key of its family here
+        // otherwise, ~1,400 keys for each of ~20 names per `Red` model create.
+        let sym = Symbol::intern(name);
+        let generation = self.caches.fn_resolve_gen;
+        let key = self.bare_name_ctx_key(sym);
+        let cached = self.caches.multi_fn_cache.get(generation, &key).copied();
+        let mut base_keys = None;
+        let in_registry = match cached {
+            Some(known) => known,
+            None => {
+                let keys = self.fn_keys_for_base(name);
+                let packages = self.bare_name_packages_syms();
+                let found = self
+                    .registry()
+                    .has_multi_function(Some(&keys), &packages, name);
+                self.caches.multi_fn_cache.insert(generation, key, found);
+                base_keys = Some(keys);
+                found
+            }
+        };
+        in_registry
+            && (!self.operator_has_import_scope(name) || {
+                let keys = base_keys.unwrap_or_else(|| self.fn_keys_for_base(name));
+                let packages = self.bare_name_packages_syms();
+                self.any_visible_candidate_of(Some(&keys), &packages, name)
+            })
     }
 
     /// [`Self::has_multi_function`] for a `&self` caller, which cannot fill the
