@@ -304,7 +304,7 @@ impl Interpreter {
             if let ValueView::Pair(key, value) = arg.view()
                 && key == name
             {
-                return Some(value.clone());
+                return Some(value.deref_container());
             }
         }
         None

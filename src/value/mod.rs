@@ -575,6 +575,7 @@ mod attr_site;
 mod attr_store_kind;
 mod bareword_site;
 pub(crate) mod buf_class_names;
+pub(crate) mod call_args;
 pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;

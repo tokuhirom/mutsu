@@ -86,6 +86,8 @@ impl Interpreter {
     pub(crate) fn build_compunit_dependencyspecification(
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+            let read_named = crate::value::call_args::read_named_args(args);
+            let args = read_named.as_ref();
             let mut short_name: Option<String> = None;
             let mut auth_matcher: Option<String> = None;
             let mut version_matcher: Option<String> = None;
@@ -244,7 +246,7 @@ impl Interpreter {
                 if key == "prefix" {
                     prefix = Some(value.to_string_value());
                 } else if key == "next-repo" && value.truthy() {
-                    attrs.insert("next-repo", value.clone());
+                    attrs.insert("next-repo", value.deref_container());
                 }
             }
         }
@@ -271,7 +273,7 @@ impl Interpreter {
                     if key == "prefix" {
                         prefix = value.to_string_value();
                     } else if key == "next-repo" && value.truthy() {
-                        next_repo = Some(value.clone());
+                        next_repo = Some(value.deref_container());
                     }
                 }
             }
@@ -301,7 +303,7 @@ impl Interpreter {
                     if key == "prefix" {
                         prefix = value.to_string_value();
                     } else if key == "next-repo" && value.truthy() {
-                        next_repo = Some(value.clone());
+                        next_repo = Some(value.deref_container());
                     }
                 }
             }

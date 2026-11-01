@@ -200,6 +200,9 @@ impl RowFlags {
     /// is a class-method owner ([`class_method_owner`](super::class_method_owner)),
     /// which the by-name dispatch asks once for a type object.
     pub(crate) const CLASS_METHOD: RowFlags = RowFlags(1 << 19);
+    /// The named arguments are a raw capture relayed to another binder
+    /// (`Mu.new`/`bless`), rather than ordinary named parameter values.
+    pub(crate) const RAW_NAMED: RowFlags = RowFlags(1 << 20);
 
     /// The flags of both.
     // Cost: O(1).
@@ -253,6 +256,16 @@ pub(crate) struct MethodRow {
 }
 
 impl MethodRow {
+    /// Bind ordinary named parameters by value; capture relays keep cells.
+    // Cost: O(n + k), n = named arguments, k = copied key bytes. Rakudo: O(n) -- see #9252.
+    pub(super) fn bind_named<'a>(&self, args: &'a [Value]) -> std::borrow::Cow<'a, [Value]> {
+        if self.flags.contains(RowFlags::RAW_NAMED) {
+            std::borrow::Cow::Borrowed(args)
+        } else {
+            crate::value::call_args::read_named_args(args)
+        }
+    }
+
     /// The arities the table registers the row at: its own, or for a slurpy
     /// row every one from its own up to 7.
     // Cost: O(1).
@@ -315,8 +328,8 @@ impl<'a> Named<'a> {
         Named(pairs)
     }
 
-    /// The named arguments as the string-keyed `Pair`s the call passed them
-    /// as, for a primitive that reads its arguments as one list.
+    /// Bound named arguments as string-keyed `Pair`s, for a primitive that
+    /// reads them as one list. Raw capture relays retain the original cells.
     // Cost: O(1).
     pub(crate) fn pairs(&self) -> &'a [Value] {
         self.0

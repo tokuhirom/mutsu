@@ -18,7 +18,7 @@ type Answer = (Result<Value, RuntimeError>, bool);
 /// narrowing row does not bind them. `target` must have the shape the row
 /// was resolved for. An [`Handler::Interp`] row needs `interp`; without one
 /// it declines.
-// Cost: O(1) plus the handler's own cost.
+// Cost: O(n + k) plus the handler, n = named args, k = key bytes. Rakudo: O(n) -- see #9252.
 #[inline]
 fn call(
     row: &MethodRow,
@@ -27,6 +27,8 @@ fn call(
     positional: &[Value],
     named: Named<'_>,
 ) -> Option<Answer> {
+    let bound_named = row.bind_named(named.pairs());
+    let named = Named::new(&bound_named);
     // A random answer cannot be checked by running the call a second time.
     let rerunnable = !row.flags.skips_cross_check();
     // ADR-0068: a leaf READ of a container (`%!h.keys`) walks the backing map,
@@ -351,7 +353,8 @@ pub(crate) fn invoke_mut(
         .into_iter()
         .filter(|pair| names_declared(row, pair))
         .collect();
-    handler(interp, place, &positional, Named::new(&named))
+    let bound_named = row.bind_named(&named);
+    handler(interp, place, &positional, Named::new(&bound_named))
 }
 
 /// Whether `arg` is a plain scalar a row may be handed by default: a `Str`

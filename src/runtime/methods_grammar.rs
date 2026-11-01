@@ -647,7 +647,7 @@ impl Interpreter {
                         }
                     }
                 } else if key == "actions" {
-                    actions_obj = Some(value.clone());
+                    actions_obj = Some(value.deref_container());
                 }
                 continue;
             }
