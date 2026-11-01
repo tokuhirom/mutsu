@@ -1371,10 +1371,13 @@ impl Registry {
             // inside a C3 merge that tail must be present, or a sibling
             // parent's `Any, Mu` sorts ahead of it: `class C is A is
             // Exception` listed `Exception` after `Mu`.
-            for implicit in ["Any", "Mu"] {
-                if class_name != implicit && !mro.iter().any(|n| n == implicit) {
-                    mro.push(implicit.to_string());
+            // Only a chain that never reached `Mu` is truncated: a class that
+            // `is Mu` (and its subclasses) is deliberately not an `Any`.
+            if !mro.iter().any(|n| n == "Mu") {
+                if !mro.iter().any(|n| n == "Any") {
+                    mro.push("Any".to_string());
                 }
+                mro.push("Mu".to_string());
             }
             return Ok(mro);
         }
