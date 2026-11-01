@@ -1,6 +1,6 @@
 # ADR-15760: NameScope — one scope type, source-order classification, and a typed node lowered where the parser builds it
 
-- **Status**: Accepted (maintainer decision, 2026-10-31) after revision
+- **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 (2026-11-01) Proposed, §6
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15760](https://github.com/tokuhirom/mutsu/issues/15760) (RakuAST C2). Roadmap:
@@ -185,7 +185,8 @@ Structural slices change no behaviour; slice 1 is the only one that does. They a
   `DeclaredNames` as an explicit parameter of `finalize_unit`, `round_trip_eval`, the `Str.AST` entry and `lower`. No
   behaviour change; the whole-unit pre-scan is still how the scope is filled.
 - **1.** Source-order classification and routine-only late binding (§2.3), the end-of-unit `Undeclared routine`
-  check, cache format bump. Closes #15791.
+  check, cache format bump. Closes #15791. **Split into 1a-1d by Amendment 1 (§6):** the mechanism and the cache note
+  changed, the rule did not.
 - **2.** Build-time lowering family by family (§2.4), deleting `finalize`'s share each time; fallback constructs
   (§2.6) and fragments audit; then the deletions of §2.5.
 
@@ -204,3 +205,83 @@ Structural slices change no behaviour; slice 1 is the only one that does. They a
 
 Answers recorded (maintainer, 2026-10-31): source order with no pre-scan, only routine names late-bound (Q1); slice 0
 first (Q2); `src/scope.rs` (Q3).
+
+## 6. Amendment 1 (Proposed, 2026-11-01): where the early classification really comes from, and how slice 1 splits
+
+Slice 0 is merged (#15837, #15840). The first attempt at slice 1 (branch `fix/15791-source-order-classification`:
+`bareword::DeclaredNames::collect` and `BlockScope::enter` replaced by a per-statement `declare_statement`) built and
+changed **none** of the rows of #15791. §2.3 assumed the frontend's whole-unit scan was the one source of the early
+classification. It is one of five. The measurements below (raku 2026.09, mutsu at `main` after #15840, 2026-11-01) are
+the correction.
+
+### 6.1 The five sources
+
+| # | Where | What it does today | Effect |
+| --- | --- | --- | --- |
+| 1 | `rakuast::bareword::DeclaredNames` / `BlockScope` (§1.1) | whole-unit and whole-block pre-scan, read by `bareword::convert` | classifies lowercase barewords in `finalize` and every bareword in the `.AST` view |
+| 2 | `rakuast::carried::expr_carried`, `Expr::BareWord` arm | an uppercase bareword is **carried**: the frontend never classifies it on the executing path | it resolves at run time, where class declarations are registered before the unit's statements run: `say A; class A {}` prints `(A)` |
+| 3 | `runtime::undeclared_routines` (`scan.rs`) | CHECK-time, scope-blind scan of the AST; `declared` deliberately absorbs variables, types and terms ("suppressing a call on any of them is the safe direction") | this is the "end-of-unit `Undeclared routine` check" §2.3 asks for, and it already exists; it excuses `say x; my \x = 1` because `x` is declared *somewhere* |
+| 4 | `runtime::eval_post_declared_types` | by top-level statement index; called from `EVAL` only (`eval_check.rs`, `system.rs`) | the main program and `use`d modules have no post-declared-type check; `EVAL q[say A; class A {}]` already dies correctly |
+| 5 | parser registries (`is_user_declared_type`, `register_user_*`) | filled when a node is built | already source order; not a cause |
+
+Rakudo's `.AST` raises the same compile errors as running the code (`Q{say A; class A {}}.AST` is
+`Illegally post-declared type`, `Q{say x; my \x = 1}.AST` is `Undeclared routine: x`); mutsu's `Str.AST` returns a tree.
+
+### 6.2 Measured rows
+
+| Program | raku | mutsu | Source |
+| --- | --- | --- | --- |
+| `say A; class A {}` | post-declared type | `(A)` | 2, 4 |
+| `{ say B; class B {} }` | post-declared type | `(B)` | 2, 4 |
+| `sub f { A.new }; class A {}` | post-declared type | nothing | 4 |
+| `class A { method m { B.new } }; class B {}` | post-declared type | nothing | 4 |
+| `say X; constant X = 3` | `(X)` (core `X`) | `3` | 2 (and run-time constant hoisting) |
+| `say x; my \x = 1` | `Undeclared routine` | `x` | 3 |
+| `{ say x; my \x = 1 }`, `say x; { my \x = 1 }` | `Undeclared routine` | `x` | 3 |
+| `say Y; enum E <Y Z>` | `Undeclared routine: Y` | `Y` | 3 |
+| `my \x = 1; { say x }` | `1` | `1` | — |
+| `foo; sub foo {...}`, `{ foo; sub foo {...} }` | works | works | routines are hoisted |
+| `{ sub foo {...} }; foo` | `Undeclared routine` | nothing | 3 (routine scoping; filed separately) |
+
+### 6.3 Decision (proposed)
+
+§2.3's *rule* stands: source order, only routines late-bound. §2.3's *mechanism* ("lower an unresolved bareword to a
+deferred routine call; report at the end of the unit") is replaced, because the end-of-unit check exists (source 3) and
+the carried path (source 2) never produces an unresolved bareword to defer. Slice 1 is split into independent PRs:
+
+- **1a. One post-declared-type check for every unit.** Replace `eval_post_declared_types` (EVAL only, statement-index) by a
+  pure check over `&[Stmt]` and `&NameScope` that runs at the end of **every** executing parse (main program, module,
+  `EVAL`) and in `Str.AST`: a type name used where no declaration of it is visible, but declared later in the unit, is
+  `Illegally post-declared type`, including a use inside a routine or method body and inside a nested block. It lives in
+  `src/rakuast` (a checked layer since slice P) as the `finish_unit` check §2.5 item 3 names. Closes rows 1-4 of §6.2.
+- **1b. Order-aware term and type excuses in the undeclared-routine scan.** In `undeclared_routines::scan`, `declared`
+  splits: routines stay hoisted unit-wide; variables, sigilless terms, enum values and types record the pre-order
+  position of their declaration (and the lexical block they are visible in), and a bareword call is excused by one of
+  them only when it is declared before the call in a block that encloses the call. The existing `Frame` for routine
+  bodies is extended to blocks. Closes the `x` and `Y` rows. Includes the conservative `bail` cases unchanged.
+- **1c. The `.AST` view in source order.** The frontend scan of source 1 becomes per-statement (the WIP branch
+  is the starting point), and `Str.AST` runs 1a/1b so it raises what rakudo's `.AST` raises. `.AST` of
+  `say X; constant X = 3` then renders the first `X` as the core `Type::Simple`.
+- **1d (moves to slice 2). Classify uppercase barewords in the frontend instead of carrying them.** Row `say X; constant X = 3`
+  executing as `(X)` needs the use to bind to the lexical symbol at its position, which no run-time resolution can do
+  after hoisting. It needs `expr_carried` to stop carrying `BareWord`, so it belongs with the family-by-family lowering
+  of slice 2. #15791 stays open for this row only.
+- **Precompilation cache.** 1a-1c do not change the lowered statements, so the cache format is **not** bumped by them
+  (this replaces the note in §2.6); 1d will bump it.
+
+### 6.4 Consequences and risks
+
+- 1a and 1b make programs fail that mutsu runs today. That is the point (rakudo rejects them), but it is the largest
+  roast risk of the campaign: every roast file that forward-references a type or term is affected, so each PR runs
+  `make roast` in full and records the files it moves.
+- 1a must not reject what rakudo accepts: `role R {...}`/`class C {...}` stubs declare at the stub; `unit` declarations
+  and `our`-scoped nested names (`module M { our class N }; M::N`) are visible by qualified name from the start of their
+  declaration; imported types (`use`, `need`, `import`) are declared at the import statement.
+- Finding filed separately: `{ sub foo {...} }; foo` runs silently in mutsu (rakudo: `Undeclared routine`).
+
+### 6.5 Questions for the maintainer
+
+1. `Str.AST` raising the two compile errors (as rakudo does) rather than returning a tree: recommended yes (1c).
+2. Row `say X; constant X = 3` deferred to slice 2 as 1d, #15791 left open for it: acceptable?
+3. The post-declared-type check in `src/rakuast` rather than `src/runtime`: it needs no interpreter, and `src/analysis` /
+   the language server can call it (ADR-0065); recommended yes.
