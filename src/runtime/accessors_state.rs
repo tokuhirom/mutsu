@@ -301,7 +301,10 @@ impl Interpreter {
                 .wrap_name_to_sub
                 .iter()
                 .filter(|(key, _)| {
-                    key.as_str() != name && key.rsplit("::").next() == Some(name)
+                    key.as_str() != name
+                        && crate::qualified::is_qualified_str(key)
+                        && crate::qualified::unqualified_part(Symbol::intern(key)).as_str()
+                            == name
                 })
                 .map(|(_, sub)| sub)
                 .find(|sub| self.wrapped_sub_is_the_callee(sub, name))

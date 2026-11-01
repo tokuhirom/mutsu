@@ -73,7 +73,7 @@ pub(crate) fn wrap_ledger_name(package: Symbol, name: &str) -> String {
     if crate::qualified::is_global_package(package) || crate::qualified::is_qualified_str(name) {
         name.to_string()
     } else {
-        format!("{}::{}", package.as_str(), name)
+        crate::qualified::qualified_text(package, name).as_str().to_string()
     }
 }
 
