@@ -148,7 +148,10 @@ impl Interpreter {
     /// lane does not reproduce (a key type, a declared type other than
     /// `Array[T]`), and for a value the constraint would reject or coerce.
     // Cost: O(1).
-    fn typed_element_admits(items: &crate::value::ArrayData, value: &Value) -> Option<&'static str> {
+    fn typed_element_admits(
+        items: &crate::value::ArrayData,
+        value: &Value,
+    ) -> Option<&'static str> {
         if items.key_type.is_some() {
             return None;
         }
