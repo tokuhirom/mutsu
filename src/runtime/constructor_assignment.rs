@@ -97,9 +97,9 @@ impl Interpreter {
             .find(|attr| attr.name == *key && attr.sigil == sigil)
             .and_then(|attr| {
                 super::attribute_type_constraint(
-                    &class_attrs_info,
+                    class_attrs_info,
                     attr,
-                    &attr_type_constraints,
+                    attr_type_constraints,
                 )
             });
         // A coercion-typed attribute (`has Int() $.x`)
@@ -142,7 +142,7 @@ impl Interpreter {
             }
         };
         let storage_key =
-            super::attribute_storage_key(&class_attrs_info, key, sigil);
+            super::attribute_storage_key(class_attrs_info, key, sigil);
         attrs.insert(
             storage_key,
             Self::itemize_attr_store_value(sigil, coerced),
