@@ -183,7 +183,12 @@ impl Interpreter {
         (0..=kb.len() - needle_len).rev().find_map(|start| {
             let mid = start + 2;
             let end = mid + pb.len();
-            (&kb[start..mid] == b"::" && &kb[mid..end] == pb && &kb[end..end + 2] == b"::")
+            // The first byte rejects almost every offset before any slice compare.
+            (kb[start] == b':'
+                && pb.first().is_none_or(|b| kb[mid] == *b)
+                && kb[start + 1] == b':'
+                && &kb[mid..end] == pb
+                && &kb[end..end + 2] == b"::")
                 .then(|| &key[end + 2..])
         })
     }
