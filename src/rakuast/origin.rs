@@ -280,6 +280,32 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     }
 }
 
+/// A type or term written as just its name (`Int`, `RakuAST::Class`, `True`)
+/// holds a `Name` that spans the same text as the term itself, in Rakudo. The
+/// range is given only when the text at `span` is exactly the name.
+// Cost: O(k), k = length of the name.
+pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    use super::name_parts::{NameShape, name_shape};
+    if !matches!(
+        node.class,
+        super::RakuAstClass::TypeSimple | super::RakuAstClass::TermName
+    ) {
+        return;
+    }
+    super::infix_origins::with_child_at(node, 0, |name| {
+        if name.class != super::RakuAstClass::Name || name.origin.0.is_some() {
+            return;
+        }
+        let Some(NameShape::Identifier(written)) = name_shape(name) else {
+            return;
+        };
+        let exact = super::unit_source::with_text(span, |text| (text == written).then_some(()));
+        if exact.is_some() {
+            set_span(name, span);
+        }
+    });
+}
+
 /// The byte length of the opening bracket of a word subscript written
 /// `<...>`, `<<...>>` or `«...»`, and its closing bracket.
 // Cost: O(1).

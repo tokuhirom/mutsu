@@ -2516,6 +2516,7 @@ pub(super) fn convert_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
     // A term the parser placed (ADR-10723 Stage 2).
     if let Some(span) = super::expr_origins::of(expr) {
         origin::set_span(&mut node, span);
+        origin::named_term(&mut node, span);
         origin::quoted_text(&mut node, span);
         super::call_origins::postfix_call(&mut node, span);
     }
