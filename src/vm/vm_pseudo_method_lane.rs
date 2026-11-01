@@ -58,11 +58,12 @@ impl Interpreter {
             _ => return None,
         };
         let target = self.stack.last()?;
-        // `.VAR` on a plain `Proxy`: the Proxy itself, decontainerized, so the
-        // next method call does not FETCH. A Proxy subclass is a user class and
-        // may declare its own `VAR`, so it stays on the generic path.
+        // `.VAR` on a `Proxy` (or a subclass of it): the Proxy itself,
+        // decontainerized, so the next method call does not FETCH. Rakudo
+        // compiles `.VAR` itself, so a `method VAR` a Proxy subclass declares is
+        // never called there either.
         if kind == PseudoKind::Var {
-            if !matches!(target.view(), ValueView::Proxy { subclass: None, .. })
+            if !matches!(target.view(), ValueView::Proxy { .. })
                 || self.has_any_wrap_chains()
             {
                 return None;
