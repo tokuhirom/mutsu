@@ -107,7 +107,7 @@ impl Interpreter {
     /// out-of-unit run has no id for.
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
-    fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    pub(super) fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
         // A `use` nested in a block runs here too, ahead of the unit (its
         // import is then not confined to the block).
         let mut lifted = 0;
@@ -299,28 +299,7 @@ impl Interpreter {
                         return Err(refusal);
                     }
                 };
-                // The hook maps the pre-run recorded are replayed by the
-                // unit's own `use`s and end with the unit.
-                let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
-                // The pre-run's imports (a `sub EXPORT` hook's terms, whose
-                // `use` is dropped from the unit and so leaves the unit no
-                // region of its own) are the EVAL's own: they bind in an env
-                // import region that ends with it, or the next EVAL would
-                // read them (`Logic::Ternary`'s `True`, #15770).
-                let prerun_region = crate::compiler::Compiler::has_use_stmt(&stmts)
-                    .then(|| self.open_import_region());
-                let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
-                    let validated = self.validate_eval_source(&stmts);
-                    self.module.eval_prerun_modules.clear();
-                    self.module.eval_prerun_sets.clear();
-                    validated?;
-                    self.run_eval_unit_stmts(stmts)
-                });
-                if let Some(region) = prerun_region {
-                    self.close_import_region(region);
-                }
-                self.module.eval_hook_results = outer_hook_results;
-                ran
+                self.validate_and_run_eval_unit(stmts)
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
@@ -332,6 +311,41 @@ impl Interpreter {
                 Err(parse_err)
             }
         }
+    }
+
+    /// Validate and run the statements of an EVAL'd unit: its `use`s run first
+    /// (as rakudo does at BEGIN time) so the CHECK-time checks read what they
+    /// really import, then the unit runs. String `EVAL` and a lowered
+    /// `RakuAST::Node.EVAL` share it, so a tree holding a `use` sees its
+    /// imports the way the same source text does (#15868).
+    // Cost: O(u) static checks plus the load of each pre-run `use`, then the
+    // unit itself.
+    pub(super) fn validate_and_run_eval_unit(
+        &mut self,
+        stmts: Vec<Stmt>,
+    ) -> Result<Value, RuntimeError> {
+        // The hook maps the pre-run recorded are replayed by the
+        // unit's own `use`s and end with the unit.
+        let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
+        // The pre-run's imports (a `sub EXPORT` hook's terms, whose
+        // `use` is dropped from the unit and so leaves the unit no
+        // region of its own) are the EVAL's own: they bind in an env
+        // import region that ends with it, or the next EVAL would
+        // read them (`Logic::Ternary`'s `True`, #15770).
+        let prerun_region =
+            crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
+        let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+            let validated = self.validate_eval_source(&stmts);
+            self.module.eval_prerun_modules.clear();
+            self.module.eval_prerun_sets.clear();
+            validated?;
+            self.run_eval_unit_stmts(stmts)
+        });
+        if let Some(region) = prerun_region {
+            self.close_import_region(region);
+        }
+        self.module.eval_hook_results = outer_hook_results;
+        ran
     }
 
     /// Run the parsed (or RakuAST-lowered) statements of an EVAL'd unit:

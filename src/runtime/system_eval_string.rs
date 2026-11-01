@@ -39,10 +39,7 @@ impl Interpreter {
     pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
         self.with_eval_import_scope(|interp| {
             interp.run_compunit(|interp| {
-                interp.isolated_eval_unit(|interp| {
-                    interp.validate_eval_source(&stmts)?;
-                    interp.run_eval_unit_stmts(stmts)
-                })
+                interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts))
             })
         })
     }
