@@ -13,6 +13,7 @@ pub(crate) mod attach_target;
 pub(crate) mod begin_prologue;
 mod dispatcher_wrap;
 mod enum_type_key;
+mod compunit_unit_pad;
 mod export_hook_routines;
 mod map_grep_loop_phasers;
 pub(crate) mod map_grep_plan;

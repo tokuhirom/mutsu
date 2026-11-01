@@ -57,7 +57,7 @@ impl Interpreter {
     }
 
     /// The Pod entries of a whole source, and the byte ranges they came from.
-    fn scan_pod_source(input: &str) -> (Vec<Value>, Option<PodRanges>) {
+    pub(crate) fn scan_pod_source(input: &str) -> (Vec<Value>, Option<PodRanges>) {
         let raw_lines: Vec<&str> = input.lines().collect();
         let in_heredoc = Self::heredoc_body_lines(&raw_lines);
         let lines: Vec<&str> = raw_lines

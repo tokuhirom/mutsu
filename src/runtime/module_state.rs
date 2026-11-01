@@ -143,6 +143,10 @@ pub(crate) struct ModuleState {
     pub(crate) module_own_families:
         HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
     pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
+    /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
+    /// built on the first ask so every later ask returns the same `Hash` and
+    /// the same Pod objects (`at-unit($cu, '$=pod')[0] === $pod`).
+    pub(crate) loaded_unit_pads: HashMap<String, Value>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
     /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
     /// stay lexical to the importing scope.
@@ -707,6 +711,7 @@ impl ModuleState {
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: Default::default(),
+            loaded_unit_pads: HashMap::new(),
             module_registered_functions: Default::default(),
             module_registered_protos: Default::default(),
             packages_with_deferred_use_imports: Default::default(),
@@ -818,6 +823,7 @@ impl ModuleState {
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: self.loaded_modules.clone(),
+            loaded_unit_pads: self.loaded_unit_pads.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
             module_registered_protos: self.module_registered_protos.clone(),
             packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
