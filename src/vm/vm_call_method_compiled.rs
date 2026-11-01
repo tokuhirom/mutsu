@@ -100,12 +100,17 @@ impl Interpreter {
         outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
-            .locals
-            .iter()
-            .enumerate()
-            .map(|(idx, name)| (name.as_str(), idx))
-            .collect();
+        // The enclosing frame's slot for a captured name: the LAST slot of that
+        // name (a shadowing redeclaration owns a later one), as the per-call
+        // `name -> slot` map this replaces resolved duplicates. The map cost
+        // O(L) SipHash inserts per `protect` call, L = the enclosing frame's
+        // locals; `CompiledCode`'s slot index is built once.
+        let outer_slot_of = |name: &str| -> Option<usize> {
+            outer_code
+                .local_slots_named(name)
+                .last()
+                .map(|slot| *slot as usize)
+        };
         let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings) = match code_val
             .view()
         {
@@ -154,7 +159,7 @@ impl Interpreter {
         let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
         // A detached copy of the enclosing frame's slots. This path reads the
-        // enclosing lexicals through `outer_local_slots` *and* writes the
+        // enclosing lexicals through `outer_slot_of` *and* writes the
         // block's free-variable writes back into them, then restores the whole
         // array on exit — so the copy is the semantics, not an artifact of the
         // old per-frame `Vec` (ADR-0077 Slice 2 kept it deliberately; making it
@@ -174,8 +179,8 @@ impl Interpreter {
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(val) = saved_locals.get(*outer_slot)
+                if let Some(outer_slot) = outer_slot_of(name.as_str())
+                    && let Some(val) = saved_locals.get(outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -194,9 +199,8 @@ impl Interpreter {
         // block does `self!try-load`, and self would wrongly resolve to the Repo
         // rather than the Fetch that lexically encloses the block. Prefer the
         // enclosing frame's `self` local, then the block's captured env.
-        let enclosing_self = outer_local_slots
-            .get("self")
-            .and_then(|s| saved_locals.get(*s))
+        let enclosing_self = outer_slot_of("self")
+            .and_then(|s| saved_locals.get(s))
             .filter(|v| !matches!(v.view(), ValueView::Nil))
             .cloned()
             .or_else(|| {
@@ -245,9 +249,9 @@ impl Interpreter {
         // inside `$lock.protect: { ... }`).
         for sym in &block_cc.free_var_writes {
             sym.with_str(|name| {
-                if let Some(outer_slot) = outer_local_slots.get(name)
+                if let Some(outer_slot) = outer_slot_of(name)
                     && let Some(val) = self.env().get(name).cloned()
-                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                    && let Some(target) = saved_locals.get_mut(outer_slot)
                 {
                     *target = val;
                 }
@@ -262,8 +266,8 @@ impl Interpreter {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                if let Some(outer_slot) = outer_slot_of(name.as_str())
+                    && let Some(target) = saved_locals.get_mut(outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }
