@@ -877,14 +877,24 @@ impl Interpreter {
     }
 
     /// [`Self::has_multi_function`] for a `&self` caller, which cannot fill the
-    /// lazy base-name index and so pays the full functions-map scan. Only the
-    /// EVAL-time undeclared-name checks use it — a per-compilation-unit cost,
-    /// not a per-call one.
+    /// lazy base-name index: it reads the index when an earlier `&mut` probe
+    /// filled it for `name`'s base (the entry is evicted when a key of that
+    /// base changes), and pays the full functions-map scan otherwise.
+    // Cost: O(k) with the base-name index already filled for `name`, k = keys
+    // sharing its base name; else O(n), n = registered routines.
     pub(crate) fn has_multi_function_unindexed(&self, name: &str) -> bool {
         let packages = self.bare_name_packages_syms();
-        self.registry().has_multi_function(None, &packages, name)
+        // Read the index the `&mut` probes filled, as the sibling
+        // `has_multi_candidates_unindexed` does: without it every call walked
+        // the whole functions map (Red's `wrapped_sub_is_the_callee`, ~50 per
+        // `^create`, ~1.5k keys each). `Symbol::lookup`: a base never
+        // interned has no keys.
+        let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
+            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        let base_keys = base_keys.as_deref();
+        self.registry().has_multi_function(base_keys, &packages, name)
             && (!self.operator_has_import_scope(name)
-                || self.any_visible_candidate_of(None, &packages, name))
+                || self.any_visible_candidate_of(base_keys, &packages, name))
     }
 
     /// Check if a user-defined function with the given name can accept the
