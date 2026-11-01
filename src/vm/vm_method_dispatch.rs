@@ -1914,6 +1914,7 @@ impl Interpreter {
         env: &mut crate::env::Env,
         param_values: &super::vm_param_values::ParamValues<'_>,
         method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
         names_by_string: bool,
     ) {
         for (param_name, param_sym, param_val) in param_values.iter() {
@@ -1936,7 +1937,14 @@ impl Interpreter {
                             .iter()
                             .any(|t| t == "rw" || t == "copy" || t == "raw")
                 });
-            if slot_only && !names_by_string && !env.contains_key_sym(*param_sym) {
+            // A parameter some by-name reader of this frame reads (`needs_env_sync`:
+            // a grammar's token code block, an attribute default or a nested
+            // routine declared in the body) is in the env as well (#15863).
+            if slot_only
+                && !names_by_string
+                && !cc.local_needs_env_sync(param_name)
+                && !env.contains_key_sym(*param_sym)
+            {
                 continue;
             }
             crate::env::note_env_key(param_name);
@@ -2467,6 +2475,7 @@ impl Interpreter {
                 env,
                 &param_values,
                 method_def,
+                cc,
                 cc.static_name_lookup || cc.needs_reflective_capture,
             );
         } else {
@@ -2483,6 +2492,7 @@ impl Interpreter {
                 env,
                 &param_values,
                 method_def,
+                cc,
                 cc.static_name_lookup || cc.needs_reflective_capture,
             );
         }
