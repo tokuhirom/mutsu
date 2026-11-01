@@ -1502,6 +1502,14 @@ pub(crate) fn lower_parsed_stmt(
     conditional_lower::lower_parsed(node)
 }
 
+/// The `Name` node of the identifier `identifier`, written where `origin` says.
+// Cost: O(k), k = length of the identifier.
+pub(crate) fn name_node_at(identifier: &str, origin: &NodeOrigin) -> Value {
+    let mut name = convert::name_from_identifier(identifier);
+    name.origin = origin.clone();
+    Value::rakuast(Box::new(name))
+}
+
 /// The name a `RakuAST::Sub` node declares (`foo` of `sub foo { }`), if it has one.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {

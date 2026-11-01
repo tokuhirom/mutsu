@@ -851,6 +851,14 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
+        // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
+        RakuAstClass::TermEnum => {
+            let identifier = node.fields.iter().find_map(|f| match &f.value {
+                RakuAstFieldValue::Node(v) => v.as_str().map(str::to_string),
+                _ => None,
+            })?;
+            Some(vec![crate::rakuast::name_node_at(&identifier, &node.origin)])
+        }
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))
