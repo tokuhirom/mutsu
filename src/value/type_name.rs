@@ -107,7 +107,11 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
         }
         ValueView::Nil => "Nil",
-        ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
+        ValueView::Sub(data) => match data
+            .env
+            .get_sym(crate::symbol::well_known::callable_type())
+            .map(Value::view)
+        {
             Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",
             Some(ValueView::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
             Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",

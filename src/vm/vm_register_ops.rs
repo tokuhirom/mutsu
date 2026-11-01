@@ -1652,9 +1652,7 @@ impl Interpreter {
             && self
                 .env()
                 .capture_view()
-                .get(&crate::symbol::Symbol::intern(
-                    "__mutsu_declared_method_capture",
-                ))
+                .get(&crate::symbol::well_known::declared_method_capture())
                 .is_some_and(|value| value.as_int() == Some(2))
         {
             let capture_view = self.env().capture_view();
