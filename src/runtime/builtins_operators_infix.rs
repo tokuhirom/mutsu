@@ -14,7 +14,7 @@ impl Interpreter {
     /// (the same `multi infix:` imported by an `EXPORT` hook and a direct
     /// `use`).
     // Cost: O(1).
-    fn declined_captured_family(&self, infix_name: &str, callable: &Value) -> bool {
+    pub(super) fn declined_captured_family(&self, infix_name: &str, callable: &Value) -> bool {
         self.user_infix_override(infix_name)
             && matches!(callable.view(), ValueView::Sub(data)
                 if data.env.get_sym(crate::symbol::wk::multi_dispatch_candidates()).is_some())
@@ -74,6 +74,15 @@ impl Interpreter {
         args: &[Value],
         core_only: bool,
     ) -> Result<Value, RuntimeError> {
+        // A plain binary operator on two operands needs none of the meta, set,
+        // sequence or short-circuit handling below (#15847). The one operand
+        // shape that still does is the parser's `method` marker.
+        if args.len() == 2
+            && let Some(plain) = super::builtins_operators_infix_pair::plain_infix(op)
+            && !matches!(args[0].view(), ValueView::Str(s) if s.as_str() == "method")
+        {
+            return self.infix_pair(op, Some(plain), args[0].clone(), &args[1], core_only);
+        }
         // Hyper meta-operators called via their subroutine name, e.g.
         // `&infix:<<<+>>>(@a, @b)` / `&infix:<»+«>(@a, @b)`. Apply the inner
         // operator elementwise according to the dwim sides.
@@ -466,204 +475,7 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            let pair_args = vec![acc.clone(), rhs.clone()];
-            // Built by hand: `format!` costs ~0.5k Ir per call, on every
-            // operator called through a routine or a code value.
-            let mut infix_name = String::with_capacity(op.len() + 8);
-            infix_name.push_str("infix:<");
-            infix_name.push_str(op);
-            infix_name.push('>');
-            if !core_only
-                && let Some(value) = self.try_user_infix(&infix_name, &pair_args[0], &pair_args[1])?
-            {
-                acc = value;
-                continue;
-            }
-            if !core_only
-                && let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args)?
-            {
-                crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
-                acc = self.call_routine_def(&def, pair_args)?;
-                continue;
-            }
-            if !core_only
-                && let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
-                && !self.declined_captured_family(&infix_name, &callable)
-                && matches!(
-                    callable.view(),
-                    ValueView::Sub(_)
-                        | ValueView::WeakSub(_)
-                        | ValueView::Instance { .. }
-                        | ValueView::Mixin(..)
-                )
-            {
-                crate::trace::trace_log!(
-                    "call",
-                    "call_infix_routine dispatch callable env: {}",
-                    infix_name
-                );
-                acc = self.eval_call_on_value(callable, pair_args)?;
-                continue;
-            }
-            crate::trace::trace_log!(
-                "call",
-                "call_infix_routine fallback reduce/eval: {}",
-                infix_name
-            );
-            // Smart match needs the full interpreter for regex dispatch
-            if op == "~~" {
-                acc = Value::truth(self.smart_match(&acc, rhs));
-                continue;
-            }
-            if op == "!~~" {
-                acc = Value::truth(!self.smart_match(&acc, rhs));
-                continue;
-            }
-            // `eqv` likewise needs the full interpreter, not the pure
-            // `apply_reduction_op` fold: the lazy-iterable rules, `Proxy`
-            // element FETCH, and the Seq reify/consume protocol (the source of
-            // `X::Seq::Consumed`) all live in `eqv_values`, and the routine form
-            // `&infix:<eqv>($a, $b)` must behave exactly like the `a eqv b`
-            // operator. The real `Test.rakumod`'s `cmp-ok` reaches `eqv` only
-            // through this routine form.
-            if op == "eqv" {
-                acc = if core_only {
-                    self.core_eqv_values(acc, rhs.clone())?
-                } else {
-                    self.eqv_values(acc, rhs.clone())?
-                };
-                continue;
-            }
-            // The numeric-comparison family likewise needs the full
-            // interpreter, not the pure `apply_reduction_op` fold plus this
-            // function's own `coerce_infix_operand_numeric` bridge: that
-            // bridge is a *reimplementation* of the operator's coercion rules
-            // (Inf/-Inf-valued Rat/FatRat, exact BigInt equality, SetHash/Set
-            // structural comparison, a user subclass of Int, ...) and drifts
-            // from the real operator body in `vm_comparison_ops.rs` /
-            // `vm_comparison_order_ops.rs`. `&infix:<==>($a, $b)` — exactly
-            // what the real `Test.rakumod`'s `cmp-ok` reaches through — must
-            // behave identically to `$a == $b`.
-            if let Some(result) = match op {
-                "==" => Some(self.num_eq_values(acc.clone(), rhs.clone())?),
-                "!=" => Some(self.num_ne_values(acc.clone(), rhs.clone())?),
-                "<" => Some(self.num_lt_values(acc.clone(), rhs.clone())?),
-                ">" => Some(self.num_gt_values(acc.clone(), rhs.clone())?),
-                "<=" => Some(self.num_le_values(acc.clone(), rhs.clone())?),
-                ">=" => Some(self.num_ge_values(acc.clone(), rhs.clone())?),
-                "<=>" => Some(self.spaceship_values(acc.clone(), rhs.clone())?),
-                _ => None,
-            } {
-                acc = result;
-                continue;
-            }
-            // The string comparisons, `leg`, `before`/`after`, `===`/`!==` and
-            // `min`/`max` have one body each, shared with their opcode and the
-            // metaop leaf (`vm_operator_values.rs`, #9447).
-            if Self::is_comparison_family_op(op)
-                && let Some(result) = self.comparison_family_values(op, &acc, rhs)
-            {
-                acc = result?;
-                continue;
-            }
-            // `cmp` has structural Range/list/Inf handling in the operator
-            // implementation. Once user-defined candidates decline, the
-            // routine form must use that same native candidate instead of
-            // reducing through the generic numeric bridge. This is the path
-            // used by `cmp-ok` and by an explicitly called `&infix:<cmp>`.
-            if op == "cmp" {
-                let lhs = acc.unwrap_varref().deref_container().deitemize_element();
-                let rhs = rhs.unwrap_varref().deref_container().deitemize_element();
-                acc = self.cmp_value(lhs, rhs)?;
-                continue;
-            }
-            let mut lhs = acc.clone();
-            let mut rhs = rhs.clone();
-            // `cmp` is value-oriented, but an argument that came from a
-            // scalar variable or positional access can still carry the
-            // transient VarRef/ContainerRef wrappers here. Strip those
-            // before the numeric bridge so both Instant operands take the
-            // same path; otherwise only the variable side is Numeric'ed and
-            // the array-element side falls through to representation text.
-            if op == "cmp" {
-                lhs = lhs.unwrap_varref().deref_container().deitemize_element();
-                rhs = rhs.unwrap_varref().deref_container().deitemize_element();
-            }
-            // The string operators take the same operand coercion as their
-            // opcode (a user `Str`/`Stringy`, a `utf8` decode, a `Proxy`
-            // FETCH, and the Blob rules), so `&infix:<eq>($obj, "b")` and
-            // `.sort(&infix:<leg>)` agree with `$obj eq "b"` / `$obj leg "a"`.
-            // The pure table below only knows `.gist` for an object.
-            if matches!(op, "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg") {
-                (lhs, rhs) = self.coerce_str_compare_operands(lhs, rhs)?;
-            } else if matches!(op, "~" | "~|" | "~^" | "~&") {
-                lhs = self.coerce_stringy_operand(lhs)?;
-                rhs = self.coerce_stringy_operand(rhs)?;
-            }
-            if self.infix_uses_numeric_bridge(op) {
-                // The arithmetic ops evaluate to a lazy X::Str::Numeric Failure
-                // on a non-numeric string, like their opcodes
-                // (`coerce_numeric_bridge_pair_strict`); the generic comparators
-                // (cmp/before/after/min/max) compare them as strings.
-                if Self::infix_is_strictly_numeric(op)
-                    && let Some(failure) = crate::runtime::utils::str_numeric_operand_failure(&lhs)
-                        .or_else(|| crate::runtime::utils::str_numeric_operand_failure(&rhs))
-                {
-                    acc = failure;
-                    continue;
-                }
-                lhs = self.coerce_infix_operand_numeric(lhs)?;
-                rhs = self.coerce_infix_operand_numeric(rhs)?;
-            }
-            if let Ok(value) = Self::apply_reduction_op(op, &lhs, &rhs) {
-                acc = value;
-            } else {
-                let (expr_op, expr_left, expr_right) =
-                    if let Some(inner) = op.strip_prefix('R').filter(|inner| !inner.is_empty()) {
-                        // Runtime autogen for callable reverse meta-ops (&infix:<Rop>):
-                        // evaluate the inner operator with swapped operands.
-                        (inner, rhs.clone(), acc)
-                    } else {
-                        (op, acc, rhs.clone())
-                    };
-                let expr_args = vec![expr_left.clone(), expr_right.clone()];
-                let expr_infix_name = format!("infix:<{}>", expr_op);
-                if core_only {
-                    return Err(RuntimeError::new(format!(
-                        "No core candidate of {expr_infix_name} accepts these arguments"
-                    )));
-                }
-                if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args)? {
-                    crate::trace::trace_log!(
-                        "call",
-                        "call_infix_routine fallback dispatch def: {}",
-                        expr_infix_name
-                    );
-                    acc = self.call_routine_def(&def, expr_args)?;
-                    continue;
-                }
-                if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
-                    && !self.declined_captured_family(&expr_infix_name, &callable)
-                    && matches!(
-                        callable.view(),
-                        ValueView::Sub(_)
-                            | ValueView::WeakSub(_)
-                            | ValueView::Instance { .. }
-                            | ValueView::Mixin(..)
-                    )
-                {
-                    crate::trace::trace_log!(
-                        "call",
-                        "call_infix_routine fallback dispatch callable env: {}",
-                        expr_infix_name
-                    );
-                    acc = self.eval_call_on_value(callable, expr_args)?;
-                    continue;
-                }
-                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
-                    expr_op, expr_left, expr_right,
-                ))])?;
-            }
+            acc = self.infix_pair(op, None, acc, rhs, core_only)?;
         }
         Ok(acc)
     }
@@ -685,7 +497,7 @@ impl Interpreter {
     /// (`cmp`, `before`/`after`, `min`/`max`) compare strings as strings; the
     /// numeric comparisons (`==`, `<`, ...) never reach this bridge and carry
     /// the same check in their operator bodies (`num_eq_values` etc.).
-    fn infix_is_strictly_numeric(op: &str) -> bool {
+    pub(super) fn infix_is_strictly_numeric(op: &str) -> bool {
         matches!(op, "+" | "-" | "*" | "/" | "%" | "**")
     }
 }
