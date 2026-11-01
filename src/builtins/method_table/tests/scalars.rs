@@ -9,11 +9,8 @@ fn native_integer_coercers_reach_rows_for_closed_receivers() {
     for &name in crate::native_types::NATIVE_INT_COERCE_METHODS {
         let method = Symbol::intern(name);
         let range = Value::range(1, 3);
-        assert_eq!(
-            answer(&range, method, &[])
-                .expect("Range coercion must have a row")
-                .unwrap(),
-            Value::int(3),
+        assert!(
+            matches!(answer(&range, method, &[]), Some(Ok(value)) if value == Value::int(3)),
             "Range.{name}"
         );
         let path = sample(DispatchShape::IoPath);
