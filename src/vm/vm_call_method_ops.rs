@@ -846,6 +846,16 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
+        // object is answered without the probe chain below. Ahead of the
+        // accessor-ref marker take, which the lane requires to be unset.
+        if modifier_idx.is_none()
+            && let Some(result) =
+                self.try_pseudo_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
