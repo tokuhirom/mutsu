@@ -21,33 +21,100 @@
     "unresolved": []
   },
   "dist": "Pop",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Pop/Entities.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Pop/Point.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 9.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Pop/Rect.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Pop": "Failed to parse module 'Pop::Drawable': Confused. Two terms in a row [at lib/Pop/Drawable.rakumod:22]",
+    "Pop": "ok",
     "Pop::Color": "ok",
-    "Pop::Config": "'Pop::Config' cannot inherit from 'Singleton' because it is unknown.",
-    "Pop::Drawable": "Failed to parse module 'Pop::Drawable': Confused. Two terms in a row [at lib/Pop/Drawable.rakumod:22]",
+    "Pop::Config": "ok",
+    "Pop::Drawable": "ok",
     "Pop::Entities": "ok",
-    "Pop::Graphics": "'Pop::Config' cannot inherit from 'Singleton' because it is unknown.",
-    "Pop::Images": "'Pop::Images' cannot inherit from 'Singleton' because it is unknown.",
-    "Pop::Inputs": "'Pop::Inputs' cannot inherit from 'Singleton' because it is unknown.",
+    "Pop::Graphics": "ok",
+    "Pop::Images": "ok",
+    "Pop::Inputs": "ok",
     "Pop::Point": "ok",
     "Pop::Rect": "ok",
     "Pop::SDL": "ok",
     "Pop::SDL::GFX": "ok",
     "Pop::SDL::Image": "ok",
     "Pop::Singleton": "ok",
-    "Pop::Sprite": "Failed to parse module 'Pop::Drawable': Confused. Two terms in a row [at lib/Pop/Drawable.rakumod:22]",
+    "Pop::Sprite": "ok",
     "Pop::Surface": "ok",
-    "Pop::Texture": "Failed to parse module 'Pop::Drawable': Confused. Two terms in a row [at lib/Pop/Drawable.rakumod:22]",
-    "Pop::Textures": "Failed to parse module 'Pop::Drawable': Confused. Two terms in a row [at lib/Pop/Drawable.rakumod:22]"
+    "Pop::Texture": "ok",
+    "Pop::Textures": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -58,12 +125,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/OP/POP/a674870e4fb5eedfe13627519b3fa2bfca06f8e9.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 13,
+    "baseline_files": 3,
+    "mutsu_assertions": 13,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "0.0.3"

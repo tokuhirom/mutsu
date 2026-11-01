@@ -22,23 +22,22 @@
   "dist": "JavaScript::Google::Charts",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller is-reshapable(Array:D, :iterable-type(Iterable), :record-type(Associative)); Routine does not have any candidates.  Is only the proto defined?",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.63,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/scatter-column-names.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 17.55,
+        "secs": 11.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,10 +52,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -67,13 +66,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/AV/JAVASCRIPT_GOOGLE_CHARTS/5c3cb28f7061a84594782e8b7b97e35622acd15b.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 8,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.15,
+        "secs": 8.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -54,7 +54,7 @@
         "nok": 11,
         "ok": 0,
         "plan": 11,
-        "secs": 11.97,
+        "secs": 7.92,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.31,
+        "secs": 8.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.93,
+        "secs": 6.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,21 +96,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/outlines.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.95,
+        "secs": 7.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -124,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.07,
+        "secs": 8.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -137,10 +123,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -149,7 +135,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/P/DF/PDF_API6/786604edc4f1f6a19770f68da8d74f02597ae2c4.tar.gz"
+    "url": "https://360.zef.pm/P/DF/PDF_API6/4681457145b3ed6e06da3b9c68b42601db6cf347.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -159,5 +145,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.2.10"
+  "version": "0.2.11"
 }

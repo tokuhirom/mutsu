@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.32,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 0.49,
+        "secs": 0.7,
         "skip": 41,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 2.41,
+        "secs": 3.24,
         "skip": 41,
         "todo": 0,
         "verdict": "pass"
@@ -52,30 +52,29 @@
         "nok": 0,
         "ok": 139,
         "plan": null,
-        "secs": 0.96,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": ":subs imports exactly its own category",
-        "nok": 7,
-        "ok": 2,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.49,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-exports.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.73,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +86,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.69,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -97,7 +96,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.03,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,10 +108,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +122,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMBOX2/0f55b3e08f54b33e879d2916ee588f5cf52ea782.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 53,
     "baseline_files": 3,
-    "mutsu_assertions": 46,
-    "parity_files": 2,
-    "regressed_files": 1
+    "mutsu_assertions": 53,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.5"
 }

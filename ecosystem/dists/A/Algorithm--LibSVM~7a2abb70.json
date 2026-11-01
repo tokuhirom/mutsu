@@ -7,9 +7,116 @@
     "unresolved": []
   },
   "dist": "Algorithm::LibSVM",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "Algorithm::LibSVM.new should create a instance",
+        "nok": 5,
+        "ok": 1,
+        "plan": 6,
+        "secs": 8.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-csvc.t",
+      "raku": {
+        "first_failure": "Must specify a non-empty string as a path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-nusvc.t",
+      "raku": {
+        "first_failure": "Must specify a non-empty string as a path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-oneclass.t",
+      "raku": {
+        "first_failure": "Must specify a non-empty string as a path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-epssvr.t",
+      "raku": {
+        "first_failure": "Must specify a non-empty string as a path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-nusvr.t",
+      "raku": {
+        "first_failure": "Must specify a non-empty string as a path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-parse.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Algorithm::LibSVM": "Failed to parse module 'Algorithm::LibSVM': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::Method`",
+    "Algorithm::LibSVM": "ok",
     "Algorithm::LibSVM::Actions": "ok",
     "Algorithm::LibSVM::CustomBuilder": "raku_also_fails",
     "Algorithm::LibSVM::Grammar": "ok",
@@ -20,10 +127,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -34,12 +141,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/LG/ALGORITHM_LIBSVM/fec1e1869492806f6e8e4821ce03f6ce2a7faf13.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 6,
+    "baseline_files": 1,
+    "mutsu_assertions": 6,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.20"

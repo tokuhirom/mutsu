@@ -23,16 +23,103 @@
     "unresolved": []
   },
   "dist": "LN",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-ARGFILES.t",
+      "raku": {
+        "first_failure": ".ln method",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 4.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-no-reset.t",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 5.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-imports.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/42B40DB850BDD20656D124AA02DE2C1D1665DAFE5927317586489286388D3B25: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 14.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "LN": "The Nil role can only be mixed into an IO::CatHandle, not a Nil"
+    "LN": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-30",
+    "date": "2026-10-31",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "151b3e15",
+    "mutsu_commit": "1f240334",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -43,12 +130,12 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/L/LN/LN%3Aver%3C1.001002%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 2,
+    "mutsu_assertions": 3,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "1.001002"
