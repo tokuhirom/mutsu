@@ -588,7 +588,9 @@ impl Interpreter {
             // reached, for one load instead of an env walk.
             DeclaredConstraint::NonNative => return false,
             DeclaredConstraint::Untyped => return true,
-            DeclaredConstraint::Unrecorded | DeclaredConstraint::Conflicting => {}
+            DeclaredConstraint::Unrecorded
+            | DeclaredConstraint::Declared
+            | DeclaredConstraint::Conflicting => {}
         }
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();

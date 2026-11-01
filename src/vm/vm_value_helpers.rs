@@ -529,6 +529,7 @@ impl Interpreter {
                 DeclaredConstraint::Untyped => return value,
                 DeclaredConstraint::NonNative
                 | DeclaredConstraint::Unrecorded
+                | DeclaredConstraint::Declared
                 | DeclaredConstraint::Conflicting => {}
             }
         }

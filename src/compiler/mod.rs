@@ -3557,8 +3557,13 @@ impl Compiler {
     pub(super) fn note_untyped_local_declaration(&mut self, name: &str) {
         if Self::is_simple_scalar_store_name(name) {
             self.code.note_untyped_declaration(name);
-        } else {
-            self.note_declared_local(name);
+        } else if let Some(bare) = name.strip_prefix(['@', '%'])
+            && Self::is_plain_lexical_name(bare)
+        {
+            // An `@`/`%` declared without a constraint: only the plain
+            // lexical names are slot-addressed stores (the same names
+            // `note_declared_local` records).
+            self.code.note_untyped_declaration(name);
         }
     }
 

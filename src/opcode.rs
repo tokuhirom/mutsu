@@ -9284,7 +9284,7 @@ impl CompiledCode {
     /// variable): only [`crate::binding_desc::BindingDesc::declared_here`]
     /// follows from it.
     pub(crate) fn note_declared_local(&mut self, name: &str) {
-        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Unrecorded);
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Declared);
     }
 
     /// Record that `name` is out of the bake's reach — a trait was applied to
@@ -9355,6 +9355,17 @@ impl CompiledCode {
                 if let Some(&c) = pending.get(name.as_str()) {
                     desc.declared_here = true;
                     if desc.flags.simple_scalar_local() {
+                        desc.declared_constraint = match c {
+                            crate::binding_desc::DeclaredConstraint::Declared => {
+                                crate::binding_desc::DeclaredConstraint::Unrecorded
+                            }
+                            other => other,
+                        };
+                    } else if c == crate::binding_desc::DeclaredConstraint::Untyped {
+                        // An `@`/`%` declared without a constraint, in every
+                        // declaration of its slot (a typed one would have
+                        // folded this to `Conflicting`): a store has none to
+                        // check, so it skips the by-name record probe.
                         desc.declared_constraint = c;
                     }
                 }
