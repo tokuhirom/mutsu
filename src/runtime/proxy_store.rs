@@ -29,6 +29,18 @@ impl Interpreter {
         if !value.is_proxy_value() {
             return Ok(value);
         }
+        // The Proxy `.VAR` answers (and the invocant a FETCH/STORE receives) is
+        // the container itself, not a value to read: `my $v = $p.VAR` stores it
+        // without running FETCH, as `raku` does (#15893).
+        if matches!(
+            value.view(),
+            ValueView::Proxy {
+                decontainerized: true,
+                ..
+            }
+        ) {
+            return Ok(value);
+        }
         self.auto_fetch_proxy(&value)
     }
 
