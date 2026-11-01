@@ -59,3 +59,23 @@ Make the BUILDPLAN mutsu's construction plan in the same encoding Rakudo uses, a
 - The full list of current task codes and their payloads (`400` with its default thunk, `800` with its exception data, the `1100`+ codes for `is built`, native attributes and default values of different kinds). It has to be taken from Rakudo's `BUILDPLAN.nqp` before implementation.
 - Whether `@!BUILDALLPLAN` is needed as separate state or can be derived from the MRO's `@!BUILDPLAN`s on demand. AttrX::Mooish writes both.
 - Which other `Metamodel::ClassHOW` compose-time hooks dists override (`compose_attributes`, `incorporate_multi_candidates`) and whether they belong to the same slice.
+
+## Constructor binding follow-up (#14559)
+
+The 1300/1400 task codes and `BuiltTrait::Bind` are recorded, but construction
+still treats them as assignment. On 2026-11-01, a focused oracle comparison
+confirms that Rakudo binds both a provided scalar and a default expression's
+scalar container; a literal instead becomes immutable. Array/hash element
+arguments, `bless` forwarding, cached constructor calls and cells escaping their
+declaring frame obey the same rule. Ordinary attributes continue to assign into
+their own storage. The regression is
+`t/oo/construct/buildplan-built-bind-containers.t` (Rakudo passes all 15 cases;
+mutsu initially fails 12).
+
+Implementation follows the existing container transport contract (ADR-0067):
+retain the named argument's container at its producer, then let the attribute's
+construction mode choose binding or value assignment. Reuse the attribute
+`ContainerRef` storage and bound-value marker used by explicit `$!attr := ...`.
+The native constructor, `bless` and replacement-plan task runner must share
+this operation. A bound default is compiled in container-returning mode instead
+of recovering a location from its value after evaluation.
