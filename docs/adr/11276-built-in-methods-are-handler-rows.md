@@ -5807,3 +5807,19 @@ collection, IO path, native-array and shaped-array cases in
 `t/nativecall/native-int-coercer-entry-rows.t`. A Rust test additionally pins
 that the closed Range and IO path receivers are answered by rows themselves,
 before any cascade can run. No other cascade guard is removed in this slice.
+
+### 9.200 Slice 5 inventory: the pure Code entry (2026-11-01)
+
+`refactor/11276-code-pure-row-lookup` audits the surviving pure Code entry.
+The zero-argument cascade gates on `Capture`/`clone`, and `code::pure_answer`
+matches those names again and calls the handlers directly. The registry already
+has the three relevant rows: `Code.Capture`, `Code.clone` and `Block.clone`.
+The owner chain is already centralized by ADR-14477's `code_class::owners_of`.
+`Mu.clone` is the third caller of the pure entry, for a `Sub` receiver.
+
+The deletion unit is both method-name gates and their direct handler routing.
+The replacement looks up the nearest registered owner row and uses the existing
+pure invocation/guard machinery. An interpreter-only row must decline without
+falling through to a pure ancestor. No per-class shape decision changes here.
+The initial arm inventory remains 223 total arms, 119 naming built-in methods;
+the method-name gates here are not the report's quoted-name cascade arms.
