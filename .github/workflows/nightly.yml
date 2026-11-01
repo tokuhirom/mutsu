@@ -1,0 +1,91 @@
+name: Nightly
+
+# Checks that otherwise run only when a release tag is pushed, so a break in
+# them is found the next morning instead of in the middle of a release.
+#
+#   docker-build: the Docker image builds from the repository as checked in.
+#                 docker.yml runs only on a `v*` tag, so nothing else builds
+#                 the Dockerfile; v0.24.0 and v0.26.0 both shipped without an
+#                 image because `.dockerignore` (an allowlist) lacked a path
+#                 the workspace needs. The build here pushes nothing.
+#
+# `wasm-e2e` is deliberately not repeated here: ci.yml already runs it on every
+# hourly run on `main` (ADR-11581). What was missing for it was a person being
+# told when it fails, which ci.yml's `report` job now does.
+#
+# A red nightly run opens (or comments on) the tracking issue labelled
+# `ci:nightly`, the same way stress.yml does for `ci:stress`: nobody watches a
+# scheduled run's checks.
+on:
+  schedule:
+    # 19:11 UTC = 04:11 JST, after stress.yml (18:41 UTC) has the runners.
+    - cron: '11 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # amd64 only: the failures this guards against (the build context, the
+      # Dockerfile, the workspace layout) do not depend on the architecture, and
+      # the arm64 build costs a second runner for the same answer. The layer
+      # cache is read from docker.yml's scope and never written, so this job
+      # cannot evict what a release build restores.
+      - name: Build the image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=docker-amd64
+
+  # A red nightly run must reach a person. Open the `ci:nightly` tracking issue,
+  # or comment on it if one is already open. On-demand runs report to whoever
+  # started them and file nothing.
+  report:
+    needs: [docker-build]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: >-
+            docker-build=${{ needs.docker-build.result }}
+        run: |
+          set -euo pipefail
+          failed=""
+          for r in $RESULTS; do
+            [ "${r#*=}" = "success" ] || failed="$failed ${r%%=*} (${r#*=})"
+          done
+          body="Nightly run failed on \`${GITHUB_SHA::12}\`: ${RUN_URL}
+
+          Failed:${failed}"
+          gh label create ci:nightly --color B60205 \
+            --description "Nightly run failure (nightly.yml)" 2>/dev/null || true
+          existing=$(gh issue list --label ci:nightly --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --label ci:nightly \
+              --title "Nightly run is red" --body "$body"
+          fi
