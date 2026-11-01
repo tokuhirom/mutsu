@@ -5,12 +5,15 @@
 # IMPORTANT: every path the Dockerfile pulls from the build context must be
 # allowlisted here, or the build fails with `"/src/<path>": not found`. When you
 # add a `COPY --from=builder /src/<x>` line to the Dockerfile, add `!<x>` below.
-# (This bit us for modules/ and LICENSE — docker.yml only runs on a tag, so PR CI
-# does not catch it.)
+# (This bit us for modules/ and LICENSE, and again for crates/ — the root
+# Cargo.toml lists crates/mutsu-lsp as a workspace member, so cargo cannot load
+# the manifest without it. docker.yml only runs on a tag, so PR CI does not
+# catch it.)
 *
 !Cargo.toml
 !Cargo.lock
 !src/
 !vendor/
+!crates/
 !modules/
 !LICENSE
