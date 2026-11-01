@@ -1,5 +1,4 @@
 use crate::builtins::method_table::receiver_step::{MixinStep, Step};
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
