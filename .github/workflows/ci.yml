@@ -1368,3 +1368,51 @@ jobs:
           path: tmp/debug-tap.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # A red hourly run on `main` must reach a person: nobody watches a scheduled
+  # run's checks. `wasm-e2e` is post-merge only (ADR-11581), so the hourly run
+  # is the only place its failures show before a release; on 2026-11-01 it was
+  # red for hours and the first anyone looked was the v0.26.0 tag build. Open the
+  # `ci:main` tracking issue, or comment on it when this run fails a set of jobs
+  # that no earlier comment names (an hourly run that stays red the same way
+  # would otherwise add a comment per hour). Only scheduled runs report: a
+  # dispatch reports to whoever started it, and a release gate to the release.
+  report:
+    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri]
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: >-
+            test-check=${{ needs.test-check.result }}
+            lint-configs=${{ needs.lint-configs.result }}
+            test-suites=${{ needs.test-suites.result }}
+            wasm-e2e=${{ needs.wasm-e2e.result }}
+            debug-tap=${{ needs.debug-tap.result }}
+            miri=${{ needs.miri.result }}
+        run: |
+          set -euo pipefail
+          failed=""
+          for r in $RESULTS; do
+            [ "${r#*=}" = "failure" ] && failed="$failed ${r%%=*}"
+          done
+          line="Failed:${failed}"
+          body="CI on \`main\` failed at \`${GITHUB_SHA::12}\`: ${RUN_URL}
+
+          ${line}"
+          gh label create ci:main --color B60205 \
+            --description "Hourly CI failure on main (ci.yml)" 2>/dev/null || true
+          existing=$(gh issue list --label ci:main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create --label ci:main --title "CI on main is red" --body "$body"
+          elif ! gh issue view "$existing" --json body,comments \
+                 --jq '[.body, (.comments[].body)] | join("\n")' | grep -qxF "$line"; then
+            gh issue comment "$existing" --body "$body"
+          fi
