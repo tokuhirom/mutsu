@@ -210,6 +210,21 @@ fn string_increment(s: &str) -> String {
 }
 
 impl Interpreter {
+    /// Whether an `EVAL` forbids a routine declared here to shadow an outer one
+    /// of the same name: the `EVAL` unit's own top level may not redeclare what
+    /// its caller (or a previous `EVAL`) declared, but a block nested in the unit
+    /// follows the ordinary lexical shadowing rules, as in the unit's source text
+    /// run outside an `EVAL` (#15869).
+    // Cost: O(1).
+    fn eval_blocks_lexical_shadow(&self) -> bool {
+        let flag = |key: &str| {
+            matches!(self.env.get(key).map(Value::view), Some(ValueView::Bool(true)))
+        };
+        (flag("__mutsu_in_eval") || flag("__mutsu_eval_wrapped_decls"))
+            && self.block_scope_depth <= self.module.eval_unit_block_depth
+            && !self.in_inlined_block_frame()
+    }
+
     /// Insert a multi-overload `def` into the function registry under `base_key`,
     /// falling back to the first free `base_key__m{N}` suffix when `base_key` is
     /// already taken. Uses a SINGLE write guard for all probes — the previous
@@ -693,13 +708,7 @@ impl Interpreter {
             || is_lexical_hoist
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || (!matches!(
-                    self.env.get("__mutsu_in_eval").map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) && !matches!(
-                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                    Some(ValueView::Bool(true))
-                )));
+                || !self.eval_blocks_lexical_shadow());
         if allow_lexical_shadow {
             return false;
         }
@@ -1411,13 +1420,7 @@ impl Interpreter {
             || in_nested_scope
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || (!matches!(
-                    self.env.get("__mutsu_in_eval").map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) && !matches!(
-                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                    Some(ValueView::Bool(true))
-                )));
+                || !self.eval_blocks_lexical_shadow());
         let code_var_key = format!("&{}", name);
         // The same declaration re-executing is no redeclaration: a role body's
         // `sub ... is export` runs again every time the role body does (a
