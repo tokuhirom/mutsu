@@ -5823,3 +5823,11 @@ pure invocation/guard machinery. An interpreter-only row must decline without
 falling through to a pure ancestor. No per-class shape decision changes here.
 The initial arm inventory remains 223 total arms, 119 naming built-in methods;
 the method-name gates here are not the report's quoted-name cascade arms.
+
+The pure owner entry resolves the nearest zero-argument row before invoking it
+through `admits`/`invoke`; a nearest interpreter row therefore declines without
+running an ancestor. Code's pure entry and `Mu.clone` use that lookup. Instance
+code-class classification is memoized by its immutable class symbol, including
+negative results and mixin base names, so expanding the receiver-based entry
+does not copy or re-scan class names on every native method call. This is a
+classification memo, not a cache of mutable method resolution.

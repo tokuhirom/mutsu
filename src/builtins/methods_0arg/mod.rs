@@ -354,11 +354,9 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
 
 fn dispatch_core(target: &Value, method_sym: Symbol) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.as_str();
-    // `Code.Capture` and `Code.clone` are rows of the method table
-    // (`method_table::code`, ADR-12523 slice 5).
-    if matches!(method, "Capture" | "clone")
-        && let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method)
-    {
+    // A code value reaches its registered row through its class's owner
+    // chain, including the pure entry (ADR-14477).
+    if let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method_sym) {
         return Some(answer);
     }
 

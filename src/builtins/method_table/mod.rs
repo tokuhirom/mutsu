@@ -60,6 +60,7 @@ mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
 pub(crate) mod native_array_result;
+mod owner_pure;
 mod place;
 pub(crate) mod receiver_step;
 mod row;
@@ -119,6 +120,7 @@ pub(crate) use dispatch::{shapeless_row, try_dispatch};
 pub(crate) use implicit_named::strip_undeclared_nameds;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use mutating::type_object_owners as mut_type_object_owners;
+pub(crate) use owner_pure::invoke_owner_pure;
 pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 #[cfg(test)]

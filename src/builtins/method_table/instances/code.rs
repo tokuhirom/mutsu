@@ -109,16 +109,12 @@ pub(crate) fn answer(
     crate::builtins::method_table::invoke_owner(interp, owners, method, args, || target.clone())
 }
 
-/// The answer of the pure `Code` row for `method` (`Capture` or `clone`), or
-/// `None` when `target` is not a code object.
-// Cost: O(1).
-pub(crate) fn pure_answer(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    super::code_class::owners_of(target)?;
-    match method {
-        "Capture" => capture(target, &[]),
-        "clone" => clone(target, &[]),
-        _ => None,
-    }
+/// Answer the nearest pure row of the receiver's code class, or decline when
+/// the receiver is not code or its nearest method needs the interpreter.
+// Cost: O(o), o = owners (at most five), plus the handler's own cost.
+pub(crate) fn pure_answer(target: &Value, method: Symbol) -> Option<Result<Value, RuntimeError>> {
+    let owners = super::code_class::owners_of(target)?;
+    crate::builtins::method_table::invoke_owner_pure(owners, target, method)
 }
 
 /// `Code.of` and `Code.returns`: the return type the routine declares, the type
