@@ -1788,7 +1788,7 @@ impl Interpreter {
             // to every later routine with the same name. Retire it before an
             // EVAL-local redeclaration replaces the registry entry; named
             // call dispatch otherwise finds the stale chain by name.
-            self.clear_wrap_chains_for_name(name);
+            self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
             self.registry_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);

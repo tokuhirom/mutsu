@@ -112,6 +112,12 @@ pub(crate) struct DispatchState {
     pub(crate) wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,
     /// Maps sub_id to function name for named call wrap chain lookup.
     pub(crate) wrap_sub_names: HashMap<u64, String>,
+    /// Maps sub_id to the package the wrapped routine is declared in. Wrap
+    /// state is recorded under the routine's bare name, so two routines of
+    /// different packages sharing it (`class A { sub nc ... }` and
+    /// `class B { sub nc ... }`, each with a bound `$!do`) are told apart by
+    /// this table, not merged into one chain.
+    pub(crate) wrap_sub_packages: HashMap<u64, Symbol>,
     /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
     /// when dispatching named function calls through the wrap chain.
     pub(crate) wrap_name_to_sub: ValueMap,
@@ -244,6 +250,7 @@ impl DispatchState {
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             wrap_chains: self.wrap_chains.clone(),
             wrap_sub_names: self.wrap_sub_names.clone(),
+            wrap_sub_packages: self.wrap_sub_packages.clone(),
             wrap_name_to_sub: self.wrap_name_to_sub.clone(),
             wrap_callable_ids: self.wrap_callable_ids.clone(),
             wrap_handle_counter: self.wrap_handle_counter,
