@@ -5772,6 +5772,21 @@ question that justified the decline ("does a bridge resolve this receiver furthe
 - **Found, not fixed**: `Exception`/`X::AdHoc` instances and `utf8` still answer `X::Method::NotFound` for `.splice` (an earlier path intercepts them before
   `invoke_mut`); a `Mixin` and a cell reference still decline.
 
+### 9.199 Slice 5 inventory: native integer coercer entry (2026-11-01)
+
+`refactor/11276-native-int-coercer-entry` audits the remaining native integer
+coercer branch in `native_method_0arg_cascade`. All eleven coercion names already
+have `Cool` and `Int` rows in `scalars::real_misc` (22 rows). The cascade still
+recognizes the names separately and calls the primitive directly. Narrow-width
+names are absent from the audited `Cool` numeric names of closed collection
+shapes, so the existing rows cannot replace that branch for those receivers yet.
+
+The deletion unit is the entire native integer coercer branch, with admission
+of the existing rows driven by the shared native coercion-name list. The initial
+`scripts/method-rows-report.py --arms` inventory is 4 pure-cascade arms, 216
+runtime arms and 3 VM mutation-helper arms (223 total); these counts do not
+measure this branch, which uses a predicate rather than quoted-name arms.
+
 ### 9.69 `Any.splice` sees through a cell, a variable reference and a mixin (2026-10-11)
 
 `refactor/12653-unwrap-mixin-ref-receivers` (issue #12653). The remainder of #12647: the row no longer carries a `ContainerRef | VarRef | Mixin` decline list.
