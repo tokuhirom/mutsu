@@ -1,6 +1,6 @@
 # ADR-15760: NameScope — one scope type, source-order classification, and a typed node lowered where the parser builds it
 
-- **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 (2026-11-01) Proposed, §6
+- **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 Accepted (maintainer decision, 2026-11-01), §6
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15760](https://github.com/tokuhirom/mutsu/issues/15760) (RakuAST C2). Roadmap:
@@ -206,7 +206,7 @@ Structural slices change no behaviour; slice 1 is the only one that does. They a
 Answers recorded (maintainer, 2026-10-31): source order with no pre-scan, only routine names late-bound (Q1); slice 0
 first (Q2); `src/scope.rs` (Q3).
 
-## 6. Amendment 1 (Proposed, 2026-11-01): where the early classification really comes from, and how slice 1 splits
+## 6. Amendment 1 (Accepted, 2026-11-01): where the early classification really comes from, and how slice 1 splits
 
 Slice 0 is merged (#15837, #15840). The first attempt at slice 1 (branch `fix/15791-source-order-classification`:
 `bareword::DeclaredNames::collect` and `BlockScope::enter` replaced by a per-statement `declare_statement`) built and
@@ -243,7 +243,7 @@ Rakudo's `.AST` raises the same compile errors as running the code (`Q{say A; cl
 | `foo; sub foo {...}`, `{ foo; sub foo {...} }` | works | works | routines are hoisted |
 | `{ sub foo {...} }; foo` | `Undeclared routine` | nothing | 3 (routine scoping; filed separately) |
 
-### 6.3 Decision (proposed)
+### 6.3 Decision
 
 §2.3's *rule* stands: source order, only routines late-bound. §2.3's *mechanism* ("lower an unresolved bareword to a
 deferred routine call; report at the end of the unit") is replaced, because the end-of-unit check exists (source 3) and
@@ -279,9 +279,11 @@ the carried path (source 2) never produces an unresolved bareword to defer. Slic
   declaration; imported types (`use`, `need`, `import`) are declared at the import statement.
 - Finding filed separately: `{ sub foo {...} }; foo` runs silently in mutsu (rakudo: `Undeclared routine`).
 
-### 6.5 Questions for the maintainer
+### 6.5 Questions for the maintainer (answered 2026-11-01)
 
 1. `Str.AST` raising the two compile errors (as rakudo does) rather than returning a tree: recommended yes (1c).
 2. Row `say X; constant X = 3` deferred to slice 2 as 1d, #15791 left open for it: acceptable?
 3. The post-declared-type check in `src/rakuast` rather than `src/runtime`: it needs no interpreter, and `src/analysis` /
    the language server can call it (ADR-0065); recommended yes.
+
+Answers (maintainer, 2026-11-01): 1 yes, 2 yes, 3 yes, as recommended. Amendment 1 is Accepted.
