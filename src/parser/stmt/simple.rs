@@ -40,9 +40,7 @@ pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
     set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{
-    fold_use_lib_path, parser_source_file, try_add_parse_time_lib_path, use_lib_args,
-};
+pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
