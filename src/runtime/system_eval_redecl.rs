@@ -168,6 +168,9 @@ impl Interpreter {
         };
 
         let type_redeclaration = |name: &str| -> RuntimeError {
+            // A role's key carries its parameter shape (`R[Int]`); the error
+            // names the role.
+            let name = name.split_once('[').map_or(name, |(base, _)| base);
             let mut attrs = ValueMap::default();
             attrs.insert("symbol".to_string(), Value::str(name.to_string()));
             attrs.insert(
@@ -332,14 +335,31 @@ impl Interpreter {
                     }
                     (name, is_stub)
                 }
-                Stmt::RoleDecl { name, body, .. } => {
+                Stmt::RoleDecl {
+                    name,
+                    body,
+                    type_param_defs,
+                    ..
+                } => {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
                     if let Some(err) = dup_routine_in_body(&name.resolve(), body) {
                         return Err(err);
                     }
-                    (name.resolve().to_string(), body_is_stub(body))
+                    // Roles of one name with different parameter lists are the
+                    // candidates of one role group, not redeclarations of each
+                    // other; only the same parameter shape is.
+                    let shape: Vec<String> = type_param_defs
+                        .iter()
+                        .map(|d| d.type_constraint.clone().unwrap_or_default())
+                        .collect();
+                    let key = if shape.is_empty() {
+                        name.resolve().to_string()
+                    } else {
+                        format!("{}[{}]", name.resolve(), shape.join(","))
+                    };
+                    (key, body_is_stub(body))
                 }
                 Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
                 Stmt::EnumDecl { name, variants, .. } => {
