@@ -42,8 +42,40 @@ impl Interpreter {
             return Ok(false);
         };
         let name = code.const_sym(name_idx);
-        let Some(target) = self.lexical_import_operator_binding(chain, name) else {
-            return Ok(false);
+        // #14371: a call of a plain imported routine remembers the definition
+        // its name resolved to, for one lexical-import-set generation. A name
+        // that is a built-in operator's candidate family (`:<`) or that any set
+        // binds as a code object is never memoized, so the operator merge in
+        // `lexical_import_operator_binding` still sees every call.
+        let sites = code.constants.len();
+        let generation = self.module.lexical_import_gen;
+        let memoized = if call.is_some() {
+            code.lex_import_sites
+                .cached(sites, name_idx as usize, generation, chain_idx)
+        } else {
+            None
+        };
+        let target = match memoized {
+            Some(def) => crate::runtime::lexical_imports::LexicalImport::Routine(def),
+            None => {
+                let Some(target) = self.lexical_import_operator_binding(chain, name) else {
+                    return Ok(false);
+                };
+                if call.is_some()
+                    && let crate::runtime::lexical_imports::LexicalImport::Routine(def) = &target
+                    && self.module.builtin_op_fallback_depth == 0
+                    && !name.with_str(|n| n.contains(":<"))
+                {
+                    code.lex_import_sites.remember(
+                        sites,
+                        name_idx as usize,
+                        generation,
+                        chain_idx,
+                        std::sync::Arc::clone(def),
+                    );
+                }
+                target
+            }
         };
         let Some((arity, arg_sources_idx, bare_args)) = call else {
             let value = match target {
