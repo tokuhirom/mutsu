@@ -40,7 +40,9 @@ pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
     set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
+pub(crate) use lib_paths::{
+    fold_use_lib_path, parser_source_file, try_add_parse_time_lib_path, use_lib_args,
+};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -81,7 +83,7 @@ pub(in crate::parser) use compile_consts::{
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
 pub(in crate::parser) use lib_paths::{
-    parser_lib_paths, register_preload_module_exports, try_add_parse_time_lib_path,
+    parser_lib_paths, register_preload_module_exports,
 };
 pub(crate) use module_exports::exported_types::{scanned_exported_types, scanned_hook_type_keys};
 pub(crate) use module_exports::exported_vars::{
