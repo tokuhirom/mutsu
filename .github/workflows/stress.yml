@@ -60,7 +60,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux-release"
           # Restore only: ci.yml's runs on main own these entries.
@@ -143,7 +143,7 @@ jobs:
       # compile a debug build — see the `build` job for why the release build
       # keeps a separate key.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux"
           # Restore only: ci.yml's runs on main own these entries.
@@ -440,7 +440,7 @@ jobs:
       # compile a debug build — see the `build` job for why the release build
       # keeps a separate key.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux"
           # Restore only: ci.yml's runs on main own these entries.

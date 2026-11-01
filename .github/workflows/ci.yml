@@ -420,7 +420,7 @@ jobs:
       # The "ci-linux" dependency cache (opt-level 0 debug) — see `test-suites`
       # for why the release build and `debug-tap` keep separate keys.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -532,7 +532,7 @@ jobs:
       # recompile from scratch on every run. GC/JIT are runtime env vars, not
       # cargo features, so they never need a key of their own.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux-release"
           # Only PRs restore; only runs on main save. This keeps the cache warm
@@ -979,7 +979,7 @@ jobs:
       # artifacts (no cranelift in one, a different target triple in the
       # other), so sharing their key would only evict entries they still need.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-lint-configs"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1058,7 +1058,7 @@ jobs:
           rustup default nightly-2026-08-01
 
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-miri"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1176,7 +1176,7 @@ jobs:
       # here: this builds for wasm32-unknown-unknown, whose linker is wasm-ld,
       # not the host cc — the `-fuse-ld=mold` flag would not apply.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-wasm"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1294,7 +1294,7 @@ jobs:
       # to recompile from scratch (the same reasoning as `test-suites`'s
       # separate release key).
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux-debug-tap"
           save-if: ${{ github.ref == 'refs/heads/main' }}
