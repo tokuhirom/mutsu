@@ -117,6 +117,53 @@ struct Unexplained {
     body_scoped: HashSet<String>,
 }
 
+/// Whether a unit's imports cannot be seen before it runs: a `use` of a module
+/// that may import routines or types, after a `use lib` that its module search
+/// depends on. The unit's `use`s are pre-run only up to the first `use lib`
+/// (`run_eval_hook_uses`), so whatever the later ones import is unknown to the
+/// CHECK-time name checks, and judging any bareword would risk a false positive,
+/// exactly as the mainline check gives up on a unit with such a `use`.
+// Cost: O(s), s = statements of the unit.
+pub(crate) fn imports_follow_use_lib(stmts: &[Stmt]) -> bool {
+    let mut after_lib = false;
+    for stmt in stmts {
+        match stmt {
+            _ if contains_use_lib(std::slice::from_ref(stmt)) => after_lib = true,
+            Stmt::Use { module, .. } if after_lib && !conditional::imports_no_routines(module) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether a `use lib` appears anywhere in the unit, nested blocks included.
+/// A `use` that follows one imports from a path nothing has added yet when the
+/// EVAL's pre-run looks at it, so the pre-run leaves such a unit to run in
+/// position.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn contains_use_lib(stmts: &[Stmt]) -> bool {
+    use crate::ast_visit::{Visit, walk_stmt};
+    #[derive(Default)]
+    struct UseLib(bool);
+    impl<'ast> Visit<'ast> for UseLib {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if matches!(stmt, Stmt::Use { module, .. } if module == "lib") {
+                self.0 = true;
+            }
+            if !self.0 {
+                walk_stmt(self, stmt);
+            }
+        }
+    }
+    let mut found = UseLib::default();
+    for stmt in stmts {
+        found.visit_stmt(stmt);
+    }
+    found.0
+}
+
 /// The AST half of the mainline undeclared-routine check, recorded with a
 /// precompiled unit (ADR-12026 §2.1): every call that the unit's own
 /// declarations and the static tables leave unexplained. The parser's import
@@ -428,6 +475,11 @@ impl Interpreter {
                 // A capitalised callee (only judged in `EVAL`) is a coercion
                 // when a type of that name exists, and a core term (`IterationEnd`)
                 // is not a routine call at all.
+                // A parameterized type used as an invocant (`array[uint8].new`)
+                // is a type, whatever the case of its base.
+                || name.split_once('[').is_some_and(|(base, _)| {
+                    base == "array" || self.has_type(base) || Self::is_builtin_type(base)
+                })
                 || (name.starts_with(|c: char| c.is_ascii_uppercase())
                     && (self.has_type(name)
                         || self.has_class(name)

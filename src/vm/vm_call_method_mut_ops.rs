@@ -381,6 +381,14 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
+        // object is answered without the probe chain below.
+        if let Some(result) =
+            self.try_pseudo_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // ADR-0121 D3: a generated accessor already resolved to a slot of the
         // receiver's layout reads it before the probe chain runs (see
         // `vm_accessor_lane`).

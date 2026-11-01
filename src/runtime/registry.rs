@@ -1364,7 +1364,22 @@ impl Registry {
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
         {
-            return Ok(class_def.mro.iter().map(|s| s.resolve()).collect());
+            let mut mro: Vec<String> = class_def.mro.iter().map(|s| s.resolve()).collect();
+            // A built-in class registered at start-up carries a truncated
+            // linearization (`Exception`, `X::AdHoc`, ... stop at the class
+            // itself; `.^mro` appends `Any`/`Mu` on display). As a parent
+            // inside a C3 merge that tail must be present, or a sibling
+            // parent's `Any, Mu` sorts ahead of it: `class C is A is
+            // Exception` listed `Exception` after `Mu`.
+            // Only a chain that never reached `Mu` is truncated: a class that
+            // `is Mu` (and its subclasses) is deliberately not an `Any`.
+            if !mro.iter().any(|n| n == "Mu") {
+                if !mro.iter().any(|n| n == "Any") {
+                    mro.push("Any".to_string());
+                }
+                mro.push("Mu".to_string());
+            }
+            return Ok(mro);
         }
         stack.push(class_name.to_string());
         let explicit_parents = self

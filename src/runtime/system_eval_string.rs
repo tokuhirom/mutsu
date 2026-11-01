@@ -37,14 +37,21 @@ impl Interpreter {
     /// and the same CHECK-time validation (undeclared names, redeclarations,
     /// ...) before it runs (#13295).
     pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
-        self.with_eval_import_scope(|interp| {
-            interp.run_compunit(|interp| {
-                interp.isolated_eval_unit(|interp| {
-                    interp.validate_eval_source(&stmts)?;
-                    interp.run_eval_unit_stmts(stmts)
+        // The tree was parsed elsewhere, so the parser's import table holds
+        // none of what its `use` statements import; the CHECK-time routine
+        // scan reads it (#15868).
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
+        let result = crate::parser::with_rakuast_lexical_scope(|| {
+            Self::register_lowered_unit_imports(&stmts);
+            self.with_eval_import_scope(|interp| {
+                interp.run_compunit(|interp| {
+                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts, true))
                 })
             })
-        })
+        });
+        crate::parser::clear_parser_lib_paths();
+        result
     }
 
     /// Run `body` as an EVAL'd compilation unit: snapshot what the unit may
@@ -60,6 +67,8 @@ impl Interpreter {
         let saved_eval_chain = self.module.eval_import_chain.replace(eval_chain);
         let eval_unit = self.executing_unit_sym();
         let saved_eval_unit = self.module.eval_import_unit.replace(eval_unit);
+        let saved_unit_depth =
+            std::mem::replace(&mut self.module.eval_unit_block_depth, self.block_scope_depth + 1);
         let routine_snapshot = self.snapshot_routine_registry();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
@@ -207,6 +216,7 @@ impl Interpreter {
         }
         self.module.eval_import_chain = saved_eval_chain;
         self.module.eval_import_unit = saved_eval_unit;
+        self.module.eval_unit_block_depth = saved_unit_depth;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;

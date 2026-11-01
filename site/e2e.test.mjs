@@ -668,8 +668,8 @@ try {
 
   // --- Test: every run starts from a clean interpreter ---
   console.log('Test: playground runs are isolated');
-  await runEditor(page, 'my $shared = 40; say "set";');
-  assert(await runEditor(page, 'say $shared.defined') === 'False',
+  await runEditor(page, 'our $shared = 40; say "set";');
+  assert(await runEditor(page, 'say $GLOBAL::shared.defined') === 'False',
          'the previous run left nothing behind');
 
   // The loop runs in a worker: Stop must remain clickable, and the next run
@@ -898,8 +898,9 @@ try {
   await page.click('#reset-btn');
   await page.waitForFunction(() => document.querySelector('#repl-log > div.note')
     ?.textContent.includes('Session reset') && !document.getElementById('repl-input').disabled);
-  const afterReset = await replEval(page, 'say $x.defined');
-  assert(afterReset === 'False', `reset clears declarations (got: ${JSON.stringify(afterReset)})`);
+  // An undeclared `$x` is a compile error in Raku, so probe it through EVAL.
+  const afterReset = await replEval(page, 'say (try EVAL q[$x]) // "gone"');
+  assert(afterReset === 'gone', `reset clears declarations (got: ${JSON.stringify(afterReset)})`);
 
   // --- Test: the generated data files are never read from a stale cache ---
   // Chromium puts the `cache: 'no-cache'` mode on the wire as

@@ -502,6 +502,12 @@ pub(crate) struct ModuleState {
     /// owner): code of any other compunit it calls reads its own top-level
     /// `use`s, not the chain (#14481).
     pub(crate) eval_import_unit: Option<Symbol>,
+    /// The `block_scope_depth` at which the running `EVAL` unit's own top-level
+    /// statements run (the unit's run opens one block scope). A block nested in
+    /// the unit is deeper, and declares routines under the ordinary lexical
+    /// shadowing rules; the unit's top level still sees the caller's names as
+    /// ones it may not redeclare.
+    pub(crate) eval_unit_block_depth: usize,
     /// Classes whose declaration died while an `EVAL` unit was compiling it
     /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
     /// compile, so `isolated_eval_unit` does not merge these into the
@@ -758,6 +764,7 @@ impl ModuleState {
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_import_unit: None,
+            eval_unit_block_depth: 0,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
             eval_prerun_sets: Vec::new(),
@@ -868,6 +875,7 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
+            eval_unit_block_depth: self.eval_unit_block_depth,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_prerun_sets: self.eval_prerun_sets.clone(),
