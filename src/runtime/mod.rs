@@ -399,14 +399,16 @@ pub(crate) fn local_timezone_offset_secs() -> i64 {
     sys_resources::local_offset_at(crate::builtins::epoch_nanos() / 1_000_000_000).0
 }
 
-type ProtectBlockCacheEntry = (
-    Arc<CompiledCode>,
-    Arc<CompiledFns>,
-    Arc<Vec<(usize, String)>>,
-    Arc<Vec<(usize, String)>>,
-    Arc<Vec<String>>,
-);
-type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
+/// What a `protect` block's bytecode says about the names it touches, which does
+/// not depend on the closure's captured env: the local slots it assigns and the
+/// global names it reads or writes, in first-use order. Keyed by the compiled
+/// body (`Arc` identity), so every closure instance of one literal shares it --
+/// the old per-instance cache (`data.id`, fresh for each closure creation) missed
+/// on every call and never evicted.
+pub(crate) struct ProtectBlockOps {
+    pub(crate) assigned_slots: std::collections::HashSet<usize>,
+    pub(crate) global_names: Vec<String>,
+}
 
 /// ADR-0037 §2.3: how `EVAL ..., context => $ctx`'s `return` classifies,
 /// derived once at EVAL entry from the routine identity `CALLER::` stamped
