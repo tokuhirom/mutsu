@@ -222,6 +222,7 @@ impl Interpreter {
         };
         (flag("__mutsu_in_eval") || flag("__mutsu_eval_wrapped_decls"))
             && self.block_scope_depth <= self.module.eval_unit_block_depth
+            && !self.in_inlined_block_frame()
     }
 
     /// Insert a multi-overload `def` into the function registry under `base_key`,
