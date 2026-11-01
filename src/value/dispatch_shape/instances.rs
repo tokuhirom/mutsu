@@ -108,5 +108,8 @@ pub(super) fn is_known_shapeless(class: Symbol) -> bool {
 #[inline]
 pub(super) fn note_shapeless(class: Symbol) {
     let slot = &SHAPELESS_CLASSES[class.id() as usize % SHAPELESS_CLASSES.len()];
-    slot.store(class.id().wrapping_add(1), std::sync::atomic::Ordering::Relaxed);
+    slot.store(
+        class.id().wrapping_add(1),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
