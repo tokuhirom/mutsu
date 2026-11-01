@@ -29,6 +29,11 @@ pub(crate) const JIT_STATUS_ERR: u32 = 1;
 pub(crate) const JIT_STATUS_HALT: u32 = 2;
 #[cfg(feature = "jit")]
 pub(crate) const JIT_STATUS_PANIC: u32 = 3;
+/// Returned only by the `LexImportCall` shim, never by a body: the op ran the
+/// op at `ip + 1` itself (an imported routine's call), so the generated code
+/// continues at `ip + 2`. The emitted code for that op consumes it.
+#[cfg(feature = "jit")]
+pub(crate) const JIT_STATUS_SKIP: u32 = 4;
 
 #[cfg(feature = "jit")]
 thread_local! {

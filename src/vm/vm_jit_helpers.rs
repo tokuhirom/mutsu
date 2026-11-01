@@ -26,7 +26,9 @@
 //! shims below cannot signal a status, so a panic there still aborts — their
 //! bodies only touch infallible stack/clone machinery.
 
-use super::vm_jit::{JIT_STATUS_ERR, JIT_STATUS_HALT, JIT_STATUS_OK, JIT_STATUS_PANIC, park_panic};
+use super::vm_jit::{
+    JIT_STATUS_ERR, JIT_STATUS_HALT, JIT_STATUS_OK, JIT_STATUS_PANIC, JIT_STATUS_SKIP, park_panic,
+};
 use super::*;
 
 /// Run a shim body under a catch-all panic boundary (see the module doc):
@@ -464,6 +466,43 @@ pub(super) unsafe extern "C" fn call_method_mut(
     panic_boundary(|| {
         let r = interp.exec_call_method_mut_site(code, op_idx as usize);
         call_site_status(interp, code, r)
+    })
+}
+
+/// `OpCode::LexImportCall` (`Interpreter::exec_lex_import_call_site`, or
+/// `exec_lex_import_term_site` for a bare word): [`JIT_STATUS_SKIP`] when the
+/// op at `op_idx + 1` was run here (the generated code continues at
+/// `op_idx + 2`), [`JIT_STATUS_OK`] when no set binds the name and the op at
+/// `op_idx + 1` runs as itself. The compiler admits the op only when
+/// `op_idx + 1` is one of the four ops those sites consume.
+pub(super) unsafe extern "C" fn lex_import_call(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    fns: *const CompiledFns,
+) -> u32 {
+    let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
+    panic_boundary(|| {
+        let ip = op_idx as usize;
+        let Some(OpCode::LexImportCall { chain_idx }) = code.ops.get(ip) else {
+            return JIT_STATUS_ERR;
+        };
+        let consumed = if interp
+            .exec_lex_import_term_site(code, ip, *chain_idx)
+            .is_some()
+        {
+            Ok(true)
+        } else {
+            interp.exec_lex_import_call_site(code, ip, *chain_idx, fns)
+        };
+        match consumed {
+            Ok(true) => match call_site_status(interp, code, Ok(())) {
+                JIT_STATUS_OK => JIT_STATUS_SKIP,
+                other => other,
+            },
+            Ok(false) => call_site_status(interp, code, Ok(())),
+            Err(e) => call_site_status(interp, code, Err(e)),
+        }
     })
 }
 

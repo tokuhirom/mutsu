@@ -52,11 +52,32 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
     // Static support scan + jump-target collection. Any opcode outside the
     // Tier A set rejects the whole range (no partial compilation).
     let mut targets: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    for op in &code.ops[start..end] {
+    for (i, op) in code.ops[start..end]
+        .iter()
+        .enumerate()
+        .map(|(k, op)| (start + k, op))
+    {
         if noarg_shim(op).is_some() || step_supported(op) {
             continue;
         }
         match op {
+            // A lexically imported routine's call (#14371): the op consumes
+            // the op after it when it runs the call itself, so `i + 2` is a
+            // branch target. Admitted only for the four ops its sites consume
+            // (not `GetExportTermOrJump`, whose term site jumps elsewhere).
+            OpCode::LexImportCall { .. }
+                if matches!(
+                    code.ops.get(i + 1),
+                    Some(
+                        OpCode::CallFunc { .. }
+                            | OpCode::CallOnCodeVar { .. }
+                            | OpCode::GetCodeVar(_)
+                            | OpCode::GetBareWord(_)
+                    )
+                ) && i + 2 <= end =>
+            {
+                targets.insert(i + 2);
+            }
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
@@ -552,6 +573,26 @@ fn build(
                     helpers::call_func as *const () as usize,
                     &[interp, codep, opidx, fnsp],
                 )?;
+                check_status(&mut b, status);
+            }
+            OpCode::LexImportCall { .. } => {
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_call,
+                    helpers::lex_import_call as *const () as usize,
+                    &[interp, codep, opidx, fnsp],
+                )?;
+                // SKIP: the shim ran the op at i + 1 itself; continue at i + 2
+                // (a target registered by the pre-pass).
+                let skip = b.ins().icmp_imm(
+                    cranelift_codegen::ir::condcodes::IntCC::Equal,
+                    status,
+                    super::vm_jit::JIT_STATUS_SKIP as i64,
+                );
+                let next = b.create_block();
+                b.ins().brif(skip, block_at[&(i + 2)], &[], next, &[]);
+                b.switch_to_block(next);
                 check_status(&mut b, status);
             }
             OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {
