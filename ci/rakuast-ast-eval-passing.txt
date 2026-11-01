@@ -3479,6 +3479,7 @@ t/modules/role-method-closure-module-names.t
 t/modules/role-method-trait-package-how.t
 t/modules/role-method-where-clause-reaches-its-module-sub.t
 t/modules/role-type-object-package-scope.t
+t/modules/routine-call-package-switch-restores.t
 t/modules/routine-capture-keeps-live-module-aggregate.t
 t/modules/routine-do-bind-same-name-module.t
 t/modules/routine-package-switch-restore.t
@@ -4707,6 +4708,7 @@ t/oo/method/proto-method-visible-to-find-method.t
 t/oo/method/proxy-invocant-user-method.t
 t/oo/method/proxy-var-method-call.t
 t/oo/method/pseudo-method-what-how-lane.t
+t/oo/method/pseudo-method-who-where-definite-parity.t
 t/oo/method/q-adverb-array-method-interp.t
 t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
@@ -4959,6 +4961,7 @@ t/oo/role/enum-does-anonymous-role-literal.t
 t/oo/role/enum-does-role.t
 t/oo/role/enum-role-and-enumhow.t
 t/oo/role/eval-declared-lexical-role-does-not-leak.t
+t/oo/role/eval-role-group-candidates.t
 t/oo/role/eval-use-role-body-import-visibility.t
 t/oo/role/forward-declared-role-stub-upgrade.t
 t/oo/role/frame-record-class-role-composition.t
@@ -4990,6 +4993,7 @@ t/oo/role/method-trait-proto-and-role-dispatch.t
 t/oo/role/method-trait-role-def-identity.t
 t/oo/role/method-trait-role-introspection.t
 t/oo/role/mixin-but-role-angle-value.t
+t/oo/role/mixin-can-parametric-role-group.t
 t/oo/role/mixin-method-reaches-enclosing-role-multi-sub.t
 t/oo/role/mixin-nqp-attr-role-cell.t
 t/oo/role/mixin-reaches-role-rows.t
@@ -4997,6 +5001,7 @@ t/oo/role/mixin-role-application-order.t
 t/oo/role/mixin-role-attr-closure-two-roles.t
 t/oo/role/mixin-role-attribute-cell.t
 t/oo/role/mixin-role-callsame-ranks-class-multis.t
+t/oo/role/mixin-role-group-method-shadows-builtin.t
 t/oo/role/mixin-role-transitive-does.t
 t/oo/role/mixin-roles-introspection.t
 t/oo/role/mixin-value-parameterized-role-identity.t
@@ -5016,6 +5021,7 @@ t/oo/role/nested-my-role-same-name-in-two-roles.t
 t/oo/role/nextsame-role-mixin.t
 t/oo/role/objat-role-mixin-raku.t
 t/oo/role/parameterize-role-with-value.t
+t/oo/role/parameterized-role-composes-base-candidate.t
 t/oo/role/parameterized-role-static-scope.t
 t/oo/role/parametric-container-role-of.t
 t/oo/role/parametric-role-bless-pun.t
@@ -5079,6 +5085,7 @@ t/oo/role/role-body-bind-composer-shadow.t
 t/oo/role/role-body-bind-group.t
 t/oo/role/role-body-class-is-composing-class.t
 t/oo/role/role-body-composition-timing.t
+t/oo/role/role-body-constant-per-role.t
 t/oo/role/role-body-enclosing-enum-type.t
 t/oo/role/role-body-guard-parameterisation.t
 t/oo/role/role-body-lexical-assignment-reaches-methods.t
@@ -5106,6 +5113,7 @@ t/oo/role/role-body-writes-declaration-site-lexicals.t
 t/oo/role/role-bounded-env-sync.t
 t/oo/role/role-builtin-parent.t
 t/oo/role/role-callable-param-and-custom-container.t
+t/oo/role/role-candidate-get-attribute-for-usage.t
 t/oo/role/role-candidate-language-revision-from-decl.t
 t/oo/role/role-class-prioritization.t
 t/oo/role/role-closure-private-attribute-foreign-arg.t
@@ -5261,6 +5269,7 @@ t/oo/role/run-nested-role-body.t
 t/oo/role/runtime-parametric-role-value-args.t
 t/oo/role/rw-accessor-proxy-role-mixed-delete-chain.t
 t/oo/role/rw-accessor-proxy-role-mixed-lvalue-chain.t
+t/oo/role/same-name-parametric-and-plain-role.t
 t/oo/role/seq-does-sequence-role.t
 t/oo/role/sequence-role-instance-under-but-mixin.t
 t/oo/role/sequence-role-list-methods.t
@@ -6858,6 +6867,7 @@ t/routines/dispatch/heredoc-multibyte-terminator.t
 t/routines/dispatch/increment-requires-mutable-candidates.t
 t/routines/dispatch/indexed-multidim-bind.t
 t/routines/dispatch/infix-captured-candidate-env-rollback.t
+t/routines/dispatch/infix-code-value-call-user-candidates.t
 t/routines/dispatch/infix-multi-imported-by-two-routes.t
 t/routines/dispatch/int-mod-real-candidate.t
 t/routines/dispatch/junction-in-mu-variable-multi-dispatch.t
