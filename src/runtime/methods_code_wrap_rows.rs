@@ -190,7 +190,7 @@ impl Interpreter {
                 .dispatch
                 .wrap_sub_names
                 .iter()
-                .find(|(_, n)| **n == func_name)
+                .find(|(id, n)| **n == func_name && self.wrap_id_is_in_package(**id, data.package))
                 .map(|(id, _)| *id)
                 .unwrap_or(data.id);
             if args.is_empty() {

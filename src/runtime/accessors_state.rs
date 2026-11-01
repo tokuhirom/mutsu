@@ -290,7 +290,25 @@ impl Interpreter {
         }
         if self.wrap_sub_id_for_name(name).is_some() {
             let sub = self.get_wrapped_sub(name)?;
-            return self.wrapped_sub_is_the_callee(&sub, name).then_some(sub);
+            if self.wrapped_sub_is_the_callee(&sub, name) {
+                return Some(sub);
+            }
+            // The bare-name entry belongs to a same-named routine of another
+            // package; the one this call reaches is recorded under its
+            // qualified name.
+            return self
+                .dispatch
+                .wrap_name_to_sub
+                .iter()
+                .filter(|(key, _)| {
+                    key.as_str() != name
+                        && crate::qualified::is_qualified_str(key)
+                        && crate::qualified::unqualified_part(Symbol::intern(key)).as_str()
+                            == name
+                })
+                .map(|(_, sub)| sub)
+                .find(|sub| self.wrapped_sub_is_the_callee(sub, name))
+                .cloned();
         }
         let name = Symbol::intern(name);
         if !crate::qualified::is_qualified(name) {
