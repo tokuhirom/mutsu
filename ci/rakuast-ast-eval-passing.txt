@@ -2476,6 +2476,7 @@ t/lang/eval-private-and-stubs.t
 t/lang/eval-repeated-use-runs-hook-each-time.t
 t/lang/eval-sigilless-uppercase-scoped.t
 t/lang/eval-smiley-type-object-term.t
+t/lang/eval-stub-sub-then-definition.t
 t/lang/eval-tail-output-statement-value.t
 t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
@@ -4254,7 +4255,6 @@ t/oo/enum-does-enumeration.t
 t/oo/enum-value-does-not-block-unrelated-rebind.t
 t/oo/eval-does-not-leak-use-fatal.t
 t/oo/eval-my-term-named-like-builtin-does-not-leak.t
-t/oo/eval-stub-sub-then-definition.t
 t/oo/exists-adverb-on-mixin.t
 t/oo/fatal-mode-does-not-leak-into-callee.t
 t/oo/for-loop-alias-does-not-leak-into-later-loop.t
