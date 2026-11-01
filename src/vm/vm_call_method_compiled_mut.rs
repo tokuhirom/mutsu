@@ -367,7 +367,6 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &mut Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let method = method_sym.as_str();
         let class_sym = match target.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Package(name) => Some(name),
