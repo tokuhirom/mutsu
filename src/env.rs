@@ -811,9 +811,29 @@ fn file_key() -> Symbol {
 #[inline]
 fn file_sym_of(v: &Value) -> Option<Symbol> {
     match v.view() {
-        crate::value::ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+        crate::value::ValueView::Str(s) => Some(intern_file(s.as_str())),
         _ => None,
     }
+}
+
+/// `Symbol::intern` of a `?FILE` value, remembering the last answer: every
+/// closure capture re-derives its env's file symbol, and nearly always from the
+/// same file, so the repeat costs a string compare instead of a hash probe.
+/// Symbols are process-global, so a per-thread memo is sound.
+// Cost: O(|s|), the compare; the first sight of a file also interns it.
+#[inline]
+fn intern_file(s: &str) -> Symbol {
+    thread_local! {
+        static LAST_FILE: std::cell::Cell<Option<Symbol>> = const { std::cell::Cell::new(None) };
+    }
+    if let Some(sym) = LAST_FILE.with(std::cell::Cell::get)
+        && sym.as_str() == s
+    {
+        return sym;
+    }
+    let sym = Symbol::intern(s);
+    LAST_FILE.with(|c| c.set(Some(sym)));
+    sym
 }
 
 /// A pinned overlay tier: the values an [`Env`] overlay held when

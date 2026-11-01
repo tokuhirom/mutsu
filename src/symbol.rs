@@ -1377,6 +1377,16 @@ pub(crate) mod well_known {
         *SYM
     }
 
+    /// Marks an env as a declared method's capture (`1`: the declaration
+    /// frame's, `2`: a class-how added method's); asked on every closure
+    /// creation inside a method (`box_captured_lexicals`).
+    #[inline]
+    pub(crate) fn declared_method_capture() -> Symbol {
+        static SYM: LazyLock<Symbol> =
+            LazyLock::new(|| Symbol::intern("__mutsu_declared_method_capture"));
+        *SYM
+    }
+
     /// The declared return type a routine's env carries for its own body.
     #[inline]
     pub(crate) fn return_type() -> Symbol {
