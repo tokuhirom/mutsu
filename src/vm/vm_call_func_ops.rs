@@ -2975,7 +2975,19 @@ impl Interpreter {
         // after EVERY interpreter-native builtin call (`make`, in a
         // grammar-action walk, is one per action), forcing a full
         // registry rescan per call.
-        if self.registry_write_generation() != reg_gen_before {
+        //
+        // Not for a re-dispatch (`samewith`, `nextwith`, `callwith`, ...): it
+        // only runs the next candidate's code, and any registration that code
+        // performs announces itself through its own call or registration path.
+        // Taking a registry write guard while resolving the next candidate is
+        // not a change to the function set, and discarding every memo after it
+        // made each `.new` through Red's `callwith`/`samewith` chain re-probe
+        // `has_multi_*` for every name it then asked about again.
+        if !matches!(
+            name,
+            "samewith" | "nextwith" | "callwith" | "callsame" | "nextsame"
+        ) && self.registry_write_generation() != reg_gen_before
+        {
             self.invalidate_fn_resolution();
         }
         // substr-rw / subbuf-rw return a Proxy that must be preserved

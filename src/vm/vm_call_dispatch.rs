@@ -97,7 +97,7 @@ impl Interpreter {
     /// determined by the current package and the innermost routine frame's
     /// lexical package, so `(those two, name)` is a sound memo key.
     #[inline]
-    fn bare_name_ctx_key(&self, name_sym: Symbol) -> (Symbol, Option<Symbol>, Symbol) {
+    pub(crate) fn bare_name_ctx_key(&self, name_sym: Symbol) -> (Symbol, Option<Symbol>, Symbol) {
         (
             self.current_package_sym(),
             self.routine_stack_top().and_then(|f| f.lexical_package),
