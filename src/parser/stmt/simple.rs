@@ -82,20 +82,17 @@ pub(in crate::parser) use compile_consts::{
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
-pub(in crate::parser) use lib_paths::{
-    parser_lib_paths, register_preload_module_exports,
-};
+pub(in crate::parser) use lib_paths::{parser_lib_paths, register_preload_module_exports};
 pub(crate) use module_exports::exported_types::{scanned_exported_types, scanned_hook_type_keys};
 pub(crate) use module_exports::exported_vars::{
     ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
 };
-pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(crate) use module_exports::register_module_exports_with_tags;
+pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_import_tags,
-    register_inline_module_exports, register_module_exports,
-    register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
-    type_index_is_complete,
+    register_inline_module_exports, register_module_exports, register_module_type_names,
+    scanned_module_value_terms, source_declares_export_hook, type_index_is_complete,
 };
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
