@@ -172,7 +172,11 @@ impl Interpreter {
         // Parser normalization fallback: `method foo { ... }` can appear as
         // InfixFunc(name="foo", left=BareWord("method"), right=[ArrayLiteral(...)]).
         // Treat this as a Method object value.
-        if !args.is_empty() && args[0].to_string_value() == "method" {
+        // (`BareWord("method")` evaluates to a plain `Str`, so only a `Str`
+        // can be the marker; stringifying every operand to test for it
+        // allocated on each operator call.)
+        if matches!(args.first().map(Value::view), Some(ValueView::Str(s)) if s.as_str() == "method")
+        {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("name".to_string(), Value::str(op.to_string()));
             attrs.insert("is_dispatcher".to_string(), Value::FALSE);
@@ -463,7 +467,12 @@ impl Interpreter {
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];
-            let infix_name = format!("infix:<{}>", op);
+            // Built by hand: `format!` costs ~0.5k Ir per call, on every
+            // operator called through a routine or a code value.
+            let mut infix_name = String::with_capacity(op.len() + 8);
+            infix_name.push_str("infix:<");
+            infix_name.push_str(op);
+            infix_name.push('>');
             if !core_only
                 && let Some(value) = self.try_user_infix(&infix_name, &pair_args[0], &pair_args[1])?
             {

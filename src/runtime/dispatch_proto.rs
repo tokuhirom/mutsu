@@ -41,12 +41,43 @@ impl Interpreter {
     /// (`fn_keys_for_base`), which fills lazily — the probe itself reads only
     /// the registry and the package context.
     pub(crate) fn has_multi_candidates(&mut self, name: &str) -> bool {
-        let base_keys = self.fn_keys_for_base(name);
-        let packages = self.bare_name_packages_syms();
-        self.registry()
-            .has_multi_candidates(Some(&base_keys), &packages, name)
-            && (!self.operator_has_import_scope(name)
-                || self.any_visible_candidate_of(Some(&base_keys), &packages, name))
+        // The registry half is memoised like `has_multi_function`'s, in the
+        // family-generation cache `has_multi_candidates_cached_sym` shares (it
+        // stores exactly this half for an unscoped name); only the compunit
+        // visibility half runs per call.
+        let sym = Symbol::intern(name);
+        let generation = self.caches.fn_resolve_gen;
+        let key = self.bare_name_ctx_key(sym);
+        let cached = self
+            .caches
+            .multi_candidates_cache
+            .get(generation, &key, || self.dispatch.fn_family_gens.of_name(sym));
+        let mut base_keys = None;
+        let in_registry = match cached {
+            Some(known) => known,
+            None => {
+                let keys = self.fn_keys_for_base(name);
+                let packages = self.bare_name_packages_syms();
+                let found = self
+                    .registry()
+                    .has_multi_candidates(Some(&keys), &packages, name);
+                self.caches.multi_candidates_cache.insert(
+                    generation,
+                    self.caches.fn_resolve_gen,
+                    || self.dispatch.fn_family_gens.of_name(sym),
+                    key,
+                    found,
+                );
+                base_keys = Some(keys);
+                found
+            }
+        };
+        in_registry
+            && (!self.operator_has_import_scope(name) || {
+                let keys = base_keys.unwrap_or_else(|| self.fn_keys_for_base(name));
+                let packages = self.bare_name_packages_syms();
+                self.any_visible_candidate_of(Some(&keys), &packages, name)
+            })
     }
 
     /// [`Self::has_multi_candidates`] for a `&self` caller — see
@@ -60,12 +91,26 @@ impl Interpreter {
     // Cost: O(k) with the index filled, k = registered keys sharing `name`'s
     // base; else O(n), n = registered routines.
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
+        // The registry half is the memo the `&mut` probes fill (see
+        // `has_multi_candidates`): read it, so `resolve_function` -- ~250 of
+        // these per Red model create -- does not walk the family again.
+        // `Symbol::lookup`: a name never interned has no memo.
+        let memo = Symbol::lookup(name).and_then(|sym| {
+            self.caches.multi_candidates_cache.peek(
+                self.caches.fn_resolve_gen,
+                &self.bare_name_ctx_key(sym),
+                || self.dispatch.fn_family_gens.of_name(sym),
+            )
+        });
         let packages = self.bare_name_packages_syms();
         let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
             .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
         let base_keys = base_keys.as_deref();
-        self.registry()
-            .has_multi_candidates(base_keys, &packages, name)
+        let in_registry = memo.unwrap_or_else(|| {
+            self.registry()
+                .has_multi_candidates(base_keys, &packages, name)
+        });
+        in_registry
             && (!self.operator_has_import_scope(name)
                 || self.any_visible_candidate_of(base_keys, &packages, name))
     }

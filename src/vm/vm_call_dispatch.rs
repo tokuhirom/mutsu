@@ -97,7 +97,7 @@ impl Interpreter {
     /// determined by the current package and the innermost routine frame's
     /// lexical package, so `(those two, name)` is a sound memo key.
     #[inline]
-    fn bare_name_ctx_key(&self, name_sym: Symbol) -> (Symbol, Option<Symbol>, Symbol) {
+    pub(crate) fn bare_name_ctx_key(&self, name_sym: Symbol) -> (Symbol, Option<Symbol>, Symbol) {
         (
             self.current_package_sym(),
             self.routine_stack_top().and_then(|f| f.lexical_package),
@@ -207,21 +207,33 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let name_sym = crate::symbol::Symbol::intern(name);
-        if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &args) {
+        // The base-name negative gate (#5574), asked once: when no registry key
+        // carries this name no user routine can answer, so both resolutions
+        // below -- `find_compiled_function` (which needs the registry's own
+        // resolution to name a def) and `resolve_function_with_types` (which
+        // starts with this very gate) -- would only report a miss. A builtin
+        // operator called through a code value (`my $c = &[cmp]; $c(1, 2)`)
+        // paid ~5k Ir for those two misses before reaching its native handler.
+        // A `proto` with no candidates lives in its own map and is answered
+        // by `resolve_function_with_types` ahead of that gate, so it counts.
+        let user_routine_possible = self.fn_base_name_registered_sym(name, name_sym)
+            || self.has_proto_cached_sym(name, name_sym);
+        if user_routine_possible
+            && let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &args)
+        {
             let pkg_sym = self.current_package_sym();
             // Prefer the routine's own nested-sub table over the caller's
             // (ADR-0019 C6e-3c) — see `compile_and_call_function_def`.
             let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
             return self.call_compiled_function_named(cf, args, fns, pkg_sym, name_sym);
         }
-        if let Some(native_result) =
-            self.try_native_function(crate::symbol::Symbol::intern(name), &mut args)
-        {
+        if let Some(native_result) = self.try_native_function(name_sym, &mut args) {
             return native_result;
         }
         // Try resolving the function definition and compiling on-the-fly.
         // Skip functions that need special interpreter handling.
-        if !self.is_interpreter_handled_function(name)
+        if user_routine_possible
+            && !self.is_interpreter_handled_function(name)
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                 .ok()
                 .flatten()
