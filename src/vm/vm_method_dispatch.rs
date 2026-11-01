@@ -2935,24 +2935,6 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_body);
         crate::alloc_scope!("mfast:epilogue");
 
-        if !can_skip_merge {
-            // Non-can_skip_merge: AssignExpr may have written attribute values to
-            // env. Sync locals→env first so the merge/reconcile sees them.
-            for (i, local_name) in cc.locals.iter().enumerate() {
-                if local_name.starts_with('.')
-                    || local_name.starts_with('!')
-                    || local_name.starts_with("@!")
-                    || local_name.starts_with("@.")
-                    || local_name.starts_with("%!")
-                    || local_name.starts_with("%.")
-                {
-                    {
-                        let __v = self.locals[i].clone();
-                        self.env_mut().insert(local_name.clone(), __v);
-                    }
-                }
-            }
-        }
         // Snapshot this frame's final lexical state for any END phaser it
         // registered. A `my` in a fast-path method usually lives only in a local
         // slot, so the slots are pushed into the (about-to-be-discarded) callee
