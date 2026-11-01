@@ -1769,11 +1769,11 @@ impl Interpreter {
     // holding a ContainerRef (almost always 0).
     fn frame_container_refs<'a>(&self, code: &'a CompiledCode) -> Vec<(&'a str, Value)> {
         let mut refs = Vec::new();
-        for (slot, name) in code.locals.iter().enumerate() {
-            if let Some(v) = self.locals.get(slot)
-                && v.is_container_ref()
-                && !code.locals[..slot].contains(name)
-            {
+        // Walk the frame window directly (one bounds check for the whole walk
+        // instead of one per slot); a slot past the window has no value.
+        let window: &[Value] = &self.locals;
+        for (slot, (name, v)) in code.locals.iter().zip(window).enumerate() {
+            if v.is_container_ref() && !code.locals[..slot].contains(name) {
                 refs.push((name.as_str(), v.clone()));
             }
         }
