@@ -96,3 +96,10 @@ Scalars, Proxy STORE, inherited modes, source container type constraints,
 readonly parameters and type-object refusal. Checked writes through cells use
 the shared readonly-kind error constructor instead of flattening every refusal
 to the immutable-value message.
+
+Native rows bind ordinary named parameters by value at the shared row entry.
+Rows that relay an entire capture to another binder declare `RAW_NAMED` in
+their registration metadata; the `new`/`bless` factory relays retain cells for
+the constructor's attribute-specific binding. RakuAST and dependency-specification
+value constructors use the same named-value reader. This preserves the raw
+transport contract without requiring every native handler to understand cells.

@@ -305,8 +305,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         for a in args {
             match a.view() {
-                ValueView::Pair(k, v) if k == "key" => named_key = Some(v.clone()),
-                ValueView::Pair(k, v) if k == "value" => named_value = Some(v.clone()),
+                ValueView::Pair(k, v) if k == "key" => named_key = Some(v.deref_container()),
+                ValueView::Pair(k, v) if k == "value" => named_value = Some(v.deref_container()),
                 ValueView::Pair(..) => { /* extra named args are ignored by bless */ }
                 _ => positional.push(a.clone()),
             }

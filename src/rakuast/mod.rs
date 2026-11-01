@@ -1906,6 +1906,8 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    let read_named = crate::value::call_args::read_named_args(args);
+    let args = read_named.as_ref();
     // An array element or a bound variable arrives as its `ContainerRef` cell
     // (`Name.from-identifier(@parts.head)`); a node stores the value inside.
     if args
