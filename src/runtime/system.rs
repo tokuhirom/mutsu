@@ -125,10 +125,10 @@ impl Interpreter {
         // import is then not confined to the block).
         let mut lifted = 0;
         let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
-        let positional = stmts.iter().any(|stmt| {
-            matches!(stmt, Stmt::Use { module, .. } if module == "lib")
-                || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
-        });
+        let positional = super::undeclared_routines::contains_use_lib(&stmts)
+            || stmts.iter().any(|stmt| {
+                matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+            });
         if !positional {
             let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts);
             lifted = nested.len();
@@ -141,7 +141,7 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                matches!(stmt, Stmt::Use { module, .. } if module == "lib")
+                super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
                     || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
             })
             .unwrap_or(stmts.len());

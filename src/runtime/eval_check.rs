@@ -24,6 +24,7 @@ fn collect_use_declared_type_names(
     interp: &Interpreter,
     module: &str,
     extra_dirs: &[String],
+    exported_only: bool,
     out: &mut HashSet<String>,
 ) -> bool {
     // `use Foo:auth<zef:x>` carries its dist selectors appended to the module
@@ -71,7 +72,18 @@ fn collect_use_declared_type_names(
         }
         if j > start {
             let name: String = bytes[start..j].iter().collect();
-            if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+            // A module the EVAL's pre-run already loaded imported what it
+            // exports and no more: a declaration without `is export` stays
+            // unknown to the unit.
+            let exported = !exported_only || {
+                let mut k = j;
+                while k < bytes.len() && !matches!(bytes[k], '{' | ';') {
+                    k += 1;
+                }
+                let traits: String = bytes[j..k].iter().collect();
+                traits.contains("is export")
+            };
+            if exported && name.starts_with(|c: char| c.is_ascii_uppercase()) {
                 // `role A::Greeter is export` is imported as `Greeter`.
                 let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(&name));
                 if short.as_str() != name && !short.as_str().is_empty() {
@@ -203,7 +215,7 @@ impl Interpreter {
             &[],
         )
         .out;
-        collect_use_declared_type_names(self, module, &lib_dirs, &mut HashSet::new())
+        collect_use_declared_type_names(self, module, &lib_dirs, false, &mut HashSet::new())
     }
 
     /// Every type name this unit declares, plus those its `use`d modules
@@ -222,10 +234,13 @@ impl Interpreter {
         )
         .out;
         let harvest = |module: &str, out: &mut HashSet<String>| {
-            // A module the EVAL's pre-run already loaded is in the
-            // interpreter's own scope; its source says more than it imports.
-            !self.module.eval_prerun_modules.contains(module)
-                && collect_use_declared_type_names(self, module, &lib_dirs, out)
+            // A module the EVAL's pre-run already loaded binds its exports in
+            // an import region the registry's short-name lookup does not read
+            // (`use NativeCall; sub f(Pointer $p)`), so the exported
+            // declarations of its source count, and only those.
+            let preran = self.module.eval_prerun_modules.contains(module);
+            // Its hook, if any, already ran: the import set is known.
+            collect_use_declared_type_names(self, module, &lib_dirs, preran, out) && !preran
         };
         scan(
             TypeDecls {
