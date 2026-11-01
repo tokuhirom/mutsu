@@ -9249,6 +9249,19 @@ impl CompiledCode {
     /// `declared_here`) and `compute_free_vars`.
     // Cost: O(l), l = locals; once per compiled chunk.
     fn compute_fresh_locals(&mut self) {
+        // An `@`/`%` slot whose binding a `:=` rebinds after its declaration
+        // (here or in a nested closure) can carry a typed container's
+        // constraint by name from then on (`runtime_var_bind_meta`): it is not
+        // an untyped slot, whatever its declaration said. Slots rebound this
+        // way are final only now (`compute_free_vars` folds the closures').
+        for &slot in &self.rebound_slots {
+            if let Some(desc) = self.binding_descs.get_mut(slot as usize)
+                && !desc.flags.simple_scalar_local()
+                && desc.declared_constraint == crate::binding_desc::DeclaredConstraint::Untyped
+            {
+                desc.declared_constraint = crate::binding_desc::DeclaredConstraint::Unrecorded;
+            }
+        }
         for (desc, sym) in self.binding_descs.iter_mut().zip(self.locals_sym.iter()) {
             // The "initialize once per declaration site" marker of an
             // expression-position container declaration (`==> my @v`,

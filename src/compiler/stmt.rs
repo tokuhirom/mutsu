@@ -1520,7 +1520,16 @@ impl Compiler {
                 // no constraint, whatever a same-named variable elsewhere
                 // recorded (ADR-13757).
                 if type_constraint.is_none() && !*is_our {
-                    self.note_untyped_local_declaration(name);
+                    if (bind_vardecl || bind.is_some())
+                        && (name.starts_with('@') || name.starts_with('%'))
+                    {
+                        // `my @a := <typed container>`: the binding carries
+                        // the container's constraint by name, so the slot is
+                        // declared but not untyped.
+                        self.note_declared_local(name);
+                    } else {
+                        self.note_untyped_local_declaration(name);
+                    }
                 }
                 // Record type constraint for compile-time literal type checks
                 if let Some(tc) = type_constraint {
