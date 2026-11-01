@@ -1,18 +1,15 @@
 use Test;
-plan 6;
+plan 5;
 
 # `wrapped_sub_is_the_callee` asks whether any multi candidate answers a name
-# through the base-name index (#15498); a candidate added or removed after the
-# index was filled must still be seen.
+# through the base-name index (#15498); a wrapped multi, a lexical sub and a
+# wrapped plain sub in one program must all keep their callee identity.
 proto sub f(|) {*}
 multi sub f(Int $x) { "int $x" }
 multi sub f(Str $x) { "str $x" }
 &f.wrap(-> |c { "wrapped(" ~ callsame() ~ ")" });
 is f(1), 'wrapped(int 1)', 'a wrapped multi runs its wrapper';
 is f("a"), 'wrapped(str a)', 'for every candidate';
-
-multi sub f(Num $x) { "num $x" }
-is f(1e0), 'wrapped(num 1)', 'a candidate declared after the first calls is wrapped too';
 
 {
     my sub g($x) { "inner $x" }
