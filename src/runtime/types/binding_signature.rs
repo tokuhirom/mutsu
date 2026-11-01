@@ -807,7 +807,7 @@ impl Interpreter {
                         .dispatch
                         .samewith_context_stack
                         .last()
-                        .map(|ctx| ctx.name.as_str())
+                        .map(|ctx| &*ctx.name)
                         .unwrap_or("<anon>");
                     return Err(RuntimeError::parameter_invalid_concreteness(
                         base_type,
