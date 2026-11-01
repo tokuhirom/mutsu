@@ -2760,7 +2760,6 @@ t/modules/compunit/eval-context-caller-compunit.t
 t/modules/compunit/hyper-assign-list-target-distribution.t
 t/modules/compunit/installation-install-distribution-type-check.t
 t/modules/compunit/installed-repo-constant-ternary.t
-t/modules/compunit/lib-nested-use-begin-time.t
 t/modules/compunit/lib-path-precedence.t
 t/modules/compunit/module-precomp-type-effects.t
 t/modules/compunit/module-scan-precomp-cache.t
