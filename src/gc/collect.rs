@@ -153,22 +153,26 @@ fn scan_black(node: &ErasedGc, m: &mut Metrics) {
 /// re-buffered entry is only a `Weak` handle that fails to upgrade at the
 /// next drain once reclaim frees the node.
 // Cost: O(n + e) over the white subgraph reachable from `node`.
-fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>, seen: &mut HashSet<usize>) -> bool {
+fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>) -> bool {
+    // A node is visited at most once without a visited set: it is taken only
+    // while White and turned Black the moment it is taken, so a second path to
+    // it finds it Black. (A `HashSet<usize>` of visited ids used to sit here;
+    // its entries were exactly the Black nodes, `insert` on the entry node
+    // always answered "new", and the SipHash per node was ~5% of a Red
+    // `^create`, #15498.)
     if node.gc_color() != Color::White {
         return false;
     }
-    let started = seen.insert(erased_id(node));
     let mut work = vec![node.clone()];
     while let Some(node) = work.pop() {
         if node.gc_color() != Color::White {
             continue;
         }
-        seen.insert(erased_id(&node));
         node.gc_set_color(Color::Black);
         work.extend(children(&node));
         out.push(node);
     }
-    started
+    true
 }
 
 /// Break every white node's outgoing `Gc` edges so the backing `Arc`s free them.
@@ -482,10 +486,9 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
         scan(root, &mut m);
     }
     let mut white = Vec::new();
-    let mut seen = HashSet::new();
     let mut cycles = 0;
     for root in &roots {
-        if collect_white(root, &mut white, &mut seen) {
+        if collect_white(root, &mut white) {
             cycles += 1;
         }
     }
