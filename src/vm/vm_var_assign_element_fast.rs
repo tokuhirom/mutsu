@@ -421,7 +421,10 @@ impl Interpreter {
             if items.has_native_backing() || items.default.is_some() {
                 return None;
             }
-            Some(Self::typed_element_admits(&items, &self.stack[stack_len - 2])?)
+            Some(Self::typed_element_admits(
+                &items,
+                &self.stack[stack_len - 2],
+            )?)
         } else {
             None
         };
