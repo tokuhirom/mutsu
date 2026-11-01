@@ -157,21 +157,35 @@ impl Interpreter {
             .map(|head| head.as_str())
     }
 
+    // Cost: O(|key| + |package|) bytes, no allocation. (It used to build two
+    // `format!` strings and three `StrSearcher`s per call, ~1.6k Ir; a whole-stash
+    // build calls it once per registered class, role and package.)
     pub(super) fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
-        let package = package.trim_end_matches("::");
-        if Symbol::intern(package) == crate::symbol::wk::global_package() {
+        let mut package = package;
+        while let Some(rest) = package.strip_suffix("::") {
+            package = rest;
+        }
+        if package == crate::symbol::wk::global_package().as_str() {
             return Some(key);
         }
-        let direct = format!("{package}::");
-        if let Some(rest) = key.strip_prefix(&direct) {
+        // `Package::rest`
+        if let Some(rest) = key.strip_prefix(package)
+            && let Some(rest) = rest.strip_prefix("::")
+        {
             return Some(rest);
         }
-        let needle = format!("::{package}::");
-        if let Some(idx) = key.rfind(&needle) {
-            let start = idx + needle.len();
-            return Some(&key[start..]);
+        // The last `::Package::` anywhere in the key.
+        let (kb, pb) = (key.as_bytes(), package.as_bytes());
+        let needle_len = pb.len() + 4;
+        if kb.len() < needle_len {
+            return None;
         }
-        None
+        (0..=kb.len() - needle_len).rev().find_map(|start| {
+            let mid = start + 2;
+            let end = mid + pb.len();
+            (&kb[start..mid] == b"::" && &kb[mid..end] == pb && &kb[end..end + 2] == b"::")
+                .then(|| &key[end + 2..])
+        })
     }
 
     /// Attribute a pseudo-stash carries to remember the package of the frame it
