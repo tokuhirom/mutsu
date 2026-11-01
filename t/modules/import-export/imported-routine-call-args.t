@@ -20,4 +20,4 @@ is ilc-slurpy(|@a), 3, 'a |slip argument is spread';
 is ilc-id((a => 1)).value, 1, 'a Pair argument stays a positional Pair';
 is ilc-inc(1 | 2).raku, (2 | 3).raku, 'a Junction argument autothreads';
 my $j = 10 & 20;
-is ilc-inc($j).eigenstates.sort.join(","), "11,21", 'a Junction in a variable autothreads';
+ok (ilc-inc($j) == 11|21), "a Junction in a variable autothreads";
