@@ -29,12 +29,14 @@ impl Interpreter {
         if def.deprecated_message.is_some() || def.is_test_assertion || self.stack.len() < arity {
             return Ok(false);
         }
-        if self
-            .decode_arg_sources_shared(code, arg_sources_idx)
-            .is_some_and(|(_, has_slip)| has_slip)
-        {
+        // The light binder reads no rw-source slots, so the site is asked only
+        // whether it spreads a `|EXPR` (no decode, no slot-map refill); the map
+        // is left empty as `decode_arg_sources_shared` leaves it for a site
+        // without slotted sources.
+        if Self::stack_args_have_slip(code, arg_sources_idx) {
             return Ok(false);
         }
+        self.pending_call_arg_source_slots.clear();
         let name = Self::const_str(code, name_idx);
         let start = self.stack.len() - arity;
         // The parser's synthetic callsite-line Pair, last when present, is
