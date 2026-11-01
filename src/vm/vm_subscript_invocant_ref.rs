@@ -234,10 +234,63 @@ impl Interpreter {
             self.stack.push(cell);
             return Ok(());
         }
+        // A `Buf` element passed to a routine with a native parameter at that
+        // position is a native `uint*` container for dispatch, as in rakudo
+        // (`m($buf[0])` picks `multi m(byte)`; a `Blob` element stays `Int`):
+        // the value is read as usual and boxed in a native-typed cell.
+        let buf_native = if mark.is_positional {
+            self.buf_item_native_type(code, mark)
+        } else {
+            None
+        };
         // A callee that does not bind the container reads the value, exactly
         // as the plain `Index` op does.
         self.exec_index_op_with_positional(mark.is_positional)?;
-        self.decont_native_pos_ref_on_top()
+        self.decont_native_pos_ref_on_top()?;
+        if let Some(native) = buf_native
+            && let Some(top) = self.stack.last()
+            && matches!(top.view(), ValueView::Int(_))
+        {
+            let value = self.stack.pop().unwrap_or(Value::NIL);
+            let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
+            crate::value::register_container_constraint(&cell, native);
+            self.stack.push(Value::container_ref(cell));
+        }
+        Ok(())
+    }
+
+    /// The native element type of the `Buf` the subscript on top of the stack
+    /// reads (`uint8` for a `buf8`), when the callee has a native-typed
+    /// parameter at this argument's position; `None` otherwise, and for a `Blob`
+    /// (whose elements rakudo dispatches as boxed `Int`).
+    // Cost: O(1) for a non-Buf receiver (one tag probe); a Buf receiver walks
+    // the callee's candidates once.
+    fn buf_item_native_type(
+        &mut self,
+        code: &CompiledCode,
+        mark: &crate::opcode::IndexArgRefMark,
+    ) -> Option<&'static str> {
+        let n = self.stack.len();
+        let target = self.stack.get(n.checked_sub(2)?)?;
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        let name = class_name.resolve();
+        let native = match name.as_str() {
+            "buf8" | "Buf[uint8]" | "Buf[byte]" => "uint8",
+            "buf16" | "Buf[uint16]" => "uint16",
+            "buf32" | "Buf[uint32]" => "uint32",
+            "buf64" | "Buf[uint64]" => "uint64",
+            _ => return None,
+        };
+        let crate::opcode::RwArgCallee::Named { name_idx } = &mark.mark.callee else {
+            return None;
+        };
+        let routine = Self::const_str(code, *name_idx);
+        let routine_sym = code.const_sym(*name_idx);
+        let positional = mark.mark.positional as usize;
+        self.routine_takes_native_at(routine, routine_sym, positional)
+            .then_some(native)
     }
 
     /// The cell a `List` (or a scalar holding one) already stores at the

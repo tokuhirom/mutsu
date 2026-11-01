@@ -72,6 +72,37 @@ impl Interpreter {
         Some(self.keys_bind_container_at(&keys, positional))
     }
 
+    /// Whether any registered candidate of the routine `name` takes a native
+    /// type (`byte`, `int`, `uint8`, ...) as its `positional`-th positional
+    /// parameter (ADR-15309: a `Buf` element argument is a native container
+    /// for exactly such a callee).
+    // Cost: O(c), c = registered candidates of the name.
+    pub(crate) fn routine_takes_native_at(
+        &mut self,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+        positional: usize,
+    ) -> bool {
+        if positional == crate::opcode::RWARG_POSITIONAL_UNKNOWN as usize {
+            return false;
+        }
+        let keys = self.fn_keys_for_base_sym(name, name_sym);
+        let registry = self.registry();
+        keys.iter().any(|k| {
+            registry.functions.get(k).is_some_and(|def| {
+                def.param_defs
+                    .iter()
+                    .filter(|p| !p.named)
+                    .nth(positional)
+                    .and_then(|p| p.type_constraint.as_deref())
+                    .is_some_and(|tc| {
+                        let base = crate::runtime::types::strip_type_smiley(tc).0;
+                        crate::native_types::native_family(base).is_some()
+                    })
+            })
+        })
+    }
+
     /// Shared body of the entry points above.
     fn keys_bind_container_at(
         &mut self,
