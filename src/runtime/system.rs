@@ -73,14 +73,27 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
 
 impl Interpreter {
     pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.validate_eval_source_with(stmts, false)
+    }
+
+    /// [`Self::validate_eval_source`]; `imports_unseen` skips the two checks that
+    /// judge a bareword against the unit's imports, for a unit whose imports
+    /// are not known before it runs ([`undeclared_routines::imports_follow_use_lib`]).
+    fn validate_eval_source_with(
+        &self,
+        stmts: &[Stmt],
+        imports_unseen: bool,
+    ) -> Result<(), RuntimeError> {
         self.check_eval_mainline_placeholders(stmts)?;
         self.check_eval_class_redeclarations(stmts)?;
         self.check_eval_undeclared_trusts(stmts)?;
         self.check_eval_undeclared_type_args(stmts)?;
         self.check_eval_undeclared_vars(stmts)?;
         self.check_eval_outer_binds(stmts)?;
-        self.check_eval_undeclared_names(stmts)?;
-        self.check_eval_undeclared_routines(stmts)?;
+        if !imports_unseen {
+            self.check_eval_undeclared_names(stmts)?;
+            self.check_eval_undeclared_routines(stmts)?;
+        }
         Self::check_eval_routine_magicals(stmts)?;
         self.check_eval_post_declared_types(stmts)?;
         self.check_eval_begin_forward_calls(stmts)?;
@@ -107,15 +120,15 @@ impl Interpreter {
     /// out-of-unit run has no id for.
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
-    fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    pub(super) fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
         // A `use` nested in a block runs here too, ahead of the unit (its
         // import is then not confined to the block).
         let mut lifted = 0;
         let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
-        let positional = stmts.iter().any(|stmt| {
-            matches!(stmt, Stmt::Use { module, .. } if module == "lib")
-                || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
-        });
+        let positional = super::undeclared_routines::contains_use_lib(&stmts)
+            || stmts.iter().any(|stmt| {
+                matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+            });
         if !positional {
             let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts);
             lifted = nested.len();
@@ -128,7 +141,7 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                matches!(stmt, Stmt::Use { module, .. } if module == "lib")
+                super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
                     || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
             })
             .unwrap_or(stmts.len());
@@ -299,28 +312,7 @@ impl Interpreter {
                         return Err(refusal);
                     }
                 };
-                // The hook maps the pre-run recorded are replayed by the
-                // unit's own `use`s and end with the unit.
-                let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
-                // The pre-run's imports (a `sub EXPORT` hook's terms, whose
-                // `use` is dropped from the unit and so leaves the unit no
-                // region of its own) are the EVAL's own: they bind in an env
-                // import region that ends with it, or the next EVAL would
-                // read them (`Logic::Ternary`'s `True`, #15770).
-                let prerun_region = crate::compiler::Compiler::has_use_stmt(&stmts)
-                    .then(|| self.open_import_region());
-                let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
-                    let validated = self.validate_eval_source(&stmts);
-                    self.module.eval_prerun_modules.clear();
-                    self.module.eval_prerun_sets.clear();
-                    validated?;
-                    self.run_eval_unit_stmts(stmts)
-                });
-                if let Some(region) = prerun_region {
-                    self.close_import_region(region);
-                }
-                self.module.eval_hook_results = outer_hook_results;
-                ran
+                self.validate_and_run_eval_unit(stmts, false)
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
@@ -332,6 +324,45 @@ impl Interpreter {
                 Err(parse_err)
             }
         }
+    }
+
+    /// Validate and run the statements of an EVAL'd unit: its `use`s run first
+    /// (as rakudo does at BEGIN time) so the CHECK-time checks read what they
+    /// really import, then the unit runs. String `EVAL` and a lowered
+    /// `RakuAST::Node.EVAL` share it, so a tree holding a `use` sees its
+    /// imports the way the same source text does (#15868).
+    // Cost: O(u) static checks plus the load of each pre-run `use`, then the
+    // unit itself.
+    pub(super) fn validate_and_run_eval_unit(
+        &mut self,
+        stmts: Vec<Stmt>,
+        lowered: bool,
+    ) -> Result<Value, RuntimeError> {
+        // A lowered tree was not parsed here: when its imports follow a
+        // `use lib` they are unknown until it runs.
+        let imports_unseen = lowered && super::undeclared_routines::imports_follow_use_lib(&stmts);
+        // The hook maps the pre-run recorded are replayed by the
+        // unit's own `use`s and end with the unit.
+        let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
+        // The pre-run's imports (a `sub EXPORT` hook's terms, whose
+        // `use` is dropped from the unit and so leaves the unit no
+        // region of its own) are the EVAL's own: they bind in an env
+        // import region that ends with it, or the next EVAL would
+        // read them (`Logic::Ternary`'s `True`, #15770).
+        let prerun_region =
+            crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
+        let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+            let validated = self.validate_eval_source_with(&stmts, imports_unseen);
+            self.module.eval_prerun_modules.clear();
+            self.module.eval_prerun_sets.clear();
+            validated?;
+            self.run_eval_unit_stmts(stmts)
+        });
+        if let Some(region) = prerun_region {
+            self.close_import_region(region);
+        }
+        self.module.eval_hook_results = outer_hook_results;
+        ran
     }
 
     /// Run the parsed (or RakuAST-lowered) statements of an EVAL'd unit:

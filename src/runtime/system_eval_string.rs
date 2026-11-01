@@ -37,14 +37,21 @@ impl Interpreter {
     /// and the same CHECK-time validation (undeclared names, redeclarations,
     /// ...) before it runs (#13295).
     pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
-        self.with_eval_import_scope(|interp| {
-            interp.run_compunit(|interp| {
-                interp.isolated_eval_unit(|interp| {
-                    interp.validate_eval_source(&stmts)?;
-                    interp.run_eval_unit_stmts(stmts)
+        // The tree was parsed elsewhere, so the parser's import table holds
+        // none of what its `use` statements import; the CHECK-time routine
+        // scan reads it (#15868).
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
+        let result = crate::parser::with_rakuast_lexical_scope(|| {
+            Self::register_lowered_unit_imports(&stmts);
+            self.with_eval_import_scope(|interp| {
+                interp.run_compunit(|interp| {
+                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts, true))
                 })
             })
-        })
+        });
+        crate::parser::clear_parser_lib_paths();
+        result
     }
 
     /// Run `body` as an EVAL'd compilation unit: snapshot what the unit may
