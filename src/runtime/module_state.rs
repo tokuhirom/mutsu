@@ -875,6 +875,7 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
+            eval_unit_block_depth: self.eval_unit_block_depth,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_prerun_sets: self.eval_prerun_sets.clone(),
