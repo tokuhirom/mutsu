@@ -1104,8 +1104,10 @@ impl Interpreter {
         // reports that the method is not rw. Keep the marker out of
         // `target_var`, since that slot is a real caller writeback name.
         let dot_twigil = matches!(args.get(6).map(Value::view), Some(ValueView::Bool(true)));
-        if dot_twigil {
-            self.check_dot_twigil_accessor_writable(&format!(".{method}"), false)?;
+        if dot_twigil
+            && self.check_dot_twigil_accessor_writable(&format!(".{method}"), false, Some(&value))?
+        {
+            return Ok(value);
         }
         self.assign_method_lvalue_with_values(
             target_var.as_deref(),

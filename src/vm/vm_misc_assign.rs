@@ -147,10 +147,17 @@ impl Interpreter {
     /// defeat the assignment), so it hits the raw accessor return and dies.
     /// Returns `true` when the caller must SKIP its store and leave the computed
     /// value alone.
+    ///
+    /// `rhs` is the value a simple `$.attr = rhs` stores. When the attribute
+    /// holds an object that has a STORE (an `Array`, `Hash` or `Buf`), the
+    /// assignment replaces that object's contents in place -- rakudo's
+    /// `infix:<=>` calls STORE on the accessor's result -- and the caller skips
+    /// its own store.
     pub(crate) fn check_dot_twigil_accessor_writable(
         &mut self,
         name: &str,
         rmw: bool,
+        rhs: Option<&Value>,
     ) -> Result<bool, RuntimeError> {
         let Some(attr) = name.strip_prefix('.') else {
             return Ok(false);
@@ -196,6 +203,13 @@ impl Interpreter {
             }
             _ => Value::NIL,
         };
+        if let Some(rhs) = rhs
+            && self
+                .store_into_aggregate_lvalue(&current, rhs.clone())
+                .is_some()
+        {
+            return Ok(true);
+        }
         Err(RuntimeError::assignment_ro_typename(
             &crate::value::what_type_name(&current),
             &current.to_string_value(),
@@ -298,7 +312,15 @@ impl Interpreter {
         let store_sym = crate::symbol::Symbol::intern(&store_name);
         self.check_bareword_store(&store_name, store_sym, &name, false)?;
         self.check_readonly_for_modify(&name)?;
-        if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw)? {
+        let rhs = if dot_twigil_rmw {
+            None
+        } else {
+            self.stack.last().map(|top| match top.view() {
+                ValueView::VarRef { value, .. } => value.clone(),
+                _ => top.deref_container(),
+            })
+        };
+        if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw, rhs.as_ref())? {
             // The write went to the throwaway itemization; the computed value is
             // already the stack top, which is this expression's result.
             return Ok(());
