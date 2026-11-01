@@ -4,7 +4,7 @@ use Test;
 # not write it into the env (ADR-14633). Every by-name reader of that
 # parameter still has to see it.
 
-plan 10;
+plan 13;
 
 class C {
     method by-eval($x) { EVAL '$x + 1' }
@@ -19,6 +19,9 @@ class C {
     method write-attr($x) { $!n = $x; my &c = { $x + $!n }; c() }
     method slash($/) { $0 }
     method topic($_) { .uc }
+    method no-params { 42 }
+    method only-scalar($x) { $x * 2 }
+    method aggregate(@xs) { @xs.push(9); @xs.elems }
 }
 
 my $o = C.new;
@@ -34,3 +37,11 @@ is $o.two('a', 'b'), 'ab', 'EVAL reads two scalar parameters';
 is $o.write-attr(5), 10, 'a parameter is read by a closure in a method that writes an attribute';
 is $o.slash('ab' ~~ /(a)/), 'a', 'a $/ parameter is the match';
 is $o.topic('ab'), 'AB', 'a $_ parameter is the topic';
+
+# A frame with nothing to write into its env must not perturb it: calls with no
+# parameters, with only scalar parameters and with an aggregate keep working,
+# also when repeated and nested.
+is $o.no-params + $o.no-params, 84, 'a method with no parameters can be called repeatedly';
+is $o.only-scalar($o.only-scalar(3)), 12, 'scalar-only methods nest';
+my @a = 1, 2;
+is $o.aggregate(@a), 3, 'an aggregate parameter still shares the caller container';
