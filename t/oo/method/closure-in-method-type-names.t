@@ -1,5 +1,5 @@
 use Test;
-plan 7;
+plan 8;
 
 # Closure creation inside a method and the type names of callables share the
 # well-known symbols the hot paths now use instead of re-interning them (#15530).
