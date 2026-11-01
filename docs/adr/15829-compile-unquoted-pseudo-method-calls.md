@@ -1,6 +1,6 @@
 # ADR-15829: Compile unquoted MOP pseudo-method calls to a guarded opcode
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision, 2026-11-01)
 - **Issue**: [#15829](https://github.com/tokuhirom/mutsu/issues/15829) (child of
   [#15737](https://github.com/tokuhirom/mutsu/issues/15737); motivated by
   [#15688](https://github.com/tokuhirom/mutsu/issues/15688))
