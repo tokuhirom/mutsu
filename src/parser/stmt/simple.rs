@@ -40,7 +40,9 @@ pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
     set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
+pub(crate) use lib_paths::{
+    fold_use_lib_path, parser_source_file, try_add_parse_time_lib_path, use_lib_args,
+};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -88,9 +90,10 @@ pub(crate) use module_exports::exported_vars::{
     ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
 };
 pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
+pub(crate) use module_exports::register_module_exports_with_tags;
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_import_tags,
-    register_inline_module_exports, register_module_exports, register_module_exports_with_tags,
+    register_inline_module_exports, register_module_exports,
     register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
     type_index_is_complete,
 };
