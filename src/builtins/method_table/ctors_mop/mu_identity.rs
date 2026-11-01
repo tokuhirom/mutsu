@@ -17,6 +17,7 @@
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
+use crate::symbol::Symbol;
 use crate::value::{JunctionKind, RuntimeError, Value, ValueView};
 
 macro_rules! row {
@@ -246,7 +247,9 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         ValueView::Slip(items) => Some(Ok(
             Value::slip(items.to_vec()).with_slip_itemized(target.slip_is_itemized())
         )),
-        ValueView::Sub(_) => crate::builtins::method_table::code::pure_answer(target, "clone"),
+        ValueView::Sub(_) => {
+            crate::builtins::method_table::code::pure_answer(target, Symbol::intern("clone"))
+        }
         ValueView::Int(_)
         | ValueView::BigInt(_)
         | ValueView::Num(_)
