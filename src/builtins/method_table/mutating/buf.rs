@@ -195,7 +195,11 @@ fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value
             // `Blob` is immutable and keeps the copy.
             if !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) {
                 crate::value::value_buf::extend_buf_elems(&attributes, class_name, &new_items, end);
-                return Some(Ok(Value::instance_sharing_cell(&attributes, class_name, id)));
+                return Some(Ok(Value::instance_sharing_cell(
+                    &attributes,
+                    class_name,
+                    id,
+                )));
             }
             let attrs = buf_attrs_extended(&attributes, class_name, &new_items, end);
             Ok(Value::make_instance(class_name, attrs))
