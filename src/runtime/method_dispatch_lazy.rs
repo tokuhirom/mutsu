@@ -92,10 +92,52 @@ impl Interpreter {
         invocant: Value,
         chosen: Option<(&str, &MethodDef)>,
     ) -> bool {
-        // Always push samewith context so samewith() can find the method name/invocant
-        self.push_method_samewith_context(
+        self.push_method_dispatch_frame_named(
             receiver_class,
             method_name,
+            std::borrow::Cow::Owned(method_name.to_string()),
+            args,
+            invocant,
+            chosen,
+        )
+    }
+
+    /// [`Self::push_method_dispatch_frame`] for a caller holding the method's
+    /// interned [`Symbol`]: the samewith context borrows the symbol's string
+    /// instead of copying it, which is one allocation per method call.
+    // Cost: as `push_method_dispatch_frame`, minus the name's allocation.
+    pub(crate) fn push_method_dispatch_frame_sym(
+        &mut self,
+        receiver_class: &str,
+        method_sym: Symbol,
+        args: &[Value],
+        invocant: Value,
+        chosen: Option<(&str, &MethodDef)>,
+    ) -> bool {
+        let method_name = method_sym.as_str();
+        self.push_method_dispatch_frame_named(
+            receiver_class,
+            method_name,
+            std::borrow::Cow::Borrowed(method_name),
+            args,
+            invocant,
+            chosen,
+        )
+    }
+
+    fn push_method_dispatch_frame_named(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        name: std::borrow::Cow<'static, str>,
+        args: &[Value],
+        invocant: Value,
+        chosen: Option<(&str, &MethodDef)>,
+    ) -> bool {
+        // Always push samewith context so samewith() can find the method name/invocant
+        self.push_method_samewith_context_named(
+            receiver_class,
+            name,
             args,
             Some(invocant.clone()),
         );

@@ -1384,11 +1384,32 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
+        self.push_method_samewith_context_named(
+            receiver_class,
+            std::borrow::Cow::Owned(method_name.to_string()),
+            args,
+            invocant,
+        );
+    }
+
+    /// [`Self::push_method_samewith_context`] for a caller that holds the
+    /// method name as an interned `&'static str`: the context borrows it, so
+    /// the common call (no deferral builtin anywhere in the program) allocates
+    /// nothing for the name.
+    // Cost: O(1) when no unit mentions `samewith` or a deferral builtin;
+    // otherwise O(a), a = the call's argument count (copied into the context).
+    pub(crate) fn push_method_samewith_context_named(
+        &mut self,
+        receiver_class: &str,
+        name: std::borrow::Cow<'static, str>,
+        args: &[Value],
+        invocant: Option<Value>,
+    ) {
         // Nothing in the program can read the invocant, the arguments or the
         // metamodel entry below (see `opcode::samewith_context_possible`): the
         // only reader left wants the routine name for an error message.
         if !crate::opcode::samewith_context_possible() {
-            self.push_samewith_context(method_name, None, None);
+            self.push_samewith_context_named(name, None, None);
             return;
         }
         // A role mixed into a class's native HOW (`$class.HOW does
@@ -1399,12 +1420,12 @@ impl Interpreter {
             matches!(inv.view(), crate::value::ValueView::Mixin(..))
                 && Self::how_target_from_value(inv).is_some()
         });
-        self.push_samewith_context(method_name, invocant, Some(args.to_vec()));
+        self.push_samewith_context_named(name.clone(), invocant, Some(args.to_vec()));
         if native_how_mixin || self.is_metamodel_how_class(receiver_class) {
             self.dispatch.metamodel_dispatch_stack.push((
                 self.dispatch.samewith_context_stack.len(),
                 receiver_class.to_string(),
-                method_name.to_string(),
+                name.to_string(),
                 args.to_vec(),
             ));
         }
@@ -1864,10 +1885,27 @@ impl Interpreter {
         invocant: Option<Value>,
         args: Option<Vec<Value>>,
     ) {
+        self.push_samewith_context_named(
+            std::borrow::Cow::Owned(name.to_string()),
+            invocant,
+            args,
+        );
+    }
+
+    /// [`Self::push_samewith_context`] with the name already owned or
+    /// borrowed from an interned symbol, so a caller holding a `Symbol` pays
+    /// no allocation for it.
+    // Cost: O(1).
+    pub(crate) fn push_samewith_context_named(
+        &mut self,
+        name: std::borrow::Cow<'static, str>,
+        invocant: Option<Value>,
+        args: Option<Vec<Value>>,
+    ) {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: name.to_string(),
+                name,
                 invocant,
                 callable: None,
                 args,
@@ -1881,7 +1919,7 @@ impl Interpreter {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: String::new(),
+                name: std::borrow::Cow::Borrowed(""),
                 invocant: None,
                 callable: Some(callable),
                 args: None,

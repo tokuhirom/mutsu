@@ -518,7 +518,7 @@ pub(crate) enum NativeBase {
 #[derive(Debug, Clone)]
 pub(crate) struct SamewithContext {
     /// The enclosing multi sub / method / proto's dispatch name.
-    pub(crate) name: String,
+    pub(crate) name: std::borrow::Cow<'static, str>,
     /// The invocant for a method dispatch; `None` for a plain sub.
     pub(crate) invocant: Option<Value>,
     /// A directly-invoked anonymous routine. Unlike a named multi sub or
