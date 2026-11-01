@@ -850,13 +850,8 @@ impl Interpreter {
         // object is answered without the probe chain below. Ahead of the
         // accessor-ref marker take, which the lane requires to be unset.
         if modifier_idx.is_none()
-            && let Some(result) = self.try_pseudo_method_lane(
-                name.raw,
-                arity,
-                modifier_idx,
-                quoted,
-                arg_sources_idx,
-            )
+            && let Some(result) =
+                self.try_pseudo_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
         {
             self.stack.push(result?);
             return Ok(());
