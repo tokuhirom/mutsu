@@ -1999,13 +1999,9 @@ pub(crate) struct Compiler {
     /// interpret-path fallback) leaves it false. Only then may a `&name` read
     /// be recorded as having no lexical binding in scope (`amp_scope`).
     pub(crate) lexical_scope_known: bool,
-    /// When true, a `key => $var` Pair must NOT capture `$var`'s container.
-    /// Set while compiling call arguments: a named argument's value is passed
-    /// to the callee by the call's binding rules (and decontainerized for plain
-    /// params / attribute stores), so capturing the container there breaks code
-    /// that reads the bound value without deref (e.g. `.new(prefix => $dir)`).
-    /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
-    /// write-through (S02:1704).
+    /// Suppress incidental Pair capture within ordinary argument expressions.
+    /// A syntactic named argument or a positional data Pair retains its RHS
+    /// container; the callee decides between value binding and aliasing.
     suppress_pair_capture: bool,
     /// Set while compiling the value of a `key => my $ = expr` Pair: the
     /// anonymous scalar's container becomes the Pair's value as a writable

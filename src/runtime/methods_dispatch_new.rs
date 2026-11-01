@@ -516,53 +516,7 @@ impl Interpreter {
         // supplied by the caller (for example, `has Int $!size = $!buffer.elems`).
         // Seed those supplied attributes first; the existing override pass
         // below keeps the final assignment semantics and handles unknown names.
-        let provided_attrs: Vec<Option<Value>> = plan
-            .class_attrs
-            .iter()
-            .enumerate()
-            .map(|(i, attr)| {
-                args.iter()
-                    .zip(arg_attr_idx.iter())
-                    .filter_map(|(arg, attr_idx)| {
-                        if *attr_idx != Some(i as u32) {
-                            return None;
-                        }
-                        let ValueView::Pair(key, value) = arg.view() else {
-                            return None;
-                        };
-                        let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str())
-                        {
-                            self.coerce_value_to_is_type(type_name, attr.sigil, value.clone())
-                                .ok()?
-                        } else {
-                            Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
-                        };
-                        // A coercion-typed attribute (`has Str() $.x`) coerces a
-                        // provided value through its target type, as `.new` does.
-                        let coerced = match plan.attr_constraints[i].as_ref() {
-                            Some(tc)
-                                if attr.sigil == '$'
-                                    && !coerced.is_nil()
-                                    && crate::runtime::types::is_coercion_constraint(tc) =>
-                            {
-                                self.coerce_value_for_constraint(tc, coerced)
-                            }
-                            _ => coerced,
-                        };
-                        // Raku: assigning `Nil` to a scalar container resets it
-                        // to the container's declared type default, exactly
-                        // like `has $.x = Nil` and plain `$x = Nil` do — not
-                        // the provided `Nil` itself.
-                        let coerced = if attr.sigil == '$' && coerced.is_nil() {
-                            self.attr_store_nil_default(cn_resolved, &attr.name, '$', coerced)
-                        } else {
-                            coerced
-                        };
-                        Some(coerced)
-                    })
-                    .last()
-            })
-            .collect();
+        let provided_attrs = self.constructor_provided_attrs(cn_resolved, &args, &plan, &arg_attr_idx);
         for (i, (attr, &attr_sym)) in plan
             .class_attrs
             .iter()
@@ -706,6 +660,8 @@ impl Interpreter {
             let val = Self::itemize_attr_store_value(*sigil, val);
             if default.is_none() || attr.default_is_seed || is_deferred {
                 attributes.insert_seed(attr_sym, val);
+            } else if plan.attr_binds[i] {
+                Self::bind_constructor_attribute(&mut attributes, attr_sym, attr_name, val);
             } else {
                 attributes.insert(attr_sym, val);
             }
@@ -722,6 +678,15 @@ impl Interpreter {
                 }
                 match attr_idx.map(|i| i as usize) {
                     Some(i) => {
+                        if plan.attr_binds[i] {
+                            self.check_attr_store_type(cn_resolved, key, '$', value.deref_container())?;
+                            Self::bind_constructor_attribute(
+                                &mut attributes, plan.attr_syms[i], key, value.clone(),
+                            );
+                            deferred_defaults.retain(|d| d.name.as_str() != &**key);
+                            continue;
+                        }
+                        let value = value.deref_container();
                         // Sigil-coerce like `dispatch_new` does: a `%`-attribute
                         // provided as a (list of) Pair(s) becomes a Hash, a
                         // `@`-attribute provided as a List becomes an Array

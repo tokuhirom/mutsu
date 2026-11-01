@@ -506,10 +506,10 @@ impl Compiler {
         // (`@a.push: "k$i" => $i`) parses to `PositionalPair` — it is *data*,
         // not a named argument, so the Pair it builds keeps its value's
         // container exactly like the standalone literal `my $p = ("k" => $v)`
-        // does (S02:1704). `suppress_pair_capture` exists for the named-argument
-        // case only (see its field doc); suppressing it here made every pushed
-        // pair snapshot its value instead of aliasing it.
-        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
+        // does (S02:1704). A syntactic named argument also retains its
+        // container: a raw binder or bound attribute may need that location.
+        let suppress_pairs =
+            !matches!(arg, Expr::PositionalPair(_)) && !Self::is_named_arg_expr(arg);
         self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(suppress_pairs, |s| {
                 // An `AssignExpr` in argument position is always a real
@@ -860,7 +860,8 @@ impl Compiler {
         let inserted = call_arg_decl
             .as_ref()
             .is_some_and(|name| self.call_arg_decl_slots.insert(name.clone()));
-        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
+        let suppress_pairs =
+            !matches!(arg, Expr::PositionalPair(_)) && !Self::is_named_arg_expr(arg);
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });

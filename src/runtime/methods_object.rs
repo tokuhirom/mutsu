@@ -553,6 +553,10 @@ impl Interpreter {
             .iter()
             .map(|a| self.is_attribute_buildable(cn_resolved, &a.name))
             .collect();
+        let attr_binds = class_attrs
+            .iter()
+            .map(|attr| self.attribute_binds_in_mro(cn_resolved, attr))
+            .collect();
         let probe_skeleton = std::sync::Arc::new(
             attr_syms
                 .iter()
@@ -632,6 +636,7 @@ impl Interpreter {
             attr_seeds,
             attr_constraints,
             attr_buildable,
+            attr_binds,
             build_steps,
             tweak_steps,
             probe_skeleton,
@@ -727,7 +732,7 @@ impl Interpreter {
         // Scalar (ADR-0040 §9); the builder reads plain values.
         let fetched;
         let args = if args.iter().any(Self::arg_carries_store_proxy) {
-            match self.fetch_proxy_ctor_args(args) {
+            match self.fetch_bound_ctor_proxy_args(args, &plan) {
                 Ok(v) => {
                     fetched = v;
                     &fetched[..]

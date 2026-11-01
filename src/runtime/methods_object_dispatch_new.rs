@@ -1590,68 +1590,10 @@ impl Interpreter {
                                 && self.is_attribute_buildable(class_key, k)
                                 && (!attrs_fully_known || sigil_map.contains_key(k.as_str()))
                             {
-                                let sigil = sigil_map.get(k).copied().unwrap_or('$');
-                                let mut value = v.clone();
-                                // A `Proxy` is FETCHed as it lands in the attribute's
-                                // Scalar (ADR-0040 §9).
-                                if sigil == '$' && value.is_proxy_value() {
-                                    value = self.auto_fetch_proxy(&value)?;
-                                }
-                                let attr_type_constraint = class_attrs_info
-                                    .iter()
-                                    .find(|attr| attr.name == *k && attr.sigil == sigil)
-                                    .and_then(|attr| {
-                                        super::attribute_type_constraint(
-                                            &class_attrs_info,
-                                            attr,
-                                            &attr_type_constraints,
-                                        )
-                                    });
-                                // A coercion-typed attribute (`has Int() $.x`)
-                                // coerces its provided value through the target
-                                // type (built-in coercion or a user COERCE method).
-                                if sigil == '$'
-                                    && let Some(tc) = attr_type_constraint.as_ref()
-                                    && crate::runtime::types::is_coercion_constraint(tc)
-                                {
-                                    value = self.coerce_value_for_constraint(tc, value);
-                                }
-                                // An `is Type` container attribute (`has @.a is
-                                // Buf`) is owned by its DECLARED container type,
-                                // which coerces the provided value itself (Buf,
-                                // BagHash, Array[T], ...). It must see the value
-                                // as supplied: running the generic sigil
-                                // coercion first list-assigns an already-correct
-                                // `Buf` into a one-element array (`my @a = $buf`
-                                // is `[Buf]` in raku too), and the declared type
-                                // was then rebuilt from that wrapper.
-                                let is_type = matches!(sigil, '@' | '%')
-                                    .then(|| self.attribute_is_type_in_mro(class_key, k))
-                                    .flatten();
-                                let coerced = if let Some(type_name) = is_type {
-                                    self.coerce_value_to_is_type(&type_name, sigil, value)?
-                                } else {
-                                    let coerced =
-                                        Self::coerce_provided_attr_value_by_sigil(value, sigil);
-                                    // A `%`-sigil attribute bound to a non-Hash
-                                    // object list-contextualizes it (Raku's
-                                    // Hash.STORE): an object with a custom
-                                    // `.iterator`/`.list` (e.g. `handles`)
-                                    // contributes its pairs.
-                                    if sigil == '%'
-                                        && matches!(coerced.view(), ValueView::Instance { .. })
-                                    {
-                                        self.coerce_object_to_hash(coerced)
-                                    } else {
-                                        coerced
-                                    }
-                                };
-                                let storage_key =
-                                    super::attribute_storage_key(&class_attrs_info, k, sigil);
-                                attrs.insert(
-                                    storage_key,
-                                    Self::itemize_attr_store_value(sigil, coerced),
-                                );
+                                self.store_ctor_named_value(
+                                    class_key, &ctor_plan, &mut attrs,
+                                    (k, sigil_map.get(k).copied().unwrap_or('$')), v.clone(),
+                                )?;
                             }
                             // When BUILD exists, named args are passed to BUILD
                             // which controls attribute initialization directly
@@ -1841,6 +1783,7 @@ impl Interpreter {
                     inv_cell.set_rakuast_base(node);
                 }
                 for attr in class_attrs_info.clone() {
+                    let binding = self.attribute_binds_in_mro(class_key, &attr).then(|| attr.clone());
                     let attr_type_constraint = super::attribute_type_constraint(
                         &class_attrs_info,
                         &attr,
@@ -1897,6 +1840,12 @@ impl Interpreter {
                             default_is_seed,
                         });
                         attrs.insert_seed(storage_key, seed);
+                        continue;
+                    }
+                    if let Some(binding) = binding.filter(|_| !seeds && build_override.is_none()) {
+                        inv_cell.commit_attrs(attrs.clone());
+                        let value = self.bound_constructor_default(*class_name, &binding, &inv, &attrs)?;
+                        Self::bind_constructor_attribute(&mut attrs, storage_key, &attr_name, value);
                         continue;
                     }
                     // An `is built(&code)` override is an initializer the

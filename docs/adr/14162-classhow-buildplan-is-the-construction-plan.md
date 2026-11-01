@@ -79,3 +79,20 @@ construction mode choose binding or value assignment. Reuse the attribute
 The native constructor, `bless` and replacement-plan task runner must share
 this operation. A bound default is compiled in container-returning mode instead
 of recovering a location from its value after evaluation.
+
+The implementation uses an MRO-resolved `attr_binds` fact in `NativeCtorPlan`;
+the attribute's construction mode is classified once per class shape. Bare
+bound values sit in readonly binding cells, reusing the normal store refusal,
+while supplied cells and Proxies remain the actual storage location. The
+compiler records a named readonly parameter's alias kind on `MakeNamedArg` so
+light routine calls need no new name-keyed readonly bookkeeping.
+
+Ordinary native attribute initialization is moved into
+`constructor_named_attrs.rs`, the generic assignment and `bless` seed pass into
+`constructor_assignment.rs`, and common binding into `constructor_binding.rs`.
+Pair bytecode handlers live in `vm_pair_ops.rs`. The expanded regression covers
+35 passing oracle cases, including all construction engines, aggregate-holding
+Scalars, Proxy STORE, inherited modes, source container type constraints,
+readonly parameters and type-object refusal. Checked writes through cells use
+the shared readonly-kind error constructor instead of flattening every refusal
+to the immutable-value message.
