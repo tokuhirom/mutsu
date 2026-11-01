@@ -857,7 +857,10 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                 RakuAstFieldValue::Node(v) => v.as_str().map(str::to_string),
                 _ => None,
             })?;
-            Some(vec![crate::rakuast::name_node_at(&identifier, &node.origin)])
+            Some(vec![crate::rakuast::name_node_at(
+                &identifier,
+                &node.origin,
+            )])
         }
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
