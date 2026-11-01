@@ -69,6 +69,8 @@ impl Interpreter {
         let saved_eval_unit = self.module.eval_import_unit.replace(eval_unit);
         let saved_unit_depth =
             std::mem::replace(&mut self.module.eval_unit_block_depth, self.block_scope_depth + 1);
+        let saved_unit_routine_depth =
+            std::mem::replace(&mut self.module.eval_unit_routine_depth, self.routine_stack.len());
         let routine_snapshot = self.snapshot_routine_registry();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
@@ -217,6 +219,7 @@ impl Interpreter {
         self.module.eval_import_chain = saved_eval_chain;
         self.module.eval_import_unit = saved_eval_unit;
         self.module.eval_unit_block_depth = saved_unit_depth;
+        self.module.eval_unit_routine_depth = saved_unit_routine_depth;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;
