@@ -1849,7 +1849,7 @@ impl Interpreter {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: std::borrow::Cow::Owned(name.to_string()),
+                name: name.to_string(),
                 invocant,
                 callable: None,
                 args,
@@ -1863,7 +1863,7 @@ impl Interpreter {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: std::borrow::Cow::Borrowed(""),
+                name: String::new(),
                 invocant: None,
                 callable: Some(callable),
                 args: None,

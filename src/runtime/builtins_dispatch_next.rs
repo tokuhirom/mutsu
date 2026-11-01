@@ -270,7 +270,7 @@ impl Interpreter {
         };
         env.insert(
             Self::SAMEWITH_LEXICAL_NAME_KEY.to_string(),
-            Value::str(ctx.name.to_string()),
+            Value::str(ctx.name.clone()),
         );
         if let Some(inv) = &ctx.invocant {
             env.insert(Self::SAMEWITH_LEXICAL_INVOCANT_KEY.to_string(), inv.clone());
