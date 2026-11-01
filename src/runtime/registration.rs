@@ -875,7 +875,12 @@ impl Interpreter {
         let Some(def) = def else {
             return false;
         };
-        if self.has_multi_function(name) {
+        // The memoised probe, not `has_multi_function`: this is the same
+        // question `has_multi` asked above (a hit unless resolving ran user
+        // code that re-registered the family), and the uncached probe walks
+        // every key of the name's family -- ~1,400 per call for Red's
+        // operators -- on each call of a user sub that shadows a builtin.
+        if self.has_multi_function_cached(name) {
             self.args_match_multi_candidate_in_scope(args, &def)
         } else {
             self.args_match_param_types(args, &def.param_defs)
