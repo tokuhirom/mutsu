@@ -280,7 +280,16 @@ pub(super) fn after_define(mode: DumpMode, name: &str, ctx: &cranelift_codegen::
         .buffer
         .get_srclocs_sorted()
         .iter()
-        .map(|l| (l.start, l.end, l.loc.bits()))
+        .map(|l| {
+            // The JIT only ever sets absolute srclocs (op index); a relative one
+            // (inlined code) has no op index to report.
+            let op = if l.loc.is_abs() {
+                l.loc.as_abs().bits()
+            } else {
+                u32::MAX
+            };
+            (l.start, l.end, op)
+        })
         .collect();
     let len = cc.code_buffer().len();
     dump_code(name, cc.vcode.as_deref(), len, &spans);
