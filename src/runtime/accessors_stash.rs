@@ -162,17 +162,17 @@ impl Interpreter {
     // build calls it once per registered class, role and package.)
     pub(super) fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let mut package = package;
-        while let Some(rest) = package.strip_suffix("::") {
-            package = rest;
+        while package.as_bytes().ends_with(b"::") {
+            package = &package[..package.len() - 2];
         }
         if package == crate::symbol::wk::global_package().as_str() {
             return Some(key);
         }
         // `Package::rest`
         if let Some(rest) = key.strip_prefix(package)
-            && let Some(rest) = rest.strip_prefix("::")
+            && rest.as_bytes().starts_with(b"::")
         {
-            return Some(rest);
+            return Some(&rest[2..]);
         }
         // The last `::Package::` anywhere in the key.
         let (kb, pb) = (key.as_bytes(), package.as_bytes());
