@@ -2983,8 +2983,10 @@ impl Interpreter {
         // not a change to the function set, and discarding every memo after it
         // made each `.new` through Red's `callwith`/`samewith` chain re-probe
         // `has_multi_*` for every name it then asked about again.
-        if !matches!(name, "samewith" | "nextwith" | "callwith" | "callsame" | "nextsame")
-            && self.registry_write_generation() != reg_gen_before
+        if !matches!(
+            name,
+            "samewith" | "nextwith" | "callwith" | "callsame" | "nextsame"
+        ) && self.registry_write_generation() != reg_gen_before
         {
             self.invalidate_fn_resolution();
         }
