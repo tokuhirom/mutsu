@@ -75,10 +75,20 @@ impl Interpreter {
                 *self.env_mut() = restored;
             }
             Err(replaced) => {
-                // The env was replaced wholesale while the region ran: no
-                // layer to drop. Keep what is there; the mismatch is a bug
-                // elsewhere (no test or whitelisted roast file reaches it).
-                debug_assert!(false, "an import region's env was replaced wholesale");
+                // The env was replaced while the region ran. Spawning a thread
+                // (`start`, `Thread.start`) flattens a scoped env
+                // ([`Interpreter::clone_for_thread`]), which folds the import
+                // layer into the one flat tier: the region is gone, its imports
+                // are plain by-name writes now, and the unit's own bookkeeping
+                // (`unit_env_imports`, the alias removal of
+                // `with_eval_import_scope`) takes them out again when the unit
+                // ends. That is the expected end of a region whose env was
+                // flattened. An env that still has the layer but is not the
+                // region's tier is a real mismatch.
+                debug_assert!(
+                    !replaced.has_import_layer(region.id),
+                    "an import region's env was replaced while its layer was still in the chain"
+                );
                 *self.env_mut() = replaced;
             }
         }
