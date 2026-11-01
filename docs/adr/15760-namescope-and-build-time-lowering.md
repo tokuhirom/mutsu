@@ -285,4 +285,3 @@ the carried path (source 2) never produces an unresolved bareword to defer. Slic
 2. Row `say X; constant X = 3` deferred to slice 2 as 1d, #15791 left open for it: acceptable?
 3. The post-declared-type check in `src/rakuast` rather than `src/runtime`: it needs no interpreter, and `src/analysis` /
    the language server can call it (ADR-0065); recommended yes.
-
