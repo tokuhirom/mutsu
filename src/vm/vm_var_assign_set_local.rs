@@ -516,12 +516,17 @@ impl Interpreter {
     // Cost: O(1), plus one env lookup once any marker exists.
     #[inline]
     fn slot_has_sigilless_readonly_marker(&self, code: &CompiledCode, idx: usize) -> bool {
+        // `maybe_env_key` first: a marker key that was never written anywhere
+        // (the common name, even in a program that has bound some other
+        // sigilless name) is answered by one flag-word read, where `get_sym`
+        // hashes the frame's own overlay before it can say so (#15981).
         crate::env::sigilless_readonly_keys_possible()
             && code.readonly_sym(idx).is_some_and(|sym| {
-                matches!(
-                    self.env().get_sym(sym).map(Value::view),
-                    Some(ValueView::Bool(true))
-                )
+                crate::symbol::maybe_env_key(sym)
+                    && matches!(
+                        self.env().get_sym(sym).map(Value::view),
+                        Some(ValueView::Bool(true))
+                    )
             })
     }
 
@@ -1442,8 +1447,15 @@ impl Interpreter {
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub). Same latch: the `__mutsu_sigilless_readonly::*`
             // key only exists once the program creates a sigilless/`:=` alias.
+            //
+            // `env_mut()` copies the env when it is shared, and the key is
+            // almost never there: probe first (the latch keeps a never-written
+            // key at one flag-word read), so a declaration in a loop body does
+            // not copy the env once per iteration in a program that happens to
+            // have bound a sigilless name somewhere (#15981).
             if crate::env::sigilless_readonly_keys_possible()
                 && let Some(sym) = code.readonly_sym(idx)
+                && self.env().contains_key_sym(sym)
             {
                 self.env_mut().remove_sym(sym);
             }
@@ -1466,6 +1478,7 @@ impl Interpreter {
             // (#9244).
             if crate::env::closure_meta_keys_possible()
                 && let Some(sym) = code.alias_sym(idx)
+                && self.env().contains_key_sym(sym)
             {
                 self.env_mut().remove_sym(sym);
             }
@@ -2513,6 +2526,7 @@ impl Interpreter {
         if !is_vardecl
             && crate::env::sigilless_readonly_keys_possible()
             && let Some(readonly_sym) = code.readonly_sym(idx)
+            && crate::symbol::maybe_env_key(readonly_sym)
             && let Some(alias_sym) = code.alias_sym(idx)
             && matches!(
                 self.env().get_sym(readonly_sym).map(Value::view),
