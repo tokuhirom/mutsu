@@ -287,7 +287,22 @@ impl Interpreter {
         if is_failure(&right) {
             return Ok(right);
         }
-        let ord = cmp_values(&left, &right);
+        // An object with its own `Str`/`Stringy` orders by that string, as the
+        // `cmp` operator does (#15940); `cmp_values` is the structural order
+        // and knows nothing of user methods.
+        let ord = if self.has_user_stringifier_operand(&left)
+            || self.has_user_stringifier_operand(&right)
+        {
+            match self.cmp_value(left.clone(), right.clone())?.view() {
+                ValueView::Enum { key, .. } if key.as_str() == "Less" => std::cmp::Ordering::Less,
+                ValueView::Enum { key, .. } if key.as_str() == "More" => {
+                    std::cmp::Ordering::Greater
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        } else {
+            cmp_values(&left, &right)
+        };
         let keep_left = if is_min { ord.is_le() } else { ord.is_ge() };
         Ok(if keep_left { left } else { right })
     }
