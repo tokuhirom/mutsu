@@ -59,6 +59,20 @@ impl Interpreter {
             }
         }
 
+        // A `[ ]` subscript addresses the element its `Int` names, and an object
+        // with its own `EXISTS-POS` is handed that `Int` (`@o[1.2]:exists` calls
+        // `EXISTS-POS(1)`, #15996). A user `postcircumfix:<[ ]>` has already had
+        // the raw index above.
+        // The key-returning forms (`:exists:kv`, `:k`, `:p`) keep the index as
+        // written: `@a[1.7]:exists:kv` answers `(1.7, True)`.
+        if !is_zen
+            && adverb_bits == 0
+            && kind == SubscriptKind::Positional
+            && let Some(index) = self.stack.last_mut()
+        {
+            *index = Self::positional_index_as_int(index.clone());
+        }
+
         // Check for invalid adverb combos — die at runtime
         match adverb_bits {
             6 | 7 => {

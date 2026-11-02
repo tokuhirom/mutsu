@@ -10,6 +10,10 @@ impl Interpreter {
     pub(super) fn positional_index_as_int(index: Value) -> Value {
         match index.view() {
             ValueView::Bool(b) => Value::int(i64::from(b)),
+            // `Inf` and `NaN` name no element and have no `Int`: they pass
+            // unchanged, so the store's own check raises "Cannot convert Inf to
+            // Int" instead of a wrapped `0` addressing a real slot.
+            ValueView::Num(f) if !f.is_finite() => index,
             ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..) => {
                 Value::int(crate::runtime::to_int(&index))
             }

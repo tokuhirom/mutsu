@@ -509,6 +509,12 @@ impl Interpreter {
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
+        // A `[ ]` subscript addresses the element its `Int` names, and an object
+        // with its own `ASSIGN-POS`/`BIND-POS` is handed that `Int`
+        // (`@o[2.9] = v` calls `ASSIGN-POS(2, v)`, #15996).
+        if is_positional {
+            idx = Self::positional_index_as_int(idx);
+        }
         // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
         // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).
         // Every reader below walks it purely, so an unpulled body would
