@@ -127,6 +127,7 @@ impl Encode for CompiledCode {
             needs_cell_regex,
             type_body_written_lexicals,
             authoritative_free_vars,
+            routine_scoped_free,
             self_capture_decl_locals,
             captures_own_declaration,
             outer_code_var_names,
@@ -292,6 +293,7 @@ impl Encode for CompiledCode {
         needs_cell_regex.encode(encoder)?;
         type_body_written_lexicals.encode(encoder)?;
         authoritative_free_vars.encode(encoder)?;
+        routine_scoped_free.encode(encoder)?;
         self_capture_decl_locals.encode(encoder)?;
         captures_own_declaration.encode(encoder)?;
         encode_string_set(outer_code_var_names, encoder)?;
@@ -444,6 +446,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             needs_cell_regex: Decode::decode(decoder)?,
             type_body_written_lexicals: Decode::decode(decoder)?,
             authoritative_free_vars: Decode::decode(decoder)?,
+            routine_scoped_free: Decode::decode(decoder)?,
             self_capture_decl_locals: Decode::decode(decoder)?,
             captures_own_declaration: Decode::decode(decoder)?,
             outer_code_var_names: decode_set(decoder)?,

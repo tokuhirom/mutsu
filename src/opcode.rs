@@ -7662,6 +7662,12 @@ pub(crate) struct CompiledCode {
     /// than declared by the creator, and all non-plain-lexical names (dynamics,
     /// the topic, `self`, `__mutsu_*`) — keeps the don't-overwrite merge.
     pub(crate) authoritative_free_vars: Vec<Symbol>,
+    /// The subset of this code's free variables that an ENCLOSING ROUTINE (a
+    /// method or sub around this nested `sub`) declares. They are lexically
+    /// nearer than a same-named `my` in the surrounding class/package body, so
+    /// a read must not resolve to the package store (`package_scope_lexical`)
+    /// ahead of the enclosing routine's own binding (#15986).
+    pub(crate) routine_scoped_free: Vec<Symbol>,
     /// Locals whose own `my $x = ...` *initializer* creates a closure that
     /// captures `$x` itself — the self-recursive closure (`my $f = -> $n { ...
     /// $f($n-1) ... }`). The capture op runs BEFORE the declaration's store, so
@@ -8541,6 +8547,7 @@ impl CompiledCode {
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             authoritative_free_vars: Vec::new(),
+            routine_scoped_free: Vec::new(),
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),

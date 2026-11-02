@@ -541,7 +541,7 @@ impl Interpreter {
                     // capture through its persisted shared cell ONLY — see
                     // `escaping_our_read` — short-circuiting the env lookup.
                     .or_else(|| self.escaping_our_read(name))
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     // A package-qualified variable lives in `our_vars`; an env
                     // entry under its name is a copy some frame left behind
                     // (a by-name write stores both), which a later write from
@@ -910,7 +910,7 @@ impl Interpreter {
                 let val = self
                     // A package-block `my @a` read by the package's own subs,
                     // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .package_scope_lexical(name)
+                    .package_scope_lexical_in(code, name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
@@ -975,7 +975,7 @@ impl Interpreter {
                     // binding — package_lexicals only holds this name's
                     // declaration-time snapshot, taken once at block exit
                     // (#8869).
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     .map(Ok)
                     .unwrap_or_else(|| {
                         // A never-declared `@*`-twigil (dynamic) variable: the
@@ -1109,7 +1109,7 @@ impl Interpreter {
                 let val = package_val
                     // A package-block `my %h` read by the package's own subs,
                     // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
