@@ -5512,6 +5512,11 @@ impl Compiler {
                     if !self.emit_block_placeholder_die(body) {
                         for inner in body {
                             self.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                self.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                     prev_guard = Some(guard_idx);
@@ -5537,6 +5542,11 @@ impl Compiler {
                     if !self.emit_block_placeholder_die(body) {
                         for inner in body {
                             self.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                self.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                     prev_guard = Some(guard_idx);
