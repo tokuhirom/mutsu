@@ -225,6 +225,11 @@ impl Interpreter {
         if args.is_empty() && self.payload_instance_lists_own_iterator(target, method_name) {
             return None;
         }
+        // The same subclass with its own `list` answers `join`/`Array`/... from
+        // it (#16022).
+        if args.is_empty() && self.payload_instance_reads_own_list(target, method_name) {
+            return None;
+        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
         // registry, so the pure native path cannot answer these — and it must
