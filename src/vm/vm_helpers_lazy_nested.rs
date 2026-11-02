@@ -11,6 +11,16 @@ impl Interpreter {
         self.reify_nested_map_grep_for_read_inner(value, false, &mut seen)
     }
 
+    /// Whether the nested-read walk may have something to do for `item`:
+    /// everything but a scalar leaf (an `Int`, `Str`, ... holds no nested
+    /// `Seq`). A pure tag probe, so the walk skips the leaves of a large list
+    /// without a stack check, a `view()` and a call per element.
+    // Cost: O(1).
+    #[inline]
+    fn reify_walk_may_descend(item: &Value) -> bool {
+        !item.is_scalar_leaf()
+    }
+
     fn reify_nested_map_grep_for_read_inner(
         &mut self,
         value: &Value,
@@ -48,7 +58,12 @@ impl Interpreter {
                         items.iter().cloned().collect()
                     };
                     for item in &elems {
-                        self.reify_nested_map_grep_for_read_inner(item, true, seen)?;
+                        // A scalar word (Int, Str, Num, a type object, ...) holds
+                        // nothing this walk acts on: skip it on its tag, without a
+                        // stack check, a `view()` and a call per element.
+                        if Self::reify_walk_may_descend(item) {
+                            self.reify_nested_map_grep_for_read_inner(item, true, seen)?;
+                        }
                     }
                 }
             }

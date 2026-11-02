@@ -651,6 +651,19 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Mixin))
     }
 
+    /// Whether this word is a scalar leaf no container walk can descend into:
+    /// an `Int`, a `Num`, a `Str`, a `Bool`, `Nil` or a type object. A pure
+    /// tag probe; a `false` here says nothing (the caller then looks closer).
+    #[inline]
+    pub(in crate::value) fn is_scalar_leaf(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Int(_)
+                | Classified::Num(_)
+                | Classified::Kind(Kind::Str | Kind::Bool | Kind::Nil | Kind::Package)
+        )
+    }
+
     /// How `flat`'s instance scan must treat this word, from the tag alone:
     /// `Some(true)` an `Instance` or `Mixin` (it may be `Iterable`),
     /// `Some(false)` a word `flat` never descends into or asks, `None` a plain

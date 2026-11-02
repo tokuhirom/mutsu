@@ -858,6 +858,13 @@ impl Value {
         self.0.is_mixin()
     }
 
+    /// Whether this is a scalar leaf (`Int`, `Num`, `Str`, `Bool`, `Nil`, a type
+    /// object) that no container walk descends into. A pure tag probe.
+    #[inline]
+    pub(crate) fn is_scalar_leaf(&self) -> bool {
+        self.0.is_scalar_leaf()
+    }
+
     /// `flat`'s instance-scan class of this word from its tag alone; see
     /// `peek::flat_scan_class`.
     #[inline]
