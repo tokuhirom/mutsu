@@ -146,6 +146,46 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 
 /// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
 /// `Debug`, and nothing needs to format the registry.
+/// A memo of the lexical-type-key scan (see [`Registry::lexical_key_scans`]).
+/// Cloning a registry starts the copy with an empty memo.
+#[derive(Default)]
+pub(crate) struct LexicalKeyScans(
+    std::sync::Mutex<rustc_hash::FxHashMap<Box<str>, Option<String>>>,
+);
+
+impl Clone for LexicalKeyScans {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl LexicalKeyScans {
+    // Cost: O(1) expected.
+    pub(crate) fn get(&self, qualified: &str) -> Option<Option<String>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(qualified)
+            .cloned()
+    }
+
+    // Cost: O(1) expected.
+    pub(crate) fn insert(&self, qualified: &str, answer: Option<String>) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(qualified.into(), answer);
+    }
+
+    // Cost: O(entries).
+    fn clear(&mut self) {
+        self.0
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
@@ -757,6 +797,10 @@ pub(crate) struct Registry {
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
     class_short_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Box<str>>>,
+    /// `source-facing name -> mangled registry key` answers of the four-map
+    /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
+    /// registry write with the other indexes above.
+    pub(crate) lexical_key_scans: LexicalKeyScans,
     /// A process-unique stamp of this registry's content, replaced on every
     /// write through [`RegistryWriteGuard`]'s `DerefMut` (the only path to a
     /// `&mut Registry`), so a memo tagged with it cannot outlive a change to
@@ -862,6 +906,7 @@ impl Registry {
     fn invalidate_lexical_type_names(&mut self) {
         self.lexical_type_names.take();
         self.class_short_names.take();
+        self.lexical_key_scans.clear();
         static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
