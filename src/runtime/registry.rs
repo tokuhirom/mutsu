@@ -2337,6 +2337,14 @@ impl RegistryWriteGuard<'_> {
     /// Keep the callers to writes that provably stay off those four maps; any
     /// other write must go through `DerefMut`, which is what keeps the index
     /// coherent by construction.
+    pub(crate) fn routine_tables_mut(&mut self) -> &mut Registry {
+        let arc: &mut Arc<Registry> = &mut self.inner;
+        if Arc::strong_count(arc) > 1 {
+            crate::vm::vm_stats::record_registry_cow_clone();
+        }
+        Arc::make_mut(arc)
+    }
+
     // The routine-table writers below SHADOW the `Registry` methods of the same
     // name (an inherent method of the guard wins over the one found through
     // `Deref`), so a call written `self.registry_mut().functions_mut()` takes the
@@ -2387,26 +2395,11 @@ impl RegistryWriteGuard<'_> {
         self.routine_tables_mut().proto_subs_restore(set);
     }
 
-    /// [`Registry::install_function`] without dropping the type-name caches.
-    // Cost: O(1) (copy-on-write share aside).
-    #[inline]
-    pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
-        self.routine_tables_mut().install_function(key, def);
-    }
-
     /// [`Registry::renew_functions_version`] without dropping the type-name caches.
     // Cost: O(1) (copy-on-write share aside).
     #[inline]
     pub(crate) fn renew_functions_version(&mut self) {
         self.routine_tables_mut().renew_functions_version();
-    }
-
-    pub(crate) fn routine_tables_mut(&mut self) -> &mut Registry {
-        let arc: &mut Arc<Registry> = &mut self.inner;
-        if Arc::strong_count(arc) > 1 {
-            crate::vm::vm_stats::record_registry_cow_clone();
-        }
-        Arc::make_mut(arc)
     }
 }
 
