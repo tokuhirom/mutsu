@@ -354,7 +354,7 @@ impl Interpreter {
                     source_line: None,
                     // The thunk is lexical to the unit that declared the attribute, wherever
                     // `.build` is later called from (a Red `Dirtable` method calls it).
-                    source_file: self.current_source_file().map(Into::into),
+                    source_file: self.current_source_file(),
                     owned_captures: Vec::new(),
                     authoritative_captures: Vec::new(),
                     own_cell_captures: Vec::new(),
