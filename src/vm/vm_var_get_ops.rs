@@ -142,19 +142,23 @@ impl Interpreter {
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        self.push_bare_word_value_in(name_sym, compiled_fns, false)
+        self.push_bare_word_value_in(name_sym, compiled_fns, false, false)
     }
 
     /// [`Self::push_bare_word_value`], told whether the name also spells a
     /// `$`-scalar of the reading scope (`over_scalar`, from
     /// [`OpCode::GetBareWordOverScalar`]): the `env[name]` entry is then that
     /// scalar and is no term, and a name nothing else claims is undeclared.
+    /// `foreign_unit` says the reading code is a loaded module's own
+    /// ([`Self::code_is_loaded_module_code`]): the program's type-only keys
+    /// are no declaration of its frame.
     // Cost: as `push_bare_word_value`.
     pub(crate) fn push_bare_word_value_in(
         &mut self,
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
         over_scalar: bool,
+        foreign_unit: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
         if self
@@ -176,9 +180,13 @@ impl Interpreter {
         let lexical_type = if let Some(binding) = self.lexical_type_binding_sym(name_sym) {
             // A bare binding this frame hides (a block-scoped `use`'s import
             // of the same name, ADR-8751) is no binding of the frame's: the
-            // type-only key is the frame's own declaration.
+            // type-only key is the frame's own declaration. That holds for
+            // the program's own top-level routine only; a loaded module's
+            // routine (`foreign_unit`) reads the program's key through its
+            // caller's env, and a type of the same name the module exports
+            // is what it means (its own `Pkg::Name` resolves below).
             let taken_over = over_scalar
-                || self.env().frame_hides_unit_name(name_sym)
+                || (!foreign_unit && self.env().frame_hides_unit_name(name_sym))
                 || !matches!(
                     self.env().get(name).map(Value::view),
                     None | Some(ValueView::Package(_))
@@ -331,7 +339,12 @@ impl Interpreter {
                     return Ok(());
                 }
             }
-            return self.push_bare_word_value_in(Symbol::intern(&real), compiled_fns, false);
+            return self.push_bare_word_value_in(
+                Symbol::intern(&real),
+                compiled_fns,
+                false,
+                foreign_unit,
+            );
         }
         // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
         // one whose block has exited), which is stored under its term key rather
@@ -362,7 +375,7 @@ impl Interpreter {
             let real =
                 crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
             if self.get_our_var(real.as_str()).is_some() {
-                return self.push_bare_word_value_in(real, compiled_fns, false);
+                return self.push_bare_word_value_in(real, compiled_fns, false, foreign_unit);
             }
         }
         // An imported routine may share its short spelling with a type
