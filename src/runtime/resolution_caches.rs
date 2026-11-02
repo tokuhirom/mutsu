@@ -10,6 +10,9 @@ pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
 /// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
 pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
 
+/// A `(class, method)` deferral expansion shared between callers.
+pub(crate) type SharedDeferralExpansion = std::sync::Arc<Vec<(Symbol, super::MethodDef)>>;
+
 /// `multi_light_cache`'s entry: a type-deterministic multi call's winning
 /// candidate and the compiled body the positional light path runs for it
 /// (its `compiled_fns` key, re-validated by fingerprint on every hit).
@@ -383,6 +386,12 @@ pub(crate) struct ResolutionCaches {
     pub(crate) class_attributes_shared:
         rustc_hash::FxHashMap<Symbol, std::sync::Arc<Vec<super::ClassAttributeDef>>>,
     pub(crate) class_attributes_stamp: u64,
+    /// `Interpreter::deferral_expansion_shared`: the structural deferral
+    /// expansion of `(class, method)`, valid while `deferral_expansion_stamp`
+    /// equals the registry's `type_stamp`.
+    pub(crate) deferral_expansion_shared:
+        rustc_hash::FxHashMap<(Symbol, Symbol), SharedDeferralExpansion>,
+    pub(crate) deferral_expansion_stamp: u64,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path

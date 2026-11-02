@@ -124,6 +124,36 @@ impl Interpreter {
     /// Build the flat deferral expansion for `(class_name, method_name)` — see the module doc.
     /// Structural (no argument filtering): the caller matches this against a specific call's
     /// `arg_values` exactly as it did `resolve_all_methods_with_owner`'s output.
+    /// [`Self::resolve_deferral_expansion`], built once per `(class, method)`
+    /// and registry `type_stamp` and handed out shared: the expansion is
+    /// structural (a function of the registry alone), and rebuilding it cloned
+    /// every candidate `MethodDef` on each method call that needs a frame.
+    // Cost: O(1) amortized; a miss is `resolve_deferral_expansion`'s.
+    pub(crate) fn deferral_expansion_shared(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> std::sync::Arc<Vec<(Symbol, MethodDef)>> {
+        let key = (Symbol::intern(class_name), Symbol::intern(method_name));
+        if self.caches.deferral_expansion_stamp == self.registry().type_stamp()
+            && let Some(hit) = self.caches.deferral_expansion_shared.get(&key)
+        {
+            return std::sync::Arc::clone(hit);
+        }
+        let built = std::sync::Arc::new(self.resolve_deferral_expansion(class_name, method_name));
+        // The build may itself have touched the registry (an MRO memo): file
+        // the entry under the stamp it is valid for now.
+        let stamp = self.registry().type_stamp();
+        if self.caches.deferral_expansion_stamp != stamp {
+            self.caches.deferral_expansion_shared.clear();
+            self.caches.deferral_expansion_stamp = stamp;
+        }
+        self.caches
+            .deferral_expansion_shared
+            .insert(key, std::sync::Arc::clone(&built));
+        built
+    }
+
     pub(crate) fn resolve_deferral_expansion(
         &mut self,
         class_name: &str,
