@@ -88,6 +88,14 @@ impl Interpreter {
             vec![derefed_operand]
         } else if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(&ll)?
+        } else if !spec.item_operand
+            && crate::builtins::native_base::has_iterable_payload(&list_value)
+            && let Some(items) = self.try_iterable_instance_items(&list_value)?
+        {
+            // An instance of an `is Range` / `is Seq` subclass is the list it
+            // carries (`[+] Q.new(1, 3)` is `1 + 2 + 3`); a user class that
+            // merely does `Iterable` stays one operand (#15322).
+            items
         } else {
             runtime::value_to_list(&list_value)
         };
