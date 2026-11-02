@@ -48,6 +48,11 @@ impl Interpreter {
         if self.has_user_method(&cn, method) {
             return Ok(None);
         }
+        // `Range.Seq` / `Seq.Seq` read the carried range or sequence, not a
+        // `list` the subclass declares (measured, #16022).
+        if method == "Seq" && crate::builtins::native_base::has_iterable_payload(target) {
+            return Ok(None);
+        }
         if !self.has_user_method(&cn, "list") {
             // `Any.hash` is `self.list.hash`; a plain user class's default
             // `list` is the one-item list of itself, so `.hash` dies with

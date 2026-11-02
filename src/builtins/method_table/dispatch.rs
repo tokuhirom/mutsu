@@ -463,6 +463,7 @@ fn dispatch(
             Some(_)
                 if interp.as_deref_mut().is_some_and(|i| {
                     i.payload_instance_lists_own_iterator(target, method.as_str())
+                        || i.payload_instance_reads_own_list(target, method.as_str())
                 }) =>
             {
                 return None;
