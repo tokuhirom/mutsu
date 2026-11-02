@@ -865,7 +865,10 @@ impl Interpreter {
     ) -> Result<Option<()>, RuntimeError> {
         let name = &code.locals[idx];
         let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name.as_str());
-        if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
+        if !(name.starts_with('%')
+            || name.starts_with('@')
+            || self.take_pending_sigilless_slot(code, idx, name))
+        {
             return Ok(None);
         }
         let name = name.to_string();
@@ -1122,6 +1125,35 @@ impl Interpreter {
     /// name that still carries the sigilless read-only marker counts too: only
     /// a sigilless binding ever gets that marker, never a `$x`, so a scalar
     /// holding such an object is still assigned as a container.
+    /// [`Self::take_pending_sigilless`] for a local slot: the readonly key and
+    /// the name's symbol are the slot's pre-interned ones, so a program that
+    /// has bound any sigilless name (which arms both probes for every store)
+    /// does not intern the name and build the marker key on every assignment
+    /// (#15981).
+    // Cost: O(1): two flag-word reads when neither the marker key nor a
+    // readonly mark exists.
+    fn take_pending_sigilless_slot(&mut self, code: &CompiledCode, idx: usize, name: &str) -> bool {
+        if self.pending_sigilless_store.as_deref() == Some(name) {
+            self.pending_sigilless_store = None;
+            return true;
+        }
+        if crate::env::sigilless_readonly_keys_possible()
+            && let Some(key) = code.readonly_sym(idx)
+            && crate::symbol::maybe_env_key(key)
+            && matches!(
+                self.env().get_sym(key).map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+        {
+            return true;
+        }
+        !self.no_readonly_vars()
+            && match code.locals_sym.get(idx).copied() {
+                Some(sym) => self.readonly_kind_sym(sym),
+                None => self.readonly_kind(name),
+            } == Some(crate::ast::ReadonlyKind::ImmutableValue)
+    }
+
     fn take_pending_sigilless(&mut self, name: &str) -> bool {
         if self.pending_sigilless_store.as_deref() == Some(name) {
             self.pending_sigilless_store = None;
