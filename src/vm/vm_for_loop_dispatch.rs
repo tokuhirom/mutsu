@@ -717,8 +717,18 @@ impl Interpreter {
         // role, not in the wrapped class's method table.  List assignment of
         // such an Iterable (for example `@ = DataFrame`) must therefore use
         // the role dispatch path just like reductions and `for` loops do.
-        if matches!(iterable.view(), ValueView::Mixin(..)) {
-            if self.mixin_composes_method(iterable, "iterator") {
+        if let ValueView::Mixin(inner, _) = iterable.view() {
+            // A `but`-mixed `Iterable` instance (`Q.new but role {...}`) keeps
+            // the wrapped class's own `iterator`, with the mixed value as
+            // `self` (#15973).
+            let inner_iterable = match inner.view() {
+                ValueView::Instance { class_name, .. } => {
+                    let cn = class_name.resolve();
+                    self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "iterator")
+                }
+                _ => false,
+            };
+            if self.mixin_composes_method(iterable, "iterator") || inner_iterable {
                 return self.drive_user_iterator_items(iterable).map(Some);
             }
             return Ok(None);
@@ -883,6 +893,12 @@ impl Interpreter {
         let iterator = if matches!(iterable.view(), ValueView::Mixin(..))
             && self.is_iterator_sequence_instance(iterable)
         {
+            self.call_user_iterator_on_mixin(iterable)?
+        } else if matches!(iterable.view(), ValueView::Mixin(..))
+            && !self.mixin_composes_method(iterable, "iterator")
+        {
+            // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
+            // run it with the mixed value as `self` (#15973).
             self.call_user_iterator_on_mixin(iterable)?
         } else if let Some(result) =
             self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
