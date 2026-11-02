@@ -1,8 +1,8 @@
 //! RakuAST's synthesized predicate block for shaped array parameters.
 
-use super::convert::{
-    convert_expr, leaf_field, name_from_identifier, node_field, plain_infix, statement_expression,
-    unsupported,
+use super::view::{
+    leaf_field, name_from_identifier, node_field, plain_infix, statement_expression, unsupported,
+    view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef};
@@ -11,7 +11,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// Build Rakudo's `array-shape` predicate block from the parser's dimensions.
 // Cost: O(d), d = number of dimensions and their expression trees.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     pd: &ParamDef,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -19,11 +19,11 @@ pub(super) fn convert(
         return Ok(None);
     };
     let dims = if dimensions.len() == 1 {
-        convert_expr(names, &dimensions[0])?
+        view_expr(names, &dimensions[0])?
     } else {
         let mut operands = Vec::with_capacity(dimensions.len());
         for dim in dimensions {
-            operands.push(Value::rakuast(Box::new(convert_expr(names, dim)?)));
+            operands.push(Value::rakuast(Box::new(view_expr(names, dim)?)));
         }
         RakuAstNode {
             origin: Default::default(),

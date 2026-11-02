@@ -1,7 +1,7 @@
 //! Preserve the parser's runtime choices for names supplied by EXPORT hooks.
 
-use super::convert::{convert_expr, convert_literal, leaf_field};
 use super::lower::{leaf_str, lower_expr, unsupported};
+use super::view::{leaf_field, view_expr, view_literal};
 use super::{RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -9,9 +9,12 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
 // Cost: O(n), n = nodes of the fallback expression.
-pub(super) fn convert(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn view_node(
+    names: &NameScope,
+    expr: &Expr,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     match expr {
-        Expr::ExportTermOrCall { name, call } => Some(convert_expr(names, call).map(|mut node| {
+        Expr::ExportTermOrCall { name, call } => Some(view_expr(names, call).map(|mut node| {
             node.fields.push(leaf_field(
                 Some("export-term-name"),
                 Value::str(name.resolve()),
@@ -19,7 +22,7 @@ pub(super) fn convert(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNo
             node
         })),
         Expr::ShadowableTermKeyword { name, value } => {
-            Some(convert_literal(names, value).map(|mut node| {
+            Some(view_literal(names, value).map(|mut node| {
                 node.fields.push(leaf_field(
                     Some("shadowable-term-name"),
                     Value::str(name.resolve()),

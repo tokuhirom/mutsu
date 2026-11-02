@@ -6,8 +6,8 @@
 //! operator nodes, the atomicity being in the operator's name. The parser's
 //! spelling of each is `ast::atomic_op`'s.
 
-use super::convert::{convert_expr, leaf_field, node_field, plain_infix, postfix_operand};
 use super::lower::{leaf_str, lower_expr, named_child, positional_leaf};
+use super::view::{leaf_field, node_field, plain_infix, postfix_operand, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
 use crate::ast::parsed::AtomicVar;
@@ -45,7 +45,7 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
                 node_field(Some("prefix"), prefix_op("⚛")),
                 node_field(
                     Some("operand"),
-                    convert_expr(names, &temporize::variable_expr(name))?,
+                    view_expr(names, &temporize::variable_expr(name))?,
                 ),
             ],
         }),
@@ -55,10 +55,10 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
             fields: vec![
                 node_field(
                     Some("left"),
-                    convert_expr(names, &temporize::variable_expr(name))?,
+                    view_expr(names, &temporize::variable_expr(name))?,
                 ),
                 node_field(Some("infix"), plain_infix("⚛=")),
-                node_field(Some("right"), convert_expr(names, value)?),
+                node_field(Some("right"), view_expr(names, value)?),
             ],
         }),
     }
@@ -67,7 +67,7 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
 /// The node of the atomic operator the call `name(args)` is, or `None` when it
 /// is not one.
 // Cost: O(n), n = size of the operands.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     name: &str,
     args: &[Expr],
@@ -83,7 +83,7 @@ pub(super) fn convert(
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op(operator)),
-                node_field(Some("operand"), convert_expr(names, operand)?),
+                node_field(Some("operand"), view_expr(names, operand)?),
             ],
         }),
         Atomic::Unary {
@@ -106,9 +106,9 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(names, left)?),
+                node_field(Some("left"), view_expr(names, left)?),
                 node_field(Some("infix"), plain_infix(operator)),
-                node_field(Some("right"), convert_expr(names, right)?),
+                node_field(Some("right"), view_expr(names, right)?),
             ],
         }),
     })())
@@ -179,7 +179,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
                     name: name.clone(),
                 })),
                 other => crate::parser::atomic_elem_update("atomic-fetch", other)
-                    .ok_or_else(|| super::convert::unsupported("atomic fetch of this operand")),
+                    .ok_or_else(|| super::view::unsupported("atomic fetch of this operand")),
             },
             _ => Ok(atomic_op::operator_call(category, &operator, vec![first])),
         }

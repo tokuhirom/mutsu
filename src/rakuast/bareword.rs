@@ -4,14 +4,14 @@
 //! name *is*: a type object renders as `Type::Simple`, a constant or other
 //! defined term as `Term::Name`, a setting enum value as `Term::Enum`, and a
 //! routine called without arguments as `Call::Name::WithoutParentheses`.
-//! mutsu's parser leaves all of these as `Expr::BareWord`, so the converter
+//! mutsu's parser leaves all of these as `Expr::BareWord`, so the view
 //! re-derives which is which from the setting (the generated name lists) and
 //! from the compilation unit's own declarations. A bareword none of those
 //! resolves stays the conversion boundary: guessing would render a wrong node.
 
 use std::collections::HashMap;
 
-use super::convert::{leaf_field, name_from_identifier, node_field};
+use super::view::{leaf_field, name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
@@ -428,7 +428,7 @@ fn collect_declared_names(
             }
             // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
             // renders `T` as a `Type::Simple`, measured on 2026.09).
-            if let Some(name) = super::convert::type_capture_name(param) {
+            if let Some(name) = super::view::type_capture_name(param) {
                 insert_declared_type(Symbol::intern(name), self.0);
             }
             walk_param(self, param);
@@ -449,7 +449,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
 // Cost: O(k + d), k = length of `name`, d = parser scope depth.
-pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
+pub(super) fn view_node(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
@@ -494,14 +494,14 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
         .strip_suffix(":D")
         .or_else(|| name.strip_suffix(":U"))
         .or_else(|| name.strip_suffix(":_"))
-        && convert(names, base).is_some_and(|node| {
+        && view_node(names, base).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
             )
         })
     {
-        return super::convert::build_type_node(names, name).ok();
+        return super::view::build_type_node(names, name).ok();
     }
     // `GLOBAL` and a pseudo-package prefix on a name that resolves
     // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
@@ -512,7 +512,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("GLOBAL::")
         .or_else(|| name.strip_prefix("CORE::"))
-        && let Some(node) = convert(names, rest)
+        && let Some(node) = view_node(names, rest)
     {
         match node.class {
             RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
@@ -525,7 +525,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && convert(names, rest).is_some_and(|node| {
+        && view_node(names, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
@@ -570,7 +570,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
             fields: vec![leaf_field(None, Value::str(constant.to_string()))],
         });
     }
-    if let Some(op) = super::convert::nqp_op(name) {
+    if let Some(op) = super::view::nqp_op(name) {
         return Some(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Nqp,

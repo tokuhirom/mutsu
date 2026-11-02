@@ -13,7 +13,7 @@
 //!
 //! The parser expands the declaration (`parser::stmt::decl::destructure::desugar`)
 //! and keeps the source form as the expansion's first statement (ADR-10723
-//! Stage 1), so both directions go through that record: `convert` reads it,
+//! Stage 1), so both directions go through that record: `view` reads it,
 //! and `lower` builds one and hands it to the same expansion. An element can
 //! have a type (`Int $a`), a `where`, one of `is rw` / `raw` / `copy` /
 //! `readonly`, a sigilless target (`\c`, a `ParameterTarget::Term`), a name
@@ -23,8 +23,8 @@
 //! `is default` is metadata omitted by Rakudo's renderer. Nested groups remain
 //! refused until their parser representation retains the grouping.
 
-use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
+use super::view::{leaf_field, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, Stmt};
 use crate::scope::NameScope;
@@ -77,7 +77,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     decl: &SignatureDecl,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -85,7 +85,7 @@ pub(super) fn convert(
     let parameters = if let Some(shape) = &decl.group_shape {
         shape
             .iter()
-            .map(|item| convert_group(names, item, &decl.vars, is_binding, 0))
+            .map(|item| view_group(names, item, &decl.vars, is_binding, 0))
             .collect::<Result<Vec<_>, _>>()?
     } else {
         decl.vars
@@ -100,7 +100,7 @@ pub(super) fn convert(
     if let Some(type_name) = &decl.type_constraint {
         signature_fields.push(node_field(
             Some("returns"),
-            super::convert::build_type_node(names, type_name)?,
+            super::view::build_type_node(names, type_name)?,
         ));
     }
     let signature = RakuAstNode {
@@ -113,7 +113,7 @@ pub(super) fn convert(
         // Rakudo omits the group trait from .raku, but execution still needs it.
         fields.push(node_field(
             Some("group-default"),
-            convert_expr(names, default)?,
+            view_expr(names, default)?,
         ));
     }
     if decl.is_our || decl.is_state {
@@ -124,7 +124,7 @@ pub(super) fn convert(
     if let Some(type_name) = &decl.type_constraint {
         fields.push(node_field(
             Some("type"),
-            super::convert::build_type_node(names, type_name)?,
+            super::view::build_type_node(names, type_name)?,
         ));
     }
     if let Some(init) = &decl.init {
@@ -138,7 +138,7 @@ pub(super) fn convert(
             RakuAstNode {
                 origin: Default::default(),
                 class,
-                fields: vec![node_field(None, convert_expr(names, &init.rhs)?)],
+                fields: vec![node_field(None, view_expr(names, &init.rhs)?)],
             },
         ));
     }
@@ -151,7 +151,7 @@ pub(super) fn convert(
 
 /// A source group into a parameter with a nested sub-signature.
 // Cost: O(n), n = leaves in the group, with nesting bounded at 128.
-fn convert_group(
+fn view_group(
     names: &NameScope,
     item: &SignatureGroup,
     vars: &[SignatureVar],
@@ -173,7 +173,7 @@ fn convert_group(
         SignatureGroup::Group(members) => {
             let parameters = members
                 .iter()
-                .map(|member| convert_group(names, member, vars, is_binding, depth + 1))
+                .map(|member| view_group(names, member, vars, is_binding, depth + 1))
                 .collect::<Result<Vec<_>, _>>()?;
             RakuAstNode {
                 origin: Default::default(),
@@ -210,7 +210,7 @@ fn parameter(
     is_binding: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if let Some(literal) = &var.literal_value {
-        return super::signature_literal::convert(names, literal);
+        return super::signature_literal::view_node(names, literal);
     }
     let target = if var.sigilless {
         RakuAstNode {
@@ -218,7 +218,7 @@ fn parameter(
             class: RakuAstClass::ParameterTargetTerm,
             fields: vec![node_field(
                 None,
-                super::convert::name_from_identifier(&var.name),
+                super::view::name_from_identifier(&var.name),
             )],
         }
     } else {
@@ -257,7 +257,7 @@ fn parameter(
         fields.push(leaf_field(Some("optional"), Value::truth(var.is_optional)));
     }
     if let Some(default) = &var.default {
-        fields.push(node_field(Some("default"), convert_expr(names, default)?));
+        fields.push(node_field(Some("default"), view_expr(names, default)?));
     }
     if var.is_slurpy {
         fields.push(leaf_field(
@@ -266,7 +266,7 @@ fn parameter(
         ));
     }
     if let Some(constraint) = &var.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(names, constraint)?));
+        fields.push(node_field(Some("where"), view_expr(names, constraint)?));
     }
     if let Some(param_trait) = var.param_trait {
         fields.push(RakuAstField {
@@ -518,9 +518,9 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
 // Cost: O(1).
 fn anonymous_sigil(name: &str) -> Option<&'static str> {
     match name {
-        super::convert::ANONYMOUS_SCALAR_PARAM => Some("$"),
-        super::convert::ANONYMOUS_ARRAY_PARAM => Some("@"),
-        super::convert::ANONYMOUS_HASH_PARAM => Some("%"),
+        super::view::ANONYMOUS_SCALAR_PARAM => Some("$"),
+        super::view::ANONYMOUS_ARRAY_PARAM => Some("@"),
+        super::view::ANONYMOUS_HASH_PARAM => Some("%"),
         _ => None,
     }
 }
@@ -529,9 +529,9 @@ fn anonymous_sigil(name: &str) -> Option<&'static str> {
 // Cost: O(1).
 fn anonymous_name(sigil: &str) -> Option<&'static str> {
     match sigil {
-        "$" => Some(super::convert::ANONYMOUS_SCALAR_PARAM),
-        "@" => Some(super::convert::ANONYMOUS_ARRAY_PARAM),
-        "%" => Some(super::convert::ANONYMOUS_HASH_PARAM),
+        "$" => Some(super::view::ANONYMOUS_SCALAR_PARAM),
+        "@" => Some(super::view::ANONYMOUS_ARRAY_PARAM),
+        "%" => Some(super::view::ANONYMOUS_HASH_PARAM),
         _ => None,
     }
 }

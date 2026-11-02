@@ -3,11 +3,11 @@
 //! the parser spells as the declaration followed by one phaser per trait
 //! ([`crate::ast::var_will`]).
 
-use super::convert::{
-    convert_stmt, expression_of, leaf_field, node_field, signature_block_node,
-    statement_expression, unsupported,
-};
 use super::lower::{leaf_str, lower_block, named_child, rakuast_node_of};
+use super::view::{
+    expression_of, leaf_field, node_field, signature_block_node, statement_expression, unsupported,
+    view_stmt,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
 use crate::scope::NameScope;
@@ -15,12 +15,12 @@ use crate::value::{RuntimeError, Value};
 
 /// The declaration statement with its `will` phasers as its traits.
 // Cost: O(n), n = size of the declaration and the phaser bodies.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     decl: &Stmt,
     phasers: &[(PhaserKind, Vec<Stmt>)],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let statement = convert_stmt(names, decl)?.ok_or_else(|| unsupported("will trait"))?;
+    let statement = view_stmt(names, decl)?.ok_or_else(|| unsupported("will trait"))?;
     let mut declaration = expression_of(&statement)
         .filter(|d| d.class == RakuAstClass::VarDeclarationSimple)
         .ok_or_else(|| unsupported("will trait"))?;

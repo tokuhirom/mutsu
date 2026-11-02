@@ -27,13 +27,13 @@
 //! evaluates it with the match bound as `$/`, which is what a `qq` replacement
 //! reads — because a tree has no `qq` source to give back.
 
-use super::convert::{
-    convert_expr, leaf_field, node_field, plain_infix, quoted_string, regex_node,
-    statement_expression, unsupported as unsupported_what,
-};
 use super::lower::{
     bool_field, leaf_str, list_field, lower_expr, lower_regex_node, named_child,
     named_child_or_positional, positional_leaf, rakuast_node_of, unsupported,
+};
+use super::view::{
+    leaf_field, node_field, plain_infix, quoted_string, regex_node, statement_expression,
+    unsupported as unsupported_what, view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SubstThunk};
@@ -43,7 +43,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// `s///`, `S///` and `tr///` as their RakuAST nodes.
 // Cost: O(n), n = size of the pattern and replacement.
-pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Subst {
             samespace,
@@ -120,7 +120,7 @@ fn substitution(
                     fields: Vec::new(),
                 },
             ));
-            convert_expr(names, expr)?
+            view_expr(names, expr)?
         }
         Some(SubstThunk {
             expr,
@@ -136,9 +136,9 @@ fn substitution(
             ));
             let rhs = crate::parser::subst_compound_rhs(expr)
                 .ok_or_else(|| unsupported_what("compound substitution replacement"))?;
-            convert_expr(names, rhs)?
+            view_expr(names, rhs)?
         }
-        None => convert_expr(names, &crate::parser::interpolate_qq_content(replacement)?)?,
+        None => view_expr(names, &crate::parser::interpolate_qq_content(replacement)?)?,
     };
     fields.push(node_field(Some("pattern"), regex_node(names, &tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));
@@ -236,7 +236,7 @@ pub(super) fn adverb_node(
     };
     let expr = crate::parser::parse_adverb_argument(argument)
         .ok_or_else(|| unsupported_what("regex adverb argument"))?;
-    let value = convert_expr(names, &expr)?;
+    let value = view_expr(names, &expr)?;
     let dynamic_position = matches!(adverb.name.as_str(), "p" | "pos" | "c" | "continue");
     if crate::regex_tree::expression_argument_source(&expr).is_none() && !dynamic_position {
         return Err(unsupported_what("regex adverb argument"));

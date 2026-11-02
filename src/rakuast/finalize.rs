@@ -9,7 +9,7 @@
 //! No `RakuAstNode` is built for the rest of the unit.
 //!
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
-//! nodes themselves (`convert`, `lower`).
+//! nodes themselves (`view`, `lower`).
 
 use crate::scope::NameScope;
 use std::cell::Cell;
@@ -133,10 +133,10 @@ impl Finalize<'_> {
 
     /// A statement the parser's own tree cannot stand for, converted and
     /// lowered on its own.
-    fn convert_statement(&mut self, stmt: &mut Stmt) {
+    fn view_statement(&mut self, stmt: &mut Stmt) {
         let names = self.names;
         let line = self.line;
-        let converted = super::convert::convert_stmt(names, stmt).and_then(|node| match node {
+        let converted = super::view::view_stmt(names, stmt).and_then(|node| match node {
             Some(node) => {
                 super::infix_func::note_declaration(&node);
                 super::shadowed_terms::note_keyword_declaration(&node);
@@ -190,7 +190,7 @@ impl VisitMut for Finalize<'_> {
             inner = &spelled.expr;
         }
         if !carried::expr_carried(inner) {
-            match super::convert::convert_expr(names, expr)
+            match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
             {
                 Ok(lowered) => *expr = lowered,
@@ -248,7 +248,7 @@ impl VisitMut for Finalize<'_> {
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         if !carried::stmt_carried(stmt) {
-            self.convert_statement(stmt);
+            self.view_statement(stmt);
             return;
         }
         if matches!(stmt, Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::Assign(_)))

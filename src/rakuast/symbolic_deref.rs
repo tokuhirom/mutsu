@@ -14,11 +14,11 @@
 //! The parser keeps the variable forms as [`Expr::SymbolicDeref`] /
 //! [`Expr::SymbolicDerefAssign`] (the sigil and the name expression) and the
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
-//! assignment, is `Expr::IndirectTypeLookup`, handled in `convert.rs`).
+//! assignment, is `Expr::IndirectTypeLookup`, handled in `view.rs`).
 
-use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
+use super::view::{leaf_field, node_field, view_expr};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -29,7 +29,7 @@ pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(names, expr)?)],
+        fields: vec![node_field(None, view_expr(names, expr)?)],
     };
     Ok(name_parts::name_from_parts(vec![
         name_parts::leading_empty(),
@@ -39,7 +39,7 @@ pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
 
 /// `$::($n)` as `Var::Package`.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     sigil: &str,
     expr: &Expr,
@@ -56,7 +56,7 @@ pub(super) fn convert(
 
 /// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
 // Cost: O(n), n = nodes of the package expression plus the static name.
-pub(super) fn convert_indirect_code(
+pub(super) fn view_indirect_code(
     names: &NameScope,
     package: &Expr,
     name: &str,
@@ -71,7 +71,7 @@ pub(super) fn convert_indirect_code(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(names, package)?)],
+        fields: vec![node_field(None, view_expr(names, package)?)],
     })));
     parts.push(name_parts::simple_part(name));
     Ok(RakuAstNode {
@@ -226,7 +226,7 @@ fn is_lexical_pseudo_package(segment: &str) -> bool {
 /// `MY::(EXPR)` / `GLOBAL::(EXPR)`: the package's parts, then the key as a
 /// `Name::Part::Expression`.
 // Cost: O(n), n = nodes of the key, plus the package's segments.
-pub(super) fn convert_package_indirect(
+pub(super) fn view_package_indirect(
     names: &NameScope,
     package: &str,
     key: &Expr,
@@ -237,7 +237,7 @@ pub(super) fn convert_package_indirect(
     parts.push(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(names, key)?)],
+        fields: vec![node_field(None, view_expr(names, key)?)],
     })));
     let name = name_parts::name_from_parts(parts);
     let lexical = name_parts::identifier_segments(package)

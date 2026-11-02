@@ -9,16 +9,14 @@
 //!
 //! The parser takes a `whenever`'s pointy block apart into the statement's
 //! `params` / `param_defs` / `body`, the way `Expr::Lambda` and
-//! `Expr::AnonSubParams` hold them, so the converter rebuilds that expression
+//! `Expr::AnonSubParams` hold them, so the view rebuilds that expression
 //! for the body and the lowering takes it apart again. It records `done` and
 //! `done()` as the same `Stmt::ReactDone`; that renders as the bare call,
 //! which lowers to the bare word the compiler reads as the completion unless
 //! a lexical `&done` shadows it.
 
-use super::convert::{
-    block_node, blockoid, convert_expr, name_from_identifier, node_field, true_field,
-};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
+use super::view::{block_node, blockoid, name_from_identifier, node_field, true_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, RoutineDeclarator, Stmt};
 use crate::scope::NameScope;
@@ -27,7 +25,7 @@ use crate::value::RuntimeError;
 /// `react { body }`, or `react STATEMENT` (`blorst`), whose one statement the
 /// node holds directly.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_react(
+pub(super) fn view_react(
     names: &NameScope,
     body: &[Stmt],
     blorst: bool,
@@ -44,9 +42,9 @@ pub(super) fn convert_react(
                     body,
                 },
             ],
-        ) => convert_whenever(names, supply, params, param_defs, body)?,
-        (true, [Stmt::Expr(expr)]) => convert_expr(names, expr)?,
-        (true, _) => return Err(super::convert::unsupported("react with a statement body")),
+        ) => view_whenever(names, supply, params, param_defs, body)?,
+        (true, [Stmt::Expr(expr)]) => view_expr(names, expr)?,
+        (true, _) => return Err(super::view::unsupported("react with a statement body")),
     };
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -80,7 +78,7 @@ fn whenever_block(params: &[String], param_defs: &[ParamDef], body: &[Stmt]) -> 
 
 /// `whenever SUPPLY BLOCK`.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_whenever(
+pub(super) fn view_whenever(
     names: &NameScope,
     supply: &Expr,
     params: &[String],
@@ -101,13 +99,13 @@ pub(super) fn convert_whenever(
             ],
         }
     } else {
-        convert_expr(names, &whenever_block(params, param_defs, body))?
+        view_expr(names, &whenever_block(params, param_defs, body))?
     };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementWhenever,
         fields: vec![
-            node_field(Some("trigger"), convert_expr(names, supply)?),
+            node_field(Some("trigger"), view_expr(names, supply)?),
             node_field(Some("body"), block),
         ],
     })
@@ -115,10 +113,7 @@ pub(super) fn convert_whenever(
 
 /// `supply { body }` -> `StatementPrefix::Supply(Block)`.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_supply(
-    names: &NameScope,
-    body: &[Stmt],
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementPrefixSupply,
@@ -139,7 +134,7 @@ pub(super) fn lower_supply(names: &NameScope, node: &RakuAstNode) -> Result<Expr
 }
 
 /// `done`, as the bare call rakudo parses it to.
-pub(super) fn convert_done() -> RakuAstNode {
+pub(super) fn view_done() -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CallNameWithoutParentheses,

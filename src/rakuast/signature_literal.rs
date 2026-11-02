@@ -1,8 +1,8 @@
 //! Literal postconstraints in a declaring signature. The generated `where`
 //! refers to the parameter's value through Term::Declaration, as Rakudo does.
 
-use super::convert::{build_type_node, leaf_field, name_from_identifier, node_field, unsupported};
 use super::lower::named_child;
+use super::view::{build_type_node, leaf_field, name_from_identifier, node_field, unsupported};
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SignatureVar};
 use crate::scope::NameScope;
@@ -84,7 +84,7 @@ fn constraint() -> RakuAstNode {
 }
 
 // Cost: O(s), s = size of the literal value.
-pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = expr else {
         return Err(unsupported("nonconstant signature literal postconstraint"));
     };
@@ -147,6 +147,6 @@ pub(super) fn lower(names: &NameScope, param: &RakuAstNode) -> Result<SignatureV
         var.per_var_type_constraint = Some(super::type_lower::type_constraint(names, param, ty)?);
     }
     // Validate the value through the same conversion used by the read side.
-    convert(names, var.literal_value.as_ref().unwrap())?;
+    view_node(names, var.literal_value.as_ref().unwrap())?;
     Ok(var)
 }

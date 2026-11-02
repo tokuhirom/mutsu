@@ -27,7 +27,7 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 /// The `QuantifiedAtom` node for `atom` under `quantifier`. `separator` is
 /// the already converted separator node.
 // Cost: O(1).
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,
@@ -86,7 +86,7 @@ fn quantifier_node(
         QuantifierKind::Block(code) => {
             fields.push(field(
                 "block",
-                Value::rakuast(Box::new(super::convert::block_node(names, &code.body)?)),
+                Value::rakuast(Box::new(super::view::block_node(names, &code.body)?)),
             ));
             fields.push(super::regex_code::source_field(&code.code));
             RakuAstClass::RegexQuantifierBlockRange

@@ -9,8 +9,8 @@
 //! marker on its `Call::Term`, which the lowering reads back; a hand-built
 //! `Call::Term` has none and stays a call on the type object.
 
-use super::convert::{arg_list, node_field};
 use super::lower::arg_exprs;
+use super::view::{arg_list, node_field};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -28,7 +28,7 @@ pub(super) fn is_marker(field: &RakuAstField) -> bool {
 /// `Num(EXPR)` -> the call on the type term; `None` when `name` is not a type
 /// name. `args` is absent for `Int()`.
 // Cost: O(k + n), k = length of `name`, n = size of the arguments.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     name: &str,
     args: &[Expr],
@@ -36,7 +36,7 @@ pub(super) fn convert(
     if !name.starts_with(char::is_uppercase) {
         return Ok(None);
     }
-    let Some(base) = bareword::convert(names, name) else {
+    let Some(base) = bareword::view_node(names, name) else {
         return Ok(None);
     };
     if base.class != RakuAstClass::TypeSimple {

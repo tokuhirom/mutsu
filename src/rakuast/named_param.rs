@@ -23,9 +23,9 @@
 //! (`:$a ($x, $y)`) destructures; it is rendered with a `sub-signature` field
 //! like a positional one.
 
-use super::convert::{
-    build_type_node, convert_expr, implicit_parameter_type, node_field, split_sigil,
-    type_capture_name, type_capture_node, type_captures_field, unsupported,
+use super::view::{
+    build_type_node, implicit_parameter_type, node_field, split_sigil, type_capture_name,
+    type_capture_node, type_captures_field, unsupported, view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, ParamTarget};
@@ -172,7 +172,7 @@ pub(super) fn named_parameter(
             RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::ParameterTargetVar,
-                fields: vec![super::convert::leaf_field(
+                fields: vec![super::view::leaf_field(
                     Some("name"),
                     Value::str(format!("{sigil}{desigil}")),
                 )],
@@ -182,7 +182,7 @@ pub(super) fn named_parameter(
     // A named parameter is optional unless marked `!`; rakudo writes the
     // field only when the source spelled a marker.
     match flat.default {
-        Some(d) => fields.push(node_field(Some("default"), convert_expr(names, d)?)),
+        Some(d) => fields.push(node_field(Some("default"), view_expr(names, d)?)),
         None if pd.required || pd.optional_marker => fields.push(RakuAstField {
             name: Some("optional"),
             value: RakuAstFieldValue::Node(Value::truth(!pd.required)),
@@ -190,7 +190,7 @@ pub(super) fn named_parameter(
         None => {}
     }
     if let Some(w) = flat.where_constraint {
-        fields.push(node_field(Some("where"), convert_expr(names, w)?));
+        fields.push(node_field(Some("where"), view_expr(names, w)?));
     }
     Ok(RakuAstNode {
         origin: Default::default(),

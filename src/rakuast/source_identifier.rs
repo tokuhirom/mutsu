@@ -1,5 +1,5 @@
 //! Conversion of source-written identifiers, independent of generated helpers.
-use super::convert::{call_name, leaf_field, node_field, unsupported};
+use super::view::{call_name, leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
 use crate::scope::NameScope;

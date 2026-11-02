@@ -13,16 +13,16 @@ const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
 /// Keep the parser's lexical-scope diagnostic while exposing the public
 /// interpolated string tree.
 // Cost: O(n), n = heredoc content size.
-pub(super) fn convert_closed_block_heredoc(
+pub(super) fn view_closed_block_heredoc(
     names: &NameScope,
     content: &str,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut quoted =
-        super::convert::convert_expr(names, &crate::parser::interpolate_heredoc_content(content)?)?;
+        super::view::view_expr(names, &crate::parser::interpolate_heredoc_content(content)?)?;
     if quoted.class != RakuAstClass::QuotedString {
-        return Err(super::convert::unsupported("closed-block heredoc contents"));
+        return Err(super::view::unsupported("closed-block heredoc contents"));
     }
-    quoted.fields.push(super::convert::leaf_field(
+    quoted.fields.push(super::view::leaf_field(
         Some(SOURCE_CLOSED_BLOCK_HEREDOC),
         Value::str(content.to_string()),
     ));
@@ -35,16 +35,13 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(n), n = quoted-string expression size.
-pub(super) fn convert_format(
-    names: &NameScope,
-    args: &[Expr],
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_format(names: &NameScope, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
-        return Err(super::convert::unsupported("format quote arguments"));
+        return Err(super::view::unsupported("format quote arguments"));
     };
-    let mut quoted = super::convert::convert_expr(names, string)?;
+    let mut quoted = super::view::view_expr(names, string)?;
     if quoted.class != RakuAstClass::QuotedString {
-        return Err(super::convert::unsupported("format quote contents"));
+        return Err(super::view::unsupported("format quote contents"));
     }
     if let Some(field) = quoted
         .fields

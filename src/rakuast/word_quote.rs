@@ -9,10 +9,10 @@
 //! (`Spelling::InterpolatingWords`), so the segments are re-derived here; the
 //! lowering splits them back into words and hands them to `word_list::lower_quotewords`.
 
-use super::convert::{convert_expr, interp_segment, node_field};
 use super::lower::{
     list_field, lower_expr, named_child_or_positional, positional_leaf, unsupported,
 };
+use super::view::{interp_segment, node_field, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::parser::QuoteWordsPart;
@@ -21,17 +21,17 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for the interpolating `quotewords` quote written as `text`.
 // Cost: O(n), n = length of `text`.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     val: bool,
     text: &str,
     delimiter: Option<char>,
     interpolates: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    convert_nested(names, val, text, delimiter, interpolates, 0)
+    view_nested(names, val, text, delimiter, interpolates, 0)
 }
 
-fn convert_nested(
+fn view_nested(
     names: &NameScope,
     val: bool,
     text: &str,
@@ -40,12 +40,12 @@ fn convert_nested(
     depth: usize,
 ) -> Result<RakuAstNode, RuntimeError> {
     if depth >= 128 {
-        return Err(super::convert::unsupported(
+        return Err(super::view::unsupported(
             "a word quote nested beyond 128 levels",
         ));
     }
     let parts = crate::parser::quotewords_spelled_parts(text, delimiter, interpolates)
-        .ok_or_else(|| super::convert::unsupported("a word quote that does not parse"))?;
+        .ok_or_else(|| super::view::unsupported("a word quote that does not parse"))?;
     let mut segments = Vec::new();
     for part in &parts {
         match part {
@@ -61,11 +61,11 @@ fn convert_nested(
                 segments.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::QuoteWordsAtom,
-                    fields: vec![node_field(None, convert_expr(names, expr)?)],
+                    fields: vec![node_field(None, view_expr(names, expr)?)],
                 })));
             }
             QuoteWordsPart::Nested(inner) => {
-                segments.push(Value::rakuast(Box::new(convert_nested(
+                segments.push(Value::rakuast(Box::new(view_nested(
                     names,
                     val,
                     inner,

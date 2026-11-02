@@ -8,12 +8,12 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
-use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
     lower_dotty_assign, lower_expr, lower_var_decl, named_child, named_child_or_positional,
     positional_leaf, unsupported,
 };
+use super::view::{leaf_field, node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::temporize::{self, Assigned, Target, Temporized};
 use crate::ast::{Expr, Stmt};
@@ -45,8 +45,8 @@ fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
 /// The lvalue under the prefix.
 fn operand_node(names: &NameScope, target: &Target) -> Result<RakuAstNode, RuntimeError> {
     match target {
-        Target::Variable(key) => convert_expr(names, &temporize::variable_expr(key)),
-        Target::Undefine(key) => convert_expr(
+        Target::Variable(key) => view_expr(names, &temporize::variable_expr(key)),
+        Target::Undefine(key) => view_expr(
             names,
             &Expr::Call {
                 name: crate::symbol::Symbol::intern("undefine"),
@@ -54,7 +54,7 @@ fn operand_node(names: &NameScope, target: &Target) -> Result<RakuAstNode, Runti
                 listop: false,
             },
         ),
-        Target::Element(element) => convert_expr(names, element),
+        Target::Element(element) => view_expr(names, element),
     }
 }
 
@@ -66,13 +66,13 @@ fn is_scalar_variable(target: &Target) -> bool {
 
 /// `temp my $x`: the declaration under a `temp` prefix.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn convert_declaration(
+pub(super) fn view_declaration(
     names: &NameScope,
     decl: &Stmt,
 ) -> Result<RakuAstNode, RuntimeError> {
     Ok(prefix_node(
         true,
-        convert_expr(names, &Expr::DoStmt(Box::new(decl.clone())))?,
+        view_expr(names, &Expr::DoStmt(Box::new(decl.clone())))?,
     ))
 }
 
@@ -81,7 +81,7 @@ pub(super) fn convert_declaration(
 /// already-expanded writeback value for the compiler; its identity marker
 /// preserves the compound operator and original left operand for this model.
 // Cost: O(e), e = size of the assignment value and method arguments.
-pub(super) fn convert_method_assign_stmt(
+pub(super) fn view_method_assign_stmt(
     names: &NameScope,
     stmt: &Stmt,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -94,9 +94,9 @@ pub(super) fn convert_method_assign_stmt(
         type_invocant,
     } = stmt
     else {
-        return Err(super::convert::unsupported("temp method assignment"));
+        return Err(super::view::unsupported("temp method assignment"));
     };
-    convert_method_assign(
+    view_method_assign(
         names,
         var_name,
         method_name,
@@ -108,7 +108,7 @@ pub(super) fn convert_method_assign_stmt(
 }
 
 // Cost: O(e), e = size of the assignment value and method arguments.
-fn convert_method_assign(
+fn view_method_assign(
     names: &NameScope,
     var_name: &str,
     method_name: &str,
@@ -137,7 +137,7 @@ fn convert_method_assign(
             Some(meta) if type_invocant => (meta, Some('^')),
             _ => (method_name, None),
         };
-        convert_expr(
+        view_expr(
             names,
             &Expr::MethodCall {
                 target: Box::new(invocant),
@@ -165,25 +165,25 @@ fn convert_method_assign(
         )
     {
         let operator = crate::op_names::token_kind_to_op_name(op);
-        return super::convert::compound_assignment_with_left(
+        return super::view::compound_assignment_with_left(
             names,
             left,
             &format!("{operator}="),
             right,
         );
     }
-    super::convert::assignment_around(names, left, is_attribute, value)
+    super::view::assignment_around(names, left, is_attribute, value)
 }
 
 /// The prefix over the lvalue, with the assignment around it.
 // Cost: O(n), n = size of the lvalue and the assigned expression.
-pub(super) fn convert_temporized(
+pub(super) fn view_temporized(
     names: &NameScope,
     t: &Temporized,
 ) -> Result<RakuAstNode, RuntimeError> {
     match &t.assigned {
         Assigned::No => Ok(prefix_node(t.is_temp, operand_node(names, &t.target)?)),
-        Assigned::Plain(value) => super::convert::assignment_around(
+        Assigned::Plain(value) => super::view::assignment_around(
             names,
             prefix_node(t.is_temp, operand_node(names, &t.target)?),
             is_scalar_variable(&t.target),
@@ -192,24 +192,24 @@ pub(super) fn convert_temporized(
         Assigned::Compound(Expr::CompoundAssign {
             target, op, rhs, ..
         }) => {
-            let left = prefix_node(t.is_temp, convert_expr(names, target)?);
+            let left = prefix_node(t.is_temp, view_expr(names, target)?);
             if op == crate::parser::DOTTY_ASSIGN_OP {
-                super::convert::dotty_assignment_with_left(names, left, rhs)
+                super::view::dotty_assignment_with_left(names, left, rhs)
             } else {
-                super::convert::compound_assignment_with_left(names, left, op, rhs)
+                super::view::compound_assignment_with_left(names, left, op, rhs)
             }
         }
         Assigned::Compound(Expr::Ast(node)) => match node.as_ref() {
             crate::ast::parsed::ParsedExpr::CompoundAssign(a)
                 if a.meta == crate::ast::parsed::CompoundMeta::Dotty =>
             {
-                let left = prefix_node(t.is_temp, convert_expr(names, &a.target)?);
-                super::convert::dotty_assignment_with_left(names, left, &a.source)
+                let left = prefix_node(t.is_temp, view_expr(names, &a.target)?);
+                super::view::dotty_assignment_with_left(names, left, &a.source)
             }
             crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
-                let left = prefix_node(t.is_temp, convert_expr(names, &a.target)?);
+                let left = prefix_node(t.is_temp, view_expr(names, &a.target)?);
                 super::parsed_view::with_compound_meta(
-                    super::convert::compound_assignment_with_left(
+                    super::view::compound_assignment_with_left(
                         names,
                         left,
                         &super::parsed_view::compound_spelling(a),
@@ -218,11 +218,11 @@ pub(super) fn convert_temporized(
                     a.meta,
                 )
             }
-            _ => Err(super::convert::unsupported(
+            _ => Err(super::view::unsupported(
                 "temp with an unrecognised compound assignment",
             )),
         },
-        Assigned::Compound(_) => Err(super::convert::unsupported(
+        Assigned::Compound(_) => Err(super::view::unsupported(
             "temp with an unrecognised compound assignment",
         )),
     }

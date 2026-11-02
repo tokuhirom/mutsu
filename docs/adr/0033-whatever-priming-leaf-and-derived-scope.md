@@ -36,7 +36,7 @@ $ mutsu -e 'say Q[* + *].AST'
 RakuAST: `.AST` does not yet support this construct: `is rw` / Whatever / typed pointy block
 ```
 
-Those two errors are raised at `src/rakuast/convert.rs:1107` and `:1120`, in the
+Those two errors are raised at `src/rakuast/view.rs:1107` and `:1120`, in the
 `Expr::Lambda { is_whatever_code, .. }` / `Expr::AnonSubParams { is_whatever_code, .. }`
 arms. They fire because by the time the converter runs, `* + 1` is no longer an
 expression containing a `*` — mutsu's **parser** has already replaced it with a
@@ -253,7 +253,7 @@ decision this ADR fixes — is:
 
 ### 5. RakuAST read direction
 
-In `src/rakuast/convert.rs`:
+In `src/rakuast/view.rs`:
 
 - `Expr::WhateverCurry(body)` converts to `convert_expr(body)` with **no wrapper node**,
   matching Rakudo.
@@ -388,7 +388,7 @@ family as `unless` → `if !`.
   `(* + 1 orelse * + 2).arity` is `1` in raku because the barrier ends the scope before
   `.arity`. `plant` must get the interaction between barriers and trailing postfixes
   right; both forms belong in `t/whatever-thunky-operators.t`.
-- **File-size cap.** `src/rakuast/convert.rs` (1795 lines), `mod.rs` (1048) and
+- **File-size cap.** `src/rakuast/view.rs` (1795 lines), `mod.rs` (1048) and
   `lower.rs` (864) already exceed the repo's 500-line convention, as does
   `src/parser/expr/mod.rs` (515), which hosts six of the wrap sites. Phase 1's move gives
   a natural opportunity to shrink `src/parser/expr/mod.rs`; phases 2 and 3 should land
@@ -498,7 +498,7 @@ type-subset}.t` sweep passing unchanged.
 (`"RakuAST::Term::HyperWhatever"`, bare `.new`); `WhateverCodeArgument` was added explicitly
 to the `semantic_ancestors`/`semantic_type_object_ancestors` TERM set (the section 2.4 trap:
 its printed name does not start with `RakuAST::Term::`, so the name-prefix rule would
-otherwise silently make `~~ RakuAST::Term` false). `src/rakuast/convert.rs` gained arms for
+otherwise silently make `~~ RakuAST::Term` false). `src/rakuast/view.rs` gained arms for
 `Expr::WhateverArg` (-> `WhateverCodeArgument`), `Expr::HyperWhatever` (-> `TermHyperWhatever`,
 a read-direction-only bonus per section 2.4 — priming for `**` stays out of scope), and
 `Expr::WhateverCurry(body)` (-> `convert_expr(body)`, no wrapper node, matching Rakudo's
@@ -806,7 +806,7 @@ ordinary execution, module loads, `EVAL`, and `Str.AST` (`rakuast::str_dot_ast` 
 via `parse_dispatch::parse_source`, `src/rakuast/mod.rs:491`).
 
 Why a post-parse pass rather than the parser's `*` term site: the classification needs the
-*parent*, which the term parser does not have. Why not inside `rakuast::convert` (walking
+*parent*, which the term parser does not have. Why not inside `rakuast::view` (walking
 with a context parameter and never materialising the variant): because Phase 3 must be able
 to *produce* the leaf when lowering a hand-constructed
 `RakuAST::WhateverCode::Argument.new`, and Phase 4's `plant` must be able to *read* it; a
@@ -839,7 +839,7 @@ In `src/rakuast/mod.rs`:
   shape (measured), and the `RakuAST::Term::` prefix covers it. This ADR's §1 excludes `**`
   from the *priming* work; it does not exclude giving it a read-direction node.
 
-In `src/rakuast/convert.rs`:
+In `src/rakuast/view.rs`:
 
 - `Expr::WhateverArg` → `WhateverCodeArgument` (next to the `Expr::Whatever` arm at `:828`).
 - `Expr::WhateverCurry(body)` → `convert_expr(body)`, **no wrapper node** (§5): Rakudo's tree
@@ -926,7 +926,7 @@ green unchanged — they are the same surface Phase 1 leaned on.
   predicates. If it proves awkward, splitting it into its own follow-up PR is legitimate;
   splitting the *leaf classification* is not, since nothing else in Phase 2 is useful without
   it.
-- **File-size cap.** `src/rakuast/convert.rs` (1795 lines) and `mod.rs` (1048) are already
+- **File-size cap.** `src/rakuast/view.rs` (1795 lines) and `mod.rs` (1048) are already
   over the repo's 500-line convention. Per the Risks section above, land the per-cluster
   split *with* this phase rather than growing them further.
 
@@ -939,5 +939,5 @@ green unchanged — they are the same surface Phase 1 leaned on.
 - `raku-doc/doc/Type/Whatever.rakudoc:15-88` — Whatever-priming and its exception table.
 - `src/parser/expr/whatever.rs`, `whatever_wrap.rs`, `whatever_replace.rs` — the current
   parser-side implementation.
-- `src/rakuast/convert.rs:828`, `:1100-1123`; `src/rakuast/lower.rs:655`;
+- `src/rakuast/view.rs:828`, `:1100-1123`; `src/rakuast/lower.rs:655`;
   `src/rakuast/mod.rs:141,226,239` — the RakuAST sites this ADR changes.

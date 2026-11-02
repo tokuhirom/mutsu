@@ -30,8 +30,8 @@
 //! message `something else`).
 
 mod argument;
-use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
+use super::view::{name_from_identifier, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::attr_trait::AttrTrait;
@@ -186,13 +186,13 @@ impl AttributeTraits {
                                 origin: Default::default(),
                                 class: RakuAstClass::TraitWill,
                                 fields: vec![
-                                    super::convert::leaf_field(
+                                    super::view::leaf_field(
                                         Some("phase"),
                                         Value::str_from(name.as_str()),
                                     ),
                                     node_field(
                                         Some("block"),
-                                        super::convert::signature_block_node(names, body)?,
+                                        super::view::signature_block_node(names, body)?,
                                     ),
                                 ],
                             })),
@@ -208,7 +208,7 @@ impl AttributeTraits {
                     Value::rakuast(Box::new(RakuAstNode {
                         origin: Default::default(),
                         class: RakuAstClass::TraitHandles,
-                        fields: vec![node_field(None, convert_handles_term(names, term)?)],
+                        fields: vec![node_field(None, view_handles_term(names, term)?)],
                     }))
                 }
             };
@@ -221,7 +221,7 @@ impl AttributeTraits {
 /// Bare identifiers in a `handles(...)` list name delegated methods, so their
 /// term value is the method name string rather than a lexical bareword.
 // Cost: O(e), e = size of the handles term.
-fn convert_handles_term(names: &NameScope, term: &Expr) -> Result<RakuAstNode, RuntimeError> {
+fn view_handles_term(names: &NameScope, term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     struct MethodNames;
     impl VisitMut for MethodNames {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
@@ -243,7 +243,7 @@ fn convert_handles_term(names: &NameScope, term: &Expr) -> Result<RakuAstNode, R
     }
     let mut term = term.clone();
     MethodNames.visit_expr_mut(&mut term);
-    convert_expr(names, &term)
+    view_expr(names, &term)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,

@@ -47,9 +47,9 @@ pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
 use constructor_positional::single_positional_class;
-mod convert;
 mod core_term_names;
 mod statements;
+mod view;
 use crate::core_type_names;
 use crate::scope::NameScope;
 mod decl_compound_assign;
@@ -119,7 +119,6 @@ mod quoted_string;
 mod react;
 mod regex_char_class;
 mod regex_code;
-mod regex_convert;
 mod regex_decl_constructor;
 mod regex_declaration;
 mod regex_enumeration;
@@ -127,6 +126,7 @@ mod regex_extension;
 mod regex_quantifier;
 mod regex_sym;
 mod regex_variable_alias;
+mod regex_view;
 mod render;
 mod resolve;
 mod role;
@@ -189,7 +189,7 @@ pub struct RakuAstNode {
     pub origin: NodeOrigin,
 }
 
-/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `convert`
+/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `view`
 /// made below the statement level), and the origins of the empty nodes its
 /// absent fields stand for ([`empty_fields`]). It takes no part in a node's
 /// equality: two trees that differ only in where they were written are the
@@ -226,7 +226,7 @@ pub enum RakuAstFieldValue {
     Adverb(&'static str),
 }
 
-/// Every known RakuAST node kind. Exhaustive `match` on this in the converter
+/// Every known RakuAST node kind. Exhaustive `match` on this in the view
 /// and renderer (and, later, the lowerer) keeps the layer honest as it grows —
 /// adding a kind is a compile error until every site handles it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1505,7 +1505,7 @@ pub(crate) fn lower_parsed_stmt(
 /// The `Name` node of the identifier `identifier`, written where `origin` says.
 // Cost: O(k), k = length of the identifier.
 pub(crate) fn name_node_at(identifier: &str, origin: &NodeOrigin) -> Value {
-    let mut name = convert::name_from_identifier(identifier);
+    let mut name = view::name_from_identifier(identifier);
     name.origin = origin.clone();
     Value::rakuast(Box::new(name))
 }
@@ -1787,7 +1787,7 @@ pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeErro
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let mut node = convert::statement_list(names, &stmts)?;
+    let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }
@@ -3268,7 +3268,7 @@ fn construct_values(
                 "may-have-signature",
             ] {
                 if named_arg(args, name).is_some_and(|value| value.truthy()) {
-                    fields.push(convert::true_field(name));
+                    fields.push(view::true_field(name));
                 }
             }
         }

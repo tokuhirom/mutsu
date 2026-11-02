@@ -1,7 +1,7 @@
 //! Hyper subscripts retain their operator identity instead of becoming an
 //! explicit AT-POS/AT-KEY method call. Measured against Rakudo 2026.07.
-use super::convert::{convert_expr, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
+use super::view::{node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -9,7 +9,7 @@ use crate::symbol::Symbol;
 use crate::value::RuntimeError;
 
 // Cost: O(n), n = index expression size.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     name: &str,
     args: &[Expr],
@@ -24,7 +24,7 @@ pub(super) fn convert(
         let statement = RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::StatementExpression,
-            fields: vec![node_field(Some("expression"), convert_expr(names, index)?)],
+            fields: vec![node_field(Some("expression"), view_expr(names, index)?)],
         };
         let semilist = RakuAstNode {
             origin: Default::default(),

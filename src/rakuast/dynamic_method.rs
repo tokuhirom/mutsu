@@ -14,15 +14,15 @@
 //! The parser keeps them as [`Expr::DynamicMethodCall`] (`name_expr` is the
 //! variable, or a `CodeVar` for the `&f` spelling) and
 //! [`Expr::HyperMethodCallDynamic`]. A `.^$n()` loses its `^` in rakudo's tree,
-//! and a quoted name is a `Call::QuotedMethod` (see `convert.rs`).
+//! and a quoted name is a `Call::QuotedMethod` (see `view.rs`).
 
-use super::convert::{
-    arg_list, convert_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
-    unsupported as unsupported_expr,
-};
 use super::lower::{
     arg_exprs, arg_list_exprs, call_name_str, dispatch_modifier, lower_expr, named_child,
     unsupported,
+};
+use super::view::{
+    arg_list, leaf_field, name_from_identifier, node_field, postfix_operand,
+    unsupported as unsupported_expr, view_expr,
 };
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
@@ -63,7 +63,7 @@ fn postfix_of(
         // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
         // identifier `Name.from-identifier` spells.
         Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
-            fields.push(node_field(Some("block"), convert_expr(names, name_expr)?));
+            fields.push(node_field(Some("block"), view_expr(names, name_expr)?));
             RakuAstClass::CallBlockMethod
         }
         Expr::CodeVar(name) if dispatch.is_none() && name_as_method => {
@@ -71,7 +71,7 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
-            fields.push(node_field(Some("callee"), convert_expr(names, other)?));
+            fields.push(node_field(Some("callee"), view_expr(names, other)?));
             RakuAstClass::CallTermAsMethod
         }
     };
@@ -109,12 +109,7 @@ pub(super) fn call_assign_postfix(
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(
-            names,
-            convert_expr(names, name_expr)?,
-            args,
-            None,
-        ),
+        } => super::view::call_quoted_method_expr(names, view_expr(names, name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),
@@ -154,7 +149,7 @@ pub(super) fn call_assign_initializer(
 
 /// `$o.$name(args)` / `$o.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     target: &Expr,
     name_expr: &Expr,
@@ -173,7 +168,7 @@ pub(super) fn convert(
 
 /// `@a>>.$name(args)` / `@a>>.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert_hyper(
+pub(super) fn view_hyper(
     names: &NameScope,
     target: &Expr,
     name_expr: &Expr,

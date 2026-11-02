@@ -1,12 +1,12 @@
 //! Routine traits in written order, independently of their execution fields.
 
-use super::convert::{blockoid, name_from_identifier, signature};
-use super::convert::{leaf_field, node_field, unsupported};
 use super::lower::{
     list_field, lower_signature_parameters, named_child, named_child_or_positional, positional_leaf,
 };
 use super::name_parts;
 use super::type_build::return_constraint_node;
+use super::view::{blockoid, name_from_identifier, signature};
+use super::view::{leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{ParentKind, RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};
@@ -145,7 +145,7 @@ pub(super) fn trait_node(
         RoutineTrait::Handles(term) => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitHandles,
-            fields: vec![node_field(None, super::convert::convert_expr(names, term)?)],
+            fields: vec![node_field(None, super::view::view_expr(names, term)?)],
         },
         RoutineTrait::Parent { kind, name, args } => {
             // `is NAME` names a parent only when NAME is a type; any other name

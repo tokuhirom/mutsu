@@ -39,7 +39,7 @@ For each construct, investigate the smallest useful program under both a bare
    accessors, constructor shape, and `EVAL($ast)` result.
 2. Locate the existing parser/internal `Expr` or `Stmt` and confirm ordinary
    execution behavior.
-3. Implement the read direction in `src/rakuast/convert.rs`.
+3. Implement the read direction in `src/rakuast/view.rs`.
 4. Add or complete class, constructor, and accessor metadata in
    `src/rakuast/mod.rs`.
 5. Implement the write direction in `src/rakuast/lower.rs`, lowering into the

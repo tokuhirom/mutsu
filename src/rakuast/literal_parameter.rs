@@ -1,6 +1,6 @@
 //! Literal-value parameters shared by routine, pointy and signature forms.
 
-use super::convert::{build_type_node, leaf_field, node_field, unsupported};
+use super::view::{build_type_node, leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::ParamDef;
 use crate::scope::NameScope;
@@ -27,7 +27,7 @@ pub(super) fn value_type(value: &Value) -> Option<&'static str> {
 /// `sub f(<1+2i>)` and other scalar literal parameters have no target, and
 /// carry the literal's Raku type and value.
 // Cost: O(1).
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     pd: &ParamDef,
     value: &Value,

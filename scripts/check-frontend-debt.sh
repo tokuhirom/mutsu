@@ -6,7 +6,7 @@
 #
 #   synthetic-block-sites   lines in src/parser naming `SyntheticBlock` (producers and matchers)
 #   internal-name-literals  distinct `"__...` literals in src/parser
-#   convert-lines           lines of src/rakuast/convert.rs
+#   view-lines           lines of src/rakuast/view.rs
 #
 # ADR-15334 Amendment 5: the counts are executable IR and the .AST view, not debt; the ceilings are
 # pinned at their 2026-10-31 values and may only fall. The check stays.
@@ -17,7 +17,7 @@ D=${FRONTEND_DEBT_DIR:-scripts/frontend-debt.d}
 
 count_synthetic_block_sites() { grep -rn 'SyntheticBlock' src/parser | wc -l; }
 count_internal_name_literals() { { grep -rhoE '"__[A-Za-z0-9_]+' src/parser || true; } | sort -u | wc -l; }
-count_convert_lines() { wc -l <src/rakuast/convert.rs; }
+count_view_lines() { wc -l <src/rakuast/view.rs; }
 
 # check_metric NAME COUNT -> 0 ok, 1 above ceiling
 check_metric() {
@@ -48,5 +48,5 @@ fi
 rc=0
 check_metric synthetic-block-sites "$(count_synthetic_block_sites)" || rc=1
 check_metric internal-name-literals "$(count_internal_name_literals)" || rc=1
-check_metric convert-lines "$(count_convert_lines)" || rc=1
+check_metric view-lines "$(count_view_lines)" || rc=1
 exit $rc

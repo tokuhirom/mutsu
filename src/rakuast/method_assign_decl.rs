@@ -1,6 +1,6 @@
 //! RakuAST conversion of method-assignment declarations and calls.
 
-use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
+use super::view::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
 use crate::ast::method_assign_decl::MethodAssignDecl;
 use crate::ast::parsed::ParsedStmt;
@@ -9,7 +9,7 @@ use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     form: &MethodAssignDecl,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -44,14 +44,17 @@ pub(super) fn convert(
         None,
         form.anonymous,
     )?;
-    decl_traits::insert(&mut decl, decl_traits::convert(names, &form.custom_traits)?);
+    decl_traits::insert(
+        &mut decl,
+        decl_traits::view_node(names, &form.custom_traits)?,
+    );
     if let Some(dims) = &form.shape {
         super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }
     match &form.chain {
         // `my $o .= $m.uc`: the declaration is the operand of the chain
         // (`ApplyPostfix(operand => VarDeclaration, …)`, rakudo 2026.09).
-        Some(chain) => with_innermost_operand(&super::convert::convert_expr(names, chain)?, decl),
+        Some(chain) => with_innermost_operand(&super::view::view_expr(names, chain)?, decl),
         None => Ok(decl),
     }
 }
@@ -126,7 +129,7 @@ pub(super) fn lower_chained(names: &NameScope, node: &RakuAstNode) -> Result<Stm
     if form.name.starts_with(['@', '%', '&']) {
         return Err(unsupported("a `.=` declaration chain"));
     }
-    let variable = super::convert::var_lexical("$", &form.name);
+    let variable = super::view::var_lexical("$", &form.name);
     let chain = super::lower::lower_expr(names, &with_innermost_operand(node, variable)?)?;
     let mut form = form.clone();
     form.chain = Some(Box::new(chain));
@@ -140,7 +143,7 @@ pub(super) fn call_method(
     args: &[Expr],
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = super::convert::name_from_identifier(name);
+    let name_node = super::view::name_from_identifier(name);
     // Field order matches raku: name, args, dispatch.
     let mut fields = vec![node_field(Some("name"), name_node)];
     if !args.is_empty() {

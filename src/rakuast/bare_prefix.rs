@@ -27,17 +27,17 @@ pub(super) fn bare_statement_node(
     inner: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     // `do STATEMENT`: the statement under `StatementPrefix::Do`, whatever it is
-    // (the converter's own `DoStmt` arm only takes loops and conditionals).
+    // (the view's own `DoStmt` arm only takes loops and conditionals).
     if let Expr::DoStmt(stmt) = inner {
-        let statement = super::convert::convert_stmt(names, stmt)?
-            .ok_or_else(|| super::convert::unsupported("an empty `do` statement"))?;
+        let statement = super::view::view_stmt(names, stmt)?
+            .ok_or_else(|| super::view::unsupported("an empty `do` statement"))?;
         return Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::StatementPrefixDo,
-            fields: vec![super::convert::node_field(None, statement)],
+            fields: vec![super::view::node_field(None, statement)],
         });
     }
-    let mut node = super::convert::convert_expr(names, inner)?;
+    let mut node = super::view::view_expr(names, inner)?;
     let Some(field) = node.fields.first_mut() else {
         return Ok(node);
     };

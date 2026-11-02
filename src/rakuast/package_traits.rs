@@ -1,7 +1,7 @@
 //! Executable and written `is` traits of modules and packages.
 
-use super::convert::unsupported;
 use super::lower::{list_field, named_child};
+use super::view::unsupported;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
@@ -60,7 +60,7 @@ pub(super) fn construct(
         }
         let body = super::named_arg(args, "body").unwrap_or_else(|| {
             Value::rakuast(Box::new(
-                super::convert::block_node(names, &[]).expect("empty block is supported"),
+                super::view::block_node(names, &[]).expect("empty block is supported"),
             ))
         });
         super::require_rakuast_class(&body, RakuAstClass::Block, name)?;

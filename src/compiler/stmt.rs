@@ -332,7 +332,7 @@ impl Compiler {
 
     /// Whether `name` is one of mutsu's internal desugaring temps rather than a
     /// variable the source wrote. The same rule
-    /// `rakuast::convert::is_desugar_marker` uses, and for the same reason: an
+    /// `rakuast::view::is_desugar_marker` uses, and for the same reason: an
     /// internal name has none of the container semantics a user variable has.
     fn is_desugar_temp_name(name: &str) -> bool {
         name.starts_with("__")

@@ -15,15 +15,15 @@
 //! `Var::PositionalCapture`, and a `$/[0]` written out in a string does too
 //! (rakudo renders that one as an index of `$/`).
 
-use super::convert::{leaf_field, node_field, word_quote};
 use super::lower::{leaf_str, named_child_or_positional, unsupported};
+use super::view::{leaf_field, node_field, word_quote};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `$<name>` as `Var::NamedCapture`.
 // Cost: O(|name|).
-pub(super) fn convert(name: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarNamedCapture,
@@ -92,7 +92,7 @@ fn positional(index: i64) -> RakuAstNode {
 /// The variable `0`, `1`, ... as `Var::PositionalCapture`, or `None` for any
 /// other name.
 // Cost: O(|name|).
-pub(super) fn convert_positional(name: &str) -> Option<RakuAstNode> {
+pub(super) fn view_positional(name: &str) -> Option<RakuAstNode> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
@@ -102,7 +102,7 @@ pub(super) fn convert_positional(name: &str) -> Option<RakuAstNode> {
 /// A string's interpolated `$0` (`$/[0]`) as `Var::PositionalCapture`, or
 /// `None` for any other expression.
 // Cost: O(1).
-pub(super) fn convert_interpolated(expr: &Expr) -> Option<RakuAstNode> {
+pub(super) fn view_interpolated(expr: &Expr) -> Option<RakuAstNode> {
     let Expr::Index {
         target,
         index,

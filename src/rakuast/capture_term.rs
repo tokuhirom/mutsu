@@ -4,8 +4,8 @@
 //! and a bare `\$x` / `\3` is `Term::Capture` over the term itself. The parser
 //! keeps both as [`Expr::CaptureLiteral`], with a flag for the parentheses.
 
-use super::convert::{arg_list, convert_expr, node_field};
 use super::lower::{arg_list_exprs, lower_expr, named_child_or_positional};
+use super::view::{arg_list, node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -13,13 +13,13 @@ use crate::value::RuntimeError;
 
 /// An [`Expr::CaptureLiteral`] as its `Term::Capture` node.
 // Cost: O(n), n = nodes of the items.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     items: &[Expr],
     parenthesized: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     let source = match items {
-        [item] if !parenthesized => convert_expr(names, item)?,
+        [item] if !parenthesized => view_expr(names, item)?,
         _ => arg_list(names, items)?,
     };
     Ok(RakuAstNode {

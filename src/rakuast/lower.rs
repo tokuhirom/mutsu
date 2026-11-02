@@ -774,7 +774,7 @@ fn lower_native(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeEr
 }
 
 /// The label of a loop node: the name in its `labels => (Label("…"),)` field,
-/// which the converter writes first. An unlabelled loop has none.
+/// which the view writes first. An unlabelled loop has none.
 // Cost: O(l), l = labels of the node (one in practice).
 fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     let Some(field) = node.fields.iter().find(|f| f.name == Some("labels")) else {
@@ -1082,7 +1082,7 @@ fn class_traits(names: &NameScope, node: &RakuAstNode) -> Result<ClassTraits, Ru
 /// `constant X = 5` -> a `Stmt::VarDecl` carrying mutsu's `__constant` marker
 /// pair. The package-scoped default spelling is `is_our`; `scope => "my"` is the
 /// lexical one. Only the sigilless form round-trips, matching what the
-/// converter renders.
+/// view renders.
 /// `VarDeclaration::Term` (`my \x = 5`, `my Int \x := $s`) -> the parser's own
 /// expansion of a sigilless declaration. Only the default scope round-trips.
 // Cost: O(n), n = size of the initializer.
@@ -1342,7 +1342,7 @@ fn lower_constant(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runtime
 /// One kind is deliberately absent: `PRE`/`POST` — rakudo wraps their block in
 /// a call (the phaser's child is an `ApplyPostfix`, not a `Block`), and mutsu
 /// also keeps a source-text condition for the `X::Phaser::PrePost` message, so
-/// the converter refuses them and nothing lowered can be one.
+/// the view refuses them and nothing lowered can be one.
 ///
 /// `BEGIN` runs at *compile* time, which the re-entrant carrier this lowering
 /// feeds did not do — it ran the phaser in statement position, so
@@ -1395,7 +1395,7 @@ fn phaser_kind(node: &RakuAstNode) -> Result<crate::ast::PhaserKind, RuntimeErro
 }
 
 /// A package body as the parser leaves it: the `method`s declared in its
-/// nested blocks and routine bodies hoisted into it (the converter rendered
+/// nested blocks and routine bodies hoisted into it (the view rendered
 /// them where they were written, `nested_methods::unhoist`).
 pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
     super::nested_methods::hoist(&mut body);
@@ -1421,7 +1421,7 @@ fn prepend_trusts(body: &mut Vec<Stmt>, trusts: Vec<String>) {
 
 /// `class NAME { … }` -> `Stmt::ClassDecl`. The body is a `Block` whose
 /// statements are the class body (methods, attributes, …), lowered by the same
-/// statement dispatch. Only the plain form round-trips: the converter refuses
+/// statement dispatch. Only the plain form round-trips: the view refuses
 /// to *read* a class with inheritance, scope, a repr, or traits, so nothing
 /// lowered here can carry them either.
 fn lower_class(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -1747,7 +1747,7 @@ fn lower_regex_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
     let (is_my, is_our) = regex_declaration_scope(node)?;
     let multi = multiness == "multi";
     if (is_my || is_our) && node.class == RakuAstClass::RuleDeclaration {
-        // `Stmt::RuleDecl` has no scope; the converter never renders one.
+        // `Stmt::RuleDecl` has no scope; the view never renders one.
         return Err(unsupported(node));
     }
     match node.class {
@@ -1783,13 +1783,13 @@ fn lower_regex_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
 }
 
 /// `role NAME { … }` -> `Stmt::RoleDecl`. A role's body is a `RoleBody` (not a
-/// plain `Block`) wrapping the `Blockoid`, matching what the converter renders.
+/// plain `Block`) wrapping the `Blockoid`, matching what the view renders.
 /// Parameterised roles, export, `is rw`, and traits are refused on the read
 /// side, so nothing lowered here carries them.
 /// `method NAME (…) { … }` -> `Stmt::MethodDecl`, the `Method` counterpart of
 /// [`lower_sub`]. The return type comes back through the same
 /// `signature.returns` / `Trait::Returns` / `Trait::Of` reading `lower_sub`
-/// uses, so all three spellings the converter renders lower back.
+/// uses, so all three spellings the view renders lower back.
 /// `module M { … }` / `package P { … }` -> `Stmt::Package`. raku names the
 /// declarator with the class, so the keyword comes back from `node.class`
 /// rather than from a field. `grammar` is refused on the read side (its body
@@ -1849,7 +1849,7 @@ fn lower_enum(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeErro
 /// `subset S of T where P` -> `Stmt::SubsetDecl`. An explicit base type arrives
 /// as the single `Trait::Of` entry of the `traits` list; a `subset` that writes
 /// no `of` carries no `traits` field at all and takes the implied `Any`. Any
-/// other trait is a shape the converter never produced.
+/// other trait is a shape the view never produced.
 fn lower_subset(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (node, is_my, is_export, export_tags) =
         super::package_header::strip_scope_and_export(names, node)?;
@@ -1991,7 +1991,7 @@ fn lower_method(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeEr
 /// A routine's return type, from either spelling: `signature.returns` (the
 /// `-->` arrow) or a `traits => (Trait::Returns|Trait::Of(Type),)` entry. The
 /// trait spelling is recorded by the source traits (`routine_trait`), so `EVAL`
-/// reproduces the source form the converter read.
+/// reproduces the source form the view read.
 /// Declaring both is refused rather than silently collapsed. A
 /// `Trait::Is(name => rw|raw)` sets `is_traits` when the caller takes one
 /// (a method) and is refused otherwise.
@@ -2228,9 +2228,9 @@ fn lower_parameter(
             RakuAstClass::ParameterTargetVar => {
                 let raw = leaf_str(target, "name")?;
                 match raw.as_str() {
-                    "$" => super::convert::ANONYMOUS_SCALAR_PARAM.to_string(),
-                    "@" => super::convert::ANONYMOUS_ARRAY_PARAM.to_string(),
-                    "%" => super::convert::ANONYMOUS_HASH_PARAM.to_string(),
+                    "$" => super::view::ANONYMOUS_SCALAR_PARAM.to_string(),
+                    "@" => super::view::ANONYMOUS_ARRAY_PARAM.to_string(),
+                    "%" => super::view::ANONYMOUS_HASH_PARAM.to_string(),
                     _ => raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
                 }
             }
@@ -2647,7 +2647,7 @@ pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
 
 /// Whether an `ApplyInfix` is `VAR := …`: a plain `:=` infix whose left side
 /// is a variable. Any other bind target (a subscript, an attribute) stays the
-/// boundary, as the converter never renders one.
+/// boundary, as the view never renders one.
 fn infix_is_bind_to_variable(node: &RakuAstNode) -> bool {
     infix_is_bind(node)
         && named_child(node, "left")
@@ -3259,7 +3259,7 @@ pub(super) fn lower_var_decl_kept(
 
 fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
-    // the only scope that lowers (the converter renders no other).
+    // the only scope that lowers (the view renders no other).
     // `our $.x` / `my $.x` (a public or private class-level attribute) is one
     // too, by its twigil.
     if matches!(leaf_str(node, "scope").as_deref(), Ok("has" | "HAS"))
@@ -3274,9 +3274,9 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         Some(tags) => (true, tags),
         None => (false, Vec::new()),
     };
-    // The remaining scopes the converter renders are `our` and `state`; `my` is
+    // The remaining scopes the view renders are `our` and `state`; `my` is
     // the default and carries no `scope` field at all. Anything else (a scope
-    // raku has that the converter never emits) stays the boundary.
+    // raku has that the view never emits) stays the boundary.
     let (is_our, is_state) = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => (false, false),
         Some(_) => match leaf_str(node, "scope")?.as_str() {
@@ -4816,7 +4816,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
-        // itself (a leading backslash), which is how the converter reads it
+        // itself (a leading backslash), which is how the view reads it
         // back out into the `triangle` field.
         RakuAstClass::TermReduce => {
             let infix = named_child(node, "infix")?;
@@ -4831,7 +4831,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             let triangle = bool_field(node, "triangle")?;
             let args = named_child(node, "args")?;
             // A reduction takes exactly one argument expression (a list, an
-            // array variable, ...); the converter never builds more.
+            // array variable, ...); the view never builds more.
             let [only] = args.fields.as_slice() else {
                 return Err(unsupported(node));
             };

@@ -235,7 +235,7 @@ fn child_declarations(value: &Value, depth: usize) -> Result<u8, RuntimeError> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::convert::node_field;
+    use super::super::view::node_field;
     use super::*;
 
     #[test]

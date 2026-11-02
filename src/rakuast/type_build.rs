@@ -1,7 +1,7 @@
 //! Bounded composition of the parser's type spellings into source nodes.
 
 use super::bareword::simple_type_node;
-use super::convert::{is_pseudo_type, node_field, unsupported};
+use super::view::{is_pseudo_type, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
@@ -34,7 +34,7 @@ pub(super) fn declaration_type_node(
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
     {
-        return super::convert::type_capture_node(names, name);
+        return super::view::type_capture_node(names, name);
     }
     build_type_node(names, t)
 }
@@ -46,10 +46,10 @@ pub(super) fn return_constraint_node(
     t: &str,
 ) -> Result<RakuAstNode, RuntimeError> {
     if let Some(value) = crate::parser::numeric_literal_value(t) {
-        return super::convert::convert_literal(names, &value);
+        return super::view::view_literal(names, &value);
     }
     if let Some(text) = string_literal_value(t) {
-        return Ok(super::convert::quoted_string(Value::str(text)));
+        return Ok(super::view::quoted_string(Value::str(text)));
     }
     build_type_node(names, t)
 }

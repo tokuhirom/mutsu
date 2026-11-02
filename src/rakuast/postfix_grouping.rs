@@ -1,6 +1,6 @@
 //! Preserve parser parentheses that Rakudo omits from a postfix operand.
 
-use super::convert::{node_field, postfix_operand};
+use super::view::{node_field, postfix_operand};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -12,7 +12,7 @@ const MAX_GROUPING: usize = 128;
 /// Build an ApplyPostfix while retaining the parser's parentheses as hidden
 /// provenance. Rakudo omits one layer from the visible operand node.
 // Cost: O(p + n), p = parentheses around the operand, n = operand node size.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     operand: &Expr,
     postfix: RakuAstNode,

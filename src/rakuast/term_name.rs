@@ -1,8 +1,8 @@
 //! Term names preserve an imported source binding through the model boundary.
 
-use super::convert::{name_from_identifier, node_field};
 use super::lower::{lower_expr, named_child_or_positional, term_identifier_expr, unsupported};
 use super::name_parts::{self, NameShape};
+use super::view::{name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -11,7 +11,7 @@ use crate::value::RuntimeError;
 /// The parser resolved this name as an imported value. Keep that decision
 /// without changing the public constructor shape or reloading a module.
 pub(super) fn imported(names: &NameScope, name: &str) -> RakuAstNode {
-    let mut node = super::bareword::convert(names, name).unwrap_or_else(|| RakuAstNode {
+    let mut node = super::bareword::view_node(names, name).unwrap_or_else(|| RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(name))],

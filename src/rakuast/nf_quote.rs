@@ -18,8 +18,8 @@
 //! normalizes it again, which leaves a normalized text unchanged, and so
 //! restores the same value.
 
-use super::convert::quoted_string;
 use super::lower::{list_field, positional_leaf};
+use super::view::quoted_string;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, UniData, Value, ValueView};
@@ -38,9 +38,9 @@ fn processor(form: &str) -> Option<&'static str> {
 
 /// A normalized-quote literal as its `QuotedString`.
 // Cost: O(n), n = codepoints of the literal.
-pub(super) fn convert(uni: &UniData) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(uni: &UniData) -> Result<RakuAstNode, RuntimeError> {
     let Some(processor) = processor(&uni.form) else {
-        return Err(super::convert::unsupported(&format!(
+        return Err(super::view::unsupported(&format!(
             "literal {} value",
             uni.form
         )));

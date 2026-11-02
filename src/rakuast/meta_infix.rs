@@ -13,13 +13,13 @@
 //! `Z` and `X` are list-associative, so a chain of the same operator is one
 //! flat operand list; `R` is a list application only over a list-associative
 //! base operator (`,`, `min`, `(|)`, ...). mutsu keeps every one of them as a
-//! left-nested [`Expr::MetaOp`], so the converter flattens the chain and the
+//! left-nested [`Expr::MetaOp`], so the view flattens the chain and the
 //! lowering folds the operands back.
 
-use super::convert::{convert_expr, node_field, plain_infix, unsupported as unsupported_expr};
 use super::lower::{
     list_field, lower_expr, named_child, positional_leaf, rakuast_node_of, unsupported,
 };
+use super::view::{node_field, plain_infix, unsupported as unsupported_expr, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -126,7 +126,7 @@ fn assign_base(op: &str) -> Option<&str> {
 
 /// `@a X+= @b` -> `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross(Infix("+"))), right)`.
 // Cost: O(n), n = nodes of the operands.
-fn convert_assign(
+fn view_assign(
     names: &NameScope,
     meta: &str,
     base: &str,
@@ -152,16 +152,16 @@ fn convert_assign(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(names, left)?),
+            node_field(Some("left"), view_expr(names, left)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(names, right)?),
+            node_field(Some("right"), view_expr(names, right)?),
         ],
     })
 }
 
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     meta: &str,
     op: &str,
@@ -173,7 +173,7 @@ pub(super) fn convert(
         return Err(unsupported_expr(&format!("{whole:?}")));
     };
     if let Some(base) = assign_base(op) {
-        return convert_assign(names, meta, base, left, right, whole);
+        return view_assign(names, meta, base, left, right, whole);
     }
     let infix = if op.is_empty() {
         // The bare `Z` / `X` operator.
@@ -194,9 +194,9 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(names, left)?),
+                node_field(Some("left"), view_expr(names, left)?),
                 node_field(Some("infix"), infix),
-                node_field(Some("right"), convert_expr(names, right)?),
+                node_field(Some("right"), view_expr(names, right)?),
             ],
         });
     }
@@ -204,7 +204,7 @@ pub(super) fn convert(
     operands.push(right);
     let mut nodes = Vec::with_capacity(operands.len());
     for operand in operands {
-        nodes.push(Value::rakuast(Box::new(convert_expr(names, operand)?)));
+        nodes.push(Value::rakuast(Box::new(view_expr(names, operand)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -222,7 +222,7 @@ pub(super) fn convert(
 /// A bracketed compound assignment whose parser execution form erased the
 /// bracket pairs. `depth` is the number of pairs inside `MetaInfix::Assign`.
 // Cost: O(n + d), n = operand nodes, d = bracket depth (bounded at 128).
-pub(super) fn convert_bracketed_assignment(
+pub(super) fn view_bracketed_assignment(
     names: &NameScope,
     expr: &Expr,
     depth: usize,
@@ -283,9 +283,9 @@ pub(super) fn convert_bracketed_assignment(
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(names, target)?),
+            node_field(Some("left"), view_expr(names, target)?),
             node_field(Some("infix"), assign),
-            node_field(Some("right"), convert_expr(names, rhs)?),
+            node_field(Some("right"), view_expr(names, rhs)?),
         ],
     })
 }

@@ -107,7 +107,7 @@ source form (a typed node) and `lower` desugars it — that is Stage 2 itself, o
    §4: "the typed node is that `Expr` plus its positions"). Its renderer arms remain, renamed from
    "convert" to "view", and the term-origin bridge (`term_origins` → `Expr::Spelled`) stays for them.
    This ADR does **not** wrap the 86 `Expr` variants in new node types.
-5. **`src/rakuast/convert.rs` is retired family by family.** What is deleted: every arm that
+5. **`src/rakuast/view.rs` is retired family by family.** What is deleted: every arm that
    reconstructs a source form from a desugared tree (the T3 arms, the `SyntheticBlock` recognizers,
    the by-name recognizers of `__mutsu_*` calls, the bareword/name classification that guesses what
    the parser resolved). What is kept, under the view's name: the T1 arms and the T2 view. The module
@@ -250,7 +250,7 @@ toward once the round trip is gone.
 
 `make check-frontend-debt` fails when any of three counts rises above its ceiling: `SyntheticBlock`
 producer sites in `src/parser`; distinct `"__…"` internal-name literals in `src/parser`; lines of
-`src/rakuast/convert.rs`. A ceiling file is one line per metric under `scripts/frontend-debt.d/`;
+`src/rakuast/view.rs`. A ceiling file is one line per metric under `scripts/frontend-debt.d/`;
 a PR lowers a ceiling when it lowers the count, and a PR that does not touch the count never edits
 the file (AGENTS.md: a drop must not require a re-cut). Slice 9 deletes the check with the last
 thing it counts.
@@ -453,7 +453,7 @@ replaces their remaining open conditions.
    `check-frontend-debt` counts measure executable IR and the `.AST` view, not debt: `Stmt::SyntheticBlock`
    remains as lowering output, the `__mutsu_*` spellings remain as the compiler's input, and the T1 arms of
    `convert.rs` remain as the view (§2.1.4–5). The check stays and its ceilings are pinned at the values
-   measured on `main` 2026-10-31: synthetic-block-sites 10, internal-name-literals 38, convert-lines 6761.
+   measured on `main` 2026-10-31: synthetic-block-sites 10, internal-name-literals 38, view-lines 6761.
    They may only fall; §3.3's "slice 9 deletes the check" no longer applies.
 3. **Two parts of §2.1 leave Stage 2 and become their own issues**, both `lane:rakuast`, sub-issues of #7564:
    - §2.1.2, lowering each typed node at the point the parser builds it, which needs a decided scope owner

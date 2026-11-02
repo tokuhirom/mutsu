@@ -5,11 +5,11 @@
 //! [`regex_code`](super::regex_code), as a code block does, because there is no
 //! deparser to turn the statement back into the text the matcher reads.
 
-use super::convert::{
-    block_statements, convert_expr, leaf_field, name_from_identifier, node_field, quoted_string,
-    regex_node, unsupported, var_lexical,
-};
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
+use super::view::{
+    block_statements, leaf_field, name_from_identifier, node_field, quoted_string, regex_node,
+    unsupported, var_lexical, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{RegexCode, RegexExtension, RegexNode};
 use crate::scope::NameScope;
@@ -17,7 +17,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// `extension` as its RakuAST node.
 // Cost: O(n), n = size of the construct.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     extension: &RegexExtension,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -208,7 +208,7 @@ pub(super) fn convert(
             array,
             gaps,
             regex,
-        } => super::regex_variable_alias::convert(
+        } => super::regex_variable_alias::view_node(
             names,
             (name, *sequential, *array),
             gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
@@ -226,7 +226,7 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::RegexQuote,
             fields: vec![
-                node_field(None, convert_expr(names, expr)?),
+                node_field(None, view_expr(names, expr)?),
                 super::regex_code::source_field(source),
             ],
         },

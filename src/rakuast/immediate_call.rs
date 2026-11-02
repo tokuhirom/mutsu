@@ -2,13 +2,13 @@
 //! Call::Term)` (measured on rakudo 2026.09).
 //!
 //! The parser keeps the written form (`ParsedStmt::ImmediateCall`); the
-//! converter renders it from the declaration and the call arguments, and the
+//! view renders it from the declaration and the call arguments, and the
 //! lowering hands a measured node back to the same expansion function
 //! (`ast::immediate_call::expand`), so the routine is declared in the
 //! enclosing scope as the parsed program declares it.
 
-use super::convert::{arg_list, convert_stmt, expression_of, node_field};
 use super::lower::{arg_exprs, lower_stmt, named_child, unsupported};
+use super::view::{arg_list, expression_of, node_field, view_stmt};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
@@ -17,15 +17,15 @@ use crate::value::RuntimeError;
 /// The `ApplyPostfix` node of an immediate call: the routine `sub_decl` and the
 /// arguments of the call.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn convert(
+pub(super) fn view_node(
     names: &NameScope,
     sub_decl: &Stmt,
     args: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let statement = convert_stmt(names, sub_decl)?
-        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+    let statement = view_stmt(names, sub_decl)?
+        .ok_or_else(|| super::view::unsupported("immediately called sub"))?;
     let routine = expression_of(&statement)
-        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+        .ok_or_else(|| super::view::unsupported("immediately called sub"))?;
     // raku omits `args` for an argument-less call, as for `$f()`.
     let mut call = RakuAstNode {
         origin: Default::default(),

@@ -1,6 +1,6 @@
 //! The source-level regex tree as a RakuAST regex node (read direction).
 
-use super::convert::*;
+use super::view::*;
 use super::*;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode};
 use crate::scope::NameScope;
@@ -13,7 +13,7 @@ use crate::value::{RuntimeError, Value};
 pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     let (class, fields) = match node {
         RegexNode::Extension(extension) => {
-            return super::regex_extension::convert(names, extension);
+            return super::regex_extension::view_node(names, extension);
         }
         RegexNode::Literal(text) => (
             RakuAstClass::RegexLiteral,
@@ -183,7 +183,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
             let part = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
-                fields: vec![node_field(None, convert_expr(names, expr)?)],
+                fields: vec![node_field(None, view_expr(names, expr)?)],
             };
             let name = name_parts::name_from_parts(vec![
                 name_parts::leading_empty(),
@@ -289,7 +289,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 .as_ref()
                 .map(|separator| regex_node(names, &separator.node))
                 .transpose()?;
-            return super::regex_quantifier::convert(
+            return super::regex_quantifier::view_node(
                 names,
                 regex_node(names, atom)?,
                 quantifier,
@@ -312,9 +312,9 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
         RegexNode::AnchorRightWordBoundary => {
             (RakuAstClass::RegexAnchorRightWordBoundary, Vec::new())
         }
-        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
+        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::view_node(atom)),
         RegexNode::CharClassAssertion(elements) => {
-            return super::regex_enumeration::convert(names, elements);
+            return super::regex_enumeration::view_node(names, elements);
         }
         RegexNode::InternalModifier {
             kind,
@@ -345,7 +345,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 RegexNode::Extension(RegexExtension::VariableAlias { .. })
             ) =>
         {
-            return super::regex_variable_alias::convert_spaced(names, child);
+            return super::regex_variable_alias::view_spaced(names, child);
         }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,
