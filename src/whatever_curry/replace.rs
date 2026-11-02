@@ -184,6 +184,12 @@ impl VisitMut for Replacer<'_> {
             | Expr::CallOn { target, .. }
             | Expr::Exists { target, .. }
             | Expr::Index { target, .. } => self.visit_expr_mut(target),
+            // `*<a>:k`: the subscripted target is the call's first argument.
+            Expr::Call { name, args, .. }
+                if super::build::is_subscript_adverb_call(*name) && !args.is_empty() =>
+            {
+                self.visit_expr_mut(&mut args[0])
+            }
             // A user-declared prefix/postfix operator application: its operand
             // curries like a built-in unary's.
             e if crate::parser::operator_call_operands(e).is_some() => walk_expr_mut(self, e),
