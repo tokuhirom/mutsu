@@ -579,6 +579,12 @@ impl Interpreter {
                 Some('$') | None => qualified,
                 Some(sigil) => format!("{sigil}{qualified}"),
             };
+            if sigil.is_none() {
+                // An unsigiled key is the stash entry itself, not a `$` scalar.
+                self.lexicals
+                    .our_term_keys
+                    .insert(Symbol::intern(&env_name));
+            }
             self.env_mut().insert(env_name.clone(), binding.clone());
             self.set_our_var(env_name, binding.clone());
             // A routine bound into a module's own export stash
