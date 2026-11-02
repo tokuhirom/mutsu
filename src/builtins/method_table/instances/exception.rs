@@ -88,7 +88,7 @@ fn message_attr(target: &Value) -> Option<Value> {
 }
 
 /// The message built from the typed attributes of a built-in `X::` class.
-fn formatted(target: &Value) -> Option<String> {
+pub(crate) fn formatted(target: &Value) -> Option<String> {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
@@ -102,11 +102,13 @@ fn formatted(target: &Value) -> Option<String> {
     if class == "X::TypeCheck::Assignment"
         && let (Some(got), Some(expected)) = (attrs.get("got"), attrs.get("expected"))
     {
+        // Rakudo's `message` names `$!symbol`; with none it dies (see
+        // [`message`]), so there is no text to build.
+        let symbol = attrs
+            .get("symbol")
+            .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))?;
         return Some(crate::runtime::utils::type_check_assignment_error(
-            &attrs
-                .get("symbol")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default(),
+            &symbol.to_string_value(),
             &crate::runtime::utils::got_type_name(expected),
             got,
         ));
@@ -129,6 +131,13 @@ fn message(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
     }
     if class_of(target) == "CX::Warn" {
         return Some(Ok(Value::str(String::new())));
+    }
+    // A hand-built `X::TypeCheck::Assignment` without a `symbol` dies in
+    // rakudo's `message` (it calls `.name` on the undefined symbol), #16047.
+    if class_of(target) == "X::TypeCheck::Assignment" && formatted(target).is_none() {
+        return Some(Err(crate::runtime::did_you_mean::method_not_found(
+            "name", "Mu",
+        )));
     }
     Some(Ok(Value::str(formatted(target).unwrap_or_default())))
 }
@@ -212,11 +221,16 @@ fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
         ));
     }
     let class = class_of(target);
-    Some(Ok(Value::str(text(
-        target,
-        &format!("Something went wrong in ({class})"),
-        "Unexplained error",
-    ))))
+    // Rakudo's `Str` falls back to the class's last name part when `message`
+    // has nothing (or dies): `Something went wrong in (Assignment)`.
+    let fallback = no_message_text(&class);
+    if !matches!(class.as_str(), "Exception" | "X::AdHoc" | "CX::Warn")
+        && message_attr(target).is_none_or(|m| m.to_string_value().is_empty())
+        && formatted(target).is_none()
+    {
+        return Some(Ok(Value::str(fallback)));
+    }
+    Some(Ok(Value::str(text(target, &fallback, "Unexplained error"))))
 }
 
 /// `Exception.backtrace`: the backtrace attribute, `Nil` for an unthrown one.
