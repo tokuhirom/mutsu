@@ -714,6 +714,35 @@ impl Interpreter {
     }
 
 
+    /// Record the importer's short name for an exported enum type that a
+    /// block-scoped binding (`my \Errno := ...`) otherwise carries alone, so a
+    /// call-by-name coercion `Errno(2)` resolves it. The enum lives under its
+    /// declaring package (`unit module Other::Name` in `C10.rakumod`), which
+    /// the importer cannot spell from the file's module name (#16041).
+    // Cost: O(|name|) for the lookups, plus one alias-table write on a hit.
+    fn alias_exported_enum_type(&mut self, module: &str, name: &str) {
+        if name.starts_with(['$', '@', '%', '&', '\\']) || crate::qualified::is_qualified_str(name)
+        {
+            return;
+        }
+        let Some(value) = self.exported_var_value(module, name) else {
+            return;
+        };
+        let ValueView::Package(sym) = value.view() else {
+            return;
+        };
+        let target = sym.resolve().to_string();
+        if target == name || !self.registry().enum_types.contains_key(target.as_str()) {
+            return;
+        }
+        let importer = self.import_target_package_for_load();
+        crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
+            .entry(importer)
+            .or_default()
+            .entry(name.to_string())
+            .or_insert(target);
+    }
+
     /// Resolve the value behind a statically exported variable. Most exports
     /// live in the qualified environment, but a `my constant` in a unit class
     /// is persisted in that class's package-lexical store when its body exits.
@@ -1432,6 +1461,7 @@ impl Interpreter {
             // The importing block declares it itself (ADR-8751).
             if self.block_binds_imported_var(&name) {
                 self.note_block_bound_import(&name);
+                self.alias_exported_enum_type(module, &name);
                 continue;
             }
             let target = name.clone();
