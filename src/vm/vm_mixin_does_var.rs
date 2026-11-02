@@ -67,6 +67,12 @@ impl Interpreter {
                     binding
                 },
             );
+        // `%!h does R` / `@!a does R` mixes the role into the attribute's own
+        // container, which lives in `self`'s attribute cell, not in `env`
+        // (#16014): publish it there so a later `%!h = ...` sees the role.
+        if Self::is_array_hash_attr_twigil(&name) {
+            self.write_self_attr_cell(&name, stored.clone());
+        }
         self.set_env_with_main_alias(&name, stored.clone());
         // §1.5: mirror into the compiler-baked local slot when known, else by name.
         self.write_local_slot_or_name(code, slot, &name, stored);
