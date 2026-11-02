@@ -271,7 +271,16 @@ impl Interpreter {
                     "socket-port".to_string(),
                     Value::int(local.map(|a| a.port()).unwrap_or(0) as i64),
                 );
-                attrs.insert("peer-host".to_string(), Value::str(host.to_string()));
+                // The connected peer's numeric address (`getpeername`), not the
+                // name the caller connected to: `connect("localhost", ...)`
+                // answers `127.0.0.1`, as rakudo does (#16029).
+                attrs.insert(
+                    "peer-host".to_string(),
+                    Value::str(
+                        peer.map(|a| a.ip().to_string())
+                            .unwrap_or_else(|| host.to_string()),
+                    ),
+                );
                 attrs.insert(
                     "peer-port".to_string(),
                     Value::int(peer.map(|a| a.port()).unwrap_or(port) as i64),
