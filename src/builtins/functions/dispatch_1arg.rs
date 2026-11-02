@@ -629,25 +629,34 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     }
                 })
         }
+        // `defined($x)` is `$x.defined`: one implementation (the method's), so a
+        // container the argument arrives in (an `AT-KEY` element slot, a
+        // `Scalar`) is looked through exactly as the method looks through it
+        // (#16080). A case the method leaves to the interpreter falls through.
         "defined" => {
-            // For junctions, autothread .defined and collapse to Bool
-            if let ValueView::Junction { .. } = arg.view() {
-                if let Some(Ok(result)) = crate::builtins::methods_0arg::native_method_0arg(
-                    arg,
-                    crate::symbol::Symbol::intern("defined"),
-                ) {
-                    Some(Ok(result))
-                } else {
-                    Some(Ok(Value::TRUE))
-                }
+            // An element slot (`%h.AT-KEY('k')` of a missing key) arrives as the
+            // lazy `HashEntryRef`; test the value it reads, not the slot.
+            let read;
+            let arg = if let ValueView::HashEntryRef { .. } = arg.view() {
+                read = arg.hash_entry_read();
+                &read
             } else {
+                arg
+            };
+            // The method leaves some receivers to the interpreter (`None`);
+            // those are defined unless a type object, an empty Slip or a Failure.
+            crate::builtins::methods_0arg::native_method_0arg(
+                arg,
+                crate::symbol::Symbol::intern("defined"),
+            )
+            .or_else(|| {
                 Some(Ok(Value::truth(match arg.view() {
                     ValueView::Nil | ValueView::Package(_) => false,
                     ValueView::Slip(items) if items.is_empty() => false,
                     ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                     _ => true,
                 })))
-            }
+            })
         }
         // `elems($x)` is defined as `$x.elems`; delegate to the single `.elems`
         // method impl instead of a drifting second copy. The inline version here
