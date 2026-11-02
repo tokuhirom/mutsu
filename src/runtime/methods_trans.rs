@@ -250,6 +250,14 @@ impl Interpreter {
         // e.g. .trans: (/\@/ => "-",), :c  passes (pair,) as an Array arg.
         let mut flat_args: Vec<Value> = Vec::new();
         for arg in args {
+            // A Hash/Map argument (`$str.trans(%map)`) is its pairs, as in
+            // rakudo, where `trans` takes `*@changes` and a Map flattens.
+            if let ValueView::Hash(map) = arg.view() {
+                for (key, value) in map.iter() {
+                    flat_args.push(Value::pair(key.to_string(), value.clone()));
+                }
+                continue;
+            }
             // `.pairs`/`.list` now yield a Seq, so accept Array/Seq/Slip alike.
             if let Some(items) = arg.as_list_items() {
                 let all_pairs = items
