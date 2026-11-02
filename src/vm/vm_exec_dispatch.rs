@@ -2173,7 +2173,12 @@ impl Interpreter {
                 // slot (`(my $p := (1,2))` in the mainline) lands here, and
                 // without the marker `@a = $p` itemized it (#9262).
                 if !is_internal_temp {
-                    self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
+                    self.update_bound_decont_marker(
+                        &name,
+                        name_sym,
+                        was_scalar_bind || is_bind_ctx,
+                        &val,
+                    );
                     // `$!attr := $var` seats the variable's own container, so
                     // the attribute stays a writable one (`nqp::isrwcont`)
                     // even though the stack carries only its value.

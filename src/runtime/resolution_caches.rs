@@ -371,6 +371,11 @@ pub(crate) struct ResolutionCaches {
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
     pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> does the class's MRO reach a built-in
+    /// method of this name` (`Interpreter::class_reaches_builtin_method`):
+    /// a function of the MRO and the fixed method table, so cleared with
+    /// `dispatch_multi_candidate` on a registry change.
+    pub(crate) builtin_method_reached: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
