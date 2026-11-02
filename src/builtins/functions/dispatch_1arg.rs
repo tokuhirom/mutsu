@@ -643,10 +643,20 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             } else {
                 arg
             };
+            // The method leaves some receivers to the interpreter (`None`);
+            // those are defined unless a type object, an empty Slip or a Failure.
             crate::builtins::methods_0arg::native_method_0arg(
                 arg,
                 crate::symbol::Symbol::intern("defined"),
             )
+            .or_else(|| {
+                Some(Ok(Value::truth(match arg.view() {
+                    ValueView::Nil | ValueView::Package(_) => false,
+                    ValueView::Slip(items) if items.is_empty() => false,
+                    ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+                    _ => true,
+                })))
+            })
         }
         // `elems($x)` is defined as `$x.elems`; delegate to the single `.elems`
         // method impl instead of a drifting second copy. The inline version here
