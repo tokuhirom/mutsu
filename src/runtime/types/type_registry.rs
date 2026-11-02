@@ -615,14 +615,13 @@ impl Interpreter {
         // own short name is no lexical binding for code running inside the
         // class: `has Errno $.errno` there names the imported `Errno`, not
         // the class itself (#16035).
-        if self.is_compound_declared_name(target)
-            && self
-                .current_package_sym()
-                .as_str()
-                .strip_prefix(target.as_str())
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
-        {
-            return None;
+        if self.is_compound_declared_name(target) {
+            let target_sym = Symbol::intern(target);
+            if crate::qualified::package_ancestors(self.current_package_sym())
+                .any(|pkg| pkg == target_sym)
+            {
+                return None;
+            }
         }
         (self.has_type_direct(target) || self.is_published_outer_package(name, target))
             .then(|| target.clone())
