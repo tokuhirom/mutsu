@@ -55,6 +55,11 @@ impl Interpreter {
         };
         let mut err = RuntimeError::new(gist);
         err.exception = Some(Box::new(mixed));
+        // The error that unwinds is a NEW one, so the verdict a `CATCH` that
+        // already ran inline at the `die` stamped on `inner` (ADR-0072) has to
+        // be carried over, or the region owning that `CATCH` would run it again
+        // (#16054).
+        err.set_catch_inline_verdict(inner.catch_inline_verdict());
         err
     }
 

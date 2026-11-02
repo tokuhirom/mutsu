@@ -274,7 +274,15 @@ impl Interpreter {
         // raises (overflow, index out of range) must reach the consumer's QUIT
         // as the catchable error the VM boundary produces, not unwind the
         // process (#8185).
+        // The body is its own execution: a `die` in it is the supply's failure,
+        // delivered to the consumer as a quit, and no `CATCH` of the code that
+        // merely tapped, collected or awaited the supply sees it at the throw
+        // site (ADR-0072; the nested VM runs hide the outer handlers for the
+        // same reason). Left registered, a `CATCH` around `.Promise` ran inline
+        // at the `die` and again when the failed promise was awaited (#16054).
+        let saved_catch_handlers = std::mem::take(&mut self.control.catch_handlers);
         let mut result = self.run_guarded_against_panic(|me| me.call_sub_value(on_demand_cb, vec![emitter]));
+        self.control.catch_handlers = saved_catch_handlers;
         self.async_state.active_supply_emitters.pop();
         // The body's own bare `done` (`ast::Stmt::SupplyBodyDone`) always ends
         // just this synchronous call — absorb it here rather than relying on
