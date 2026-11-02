@@ -681,7 +681,17 @@ impl Interpreter {
         // no compiled slot, so it never obliges a pull.
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
-        if restored_env.ptr_eq(self.env()) && rw_bindings.is_empty() {
+        //
+        // `ptr_eq` compares the overlay only, and every empty overlay is the one
+        // shared singleton: the callee's frame root (a `scoped_child` that wrote
+        // nothing, e.g. `sub noop { }`) then equals a caller env that is itself
+        // an empty tier -- the block tier of a `do { }` in a `for` body. Taking
+        // the fast path would leave the callee's frame root (which owns `$_`)
+        // installed in the caller, and the caller's `$_` would read `Any`
+        // (#15955). The callee's env is only the caller's when it is no frame
+        // root of its own.
+        if restored_env.ptr_eq(self.env()) && !self.env().is_frame_root() && rw_bindings.is_empty()
+        {
             self.pop_caller_env();
         } else {
             let mut restored_env = restored_env;
