@@ -13,7 +13,7 @@ use crate::ast::Stmt;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
-pub(super) fn view(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn view_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Stmt::HasDecl {
         name,
         is_public,

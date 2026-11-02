@@ -40,7 +40,7 @@ pub(super) fn is_source(node: &RakuAstNode, field: &RakuAstField) -> bool {
 /// The node of a `PRE` / `POST` phaser whose body is `body` and whose argument
 /// was written `condition`.
 // Cost: O(n), n = size of the body.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     kind: &PhaserKind,
     body: &[Stmt],

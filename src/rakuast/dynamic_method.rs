@@ -154,7 +154,7 @@ pub(super) fn call_assign_initializer(
 
 /// `$o.$name(args)` / `$o.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     target: &Expr,
     name_expr: &Expr,

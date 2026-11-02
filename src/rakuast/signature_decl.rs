@@ -77,7 +77,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     decl: &SignatureDecl,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -210,7 +210,7 @@ fn parameter(
     is_binding: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if let Some(literal) = &var.literal_value {
-        return super::signature_literal::view(names, literal);
+        return super::signature_literal::view_node(names, literal);
     }
     let target = if var.sigilless {
         RakuAstNode {

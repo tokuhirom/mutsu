@@ -163,7 +163,7 @@ pub(super) fn list_node(names: &NameScope, list: &WordList) -> Result<RakuAstNod
             text,
             delimiter,
             interpolates,
-        } => super::word_quote::view(names, list.val, text, *delimiter, *interpolates),
+        } => super::word_quote::view_node(names, list.val, text, *delimiter, *interpolates),
     }
 }
 

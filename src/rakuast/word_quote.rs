@@ -21,7 +21,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for the interpolating `quotewords` quote written as `text`.
 // Cost: O(n), n = length of `text`.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     val: bool,
     text: &str,

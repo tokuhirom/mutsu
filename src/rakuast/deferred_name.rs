@@ -9,7 +9,7 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
 // Cost: O(n), n = nodes of the fallback expression.
-pub(super) fn view(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
     match expr {
         Expr::ExportTermOrCall { name, call } => Some(view_expr(names, call).map(|mut node| {
             node.fields.push(leaf_field(

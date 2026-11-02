@@ -161,7 +161,7 @@ fn view_assign(
 
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     meta: &str,
     op: &str,

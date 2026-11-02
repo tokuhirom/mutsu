@@ -10,7 +10,7 @@ use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 // Cost: O(n), n = nodes in the two composition operands.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     source: &Expr,
     executable: &Expr,

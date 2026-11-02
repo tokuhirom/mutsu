@@ -33,7 +33,7 @@ fn class_of(kind: ContextKind) -> RakuAstClass {
 
 /// An [`Expr::Contextualizer`] as its `Contextualizer::*` node.
 // Cost: O(n), n = nodes of the contents.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     kind: ContextKind,
     inner: &Expr,

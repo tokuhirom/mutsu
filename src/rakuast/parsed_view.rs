@@ -82,7 +82,7 @@ pub(super) fn parsed_node(
                 .ok_or_else(|| super::view::unsupported("binding declaration"))?
         }
         ParsedStmt::DeclTail { head, tail } => {
-            statement_expression(super::decl_tail::view(names, head, tail)?)
+            statement_expression(super::decl_tail::view_node(names, head, tail)?)
         }
         ParsedStmt::DeclCompound { decl, op, source } => statement_expression(
             super::view::declaration_compound_assign(names, decl, op, source)?,
@@ -119,7 +119,7 @@ pub(super) fn parsed_node(
             super::view::comma_declarations_node(names, declarations)?,
         ),
         ParsedStmt::ImmediateCall { decl, args } => {
-            statement_expression(super::immediate_call::view(names, decl, args)?)
+            statement_expression(super::immediate_call::view_node(names, decl, args)?)
         }
         ParsedStmt::AttributeGroup(attributes) => {
             statement_expression(super::attribute_group::to_signature(names, attributes)?)
@@ -131,13 +131,13 @@ pub(super) fn parsed_node(
             statement_expression(super::temporize::view_temporized(names, t)?)
         }
         ParsedStmt::SignatureDecl(decl) => {
-            statement_expression(super::signature_decl::view(names, decl)?)
+            statement_expression(super::signature_decl::view_node(names, decl)?)
         }
         ParsedStmt::SignatureBind { signature, rhs } => {
             statement_expression(super::view::signature_bind_node(names, signature, rhs)?)
         }
         ParsedStmt::MethodAssignDecl(form) => {
-            statement_expression(super::method_assign_decl::view(names, form)?)
+            statement_expression(super::method_assign_decl::view_node(names, form)?)
         }
         ParsedStmt::SigillessDecl(d) => {
             let call_assign = match (&d.form, &d.expr) {
@@ -161,7 +161,7 @@ pub(super) fn parsed_node(
             )?)
         }
         ParsedStmt::WillDecl { decl, phasers, .. } => {
-            super::var_will::view(names, decl, phasers)?
+            super::var_will::view_node(names, decl, phasers)?
         }
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::view::does_declaration(names, decl, role, init.as_ref())?

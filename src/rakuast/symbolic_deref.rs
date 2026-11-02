@@ -39,7 +39,7 @@ pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
 
 /// `$::($n)` as `Var::Package`.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     sigil: &str,
     expr: &Expr,

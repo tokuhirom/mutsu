@@ -449,7 +449,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
 // Cost: O(k + d), k = length of `name`, d = parser scope depth.
-pub(super) fn view(names: &NameScope, name: &str) -> Option<RakuAstNode> {
+pub(super) fn view_node(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
@@ -494,7 +494,7 @@ pub(super) fn view(names: &NameScope, name: &str) -> Option<RakuAstNode> {
         .strip_suffix(":D")
         .or_else(|| name.strip_suffix(":U"))
         .or_else(|| name.strip_suffix(":_"))
-        && view(names, base).is_some_and(|node| {
+        && view_node(names, base).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
@@ -512,7 +512,7 @@ pub(super) fn view(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("GLOBAL::")
         .or_else(|| name.strip_prefix("CORE::"))
-        && let Some(node) = view(names, rest)
+        && let Some(node) = view_node(names, rest)
     {
         match node.class {
             RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
@@ -525,7 +525,7 @@ pub(super) fn view(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && view(names, rest).is_some_and(|node| {
+        && view_node(names, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName

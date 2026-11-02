@@ -70,7 +70,7 @@ fn written_operands<'a>(source: &'a Expr, sink: &'a Expr, to_right: bool) -> Vec
 
 /// An [`Expr::Feed`] as its `ApplyListInfix` over a `Feed`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     source: &Expr,
     sink: &Expr,

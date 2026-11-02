@@ -45,7 +45,7 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     proto: ProtoDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {

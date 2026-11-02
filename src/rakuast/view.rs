@@ -411,7 +411,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             super::temporize::view_method_assign_stmt(names, stmt)?,
         ))),
         Stmt::VarDecl { .. } => var_decl_statement(names, var_decl_parts(stmt)?, false),
-        Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::view(names, inner)?)),
+        Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::view_node(names, inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(
             names, body,
@@ -432,7 +432,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             bare,
         } => {
             if let Some(condition) = condition {
-                let mut statement = super::phaser_condition::view(names, kind, body, condition)?
+                let mut statement = super::phaser_condition::view_node(names, kind, body, condition)?
                     .ok_or_else(|| unsupported("PRE/POST phaser condition"))?;
                 if *bare {
                     super::bare_prefix::unblock_phaser(&mut statement);
@@ -1152,7 +1152,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             .into_iter()
             .collect();
             // `is foo` / `is foo(ARG)`; after `is export`, before the base.
-            traits.extend(super::decl_traits::view(names, custom_traits)?);
+            traits.extend(super::decl_traits::view_node(names, custom_traits)?);
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
@@ -1183,7 +1183,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             is_method,
             is_our,
             ..
-        } => Ok(Some(statement_expression(super::proto::view(
+        } => Ok(Some(statement_expression(super::proto::view_node(
             names,
             super::proto::ProtoDecl {
                 name: *name,
@@ -1231,7 +1231,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             custom_traits,
             marks,
             ..
-        } => Ok(Some(statement_expression(super::role::view(
+        } => Ok(Some(statement_expression(super::role::view_node(
             names,
             super::role::RoleDecl {
                 name: *name,
@@ -1246,7 +1246,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 marks: marks.clone(),
             },
         )?))),
-        Stmt::HasDecl { .. } => super::attribute_decl::view(names, stmt),
+        Stmt::HasDecl { .. } => super::attribute_decl::view_node(names, stmt),
         // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the
         // `Term::Name`, and the assignment is a list assignment (no `:item`).
         Stmt::Assign {
@@ -1852,7 +1852,7 @@ pub(super) fn var_decl_statement(
     if let Some((dims, _)) = &shaped {
         super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }
-    let mut traits = decl_traits::view(names, custom_traits)?;
+    let mut traits = decl_traits::view_node(names, custom_traits)?;
     if is_dynamic && !twigil_dynamic {
         // The parser keeps `is dynamic` as a flag, not in source order among
         // the other traits, so only a lone one renders faithfully.
@@ -2378,7 +2378,7 @@ pub(super) fn angle_subscript_node(
             .fields
             .push(node_field(Some("assignee"), view_expr(names, value)?));
     }
-    super::postfix_grouping::view(names, target, index_node)
+    super::postfix_grouping::view_node(names, target, index_node)
 }
 
 /// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
@@ -2472,7 +2472,7 @@ pub(super) fn subscript_dims_node(
             .fields
             .push(node_field(Some("assignee"), view_expr(names, value)?));
     }
-    super::postfix_grouping::view(names, target, index_node)
+    super::postfix_grouping::view_node(names, target, index_node)
 }
 
 pub(super) fn take_logical_tail_node(
@@ -2525,7 +2525,7 @@ pub(super) fn view_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
 }
 
 fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    if let Some(node) = super::deferred_name::view(names, expr) {
+    if let Some(node) = super::deferred_name::view_node(names, expr) {
         return node;
     }
     // The adverbs of a subscript lower from the class of the subscript.
@@ -2537,7 +2537,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // Stage 2): rendered, not reconstructed.
         Expr::Ast(node) => super::parsed_view::parsed_expr_node(names, node),
         // `$<name>`: the named capture of the last match.
-        Expr::CaptureVar(name) => super::match_vars::view(name),
+        Expr::CaptureVar(name) => super::match_vars::view_node(name),
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
@@ -2674,7 +2674,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                         "negated infix spelling without a binary operator",
                     ));
                 };
-                super::meta_infix::view(
+                super::meta_infix::view_node(
                     names,
                     "!",
                     &token_kind_to_op_name(op),
@@ -2687,7 +2687,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
                     return Err(unsupported("negated set spelling without its relation"));
                 };
-                super::meta_infix::view(names, "!", written, left, right, &spelled.expr)
+                super::meta_infix::view_node(names, "!", written, left, right, &spelled.expr)
             }
             Spelling::NegatedSetGlyph(glyph) => {
                 let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
@@ -2729,7 +2729,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 super::symbolic_deref::view_package_indirect(names, package, key)
             }
             Spelling::CompositionWhatever(source) => {
-                super::composition_source::view(names, source, &spelled.expr)
+                super::composition_source::view_node(names, source, &spelled.expr)
             }
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
             Spelling::CompilerVar(written) => {
@@ -2793,7 +2793,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             })
         }
         Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
-            super::substitution::view(names, expr)
+            super::substitution::view_node(names, expr)
         }
         Expr::RegexLiteral { value, tree } => {
             let mut node = quoted_regex_node(names, tree)?;
@@ -2817,13 +2817,13 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 expr,
                 Expr::Call { listop: true, .. } | Expr::UserRoutineCall { listop: true, .. }
             );
-            if let Some(prefix) = super::prefix_call::view(names, name.as_str(), args) {
+            if let Some(prefix) = super::prefix_call::view_node(names, name.as_str(), args) {
                 return prefix;
             }
             if let Some(stub) = stub_node(names, name.as_str(), args) {
                 return stub;
             }
-            if let Some(atomic) = super::atomic_op::view(names, name.as_str(), args) {
+            if let Some(atomic) = super::atomic_op::view_node(names, name.as_str(), args) {
                 return atomic;
             }
             if name.as_str() == crate::ast::quote_processing::FORMAT {
@@ -2832,7 +2832,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
             }
-            if let Some(coercion) = super::type_call::view(names, name.as_str(), args)? {
+            if let Some(coercion) = super::type_call::view_node(names, name.as_str(), args)? {
                 return Ok(coercion);
             }
             if let Some(op) = nqp_op(name.as_str()) {
@@ -2885,7 +2885,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Ok(var_lexical("$", name))
         }
         // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
-        Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::view(names, sigil, expr),
+        Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::view_node(names, sigil, expr),
         Expr::IndirectCodeLookup {
             package,
             name,
@@ -2973,7 +2973,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     .fields
                     .push(node_field(Some("args"), arg_list(names, args)?));
             }
-            super::postfix_grouping::view(names, target, call_term)
+            super::postfix_grouping::view_node(names, target, call_term)
         }
         // The `*` whatever term (a *value*, not a priming argument).
         Expr::Whatever => Ok(RakuAstNode {
@@ -3066,7 +3066,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             sink,
             append,
             left_is_source,
-        } => super::feed_op::view(names, source, sink, *append, *left_is_source),
+        } => super::feed_op::view_node(names, source, sink, *append, *left_is_source),
         // A pair the parser marked POSITIONAL: a non-bareword key (`"a" => 1`,
         // `$k => 1`), or a parenthesized one, which carries an inner `Grouped`.
         // The marker itself says nothing about the rendering — raku renders a
@@ -3103,8 +3103,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         },
         // A bareword the setting or the unit's own declarations resolve; any
         // other one stays the boundary (the catch-all arm below).
-        Expr::BareWord(name) if bareword::view(names, name).is_some() => {
-            let mut node = bareword::view(names, name).expect("just checked");
+        Expr::BareWord(name) if bareword::view_node(names, name).is_some() => {
+            let mut node = bareword::view_node(names, name).expect("just checked");
             if matches!(
                 node.class,
                 RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
@@ -3208,7 +3208,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             let crate::ast::parsed::ParsedStmt::DeclTail { head, tail } = node.as_ref() else {
                 unreachable!()
             };
-            super::decl_tail::view(names, head, tail)
+            super::decl_tail::view_node(names, head, tail)
         }
         // A comma list of declarations kept in its RakuAST shape.
         Expr::DoStmt(stmt)
@@ -3696,7 +3696,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             ],
         }),
         Expr::PostfixOp { op, expr } => {
-            super::postfix_grouping::view(names, expr, postfix_node(op))
+            super::postfix_grouping::view_node(names, expr, postfix_node(op))
         }
         // `COND ?? THEN !! ELSE` -> Ternary(condition, then, else). Note raku
         // constant-folds a literal-condition ternary (`1 ?? 2 !! 3` -> IntLiteral(2));
@@ -3753,7 +3753,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     fields: vec![node_field(None, postfix)],
                 });
             }
-            super::postfix_grouping::view(names, target, postfix)
+            super::postfix_grouping::view_node(names, target, postfix)
         }
         // A dynamically interpolated quoted method name (`$value."$name"()`)
         // keeps the name as a QuotedString expression.  It is distinct from an
@@ -3766,7 +3766,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             modifier,
             quoted: true,
         } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => {
-            super::postfix_grouping::view(
+            super::postfix_grouping::view_node(
                 names,
                 target,
                 call_quoted_method_expr(names, view_expr(names, name_expr)?, args, *modifier)?,
@@ -3779,7 +3779,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             args,
             modifier,
             quoted: false,
-        } => super::dynamic_method::view(names, target, name_expr, args, *modifier),
+        } => super::dynamic_method::view_node(names, target, name_expr, args, *modifier),
         Expr::HyperMethodCallDynamic {
             target,
             name_expr,
@@ -3797,7 +3797,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         } => {
             let inner = if !quoted
                 && modifier.is_none()
-                && let Some(result) = super::hyper_subscript::view(names, name.as_str(), args)
+                && let Some(result) = super::hyper_subscript::view_node(names, name.as_str(), args)
             {
                 result?
             } else {
@@ -3808,15 +3808,15 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 class: RakuAstClass::MetaPostfixHyper,
                 fields: vec![node_field(None, inner)],
             };
-            super::postfix_grouping::view(names, target, hyper)
+            super::postfix_grouping::view_node(names, target, hyper)
         }
         // A bare comma list `1, 2, 3` -> ApplyListInfix(infix => ",", operands).
         Expr::ArrayLiteral(items) => comma_list_node(names, items),
         // `{a => 1}` / `%(a => 1)` -> `Circumfix::HashComposer` /
         // `Contextualizer::Hash`, by the spelling the parser recorded.
-        Expr::Hash(pairs, spelling) => hash_literal::view(names, pairs, *spelling),
+        Expr::Hash(pairs, spelling) => hash_literal::view_node(names, pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
-        Expr::Contextualizer { kind, inner } => super::contextualizer::view(names, *kind, inner),
+        Expr::Contextualizer { kind, inner } => super::contextualizer::view_node(names, *kind, inner),
         // `$a minmax $b`, `$a foo $b` (a declared `infix:<foo>`), `$a ff $b`:
         // an ordinary application of an `Infix`.
         Expr::InfixFunc {
@@ -3824,10 +3824,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             left,
             right,
             modifier,
-        } => super::infix_func::view(names, name, left, right, modifier, expr),
+        } => super::infix_func::view_node(names, name, left, right, modifier, expr),
         // `\(1, :a)` / `\$x` -> `Term::Capture`.
         Expr::CaptureLiteral(items, parenthesized) => {
-            super::capture_term::view(names, items, *parenthesized)
+            super::capture_term::view_node(names, items, *parenthesized)
         }
         // `@a Z @b`, `@a X+ @b`, `@a R- @b`: `ApplyListInfix` / `ApplyInfix` over
         // `MetaInfix::Zip` / `Cross` / `Reverse`.
@@ -3836,7 +3836,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             op,
             left,
             right,
-        } => super::meta_infix::view(names, meta, op, left, right, expr),
+        } => super::meta_infix::view_node(names, meta, op, left, right, expr),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         // `[]`: a composer of an empty semilist, with no statement at all.
@@ -4863,7 +4863,7 @@ fn parameter(
         return Ok(node);
     }
     if let Some(value) = &pd.literal_value {
-        return super::literal_parameter::view(names, pd, value);
+        return super::literal_parameter::view_node(names, pd, value);
     }
     if let Some(num) = super::literal_parameter::special_num(pd) {
         let literal = crate::ast::ParamDef {
@@ -4871,7 +4871,7 @@ fn parameter(
             type_constraint: None,
             ..pd.clone()
         };
-        return super::literal_parameter::view(names, &literal, &Value::num(num));
+        return super::literal_parameter::view_node(names, &literal, &Value::num(num));
     }
     let type_capture = match type_capture_name(pd) {
         Some(name) => Some(type_capture_node(names, name)?),
@@ -5095,7 +5095,7 @@ fn parameter(
         ));
     }
     super::parameter_signature::attach_constraint(names, &mut node, pd, type_setting)?;
-    if let Some(shape) = super::parameter_shape::view(names, pd)? {
+    if let Some(shape) = super::parameter_shape::view_node(names, pd)? {
         node.fields.push(node_field(Some("array-shape"), shape));
     }
     // `$x is copy` -> `traits => (Trait::Is(name => Name.from-identifier("copy")),)`,
@@ -5756,7 +5756,7 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
     // `Nil` is a type object written as a bareword, not a literal value: raku
     // renders it `Type::Simple.new(Name.from-identifier("Nil"))`, exactly like
     // `Int`. mutsu's parser resolves the bareword to the value eagerly, so the
-    // check has to come before the `view()` match — `Nil`'s view is not a
+    // check has to come before the `view_node()` match — `Nil`'s view is not a
     // variant this function would otherwise recognize.
     if v.is_nil() {
         return Ok(simple_type_node("Nil"));
@@ -5815,7 +5815,7 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
             fields: vec![leaf_field(None, v.clone())],
         }),
         // `q:nfc'…'` and its siblings: see `nf_quote`.
-        ValueView::Uni(uni) => super::nf_quote::view(uni),
+        ValueView::Uni(uni) => super::nf_quote::view_node(uni),
         // `v6.d`, `v1.2.3+`.
         ValueView::Version { .. } => Ok(RakuAstNode {
             origin: Default::default(),
@@ -6510,7 +6510,7 @@ fn literal_hash_index_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
     else {
         return Err(unsupported("literal hash index provenance"));
     };
-    super::postfix_grouping::view(
+    super::postfix_grouping::view_node(
         names,
         target,
         RakuAstNode {

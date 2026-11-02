@@ -15,7 +15,7 @@ use crate::value::RuntimeError;
 const SOURCE_DOC_PHASER: &str = "source-doc-phaser";
 
 // Cost: O(n), n = nodes in the phaser body.
-pub(super) fn view(names: &NameScope, inner: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(names: &NameScope, inner: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     let original = view_stmt(names, inner)?.ok_or_else(|| unsupported("DOC phaser body"))?;
     let nil = RakuAstNode {
         origin: Default::default(),

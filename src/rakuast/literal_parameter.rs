@@ -27,7 +27,7 @@ pub(super) fn value_type(value: &Value) -> Option<&'static str> {
 /// `sub f(<1+2i>)` and other scalar literal parameters have no target, and
 /// carry the literal's Raku type and value.
 // Cost: O(1).
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     pd: &ParamDef,
     value: &Value,

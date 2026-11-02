@@ -17,7 +17,7 @@ use crate::value::RuntimeError;
 /// The `ApplyPostfix` node of an immediate call: the routine `sub_decl` and the
 /// arguments of the call.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     sub_decl: &Stmt,
     args: &[Expr],

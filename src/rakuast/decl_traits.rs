@@ -79,7 +79,7 @@ pub(super) fn type_node(names: &NameScope, name: &str) -> Result<RakuAstNode, Ru
 /// The `traits` items for a declaration's rendered custom traits, in source
 /// order.
 // Cost: O(t), t = custom traits of the declaration.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     custom_traits: &[(String, Option<Expr>)],
 ) -> Result<Vec<Value>, RuntimeError> {

@@ -59,7 +59,7 @@ pub(super) fn to_signature(
                 leaf_field(Some("optional"), Value::truth(false)),
             ],
         })));
-        let Some(member) = super::attribute_decl::view(names, attribute)? else {
+        let Some(member) = super::attribute_decl::view_node(names, attribute)? else {
             return Err(unsupported("grouped attribute declaration"));
         };
         let expression = super::lower::named_child(&member, "expression")?;
@@ -107,13 +107,13 @@ pub(super) fn view_colon(
     let Some(visible) = attributes.last() else {
         return Err(unsupported("empty attribute colon argument list"));
     };
-    let Some(statement) = super::attribute_decl::view(names, visible)? else {
+    let Some(statement) = super::attribute_decl::view_node(names, visible)? else {
         return Err(unsupported("attribute colon argument list"));
     };
     let mut declaration = super::lower::named_child(&statement, "expression")?.clone();
     let mut members = Vec::with_capacity(attributes.len());
     for attribute in attributes {
-        let Some(member) = super::attribute_decl::view(names, attribute)? else {
+        let Some(member) = super::attribute_decl::view_node(names, attribute)? else {
             return Err(unsupported("attribute colon argument list"));
         };
         members.push(Value::rakuast(Box::new(

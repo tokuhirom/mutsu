@@ -39,7 +39,7 @@ fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
 
 /// The `Assertion::CharClass` node for a tree assertion.
 // Cost: O(n), n = total number of entries.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     elements: &[CharClassElement],
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -142,7 +142,7 @@ fn view_entry(entry: &EnumerationElement) -> Value {
             ],
         ),
         EnumerationElement::Class(atom) => {
-            Value::rakuast(Box::new(super::regex_char_class::view(atom)))
+            Value::rakuast(Box::new(super::regex_char_class::view_node(atom)))
         }
     }
 }

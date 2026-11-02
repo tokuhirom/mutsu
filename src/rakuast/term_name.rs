@@ -11,7 +11,7 @@ use crate::value::RuntimeError;
 /// The parser resolved this name as an imported value. Keep that decision
 /// without changing the public constructor shape or reloading a module.
 pub(super) fn imported(names: &NameScope, name: &str) -> RakuAstNode {
-    let mut node = super::bareword::view(names, name).unwrap_or_else(|| RakuAstNode {
+    let mut node = super::bareword::view_node(names, name).unwrap_or_else(|| RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(name))],

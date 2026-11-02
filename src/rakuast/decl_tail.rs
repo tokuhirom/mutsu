@@ -120,7 +120,7 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 
 /// A head and its loose tail as the one expression they were written as.
 // Cost: O(n), n = size of the statement.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     head: &Stmt,
     tail: &Expr,
@@ -149,7 +149,7 @@ pub(super) fn view(
 
         let decl =
             crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
-        let declaration = super::signature_decl::view(names, decl)?;
+        let declaration = super::signature_decl::view_node(names, decl)?;
         replace_group_seed(&converted, &declaration).ok_or_else(unsupported_statement)
     })()
 }

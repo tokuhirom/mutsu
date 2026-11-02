@@ -35,7 +35,7 @@ fn prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a call named `name` with `args` spells, or `None` for
 /// any other call.
 // Cost: O(n), n = size of the argument.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     name: &str,
     args: &[Expr],

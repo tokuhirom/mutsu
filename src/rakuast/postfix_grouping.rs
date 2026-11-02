@@ -12,7 +12,7 @@ const MAX_GROUPING: usize = 128;
 /// Build an ApplyPostfix while retaining the parser's parentheses as hidden
 /// provenance. Rakudo omits one layer from the visible operand node.
 // Cost: O(p + n), p = parentheses around the operand, n = operand node size.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     operand: &Expr,
     postfix: RakuAstNode,

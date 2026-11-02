@@ -9,7 +9,7 @@ use crate::symbol::Symbol;
 use crate::value::RuntimeError;
 
 // Cost: O(n), n = index expression size.
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     name: &str,
     args: &[Expr],

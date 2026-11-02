@@ -27,7 +27,7 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 /// The `QuantifiedAtom` node for `atom` under `quantifier`. `separator` is
 /// the already converted separator node.
 // Cost: O(1).
-pub(super) fn view(
+pub(super) fn view_node(
     names: &NameScope,
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,

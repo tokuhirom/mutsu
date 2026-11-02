@@ -38,7 +38,7 @@ fn processor(form: &str) -> Option<&'static str> {
 
 /// A normalized-quote literal as its `QuotedString`.
 // Cost: O(n), n = codepoints of the literal.
-pub(super) fn view(uni: &UniData) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(uni: &UniData) -> Result<RakuAstNode, RuntimeError> {
     let Some(processor) = processor(&uni.form) else {
         return Err(super::view::unsupported(&format!(
             "literal {} value",
