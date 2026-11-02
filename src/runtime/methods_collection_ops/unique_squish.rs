@@ -264,20 +264,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let (as_func, with_func) = distinct_adverbs(args);
 
-        if as_func.is_none()
-            && with_func.is_none()
-            && matches!(
-                target.view(),
-                ValueView::Range(_, _)
-                    | ValueView::RangeExcl(_, _)
-                    | ValueView::RangeExclStart(_, _)
-                    | ValueView::RangeExclBoth(_, _)
-                    | ValueView::GenericRange { .. }
-            )
-        {
-            return Ok(target);
-        }
-
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else if let ValueView::LazyList(ll) = target.view() {
