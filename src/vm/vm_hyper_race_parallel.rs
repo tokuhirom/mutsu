@@ -287,7 +287,13 @@ impl Interpreter {
                     // catchable X::AdHoc and suppresses the default backtrace dump,
                     // making worker panic handling uniform across all spawn sites.
                     let call_result = crate::vm::guard_worker_panic(|| {
-                        vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
+                        // A Str-keyed Pair element is one positional argument,
+                        // not a named one (`pair_as_positional`, as `map`).
+                        vm.vm_call_on_value(
+                            block_clone.clone(),
+                            vec![crate::runtime::utils::pair_as_positional(item)],
+                            None,
+                        )
                     });
                     match call_result {
                         Ok(val) => {

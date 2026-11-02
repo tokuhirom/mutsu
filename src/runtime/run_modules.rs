@@ -1378,6 +1378,11 @@ impl Interpreter {
                 module_docs,
             ) {
                 Ok(()) => self.run_compunit(|interp| {
+                    // The unit's own `$=pod` is a compunit lexical from the
+                    // start of its mainline: without it the mainline read
+                    // climbs to an already-loaded ancestor package's document
+                    // (`unit module Sway::Config::CLI` after `use Sway::Config`).
+                    interp.register_unit_pod_before_mainline(unit_name.as_deref());
                     interp.run_module_mainline(|interp| {
                         interp.run_module_block(&module_ast, facts.has_block_phasers, code_slot)
                     })
