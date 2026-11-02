@@ -1,7 +1,7 @@
 //! RakuAST's synthesized predicate block for shaped array parameters.
 
-use super::convert::{
-    convert_expr, leaf_field, name_from_identifier, node_field, plain_infix, statement_expression,
+use super::view::{
+    view_expr, leaf_field, name_from_identifier, node_field, plain_infix, statement_expression,
     unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -19,11 +19,11 @@ pub(super) fn convert(
         return Ok(None);
     };
     let dims = if dimensions.len() == 1 {
-        convert_expr(names, &dimensions[0])?
+        view_expr(names, &dimensions[0])?
     } else {
         let mut operands = Vec::with_capacity(dimensions.len());
         for dim in dimensions {
-            operands.push(Value::rakuast(Box::new(convert_expr(names, dim)?)));
+            operands.push(Value::rakuast(Box::new(view_expr(names, dim)?)));
         }
         RakuAstNode {
             origin: Default::default(),

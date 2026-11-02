@@ -16,7 +16,7 @@
 //! The field is part of the model but not of the constructor form: Rakudo's
 //! `.raku` shows no source text either.
 
-use super::convert::{block_node, node_field, statement_expression};
+use super::view::{block_node, node_field, statement_expression};
 use super::lower::{lower_block, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
@@ -76,7 +76,7 @@ pub(super) fn convert(
     } else {
         // The bare form `PRE COND`: the written statement.
         let [stmt] = body else { return Ok(None) };
-        let Some(node) = super::convert::convert_stmt(names, stmt)? else {
+        let Some(node) = super::view::view_stmt(names, stmt)? else {
             return Ok(None);
         };
         node

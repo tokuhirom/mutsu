@@ -5,8 +5,8 @@
 //! [`regex_code`](super::regex_code), as a code block does, because there is no
 //! deparser to turn the statement back into the text the matcher reads.
 
-use super::convert::{
-    block_statements, convert_expr, leaf_field, name_from_identifier, node_field, quoted_string,
+use super::view::{
+    block_statements, view_expr, leaf_field, name_from_identifier, node_field, quoted_string,
     regex_node, unsupported, var_lexical,
 };
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
@@ -226,7 +226,7 @@ pub(super) fn convert(
             origin: Default::default(),
             class: RakuAstClass::RegexQuote,
             fields: vec![
-                node_field(None, convert_expr(names, expr)?),
+                node_field(None, view_expr(names, expr)?),
                 super::regex_code::source_field(source),
             ],
         },

@@ -9,7 +9,7 @@
 //! registration (`ast::package_header`). [`apply`] turns the parser's header
 //! into those fields, [`strip`] takes them off a node again for the lowering.
 
-use super::convert::{leaf_field, node_field, unsupported};
+use super::view::{leaf_field, node_field, unsupported};
 use super::lower::{list_field, named_child};
 use super::routine_traits::{IsTraits, export_argument, trait_is};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -74,7 +74,7 @@ pub(super) fn apply(
                 Expr::Literal(value) if let ValueView::Str(text) = value.view() => {
                     node_field(Some("value"), words_value(&text))
                 }
-                value => node_field(Some("value"), super::convert::convert_expr(names, value)?),
+                value => node_field(Some("value"), super::view::view_expr(names, value)?),
             };
             pairs.push(Value::rakuast(Box::new(RakuAstNode {
                 origin: Default::default(),

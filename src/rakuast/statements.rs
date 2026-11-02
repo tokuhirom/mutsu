@@ -1,7 +1,7 @@
 //! The statements of a compilation unit or a block, each as its RakuAST node
 //! (`RakuAST::StatementList`), with the carried ones as leaves.
 
-use super::convert::{convert_stmt, node_field, unit_package_taking};
+use super::view::{view_stmt, node_field, unit_package_taking};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, bareword, origin};
 use crate::ast::Stmt;
 use crate::scope::NameScope;
@@ -60,7 +60,7 @@ pub(super) fn statement_list_inner(
         // unit in the declaration's body; the parser leaves it beside it.
         let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| span));
         if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
-            if let Some(mut node) = convert_stmt(names, &unit)? {
+            if let Some(mut node) = view_stmt(names, &unit)? {
                 super::routine_origins::package_origins(&mut node, &unit);
                 if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                     node.fields.push(field);
@@ -77,7 +77,7 @@ pub(super) fn statement_list_inner(
         if crate::ast::anon_state::is_implicit_decl(stmt) && !super::finalize::executing() {
             continue;
         }
-        if let Some(mut node) = convert_stmt(names, stmt)? {
+        if let Some(mut node) = view_stmt(names, stmt)? {
             super::routine_origins::package_origins(&mut node, stmt);
             if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                 node.fields.push(field);

@@ -2228,9 +2228,9 @@ fn lower_parameter(
             RakuAstClass::ParameterTargetVar => {
                 let raw = leaf_str(target, "name")?;
                 match raw.as_str() {
-                    "$" => super::convert::ANONYMOUS_SCALAR_PARAM.to_string(),
-                    "@" => super::convert::ANONYMOUS_ARRAY_PARAM.to_string(),
-                    "%" => super::convert::ANONYMOUS_HASH_PARAM.to_string(),
+                    "$" => super::view::ANONYMOUS_SCALAR_PARAM.to_string(),
+                    "@" => super::view::ANONYMOUS_ARRAY_PARAM.to_string(),
+                    "%" => super::view::ANONYMOUS_HASH_PARAM.to_string(),
                     _ => raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
                 }
             }

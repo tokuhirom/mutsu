@@ -284,7 +284,7 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
         return None;
     }
     let mut fields = if qualifiers.is_empty() {
-        vec![super::convert::leaf_field(
+        vec![super::view::leaf_field(
             None,
             Value::str((*category).to_string()),
         )]
@@ -313,7 +313,7 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
-        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(super::convert::word_quote(
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(super::view::word_quote(
             symbol,
         )))]),
     }

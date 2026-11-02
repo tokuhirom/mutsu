@@ -38,7 +38,7 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
             )));
         }
         if value.truthy() {
-            fields.push(convert::true_field("private"));
+            fields.push(view::true_field("private"));
         }
     }
     for (key, expected) in [

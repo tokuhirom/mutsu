@@ -4,7 +4,7 @@
 //! infix and its original operand order.
 
 use super::RakuAstNode;
-use super::convert::{convert_expr, unsupported};
+use super::view::{view_expr, unsupported};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
 use crate::value::RuntimeError;
@@ -52,5 +52,5 @@ pub(super) fn convert(
         }),
         form: *form,
     };
-    convert_expr(names, &restored)
+    view_expr(names, &restored)
 }

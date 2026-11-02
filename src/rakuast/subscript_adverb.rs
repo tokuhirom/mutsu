@@ -16,9 +16,9 @@
 //! [`postcircumfix_node`] is their view and [`lower`] the one lowering, which expands them
 //! into the shapes the compiler executes (`ast::subscript_adverb::expand`).
 
-use super::convert::{
-    angle_key_text, angle_subscript_node, convert_expr, leaf_field, splat_dimensions,
-    subscript_dims_node, unsupported as convert_unsupported,
+use super::view::{
+    angle_key_text, angle_subscript_node, view_expr, leaf_field, splat_dimensions,
+    subscript_dims_node, unsupported as view_unsupported,
 };
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -31,7 +31,7 @@ mod hyperslice;
 
 /// `%h{**}:k`: the hash hyperslice the parser keeps as `Expr::HyperSlice`.
 // Cost: O(n), n = nodes under the target.
-pub(super) fn convert_hyper_slice(
+pub(super) fn view_hyper_slice(
     names: &NameScope,
     expr: &Expr,
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
@@ -66,7 +66,7 @@ pub(super) fn postcircumfix_node(
 ) -> Result<RakuAstNode, RuntimeError> {
     let colonpairs = pairs
         .iter()
-        .map(|pair| convert_expr(names, pair).map(|node| Value::rakuast(Box::new(node))))
+        .map(|pair| view_expr(names, pair).map(|node| Value::rakuast(Box::new(node))))
         .collect::<Result<Vec<_>, _>>()?;
     match subscript {
         Expr::Index {
@@ -106,7 +106,7 @@ pub(super) fn postcircumfix_node(
             None,
             colonpairs,
         ),
-        _ => Err(convert_unsupported("subscript adverb source form")),
+        _ => Err(view_unsupported("subscript adverb source form")),
     }
 }
 

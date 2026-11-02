@@ -591,8 +591,8 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
         return;
     };
     let mut fields = vec![
-        super::convert::leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-        super::convert::leaf_field(
+        super::view::leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+        super::view::leaf_field(
             Some("desigilname"),
             Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
                 super::name_parts::simple_part(rest),
@@ -602,7 +602,7 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     // The constructor's own order (`type` first), which the field lookups of a
     // declaration read.
     if let Some(ty) = type_node {
-        fields.insert(0, super::convert::leaf_field(Some("type"), ty.clone()));
+        fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
     }
     node.origin.2 = Some(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),

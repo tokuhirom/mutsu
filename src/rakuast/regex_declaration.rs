@@ -1,5 +1,5 @@
 //! Regex declaration nodes and their parser-owned reflection provenance.
-use super::convert::{leaf_field, name_from_identifier, node_field, regex_node, signature};
+use super::view::{leaf_field, name_from_identifier, node_field, regex_node, signature};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::regex_tree::RegexTree;

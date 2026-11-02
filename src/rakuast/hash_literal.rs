@@ -15,7 +15,7 @@
 //! The parser builds both as one [`Expr::Hash`] and records which spelling the
 //! source wrote as its [`HashSpelling`]; both directions read and restore it.
 
-use super::convert::{convert_expr, leaf_field, node_field, plain_infix, statement_expression};
+use super::view::{view_expr, leaf_field, node_field, plain_infix, statement_expression};
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, HashSpelling};
@@ -78,7 +78,7 @@ fn contents_node(
             class: RakuAstClass::FatArrow,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.clone())),
-                node_field(Some("value"), convert_expr(names, value)?),
+                node_field(Some("value"), view_expr(names, value)?),
             ],
         };
         super::infix_origins::derive(names, &mut pair);
@@ -122,11 +122,11 @@ pub(super) fn object_hash_node(
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::with_capacity(2);
     if args.len() == 1 {
-        fields.push(node_field(None, convert_expr(names, &args[0])?));
+        fields.push(node_field(None, view_expr(names, &args[0])?));
     } else if !args.is_empty() {
         fields.push(node_field(
             None,
-            super::convert::comma_list_node(names, args)?,
+            super::view::comma_list_node(names, args)?,
         ));
     }
     fields.push(leaf_field(Some("object-hash"), Value::truth(true)));

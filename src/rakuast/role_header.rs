@@ -54,7 +54,7 @@ pub(super) fn construct(
 // Cost: O(k), k = name length.
 pub(super) fn retain_name(fields: &mut Vec<super::RakuAstField>, name: crate::symbol::Symbol) {
     if crate::value::is_internal_anon_type_name(name.as_str()) {
-        fields.push(super::convert::leaf_field(
+        fields.push(super::view::leaf_field(
             Some(DECLARATION_NAME),
             Value::str_from(name.as_str()),
         ));

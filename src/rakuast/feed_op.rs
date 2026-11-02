@@ -10,7 +10,7 @@
 //! `==>` (the source is the inner feed) and right-nested for `<==` (the
 //! source is the inner feed too, but written last).
 
-use super::convert::{convert_expr, node_field, unsupported as unsupported_expr};
+use super::view::{view_expr, node_field, unsupported as unsupported_expr};
 use super::lower::{list_field, lower_expr, positional_leaf, rakuast_node_of, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -93,12 +93,12 @@ pub(super) fn convert(
                 "feed sink must be a routine call or appendable variable",
             ));
         }
-        nodes.push(Value::rakuast(Box::new(convert_expr(names, operand)?)));
+        nodes.push(Value::rakuast(Box::new(view_expr(names, operand)?)));
     }
     let feed = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Feed,
-        fields: vec![super::convert::leaf_field(
+        fields: vec![super::view::leaf_field(
             None,
             Value::str(if left_is_source { "==>" } else { "<==" }.to_string()),
         )],

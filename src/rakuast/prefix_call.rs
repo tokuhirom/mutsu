@@ -16,7 +16,7 @@
 //! (raku keeps the bare statement); the parser does not record which was
 //! written.
 
-use super::convert::{block_node, convert_expr, node_field, statement_expression};
+use super::view::{block_node, view_expr, node_field, statement_expression};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, make_anon_sub};
@@ -68,9 +68,9 @@ fn blorst(names: &NameScope, arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => block_node(names, body),
         Expr::Ast(node) => match node.as_ref() {
             crate::ast::parsed::ParsedExpr::StartBody(body) => block_node(names, body),
-            _ => Ok(statement_expression(convert_expr(names, arg)?)),
+            _ => Ok(statement_expression(view_expr(names, arg)?)),
         },
-        other => Ok(statement_expression(convert_expr(names, other)?)),
+        other => Ok(statement_expression(view_expr(names, other)?)),
     }
 }
 
@@ -128,7 +128,7 @@ fn method_prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a `sugar` method call named `name` on `target` spells,
 /// or `None` for any other call.
 // Cost: O(n), n = size of the operand.
-pub(super) fn convert_method(
+pub(super) fn view_method(
     names: &NameScope,
     name: &str,
     target: &Expr,

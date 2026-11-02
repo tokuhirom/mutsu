@@ -157,7 +157,7 @@ pub(super) fn lower_word_quote(quotewords: bool, val: bool, text: &str) -> Expr 
 pub(super) fn list_node(names: &NameScope, list: &WordList) -> Result<RakuAstNode, RuntimeError> {
     match &list.source {
         WordSource::Plain { quotewords, text } => {
-            Ok(super::convert::word_quote_with(*quotewords, list.val, text))
+            Ok(super::view::word_quote_with(*quotewords, list.val, text))
         }
         WordSource::Interpolating {
             text,
@@ -179,7 +179,7 @@ pub(super) fn atom_node(names: &NameScope, atom: &WordsAtom) -> Result<RakuAstNo
     let segments = items
         .iter()
         .map(|item| {
-            Ok(Value::rakuast(Box::new(super::convert::interp_segment(
+            Ok(Value::rakuast(Box::new(super::view::interp_segment(
                 names, item,
             )?)))
         })

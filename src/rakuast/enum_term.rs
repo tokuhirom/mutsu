@@ -18,8 +18,8 @@
 //! ([`enum_variants_from_body`]), so a round-tripped enum takes the same path
 //! the parsed one did.
 
-use super::convert::{
-    convert_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
+use super::view::{
+    view_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
 };
 use super::lower::{list_field, lower_expr, named_child, positional_leaf, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -64,14 +64,14 @@ pub(super) fn enum_term_node(
         EnumVariantForm::PairList => pair_list_term(names, variants),
         EnumVariantForm::Computed => match variants {
             [(name, Some(body))] if name == DYNAMIC => computed_term(names, body),
-            _ => Err(super::convert::unsupported("enum with a computed body")),
+            _ => Err(super::view::unsupported("enum with a computed body")),
         },
     }
 }
 
 /// A computed body is the parenthesized term itself.
 fn computed_term(names: &NameScope, body: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let node = convert_expr(names, body)?;
+    let node = view_expr(names, body)?;
     if node.class == RakuAstClass::CircumfixParentheses {
         return Ok(node);
     }
@@ -111,7 +111,7 @@ fn word_term(
             continue;
         };
         if processor != "quotewords" {
-            return Err(super::convert::unsupported(
+            return Err(super::view::unsupported(
                 "word-quoted enum with explicit values",
             ));
         }
@@ -123,7 +123,7 @@ fn word_term(
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(name.clone())),
-                node_field(Some("value"), convert_expr(names, value)?),
+                node_field(Some("value"), view_expr(names, value)?),
             ],
         };
         segments.push(Value::rakuast(Box::new(RakuAstNode {
@@ -185,7 +185,7 @@ fn pair_list_term(
         .iter()
         .map(|(name, value)| {
             let value = match value {
-                Some(value) => convert_expr(names, value)?,
+                Some(value) => view_expr(names, value)?,
                 // A bare `'name'` element: the parser keeps no value for it.
                 None => {
                     return Ok(Value::rakuast(Box::new(quoted_string(Value::str(

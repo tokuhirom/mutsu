@@ -6,7 +6,7 @@
 //! `::(EXPR)` in the parameter's `type_constraint`, so the converter reparses
 //! the expression text and lowering spells a plain string literal back.
 
-use super::convert::{convert_expr, node_field, unsupported};
+use super::view::{view_expr, node_field, unsupported};
 use super::lower::lower_expr;
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
@@ -27,7 +27,7 @@ pub(super) fn capture_node(names: &NameScope, name: &str) -> Result<RakuAstNode,
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
-        fields: vec![node_field(None, convert_expr(names, &expr)?)],
+        fields: vec![node_field(None, view_expr(names, &expr)?)],
     };
     Ok(RakuAstNode {
         origin: Default::default(),

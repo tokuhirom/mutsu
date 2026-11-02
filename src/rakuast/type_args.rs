@@ -1,6 +1,6 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
-use super::convert::{convert_expr, is_simple_type, node_field, unsupported};
+use super::view::{view_expr, is_simple_type, node_field, unsupported};
 use super::type_build::{MAX_TYPE_DEPTH, application_open, build_type_node_at};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
@@ -86,7 +86,7 @@ fn colonpair_argument(names: &NameScope, source: &str) -> Result<RakuAstNode, Ru
         .iter()
         .filter(|statement| !matches!(statement, crate::ast::Stmt::SetLine(..)));
     match (expressions.next(), expressions.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(names, expr),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => view_expr(names, expr),
         _ => Err(unsupported(&format!("type argument `{source}`"))),
     }
 }
@@ -156,16 +156,16 @@ pub(super) fn parameterized_type_node_at(
             {
                 build_type_node_at(names, name, depth + 1)?
             } else {
-                convert_expr(names, expr)?
+                view_expr(names, expr)?
             };
             fields.push(node_field(None, node));
         }
     } else {
         for source in sources {
             let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
-                super::convert::convert_literal(names, &value)?
+                super::view::view_literal(names, &value)?
             } else if let Some(value) = super::type_build::string_literal_value(source) {
-                super::convert::quoted_string(crate::value::Value::str(value))
+                super::view::quoted_string(crate::value::Value::str(value))
             } else if source.starts_with(':') {
                 colonpair_argument(names, source)?
             } else {
@@ -207,7 +207,7 @@ fn term_argument(names: &NameScope, source: &str) -> Option<RakuAstNode> {
         .iter()
         .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
     match (exprs.next(), exprs.next()) {
-        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(names, expr).ok(),
+        (Some(crate::ast::Stmt::Expr(expr)), None) => view_expr(names, expr).ok(),
         _ => None,
     }
 }

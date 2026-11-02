@@ -7,7 +7,7 @@
 //! (`ast::immediate_call::expand`), so the routine is declared in the
 //! enclosing scope as the parsed program declares it.
 
-use super::convert::{arg_list, convert_stmt, expression_of, node_field};
+use super::view::{arg_list, view_stmt, expression_of, node_field};
 use super::lower::{arg_exprs, lower_stmt, named_child, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, Stmt};
@@ -22,10 +22,10 @@ pub(super) fn convert(
     sub_decl: &Stmt,
     args: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let statement = convert_stmt(names, sub_decl)?
-        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+    let statement = view_stmt(names, sub_decl)?
+        .ok_or_else(|| super::view::unsupported("immediately called sub"))?;
     let routine = expression_of(&statement)
-        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+        .ok_or_else(|| super::view::unsupported("immediately called sub"))?;
     // raku omits `args` for an argument-less call, as for `$f()`.
     let mut call = RakuAstNode {
         origin: Default::default(),

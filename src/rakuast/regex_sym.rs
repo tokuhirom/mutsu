@@ -7,7 +7,7 @@
 //! (ColonPair::Value(key => "sym", value => QuotedString<words val>("number")),)))`
 //! with no `args` (measured on 2026.09). This module maps between the two.
 
-use super::convert::{leaf_field, node_field, word_quote};
+use super::view::{leaf_field, node_field, word_quote};
 use super::lower::{
     leaf_str, list_field, named_child, positional_leaf, rakuast_node_of, unsupported,
 };

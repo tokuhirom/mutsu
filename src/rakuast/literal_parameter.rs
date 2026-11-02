@@ -1,6 +1,6 @@
 //! Literal-value parameters shared by routine, pointy and signature forms.
 
-use super::convert::{build_type_node, leaf_field, node_field, unsupported};
+use super::view::{build_type_node, leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::ParamDef;
 use crate::scope::NameScope;

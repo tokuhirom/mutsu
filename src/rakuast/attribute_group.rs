@@ -1,6 +1,6 @@
 //! Parenthesized `has` declarations as one source RakuAST signature.
 
-use super::convert::{build_type_node, leaf_field, node_field, unsupported};
+use super::view::{build_type_node, leaf_field, node_field, unsupported};
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
 use crate::scope::NameScope;
@@ -100,7 +100,7 @@ pub(super) fn to_signature(
 /// declarations parsed from that list. Preserve those declarations as hidden
 /// model metadata so evaluating the RakuAST still installs them.
 // Cost: O(a), a = total size of the declarations and expressions in the colon argument list.
-pub(super) fn convert_colon(
+pub(super) fn view_colon(
     names: &NameScope,
     attributes: &[Stmt],
 ) -> Result<RakuAstNode, RuntimeError> {

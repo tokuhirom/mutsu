@@ -12,8 +12,8 @@
 //! ([`crate::ast::decl_tail`]), so the converter puts the head back in place of
 //! that re-read, and lowering takes it out again.
 
-use super::convert::{
-    anonymous_declaration, convert_expr, convert_stmt, expression_of, node_field, plain_infix,
+use super::view::{
+    anonymous_declaration, view_expr, view_stmt, expression_of, node_field, plain_infix,
     split_sigil, var_lexical,
 };
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
@@ -126,7 +126,7 @@ pub(super) fn convert(
     tail: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     (|| {
-        let converted = convert_expr(names, tail)?;
+        let converted = view_expr(names, tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
             let (bottom, depth) = leftmost(&converted, true);
             // The tail must start with a re-read of the variable the head declares.
@@ -139,10 +139,10 @@ pub(super) fn convert(
                 return Err(unsupported_statement());
             }
             let operand = if let Some(expr) = compound_assignment_expr(head) {
-                convert_expr(names, expr)?
+                view_expr(names, expr)?
             } else {
-                let statement = convert_stmt(names, head)?.ok_or_else(unsupported_statement)?;
-                super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
+                let statement = view_stmt(names, head)?.ok_or_else(unsupported_statement)?;
+                super::view::expression_of(&statement).ok_or_else(unsupported_statement)?
             };
             return Ok(replace_leftmost(&converted, &operand));
         }
@@ -158,7 +158,7 @@ pub(super) fn convert(
 /// item as the parser kept them. RakuAST has one comma application whose first
 /// operand is the declaration.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_call_assign_list(
+pub(super) fn view_call_assign_list(
     names: &NameScope,
     head: &Stmt,
     items: &[Expr],
@@ -167,17 +167,17 @@ pub(super) fn convert_call_assign_list(
     let [first_item, rest @ ..] = items else {
         return Err(unsupported_statement());
     };
-    let first = convert_expr(names, first_item)?;
+    let first = view_expr(names, first_item)?;
     if leftmost(&first, true).0 == &var_lexical(sigil, name) {
         // A postfix chain over the declared variable, not a list item.
         return Err(unsupported_statement());
     }
-    let statement = convert_stmt(names, head)?.ok_or_else(unsupported_statement)?;
+    let statement = view_stmt(names, head)?.ok_or_else(unsupported_statement)?;
     let declaration = expression_of(&statement).ok_or_else(unsupported_statement)?;
     let mut operands = vec![Value::rakuast(Box::new(declaration))];
     operands.push(Value::rakuast(Box::new(first)));
     for item in rest {
-        operands.push(Value::rakuast(Box::new(convert_expr(names, item)?)));
+        operands.push(Value::rakuast(Box::new(view_expr(names, item)?)));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -279,7 +279,7 @@ fn compound_assignment_expr(head: &Stmt) -> Option<&crate::ast::Expr> {
 }
 
 fn unsupported_statement() -> RuntimeError {
-    super::convert::unsupported("a declaration with a loose tail")
+    super::view::unsupported("a declaration with a loose tail")
 }
 
 /// An expression node whose leading operand is a declaration or an assignment
@@ -313,7 +313,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt
     };
     if is_signature_declaration {
         let seed = signature_seed(&head)?;
-        let seed_node = match convert_expr(names, &seed) {
+        let seed_node = match view_expr(names, &seed) {
             Ok(node) => node,
             Err(error) => return Some(Err(error)),
         };

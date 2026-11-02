@@ -9,7 +9,7 @@
 //! `.AST` parse keeps the written name beside the literal
 //! (`Spelling::CompilerVar`).
 
-use super::convert::leaf_field;
+use super::view::leaf_field;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -17,7 +17,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The node for the compiler variable the parser keeps as `Var(name)`
 /// (`name` without the `$` sigil, `?PACKAGE`), or `None` for any other name.
 // Cost: O(n), n = length of the name.
-pub(super) fn convert_var(name: &str) -> Option<RakuAstNode> {
+pub(super) fn view_var(name: &str) -> Option<RakuAstNode> {
     let bare = name.strip_prefix('?')?;
     if bare.is_empty() || !bare.starts_with(|c: char| c.is_ascii_uppercase()) {
         return None;
@@ -34,10 +34,10 @@ pub(super) fn convert_var(name: &str) -> Option<RakuAstNode> {
 /// The node for a compiler variable the parser folded into `value`, written
 /// as `written` (`$?LINE`, `$?FILE`, `$?TABSTOP`).
 // Cost: O(1).
-pub(super) fn convert_folded(written: &str, value: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_folded(written: &str, value: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let literal = match value {
         Expr::Literal(v) => v.clone(),
-        _ => return Err(super::convert::unsupported("a folded compiler variable")),
+        _ => return Err(super::view::unsupported("a folded compiler variable")),
     };
     Ok(match written {
         "$?LINE" => node(RakuAstClass::VarCompilerLine, Some(literal)),

@@ -6,7 +6,7 @@
 //! it would silently change callback checking and multi dispatch. The parser
 //! already distinguishes the two with `ParamDef::sub_signature`.
 
-use super::convert::{node_field, signature};
+use super::view::{node_field, signature};
 use super::lower::{lower_signature_parameters, named_child};
 use super::{RakuAstField, RakuAstNode};
 use crate::ast::ParamDef;

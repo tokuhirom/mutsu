@@ -14,7 +14,7 @@
 //! grammar, so its `WithWhitespace` disappears with the atom: the public node
 //! is the bare interpolation and the hidden atom carries the wrapper.
 
-use super::convert::{leaf_field, node_field, regex_node};
+use super::view::{leaf_field, node_field, regex_node};
 use super::lower::{lower_regex_node, named_child};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::regex_tree::{RegexExtension, RegexNode};
@@ -57,7 +57,7 @@ pub(super) fn convert(
 
 /// `WithWhitespace(alias)`: the wrapper moves onto the hidden atom.
 // Cost: O(n), n = size of the aliased atom.
-pub(super) fn convert_spaced(
+pub(super) fn view_spaced(
     names: &NameScope,
     alias: &RegexNode,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -69,7 +69,7 @@ pub(super) fn convert_spaced(
         regex,
     }) = alias
     else {
-        return Err(super::convert::unsupported("spaced regex variable alias"));
+        return Err(super::view::unsupported("spaced regex variable alias"));
     };
     convert(
         names,

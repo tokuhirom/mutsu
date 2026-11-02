@@ -3,8 +3,8 @@
 //! phaser behind that public statement so lowering can restore `--doc`
 //! execution without running a parse-time probe.
 
-use super::convert::{
-    convert_stmt, name_from_identifier, node_field, statement_expression, unsupported,
+use super::view::{
+    view_stmt, name_from_identifier, node_field, statement_expression, unsupported,
 };
 use super::lower::{child_node, lower_stmt};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
@@ -16,7 +16,7 @@ const SOURCE_DOC_PHASER: &str = "source-doc-phaser";
 
 // Cost: O(n), n = nodes in the phaser body.
 pub(super) fn convert(names: &NameScope, inner: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let original = convert_stmt(names, inner)?.ok_or_else(|| unsupported("DOC phaser body"))?;
+    let original = view_stmt(names, inner)?.ok_or_else(|| unsupported("DOC phaser body"))?;
     let nil = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TermName,

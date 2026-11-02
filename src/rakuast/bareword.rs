@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use super::convert::{leaf_field, name_from_identifier, node_field};
+use super::view::{leaf_field, name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
@@ -428,7 +428,7 @@ fn collect_declared_names(
             }
             // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
             // renders `T` as a `Type::Simple`, measured on 2026.09).
-            if let Some(name) = super::convert::type_capture_name(param) {
+            if let Some(name) = super::view::type_capture_name(param) {
                 insert_declared_type(Symbol::intern(name), self.0);
             }
             walk_param(self, param);
@@ -501,7 +501,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
             )
         })
     {
-        return super::convert::build_type_node(names, name).ok();
+        return super::view::build_type_node(names, name).ok();
     }
     // `GLOBAL` and a pseudo-package prefix on a name that resolves
     // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
@@ -570,7 +570,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
             fields: vec![leaf_field(None, Value::str(constant.to_string()))],
         });
     }
-    if let Some(op) = super::convert::nqp_op(name) {
+    if let Some(op) = super::view::nqp_op(name) {
         return Some(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Nqp,

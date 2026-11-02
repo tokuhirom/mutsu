@@ -1,6 +1,6 @@
 //! Written delimiters of attribute trait arguments.
 
-use super::super::convert::{convert_expr, node_field, statement_expression};
+use super::super::view::{view_expr, node_field, statement_expression};
 use super::super::lower::{lower_expr, named_child, named_child_or_positional};
 use super::super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, spelled::Spelling};
@@ -13,7 +13,7 @@ pub(super) fn trait_argument(
 ) -> Result<RakuAstNode, RuntimeError> {
     match argument {
         Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::BracketTraitArgument) => {
-            convert_expr(names, &spelled.expr)
+            view_expr(names, &spelled.expr)
         }
         Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
             paren_argument(names, inner)
@@ -33,7 +33,7 @@ pub(in crate::rakuast) fn paren_argument(
         class: RakuAstClass::SemiList,
         fields: vec![node_field(
             None,
-            statement_expression(convert_expr(names, expr)?),
+            statement_expression(view_expr(names, expr)?),
         )],
     };
     Ok(RakuAstNode {

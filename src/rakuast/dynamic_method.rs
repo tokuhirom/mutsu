@@ -16,8 +16,8 @@
 //! [`Expr::HyperMethodCallDynamic`]. A `.^$n()` loses its `^` in rakudo's tree,
 //! and a quoted name is a `Call::QuotedMethod` (see `convert.rs`).
 
-use super::convert::{
-    arg_list, convert_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
+use super::view::{
+    arg_list, view_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
     unsupported as unsupported_expr,
 };
 use super::lower::{
@@ -63,7 +63,7 @@ fn postfix_of(
         // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
         // identifier `Name.from-identifier` spells.
         Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
-            fields.push(node_field(Some("block"), convert_expr(names, name_expr)?));
+            fields.push(node_field(Some("block"), view_expr(names, name_expr)?));
             RakuAstClass::CallBlockMethod
         }
         Expr::CodeVar(name) if dispatch.is_none() && name_as_method => {
@@ -71,7 +71,7 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
-            fields.push(node_field(Some("callee"), convert_expr(names, other)?));
+            fields.push(node_field(Some("callee"), view_expr(names, other)?));
             RakuAstClass::CallTermAsMethod
         }
     };
@@ -109,9 +109,9 @@ pub(super) fn call_assign_postfix(
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(
+        } => super::view::call_quoted_method_expr(
             names,
-            convert_expr(names, name_expr)?,
+            view_expr(names, name_expr)?,
             args,
             None,
         ),
@@ -173,7 +173,7 @@ pub(super) fn convert(
 
 /// `@a>>.$name(args)` / `@a>>.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert_hyper(
+pub(super) fn view_hyper(
     names: &NameScope,
     target: &Expr,
     name_expr: &Expr,

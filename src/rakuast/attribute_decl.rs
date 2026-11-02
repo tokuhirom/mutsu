@@ -1,7 +1,7 @@
 //! Attribute declarations retain value types and keyed hash shapes independently.
 
-use super::convert::{
-    Initializer, convert_expr, node_field, statement_expression, unsupported as unsupported_source,
+use super::view::{
+    Initializer, view_expr, node_field, statement_expression, unsupported as unsupported_source,
     var_declaration,
 };
 use super::lower::{
@@ -136,7 +136,7 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
     )?;
     if let Some(constraint) = where_constraint {
         decl.fields
-            .push(node_field(Some("where"), convert_expr(names, constraint)?));
+            .push(node_field(Some("where"), view_expr(names, constraint)?));
     }
     Ok(Some(statement_expression(decl)))
 }

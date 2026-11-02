@@ -1,6 +1,6 @@
 //! Anonymous positional and slurpy destructuring parameters.
 
-use super::convert::{
+use super::view::{
     build_type_node, leaf_field, node_field, signature, type_setting_any, unsupported,
 };
 use super::{RakuAstClass, RakuAstNode};
@@ -54,7 +54,7 @@ pub(super) fn anonymous_destructuring(
     if let Some(default) = &pd.default {
         fields.push(node_field(
             Some("default"),
-            super::convert::convert_expr(names, default)?,
+            super::view::view_expr(names, default)?,
         ));
     } else if pd.onearg || pd.slurpy {
         let marker = if pd.onearg {
@@ -74,10 +74,10 @@ pub(super) fn anonymous_destructuring(
     if let Some(where_constraint) = &pd.where_constraint {
         fields.push(node_field(
             Some("where"),
-            super::convert::convert_expr(names, where_constraint)?,
+            super::view::view_expr(names, where_constraint)?,
         ));
     }
-    if let Some(traits) = super::convert::parameter_traits(names, pd)? {
+    if let Some(traits) = super::view::parameter_traits(names, pd)? {
         fields.push(traits);
     }
     fields.push(node_field(Some("sub-signature"), sub));

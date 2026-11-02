@@ -48,12 +48,12 @@ pub(super) fn convert(
         class: RakuAstClass::RegexAssertionCharClass,
         fields: elements
             .iter()
-            .map(|element| convert_element(names, element).map(positional))
+            .map(|element| view_element(names, element).map(positional))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Value, RuntimeError> {
+fn view_element(names: &NameScope, element: &CharClassElement) -> Result<Value, RuntimeError> {
     Ok(match element {
         CharClassElement::Enumeration { negated, elements } => {
             let mut fields = Vec::new();
@@ -62,7 +62,7 @@ fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Valu
             }
             fields.push(RakuAstField {
                 name: Some("elements"),
-                value: RakuAstFieldValue::List(elements.iter().map(convert_entry).collect()),
+                value: RakuAstFieldValue::List(elements.iter().map(view_entry).collect()),
             });
             node(RakuAstClass::RegexCharClassElementEnumeration, fields)
         }
@@ -89,7 +89,7 @@ fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Valu
             }
             fields.push(named("property", Value::str(name.clone())));
             if let Some(predicate) = predicate {
-                fields.push(named("predicate", convert_predicate(names, predicate)?));
+                fields.push(named("predicate", view_predicate(names, predicate)?));
             }
             node(RakuAstClass::RegexCharClassElementProperty, fields)
         }
@@ -98,26 +98,26 @@ fn convert_element(names: &NameScope, element: &CharClassElement) -> Result<Valu
 
 /// `<Latin>` as a words `QuotedString`, `(1)` as a parenthesised expression.
 // Cost: O(|predicate|).
-fn convert_predicate(
+fn view_predicate(
     names: &NameScope,
     predicate: &PropertyPredicate,
 ) -> Result<Value, RuntimeError> {
     match predicate {
-        PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::convert::word_quote(
+        PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::view::word_quote(
             text.trim(),
         )))),
         PropertyPredicate::Args(text) => {
             let expr = crate::parser::parse_adverb_argument(text)
-                .ok_or_else(|| super::convert::unsupported("property predicate"))?;
-            let value = super::convert::convert_expr(names, &expr)?;
+                .ok_or_else(|| super::view::unsupported("property predicate"))?;
+            let value = super::view::view_expr(names, &expr)?;
             if crate::regex_tree::expression_argument_source(&expr).is_none() {
-                return Err(super::convert::unsupported("property predicate"));
+                return Err(super::view::unsupported("property predicate"));
             }
             let semilist = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::SemiList,
                 fields: vec![positional(Value::rakuast(Box::new(
-                    super::convert::statement_expression(value),
+                    super::view::statement_expression(value),
                 )))],
             };
             Ok(node(
@@ -128,7 +128,7 @@ fn convert_predicate(
     }
 }
 
-fn convert_entry(entry: &EnumerationElement) -> Value {
+fn view_entry(entry: &EnumerationElement) -> Value {
     match entry {
         EnumerationElement::Character(ch) => node(
             RakuAstClass::RegexCharClassEnumerationElementCharacter,

@@ -14,8 +14,8 @@
 //! records `crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE` when it supplied the
 //! `Any` value type itself, so `my %h{Str}` and `my Any %h{Str}` stay apart.
 
-use super::convert::{
-    build_type_node, convert_expr, node_field, statement_expression,
+use super::view::{
+    build_type_node, view_expr, node_field, statement_expression,
     unsupported as unsupported_source,
 };
 use super::lower::unsupported;
@@ -98,7 +98,7 @@ pub(super) fn insert_subset_shape(
     expression: &Expr,
     source: &str,
 ) -> Result<(), RuntimeError> {
-    let mut subset = convert_expr(names, expression)?;
+    let mut subset = view_expr(names, expression)?;
     if subset.class != RakuAstClass::TypeSubset {
         return Err(unsupported_source("inline subset hash key type"));
     }
@@ -164,7 +164,7 @@ pub(super) fn insert_dimensions(
         .map(|dim| {
             Ok(node_field(
                 None,
-                statement_expression(super::convert::convert_expr(names, dim)?),
+                statement_expression(super::view::view_expr(names, dim)?),
             ))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;

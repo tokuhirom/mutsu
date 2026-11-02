@@ -1,6 +1,6 @@
 //! Lowering a RakuAST type node back to the parser's type-constraint spelling.
 //!
-//! The inverse of `convert::build_type_node`: the parser keeps a type
+//! The inverse of `view::build_type_node`: the parser keeps a type
 //! constraint as one string (`Int`, `Str:D`, `Int()`, `Hash[Str, Int]`), and
 //! the converter renders that string as `Type::Simple`, `Type::Definedness`,
 //! `Type::Coercion` or `Type::Parameterized`. Every lowering site that reads a
@@ -283,7 +283,7 @@ mod tests {
             node = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::TypeCoercion,
-                fields: vec![super::super::convert::node_field(Some("base-type"), node)],
+                fields: vec![super::super::view::node_field(Some("base-type"), node)],
             };
         }
         assert!(type_constraint(names, &node, &node).is_err());

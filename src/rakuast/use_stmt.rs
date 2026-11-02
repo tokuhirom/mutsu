@@ -12,7 +12,7 @@
 //! while raku has a single `argument` expression: one `ColonPair::True` per
 //! tag, a comma list for several. Both directions translate between the two.
 
-use super::convert::{convert_expr, leaf_field, name_from_identifier, node_field, plain_infix};
+use super::view::{view_expr, leaf_field, name_from_identifier, node_field, plain_infix};
 use super::lower::{leaf_str, list_field, lower_expr, named_child, positional_leaf};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -45,7 +45,7 @@ pub(super) fn is_pragma_name(name: &str) -> bool {
 
 /// `use MODULE [ARG | :TAG...]` -> `Pragma`, `Statement::LanguageVersion` or
 /// `Statement::Use`.
-pub(super) fn convert_use(
+pub(super) fn view_use(
     names: &NameScope,
     module: &str,
     arg: Option<&Expr>,
@@ -57,7 +57,7 @@ pub(super) fn convert_use(
     // pseudo-module.
     if module == "v6" && tags.is_empty() {
         if condition.is_some() || !if_imports.is_empty() {
-            return Err(super::convert::unsupported("conditional language version"));
+            return Err(super::view::unsupported("conditional language version"));
         }
         if let Some(Expr::Literal(version)) = arg
             && let ValueView::Str(text) = version.view()
@@ -68,7 +68,7 @@ pub(super) fn convert_use(
                 fields: vec![leaf_field(None, Value::version_from_str(&text))],
             });
         }
-        return Err(super::convert::unsupported("language version argument"));
+        return Err(super::view::unsupported("language version argument"));
     }
     // The smiley pragmas (`use variables :D`): the parser keeps the smiley as
     // a `":D"` string argument, which only the colonpair spelling produces (a
@@ -84,7 +84,7 @@ pub(super) fn convert_use(
             _ => None,
         };
         let Some(smiley) = smiley else {
-            return Err(super::convert::unsupported("smiley pragma"));
+            return Err(super::view::unsupported("smiley pragma"));
         };
         let mut node = pragma_node(module);
         node.fields
@@ -128,7 +128,7 @@ pub(super) fn convert_use(
     if let Some(condition) = condition {
         node.fields.push(node_field(
             Some("source-if-condition"),
-            convert_expr(names, condition)?,
+            view_expr(names, condition)?,
         ));
     }
     if !if_imports.is_empty() {
@@ -149,13 +149,13 @@ pub(super) fn convert_use(
 /// parser declares it ahead of the import in a transparent synthetic block;
 /// replace that block with the public `Statement::Use` shape.
 // Cost: O(a), a = direct import arguments.
-pub(super) fn convert_inline_proto(
+pub(super) fn view_inline_proto(
     names: &NameScope,
     proto: &Stmt,
     use_stmt: &Stmt,
 ) -> Result<RakuAstNode, RuntimeError> {
     let Stmt::ProtoDecl { name, .. } = proto else {
-        return Err(super::convert::unsupported("inline proto argument"));
+        return Err(super::view::unsupported("inline proto argument"));
     };
     let Stmt::Use {
         module,
@@ -165,9 +165,9 @@ pub(super) fn convert_inline_proto(
         if_imports,
     } = use_stmt
     else {
-        return Err(super::convert::unsupported("inline proto use statement"));
+        return Err(super::view::unsupported("inline proto use statement"));
     };
-    let mut node = convert_use(
+    let mut node = view_use(
         names,
         module,
         arg.as_ref(),
@@ -175,23 +175,23 @@ pub(super) fn convert_inline_proto(
         condition.as_deref(),
         if_imports,
     )?;
-    let declaration = super::convert::convert_stmt(names, proto)?
-        .ok_or_else(|| super::convert::unsupported("inline proto declaration"))?;
+    let declaration = super::view::view_stmt(names, proto)?
+        .ok_or_else(|| super::view::unsupported("inline proto declaration"))?;
     let proto_node = named_child(&declaration, "expression")?.clone();
     let argument = node
         .fields
         .iter_mut()
         .find(|f| f.name == Some("argument"))
-        .ok_or_else(|| super::convert::unsupported("inline proto without argument"))?;
+        .ok_or_else(|| super::view::unsupported("inline proto without argument"))?;
     let RakuAstFieldValue::Node(value) = &mut argument.value else {
-        return Err(super::convert::unsupported("inline proto argument"));
+        return Err(super::view::unsupported("inline proto argument"));
     };
     let ValueView::RakuAst(arg_node) = value.view() else {
-        return Err(super::convert::unsupported("inline proto argument"));
+        return Err(super::view::unsupported("inline proto argument"));
     };
     let mut arg_node = arg_node.clone();
     if !replace_code_var(&mut arg_node, &name.resolve(), proto_node) {
-        return Err(super::convert::unsupported("inline proto code argument"));
+        return Err(super::view::unsupported("inline proto code argument"));
     }
     *value = Value::rakuast(Box::new(arg_node));
     Ok(node)
@@ -267,7 +267,7 @@ fn lower_source_if(
 }
 
 /// `need MODULE;` -> `Statement::Need(module-names => (Name,))`.
-pub(super) fn convert_need(module: &str) -> RakuAstNode {
+pub(super) fn view_need(module: &str) -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementNeed,
@@ -282,7 +282,7 @@ pub(super) fn convert_need(module: &str) -> RakuAstNode {
 
 /// A statically named `require` keeps its package target through the round trip.
 // Cost: O(1).
-pub(super) fn convert_require(
+pub(super) fn view_require(
     names: &NameScope,
     args: &[Expr],
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -307,7 +307,7 @@ pub(super) fn convert_require(
         [] => {}
         [import_list] => node.fields.push(node_field(
             Some("argument"),
-            convert_expr(names, import_list)?,
+            view_expr(names, import_list)?,
         )),
         _ => return Ok(None),
     }
@@ -341,7 +341,7 @@ pub(super) fn lower_require(names: &NameScope, node: &RakuAstNode) -> Result<Exp
 
 /// `import MODULE [:TAG...];` -> `Statement::Import`, its tags as the `use`
 /// statement's `argument`.
-pub(super) fn convert_import(module: &str, tags: &[String]) -> RakuAstNode {
+pub(super) fn view_import(module: &str, tags: &[String]) -> RakuAstNode {
     let mut node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementImport,
@@ -357,7 +357,7 @@ pub(super) fn convert_import(module: &str, tags: &[String]) -> RakuAstNode {
 }
 
 /// `no PRAGMA` -> `Pragma(off => True, name => PRAGMA)`.
-pub(super) fn convert_no(module: &str) -> RakuAstNode {
+pub(super) fn view_no(module: &str) -> RakuAstNode {
     let mut node = pragma_node(module);
     node.fields.insert(0, leaf_field(Some("off"), Value::TRUE));
     node
@@ -384,7 +384,7 @@ fn name_with_from(module: &str, language: &str) -> RakuAstNode {
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str("from".to_string())),
-                node_field(Some("value"), super::convert::word_quote(language)),
+                node_field(Some("value"), super::view::word_quote(language)),
             ],
         }))]),
     });
@@ -432,9 +432,9 @@ fn use_argument(
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     match (arg, tags) {
         (None, []) => Ok(None),
-        (Some(arg), []) => Ok(Some(convert_expr(names, arg)?)),
+        (Some(arg), []) => Ok(Some(view_expr(names, arg)?)),
         (None, tags) => Ok(tag_argument(tags)),
-        (Some(_), _) => Err(super::convert::unsupported(
+        (Some(_), _) => Err(super::view::unsupported(
             "use with both an argument and import tags",
         )),
     }
@@ -608,7 +608,7 @@ fn take_proto_operand(
         let Stmt::ProtoDecl { name, .. } = &proto else {
             unreachable!("proto lowerer")
         };
-        *argument = super::convert::var_lexical("&", &name.resolve());
+        *argument = super::view::var_lexical("&", &name.resolve());
         return Ok(Some(proto));
     }
     if argument.class == RakuAstClass::ApplyListInfix
@@ -629,7 +629,7 @@ fn take_proto_operand(
                     unreachable!("proto lowerer")
                 };
                 *operand =
-                    Value::rakuast(Box::new(super::convert::var_lexical("&", &name.resolve())));
+                    Value::rakuast(Box::new(super::view::var_lexical("&", &name.resolve())));
                 return Ok(Some(proto));
             }
         }

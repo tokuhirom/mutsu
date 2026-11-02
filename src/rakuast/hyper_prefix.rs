@@ -5,7 +5,7 @@
 //! [`node`] is its view and [`lower_hyper_prefix`] the one lowering to the call
 //! the runtime executes, shared by the parser's node and a hand-built tree.
 
-use super::convert::{convert_expr, leaf_field, node_field};
+use super::view::{view_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
@@ -62,7 +62,7 @@ pub(super) fn node(
                     fields: vec![node_field(None, prefix)],
                 },
             ),
-            node_field(Some("operand"), convert_expr(names, operand)?),
+            node_field(Some("operand"), view_expr(names, operand)?),
         ],
     })
 }

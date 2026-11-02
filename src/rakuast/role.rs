@@ -10,7 +10,7 @@
 //! is a `DoesDecl` too, told apart by its `also` flag. Lowering rebuilds the
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
-use super::convert::{
+use super::view::{
     blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
 };
 use super::lower::{
@@ -87,7 +87,7 @@ pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
         .iter()
         .filter(|stmt| matches!(stmt, Stmt::DoesDecl { .. }))
         .collect();
-    if composed.len() < expected || role.is_export != super::convert::has_is(written, "export") {
+    if composed.len() < expected || role.is_export != super::view::has_is(written, "export") {
         return Err(unsupported(
             "role header the written-trait record does not account for",
         ));
@@ -117,7 +117,7 @@ pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
             names, &parent,
         )?)));
     }
-    if role.is_rw && !super::convert::has_is(written, "rw") {
+    if role.is_rw && !super::view::has_is(written, "rw") {
         traits.push(Value::rakuast(Box::new(super::routine_traits::trait_is(
             "rw", None,
         ))));

@@ -1,6 +1,6 @@
 //! The source-level regex tree as a RakuAST regex node (read direction).
 
-use super::convert::*;
+use super::view::*;
 use super::*;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode};
 use crate::scope::NameScope;
@@ -183,7 +183,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
             let part = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
-                fields: vec![node_field(None, convert_expr(names, expr)?)],
+                fields: vec![node_field(None, view_expr(names, expr)?)],
             };
             let name = name_parts::name_from_parts(vec![
                 name_parts::leading_empty(),
@@ -345,7 +345,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 RegexNode::Extension(RegexExtension::VariableAlias { .. })
             ) =>
         {
-            return super::regex_variable_alias::convert_spaced(names, child);
+            return super::regex_variable_alias::view_spaced(names, child);
         }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,

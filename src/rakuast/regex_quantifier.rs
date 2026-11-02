@@ -86,7 +86,7 @@ fn quantifier_node(
         QuantifierKind::Block(code) => {
             fields.push(field(
                 "block",
-                Value::rakuast(Box::new(super::convert::block_node(names, &code.body)?)),
+                Value::rakuast(Box::new(super::view::block_node(names, &code.body)?)),
             ));
             fields.push(super::regex_code::source_field(&code.code));
             RakuAstClass::RegexQuantifierBlockRange
