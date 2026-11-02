@@ -59,23 +59,53 @@ impl Interpreter {
     ///
     /// A result shorter than the target overwrites the target's head. A result
     /// longer than the target (the target is cycled) lands on slot `i % len`, the
-    /// last write winning, so the array keeps its length.
-    // TODO: `@a «+=« (1, 2, 3)` over a 2-element `@a` applies the op to the
-    // already-updated slot on the cycle (rakudo: `[5 4]`); the result list was
-    // computed from the original elements, so a compound op gives `[4 4]` here.
-    // Cost: O(n + m), n = target length, m = result length.
+    /// last write winning, so the array keeps its length. For a compound op
+    /// (`args[2]` the right operand, `args[3]` the base op's name) each cycled
+    /// step applies the op to the slot's already-updated value, as rakudo does:
+    /// `@a «+=« (1, 2, 3)` over `[1, 2]` is `[5, 4]`.
+    // Cost: O(n + m) plus one operator call per cycled element, n = target
+    // length, m = result length.
     pub(super) fn builtin_hyper_assign_merge(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let current = crate::runtime::value_to_list(args.first().unwrap_or(&Value::NIL));
         let result = crate::runtime::value_to_list(args.get(1).unwrap_or(&Value::NIL));
         if current.is_empty() || result.len() == current.len() {
             return Ok(Value::array(result));
         }
+        let compound = match (args.get(2), args.get(3)) {
+            (Some(right), Some(op)) => {
+                let right = crate::runtime::value_to_list(right);
+                (right.len() == result.len()).then(|| (right, op.to_string_value()))
+            }
+            _ => None,
+        };
         let mut merged = current;
         let slots = merged.len();
         for (i, value) in result.into_iter().enumerate() {
-            merged[i % slots] = value;
+            let slot = i % slots;
+            merged[slot] = match &compound {
+                Some((right, op)) if i >= slots => {
+                    self.call_infix_routine(op, &[merged[slot].clone(), right[i].clone()])?
+                }
+                _ => value,
+            };
         }
         Ok(Value::array(merged))
+    }
+
+    /// The value of a merged hyper assignment (`@a «+=« (1, 2, 3)`): the array's
+    /// slots after the store, cycled to the length of the hyper op's result.
+    /// `args[0]` is the array after the store, `args[1]` the hyper op's result.
+    // Cost: O(m), m = result length.
+    pub(super) fn builtin_hyper_assign_view(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let slots = crate::runtime::value_to_list(args.first().unwrap_or(&Value::NIL));
+        let result = crate::runtime::value_to_list(args.get(1).unwrap_or(&Value::NIL));
+        if slots.is_empty() {
+            return Ok(Value::array(result));
+        }
+        let n = slots.len();
+        Ok(Value::array(
+            (0..result.len()).map(|i| slots[i % n].clone()).collect(),
+        ))
     }
 
     pub(super) fn builtin_feed_append(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
