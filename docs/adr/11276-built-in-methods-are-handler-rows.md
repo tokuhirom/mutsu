@@ -5831,3 +5831,20 @@ code-class classification is memoized by its immutable class symbol, including
 negative results and mixin base names, so expanding the receiver-based entry
 does not copy or re-scan class names on every native method call. This is a
 classification memo, not a cache of mutable method resolution.
+
+### 9.201 Slice 5 inventory: Seq state guards (2026-11-03)
+
+`refactor/11276-seq-state-row-guards` audits the remaining Seq prologue in
+`native_method_0arg_cascade`: marking `cache` requested, refusing `is-lazy`
+on a consumed body, and passing through the deferred IO `kv` value already
+produced by the VM consumption step. `dispatch_core` no longer has a Seq
+receiver block; its surviving receiver-specific entries are Code and RakuAST.
+The arm report is unchanged: 223 total quoted-name arms, 119 built-in names.
+
+The cache mark already belongs to `Seq.cache` (also shared by `Any.cache`).
+The consumed check belongs to the lazy-query primitive used by the Seq and Mu
+rows. The IO `kv` passthrough belongs to `Any.kv`, which must preserve the
+VM's streaming result instead of reading the unpulled body's empty seed.
+The deletion unit is the complete three-way Seq prologue. Validation includes
+direct row-entry probes, Rakudo state/streaming regressions, the full debug TAP
+cross-check and the release roast whitelist with that prologue removed.
