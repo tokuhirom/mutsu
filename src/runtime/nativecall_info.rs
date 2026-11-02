@@ -95,11 +95,20 @@ fn list_items(v: &Value) -> Vec<Value> {
 fn carray_elem_of(typeobj: Option<&Value>) -> Option<CType> {
     let name = match typeobj?.view() {
         ValueView::Package(n) => n.resolve(),
+        // `CArray[T]` is a mixin over the `CArray` package: the
+        // parameterization is the name `^parameterize` gave the composition.
+        ValueView::Mixin(_, mixins) => mixins.type_name()?.to_string(),
         _ => return None,
     };
     let short = crate::runtime::cstruct_layout::short_base_name(&name);
     let inner = short.strip_prefix("CArray[")?.strip_suffix(']')?;
-    CType::from_type_name(crate::runtime::cstruct_layout::short_base_name(inner))
+    // An array of arrays (`CArray[CArray[uint8]]`) holds pointers to the inner
+    // arrays; the inner element type is the inner array's own business.
+    let inner = crate::runtime::cstruct_layout::short_base_name(inner);
+    if inner == "CArray" || inner.starts_with("CArray[") {
+        return Some(CType::CArray);
+    }
+    CType::from_type_name(inner)
 }
 
 /// One parameter's marshalling, from its `param_hash_for` hash.
