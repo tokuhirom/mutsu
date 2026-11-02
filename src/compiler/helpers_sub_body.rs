@@ -536,6 +536,11 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in body {
                             sub_compiler.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -557,6 +562,11 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in body {
                             sub_compiler.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -1647,6 +1657,10 @@ impl Compiler {
                     } else {
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                 }
@@ -1805,6 +1819,10 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -1830,6 +1848,10 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
