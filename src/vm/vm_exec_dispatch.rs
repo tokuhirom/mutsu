@@ -7338,6 +7338,7 @@ impl Interpreter {
                 post_start,
                 end,
                 is_bare_block,
+                decont_result,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_block_scope_op(
@@ -7352,6 +7353,7 @@ impl Interpreter {
                         *end,
                     ],
                     *is_bare_block,
+                    *decont_result,
                     ip,
                     compiled_fns,
                 )?;

@@ -2836,6 +2836,12 @@ pub(crate) enum OpCode {
         /// callframe in Raku, so it must contribute an anonymous frame to a
         /// backtrace captured while executing inside it.
         is_bare_block: bool,
+        /// True for the body of a routine that does not return a container
+        /// (no `is rw`/`is raw`/`return-rw`): its tail value is decontainerized
+        /// before the LEAVE/KEEP queue runs, so a phaser that writes through
+        /// the container the tail left on the stack cannot change what the
+        /// caller reads (#15491).
+        decont_result: bool,
     },
     /// Lightweight block scope for an `if`/`unless`/`else` branch body that
     /// declares a block-local `my`. Unlike `BlockScope` (which does a full
@@ -5132,6 +5138,7 @@ mod const_pool_dedup {
             post_start: 3,
             end: 3,
             is_bare_block: true,
+            decont_result: false,
         });
         code.ops.push(OpCode::LoadNil);
         code.ops.push(OpCode::SetLocalDecl {

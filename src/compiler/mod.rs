@@ -5341,6 +5341,7 @@ impl Compiler {
             post_start: 0,
             end: 0,
             is_bare_block: false,
+            decont_result: false,
         });
         Self::compile_pre_phasers(self, stmts);
         self.code.patch_block_pre_end(idx);
