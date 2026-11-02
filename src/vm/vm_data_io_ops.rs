@@ -231,6 +231,16 @@ impl OutputKind {
         })
     }
 
+    /// The routine's name, as `from_name` reads it.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            OutputKind::Say => "say",
+            OutputKind::Put => "put",
+            OutputKind::Print => "print",
+            OutputKind::Note => "note",
+        }
+    }
+
     fn handle(self) -> &'static str {
         if self == OutputKind::Note {
             "$*ERR"
@@ -280,6 +290,16 @@ impl Interpreter {
     pub(super) fn exec_output_op(&mut self, kind: OutputKind, n: u32) -> Result<(), RuntimeError> {
         let start = self.stack.len() - n as usize;
         let values: Vec<Value> = self.stack.drain(start..).collect();
+        // `&say.wrap: { ... }` (Dawa's tests capture `put` this way): a wrapped
+        // output routine runs its wrapper, as the by-name call does. The wrapper
+        // reaches the real renderer through `callsame`, which does not come back
+        // through this opcode.
+        if self.any_routine_wrapped()
+            && let Some(wrapped) = self.wrapped_sub_for_call(kind.name())
+        {
+            self.vm_call_sub_value(wrapped, values)?;
+            return Ok(());
+        }
         self.render_output(kind, values)
     }
 
