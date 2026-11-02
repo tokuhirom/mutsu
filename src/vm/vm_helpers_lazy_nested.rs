@@ -55,7 +55,13 @@ impl Interpreter {
                             crate::value::container_lock::ContainerStructGuard::acquire_for(
                                 None, value,
                             );
-                        items.iter().cloned().collect()
+                        // Only scalar leaves: nothing below to reify, so no copy
+                        // of the elements either (O(1) per element, a tag test).
+                        if items.iter().all(Value::is_scalar_leaf) {
+                            Vec::new()
+                        } else {
+                            items.iter().cloned().collect()
+                        }
                     };
                     for item in &elems {
                         // A scalar word (Int, Str, Num, a type object, ...) holds
