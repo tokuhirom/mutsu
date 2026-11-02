@@ -529,7 +529,7 @@ fn chain_declared_comparison<'a>(
     operand: &dyn Fn(&str) -> PResult<'_, Expr>,
 ) -> Result<Option<(Expr, &'a str)>, PError> {
     use crate::token_kind::TokenKind;
-    let chain_kind = |word: &str| TokenKind::Ident(word.to_string().into());
+    let chain_kind = |word: &str| TokenKind::Ident(word.to_string());
     if !crate::chain_compare::is_chain_op(&chain_kind(name)) {
         return Ok(None);
     }
