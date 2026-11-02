@@ -1447,6 +1447,18 @@ pub fn lookup_container_constraint(
         .map(|c| c.ty.clone())
 }
 
+/// The class `.VAR` reports for a reflected cell: `Scalar`, or the native
+/// reference class of a cell declared with a native type (`UIntLexRef` for a
+/// `byte` cell, #15853).
+// Cost: O(1); one lock for a cell that carries a native type.
+pub(crate) fn container_view_class(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+) -> &'static str {
+    cell.native_type_name()
+        .and_then(|ty| crate::native_types::native_lex_ref_class(&ty))
+        .unwrap_or("Scalar")
+}
+
 /// Look up the full constraint record — the `of`-type together with the
 /// container name to blame in an element type-check failure.
 pub fn lookup_cell_constraint(

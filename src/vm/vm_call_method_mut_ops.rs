@@ -794,6 +794,17 @@ impl Interpreter {
         // pure code (`@a.splice(1, 1, (7,8).map({...}))` flattens the Seq into
         // the array), so a still-deferred `.map` argument has to run first.
         self.reify_map_grep_seq_args(&args)?;
+        // `.of` of a reflected element cell (`($t,)[0].VAR.of`) is the type the
+        // cell was declared with, `Mu` for an unconstrained one (#15853).
+        if method == "of"
+            && args.is_empty()
+            && let ValueView::ContainerView(cell) = target.view()
+        {
+            let of = crate::value::lookup_container_constraint(&cell)
+                .unwrap_or_else(|| "Mu".to_string());
+            self.stack.push(Value::package(Symbol::intern(&of)));
+            return Ok(());
+        }
         // Mutating methods reached through `.VAR` must retain the underlying
         // cell so the established container writeback paths can update it.
         let target = if !matches!(method, "WHAT" | "^name" | "VAR")

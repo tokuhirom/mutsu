@@ -96,6 +96,20 @@ pub(crate) fn is_native_int_coerce_method(name: &str) -> bool {
     NATIVE_INT_COERCE_METHODS.contains(&name)
 }
 
+/// The class of the native reference `.VAR` reports for a lexical declared
+/// with the native type `ty`: `my uint8 $x; $x.VAR.^name` is `UIntLexRef`
+/// (`None` for a type that is not a native scalar type).
+// Cost: O(1).
+pub(crate) fn native_lex_ref_class(ty: &str) -> Option<&'static str> {
+    Some(match ty {
+        "int" | "int8" | "int16" | "int32" | "int64" => "IntLexRef",
+        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" => "UIntLexRef",
+        "num" | "num32" | "num64" => "NumLexRef",
+        "str" => "StrLexRef",
+        _ => return None,
+    })
+}
+
 /// Returns true if `name` is a native array element type.
 pub(crate) fn is_native_array_element_type(name: &str) -> bool {
     is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
