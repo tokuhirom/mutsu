@@ -2539,6 +2539,14 @@ impl Interpreter {
             self.bind_light_aggregate_constraint(name, sym, &val);
             val.name_attribute_container(source.as_deref());
         }
+        // The call-site arg-source names describe THIS call's binding only. The
+        // light bind peeks them (`light_aggregate_binds`) instead of taking
+        // them, so left installed they would reach the first bind the method
+        // BODY makes: `CArray[uint8]` calls `^parameterize($, $)`, and
+        // `["off", None]` from `self.rs($off, 1)` matched its two-argument arity
+        // and bound `off` as a shared cell in the env, which the caller's slot
+        // never adopted (the ADR-0097 §15 divergence, #16037).
+        drop(self.take_pending_call_arg_sources());
         // A typed scalar `is copy` parameter is the method's own writable
         // variable: a store into it checks its declared type, which the
         // general binder records in the callee frame and this one did not
