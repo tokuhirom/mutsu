@@ -494,7 +494,7 @@ impl Interpreter {
                 .get(&data.id)
                 .cloned()
         {
-            match self.core_infix_verdict(family, &def, left, right) {
+            match self.core_infix_captured_verdict(family, &def, left, right) {
                 super::native_infix_dispatch::CoreInfixVerdict::Core => return Ok(None),
                 super::native_infix_dispatch::CoreInfixVerdict::Tie(core) => {
                     return Err(self.core_infix_tie_error(family, &def, core, left, right));
