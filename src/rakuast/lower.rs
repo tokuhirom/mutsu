@@ -38,16 +38,6 @@ pub fn lower(
     lower_normalized(names, normalized.as_ref().unwrap_or(node))
 }
 
-/// [`lower`] for a tree `convert` just built: it holds no user subclass, so the
-/// walk that replaces one is skipped.
-// Cost: as [`lower`] without the normalizing walk.
-pub(super) fn lower_converted(
-    names: &NameScope,
-    node: &RakuAstNode,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    lower_normalized(names, node)
-}
-
 fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);

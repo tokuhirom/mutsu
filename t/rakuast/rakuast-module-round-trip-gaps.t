@@ -4,16 +4,13 @@ use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
 # Constructs a `use`d module (Cro::HTTP::Client, YAMLish, Telemetry,
 # CSS::Module) needs the RakuAST round trip to carry, found by running the
 # whole t/ suite with the modules round-tripped (ADR-10723 section 6.126).
-# Every program runs at the `convert` level, where no subtree crosses as the
-# parser's own tree, and prints what raku prints.
+# Every program runs in a fresh process and prints what raku prints.
 
 plan 9;
 
 sub run-convert(Str $code) {
-    my %env = %*ENV;
-    %env<MUTSU_RAKUAST> = 'convert';
     my $proc = run $*EXECUTABLE, '-I', $*PROGRAM.parent(2).add('lib-prefix-class-parent').Str,
-        '-e', $code, :%env, :out, :err;
+        '-e', $code, :out, :err;
     my $out = $proc.out.slurp(:close);
     my $err = $proc.err.slurp(:close);
     ($proc.exitcode, $out, $err)

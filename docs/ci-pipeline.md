@@ -19,8 +19,11 @@ and the nightly sweeps. At ~100 merges a day, PR runs queued for 5-15 minutes pe
   does not compile (`lint-configs`) or a `cargo test` debug assertion fires (`test-check`). A PR
   touching wasm-specific code or debug-assertion paths should dispatch `ci.yml` on its branch
   ("Use workflow from") before merging.
-- **The frontend has no opt-out to test.** `scripts/rakuast-frontend.sh check` (the `convert` level, in
-  `test-suites`) is the one RakuAST-specific step; the default level is what `prove t/` runs.
+- **The frontend has no opt-out to test.** The default level is what `prove t/` runs. The write
+  direction of the RakuAST layer has its own ratchet, `scripts/rakuast-frontend.sh eval-check` (in
+  `test-suites`): every file in `ci/rakuast-ast-eval-passing.txt` runs as `EVAL(slurp($f).AST)` and
+  must still pass. It replaced the `MUTSU_RAKUAST=convert` test mode. Run it with a release build
+  and the precompile cache removed (CI is always cold, and a warm cache hid failures).
 - **The `.AST` text has its own ratchet** (`scripts/ast-text-corpus.sh check`, `test-suites`): a pinned
   sample of roast files whose `.AST` text, hashed per statement, is rakudo 2026.09's
   (`ci/ast-text-corpus/rakudo.tsv`, made with `golden` since the runner has no `raku`), and the list of

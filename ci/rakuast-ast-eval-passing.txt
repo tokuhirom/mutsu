@@ -5663,7 +5663,6 @@ t/rakuast/rakuast-for.t
 t/rakuast/rakuast-formatter.t
 t/rakuast/rakuast-frontend-decl-postfix-argument.t
 t/rakuast/rakuast-frontend-empty-statement.t
-t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
 t/rakuast/rakuast-goto-statement.t

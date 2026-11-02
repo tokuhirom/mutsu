@@ -631,30 +631,14 @@ jobs:
           MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
 
-      - name: RakuAST round-trip frontend ratchet
-        # ADR-10723 Stage 0 (#10733): every t/ file listed in
-        # ci/rakuast-frontend-passing.txt must still pass when its program
-        # units run as `parse -> RakuAST -> lower` (MUTSU_RAKUAST=1). The
-        # list only grows (`scripts/rakuast-frontend.sh update`); a listed file
-        # that fails here is a regression in the RakuAST layer, fixed in the
-        # same PR rather than dropped from the list. Same per-file wrapper,
-        # timeout and -j4 as the TAP step above. There is no opt-out left to
-        # check (the `MUTSU_LEGACY=1` step of #15060 was deleted with it).
-        run: |
-          mkdir -p tmp
-          scripts/rakuast-frontend.sh check
-        env:
-          MUTSU_BIN: target/release/mutsu
-          MUTSU_T_TIMEOUT: "45"
-          JOBS: "4"
-
       - name: RakuAST EVAL($ast) ratchet
         # RakuAST C1 (#15759): every t/ file listed in
         # ci/rakuast-ast-eval-passing.txt must still pass when it runs as
         # `EVAL(slurp($file).AST)` (scripts/ast-eval-driver.raku): the typed
         # nodes `.AST` builds, lowered back and executed. This is the write
-        # direction of the RakuAST layer through the public API, and the
-        # replacement for the lowering coverage of MUTSU_RAKUAST=convert. The
+        # direction of the RakuAST layer through the public API; it replaced
+        # the MUTSU_RAKUAST=convert test mode (and its ratchet list), which is
+        # gone. The
         # list only grows (`scripts/rakuast-frontend.sh eval-update`); a listed
         # file that fails is a regression, fixed in the same PR.
         run: |

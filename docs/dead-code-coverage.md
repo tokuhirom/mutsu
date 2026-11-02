@@ -14,9 +14,9 @@ CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target/cov \
 cp target/cov/debug/mutsu target/debug/mutsu-cov    # the binary finds lib/ relative to target/debug/
 mkdir -p tmp/prof
 export LLVM_PROFILE_FILE="$PWD/tmp/prof/mutsu-%m.profraw"   # %m: every run merges into one file
-# the corpus: t/ with and without the RakuAST frontend, the roast whitelist, and a parse-only pass
+# the corpus: t/ ordinary, t/ as EVAL($ast), the roast whitelist, and a parse-only pass
 # (`-c`) over every roast/vendor/batteries file
-MUTSU_BIN=target/debug/mutsu-cov MUTSU_RAKUAST=1 ...   # scripts/rakuast-frontend.sh style loop
+MUTSU_BIN=target/debug/mutsu-cov ...                    # scripts/rakuast-frontend.sh eval-check style loop
 MUTSU_BIN=target/debug/mutsu-cov ...                    # t/ ordinary, then `make roast`'s files
 LLVM=$(ls -d ~/.rustup/toolchains/*/lib/rustlib/*/bin | head -1)
 $LLVM/llvm-profdata merge -sparse tmp/prof/*.profraw -o tmp/cov.profdata

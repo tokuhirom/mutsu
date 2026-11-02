@@ -5,42 +5,26 @@
 //! in place before it is compiled ([`super::finalize`]): the typed nodes of the
 //! migrated families are lowered where they stand. There is no opt-out.
 //!
-//! `MUTSU_RAKUAST=convert` is the one test level that is left: the whole unit
-//! is converted to a `RakuAstNode` tree and lowered back, as `.AST` and
-//! `EVAL($ast)` do. It keeps the coverage of the `convert` and `lower` arms
-//! (`scripts/rakuast-frontend.sh check`).
+//! The coverage of the `convert` and `lower` arms that the `MUTSU_RAKUAST=convert`
+//! test level used to give (the whole unit converted to a `RakuAstNode` tree and
+//! lowered back) is now two ratchets over the public API: `EVAL(slurp($f).AST)`
+//! over every listed `t/` file (`scripts/rakuast-frontend.sh eval-check`), and the
+//! `.AST` text of a pinned roast sample against rakudo's
+//! (`scripts/ast-text-corpus.sh check`).
 //!
-//! A construct the converter or the lowerer refuses is a compile error, never a
-//! silent fallback to the parser's own tree: a fallback would count a file as
-//! round-tripping when it does not.
-
-use std::sync::OnceLock;
+//! A construct the finalizer refuses is a compile error, never a silent fallback
+//! to the parser's own tree: a fallback would count a file as round-tripping when
+//! it does not.
 
 use crate::ast::Stmt;
 use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
-/// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
-/// leaves. Read once per process.
-fn convert_level() -> bool {
-    static CONVERT: OnceLock<bool> = OnceLock::new();
-    *CONVERT.get_or_init(|| convert_level_from(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
-}
-
-// Cost: O(1).
-fn convert_level_from(rakuast: Option<&str>) -> bool {
-    rakuast == Some("convert")
-}
-
 /// A short name of the frontend level, part of the precompilation cache key: a
 /// module cached under one level is never read under another.
 // Cost: O(1).
 pub(crate) fn cache_tag() -> &'static str {
-    if convert_level() {
-        "ast-convert"
-    } else {
-        "ast"
-    }
+    "ast"
 }
 
 /// Run a parsed compilation unit through the RakuAST round trip. Every unit is
@@ -78,12 +62,7 @@ pub(crate) fn round_trip_owned(
     names: &NameScope,
     stmts: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    let mut lowered = if convert_level() {
-        let node = super::convert::statement_list(names, &stmts)?;
-        super::lower::lower_converted(names, &node)?
-    } else {
-        super::finalize::finalize_unit(names, stmts)?
-    };
+    let mut lowered = super::finalize::finalize_unit(names, stmts)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);
@@ -135,15 +114,6 @@ pub(crate) fn lower_scope(operators: &[String]) -> crate::scope::NameScope {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_convert_selects_the_test_level() {
-        assert!(convert_level_from(Some("convert")));
-        assert!(!convert_level_from(Some("1")));
-        assert!(!convert_level_from(Some("all")));
-        assert!(!convert_level_from(Some("0")));
-        assert!(!convert_level_from(None));
-    }
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {
