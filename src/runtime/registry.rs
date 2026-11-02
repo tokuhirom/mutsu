@@ -2337,6 +2337,70 @@ impl RegistryWriteGuard<'_> {
     /// Keep the callers to writes that provably stay off those four maps; any
     /// other write must go through `DerefMut`, which is what keeps the index
     /// coherent by construction.
+    // The routine-table writers below SHADOW the `Registry` methods of the same
+    // name (an inherent method of the guard wins over the one found through
+    // `Deref`), so a call written `self.registry_mut().functions_mut()` takes the
+    // index-keeping path without the call site changing. Each one writes only
+    // `functions`, `proto_functions` or `proto_subs` (and their generations),
+    // none of the four type maps the lexical-type-name index summarises. A
+    // `use` of a module installs hundreds of routines this way, and through
+    // `DerefMut` each write dropped the index: the next bare type-name lookup
+    // rebuilt it from every key of all four maps, ~120K instructions per
+    // executed `use` (#15981).
+
+    /// [`Registry::functions_mut`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn functions_mut(
+        &mut self,
+    ) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        self.routine_tables_mut().functions_mut()
+    }
+
+    /// [`Registry::proto_functions_mut`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_functions_mut(
+        &mut self,
+    ) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        self.routine_tables_mut().proto_functions_mut()
+    }
+
+    /// [`Registry::proto_subs_insert`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_subs_insert(&mut self, key: String) {
+        self.routine_tables_mut().proto_subs_insert(key);
+    }
+
+    /// [`Registry::proto_subs_retain`] without dropping the type-name caches.
+    // Cost: O(p), p = proto markers.
+    #[inline]
+    pub(crate) fn proto_subs_retain<F: FnMut(&String) -> bool>(&mut self, f: F) {
+        self.routine_tables_mut().proto_subs_retain(f);
+    }
+
+    /// [`Registry::proto_subs_restore`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_subs_restore(&mut self, set: std::sync::Arc<HashSet<String>>) {
+        self.routine_tables_mut().proto_subs_restore(set);
+    }
+
+    /// [`Registry::install_function`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
+        self.routine_tables_mut().install_function(key, def);
+    }
+
+    /// [`Registry::renew_functions_version`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn renew_functions_version(&mut self) {
+        self.routine_tables_mut().renew_functions_version();
+    }
+
     pub(crate) fn routine_tables_mut(&mut self) -> &mut Registry {
         let arc: &mut Arc<Registry> = &mut self.inner;
         if Arc::strong_count(arc) > 1 {
