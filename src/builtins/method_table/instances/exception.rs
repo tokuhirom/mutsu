@@ -104,7 +104,9 @@ pub(crate) fn formatted(target: &Value) -> Option<String> {
     {
         // Rakudo's `message` names `$!symbol`; with none it dies (see
         // [`message`]), so there is no text to build.
-        let symbol = attrs.get("symbol").filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))?;
+        let symbol = attrs
+            .get("symbol")
+            .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))?;
         return Some(crate::runtime::utils::type_check_assignment_error(
             &symbol.to_string_value(),
             &crate::runtime::utils::got_type_name(expected),
@@ -133,7 +135,9 @@ fn message(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
     // A hand-built `X::TypeCheck::Assignment` without a `symbol` dies in
     // rakudo's `message` (it calls `.name` on the undefined symbol), #16047.
     if class_of(target) == "X::TypeCheck::Assignment" && formatted(target).is_none() {
-        return Some(Err(crate::runtime::did_you_mean::method_not_found("name", "Mu")));
+        return Some(Err(crate::runtime::did_you_mean::method_not_found(
+            "name", "Mu",
+        )));
     }
     Some(Ok(Value::str(formatted(target).unwrap_or_default())))
 }
