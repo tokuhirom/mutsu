@@ -1558,6 +1558,9 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// Names declared by the routines (method/sub bodies) enclosing the code
+    /// being compiled; see `CompiledCode::routine_scoped_free`.
+    pub(crate) routine_scoped_names: std::collections::HashSet<String>,
     /// ADR-0050: where a `return` compiled here goes, when it is not what
     /// `is_routine` / `lexically_in_routine` say — `(is_routine,
     /// lexically_in_routine)` of the block's own definition site. Set only by
@@ -2167,6 +2170,7 @@ impl Compiler {
             unit_tail_sinks: false,
             in_closure_body: false,
             lexically_in_routine: false,
+            routine_scoped_names: std::collections::HashSet::new(),
             return_routineness: None,
             eval_context_dead_routine: false,
             lexically_in_block: false,
@@ -2957,6 +2961,18 @@ impl Compiler {
         }
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
+        // A routine around the nested code shadows a same-named class/package
+        // `my`; see `CompiledCode::routine_scoped_free`.
+        sub.routine_scoped_names
+            .extend(self.routine_scoped_names.iter().cloned());
+        if self.is_routine || self.lexically_in_routine {
+            sub.routine_scoped_names
+                .extend(self.local_map.keys().cloned());
+            for frame in self.local_scopes.iter() {
+                sub.routine_scoped_names
+                    .extend(frame.all_declared_names().cloned());
+            }
+        }
         sub.class_body_static_code_vars
             .extend(self.class_body_static_code_vars.iter().cloned());
         // A `:=`-bound container-less scalar stays container-less inside the

@@ -673,6 +673,16 @@ impl Compiler {
         sub_compiler.resolve_frame_lexical_routines(body);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
+        if !sub_compiler.routine_scoped_names.is_empty() {
+            let shadowed: Vec<crate::symbol::Symbol> = sub_compiler
+                .code
+                .free_var_syms
+                .iter()
+                .filter(|sym| sym.with_str(|n| sub_compiler.routine_scoped_names.contains(n)))
+                .copied()
+                .collect();
+            sub_compiler.code.routine_scoped_free = shadowed;
+        }
         // See the twin call in `compile_closure_body_of_kind`: a
         // parameter default / `where` constraint reads its outer lexicals from
         // the `ParamDef` AST at call time, invisibly to the op scan. A named

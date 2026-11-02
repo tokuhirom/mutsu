@@ -491,6 +491,25 @@ impl Interpreter {
     /// (non-GLOBAL, non-mangled) `current_package`, so a bare reference after the
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
+    /// [`Self::package_scope_lexical`] for a read in `code`, except that a
+    /// name an enclosing routine declares (`code.routine_scoped_free`) is that
+    /// routine's own binding, never the same-named class/package `my`.
+    // Cost: O(f), f = |code.routine_scoped_free| (usually 0).
+    pub(crate) fn package_scope_lexical_in(
+        &self,
+        code: &crate::opcode::CompiledCode,
+        name: &str,
+    ) -> Option<Value> {
+        if code
+            .routine_scoped_free
+            .iter()
+            .any(|sym| sym.with_str(|n| n == name))
+        {
+            return None;
+        }
+        self.package_scope_lexical(name)
+    }
+
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
         let (cur, key) = self.package_scope_lexical_key(name)?;
         self.lexicals
