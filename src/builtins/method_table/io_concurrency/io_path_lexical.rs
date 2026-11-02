@@ -137,7 +137,13 @@ fn io_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
     if ctx.attributes.contains_key("pathless") {
         return Some(Ok(Value::slip(Vec::new())));
     }
-    Some(Ok(Value::make_instance(ctx.class, ctx.attributes)))
+    // A `Distribution::Resource` answers the plain `IO::Path` it stands for.
+    let class = if ctx.class == "Distribution::Resource" {
+        Symbol::intern("IO::Path")
+    } else {
+        ctx.class
+    };
+    Some(Ok(Value::make_instance(class, ctx.attributes)))
 }
 
 /// `IO::Path.SPEC`: the `IO::Spec` type object the path follows.

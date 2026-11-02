@@ -974,15 +974,6 @@ impl Interpreter {
         {
             return matched;
         }
-        // `%?RESOURCES{...}` entries are `Distribution::Resource` objects in
-        // raku; mutsu models them as `IO::Path` instances carrying a hidden
-        // `resource` marker (`make_resource_instance`).
-        if constraint == "Distribution::Resource"
-            && matches!(value.view(), ValueView::Instance { class_name, attributes, .. }
-                if class_name == "IO::Path" && attributes.contains_key("resource"))
-        {
-            return true;
-        }
         // A short name of a type the running package declares (`Foo` in
         // `unit module M` for `M::Foo`). Its bare binding is in the scope the
         // package was declared in, which a loaded module's routine does not
