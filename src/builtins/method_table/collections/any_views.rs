@@ -184,8 +184,16 @@ pub(crate) fn values(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 }
 
 /// `Any.kv`: index, element, index, element, ...
-// Cost: O(e), e = elements (or pairs), built eagerly.
+// Cost: O(e), e = elements (or pairs), built eagerly; O(1) for an indexed IO stream.
 pub(crate) fn kv(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // The VM's consumption step already produced an indexed IO stream.
+    // Keep its deferred source so the subsequent loop can pull incrementally;
+    // applying the eager index transform to its empty seed would lose it.
+    if let ValueView::Seq(body) = target.view()
+        && body.peek_io_lines_parts().is_some_and(|(_, _, kv)| kv)
+    {
+        return Some(Ok(target.clone()));
+    }
     if let Some(answer) = shared_prefix(
         target,
         super::any_collection::kv,

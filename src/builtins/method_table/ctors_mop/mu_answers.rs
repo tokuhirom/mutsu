@@ -68,13 +68,14 @@ pub(crate) fn not(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError
 
 /// `Mu.is-lazy`: whether the receiver produces its values on demand without
 /// a known end. An `Iterator` instance answers its stored flag; a consumed
-/// `gather` list throws `X::Seq::Consumed`; any other `LazyList` asks
+/// Seq or `gather` list throws `X::Seq::Consumed`; any other `LazyList` asks
 /// `is_genuinely_lazy`, the one authority for it (a plain `gather` or a finite
 /// `.map` pipe is not lazy); everything else is lazy only when it is a lazy
 /// array, an infinite range or a lazy `Seq`.
 // Cost: O(1), the invocant's own lazy flag or range end.
 pub(crate) fn is_lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
+        ValueView::Seq(_) => super::super::collections::seq::is_lazy(target, &[]),
         ValueView::Instance {
             class_name,
             attributes,

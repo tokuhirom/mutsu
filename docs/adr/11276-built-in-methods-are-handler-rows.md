@@ -5831,3 +5831,32 @@ code-class classification is memoized by its immutable class symbol, including
 negative results and mixin base names, so expanding the receiver-based entry
 does not copy or re-scan class names on every native method call. This is a
 classification memo, not a cache of mutable method resolution.
+
+### 9.201 Slice 5 inventory: Seq state guards (2026-11-03)
+
+`refactor/11276-seq-state-row-guards` audits the remaining Seq prologue in
+`native_method_0arg_cascade`: marking `cache` requested, refusing `is-lazy`
+on a consumed body, and passing through the deferred IO `kv` value already
+produced by the VM consumption step. `dispatch_core` no longer has a Seq
+receiver block; its surviving receiver-specific entries are Code and RakuAST.
+The arm report is unchanged: 223 total quoted-name arms, 119 built-in names.
+
+The cache mark already belongs to `Seq.cache` (also shared by `Any.cache`).
+The consumed check belongs to the lazy-query primitive used by the Seq and Mu
+rows. The IO `kv` passthrough belongs to `Any.kv`, which must preserve the
+VM's streaming result instead of reading the unpulled body's empty seed.
+The deletion unit is the complete three-way Seq prologue. Validation includes
+direct row-entry probes, Rakudo state/streaming regressions, the full debug TAP
+cross-check and the release roast whitelist with that prologue removed.
+
+The full prologue is removed. `Seq.is-lazy` is the shared primitive reached by
+both the Seq and Mu rows, including direct owner-row invocation; `Any.kv`
+preserves an already-indexed deferred IO body's identity. Three direct row
+probes pin the consumed refusal, cache request without pulling, and IO body
+identity. The consumed-query probe failed before the migration. Twelve Raku
+oracle assertions cover ordinary method calls and cache/IO consumption.
+
+The oracle also found a separate timing difference: `IO::Handle.words.kv`
+advances Rakudo's handle immediately but remains unpulled in mutsu. The
+indexed values agree. This pre-existing difference is tracked by #16012;
+`lines.kv` remains unpulled on both interpreters.
