@@ -8,7 +8,7 @@ use Test;
 
 use DeclareStateHow;
 
-plan 6;
+plan 7;
 
 stately Outer {
     stately Inner is tagged("inner-tag") { }
@@ -25,4 +25,5 @@ is Plain.^tag, "plain-tag", "its trait ran";
 
 given stately Term is tagged("term-tag") { } {
     is .^tag, "term-tag", "a term-form class keeps the state its trait stored in the metaobject";
+    is .^composed-count, 1, "a term-form class composed once (shell and in-place share the metaobject)";
 }
