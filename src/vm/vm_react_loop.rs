@@ -397,23 +397,23 @@ impl Interpreter {
                             // signal; the event loop below watches it to complete the
                             // flattened subscriptions. If the callback dies, propagate
                             // as X::React::Died.
-                            let emitter_supplier_id = next_supplier_id();
-                            // Register a done-signal promise on the emitter BEFORE
-                            // running the body. `$emitter.done()` resolves all pending
-                            // promises (line in supplier_done) and only then resets the
-                            // supplier's done flag, so this promise is the only thing
-                            // that survives to tell the loop the supply completed.
-                            let done_promise = crate::value::SharedPromise::new();
-                            supplier_register_promise(emitter_supplier_id, done_promise.clone());
+                            // A react-mode `whenever` already ran this body when it
+                            // was registered (#15958); adopt that result.
+                            let prerun = whenever_id
+                                .and_then(|id| self.async_state.prerun_on_demand.remove(&id));
+                            let (emitter_supplier_id, done_promise) = match &prerun {
+                                Some(pre) => (pre.emitter_supplier_id, pre.done_promise.clone()),
+                                None => {
+                                    let id = next_supplier_id();
+                                    let dp = crate::value::SharedPromise::new();
+                                    supplier_register_promise(id, dp.clone());
+                                    (id, dp)
+                                }
+                            };
                             // Register a streaming consumer so that `emit` inside
                             // the supply body delivers values to this whenever's
-                            // callback synchronously. This lets a synchronously
-                            // infinite body (`supply { loop { emit(...) } }`) be
-                            // terminated when the consumer signals `done`, instead
-                            // of buffering every emitted value (which would never
-                            // return). Direct emits stream live; inner `whenever`
-                            // registrations still flow through `supply_emit_buffer`
-                            // and are set up as ReactSubscriptions below.
+                            // callback synchronously (so a synchronously infinite
+                            // body terminates when the consumer signals `done`).
                             self.async_state
                                 .supply_stream_consumers
                                 .push(StreamConsumer {
@@ -423,10 +423,13 @@ impl Interpreter {
                                 });
                             let stream_idx = self.async_state.supply_stream_consumers.len() - 1;
                             stream_base.get_or_insert(stream_idx);
-                            let (od_res, emitted, body_ran_done) = loan_env!(
-                                self,
-                                run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
-                            );
+                            let (od_res, emitted, body_ran_done) = match prerun {
+                                Some(pre) => (pre.result, pre.emitted, pre.body_ran_done),
+                                None => loan_env!(
+                                    self,
+                                    run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
+                                ),
+                            };
                             // A `whenever <Promise>` registered by the body is not
                             // itself a `Supply`, so the marker walk below (which
                             // only recognizes a `Supply`-sourced registration via

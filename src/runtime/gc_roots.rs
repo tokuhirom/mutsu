@@ -290,6 +290,12 @@ impl Interpreter {
         // callbacks, and it is the ONLY thing holding them between the nested
         // `whenever` running and the drive loop's next round.
         visit_slice(visitor, &self.async_state.pending_react_subscriptions);
+        for pre in self.async_state.prerun_on_demand.values() {
+            visit_slice(visitor, &pre.emitted);
+            if let Ok(v) = &pre.result {
+                visitor.visit_value(v);
+            }
+        }
         for vec in &self.async_state.supply_emit_timed_buffer {
             for (v, _) in vec {
                 visitor.visit_value(v);

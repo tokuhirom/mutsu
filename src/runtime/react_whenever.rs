@@ -170,6 +170,52 @@ impl Interpreter {
         self.async_state.supply_emit_buffer.push(EmitFrame::react()); // Use supply_emit_buffer as react subscription storage marker
     }
 
+    /// Run the body of a cold `supply { }` source now, keeping the result for
+    /// `build_react_subscriptions` (see [`PreRunOnDemand`]). A source backed by
+    /// a channel or a supplier is live already and is left alone.
+    // Cost: O(b), b = the cost of running the supply body once.
+    fn prerun_cold_supply_source(&mut self, source: &Value, whenever_id: u64) {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = source.view()
+        else {
+            return;
+        };
+        if class_name != "Supply" {
+            return;
+        }
+        let attrs = attributes.as_map();
+        let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() else {
+            return;
+        };
+        if ["supplier_id", "channel", "supply_id", "parent_supply_id"]
+            .iter()
+            .any(|k| attrs.contains_key(*k))
+        {
+            return;
+        }
+        let emitter_supplier_id = crate::runtime::native_methods::next_supplier_id();
+        let done_promise = crate::value::SharedPromise::new();
+        crate::runtime::native_methods::supplier_register_promise(
+            emitter_supplier_id,
+            done_promise.clone(),
+        );
+        let (result, emitted, body_ran_done) =
+            self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
+        self.async_state.prerun_on_demand.insert(
+            whenever_id,
+            super::async_state::PreRunOnDemand {
+                emitter_supplier_id,
+                done_promise,
+                result,
+                emitted,
+                body_ran_done,
+            },
+        );
+    }
+
     pub(crate) fn value_array_items(value: &Value) -> Option<Vec<Value>> {
         if let ValueView::Array(items, ..) = value.view() {
             Some(items.to_vec())
@@ -331,6 +377,18 @@ impl Interpreter {
                 Value::array(quit_callbacks),
                 Value::int(whenever_id as i64),
             ]);
+            // Rakudo taps a `whenever`'s source the moment the `whenever` runs,
+            // so a cold `supply { }` body starts before the react body goes on
+            // (`IO::Socket::Async::SSL.listen` binds its listener here). Run it
+            // now; the drive loop adopts the result (#15958).
+            if self
+                .async_state
+                .supply_emit_buffer
+                .last()
+                .is_some_and(|f| f.is_react)
+            {
+                self.prerun_cold_supply_source(&supply_val, whenever_id);
+            }
             if let Some(last) = self.async_state.supply_emit_buffer.last_mut() {
                 // A react body tapping a live supplier: its producers now wait
                 // for this react to handle what they emit (#11268).
