@@ -377,6 +377,9 @@ impl Compiler {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
             }
+            if let Some(cap) = &pd.type_capture {
+                sub_compiler.type_capture_locals.insert(cap.clone());
+            }
             // Also allocate locals for sub_signature parameters (array unpacking)
             // so that they get proper local slots and don't leak between recursive calls.
             if let Some(sub_params) = &pd.sub_signature {
@@ -1550,6 +1553,9 @@ impl Compiler {
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
+            }
+            if let Some(cap) = &pd.type_capture {
+                sub_compiler.type_capture_locals.insert(cap.clone());
             }
             // A destructured sub-signature param (`-> (\i, \j) { i + j }`) carries
             // its real bindings in `sub_signature`. A sigilless sub-param IS the

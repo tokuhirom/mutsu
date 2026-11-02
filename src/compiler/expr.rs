@@ -430,6 +430,13 @@ impl Compiler {
                     // declared later, or a parameter of this very routine —
                     // cannot shadow it.
                     self.code.emit(OpCode::GetLocal(slot));
+                } else if self.in_closure_body_for_type_capture(name) {
+                    // A type capture (`::T`) of an ENCLOSING routine, read from a
+                    // nested closure: a by-name read `compute_free_vars` records
+                    // as a free variable, so the closure captures the type its
+                    // creating frame bound instead of the caller's `T`.
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
                     // scope, read here from a nested — possibly escaping — closure.
