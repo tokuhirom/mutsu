@@ -126,7 +126,7 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
         // reflectively must not find the caller's.
         || key.with_str(|s| {
             s.strip_prefix(crate::env::BLOCK_LEXICAL_SUB_PREFIX)
-                .is_some_and(|name| crate::env::is_plain_user_lexical(name))
+                .is_some_and(crate::env::is_plain_user_lexical)
         })
 }
 
