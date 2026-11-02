@@ -7,18 +7,18 @@
 //! (#9494: a Text::CSV method call paid ~90 such lookups). Keyed class-first,
 //! a lookup borrows its `&str`s and the per-class question is one probe.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// `(class, attr) -> V`, stored as `class -> (attr -> V)`.
 #[derive(Clone, Debug)]
 pub(crate) struct ClassAttrTable<V> {
-    by_class: HashMap<String, HashMap<String, V>>,
+    by_class: FxHashMap<String, FxHashMap<String, V>>,
 }
 
 impl<V> Default for ClassAttrTable<V> {
     fn default() -> Self {
         Self {
-            by_class: HashMap::new(),
+            by_class: FxHashMap::default(),
         }
     }
 }
