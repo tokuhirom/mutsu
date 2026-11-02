@@ -75,6 +75,7 @@ pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
+pub(crate) use collections::list_transform::flat as flat_list;
 pub(crate) use collections::positional::is_native_array;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{

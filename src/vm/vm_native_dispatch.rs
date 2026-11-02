@@ -199,8 +199,10 @@ impl Interpreter {
             && matches!(target.view(), ValueView::Array(..) | ValueView::Seq(..))
         {
             match self.expand_iterable_instances(target) {
+                // The expanded list holds no instance any more, so the pure
+                // flattener answers it.
                 Ok(Some(expanded)) => {
-                    return Some(self.call_method_with_values(expanded, "flat", Vec::new()));
+                    return crate::builtins::method_table::flat_list(&expanded, &[]);
                 }
                 Ok(None) => {}
                 Err(err) => return Some(Err(err)),
