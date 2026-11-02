@@ -903,7 +903,11 @@ impl Interpreter {
                 {
                     self.compose_declare_attribute_metaclass(&storage_name, &attr_class)?;
                 }
-                if declare_how_has_compose {
+                // A hoisted shell's compose would run on the metaobject the
+                // in-place pass keeps (it re-registers the class and composes it
+                // again), so a HOW accumulating state in `compose` would see the
+                // class composed twice (#15022).
+                if declare_how_has_compose && !is_hoisted_shell {
                     self.registry_mut()
                         .pending_class_compose
                         .push(storage_name.clone());
