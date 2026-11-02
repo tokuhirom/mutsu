@@ -533,6 +533,15 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 }
                 v.in_scope(|v| walk_stmts(v, body));
             }),
+            // A method hoisted out of a nested block of its package body reads
+            // that block's lexicals, which are not in scope at its new place.
+            // The block keeps a `NestedMethodCapture` marker with the same
+            // signature and body, walked where those lexicals are declared
+            // (#15468).
+            Stmt::MethodDecl {
+                nested_capture_index: Some(_),
+                ..
+            } => {}
             Stmt::SubDecl { param_defs, .. } | Stmt::MethodDecl { param_defs, .. } => {
                 self.routine(param_defs, stmt)
             }
