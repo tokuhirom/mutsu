@@ -4,9 +4,9 @@
 //! regex engine's `:ignoremark` path reads it, so it lives here below both
 //! (#10779).
 
+use crate::grapheme_break::UnicodeSegmentation;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
-use unicode_segmentation::UnicodeSegmentation;
 
 /// Strip combining marks (and prepend characters) from text, working by
 /// grapheme cluster.  Returns stripped base chars and a position map from

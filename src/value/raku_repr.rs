@@ -45,7 +45,7 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
 /// True when `c` attaches to a preceding base character (Extend / combining).
 // Cost: O(1).
 fn extends_grapheme(c: char) -> bool {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     let mut buf = [0u8; 8];
     let mut t = String::from("a");
     t.push_str(c.encode_utf8(&mut buf));

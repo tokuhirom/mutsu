@@ -342,7 +342,7 @@ impl Interpreter {
         count: usize,
     ) -> Result<Option<String>, RuntimeError> {
         use std::io::Seek;
-        use unicode_segmentation::UnicodeSegmentation;
+        use crate::grapheme_break::UnicodeSegmentation;
         self.with_handle_mut(handle_value, |state| {
             if state.closed {
                 return Err(RuntimeError::io_closed("handle operation"));

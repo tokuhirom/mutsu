@@ -20,7 +20,6 @@
 
 use crate::value::{StrBody, Value};
 use std::sync::Arc;
-use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
 /// What a [`StrIterSpec`] cuts its string into.
 #[derive(Debug, Clone)]
@@ -67,18 +66,9 @@ impl StrIterSpec {
     /// Byte offset just past the grapheme that starts at `from`.
     // Cost: O(g), g = bytes of that grapheme.
     fn grapheme_end(&self, from: usize) -> usize {
-        let len = self.text.len();
-        // The chunk handed to the cursor is the whole string, starting at 0,
-        // so it never asks for pre-context (regional-indicator pairs and the
-        // like see everything before `from`).
-        let mut cursor = GraphemeCursor::new(from, len, true);
-        match cursor.next_boundary(&self.text, 0) {
-            Ok(Some(end)) => end,
-            _ => self.text[from..]
-                .graphemes(true)
-                .next()
-                .map_or(len, |g| from + g.len()),
-        }
+        // `from` is a cluster boundary and the segmenter never looks back
+        // across one, so segmenting the tail from `from` agrees with the whole.
+        from + crate::grapheme_break::next_cluster_len(&self.text[from..]).max(1)
     }
 
     /// Advance past the next element and return its byte range, or `None`

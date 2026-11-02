@@ -133,9 +133,6 @@ unless noted.
 
 | Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
 |---|---|---|---|---|
-| (none) | `S15-nfg/GraphemeBreakTest-0.t`, `-3.t` | fail 2/200 each (tests 153-154 / 33-34) | n/a | Roast re-vendor 2026-11-02 regenerated these for Unicode 18 (GB9c conjunct rules); #15931 |
-| (none) | `S15-nfg/GraphemeBreakTest-4.t` (new) | fails 33, 34, 45, 49, 50, 53 | n/a | Same Unicode 18 grapheme rules; #15931 |
-| (none) | `S32-str/utf8-c8.t` | fails 67-69, 71, 74 | n/a | New subtests: UTF8-C8 synthetics must break graphemes around themselves; #15931 |
 | (none) | `S06-operator-overloading/infix.t` | aborts after 50/51 | n/a | New test: `multi infix:<~>(Str() $a, A $b)` with `A.Str` returning self dies with unbox error; #15932 |
 | (none) | `S09-multidim/XX-POS-on-undimensioned.t` | aborts after 52/54 | n/a (needs newer rakudo) | New test: `$a.AT-POS(0) = 666` on a scalar must assign; #15933 |
 | No oracle | `S11-modules/re-export.t` | 0/3 (aborts: `Unknown function: foo`) | **SORRY** (`no such tag 'EXPORT'`) | `OuterModule` does `use InnerModule :ALL, :EXPORT` to re-export; **rakudo rejects `:EXPORT` as an undeclared tag**, so this file cannot pass upstream either. mutsu *appeared* to pass it until 2026-07-24 purely because a `unit module`'s routines leaked into `GLOBAL::` — the consumer saw Inner's subs without any re-export happening (news `2026-07/unit-module-routines-stay-in-their-package.md`). Dewhitelisted with that fix. Two independent things would be needed to revisit: real `:EXPORT` re-export semantics, and mutsu raising `X::Import::NoSuchTag` for an unknown tag even when `:ALL` is also requested (today `:ALL` short-circuits tag validation, so `:EXPORT` is silently accepted) |

@@ -82,7 +82,7 @@ impl UnitSource {
                 }
             }
         } else {
-            use unicode_segmentation::UnicodeSegmentation;
+            use crate::grapheme_break::UnicodeSegmentation;
             for (byte, grapheme) in text.grapheme_indices(true) {
                 char_starts.push(u32::try_from(byte).unwrap_or(u32::MAX));
                 chars += 1;

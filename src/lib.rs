@@ -26,6 +26,8 @@ pub mod error_render;
 pub(crate) mod exit_handover;
 mod frame_write_log;
 pub(crate) mod gc;
+pub(crate) mod grapheme_break;
+mod grapheme_break_data;
 mod interpreter;
 pub(crate) mod known_types;
 mod lexical_builtin_op;

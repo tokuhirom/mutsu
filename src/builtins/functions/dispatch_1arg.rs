@@ -1,13 +1,13 @@
 use super::math::factorial_bigint;
 use super::uniparse::uniparse_impl;
 use crate::builtins::rng::builtin_srand;
+use crate::grapheme_break::UnicodeSegmentation;
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
-use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
     // Eager list operations (combinations/permutations/...) cannot run on a
@@ -267,7 +267,13 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // Cost: O(n), n = chars of the argument.
         "flip" => {
             let s = arg.to_string_value();
-            let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
+            let reversed: String = {
+                let mut gs: Vec<&str> = s.graphemes(true).collect();
+                gs.reverse();
+                gs.concat()
+            }
+            .nfc()
+            .collect();
             Some(Ok(Value::str(reversed)))
         }
         // Cost: O(1), the same lazy Seq as `Str.words`.

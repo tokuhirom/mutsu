@@ -759,8 +759,11 @@ roast/S14-traits/routines.t
 roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
+roast/S15-nfg/GraphemeBreakTest-0.t
 roast/S15-nfg/GraphemeBreakTest-1.t
 roast/S15-nfg/GraphemeBreakTest-2.t
+roast/S15-nfg/GraphemeBreakTest-3.t
+roast/S15-nfg/GraphemeBreakTest-4.t
 roast/S15-nfg/case-change.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/concat-stable.t
@@ -1274,6 +1277,7 @@ roast/S32-str/tclc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-str/uniparse.t
+roast/S32-str/utf8-c8.t
 roast/S32-str/val.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-str/words.t
