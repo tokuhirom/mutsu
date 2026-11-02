@@ -335,6 +335,17 @@ pub(crate) fn try_custom_infix_word<'a>(
         }
         .to_string()
     });
+    // A declared comparison word the core grammar chains (`eq ne lt gt le ge
+    // eqv before after`) chains pairwise too, as the word does without a
+    // declaration (#15659): `"a" eq "a" ne "b"` is `("a" eq "a") && ("a" ne
+    // "b")`, each pair dispatching through the declared candidates and the
+    // core body. An explicit `is assoc` keeps its own folding below.
+    if crate::parser::stmt::simple::lookup_user_infix_assoc(&name).is_none()
+        && let Some(chained) = chain_declared_comparison(&name, left, &right, r2, operand)?
+    {
+        *left = chained.0;
+        return Ok(Some(chained.1));
+    }
     let mut args = vec![left.clone(), right];
     rest = r2;
     // Only genuine associativity values collect the full operand run here:
@@ -503,4 +514,53 @@ pub(crate) fn parse_comma_list_of_item_raw<'a>(
         }
     }
     Ok((r, items))
+}
+
+/// Continue a declared comparison word into a pairwise chain: `left NAME right`
+/// followed by further chaining comparison words at the same level. `None`
+/// when `name` is not a chaining comparison or nothing chains after it, so the
+/// caller keeps the plain `InfixFunc`.
+// Cost: O(k) in the chain length k.
+fn chain_declared_comparison<'a>(
+    name: &str,
+    left: &Expr,
+    right: &Expr,
+    after_right: &'a str,
+    operand: &dyn Fn(&str) -> PResult<'_, Expr>,
+) -> Result<Option<(Expr, &'a str)>, PError> {
+    use crate::token_kind::TokenKind;
+    let chain_kind = |word: &str| TokenKind::Ident(word.to_string().into());
+    if !crate::chain_compare::is_chain_op(&chain_kind(name)) {
+        return Ok(None);
+    }
+    let mut operands = vec![left.clone(), right.clone()];
+    let mut ops = vec![(chain_kind(name), false)];
+    let mut rest = after_right;
+    loop {
+        let (r_ws, _) = ws(rest)?;
+        if rest[..rest.len() - r_ws.len()].contains('\n') {
+            break;
+        }
+        let Some((next_name, next_len)) = parse_custom_infix_word(r_ws) else {
+            break;
+        };
+        if !crate::chain_compare::is_chain_op(&chain_kind(&next_name)) {
+            break;
+        }
+        let (r_after_op, _) = ws(&r_ws[next_len..])?;
+        let (r_after_arg, arg) = operand(r_after_op).map_err(|err| {
+            enrich_expected_error(
+                err,
+                "expected expression after infix operator",
+                r_after_op.len(),
+            )
+        })?;
+        ops.push((chain_kind(&next_name), false));
+        operands.push(arg);
+        rest = r_after_arg;
+    }
+    if ops.len() < 2 {
+        return Ok(None);
+    }
+    Ok(Some((Expr::ChainedCompare { operands, ops }, rest)))
 }
