@@ -1000,6 +1000,13 @@ impl Interpreter {
         if !reg.has_lexical_type_key_for(qualified) {
             return None;
         }
+        // The scan below reads the four type maps only, so its answer holds
+        // until the next registry write (which drops the memo): a method that
+        // reads the bareword of a `my class` on every call paid the four
+        // whole-map walks each time.
+        if let Some(known) = reg.lexical_key_scans.get(qualified) {
+            return known;
+        }
         let prefix = format!("{qualified}\u{0}");
         // The declaration itself, never one of its curried specializations: a
         // lexical `my role R[::T]` curried with `Str` registers a class
@@ -1025,7 +1032,9 @@ impl Interpreter {
                 .or_else(|| reg.subsets.keys().find(matches))
                 .cloned()
         };
-        find(true).or_else(|| find(false))
+        let found = find(true).or_else(|| find(false));
+        reg.lexical_key_scans.insert(qualified, found.clone());
+        found
     }
 
     /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
