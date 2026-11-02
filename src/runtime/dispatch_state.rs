@@ -48,6 +48,11 @@ pub(crate) struct DispatchState {
     /// `infix:<~>` (`exec_string_concat_op`, #15932): an interpolation inside
     /// that candidate's own body stringifies plainly instead of re-entering it.
     pub(crate) string_concat_user_fold: bool,
+    /// Ids of the captured multi dispatchers currently being dispatched by
+    /// name because their family only grew since the capture (#15925): a
+    /// second entry for the same dispatcher (its by-name call resolving back
+    /// to it) walks the captured candidates instead of recursing.
+    pub(crate) grown_family_dispatch: Vec<u64>,
     /// Active proto bodies a `{*}` may dispatch from (#10746).
     pub(crate) proto_dispatch_stack: Vec<ProtoDispatchFrame>,
     /// How many method calls are in progress (the VM's method-call opcodes,

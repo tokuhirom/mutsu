@@ -930,8 +930,14 @@ impl Interpreter {
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {
-                    let captured_match = self.captured_candidates_are_live(&name, &candidates)
-                        || self.captured_candidates_are_live_subset(&name, &candidates);
+                    let exactly_live = self.captured_candidates_are_live(&name, &candidates);
+                    // The family grew since the capture (#15925); not again
+                    // while this dispatcher's own by-name call is running.
+                    let grown_live = !exactly_live
+                        && self.has_proto(&name)
+                        && !self.dispatch.grown_family_dispatch.contains(&data.id)
+                        && self.captured_candidates_are_live_subset(&name, &candidates);
+                    let captured_match = exactly_live || grown_live;
                     // A live single routine of that name is the same family
                     // only when it is one of the captured candidates: a
                     // same-named routine imported later into the caller
@@ -969,6 +975,12 @@ impl Interpreter {
                                         ValueView::Sub(cd) if cd.id == d.id)))
                         });
                     if (live_single_is_captured || captured_match) && !amp_shadows {
+                        if grown_live {
+                            self.dispatch.grown_family_dispatch.push(data.id);
+                            let result = self.call_user_family_by_name(&name, call_args);
+                            self.dispatch.grown_family_dispatch.pop();
+                            return result;
+                        }
                         return self.call_user_family_by_name(&name, call_args);
                     }
                     // The family is not reachable by its bare name from here
