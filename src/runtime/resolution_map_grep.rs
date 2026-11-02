@@ -62,15 +62,18 @@ pub(crate) fn block_keeps_outer_topic(data: &SubData) -> bool {
     !data.params.is_empty() && !data.params.iter().any(|p| p == "_")
 }
 
-/// Whether the block's own bytecode reads `&?BLOCK`. The batched inline loops
-/// run the body without the call machinery that installs the `&?BLOCK`
-/// self-reference, so such a block must take the full per-element call path.
+/// Whether the block's own bytecode reads `&?BLOCK`, or it (or a closure nested
+/// in it) reads `&?ROUTINE`. The batched inline loops run the body without the
+/// call machinery that installs the `&?BLOCK` self-reference and the frame
+/// `&?ROUTINE` is answered from, so such a block must take the full
+/// per-element call path.
 // Cost: O(n), n = opcodes in the block body (a nested closure has its own code).
 pub(crate) fn sub_reads_block_var(data: &SubData) -> bool {
     let Some(cc) = data.compiled_code.as_ref() else {
         return false;
     };
-    cc.ops.iter().any(|op| {
+    cc.reads_routine_magical
+        || cc.ops.iter().any(|op| {
         crate::opcode::CompiledCode::op_code_var_read_const_idx(op).is_some_and(|idx| {
             matches!(
                 cc.constants.get(idx as usize).map(Value::view),

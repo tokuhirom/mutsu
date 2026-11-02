@@ -2,6 +2,7 @@ mod accessors;
 mod callable_return_type;
 mod accessors_misc;
 mod accessors_resolve;
+mod enclosing_routine;
 mod accessors_stack;
 mod accessors_stash;
 mod accessors_stash_exists;

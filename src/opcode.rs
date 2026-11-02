@@ -7811,6 +7811,11 @@ pub(crate) struct CompiledCode {
     /// only to throw it away. Over-approximating is always safe: a false
     /// positive just keeps the old behaviour.
     pub(crate) may_observe_named_slurpy: bool,
+    /// True if this code, or a closure nested in it, reads `&?ROUTINE`. The
+    /// creating frame then binds the enclosing routine into the closure it
+    /// builds (`build_closure`), because `&?ROUTINE` is a lexical: a block that
+    /// runs after its routine returned (a lazy `map`) still means THAT routine.
+    pub(crate) reads_routine_magical: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `rakuast::supply_lower`).
@@ -8477,6 +8482,7 @@ impl CompiledCode {
             static_name_lookup: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
+            reads_routine_magical: false,
             source_line: None,
             is_pointy_block: false,
             is_whatever_code: false,
@@ -12277,6 +12283,7 @@ impl CompiledCode {
         // A closure nested in a method body resolves `%_` through the method's
         // env, so its mention counts as this code's.
         self.may_observe_named_slurpy |= code.may_observe_named_slurpy;
+        self.reads_routine_magical |= code.reads_routine_magical;
         let idx = self.closure_compiled_codes.len() as u32;
         self.closure_compiled_codes.push(Arc::new(code));
         self.closure_escapes.push(escapes);
@@ -12306,6 +12313,16 @@ impl CompiledCode {
             && s.as_str() == "samewith"
         {
             self.uses_samewith = true;
+        }
+        if !self.reads_routine_magical
+            && let OpCode::GetCodeVar(name_idx)
+            | OpCode::GetCodeVarLocal { name_idx, .. }
+            | OpCode::CallOnCodeVar { name_idx, .. } = &op
+            && let Some(v) = self.constants.get(*name_idx as usize)
+            && let ValueView::Str(s) = v.view()
+            && s.as_str() == "?ROUTINE"
+        {
+            self.reads_routine_magical = true;
         }
         if !self.uses_callframe {
             match &op {
