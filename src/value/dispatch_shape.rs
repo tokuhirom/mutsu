@@ -295,6 +295,8 @@ pub(crate) enum DispatchShape {
     /// `Signature` (opaque): its renderings and parameter list are
     /// attributes the compiler set.
     Signature,
+    /// `Parameter` (opaque): its accessors are attributes the compiler set.
+    Parameter,
     /// A member of an `Int`-valued enum (opaque): a value kind, answering the
     /// rows of the roles Rakudo composes into the enum type.
     EnumNumeric,
@@ -325,7 +327,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 104] = [
+    pub(crate) const ALL: [DispatchShape; 105] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -430,6 +432,7 @@ impl DispatchShape {
         DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
         DispatchShape::Signature,
+        DispatchShape::Parameter,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
