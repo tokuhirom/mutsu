@@ -679,7 +679,10 @@ pub(crate) fn class_decl_body_opt(
                         &parent,
                         Some(TraitArgument::Words(arg.clone())),
                     );
-                    custom_traits.push((parent.clone(), Some(crate::parser::helpers::trait_angle_arg_expr(&arg))));
+                    custom_traits.push((
+                        parent.clone(),
+                        Some(crate::parser::helpers::trait_angle_arg_expr(&arg)),
+                    ));
                     let (r3, _) = ws(r3)?;
                     r = r3;
                     continue;
