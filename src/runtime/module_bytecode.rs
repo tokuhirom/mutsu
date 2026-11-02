@@ -242,6 +242,10 @@ impl Interpreter {
         stmts: &[Stmt],
     ) -> (CompiledCode, CompiledFns) {
         let (mut compiler, compile_unit) = self.block_compiler();
+        // A module's mainline runs in the importer's env, and nobody reads its
+        // value: delivering the tail through `$_` replaced the importing
+        // scope's topic with the module's last statement (#15959).
+        compiler.unit_tail_discards = true;
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let _scans = self.canonical_use_scans(Self::use_modules_of(stmts));
         compiler.defer_unit_lexical_use_sets(stmts, true);
@@ -301,6 +305,8 @@ impl Interpreter {
         slot: &ModuleCodeSlot,
     ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
         let (mut compiler, compile_unit) = self.block_compiler();
+        // See `compile_module_mainline_uncached`: the tail value is discarded.
+        compiler.unit_tail_discards = true;
         // A module's lexical scope starts empty: the import sets around the
         // `use` that loaded it belong to the importer, and the module's
         // compiled code (cached by module, not by importer) must not see them.
