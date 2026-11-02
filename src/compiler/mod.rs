@@ -3809,7 +3809,7 @@ impl Compiler {
     ///
     /// The test is on the SHAPE, not on the runtime value: rakudo agrees that
     /// `d("7".Int)` -- an in-range boxed `Int` produced at runtime -- picks
-    /// `Int`. Positions past 31 are never marked (a call with 32+ positional
+    /// `Int`. Positions past 15 are never marked (a call with 16+ positional
     /// arguments and a native `multi` candidate is not worth a wider carrier);
     /// leaving a bit clear only preserves the old ranking for that position.
     ///
@@ -3829,10 +3829,19 @@ impl Compiler {
         if args.len() == 1 && name.with_str(|n| matches!(n, "floor" | "ceiling" | "ceil")) {
             return u32::from(self.is_declared_native_arg(&args[0]));
         }
+        // Low half: positions that are genuinely native; high half: positions
+        // written as a (possibly folded) literal, which rakudo dispatches as a
+        // boxed value (#13065) but a `proto` gate still wants to see.
         let mut mask = 0u32;
-        for (i, arg) in args.iter().enumerate().take(32) {
-            if self.is_native_literal_arg(arg) {
+        for (i, arg) in args
+            .iter()
+            .enumerate()
+            .take(crate::runtime::LITERAL_MASK_SHIFT as usize)
+        {
+            if self.is_declared_native_arg(arg) {
                 mask |= 1 << i;
+            } else if self.is_native_literal_arg(arg) {
+                mask |= 1 << (i as u32 + crate::runtime::LITERAL_MASK_SHIFT);
             }
         }
         mask
