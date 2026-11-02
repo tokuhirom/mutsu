@@ -103,3 +103,7 @@ their registration metadata; the `new`/`bless` factory relays retain cells for
 the constructor's attribute-specific binding. RakuAST and dependency-specification
 value constructors use the same named-value reader. This preserves the raw
 transport contract without requiring every native handler to understand cells.
+
+Full release roast also exercises the scalar `:shape` and aggregate `:nl-in`
+consumers. Their shared parsers read the supplied container before classifying
+its value, preserving late-bound array dimensions and multiple line separators.
