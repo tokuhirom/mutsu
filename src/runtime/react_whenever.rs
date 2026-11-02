@@ -171,7 +171,7 @@ impl Interpreter {
     }
 
     /// Run the body of a cold `supply { }` source now, keeping the result for
-    /// `build_react_subscriptions` (see [`PreRunOnDemand`]). A source backed by
+    /// `build_react_subscriptions` (see `PreRunOnDemand` in `async_state`). A source backed by
     /// a channel or a supplier is live already and is left alone.
     // Cost: O(b), b = the cost of running the supply body once.
     fn prerun_cold_supply_source(&mut self, source: &Value, whenever_id: u64, callback: &Value) {
