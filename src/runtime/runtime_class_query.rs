@@ -371,6 +371,21 @@ impl Interpreter {
         false
     }
 
+    /// Whether a user-declared class inherits (transitively) from `Array` or
+    /// `List`, i.e. its instances are positional containers whose `[ ]`
+    /// subscript numifies the index.
+    // Cost: O(d), d = depth of the class's parent chain.
+    pub(crate) fn class_inherits_array(&self, name: &str) -> bool {
+        if name == "Array" || name == "List" {
+            return true;
+        }
+        let parents = {
+            let reg = self.registry();
+            reg.classes.get(name).map(|cd| cd.parents.clone())
+        };
+        parents.is_some_and(|ps| ps.iter().any(|p| self.class_inherits_array(p)))
+    }
+
     /// Check if a class has scoped subs declared in its body.
     /// True if `class_name` has recorded class-body `my` lexicals (statics)
     /// stored in `package_lexicals` by `register_class_decl`. A method reading
