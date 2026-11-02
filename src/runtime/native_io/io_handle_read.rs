@@ -154,16 +154,19 @@ impl Interpreter {
                 }
             }
         }
-        if limit.is_none() {
-            // No limit: return a lazy word iterator so a partial consumer
-            // (e.g. `$fh.words[1,2]`) leaves the handle open, while a full
-            // consumer triggers close-on-exhaust when `:close` was given.
-            if close_after {
-                self.with_handle_mut(target_val, |state| {
-                    state.close_on_exhaust = true;
-                    Ok(())
-                })?;
-            }
+        // No limit: the rest of the handle is read NOW, as Rakudo's `words`
+        // consumes the whole decoder up front (`$h.words; $h.tell` is the
+        // file size, `.is-lazy` is False, #16012).
+        // TODO: `:close` keeps the deferred Seq, because roast
+        // (S16-io/words.t) pins that a partially consumed `words(:close)`
+        // leaves the handle open and only exhaustion closes it; an eager
+        // read plus a close-on-exhaust hook on the Seq would also move
+        // `tell` for `:close`.
+        if limit.is_none() && close_after {
+            self.with_handle_mut(target_val, |state| {
+                state.close_on_exhaust = true;
+                Ok(())
+            })?;
             return Ok(Value::lazy_io_lines(target_val.clone(), false, true));
         }
         let mut words = Vec::new();
