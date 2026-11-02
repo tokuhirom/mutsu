@@ -205,7 +205,11 @@ impl Interpreter {
         // so the static is not written over the caller's same-named lexical.
         let mut shadowed_by_statics: Vec<(String, Option<Value>)> = Vec::new();
         if pkg_guard.is_some() && self.class_has_package_lexicals(def_package) {
-            self.inject_class_body_statics_saving(def_package, &mut shadowed_by_statics);
+            self.inject_class_body_statics_saving_except(
+                def_package,
+                &mut shadowed_by_statics,
+                &cf.code.routine_scoped_free,
+            );
         }
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
