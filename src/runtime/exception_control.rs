@@ -145,8 +145,16 @@ impl Interpreter {
                 .iter()
                 .any(|p| p == "X::Control" || p == "CX::Warn");
         let target = self.stamp_thrown_exception_dynamics(&target);
-        let defer_message = self.has_user_method(&cn, "message");
-        let msg = if defer_message {
+        // A hand-built `X::TypeCheck::Assignment` without a `symbol` has a
+        // `message` that dies (rakudo); it is no message to stamp, and
+        // `Str` falls back to `Something went wrong in (Assignment)` (#16047).
+        let message_dies = cn == "X::TypeCheck::Assignment"
+            && !self.has_user_method(&cn, "message")
+            && self.exception_message_text(&target).is_none();
+        let defer_message = message_dies || self.has_user_method(&cn, "message");
+        let msg = if message_dies {
+            "Something went wrong in (Assignment)".to_string()
+        } else if defer_message {
             format!("Died with {cn}")
         } else {
             self.exception_message_or_died_with(&target)

@@ -54,6 +54,7 @@ mod dispatch;
 mod implicit_named;
 pub(crate) mod index_arg;
 mod instances;
+pub(crate) use instances::exception::formatted as exception_formatted_message;
 mod io_concurrency;
 pub(crate) mod lazy_pull;
 mod lazy_refusal;
