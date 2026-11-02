@@ -2573,7 +2573,7 @@ impl Compiler {
             // The subscript temporaries of a compound assignment
             // (`__mutsu_idx_N`) are read only through their own slot, so they
             // take the slot-only stores like any `my $x` (#15917 follow-up).
-            && (!name.starts_with("__mutsu_") || name.starts_with("__mutsu_idx_"))
+            && !name.starts_with("__mutsu_")
             && !name.starts_with("__ANON")
     }
 
