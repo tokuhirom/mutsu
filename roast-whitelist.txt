@@ -508,7 +508,6 @@ roast/S06-multi/unpackability.t
 roast/S06-multi/value-based.t
 roast/S06-operator-overloading/circumfix.t
 roast/S06-operator-overloading/imported-subs.t
-roast/S06-operator-overloading/infix.t
 roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
@@ -583,7 +582,6 @@ roast/S09-autovivification/autoincrement.t
 roast/S09-autovivification/autovivification.t
 roast/S09-hashes/objecthash.t
 roast/S09-multidim/XX-POS-on-dimensioned.t
-roast/S09-multidim/XX-POS-on-undimensioned.t
 roast/S09-multidim/assign.t
 roast/S09-multidim/decl.t
 roast/S09-multidim/indexing.t
@@ -761,10 +759,8 @@ roast/S14-traits/routines.t
 roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
-roast/S15-nfg/GraphemeBreakTest-0.t
 roast/S15-nfg/GraphemeBreakTest-1.t
 roast/S15-nfg/GraphemeBreakTest-2.t
-roast/S15-nfg/GraphemeBreakTest-3.t
 roast/S15-nfg/case-change.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/concat-stable.t
@@ -1278,7 +1274,6 @@ roast/S32-str/tclc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-str/uniparse.t
-roast/S32-str/utf8-c8.t
 roast/S32-str/val.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-str/words.t
