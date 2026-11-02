@@ -1214,6 +1214,28 @@ impl Interpreter {
                     method
                 )));
             }
+            // `$a.AT-POS(0) = v` on a plain scalar value: a non-positional
+            // invocant is its own 0th element (`Any.AT-POS`), and the call
+            // answers the variable's container (rakudo/rakudo@cfb221c3e2,
+            // #15933), so the assignment stores into the variable itself.
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+                if method == "AT-POS"
+                    && target_var.is_some()
+                    && matches!(method_args.as_slice(), [i] if i.as_int() == Some(0)) =>
+            {
+                if let Some(var_name) = target_var {
+                    self.env.insert_through(var_name.to_string(), value.clone());
+                }
+                return Ok(value);
+            }
             // A builtin value (`Array`, `Hash`, a `Seq`/`LazyList`, ...) asked for
             // an element (`$list.AT-POS(0) = v`): the call answers the element's
             // own container, assigned through exactly as for a type object above.
