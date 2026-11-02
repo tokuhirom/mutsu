@@ -1056,7 +1056,21 @@ impl Compiler {
                 if Self::is_list_assign_call(expr) {
                     self.sunk_list_assign_result = true;
                 }
+                // A sunk list of plain scalar variables (`($a, $b);`, and the
+                // collector that ends a `my ($a, $b) = ...` declaration) never
+                // exposes its element containers, so skip the `WrapVarRef`
+                // boxing that would otherwise turn each variable's slot into a
+                // shared `ContainerRef` cell for good (and push every later
+                // plain store to it off the scalar-store fast lane).
+                let sunk_var_list = matches!(
+                    expr,
+                    Expr::ArrayLiteral(items)
+                        if !items.is_empty() && items.iter().all(|e| matches!(e, Expr::Var(_)))
+                );
+                let saved_suppress = self.suppress_list_var_alias;
+                self.suppress_list_var_alias |= sunk_var_list;
                 self.with_stmt_root(|c| c.compile_condition_expr(expr));
+                self.suppress_list_var_alias = saved_suppress;
                 self.sunk_list_assign_result = false;
                 if Self::is_start_call(expr) {
                     self.code.emit(OpCode::MarkPromiseSink);
