@@ -531,23 +531,24 @@ impl Value {
             ValueView::Bool(false) => "False".to_string(),
             ValueView::Range(a, b) => {
                 // .Str on a finite range iterates elements and joins with spaces.
-                // For infinite/very large ranges, fall back to range notation.
+                // An unbounded or very large range keeps range notation, with
+                // `*` for an infinite end (as rakudo's `1..Inf`.Str is `1..*`).
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}..{}", a, b)
+                    format!("{}..{}", int_range_end_text(a, true), int_range_end_text(b, false))
                 } else {
                     (a..=b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
             ValueView::RangeExcl(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}..^{}", a, b)
+                    format!("{}..^{}", int_range_end_text(a, true), int_range_end_text(b, false))
                 } else {
                     (a..b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
             ValueView::RangeExclStart(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}^..{}", a, b)
+                    format!("{}^..{}", int_range_end_text(a, true), int_range_end_text(b, false))
                 } else {
                     (a + 1..=b)
                         .map(|i| i.to_string())
@@ -557,7 +558,7 @@ impl Value {
             }
             ValueView::RangeExclBoth(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}^..^{}", a, b)
+                    format!("{}^..^{}", int_range_end_text(a, true), int_range_end_text(b, false))
                 } else {
                     (a + 1..b)
                         .map(|i| i.to_string())
@@ -574,7 +575,10 @@ impl Value {
                 let is_infinite = matches!(
                     end.view(),
                     ValueView::Whatever | ValueView::HyperWhatever | ValueView::Sub(_)
-                ) || matches!(end.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
+                ) || matches!(end.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive())
+                    // An unbounded start (`-Inf..5`, `*..5`) never expands.
+                    || matches!(start.view(), ValueView::Whatever | ValueView::HyperWhatever)
+                    || matches!(start.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_negative());
                 if !is_infinite {
                     let items = crate::value::to_list::value_to_list(self);
                     // `value_to_list` may return `[self.clone()]` for non-expandable ranges
@@ -597,10 +601,10 @@ impl Value {
                 let end_sep = if excl_end { "^" } else { "" };
                 format!(
                     "{}{}{}{}",
-                    start.to_string_value(),
+                    generic_range_end_text(start),
                     start_sep,
                     end_sep,
-                    end.to_string_value()
+                    generic_range_end_text(end)
                 )
             }
             ValueView::Array(_, crate::value::ArrayKind::Lazy) => "...".to_string(),
@@ -1487,4 +1491,26 @@ fn mixin_class_user_facing_name(key: &str) -> String {
     }
     out.push_str(&user_facing_type_name(rest));
     out
+}
+
+/// The text of an `Int` range end in unexpanded `.Str` notation: an end at
+/// the `i64` limit stands for an infinite one and prints as `*`.
+// Cost: O(1).
+fn int_range_end_text(n: i64, is_start: bool) -> String {
+    if (is_start && n == i64::MIN) || (!is_start && n == i64::MAX) {
+        "*".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
+/// The text of a generic range end in unexpanded `.Str` notation: an infinite
+/// or Whatever end prints as `*`, as rakudo's `Range.Str` does.
+// Cost: O(|v|), the end's own stringification.
+fn generic_range_end_text(v: &Value) -> String {
+    match v.view() {
+        ValueView::Whatever | ValueView::HyperWhatever => "*".to_string(),
+        ValueView::Num(n) if n.is_infinite() => "*".to_string(),
+        _ => v.to_string_value(),
+    }
 }
