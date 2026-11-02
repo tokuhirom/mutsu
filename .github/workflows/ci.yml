@@ -355,7 +355,7 @@ jobs:
 
       - name: Frontend debt does not grow
         # ADR-15334 section 3.3: SyntheticBlock references and `"__..."`
-        # literals in src/parser, and the lines of src/rakuast/convert.rs, stay
+        # literals in src/parser, and the lines of src/rakuast/view.rs, stay
         # at or below the ceilings in scripts/frontend-debt.d/. Self-tests its
         # comparison first.
         run: make check-frontend-debt
