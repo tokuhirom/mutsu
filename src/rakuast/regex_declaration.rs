@@ -30,7 +30,7 @@ pub(super) fn view_node(
     )
 }
 
-/// [`view`] over an already converted body (the `{*}` of a proto).
+/// [`view_node`] over an already converted body (the `{*}` of a proto).
 // Cost: O(p), p = size of the parameters.
 pub(super) fn with_body(
     names: &NameScope,
