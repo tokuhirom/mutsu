@@ -35,6 +35,19 @@ impl Interpreter {
             }
         }
 
+        // A `[ ]` subscript addresses the element its `Int` names, and an object
+        // with its own `EXISTS-POS` is handed that `Int` (`@o[1.2]:exists` calls
+        // `EXISTS-POS(1)`, #15996).
+        // The key-returning forms (`:exists:kv`, `:k`, `:p`) keep the index as
+        // written: `@a[1.7]:exists:kv` answers `(1.7, True)`.
+        if !is_zen
+            && adverb_bits == 0
+            && kind == SubscriptKind::Positional
+            && let Some(index) = self.stack.last_mut()
+        {
+            *index = Self::positional_index_as_int(index.clone());
+        }
+
         // Determine effective negation
         let effective_negated = if has_arg {
             !arg_val.truthy() // falsy arg => negate

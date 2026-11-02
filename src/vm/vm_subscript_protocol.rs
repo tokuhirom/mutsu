@@ -48,6 +48,13 @@ impl Interpreter {
             ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
             _ => idx.clone(),
         };
+        // `postcircumfix:<[ ]>` hands `ASSIGN-POS` the subscript as an `Int`
+        // (`@o[2.9] = v` calls `ASSIGN-POS(2, v)`), as it does for `AT-POS`.
+        let idx_arg = if is_positional {
+            Self::positional_index_as_int(idx_arg)
+        } else {
+            idx_arg
+        };
         Some(self.call_method_with_values(object.clone(), method, vec![idx_arg, val.clone()]))
     }
 
