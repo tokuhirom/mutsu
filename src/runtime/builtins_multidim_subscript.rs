@@ -189,11 +189,12 @@ impl Interpreter {
         // user candidate with an untyped index, so a positional subscript
         // stays with the core routine; the `{ }` core candidates take an
         // untyped key and tie with the user one.
-        if is_positional
-            || !matches!(
-                target.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..)
-            )
+        // An `is Array` subclass instance is an Array value that carries its
+        // class, so a positional subscript considers those too.
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) && !(is_positional && matches!(target.view(), ValueView::Array(..)))
         {
             return Ok(None);
         }
@@ -203,6 +204,33 @@ impl Interpreter {
             index.clone(),
             Value::pair(adverb.to_string(), Value::truth(truthy)),
         ];
+        // A positional user candidate does beat the core `:exists`/`:delete`
+        // candidates when its invocant is typed with a USER class the target
+        // is an instance of (Array::Rounded's `Array::Rounded:D \SELF,
+        // Any:D \index, |c`): the core candidates take an untyped invocant.
+        if is_positional {
+            // Candidates a `use` brought in are lexical to the unit; an
+            // instance of a user class (not a plain Array) goes to them.
+            if matches!(call_args[0].view(), ValueView::Instance { .. })
+                && let Some(result) =
+                    self.try_lexical_operator_candidates(op_name, call_args.clone())
+            {
+                return result;
+            }
+            return match self.resolve_function_with_types(op_name, &call_args)? {
+                Some(def)
+                    if def.param_defs.first().is_some_and(|p| {
+                        p.type_constraint.as_deref().is_some_and(|t| {
+                            let t = t.trim_end_matches([':', 'D', 'U', '?']);
+                            !t.is_empty() && self.has_class(t) && !Self::is_builtin_type(t)
+                        })
+                    }) =>
+                {
+                    self.call_routine_def(&def, call_args).map(Some)
+                }
+                _ => Ok(None),
+            };
+        }
         if let Some(result) = self.try_lexical_operator_candidates(op_name, call_args.clone()) {
             return result;
         }
