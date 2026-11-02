@@ -1413,10 +1413,12 @@ impl Interpreter {
             }
         }
 
-        // A literal is a boxed value, not a native one (rakudo 2026.09, #13065):
-        // `multi n(byte $a)` does not accept `n(1)` ("will never work"), and
-        // beside a boxed candidate the boxed one wins.
-        false
+        // The call site marks a genuinely native argument (a declared native
+        // variable or anonymous declaration) in the low half of the mask. A
+        // literal is in the high half and is a boxed value (rakudo 2026.09,
+        // #13065): `multi n(byte $a)` does not accept `n(1)` ("will never
+        // work"), and beside a boxed candidate the boxed one wins.
+        arg_idx.is_some_and(|idx| idx < 16 && self.literal_native_args & (1 << idx) != 0)
     }
 
     /// [`Self::resolved_type_capture_name`] for a parameter's constraint, except

@@ -631,6 +631,9 @@ pub(crate) use self::methods_subscript_protocol::{refuse_map_assignment, refuse_
 pub(crate) use self::output_sink::OutputSink;
 pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::{ClassDeclModifiers, HoistedShell};
+
+/// Where the literal half of `Interpreter::literal_native_args` starts.
+pub(crate) const LITERAL_MASK_SHIFT: u32 = 16;
 pub(crate) use self::registry::Registry;
 pub(crate) use self::scope_stack::ScopeStack;
 pub(crate) use self::tap_state::TapState;
@@ -2029,6 +2032,10 @@ pub struct Interpreter {
     /// `multi d(int)` / `multi d(Int)` called as `d(5)` picks `int` as rakudo
     /// does. Zero for every call site with no literal argument, which is the
     /// common case and costs one `u32` store per call.
+    ///
+    /// Layout: bit `i` (`i < 16`) marks argument `i` as genuinely native (a
+    /// declared native variable); bit `16 + i` marks it as written as a
+    /// literal, which is boxed for dispatch ([`LITERAL_MASK_SHIFT`]).
     pub(crate) literal_native_args: u32,
     /// The CURRENT call site's `OpCode::CallFunc::static_arg_types`, published
     /// by `exec_call_func_op` and restored when that call returns. The callee's

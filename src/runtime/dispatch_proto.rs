@@ -179,8 +179,9 @@ impl Interpreter {
         // Rakudo still rejects a call whose arguments are ALL literals at
         // compile time (`proto f(Int $x) {*}; multi f($) {...}; f 'foo'`);
         // mutsu has no compile-time check, so it gates those calls here.
-        let all_literal = self.literal_native_args != 0
-            && self.literal_native_args.count_ones() as usize == args.len();
+        let marked = (self.literal_native_args | self.literal_native_args >> super::LITERAL_MASK_SHIFT)
+            & ((1 << super::LITERAL_MASK_SHIFT) - 1);
+        let all_literal = marked != 0 && marked.count_ones() as usize == args.len();
         let only_star = !all_literal
             && (def.body.is_empty()
                 || super::dispatch_proto_rewrite::is_only_star_block(&def.body));
