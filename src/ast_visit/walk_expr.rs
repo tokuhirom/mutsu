@@ -169,7 +169,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             is_raw: _,
             is_block: _,
             doc: _,
-        } => super::walk_stmts(v, body),
+        } => v.visit_stmts(body),
         Expr::AnonSubParams {
             params: flat,
             param_defs,
@@ -185,7 +185,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             params(v, param_defs);
             names(v, return_type.iter(), NameKind::Type);
             traits(v, custom_traits.as_slice());
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Expr::CallOn { target, args } => {
             v.visit_expr(target);
@@ -198,7 +198,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             param_sigilless: _,
         } => {
             v.visit_name(param, NameKind::BlockParam);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Expr::Index { target, index, .. } => {
             v.visit_expr(target);
@@ -281,9 +281,9 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             exprs(v, args);
         }
         Expr::Try { body, catch } => {
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
             if let Some(c) = catch {
-                super::walk_stmts(v, c);
+                v.visit_stmts(c);
             }
         }
         Expr::Reduction { op, expr } => {
@@ -345,7 +345,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             origin: _,
         } => {
             names(v, label.iter(), NameKind::Label);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Expr::DoStmt(stmt) => v.visit_stmt(stmt),
         Expr::ControlFlow {

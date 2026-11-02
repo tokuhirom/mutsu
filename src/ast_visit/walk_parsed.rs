@@ -67,7 +67,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
     | ParsedStmt::AttributeGroup(declarations)
     | ParsedStmt::AttributeColonArglist(declarations) = node
     {
-        super::walk_stmts(v, declarations);
+        v.visit_stmts(declarations);
         return;
     }
     if let ParsedStmt::SignatureDecl(decl) = node {
@@ -123,7 +123,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
     if let ParsedStmt::WillDecl { decl, phasers, .. } = node {
         v.visit_stmt(decl);
         for (_, body) in phasers {
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         return;
     }
@@ -164,7 +164,7 @@ fn block<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, b: &'ast ParsedBlock) {
             }
         }
     }
-    super::walk_stmts(v, &b.body);
+    v.visit_stmts(&b.body);
 }
 
 /// Visits every child of `node` mutably.
@@ -311,7 +311,7 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
         }
-        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts(v, body),
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => v.visit_stmts(body),
         ParsedExpr::HyperAssign(a) => {
             v.visit_expr(&a.target);
             v.visit_expr(&a.value);

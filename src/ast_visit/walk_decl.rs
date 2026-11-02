@@ -48,7 +48,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
                 exprs(v, args);
             }
             names(v, body_parents, NameKind::Type);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::HasDecl {
             name,
@@ -139,7 +139,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             }
             traits(v, custom_traits);
             names(v, export_tags, NameKind::Module);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::RoleDecl {
             spans: _,
@@ -161,7 +161,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             params(v, type_param_defs);
             names(v, export_tags, NameKind::Module);
             traits(v, custom_traits);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         // Every other variant is walked by `walk_stmt` itself.
         _ => {}

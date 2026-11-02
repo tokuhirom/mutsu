@@ -10,6 +10,11 @@ impl Interpreter {
         if let Some(e) = super::eval_decl_scans::find_our_routine_redeclaration(stmts) {
             return Err(e);
         }
+        // A routine declared twice among the siblings of one scope, at any
+        // depth; a nested scope may shadow an outer routine (#15909).
+        if let Some(e) = super::eval_scope_redecl::find_scope_routine_redeclaration(stmts) {
+            return Err(e);
+        }
         // Type-like declarations (class/role/subset/enum) share one symbol
         // namespace; a non-stub declaration cannot be redeclared by another
         // type declaration of the same name (regardless of kind).
