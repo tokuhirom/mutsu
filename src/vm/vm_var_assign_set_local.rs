@@ -1315,7 +1315,8 @@ impl Interpreter {
         // split so both paths are covered. `raw_popped` is only borrowed.
         {
             let name = &code.locals[idx];
-            self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
+            let name_sym = code.local_sym(idx).unwrap_or_else(|| Symbol::intern(name));
+            self.update_bound_decont_marker(name, name_sym, scalar_bind || is_bind, &raw_popped);
             // `$!attr := $var` seats the variable's own container, so the
             // attribute stays a writable one (`nqp::isrwcont`) although the
             // stack carries only its value.
