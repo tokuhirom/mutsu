@@ -1869,6 +1869,14 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
+    /// Type captures (`::T` in a signature) of this frame and of the frames
+    /// around it. A nested closure naming `T` reads the type its creating
+    /// frame captured, exactly like a captured variable; resolved by name at
+    /// call time it would read whatever same-named capture the CALLER has.
+    type_capture_locals: std::collections::HashSet<String>,
+    /// The type captures of the frames AROUND this one (see
+    /// [`Self::type_capture_locals`], which holds this frame's own).
+    enclosing_type_captures: std::collections::HashSet<String>,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -2213,6 +2221,8 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
+            type_capture_locals: std::collections::HashSet::new(),
+            enclosing_type_captures: std::collections::HashSet::new(),
             enclosing_local_names: std::collections::HashSet::new(),
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
@@ -2932,6 +2942,14 @@ impl Compiler {
         }
     }
 
+    /// Whether the bare word `name` is a type capture (`::T`) of a frame
+    /// AROUND the code being compiled, and not shadowed by one of this frame's
+    /// own.
+    // Cost: O(1), two hash probes.
+    fn in_closure_body_for_type_capture(&self, name: &str) -> bool {
+        self.enclosing_type_captures.contains(name) && !self.type_capture_locals.contains(name)
+    }
+
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
         // Code nested in a closure body is still inside it (ADR-12529).
@@ -2944,6 +2962,12 @@ impl Compiler {
             .extend(self.sigilless_locals.iter().cloned());
         sub.enclosing_sigilless
             .extend(self.enclosing_sigilless.iter().cloned());
+        sub.enclosing_type_captures.extend(
+            self.type_capture_locals
+                .iter()
+                .chain(self.enclosing_type_captures.iter())
+                .cloned(),
+        );
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
         sub.enclosing_underscore_implicit = if self.local_map.contains_key("@_") {

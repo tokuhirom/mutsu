@@ -11858,7 +11858,17 @@ impl CompiledCode {
         // semantics at call time — see `authoritative_free_vars`. This is the one
         // place that knows `captured_mutated`, and the nested codes are still
         // uniquely owned here, so `make_mut` does not clone.
-        let vouched: std::collections::HashSet<Symbol> = self
+        // A type capture (`::T` in the signature, the local `__type_capture__T`)
+        // binds `T` once and is never reassigned, so a closure that names `T`
+        // keeps ITS creator's type however the caller has bound `T`.
+        let type_capture_syms: Vec<Symbol> = self
+            .locals
+            .iter()
+            .filter_map(|name| name.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX))
+            .filter(|bare| !bare.is_empty())
+            .map(Symbol::intern)
+            .collect();
+        let mut vouched: std::collections::HashSet<Symbol> = self
             .locals
             .iter()
             .filter(|name| crate::env::is_user_lexical_or_term_key(name))
@@ -11884,6 +11894,7 @@ impl CompiledCode {
                         || self.scalar_bind_locals.contains(sym))
             })
             .collect();
+        vouched.extend(type_capture_syms);
         // ADR-0055 §7.3 / ADR-0025 slice 2: the dichotomy "an escaping-captured
         // plain scalar is either authoritative or a shared cell" is only
         // exhaustive if the complement of the vouch also gets a cell. Compute it
