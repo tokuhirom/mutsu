@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 6;
+plan 9;
 
 # A program that has bound a sigilless name arms the readonly/alias marker
 # probes for every store; the probes must still catch the names that really
@@ -33,3 +33,28 @@ is $plain, 12, 'a bound scalar still writes through';
 my $big = 2 ** 80;
 $big = $big * 3;
 is $big, 3 * 2 ** 80, 'a bigint store';
+
+# Declarations in a loop body keep working once a sigilless name exists: a
+# name that carries a marker is still refused after a redeclaration, a name
+# that does not is a plain slot write.
+my @seen;
+for 1..3 -> $i {
+    my $t = $i * 2;
+    my $u = $t + 1;
+    @seen.push: $u;
+}
+is-deeply @seen, [3, 5, 7], 'declarations in a loop body';
+
+sub shadow() {
+    my \w = 10;
+    my $r = w + 1;
+    $r
+}
+is shadow(), 11, 'a sigilless binding inside a sub and a declaration after it';
+
+sub redeclare() {
+    my $z = 5;      # a plain `z` next to the file-level `\z`
+    $z = $z + 1;
+    $z
+}
+is redeclare(), 6, 'a scalar named like a sigilless binding elsewhere';
