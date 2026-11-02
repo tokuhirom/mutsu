@@ -196,6 +196,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         static_name_lookup,
         uses_dispatcher,
         may_observe_named_slurpy,
+        reads_routine_magical,
         is_supply_block_body,
         eval_context_target_callable_id,
         supply_emitter_sym,

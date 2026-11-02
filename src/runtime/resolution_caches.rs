@@ -36,9 +36,23 @@ pub(crate) struct MultiPlanLight {
 
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
+    /// The env-dependent half of a `protect` block's analysis, keyed by the
+    /// body's compiled code and which of its locals / global names its captured
+    /// env holds (two bitmasks), so a loop that builds a fresh closure per
+    /// iteration reuses one result. Holds the `Arc` so the address cannot be
+    /// reused while the entry lives.
+    ///
     /// The env-independent half of a `protect` block's analysis, by the body's
     /// compiled code (see [`ProtectBlockOps`]). Holds the `Arc` so the address
     /// cannot be reused while the entry lives.
+    pub(super) protect_block_bindings: HashMap<
+        (usize, u64, u64),
+        (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            super::ProtectBlockBindings,
+        ),
+    >,
+    /// See above: the env-independent half.
     pub(super) protect_block_ops: HashMap<
         usize,
         (
