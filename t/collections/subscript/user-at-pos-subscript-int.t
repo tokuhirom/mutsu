@@ -4,7 +4,7 @@ use Test;
 # `BIND-POS` / `EXISTS-POS` the index as an `Int` (`@o[0.6] := v` calls
 # `BIND-POS(0, v)`). The expected values are rakudo's.
 
-plan 9;
+plan 11;
 
 my @seen;
 class R is Array {
@@ -43,3 +43,10 @@ is @seen.join(","), 'AT-POS 1', 'a Num is truncated too';
 my $y = @r[2];
 my @plain = 1, 2, 3;
 is (@plain[1.7], (@plain[0.2]:exists)).join(","), '2,True', 'a plain array reads the truncated element';
+
+# Inf and NaN have no Int: the store raises instead of addressing slot 0.
+my @fin = 1, 2, 3;
+my $threw = False;
+{ @fin[NaN] = 9; CATCH { default { $threw = True } } }
+ok $threw, 'assigning to @a[NaN] throws';
+is @fin.join(","), '1,2,3', 'and leaves the array alone';
