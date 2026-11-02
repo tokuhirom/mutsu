@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 
 /// The built-in classes whose `Instance`s have a shape that is not an opaque
 /// one (those are found by their type name, `opaque.rs`).
-const INSTANCE_CLASSES: [(&str, DispatchShape); 41] = [
+const INSTANCE_CLASSES: [(&str, DispatchShape); 42] = [
     ("Date", DispatchShape::Date),
     ("Label", DispatchShape::Label),
     ("Collation", DispatchShape::Collation),
@@ -28,6 +28,9 @@ const INSTANCE_CLASSES: [(&str, DispatchShape); 41] = [
     ("Duration", DispatchShape::Duration),
     ("Match", DispatchShape::Match),
     ("IO::Path", DispatchShape::IoPath),
+    // `%?RESOURCES` entries share the path rows but are not an `IO::Path`
+    // (#15818).
+    ("Distribution::Resource", DispatchShape::IoPath),
     ("IO::Path::Unix", DispatchShape::IoPath),
     ("IO::Path::Win32", DispatchShape::IoPath),
     ("IO::Path::Cygwin", DispatchShape::IoPath),
