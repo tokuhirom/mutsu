@@ -18,10 +18,14 @@ my $port = await $tap.socket-port;
 my $client = await IO::Socket::Async.connect('localhost', $port);
 my %seen = await $server-side;
 
-is $client.peer-host, '127.0.0.1', "the client's peer-host is the numeric address, not 'localhost'";
-is $client.socket-host, '127.0.0.1', "the client's socket-host is its local numeric address";
-is %seen<socket>, '127.0.0.1', "the accepted connection's socket-host is numeric, not 'localhost'";
-is %seen<peer>, '127.0.0.1', "the accepted connection's peer-host is numeric";
+# `localhost` may resolve to 127.0.0.1 or ::1 depending on the machine, so the
+# test checks the SHAPE of the answer (an IP address, never the name given).
+sub is-ip(Str $s) { so $s ~~ /^ <[0..9a..fA..F.:]>+ $/ && $s.contains(any('.', ':')) }
+
+ok is-ip($client.peer-host), "the client's peer-host is a numeric address, not 'localhost'";
+ok is-ip($client.socket-host), "the client's socket-host is its local numeric address";
+ok is-ip(%seen<socket>), "the accepted connection's socket-host is numeric, not 'localhost'";
+ok is-ip(%seen<peer>), "the accepted connection's peer-host is numeric";
 
 $client.close;
 $tap.close;
