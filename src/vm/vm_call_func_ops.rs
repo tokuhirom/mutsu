@@ -153,6 +153,35 @@ impl Interpreter {
         }
     }
 
+    /// The sub form of a class body's `my method NAME`, when a bare call of
+    /// `NAME` inside a method of that class means it. `None` unless the
+    /// reserved env key exists (a `my method` was registered and this frame's
+    /// closure chain carries it), no nearer lexical `&NAME` slot shadows it, and
+    /// the name is not a multi or proto family.
+    // Cost: O(1) -- one memoized key, one flag-word read, plus one env probe
+    // once a `my method` of that name was ever registered.
+    #[inline]
+    pub(super) fn class_lexical_method_callable(
+        &mut self,
+        code: &CompiledCode,
+        name_sym: Symbol,
+    ) -> Option<Value> {
+        if self.in_lvalue_assignment || crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        let key = dispatch_key::class_lexical_method_sym(name_sym);
+        if !crate::symbol::maybe_env_key(key) {
+            return None;
+        }
+        if !code.local_slots_of(dispatch_key::amp_sym(name_sym)).is_empty()
+            || self.has_multi_candidates_cached_sym(name_sym)
+        {
+            return None;
+        }
+        let sub = self.env().get_sym(key).cloned()?;
+        matches!(sub.view(), ValueView::Sub(_)).then_some(sub)
+    }
+
     pub(crate) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
         if let ValueView::Sub(sub) = val.view() {
             let stored = sub.name.resolve();
@@ -2269,6 +2298,26 @@ impl Interpreter {
                             ValueView::Sub(data) if data.returns_container()
                         )
                     });
+            // A class body's `my method NAME` called in its sub form from a
+            // sibling method (`NAME(self, $x)`): the registry holds the sub
+            // form but never resolves it by the short name from here, so the
+            // call used to climb the whole ladder (six full resolutions) down
+            // to the interpreter terminal's last-resort lookup of this very
+            // reserved key. A lexical beats a same-named package routine, so
+            // ask the key first. Gated by the key's env flag word, so a
+            // program with no `my method` pays one load.
+            if !lexical_rw_callable
+                && let Some(callable) = self.class_lexical_method_callable(code, name_sym)
+            {
+                let result = self.call_lexical_callable_with_sources(
+                    callable,
+                    args,
+                    &arg_sources,
+                    Some(compiled_fns),
+                );
+                self.set_pending_call_arg_sources(None);
+                return result;
+            }
             let compiled = if !self.has_proto_cached_sym(name, name_sym) && !lexical_rw_callable {
                 self.find_compiled_function_memo(
                     compiled_fns,
