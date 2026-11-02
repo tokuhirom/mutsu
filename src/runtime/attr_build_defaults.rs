@@ -274,7 +274,7 @@ impl Interpreter {
         sigil: char,
         attr_type_constraints: &std::collections::HashMap<String, String>,
     ) -> Value {
-        let class_attrs = self.collect_class_attributes(class_key);
+        let class_attrs = self.class_attributes_shared(class_key);
         let declared_type = class_attrs
             .iter()
             .find(|attr| attr.name == attr_name && attr.sigil == sigil)

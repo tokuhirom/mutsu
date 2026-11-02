@@ -1965,7 +1965,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
-                let attrs = self.collect_class_attributes(&cn);
+                let attrs = self.class_attributes_shared(&cn);
                 let public: Vec<String> = attrs
                     .iter()
                     .filter(|a| a.is_public)

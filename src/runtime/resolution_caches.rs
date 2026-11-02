@@ -376,6 +376,13 @@ pub(crate) struct ResolutionCaches {
     /// a function of the MRO and the fixed method table, so cleared with
     /// `dispatch_multi_candidate` on a registry change.
     pub(crate) builtin_method_reached: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// `Interpreter::class_attributes_shared`: the merged attribute list of a
+    /// class, shared instead of cloned per call. A function of the registry
+    /// alone, so it is exact while `class_attributes_stamp` equals the
+    /// registry's `type_stamp` and is dropped when the stamp moves.
+    pub(crate) class_attributes_shared:
+        rustc_hash::FxHashMap<Symbol, std::sync::Arc<Vec<super::ClassAttributeDef>>>,
+    pub(crate) class_attributes_stamp: u64,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
