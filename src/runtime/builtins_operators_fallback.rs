@@ -1343,7 +1343,10 @@ impl Interpreter {
         // registry path (see `BLOCK_LEXICAL_SUB_PREFIX`).
         if let Some(sub_val) = self
             .env
-            .get(&format!("{}{name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
+            .get_block_sub_sym(Symbol::intern(&format!(
+                "{}{name}",
+                crate::env::BLOCK_LEXICAL_SUB_PREFIX
+            )))
             .cloned()
         {
             return self.eval_call_on_value(sub_val, args.to_vec());
