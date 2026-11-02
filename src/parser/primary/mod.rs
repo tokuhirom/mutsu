@@ -112,7 +112,8 @@ pub(in crate::parser) fn unit_offset_of(input: &str) -> Option<usize> {
 
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
 
-/// Byte offsets of every `\n` in a source buffer, ascending.
+/// Byte offsets of every line break in a source buffer, ascending
+/// ([`crate::str_scan::line_break_offsets`]).
 ///
 /// `current_line_number` is called once per statement *attempt*, backtracking
 /// included — hundreds of thousands of times over one module parse — and used
@@ -132,7 +133,7 @@ fn newlines_before(newlines: &[usize], offset: usize) -> i64 {
 
 /// Collect the newline offsets of `source`.
 fn newline_index(source: &str) -> NewlineIndex {
-    source.match_indices('\n').map(|(i, _)| i).collect()
+    crate::str_scan::line_break_offsets(source).into()
 }
 
 /// The source buffer `$?LINE` is computed against: where it lives, how long it

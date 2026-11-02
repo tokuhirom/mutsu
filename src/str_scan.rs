@@ -168,3 +168,49 @@ mod tests {
         }
     }
 }
+
+/// Whether `c` ends a source line the way rakudo counts lines (`$?LINE`, error
+/// positions, `RakuAST::Origin::Source.original-line`): `\n`, `\r`, VT, FF,
+/// NEL (U+0085), LINE SEPARATOR (U+2028) and PARAGRAPH SEPARATOR (U+2029). A
+/// `\r\n` pair is one break; see [`line_break_offsets`].
+#[inline]
+pub(crate) fn is_line_break(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+/// The byte offset of every line break of `source`, ascending: the break
+/// character itself, and for `\r\n` the `\n` (the pair counts once). The one
+/// definition behind the parser's `$?LINE` index and the RakuAST origin's
+/// line starts (#14819).
+// Cost: O(n), n = bytes of `source`.
+pub(crate) fn line_break_offsets(source: &str) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let mut out = Vec::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'\n' | 0x0B | 0x0C => out.push(i),
+            b'\r' => {
+                if bytes.get(i + 1) != Some(&b'\n') {
+                    out.push(i);
+                }
+            }
+            0xC2 => {
+                if bytes.get(i + 1) == Some(&0x85) {
+                    out.push(i);
+                }
+            }
+            0xE2 => {
+                if bytes.get(i + 1) == Some(&0x80)
+                    && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9))
+                {
+                    out.push(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
