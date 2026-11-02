@@ -64,11 +64,21 @@ impl Interpreter {
             if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
+            // An undeclared type is `Any`, and `Any` is narrower than `Mu`: they
+            // score their MRO depth (2 and 1) like any other type, so a family
+            // `Mu`, `Any`, `Int` defers `Int` -> `Any` -> `Mu` whatever the
+            // declaration order (#15721).
             let Some(tc) = pd.type_constraint.as_deref() else {
+                total += 2;
                 continue;
             };
             let base = Self::constraint_base_for_distance(tc);
-            if base == "Any" || base == "Mu" {
+            if base == "Any" {
+                total += 2;
+                continue;
+            }
+            if base == "Mu" {
+                total += 1;
                 continue;
             }
             let resolved = if self.registry().subsets.contains_key(base) {
