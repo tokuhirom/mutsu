@@ -651,6 +651,21 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Mixin))
     }
 
+    /// How `flat`'s instance scan must treat this word, from the tag alone:
+    /// `Some(true)` an `Instance` or `Mixin` (it may be `Iterable`),
+    /// `Some(false)` a word `flat` never descends into or asks, `None` a plain
+    /// `List` or a `Slip`, whose elements the scan has to look at. The common
+    /// scalar element is one tag compare, where decoding a [`ValueView`] per
+    /// element cost ~14 ns (`List.flat`'s scan over 1M Ints, #15962).
+    #[inline]
+    pub(in crate::value) fn flat_scan_class(&self) -> Option<bool> {
+        match classify(self.0.get()) {
+            Classified::Kind(Kind::Instance | Kind::Mixin) => Some(true),
+            Classified::Kind(Kind::ArrayList | Kind::Slip | Kind::SlipItemized) => None,
+            _ => Some(false),
+        }
+    }
+
     /// Whether this word is a `Seq` — a pure tag probe.
     #[inline]
     pub(in crate::value) fn is_seq(&self) -> bool {

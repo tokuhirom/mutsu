@@ -858,6 +858,13 @@ impl Value {
         self.0.is_mixin()
     }
 
+    /// `flat`'s instance-scan class of this word from its tag alone; see
+    /// `peek::flat_scan_class`.
+    #[inline]
+    pub(crate) fn flat_scan_class(&self) -> Option<bool> {
+        self.0.flat_scan_class()
+    }
+
     /// Whether this is a `Seq`. A pure tag probe (see [`Self::is_junction_value`]).
     #[inline]
     pub(crate) fn is_seq_value(&self) -> bool {
