@@ -173,7 +173,9 @@ impl Interpreter {
         if !crate::symbol::maybe_env_key(key) {
             return None;
         }
-        if !code.local_slots_of(dispatch_key::amp_sym(name_sym)).is_empty()
+        if !code
+            .local_slots_of(dispatch_key::amp_sym(name_sym))
+            .is_empty()
             || self.has_multi_candidates_cached_sym(name_sym)
         {
             return None;
