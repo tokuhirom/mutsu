@@ -713,7 +713,8 @@ impl Interpreter {
         if let Some(constraint) = &pd.type_constraint
             && (!pd.is_type_only()
                 || (self.is_resolvable_type(constraint)
-                    && !self.type_only_enum_value_shadows_alias(pd, constraint)))
+                    && !self.type_only_enum_value_shadows_alias(pd, constraint)
+                    && !self.names_value_constant(constraint)))
         {
             let resolved_constraint = self.resolved_type_capture_name(constraint);
             // For &-sigil parameters, the type constraint specifies the

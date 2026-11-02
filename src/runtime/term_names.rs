@@ -105,8 +105,8 @@ impl Interpreter {
     pub(crate) fn names_value_constant(&self, name: &str) -> bool {
         !crate::runtime::utils::is_known_type_constraint(name)
             && self
-                .term_binding_sym(Symbol::intern(name))
-                .is_some_and(|v| !matches!(v.view(), ValueView::Package(_)))
+                .type_name_binding(name)
+                .is_some_and(|v| !matches!(v.view(), crate::value::ValueView::Package(_)))
     }
 
     /// A lexical declaration's type identity, independent of a same-named scalar.
