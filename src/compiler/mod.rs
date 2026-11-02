@@ -5185,7 +5185,7 @@ impl Compiler {
                             // real `BlockScope` instead, which also delivers the
                             // block value via the topic (matching the SetTopic the
                             // inline path emits).
-                            if Self::needs_phaser_block_scope(body) {
+                            if Self::needs_tail_block_scope(body) {
                                 self.compile_phaser_block_scope(
                                     body,
                                     PhaserBlockResult::ReturnViaTopic,

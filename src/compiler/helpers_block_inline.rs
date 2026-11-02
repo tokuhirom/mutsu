@@ -313,7 +313,7 @@ impl Compiler {
                         // real `BlockScope` (inlining would silently drop them);
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
-                        if Self::needs_phaser_block_scope(inner) {
+                        if Self::needs_tail_block_scope(inner) {
                             if matches!(stmt, Stmt::Block(_)) {
                                 self.compile_phaser_block_literal_inline(inner);
                             } else {
