@@ -54,6 +54,9 @@ mod native {
     pub(super) struct Task {
         pub(super) run: Box<dyn FnOnce() + Send + 'static>,
         pub(super) reject: Option<Rejecter>,
+        /// A task whose user code must begin in submission order
+        /// ([`super::begin_ordered_body`]): `start`.
+        pub(super) ordered: bool,
     }
 
     pub(super) struct PoolState {
@@ -67,6 +70,12 @@ mod native {
         pub(super) starting: usize,
         /// Workers inside a task that are blocked (see `enter_blocking`).
         pub(super) blocked: usize,
+        /// Tickets handed to ordered tasks as workers dequeue them: the queue
+        /// is FIFO, so ticket order is submission order.
+        pub(super) next_ticket: u64,
+        /// Ordered tasks whose user code has begun: the one holding ticket
+        /// `begun` is next.
+        pub(super) begun: u64,
     }
 
     impl PoolState {
@@ -120,6 +129,8 @@ mod native {
                     live: 0,
                     starting: 0,
                     blocked: 0,
+                    next_ticket: 0,
+                    begun: 0,
                 }),
                 Condvar::new(),
             )
@@ -167,6 +178,46 @@ mod native {
         /// Nesting depth of `enter_blocking` on this thread; only the
         /// outermost level is counted.
         static BLOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
+        /// The start-order ticket of the ordered task this worker is running
+        /// and has not yet begun.
+        static TICKET: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    /// Wakes workers waiting for their start-order turn. A condvar of its own
+    /// (over the pool lock): `submit`'s `notify_one` must reach an idle worker,
+    /// never a task waiting for its turn.
+    fn turn() -> &'static Condvar {
+        static TURN: OnceLock<Condvar> = OnceLock::new();
+        TURN.get_or_init(Condvar::new)
+    }
+
+    /// Hand the dequeued `task` its start-order ticket when it is ordered.
+    fn claim_ticket(st: &mut PoolState, task: &Task) {
+        if task.ordered {
+            TICKET.with(|c| c.set(Some(st.next_ticket)));
+            st.next_ticket += 1;
+        }
+    }
+
+    /// Start-order gate: park until every ordered task dequeued before this
+    /// one has begun its user code, then let the next one begin. A no-op for a
+    /// task that is not ordered or has begun already. Waiting is bounded: each
+    /// predecessor is a worker between its dequeue and this same call (or the
+    /// task's end), so it never depends on a later task.
+    pub(super) fn begin_ordered_body() {
+        let Some(ticket) = TICKET.with(|c| c.take()) else {
+            return;
+        };
+        // The wait touches no `Gc` state, so it counts quiescent: a predecessor
+        // that triggers a stop-the-world must not wait for this parked worker.
+        crate::gc::block_quiescent(|| {
+            let mut st = lock_pool();
+            while st.begun != ticket {
+                st = turn().wait(st).unwrap_or_else(PoisonError::into_inner);
+            }
+            st.begun += 1;
+        });
+        turn().notify_all();
     }
 
     /// Grow the pool per [`PoolState::growth`] until it says to stop, and
@@ -242,6 +293,9 @@ mod native {
             // a panicking dedicated thread (the panic is already turned into a
             // broken Promise by `guard_worker_panic` where that matters).
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task.run));
+            // A task that ended without beginning (it panicked first) still
+            // passes its turn on.
+            begin_ordered_body();
             // Task end is a yield (ADR-0105 D2): deliver the wake-ups this
             // task deferred. Deferred starts need nothing: this worker is
             // about to dequeue them itself.
@@ -266,6 +320,7 @@ mod native {
             let cvar = &pool().1;
             let mut st = lock_pool();
             if let Some(task) = st.queue.pop_front() {
+                claim_ticket(&mut st, &task);
                 return Some(task);
             }
             st.idle += 1;
@@ -273,6 +328,7 @@ mod native {
             loop {
                 if let Some(task) = st.queue.pop_front() {
                     st.idle -= 1;
+                    claim_ticket(&mut st, &task);
                     return Some(task);
                 }
                 if st.live <= keep_alive_floor() {
@@ -410,7 +466,7 @@ pub(crate) fn enter_blocking() -> BlockingGuard {
 /// diagnostic on stderr; a task whose waiter must hear about that uses
 /// [`submit_or_reject`].
 pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
-    submit_task(on_fresh_stack(task), None);
+    submit_task(on_fresh_stack(task), None, false);
 }
 
 /// Box `task` to run as a stack of its own (`$*STACK-ID`, see
@@ -433,11 +489,34 @@ pub(crate) fn submit_or_reject(
     task: impl FnOnce() + Send + 'static,
     reject: impl FnOnce(&SpawnError) + Send + 'static,
 ) {
-    submit_task(on_fresh_stack(task), Some(Box::new(reject)));
+    submit_task(on_fresh_stack(task), Some(Box::new(reject)), false);
+}
+
+/// [`submit_or_reject`] for a task whose user code begins in submission order
+/// (`start`): two `start` blocks submitted back to back while workers are idle
+/// reach their first statement in that order, as on rakudo, though their bodies
+/// still run concurrently. The task calls [`begin_ordered_body`] right before
+/// its user code.
+pub(crate) fn submit_ordered_or_reject(
+    task: impl FnOnce() + Send + 'static,
+    reject: impl FnOnce(&SpawnError) + Send + 'static,
+) {
+    submit_task(on_fresh_stack(task), Some(Box::new(reject)), true);
+}
+
+/// Start-order gate of an ordered pool task: park until the ordered tasks
+/// submitted before this one have begun their user code, then let the next one
+/// begin. A no-op off the pool and on wasm32 (the cooperative scheduler runs
+/// tasks in order).
+// Cost: O(1) per call; parks while earlier ordered tasks are still between
+// their dequeue and their own call (a few instructions each).
+pub(crate) fn begin_ordered_body() {
+    #[cfg(not(target_arch = "wasm32"))]
+    native::begin_ordered_body();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, reject: Option<Rejecter>) {
+fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, reject: Option<Rejecter>, ordered: bool) {
     use crate::runtime::builtins_system::{StackPolicy, try_spawn_user_thread};
     if !native::pool_enabled() {
         // Thread-per-task: no queue to wait in, so a refused thread is
@@ -459,7 +538,11 @@ fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, reject: Option<Rejecter>
     let defer = {
         let mut st = native::lock_pool();
         let defer = from_worker && st.idle == 0;
-        st.queue.push_back(native::Task { run, reject });
+        st.queue.push_back(native::Task {
+            run,
+            reject,
+            ordered,
+        });
         defer
     };
     native::pool().1.notify_one();
@@ -489,7 +572,7 @@ pub(crate) fn defer_until_yield(
 
 /// wasm32: the cooperative scheduler is already a pool of one — queue the task.
 #[cfg(target_arch = "wasm32")]
-fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, _reject: Option<Rejecter>) {
+fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, _reject: Option<Rejecter>, _ordered: bool) {
     crate::runtime::builtins_system::spawn_user_thread("pool", run);
 }
 

@@ -406,7 +406,7 @@ impl Interpreter {
         // grows instead of deadlocking. If no thread can be had for it at all
         // (ADR-0123), the promise breaks with a catchable X::AdHoc.
         let reject_promise = promise.clone();
-        crate::runtime::worker_pool::submit_or_reject(
+        crate::runtime::worker_pool::submit_ordered_or_reject(
             move || {
                 // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
                 // block on it directly instead of wrapping it in a sub-VM.
@@ -417,8 +417,12 @@ impl Interpreter {
                 // user code becomes a catchable broken-Promise error (X::AdHoc)
                 // instead of silently killing the thread (hanging `await`) or
                 // aborting the process.
-                let result =
-                    crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
+                // Two `start` blocks submitted back to back begin in that order
+                // (#15967): wait for the earlier ones to reach this point.
+                let result = crate::vm::guard_worker_panic(|| {
+                    crate::runtime::worker_pool::begin_ordered_body();
+                    thread_interp.call_value(block, vec![])
+                });
                 // Transfer any handles opened by this thread back to the awaiter.
                 let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
                 let new_ids: Vec<usize> = thread_interp
