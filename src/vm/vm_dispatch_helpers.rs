@@ -922,7 +922,13 @@ impl Interpreter {
                 .as_deref()
                 .or(compiled_fns)
                 .unwrap_or(&empty_fns);
-            return self.run_decl_code(&cc, fns);
+            // Lexical to the unit that declared it: bareword visibility
+            // (`module_name_hidden_here`) follows the executing unit, not the
+            // unit of whoever calls `.build`.
+            let entered = self.enter_source_file(data.source_file.as_deref());
+            let result = self.run_decl_code(&cc, fns);
+            self.leave_source_file(entered);
+            return result;
         }
 
         // Fast path: Sub with compiled_code
