@@ -195,6 +195,14 @@ fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
     })))
 }
 
+/// Rakudo's `Exception.Str` placeholder for an exception with no usable
+/// message: the class's last name part in parentheses.
+// Cost: O(|class|), one interned lookup.
+pub(crate) fn no_message_text(class: &str) -> String {
+    let short = crate::qualified::unqualified_part(crate::symbol::Symbol::intern(class));
+    format!("Something went wrong in ({})", short.as_str())
+}
+
 /// `Exception.Str`: the message.
 // Cost: O(m), m = chars of the message.
 fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {

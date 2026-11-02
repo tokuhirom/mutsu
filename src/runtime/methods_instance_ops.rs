@@ -1037,10 +1037,7 @@ impl Interpreter {
                                         format!("Unthrown {cn} with no message")
                                     }
                                 }
-                                Err(_) => {
-                                    let short = cn.rsplit("::").next().unwrap_or(&cn);
-                                    format!("Something went wrong in ({short})")
-                                }
+                                Err(_) => crate::builtins::method_table::exception_no_message_text(&cn),
                             };
                         return Ok(with_backtrace(&target, msg));
                     } else if let Some(msg) = attributes.as_map().get("message")
