@@ -47,6 +47,7 @@ pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
 pub(crate) mod label;
+pub(crate) mod parameter;
 pub(crate) mod rakuast_node;
 mod rakuast_visit;
 mod rakuast_walk;
@@ -98,6 +99,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     routine::ROWS,
     failure::ROWS,
     signature::ROWS,
+    parameter::ROWS,
     stash::ROWS,
     wrapper_role::ROWS,
     supply::ROWS,
