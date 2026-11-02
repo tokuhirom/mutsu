@@ -7,12 +7,12 @@
 //! an `OnlyStar`. The parser keeps the first as the `Whatever` term and the
 //! second as the onlystar dispatch call (`Expr::onlystar_dispatch`).
 
-use super::view::{leaf_field, routine_node, unsupported};
 use super::lower::{
     call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
     routine_return_type, signature_positional_params,
 };
 use super::routine_traits::IsTraits;
+use super::view::{leaf_field, routine_node, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::scope::NameScope;

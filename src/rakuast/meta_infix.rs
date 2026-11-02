@@ -16,10 +16,10 @@
 //! left-nested [`Expr::MetaOp`], so the view flattens the chain and the
 //! lowering folds the operands back.
 
-use super::view::{view_expr, node_field, plain_infix, unsupported as unsupported_expr};
 use super::lower::{
     list_field, lower_expr, named_child, positional_leaf, rakuast_node_of, unsupported,
 };
+use super::view::{node_field, plain_infix, unsupported as unsupported_expr, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

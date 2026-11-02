@@ -1,7 +1,7 @@
 //! Written delimiters of attribute trait arguments.
 
-use super::super::view::{view_expr, node_field, statement_expression};
 use super::super::lower::{lower_expr, named_child, named_child_or_positional};
+use super::super::view::{node_field, statement_expression, view_expr};
 use super::super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, spelled::Spelling};
 use crate::scope::NameScope;

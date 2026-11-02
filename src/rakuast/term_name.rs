@@ -1,8 +1,8 @@
 //! Term names preserve an imported source binding through the model boundary.
 
-use super::view::{name_from_identifier, node_field};
 use super::lower::{lower_expr, named_child_or_positional, term_identifier_expr, unsupported};
 use super::name_parts::{self, NameShape};
+use super::view::{name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

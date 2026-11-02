@@ -24,8 +24,8 @@
 //! like a positional one.
 
 use super::view::{
-    build_type_node, view_expr, implicit_parameter_type, node_field, split_sigil,
-    type_capture_name, type_capture_node, type_captures_field, unsupported,
+    build_type_node, implicit_parameter_type, node_field, split_sigil, type_capture_name,
+    type_capture_node, type_captures_field, unsupported, view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, ParamTarget};

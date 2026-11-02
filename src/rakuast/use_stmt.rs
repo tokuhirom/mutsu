@@ -12,9 +12,9 @@
 //! while raku has a single `argument` expression: one `ColonPair::True` per
 //! tag, a comma list for several. Both directions translate between the two.
 
-use super::view::{view_expr, leaf_field, name_from_identifier, node_field, plain_infix};
 use super::lower::{leaf_str, list_field, lower_expr, named_child, positional_leaf};
 use super::name_parts::{self, NameShape};
+use super::view::{leaf_field, name_from_identifier, node_field, plain_infix, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
@@ -305,10 +305,9 @@ pub(super) fn view_require(
     };
     match rest {
         [] => {}
-        [import_list] => node.fields.push(node_field(
-            Some("argument"),
-            view_expr(names, import_list)?,
-        )),
+        [import_list] => node
+            .fields
+            .push(node_field(Some("argument"), view_expr(names, import_list)?)),
         _ => return Ok(None),
     }
     Ok(Some(node))
@@ -628,8 +627,7 @@ fn take_proto_operand(
                 let Stmt::ProtoDecl { name, .. } = &proto else {
                     unreachable!("proto lowerer")
                 };
-                *operand =
-                    Value::rakuast(Box::new(super::view::var_lexical("&", &name.resolve())));
+                *operand = Value::rakuast(Box::new(super::view::var_lexical("&", &name.resolve())));
                 return Ok(Some(proto));
             }
         }

@@ -9,9 +9,9 @@
 //! registration (`ast::package_header`). [`apply`] turns the parser's header
 //! into those fields, [`strip`] takes them off a node again for the lowering.
 
-use super::view::{leaf_field, node_field, unsupported};
 use super::lower::{list_field, named_child};
 use super::routine_traits::{IsTraits, export_argument, trait_is};
+use super::view::{leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::package_header::Header;

@@ -16,8 +16,8 @@
 //! The field is part of the model but not of the constructor form: Rakudo's
 //! `.raku` shows no source text either.
 
-use super::view::{block_node, node_field, statement_expression};
 use super::lower::{lower_block, named_child_or_positional};
+use super::view::{block_node, node_field, statement_expression};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
 use crate::scope::NameScope;

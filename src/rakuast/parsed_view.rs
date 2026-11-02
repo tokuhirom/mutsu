@@ -5,8 +5,8 @@
 //! statement.
 
 use super::view::{
-    block_node, view_expr, label_fields, loop_setup_node, node_field, pointy_block,
-    signature_block_node, statement_expression, topic_block_node,
+    block_node, label_fields, loop_setup_node, node_field, pointy_block, signature_block_node,
+    statement_expression, topic_block_node, view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
@@ -112,12 +112,12 @@ pub(super) fn parsed_node(
             "done",
             std::slice::from_ref(value),
         )?),
-        ParsedStmt::CallAssignList { head, items } => statement_expression(
-            super::decl_tail::view_call_assign_list(names, head, items)?,
-        ),
-        ParsedStmt::CommaDecls(declarations) => statement_expression(
-            super::view::comma_declarations_node(names, declarations)?,
-        ),
+        ParsedStmt::CallAssignList { head, items } => {
+            statement_expression(super::decl_tail::view_call_assign_list(names, head, items)?)
+        }
+        ParsedStmt::CommaDecls(declarations) => {
+            statement_expression(super::view::comma_declarations_node(names, declarations)?)
+        }
         ParsedStmt::ImmediateCall { decl, args } => {
             statement_expression(super::immediate_call::view_node(names, decl, args)?)
         }
@@ -200,14 +200,9 @@ pub(super) fn parsed_expr_node(
                 index,
                 is_positional: true,
                 ..
-            } => super::view::subscript_node(
-                names,
-                target,
-                index,
-                true,
-                Some(&a.source),
-                Vec::new(),
-            ),
+            } => {
+                super::view::subscript_node(names, target, index, true, Some(&a.source), Vec::new())
+            }
             crate::ast::Expr::Index {
                 target,
                 index,
@@ -215,13 +210,7 @@ pub(super) fn parsed_expr_node(
                 spelling: crate::ast::IndexSpelling::Angle,
                 ..
             } if super::view::angle_key_text(index).is_some() => {
-                super::view::angle_subscript_node(
-                    names,
-                    target,
-                    index,
-                    Some(&a.source),
-                    Vec::new(),
-                )
+                super::view::angle_subscript_node(names, target, index, Some(&a.source), Vec::new())
             }
             // `@a[|| @i] = 7`: one (spread) dimension folds the same way.
             crate::ast::Expr::MultiDimIndex {
@@ -338,18 +327,10 @@ fn compound_assignment_node(
             left: Box::new(a.target.clone()),
             right: Box::new(a.source.clone()),
         };
-        return super::meta_infix::view_bracketed_assignment(
-            names,
-            &written,
-            usize::from(depth),
-        );
+        return super::meta_infix::view_bracketed_assignment(names, &written, usize::from(depth));
     }
-    let node = super::view::compound_assignment_infix(
-        names,
-        &a.target,
-        &compound_spelling(a),
-        &a.source,
-    )?;
+    let node =
+        super::view::compound_assignment_infix(names, &a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
 }
 

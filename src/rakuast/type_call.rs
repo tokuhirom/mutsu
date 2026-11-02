@@ -9,8 +9,8 @@
 //! marker on its `Call::Term`, which the lowering reads back; a hand-built
 //! `Call::Term` has none and stays a call on the type object.
 
-use super::view::{arg_list, node_field};
 use super::lower::arg_exprs;
+use super::view::{arg_list, node_field};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword};
 use crate::ast::Expr;
 use crate::scope::NameScope;

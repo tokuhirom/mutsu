@@ -4,8 +4,8 @@
 //! and a bare `\$x` / `\3` is `Term::Capture` over the term itself. The parser
 //! keeps both as [`Expr::CaptureLiteral`], with a flag for the parentheses.
 
-use super::view::{arg_list, view_expr, node_field};
 use super::lower::{arg_list_exprs, lower_expr, named_child_or_positional};
+use super::view::{arg_list, node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

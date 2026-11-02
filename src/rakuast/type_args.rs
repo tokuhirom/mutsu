@@ -1,7 +1,7 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
-use super::view::{view_expr, is_simple_type, node_field, unsupported};
 use super::type_build::{MAX_TYPE_DEPTH, application_open, build_type_node_at};
+use super::view::{is_simple_type, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

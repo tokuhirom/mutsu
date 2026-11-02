@@ -7,8 +7,8 @@
 //! (`ast::immediate_call::expand`), so the routine is declared in the
 //! enclosing scope as the parsed program declares it.
 
-use super::view::{arg_list, view_stmt, expression_of, node_field};
 use super::lower::{arg_exprs, lower_stmt, named_child, unsupported};
+use super::view::{arg_list, expression_of, node_field, view_stmt};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;

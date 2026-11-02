@@ -15,8 +15,8 @@
 //! `Var::PositionalCapture`, and a `$/[0]` written out in a string does too
 //! (rakudo renders that one as an index of `$/`).
 
-use super::view::{leaf_field, node_field, word_quote};
 use super::lower::{leaf_str, named_child_or_positional, unsupported};
+use super::view::{leaf_field, node_field, word_quote};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};

@@ -16,8 +16,8 @@
 //! renders as a call. A `%(...)` of literal pairs is an [`Expr::Hash`] instead
 //! (see `hash_literal`).
 
-use super::view::{view_expr, node_field, statement_expression};
 use super::lower::{lower_expr, named_child_or_positional, unsupported};
+use super::view::{node_field, statement_expression, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{ContextKind, Expr, Stmt};
 use crate::scope::NameScope;
@@ -238,10 +238,7 @@ pub(super) fn lower(
 /// An [`Expr::Itemize`] (`$@a`, `$%h`, `$[1, 2]`) as `Contextualizer::Item`
 /// over the term itself, which holds no `StatementSequence`.
 // Cost: O(n), n = nodes of the term.
-pub(super) fn view_itemize(
-    names: &NameScope,
-    inner: &Expr,
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_itemize(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if !matches!(
         inner,
         Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BracketArray(..)
@@ -259,10 +256,7 @@ pub(super) fn view_itemize(
 /// `$[1, 2]`) as `Contextualizer::Item` over the composer, which holds no
 /// `StatementSequence`; the parser spells it as an `.item` call.
 // Cost: O(n), n = nodes of the composer.
-pub(super) fn view_item_call(
-    names: &NameScope,
-    inner: &Expr,
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_item_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
@@ -276,10 +270,7 @@ pub(super) fn view_item_call(
 /// rebuild the re-reading contextualizer instead of an explicit `.list` call,
 /// which consumes a `Seq` (#9930).
 // Cost: O(n), n = nodes of the term.
-pub(super) fn view_list_call(
-    names: &NameScope,
-    inner: &Expr,
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_list_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerList,

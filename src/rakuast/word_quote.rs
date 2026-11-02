@@ -9,10 +9,10 @@
 //! (`Spelling::InterpolatingWords`), so the segments are re-derived here; the
 //! lowering splits them back into words and hands them to `word_list::lower_quotewords`.
 
-use super::view::{view_expr, interp_segment, node_field};
 use super::lower::{
     list_field, lower_expr, named_child_or_positional, positional_leaf, unsupported,
 };
+use super::view::{interp_segment, node_field, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::parser::QuoteWordsPart;

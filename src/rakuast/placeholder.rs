@@ -7,8 +7,8 @@
 //! every positional kind is a `VarDeclaration::Placeholder::Positional`, the
 //! twigil `:` a `Placeholder::Named`. Measured on rakudo 2026.09.
 
-use super::view::leaf_field;
 use super::lower::{positional_leaf, unsupported};
+use super::view::leaf_field;
 use super::{RakuAstClass, RakuAstNode};
 pub(super) use crate::ast::placeholders::is_placeholder_name;
 use crate::value::{RuntimeError, Value, ValueView};

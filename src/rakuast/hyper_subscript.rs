@@ -1,7 +1,7 @@
 //! Hyper subscripts retain their operator identity instead of becoming an
 //! explicit AT-POS/AT-KEY method call. Measured against Rakudo 2026.07.
-use super::view::{view_expr, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
+use super::view::{node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

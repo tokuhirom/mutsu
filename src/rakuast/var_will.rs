@@ -3,11 +3,11 @@
 //! the parser spells as the declaration followed by one phaser per trait
 //! ([`crate::ast::var_will`]).
 
-use super::view::{
-    view_stmt, expression_of, leaf_field, node_field, signature_block_node,
-    statement_expression, unsupported,
-};
 use super::lower::{leaf_str, lower_block, named_child, rakuast_node_of};
+use super::view::{
+    expression_of, leaf_field, node_field, signature_block_node, statement_expression, unsupported,
+    view_stmt,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{PhaserKind, Stmt};
 use crate::scope::NameScope;

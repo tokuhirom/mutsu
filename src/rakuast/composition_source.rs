@@ -4,7 +4,7 @@
 //! infix and its original operand order.
 
 use super::RakuAstNode;
-use super::view::{view_expr, unsupported};
+use super::view::{unsupported, view_expr};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
 use crate::value::RuntimeError;

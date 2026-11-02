@@ -1,7 +1,7 @@
 //! Preserve the parser's runtime choices for names supplied by EXPORT hooks.
 
-use super::view::{view_expr, view_literal, leaf_field};
 use super::lower::{leaf_str, lower_expr, unsupported};
+use super::view::{leaf_field, view_expr, view_literal};
 use super::{RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -9,7 +9,10 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
 // Cost: O(n), n = nodes of the fallback expression.
-pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+pub(super) fn view_node(
+    names: &NameScope,
+    expr: &Expr,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
     match expr {
         Expr::ExportTermOrCall { name, call } => Some(view_expr(names, call).map(|mut node| {
             node.fields.push(leaf_field(

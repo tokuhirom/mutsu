@@ -14,8 +14,8 @@
 //! grammar, so its `WithWhitespace` disappears with the atom: the public node
 //! is the bare interpolation and the hidden atom carries the wrapper.
 
-use super::view::{leaf_field, node_field, regex_node};
 use super::lower::{lower_regex_node, named_child};
+use super::view::{leaf_field, node_field, regex_node};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::regex_tree::{RegexExtension, RegexNode};
 use crate::scope::NameScope;

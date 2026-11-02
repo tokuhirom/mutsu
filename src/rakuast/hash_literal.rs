@@ -15,8 +15,8 @@
 //! The parser builds both as one [`Expr::Hash`] and records which spelling the
 //! source wrote as its [`HashSpelling`]; both directions read and restore it.
 
-use super::view::{view_expr, leaf_field, node_field, plain_infix, statement_expression};
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
+use super::view::{leaf_field, node_field, plain_infix, statement_expression, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, HashSpelling};
 use crate::scope::NameScope;
@@ -124,10 +124,7 @@ pub(super) fn object_hash_node(
     if args.len() == 1 {
         fields.push(node_field(None, view_expr(names, &args[0])?));
     } else if !args.is_empty() {
-        fields.push(node_field(
-            None,
-            super::view::comma_list_node(names, args)?,
-        ));
+        fields.push(node_field(None, super::view::comma_list_node(names, args)?));
     }
     fields.push(leaf_field(Some("object-hash"), Value::truth(true)));
     Ok(RakuAstNode {

@@ -1,7 +1,7 @@
 //! The statements of a compilation unit or a block, each as its RakuAST node
 //! (`RakuAST::StatementList`), with the carried ones as leaves.
 
-use super::view::{view_stmt, node_field, unit_package_taking};
+use super::view::{node_field, unit_package_taking, view_stmt};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, bareword, origin};
 use crate::ast::Stmt;
 use crate::scope::NameScope;

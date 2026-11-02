@@ -15,10 +15,8 @@
 //! which lowers to the bare word the compiler reads as the completion unless
 //! a lexical `&done` shadows it.
 
-use super::view::{
-    block_node, blockoid, view_expr, name_from_identifier, node_field, true_field,
-};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
+use super::view::{block_node, blockoid, name_from_identifier, node_field, true_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, RoutineDeclarator, Stmt};
 use crate::scope::NameScope;
@@ -115,10 +113,7 @@ pub(super) fn view_whenever(
 
 /// `supply { body }` -> `StatementPrefix::Supply(Block)`.
 // Cost: O(n), n = size of the body.
-pub(super) fn view_supply(
-    names: &NameScope,
-    body: &[Stmt],
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementPrefixSupply,

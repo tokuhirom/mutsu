@@ -16,11 +16,11 @@
 //! [`postcircumfix_node`] is their view and [`lower`] the one lowering, which expands them
 //! into the shapes the compiler executes (`ast::subscript_adverb::expand`).
 
-use super::view::{
-    angle_key_text, angle_subscript_node, view_expr, leaf_field, splat_dimensions,
-    subscript_dims_node, unsupported as view_unsupported,
-};
 use super::lower::{list_field, lower_expr, unsupported};
+use super::view::{
+    angle_key_text, angle_subscript_node, leaf_field, splat_dimensions, subscript_dims_node,
+    unsupported as view_unsupported, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::subscript_adverb;

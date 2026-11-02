@@ -16,13 +16,13 @@
 //! [`Expr::HyperMethodCallDynamic`]. A `.^$n()` loses its `^` in rakudo's tree,
 //! and a quoted name is a `Call::QuotedMethod` (see `view.rs`).
 
-use super::view::{
-    arg_list, view_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
-    unsupported as unsupported_expr,
-};
 use super::lower::{
     arg_exprs, arg_list_exprs, call_name_str, dispatch_modifier, lower_expr, named_child,
     unsupported,
+};
+use super::view::{
+    arg_list, leaf_field, name_from_identifier, node_field, postfix_operand,
+    unsupported as unsupported_expr, view_expr,
 };
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
@@ -109,12 +109,7 @@ pub(super) fn call_assign_postfix(
             modifier: None,
             quoted: true,
             ..
-        } => super::view::call_quoted_method_expr(
-            names,
-            view_expr(names, name_expr)?,
-            args,
-            None,
-        ),
+        } => super::view::call_quoted_method_expr(names, view_expr(names, name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),

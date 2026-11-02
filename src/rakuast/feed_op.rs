@@ -10,8 +10,8 @@
 //! `==>` (the source is the inner feed) and right-nested for `<==` (the
 //! source is the inner feed too, but written last).
 
-use super::view::{view_expr, node_field, unsupported as unsupported_expr};
 use super::lower::{list_field, lower_expr, positional_leaf, rakuast_node_of, unsupported};
+use super::view::{node_field, unsupported as unsupported_expr, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

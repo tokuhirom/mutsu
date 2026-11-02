@@ -18,8 +18,8 @@
 //! normalizes it again, which leaves a normalized text unchanged, and so
 //! restores the same value.
 
-use super::view::quoted_string;
 use super::lower::{list_field, positional_leaf};
+use super::view::quoted_string;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, UniData, Value, ValueView};

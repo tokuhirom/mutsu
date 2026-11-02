@@ -98,10 +98,7 @@ fn view_element(names: &NameScope, element: &CharClassElement) -> Result<Value, 
 
 /// `<Latin>` as a words `QuotedString`, `(1)` as a parenthesised expression.
 // Cost: O(|predicate|).
-fn view_predicate(
-    names: &NameScope,
-    predicate: &PropertyPredicate,
-) -> Result<Value, RuntimeError> {
+fn view_predicate(names: &NameScope, predicate: &PropertyPredicate) -> Result<Value, RuntimeError> {
     match predicate {
         PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::view::word_quote(
             text.trim(),

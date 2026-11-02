@@ -11,10 +11,10 @@ use super::method_assign_decl::call_method;
 use super::nested_methods::unhoist;
 use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
-pub(super) use super::regex_view::regex_node;
 use super::regex_declaration::{
     view_node as regex_declaration, with_body as regex_declaration_with_body,
 };
+pub(super) use super::regex_view::regex_node;
 pub(super) use super::routine_source::routine_node;
 use super::source_identifier::{named_routine_call, written_identifier, written_variable};
 use super::{
@@ -432,8 +432,9 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             bare,
         } => {
             if let Some(condition) = condition {
-                let mut statement = super::phaser_condition::view_node(names, kind, body, condition)?
-                    .ok_or_else(|| unsupported("PRE/POST phaser condition"))?;
+                let mut statement =
+                    super::phaser_condition::view_node(names, kind, body, condition)?
+                        .ok_or_else(|| unsupported("PRE/POST phaser condition"))?;
                 if *bare {
                     super::bare_prefix::unblock_phaser(&mut statement);
                 }
@@ -1196,9 +1197,9 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 is_our: *is_our,
             },
         )?))),
-        Stmt::React { body, blorst } => Ok(Some(statement_expression(
-            super::react::view_react(names, body, *blorst)?,
-        ))),
+        Stmt::React { body, blorst } => Ok(Some(statement_expression(super::react::view_react(
+            names, body, *blorst,
+        )?))),
         Stmt::Whenever {
             supply,
             params,
@@ -1290,8 +1291,8 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         // inner statement and prepend its `labels` field — raku renders labels
         // first, matching the inline-label loops of slice 17.
         Stmt::Label { name, stmt } => {
-            let mut node = view_stmt(names, stmt)?
-                .ok_or_else(|| unsupported("labelled empty statement"))?;
+            let mut node =
+                view_stmt(names, stmt)?.ok_or_else(|| unsupported("labelled empty statement"))?;
             let mut fields = label_fields(&Some(name.clone()));
             fields.append(&mut node.fields);
             node.fields = fields;
@@ -3729,8 +3730,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             // `lazy EXPR` / `hyper EXPR` / `race EXPR` and `$[1, 2]` / `${...}`:
             // sugar for the call, with a node of its own.
             if *sugar && args.is_empty() && modifier.is_none() {
-                if let Some(prefix) =
-                    super::prefix_call::view_method(names, name.as_str(), target)
+                if let Some(prefix) = super::prefix_call::view_method(names, name.as_str(), target)
                 {
                     return prefix;
                 }
@@ -3816,7 +3816,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // `Contextualizer::Hash`, by the spelling the parser recorded.
         Expr::Hash(pairs, spelling) => hash_literal::view_node(names, pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
-        Expr::Contextualizer { kind, inner } => super::contextualizer::view_node(names, *kind, inner),
+        Expr::Contextualizer { kind, inner } => {
+            super::contextualizer::view_node(names, *kind, inner)
+        }
         // `$a minmax $b`, `$a foo $b` (a declared `infix:<foo>`), `$a ff $b`:
         // an ordinary application of an `Infix`.
         Expr::InfixFunc {
@@ -3856,10 +3858,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             // `[EXPR for LIST]`: the parser holds the modified statement as the
             // one element; rakudo has it as the composer's statement.
             let statement = match items.as_slice() {
-                [Expr::DoStmt(stmt)] if is_modifier_statement(stmt) => {
-                    view_stmt(names, stmt)?
-                        .ok_or_else(|| unsupported("empty statement in an array composer"))?
-                }
+                [Expr::DoStmt(stmt)] if is_modifier_statement(stmt) => view_stmt(names, stmt)?
+                    .ok_or_else(|| unsupported("empty statement in an array composer"))?,
                 // `[$x]` holds the element itself; `[$x,]` a one-operand comma
                 // list (which is why it does not flatten).
                 [single] if !*trailing_comma => statement_expression(view_expr(names, single)?),
@@ -4895,9 +4895,7 @@ fn parameter(
             fields.push(leaf_field(Some("capture-invocant"), Value::truth(true)));
         }
         match &pd.default {
-            Some(default) => {
-                fields.push(node_field(Some("default"), view_expr(names, default)?))
-            }
+            Some(default) => fields.push(node_field(Some("default"), view_expr(names, default)?)),
             None => fields.push(RakuAstField {
                 name: Some("optional"),
                 value: RakuAstFieldValue::Node(Value::truth(false)),

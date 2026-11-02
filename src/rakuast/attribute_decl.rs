@@ -1,19 +1,22 @@
 //! Attribute declarations retain value types and keyed hash shapes independently.
 
-use super::view::{
-    Initializer, view_expr, node_field, statement_expression, unsupported as unsupported_source,
-    var_declaration,
-};
 use super::lower::{
     child_node, leaf_str, lower_expr, named_child, named_child_or_positional, positional_leaf,
     simple_type_name, unsupported,
+};
+use super::view::{
+    Initializer, node_field, statement_expression, unsupported as unsupported_source,
+    var_declaration, view_expr,
 };
 use super::{RakuAstClass, RakuAstNode, attribute};
 use crate::ast::Stmt;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
-pub(super) fn view_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn view_node(
+    names: &NameScope,
+    stmt: &Stmt,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Stmt::HasDecl {
         name,
         is_public,

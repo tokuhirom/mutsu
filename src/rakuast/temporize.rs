@@ -8,12 +8,12 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
-use super::view::{view_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
     lower_dotty_assign, lower_expr, lower_var_decl, named_child, named_child_or_positional,
     positional_leaf, unsupported,
 };
+use super::view::{leaf_field, node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::temporize::{self, Assigned, Target, Temporized};
 use crate::ast::{Expr, Stmt};

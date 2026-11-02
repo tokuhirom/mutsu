@@ -18,10 +18,10 @@
 //! ([`enum_variants_from_body`]), so a round-tripped enum takes the same path
 //! the parsed one did.
 
-use super::view::{
-    view_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
-};
 use super::lower::{list_field, lower_expr, named_child, positional_leaf, unsupported};
+use super::view::{
+    leaf_field, node_field, plain_infix, quoted_string, statement_expression, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{EnumVariantForm, Expr};
 use crate::parser::enum_variants_from_body;

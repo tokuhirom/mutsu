@@ -19,8 +19,8 @@
 //! parse time, and the parser records it as a bare `(NAME, None)` entry. Any
 //! other trait stays refused.
 
-use super::view::{name_from_identifier, node_field};
 use super::lower::{named_child, positional_leaf};
+use super::view::{name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

@@ -44,7 +44,10 @@ pub(super) fn view_node(
         None,
         form.anonymous,
     )?;
-    decl_traits::insert(&mut decl, decl_traits::view_node(names, &form.custom_traits)?);
+    decl_traits::insert(
+        &mut decl,
+        decl_traits::view_node(names, &form.custom_traits)?,
+    );
     if let Some(dims) = &form.shape {
         super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }

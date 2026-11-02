@@ -24,13 +24,13 @@
 //! list is a scope, and an `infix:<…>` sub or `&infix:<…>` variable declared in
 //! it counts for the rest of that list and for what is nested in it.
 
-use super::view::{
-    view_expr, leaf_field, node_field, plain_infix, unsupported as unsupported_expr,
-};
 use super::lower::{
     list_field, lower_expr, named_child, positional_leaf, rakuast_node_of, unsupported,
 };
 use super::meta_infix::is_list_assoc;
+use super::view::{
+    leaf_field, node_field, plain_infix, unsupported as unsupported_expr, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

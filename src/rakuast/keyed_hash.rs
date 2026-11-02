@@ -14,11 +14,10 @@
 //! records `crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE` when it supplied the
 //! `Any` value type itself, so `my %h{Str}` and `my Any %h{Str}` stay apart.
 
-use super::view::{
-    build_type_node, view_expr, node_field, statement_expression,
-    unsupported as unsupported_source,
-};
 use super::lower::unsupported;
+use super::view::{
+    build_type_node, node_field, statement_expression, unsupported as unsupported_source, view_expr,
+};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::keyed_hash::join;

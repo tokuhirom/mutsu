@@ -12,7 +12,7 @@
 //! turns the nodes into the canonical name again by the same rule the parser
 //! applies to the source.
 
-use super::view::{view_expr, node_field};
+use super::view::{node_field, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

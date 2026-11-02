@@ -10,14 +10,14 @@
 //! is a `DoesDecl` too, told apart by its `also` flag. Lowering rebuilds the
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
-use super::view::{
-    blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
-};
 use super::lower::{
     lower_package_body, lower_signature_parameters, lower_stmts, named_child,
     named_child_or_positional, package_head, positional_leaf,
 };
 use super::routine_traits::IsTraits;
+use super::view::{
+    blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamDef, Stmt};
 use crate::scope::NameScope;
@@ -40,7 +40,10 @@ pub(super) struct RoleDecl<'a> {
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
-pub(super) fn view_node(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(
+    names: &NameScope,
+    role: RoleDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
     // Any plain trait name is a trait of the program's own (`is array_type(T)`),
     // rendered by name.
@@ -51,9 +54,7 @@ pub(super) fn view_node(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAst
         .any(|(t, _)| !super::decl_traits::is_class_trait(t) || t == "repr")
         || role.is_export != !role.export_tags.is_empty()
     {
-        return Err(unsupported(
-            "role with a trait the view does not render",
-        ));
+        return Err(unsupported("role with a trait the view does not render"));
     }
     // The fallback parameter parser (defaults such as `::T = my role { }`)
     // names its parameters differently from the signature it records.

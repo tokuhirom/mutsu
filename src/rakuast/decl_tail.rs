@@ -12,11 +12,11 @@
 //! ([`crate::ast::decl_tail`]), so the view puts the head back in place of
 //! that re-read, and lowering takes it out again.
 
-use super::view::{
-    anonymous_declaration, view_expr, view_stmt, expression_of, node_field, plain_infix,
-    split_sigil, var_lexical,
-};
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
+use super::view::{
+    anonymous_declaration, expression_of, node_field, plain_infix, split_sigil, var_lexical,
+    view_expr, view_stmt,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;

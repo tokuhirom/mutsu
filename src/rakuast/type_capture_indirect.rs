@@ -6,8 +6,8 @@
 //! `::(EXPR)` in the parameter's `type_constraint`, so the view reparses
 //! the expression text and lowering spells a plain string literal back.
 
-use super::view::{view_expr, node_field, unsupported};
 use super::lower::lower_expr;
+use super::view::{node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
 use crate::scope::NameScope;

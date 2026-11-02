@@ -16,9 +16,9 @@
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
 //! assignment, is `Expr::IndirectTypeLookup`, handled in `view.rs`).
 
-use super::view::{view_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
+use super::view::{leaf_field, node_field, view_expr};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;

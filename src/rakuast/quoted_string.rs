@@ -35,10 +35,7 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 }
 
 // Cost: O(n), n = quoted-string expression size.
-pub(super) fn view_format(
-    names: &NameScope,
-    args: &[Expr],
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_format(names: &NameScope, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
         return Err(super::view::unsupported("format quote arguments"));
     };

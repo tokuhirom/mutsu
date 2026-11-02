@@ -1,8 +1,8 @@
 //! RakuAST's synthesized predicate block for shaped array parameters.
 
 use super::view::{
-    view_expr, leaf_field, name_from_identifier, node_field, plain_infix, statement_expression,
-    unsupported,
+    leaf_field, name_from_identifier, node_field, plain_infix, statement_expression, unsupported,
+    view_expr,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef};

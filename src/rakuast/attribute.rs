@@ -30,8 +30,8 @@
 //! message `something else`).
 
 mod argument;
-use super::view::{view_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
+use super::view::{name_from_identifier, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::attr_trait::AttrTrait;

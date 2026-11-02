@@ -1,12 +1,12 @@
 //! Routine traits in written order, independently of their execution fields.
 
-use super::view::{blockoid, name_from_identifier, signature};
-use super::view::{leaf_field, node_field, unsupported};
 use super::lower::{
     list_field, lower_signature_parameters, named_child, named_child_or_positional, positional_leaf,
 };
 use super::name_parts;
 use super::type_build::return_constraint_node;
+use super::view::{blockoid, name_from_identifier, signature};
+use super::view::{leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{ParentKind, RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};

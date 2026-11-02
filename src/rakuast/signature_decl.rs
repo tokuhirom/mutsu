@@ -23,8 +23,8 @@
 //! `is default` is metadata omitted by Rakudo's renderer. Nested groups remain
 //! refused until their parser representation retains the grouping.
 
-use super::view::{view_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
+use super::view::{leaf_field, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, Stmt};
 use crate::scope::NameScope;

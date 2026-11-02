@@ -16,8 +16,8 @@
 //! (raku keeps the bare statement); the parser does not record which was
 //! written.
 
-use super::view::{block_node, view_expr, node_field, statement_expression};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional, unsupported};
+use super::view::{block_node, node_field, statement_expression, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, make_anon_sub};
 use crate::scope::NameScope;

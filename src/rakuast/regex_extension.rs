@@ -5,11 +5,11 @@
 //! [`regex_code`](super::regex_code), as a code block does, because there is no
 //! deparser to turn the statement back into the text the matcher reads.
 
-use super::view::{
-    block_statements, view_expr, leaf_field, name_from_identifier, node_field, quoted_string,
-    regex_node, unsupported, var_lexical,
-};
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
+use super::view::{
+    block_statements, leaf_field, name_from_identifier, node_field, quoted_string, regex_node,
+    unsupported, var_lexical, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{RegexCode, RegexExtension, RegexNode};
 use crate::scope::NameScope;

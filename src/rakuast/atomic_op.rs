@@ -6,8 +6,8 @@
 //! operator nodes, the atomicity being in the operator's name. The parser's
 //! spelling of each is `ast::atomic_op`'s.
 
-use super::view::{view_expr, leaf_field, node_field, plain_infix, postfix_operand};
 use super::lower::{leaf_str, lower_expr, named_child, positional_leaf};
+use super::view::{leaf_field, node_field, plain_infix, postfix_operand, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
 use crate::ast::parsed::AtomicVar;

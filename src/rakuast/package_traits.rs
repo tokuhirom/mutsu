@@ -1,7 +1,7 @@
 //! Executable and written `is` traits of modules and packages.
 
-use super::view::unsupported;
 use super::lower::{list_field, named_child};
+use super::view::unsupported;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;

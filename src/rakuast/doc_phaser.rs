@@ -3,10 +3,8 @@
 //! phaser behind that public statement so lowering can restore `--doc`
 //! execution without running a parse-time probe.
 
-use super::view::{
-    view_stmt, name_from_identifier, node_field, statement_expression, unsupported,
-};
 use super::lower::{child_node, lower_stmt};
+use super::view::{name_from_identifier, node_field, statement_expression, unsupported, view_stmt};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::ast::Stmt;
 use crate::scope::NameScope;
