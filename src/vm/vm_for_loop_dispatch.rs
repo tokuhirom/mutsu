@@ -676,6 +676,16 @@ impl Interpreter {
         } = raw.view()
         {
             let cn = class_name.resolve();
+            // An unbounded `Range` subclass instance stays a reify-on-demand
+            // array like a bare `1..*` (`my @a = R.new(0, Inf)`, #15480),
+            // unless the class overrides how it iterates.
+            if let Some(range) = attributes.as_map().get(crate::builtins::native_base::RANGE_PAYLOAD)
+                && !self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, "list")
+                && let Some(lazy) = crate::runtime::utils::infinite_range_to_lazy_array(range)
+            {
+                return Ok(Some(lazy));
+            }
             // An `Iterable` with its own `iterator` populates the array from
             // it -- lazily when that iterator reports `is-lazy` (#15305).
             if !attributes.contains_key("__mutsu_array_storage")
