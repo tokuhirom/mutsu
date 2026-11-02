@@ -105,6 +105,10 @@ impl Interpreter {
     /// Whether `item` is, or contains where `flat` descends, an instance.
     // Cost: O(1) for a scalar, O(m) for a nested list of m elements.
     fn may_hold_iterable_instance(item: &Value) -> bool {
+        // The tag settles every scalar element without decoding a view.
+        if let Some(settled) = item.flat_scan_class() {
+            return settled;
+        }
         match item.view() {
             ValueView::Instance { .. } | ValueView::Mixin(..) => true,
             ValueView::Array(inner, ArrayKind::List) => {
