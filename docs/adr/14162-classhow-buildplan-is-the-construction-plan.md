@@ -91,7 +91,7 @@ Ordinary native attribute initialization is moved into
 `constructor_named_attrs.rs`, the generic assignment and `bless` seed pass into
 `constructor_assignment.rs`, and common binding into `constructor_binding.rs`.
 Pair bytecode handlers live in `vm_pair_ops.rs`. The expanded regression covers
-35 passing oracle cases, including all construction engines, aggregate-holding
+38 passing oracle cases, including all construction engines, aggregate-holding
 Scalars, Proxy STORE, inherited modes, source container type constraints,
 readonly parameters and type-object refusal. Checked writes through cells use
 the shared readonly-kind error constructor instead of flattening every refusal
@@ -107,3 +107,9 @@ transport contract without requiring every native handler to understand cells.
 Full release roast also exercises the scalar `:shape` and aggregate `:nl-in`
 consumers. Their shared parsers read the supplied container before classifying
 its value, preserving late-bound array dimensions and multiple line separators.
+
+The bundled-library gate additionally pins three assignment boundaries:
+attributive BUILD parameters seat the argument's value in their own writable
+slot, clone twiddles snapshot each call's supplied value, and `Capture.new`
+binds `:@list` / `:%hash` by reading and deitemizing those aggregates. Raw
+constructor capture transport must not turn any of these into caller aliases.

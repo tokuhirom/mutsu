@@ -1,12 +1,37 @@
 use Test;
 use nqp;
 
-plan 35;
+plan 38;
 
 class Bound {
     has $.value is built(:bind);
     method store($new) { $!value = $new }
 }
+
+class AssignedBuild {
+    has $.value is rw;
+    submethod BUILD(:$!value) { }
+    method store { $!value = 9 }
+}
+sub assigned-from-readonly($value) { AssignedBuild.bless(:$value) }
+my $assigned-build = assigned-from-readonly(3);
+$assigned-build.store;
+is $assigned-build.value, 9, 'attributive BUILD parameter assigns into its writable slot';
+
+my $positions = [1, 3];
+my $names = { name => 'Diwali', year => 2018 };
+is-deeply Capture.new(:list($positions), :hash($names)),
+    \(1, 3, :name<Diwali>, :year(2018)),
+    'Capture constructor binds named aggregate parameters by value';
+
+class CloneAssigned { has $.value is rw }
+my $clone-value = 1;
+my @clones;
+for 2, 3 {
+    $clone-value = $_;
+    @clones.push: CloneAssigned.new.clone(value => $clone-value);
+}
+is-deeply @clones.map(*.value).List, (2, 3), 'clone twiddles assign each call value';
 
 my $source = 5;
 my $object = Bound.new(value => $source);

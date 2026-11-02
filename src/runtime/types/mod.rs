@@ -855,6 +855,11 @@ impl Interpreter {
         // attribute yields that List instead of its elements (YAMLish's
         // `Sequence.new(:$elems)`, where `$elems` came out of a list-assignment
         // destructure).
+        let value = if crate::value::attr_twigil_base(name).is_some() {
+            value.deref_container()
+        } else {
+            value
+        };
         let value = if name.starts_with("@!") || name.starts_with("@.") {
             Self::attributive_array_param_value(value)
         } else if name.starts_with('@') {

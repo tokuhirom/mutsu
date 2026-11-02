@@ -2228,6 +2228,13 @@ impl Interpreter {
                         }
                     })
                 });
+                let bound = bound.map(|value| {
+                    if crate::value::attr_twigil_base(&pd.name).is_some() {
+                        value.deref_container()
+                    } else {
+                        value
+                    }
+                });
                 let val = match bound {
                     // `@`-sigiled (attributive) named param: re-home a List
                     // into an Array (mirrors `bind_param_value`); scalar named

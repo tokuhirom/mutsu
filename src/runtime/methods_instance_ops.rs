@@ -2666,7 +2666,7 @@ impl Interpreter {
                 let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
                 // A twiddle is an assignment to the attribute: a typed one
                 // refuses a value of the wrong type (`X::TypeCheck::Assignment`).
-                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.clone()) {
+                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.deref_container()) {
                     Ok(value) => value,
                     Err(err) => return Some(Err(err)),
                 };
