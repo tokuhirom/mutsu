@@ -729,8 +729,12 @@ impl DispatchShape {
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
                 && const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method))
-            // `IO::Path.chars` is `Cool.chars` of the path (§9.112).
-            || (matches!(self, DispatchShape::IoPath) && const_str_eq(method, "chars"))
+            // `IO::Path.chars` is `Cool.chars` of the path (§9.112), and a
+            // `Range`/`Seq` is `Cool` too: `(1..3).chars` is `"1..3".chars`.
+            || (matches!(
+                self,
+                DispatchShape::IoPath | DispatchShape::Range | DispatchShape::Seq
+            ) && const_str_eq(method, "chars"))
     }
 
     /// Whether `Mu`'s `Int`/`Numeric` row (`method_table::ctors_mop::mu_numeric`)
