@@ -34,16 +34,21 @@ macro_rules! accessor {
 
 accessor! {
     "capture" => capture;
+    "coerce_type" => coerce_type;
     "constraint_list" => constraint_list;
     "constraints" => constraints;
     "copy" => copy;
     "default" => default;
     "invocant" => invocant;
+    "is-item" => is_item;
     "modifier" => modifier;
     "multi-invocant" => multi_invocant;
     "name" => name;
     "named" => named;
     "named_names" => named_names;
+    "nominal_type" => nominal_type;
+    "of" => of;
+    "onearg" => onearg;
     "optional" => optional;
     "positional" => positional;
     "prefix" => prefix;
@@ -58,6 +63,7 @@ accessor! {
     "twigil" => twigil;
     "type" => type_;
     "type_captures" => type_captures;
+    "untyped" => untyped;
     "usage-name" => usage_name;
 }
 
