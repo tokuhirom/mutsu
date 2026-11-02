@@ -203,8 +203,7 @@ pub(crate) fn line_break_offsets(source: &str) -> Vec<usize> {
                 }
             }
             0xE2 => {
-                if bytes.get(i + 1) == Some(&0x80)
-                    && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9))
+                if bytes.get(i + 1) == Some(&0x80) && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9))
                 {
                     out.push(i);
                 }
