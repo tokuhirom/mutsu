@@ -85,9 +85,7 @@ impl State {
     fn push(&mut self, class: u8) {
         let gcb = class & GCB_MASK;
         let incb = class >> INCB_SHIFT;
-        self.pict = if class & EXT_PICT != 0 {
-            1
-        } else if self.pict == 1 && gcb == EXTEND {
+        self.pict = if class & EXT_PICT != 0 || (self.pict == 1 && gcb == EXTEND) {
             1
         } else if self.pict == 1 && gcb == ZWJ {
             2
