@@ -679,7 +679,9 @@ impl Interpreter {
             // An unbounded `Range` subclass instance stays a reify-on-demand
             // array like a bare `1..*` (`my @a = R.new(0, Inf)`, #15480),
             // unless the class overrides how it iterates.
-            if let Some(range) = attributes.as_map().get(crate::builtins::native_base::RANGE_PAYLOAD)
+            if let Some(range) = attributes
+                .as_map()
+                .get(crate::builtins::native_base::RANGE_PAYLOAD)
                 && !self.has_user_method(&cn, "iterator")
                 && !self.has_user_method(&cn, "list")
                 && let Some(lazy) = crate::runtime::utils::infinite_range_to_lazy_array(range)
