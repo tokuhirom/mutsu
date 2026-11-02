@@ -3706,7 +3706,12 @@ impl Interpreter {
                         }
                         // A `@`-sigil copy is a fresh, mutable, untyped Array
                         // whatever the argument was (`Value::into_param_copy`).
-                        value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
+                        // A `$` copy gets a fresh Scalar around the SAME Array or
+                        // Hash, as rakudo does: `sub f($x is copy) { $x.push(9) }`
+                        // reaches the caller's array (#15649).
+                        if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
+                        }
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
                         // detach clone inherited (`sub f(:@kh is copy)` bound to
