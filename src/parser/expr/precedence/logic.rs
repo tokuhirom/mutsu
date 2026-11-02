@@ -419,9 +419,10 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     index,
                     is_positional,
                     spelling,
-                } if is_bindable_index_target(target.as_ref()) && !matches!(
-                    index.as_ref(),
-                    Expr::ArrayLiteral(_)
+                } if is_bindable_index_target(target.as_ref())
+                    && !matches!(
+                        index.as_ref(),
+                        Expr::ArrayLiteral(_)
                         | Expr::Whatever
                         // ADR-0033 Phase 1: a Whatever-index (`@a[*-1] := ...`) is
                         // still an un-expanded `WhateverCurry` marker at this
@@ -437,7 +438,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                             is_whatever_code: true,
                             ..
                         }
-                ) =>
+                    ) =>
                 {
                     // Indexed bind RHSs are values too: preserve a compound
                     // `*` expression as WhateverCode instead of evaluating it
