@@ -331,9 +331,15 @@ impl Interpreter {
             } else {
                 "Any"
             }));
-            // An untyped `&` parameter has no ranked type.
+            // An untyped `&` parameter is an implicit `Callable` constraint:
+            // it out-narrows an `Any:D` candidate for a Block, as in rakudo
+            // (#16058).
             if pd.name.starts_with('&') {
-                total += 1000;
+                let distance = self.arg_type_distance("Callable", &arg, var_type.as_deref());
+                if distance >= UNRELATED_DISTANCE {
+                    profile.mark_unrelated();
+                }
+                total += distance;
                 continue;
             }
             // An unconstrained positional `$`-param is an implicit `Any`
