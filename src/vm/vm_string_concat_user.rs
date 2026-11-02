@@ -16,9 +16,7 @@ impl Interpreter {
         n: u32,
         part_names: &[Option<crate::symbol::Symbol>],
     ) -> Result<(), RuntimeError> {
-        if n < 2
-            || self.dispatch.string_concat_user_fold
-            || !self.user_infix_override("infix:<~>")
+        if n < 2 || self.dispatch.string_concat_user_fold || !self.user_infix_override("infix:<~>")
         {
             return self.exec_string_concat_plain(n, part_names);
         }
