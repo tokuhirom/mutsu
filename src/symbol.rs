@@ -814,6 +814,14 @@ pub(crate) mod wk {
         made => "made";
         /// The `Any` type object, the value a routine's fresh topic is seeded with.
         any => "Any";
+        /// The `Mu` type object, asked of every nominal conformance check
+        /// (`nominal_type_conforms_general`).
+        mu => "Mu";
+        /// The numeric role names whose core ancestors `builtin_role_ancestors`
+        /// answers; every other name has none.
+        rational_role => "Rational";
+        real_role => "Real";
+        numeric_role => "Numeric";
         /// The class of a `Signature` value, whose `SigInfo` lives in a
         /// registry keyed by instance id until its last holder dies
         /// (`value::signature::sig_instance_born`).
