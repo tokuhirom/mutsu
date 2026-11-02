@@ -121,6 +121,13 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
         || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
+        // A block-scoped `sub`'s code object (`&name` of a routine declared in
+        // a routine's body) is that body's lexical: a callee reading `&name`
+        // reflectively must not find the caller's.
+        || key.with_str(|s| {
+            s.strip_prefix(crate::env::BLOCK_LEXICAL_SUB_PREFIX)
+                .is_some_and(|name| crate::env::is_plain_user_lexical(name))
+        })
 }
 
 /// Whether a frame running a loaded module's routine
