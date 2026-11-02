@@ -254,7 +254,10 @@ impl Interpreter {
             // rakudo, where `trans` takes `*@changes` and a Map flattens.
             if let ValueView::Hash(map) = arg.view() {
                 for (key, value) in map.iter() {
-                    flat_args.push(Value::pair(key.to_string(), value.clone()));
+                    // A `ValuePair`, not a named `Pair`: a Hash key spelled `s`, `d`
+                    // or `c` is a string to translate, not the `:s`/`:d`/`:c`
+                    // adverb.
+                    flat_args.push(Value::value_pair(Value::str(key.to_string()), value.clone()));
                 }
                 continue;
             }
