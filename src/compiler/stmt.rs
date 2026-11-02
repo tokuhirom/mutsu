@@ -5214,13 +5214,6 @@ impl Compiler {
             // A `given`/`when`/`default` statement nets exactly one stack
             // value (ADR-0052), which IS the block value here.
             s if Self::stmt_nets_a_stack_value(s) => self.compile_stmt(stmt),
-            // A tail block that declares routines scopes them: its
-            // `BlockScope` restores the routine registry on exit, so an
-            // operator multi declared in a module's last `{ ... }` is not
-            // visible to the module's routines outside it (#15981).
-            Stmt::Block(body) if Self::needs_tail_block_scope(body) => {
-                self.compile_phaser_block_literal_inline(body);
-            }
             Stmt::Block(body) => {
                 self.compile_block_inline(body);
             }

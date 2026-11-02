@@ -5185,7 +5185,7 @@ impl Compiler {
                             // real `BlockScope` instead, which also delivers the
                             // block value via the topic (matching the SetTopic the
                             // inline path emits).
-                            if Self::needs_tail_block_scope(body) {
+                            if Self::needs_phaser_block_scope(body) {
                                 self.compile_phaser_block_scope(
                                     body,
                                     PhaserBlockResult::ReturnViaTopic,
@@ -5195,7 +5195,7 @@ impl Compiler {
                             // A genuine source `{ ... }` is a Raku callframe; a
                             // compiler-synthesized block is not.
                             if matches!(stmt, Stmt::Block(_)) {
-                                self.compile_bare_block_inline(body);
+                                self.compile_unit_tail_bare_block(body);
                             } else {
                                 // `stmt` is a `SyntheticBlock` here (e.g. the
                                 // parser's wrapper for a tail `my $*x := ...`

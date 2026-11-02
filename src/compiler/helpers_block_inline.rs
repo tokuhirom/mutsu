@@ -214,6 +214,26 @@ impl Compiler {
     /// boundary to carry the `is_bare_block` flag. Synthesized blocks
     /// (`Stmt::SyntheticBlock`) and non-block inline bodies (do/sub/if-branch)
     /// must keep using [`Self::compile_block_inline`] directly — they are not frames.
+    /// [`Compiler::compile_bare_block_inline`] for a unit's tail block that
+    /// declares named routines: the block's `DoBlockExpr` restores the routine
+    /// registry on exit (`scope_routines`), so a `multi infix:<->` declared in a
+    /// module's last `{ ... }` does not stay visible to the module's other
+    /// routines (#15981). Otherwise it is the inline form: same env, value on
+    /// the stack, no extra scope.
+    pub(super) fn compile_unit_tail_bare_block(&mut self, stmts: &[Stmt]) {
+        if !stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. }))
+            || Self::has_catch_or_control(stmts)
+        {
+            self.compile_bare_block_inline(stmts);
+            return;
+        }
+        let state_reset = self.emit_nested_block_state_reset(stmts);
+        self.code.emit(OpCode::PushBlockFrame);
+        self.compile_do_block_expr(stmts, &None, crate::ast::DoBlockOrigin::Desugar);
+        self.code.emit(OpCode::PopBlockFrame);
+        self.patch_nested_block_state_reset(state_reset);
+    }
+
     pub(super) fn compile_bare_block_inline(&mut self, stmts: &[Stmt]) {
         // A genuine source `{ … }` in tail (value) position is still a block
         // literal re-cloned every time its enclosing block runs, so its own
@@ -313,7 +333,7 @@ impl Compiler {
                         // real `BlockScope` (inlining would silently drop them);
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
-                        if Self::needs_tail_block_scope(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             if matches!(stmt, Stmt::Block(_)) {
                                 self.compile_phaser_block_literal_inline(inner);
                             } else {

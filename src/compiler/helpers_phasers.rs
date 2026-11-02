@@ -91,18 +91,6 @@ impl Compiler {
         Self::has_block_enter_leave_phasers(stmts) && !Self::has_catch_or_control(stmts)
     }
 
-    /// Whether a tail-position `{ ... }` must run through a real `BlockScope`
-    /// instead of being inlined: it carries phasers
-    /// ([`Self::needs_phaser_block_scope`]), or it declares routines, whose
-    /// scope the `BlockScope` exit restores (a module's last
-    /// `{ multi infix:<-> ... }` must not stay visible to the module's other
-    /// routines, #15981).
-    // Cost: O(s), s = the block's statements.
-    pub(super) fn needs_tail_block_scope(stmts: &[Stmt]) -> bool {
-        Self::needs_phaser_block_scope(stmts)
-            || (Self::stmts_declare_routines(stmts) && !Self::has_catch_or_control(stmts))
-    }
-
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(
