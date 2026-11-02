@@ -260,7 +260,11 @@ impl Interpreter {
             Some(b'@' | b'%') => name.split_at(1),
             _ => ("", name),
         };
-        if !crate::qualified::is_qualified(Symbol::intern(rest)) {
+        // A `__mutsu_*` key is the interpreter's own metadata, never a user
+        // package variable: its `__mutsu_sigilless_readonly::\type` shape
+        // reads as a qualified name, and resolving its head as a package
+        // alias cost ~24k Ir per write (#15688).
+        if rest.starts_with("__mutsu_") || !crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
         let real = self.resolve_package_alias_prefix(rest)?;
