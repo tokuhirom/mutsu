@@ -24,7 +24,7 @@ pub(crate) struct AttrTypeConstraintCache {
 
 impl Interpreter {
     /// The class of the current `self` (the instance under a mixin).
-    fn self_instance_class(&self) -> Option<Symbol> {
+    pub(super) fn self_instance_class(&self) -> Option<Symbol> {
         Self::instance_class_of(&self.get_env_self()?)
     }
 

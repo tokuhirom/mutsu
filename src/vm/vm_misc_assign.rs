@@ -45,7 +45,44 @@ impl Interpreter {
         // by name) can even see a bind here; the others are gated to plain
         // `=`/AssignExpr forms already.
         let tc = self.self_attr_type_constraint(name);
-        self.apply_attr_container_element_type_with(name, val, is_bind, tc)
+        let val = self.apply_attr_container_element_type_with(name, val, is_bind, tc)?;
+        Ok(self.keep_attr_container_default(name, val, is_bind))
+    }
+
+    /// Carry an `@`/`%` attribute's declared `is default(...)` element default
+    /// onto the container an assignment just stored in it: the incoming value
+    /// is a fresh container without it, so `%!h = %x` would otherwise forget
+    /// `has %!h is default(7)` (#15547). A `:=` bind installs the source
+    /// container itself and keeps its own default.
+    // Cost: O(1) when the attribute has no default (two registry probes).
+    pub(super) fn keep_attr_container_default(
+        &mut self,
+        name: &str,
+        val: Value,
+        is_bind: bool,
+    ) -> Value {
+        if is_bind
+            || !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_))
+            || !(name.starts_with('@') || name.starts_with('%'))
+        {
+            return val;
+        }
+        let Some((bare, _)) = crate::value::attr_twigil_base(name) else {
+            return val;
+        };
+        let Some(class) = self.self_instance_class() else {
+            return val;
+        };
+        // The default is registered under the class that declares the
+        // attribute, which may be a base of the invocant's class.
+        let def = self
+            .class_mro(class.as_str())
+            .iter()
+            .find_map(|cn| self.class_attribute_default(cn.as_str(), bare));
+        match def {
+            Some(def) => self.tag_container_default(val, def),
+            None => val,
+        }
     }
 
     /// [`Self::apply_attr_container_element_type`] for a caller that already

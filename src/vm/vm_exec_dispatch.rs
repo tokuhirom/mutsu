@@ -2158,6 +2158,12 @@ impl Interpreter {
                         is_bind_ctx || is_rebind,
                     )?,
                 };
+                val = match &attr_site {
+                    Some(at) if at.has_prefetched_type() => {
+                        self.keep_attr_container_default(&name, val, is_bind_ctx || is_rebind)
+                    }
+                    _ => val,
+                };
                 if let Some(kind) = decl_readonly_kind {
                     self.mark_readonly_sym_with(name_sym, kind);
                     val = Self::readonly_value_binding(val, kind);
