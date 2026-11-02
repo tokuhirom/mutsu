@@ -88,7 +88,7 @@ pub(crate) struct ModuleVisibility {
     /// `our sub` (`GLOBAL::name`), by bare name.
     pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
-    pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    pub(crate) module_units: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The values of `module_units`: the compunits of the modules whose body
     /// has run. A routine compiled from one of them links its frame to its
     /// own compunit, not to the program scope
@@ -97,7 +97,8 @@ pub(crate) struct ModuleVisibility {
     /// ADR-11136: the modules a compunit merged at its top level. A
     /// block-level merge lives in the block's env tier instead
     /// (`MetaNs::ModuleMerge`).
-    pub(crate) unit_merged_modules: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
+    pub(crate) unit_merged_modules:
+        std::sync::Arc<rustc_hash::FxHashMap<Symbol, rustc_hash::FxHashSet<Symbol>>>,
     /// ADR-11136: the modules whose load granted each package
     /// (`module_granted_packages` inverted), so the #7797 qualified gate
     /// can honour a block-level merge.
