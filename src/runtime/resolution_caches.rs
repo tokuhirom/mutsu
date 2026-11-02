@@ -383,6 +383,14 @@ pub(crate) struct ResolutionCaches {
     pub(crate) class_attributes_shared:
         rustc_hash::FxHashMap<Symbol, std::sync::Arc<Vec<super::ClassAttributeDef>>>,
     pub(crate) class_attributes_stamp: u64,
+    /// `Interpreter::deferral_expansion_shared`: the structural deferral
+    /// expansion of `(class, method)`, valid while `deferral_expansion_stamp`
+    /// equals the registry's `type_stamp`.
+    pub(crate) deferral_expansion_shared: rustc_hash::FxHashMap<
+        (Symbol, Symbol),
+        std::sync::Arc<Vec<(Symbol, super::MethodDef)>>,
+    >,
+    pub(crate) deferral_expansion_stamp: u64,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path

@@ -1466,24 +1466,25 @@ impl Interpreter {
         matched_winner: Option<(Symbol, u64)>,
     ) -> Vec<(Symbol, super::MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
-        let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
+        let expansion = self.deferral_expansion_shared(receiver_class, method_name);
         let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
-        for (owner, def) in expansion {
+        for (owner, def) in expansion.iter() {
+            let owner = *owner;
             // Reuse only the resolved winner's successful applicability test;
             // every other multi candidate still needs its own signature match.
             if !def.is_multi
                 || matched_winner.is_some_and(|(matched_owner, fp)| {
-                    owner == matched_owner && self.method_def_fingerprint(&def) == fp
+                    owner == matched_owner && self.method_def_fingerprint(def) == fp
                 })
                 || self.method_args_match_for_invocant(
                     receiver_class,
-                    &def,
+                    def,
                     args,
                     role_bindings.as_ref(),
                     Some(invocant),
                 )
             {
-                all_candidates.push((owner, def));
+                all_candidates.push((owner, def.clone()));
             }
         }
         all_candidates

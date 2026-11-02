@@ -236,7 +236,7 @@ impl Interpreter {
             return free;
         }
         let free = self
-            .resolve_deferral_expansion(receiver_class, method_name)
+            .deferral_expansion_shared(receiver_class, method_name)
             .iter()
             .all(|(_, def)| def.param_defs.iter().all(param_match_is_context_free));
         self.caches.deferral_build_context_free.insert(key, free);
