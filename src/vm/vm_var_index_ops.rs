@@ -1457,10 +1457,15 @@ impl Interpreter {
         // `Doc[$doc]` compiles to this same op), and `Instance`/`Mixin` are left
         // to their own subscript protocol.
         if is_positional
-            && !matches!(
-                target.view(),
-                ValueView::Package(..) | ValueView::Instance { .. } | ValueView::Mixin(..)
-            )
+            && (match target.view() {
+                ValueView::Package(..) | ValueView::Mixin(..) => false,
+                // An instance of an `is Array` subclass is a positional
+                // container: its `AT-POS` takes an `Int`.
+                ValueView::Instance { class_name, .. } => {
+                    self.class_inherits_array(&class_name.resolve())
+                }
+                _ => true,
+            })
             && let ValueView::Str(s) = index.view()
         {
             match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
