@@ -657,7 +657,7 @@ impl Interpreter {
         RuntimeError::typed("X::OutOfRange", attrs)
     }
 
-    pub(crate) fn exec_string_concat_op(
+    pub(super) fn exec_string_concat_plain(
         &mut self,
         n: u32,
         part_names: &[Option<crate::symbol::Symbol>],
