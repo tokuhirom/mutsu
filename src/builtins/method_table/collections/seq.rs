@@ -88,11 +88,19 @@ pub(super) static ROWS: &[MethodRow] = &[
     narrow_at!("EXISTS-POS", 1, positional::exists_pos),
 ];
 
-/// `Seq.is-lazy` of a settled `Seq`: its own flag, which a settled body has clear.
+/// `Seq.is-lazy`: read its flag without consuming; a body already handed
+/// away refuses even when the pure row is invoked directly.
 // Cost: O(1).
-fn is_lazy(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    args.is_empty()
-        .then(|| Ok(Value::truth(is_value_lazy(target))))
+pub(crate) fn is_lazy(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    if let ValueView::Seq(body) = target.view()
+        && body.is_consumed()
+    {
+        return Some(Err(crate::value::seq_consumed_error()));
+    }
+    Some(Ok(Value::truth(is_value_lazy(target))))
 }
 
 /// The elements of a `Seq` for a coercion that keeps it reusable (Rakudo's

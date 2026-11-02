@@ -5848,3 +5848,15 @@ VM's streaming result instead of reading the unpulled body's empty seed.
 The deletion unit is the complete three-way Seq prologue. Validation includes
 direct row-entry probes, Rakudo state/streaming regressions, the full debug TAP
 cross-check and the release roast whitelist with that prologue removed.
+
+The full prologue is removed. `Seq.is-lazy` is the shared primitive reached by
+both the Seq and Mu rows, including direct owner-row invocation; `Any.kv`
+preserves an already-indexed deferred IO body's identity. Three direct row
+probes pin the consumed refusal, cache request without pulling, and IO body
+identity. The consumed-query probe failed before the migration. Twelve Raku
+oracle assertions cover ordinary method calls and cache/IO consumption.
+
+The oracle also found a separate timing difference: `IO::Handle.words.kv`
+advances Rakudo's handle immediately but remains unpulled in mutsu. The
+indexed values agree. This pre-existing difference is tracked by #16012;
+`lines.kv` remains unpulled on both interpreters.

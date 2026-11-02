@@ -172,38 +172,6 @@ pub(crate) fn native_method_0arg_cascade(
         None => {}
     }
 
-    // Seq consumed/cached state checks.
-    // Only handle operations that are fully dispatched here in native_method_0arg.
-    // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
-    // because native_method_0arg is called from both the VM and the interpreter,
-    // and consuming twice would throw.
-    if let ValueView::Seq(items) = target.view() {
-        if method == "cache" {
-            // .cache marks as cached; handled fully here (the actual cache impl is
-            // in the per-method handler below, this just marks state).
-            items.mark_cache_requested();
-        } else if method == "is-lazy" && items.is_consumed() {
-            // Read-only check: throws on consumed Seq but does NOT consume.
-            return Some(Err(crate::value::seq_consumed_error()));
-        } else if method == "kv"
-            && let Some((_, _, true)) = items.peek_io_lines_parts()
-        {
-            // `.kv` on a not-yet-touched `IO::Handle.lines`/`.words` Seq is
-            // itself terminal: `reify_or_consume_seq_target`'s own `"kv"`
-            // special case (`vm/vm_helpers_lazy.rs`) already built this
-            // exact value — a fresh deferred Seq over the same handle with
-            // `IoLines`'s `kv` flag flipped on, so a `for` loop can still
-            // stream it one line at a time (`claim_io_lines_for_streaming`).
-            // Reading its (still-empty) elements here via `items.to_vec()`
-            // and re-running `.kv`'s general positional-index transform
-            // would silently produce an EMPTY result instead — self-check
-            // and pass it through unchanged, exactly like
-            // `dispatch_iterator_method`'s "already an Iterator instance"
-            // short-circuit (`roast/S16-filehandles/io_in_for_loops.t`).
-            return Some(Ok(target.clone()));
-        }
-    }
-
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::native_base`).
     if let Some(result) = super::native_base::dispatch(target, method_sym, &[]) {

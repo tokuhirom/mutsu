@@ -3,6 +3,51 @@
 use super::*;
 
 #[test]
+fn seq_state_rows_refuse_consumed_lazy_queries_without_a_cascade() {
+    use crate::value::{SeqBody, SeqSource};
+    let body = SeqBody::deferred(SeqSource::Iterator(Value::int(0)));
+    body.take_iterator_source().unwrap();
+    let target = Value::seq_body(body);
+    for owner in ["Seq", "Mu"] {
+        let answer = invoke_owner_pure(&[owner], &target, Symbol::intern("is-lazy"));
+        assert!(matches!(answer, Some(Err(_))), "{owner}'s row must refuse a consumed Seq");
+    }
+}
+
+#[test]
+fn seq_state_rows_keep_an_already_indexed_io_stream_without_a_cascade() {
+    let target = Value::seq_deferred(crate::value::SeqSource::IoLines {
+        handle: Value::int(0),
+        words: false,
+        kv: true,
+    });
+    let answer = invoke_owner_pure(&["Any"], &target, Symbol::intern("kv"))
+        .expect("Any.kv is a pure row")
+        .unwrap();
+    let (crate::value::ValueView::Seq(answer), crate::value::ValueView::Seq(original)) =
+        (answer.view(), target.view())
+    else {
+        panic!("the indexed stream must remain a Seq");
+    };
+    assert!(std::sync::Arc::ptr_eq(&answer, &original),
+        "the VM's indexed stream must retain its body");
+}
+
+#[test]
+fn seq_state_rows_request_cache_without_a_cascade() {
+    use crate::value::{SeqBody, SeqSource};
+    let body = SeqBody::deferred(SeqSource::Iterator(Value::int(0)));
+    let target = Value::seq_body(body.clone());
+    assert!(!body.is_cached());
+    let answer = invoke_owner_pure(&["Seq"], &target, Symbol::intern("cache"))
+        .expect("Seq.cache is a pure row")
+        .unwrap();
+    assert!(body.is_cached());
+    assert!(body.has_deferred_source(), "requesting cache must not pull its source");
+    assert_eq!(crate::runtime::utils::value_type_name(&answer), "List");
+}
+
+#[test]
 fn counted_head_tail_rows_resolve_for_every_plain_shape() {
     for name in ["head", "tail"] {
         for shape in DispatchShape::ALL
