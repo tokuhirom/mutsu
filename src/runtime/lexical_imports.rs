@@ -328,7 +328,11 @@ impl Interpreter {
         else {
             return;
         };
-        if capture.hook_values.is_empty() {
+        // A `sub EXPORT` hook that handed out routines (`hook_routines`) leaves
+        // its set an entry even with no values for the block's own names: the
+        // hook runs on every import and may return different code each time,
+        // so such a set is never replayed (`lexical_import_replay`).
+        if capture.hook_values.is_empty() && capture.hook_routines.is_empty() {
             self.module.lexical_import_hook_values.remove(&id);
         } else {
             self.module

@@ -13,10 +13,20 @@
 //!
 //! The first run of such a `use` is checked for "nothing else": the routine,
 //! proto, class and type-alias tables, the pragmas and the env aliases are as
-//! they were, every binding of the set is a plain routine (a `sub EXPORT`
-//! hook's code value may differ per run), and the only env keys it wrote are
-//! module-merge grants. Then what it wrote is recorded, and a later run of a
-//! `use` filling the same set writes exactly that and skips the import.
+//! they were, every binding of the set is a plain routine or the dispatcher of
+//! an imported multi family (a `sub EXPORT` hook's code value may differ per
+//! run, so a set a hook contributed to is never replayed), and the only env
+//! keys it wrote are module-merge grants. Then what it wrote is recorded, and a
+//! later run of a `use` filling the same set writes exactly that and skips the
+//! import.
+//!
+//! A family dispatcher is a pure function of the candidates the module's
+//! registration produced, which are fixed once the module is loaded: the run
+//! that built it captured the importing frame's env, and a later run reuses
+//! that value rather than capturing its own frame. The candidates are module
+//! code, so nothing in them can name a lexical of the importing frame, and
+//! dynamic variables resolve through the live call chain, not the capture
+//! (`t/tooling/use-in-block-replays-family-dispatchers.t`).
 
 use super::*;
 use crate::runtime::lexical_imports::LexicalImport;
@@ -161,7 +171,10 @@ impl Interpreter {
             return None;
         }
         let set = self.module.lexical_import_sets.get(&id)?;
-        if !set.values().all(|b| matches!(b, LexicalImport::Routine(_))) {
+        if !set
+            .values()
+            .all(|b| matches!(b, LexicalImport::Routine(_) | LexicalImport::Code(_)))
+        {
             return None;
         }
         let top = self.module.import_scope_stack.last()?;
