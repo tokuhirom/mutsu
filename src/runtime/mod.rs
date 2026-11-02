@@ -410,6 +410,17 @@ pub(crate) struct ProtectBlockOps {
     pub(crate) global_names: Vec<String>,
 }
 
+/// The env-dependent half of a `protect` block's analysis: which locals and
+/// global names the closure's captured env holds. A function of the compiled
+/// body and of that set of names alone, so one result serves every closure
+/// instance of a block literal whose capture holds the same names.
+#[derive(Clone)]
+pub(crate) struct ProtectBlockBindings {
+    pub(crate) captured: std::sync::Arc<Vec<(usize, String)>>,
+    pub(crate) writeback: std::sync::Arc<Vec<(usize, String)>>,
+    pub(crate) names: std::sync::Arc<Vec<String>>,
+}
+
 /// ADR-0037 §2.3: how `EVAL ..., context => $ctx`'s `return` classifies,
 /// derived once at EVAL entry from the routine identity `CALLER::` stamped
 /// on `$ctx` (`Interpreter::eval_context_routine`). Liveness is decided at
