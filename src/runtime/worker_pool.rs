@@ -191,12 +191,21 @@ mod native {
         TURN.get_or_init(Condvar::new)
     }
 
-    /// Hand the dequeued `task` its start-order ticket when it is ordered.
-    fn claim_ticket(st: &mut PoolState, task: &Task) {
+    /// Dequeue the next task, if the start order lets it go: an ordered task
+    /// waits in the queue until the ordered task dequeued before it has begun
+    /// its user code, so the worker that wakes for it starts its own setup
+    /// after the predecessor's first statement, not alongside it. The dequeued
+    /// ordered task gets its start-order ticket.
+    fn take_next(st: &mut PoolState) -> Option<Task> {
+        if st.queue.front().is_some_and(|t| t.ordered) && st.next_ticket != st.begun {
+            return None;
+        }
+        let task = st.queue.pop_front()?;
         if task.ordered {
             TICKET.with(|c| c.set(Some(st.next_ticket)));
             st.next_ticket += 1;
         }
+        Some(task)
     }
 
     /// Start-order gate: park until every ordered task dequeued before this
@@ -218,6 +227,8 @@ mod native {
             st.begun += 1;
         });
         turn().notify_all();
+        // The next ordered task may leave the queue now ([`take_next`]).
+        pool().1.notify_all();
     }
 
     /// Grow the pool per [`PoolState::growth`] until it says to stop, and
@@ -319,16 +330,14 @@ mod native {
         crate::gc::block_quiescent(|| {
             let cvar = &pool().1;
             let mut st = lock_pool();
-            if let Some(task) = st.queue.pop_front() {
-                claim_ticket(&mut st, &task);
+            if let Some(task) = take_next(&mut st) {
                 return Some(task);
             }
             st.idle += 1;
             let deadline = Instant::now() + IDLE_GRACE;
             loop {
-                if let Some(task) = st.queue.pop_front() {
+                if let Some(task) = take_next(&mut st) {
                     st.idle -= 1;
-                    claim_ticket(&mut st, &task);
                     return Some(task);
                 }
                 if st.live <= keep_alive_floor() {
