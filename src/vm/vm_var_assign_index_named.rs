@@ -6300,30 +6300,27 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 if !package.is_empty() {
-                    let key_name = if key.starts_with('$')
-                        || key.starts_with('@')
-                        || key.starts_with('%')
-                        || key.starts_with('&')
-                    {
-                        key.clone()
+                    if key.starts_with(['$', '@', '%', '&']) {
+                        let pkg = Symbol::intern(package.trim_end_matches("::"));
+                        let fq = if crate::qualified::is_global_package(pkg) {
+                            key.clone()
+                        } else {
+                            crate::qualified::qualified(pkg, Symbol::intern(&key))
+                                .as_str()
+                                .to_string()
+                        };
+                        self.env_mut().insert(fq, val.clone());
                     } else {
-                        format!("${key}")
-                    };
-                    let pkg = Symbol::intern(package.trim_end_matches("::"));
-                    let fq = if crate::qualified::is_global_package(pkg) {
-                        key_name
-                    } else {
-                        crate::qualified::qualified(pkg, Symbol::intern(&key_name))
-                            .as_str()
-                            .to_string()
-                    };
-                    self.env_mut().insert(fq, val.clone());
-                    // An unsigiled key (`Pkg::{$k} = v`) is the package variable
-                    // `$Pkg::k`, as `bind_stash_key` installs it: keep it in the
-                    // `our` store too so another frame (a sub, a method) reads it.
-                    if !key.starts_with(['$', '@', '%', '&']) {
+                        // An unsigiled key (`Pkg::{$k} = v`) is the stash entry
+                        // `k` itself, as `bind_stash_key` installs it: kept in
+                        // the `our` store too so another frame (a sub, a
+                        // method) reads it. It is not also a `$k` scalar
+                        // (`Foo.WHO.keys` is `(k)`, #15965).
                         let pkg = Self::normalize_stash_package(&package);
                         let qualified = Self::qualify_stash_name(&pkg, &key);
+                        self.lexicals
+                            .our_term_keys
+                            .insert(Symbol::intern(&qualified));
                         self.env_mut().insert(qualified.clone(), val.clone());
                         self.set_our_var(qualified, val.clone());
                     }
