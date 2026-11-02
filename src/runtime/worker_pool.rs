@@ -191,17 +191,30 @@ mod native {
         TURN.get_or_init(Condvar::new)
     }
 
+    /// Escape hatch: `MUTSU_START_ORDER=off` lets ordered tasks start in any
+    /// order (the pre-#15967 behaviour), for A/B comparison and flake triage.
+    fn start_order_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            !matches!(
+                std::env::var("MUTSU_START_ORDER").as_deref(),
+                Ok("off") | Ok("0") | Ok("no")
+            )
+        })
+    }
+
     /// Dequeue the next task, if the start order lets it go: an ordered task
     /// waits in the queue until the ordered task dequeued before it has begun
     /// its user code, so the worker that wakes for it starts its own setup
     /// after the predecessor's first statement, not alongside it. The dequeued
     /// ordered task gets its start-order ticket.
     fn take_next(st: &mut PoolState) -> Option<Task> {
-        if st.queue.front().is_some_and(|t| t.ordered) && st.next_ticket != st.begun {
+        let ordered_start = start_order_enabled();
+        if ordered_start && st.queue.front().is_some_and(|t| t.ordered) && st.next_ticket != st.begun {
             return None;
         }
         let task = st.queue.pop_front()?;
-        if task.ordered {
+        if task.ordered && ordered_start {
             TICKET.with(|c| c.set(Some(st.next_ticket)));
             st.next_ticket += 1;
         }
