@@ -140,7 +140,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     );
                     custom_traits.push((
                         parent.clone(),
-                        Some(crate::ast::Expr::Literal(Value::str(arg))),
+                        Some(crate::parser::helpers::trait_angle_arg_expr(&arg)),
                     ));
                     let (r3, _) = ws(r3)?;
                     r = r3;
@@ -366,7 +366,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                         Some(crate::ast::routine_trait::TraitArgument::Words(arg.clone())),
                     );
                     custom_traits
-                        .push((trait_name, Some(crate::ast::Expr::Literal(Value::str(arg)))));
+                        .push((trait_name, Some(crate::parser::helpers::trait_angle_arg_expr(&arg))));
                     let (r3, _) = ws(r3)?;
                     r = r3;
                 } else {

@@ -567,6 +567,23 @@ pub(super) fn skip_balanced_parens(input: &str) -> &str {
     }
 }
 
+/// The argument expression of a custom trait written with angle brackets
+/// (`is handling<map grep>`): like `<map grep>` anywhere, several words are a
+/// list of strings, one word is that string.
+// Cost: O(w), w = words in the argument.
+pub(super) fn trait_angle_arg_expr(arg: &str) -> crate::ast::Expr {
+    let words = split_angle_words(arg);
+    if words.len() <= 1 {
+        return crate::ast::Expr::Literal(crate::value::Value::str(arg.to_string()));
+    }
+    crate::ast::Expr::ArrayLiteral(
+        words
+            .into_iter()
+            .map(|w| crate::ast::Expr::Literal(crate::value::Value::str(w.to_string())))
+            .collect(),
+    )
+}
+
 /// Parse a `<...>` trait argument (e.g. `is repr<CStruct>`, `is ctype<long>`),
 /// depth-tracking nested `<...>` and `\`-escapes. Returns the trimmed content
 /// and the input past the closing `>`.
