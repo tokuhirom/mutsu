@@ -348,6 +348,12 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 );
                 let mut on_demand_quit: Option<Value> = None;
+                // The body's own error, kept whole: a `CATCH` that already ran
+                // inline at the `die` stamped a verdict on it, and rebuilding the
+                // error from the reason alone would drop that stamp, so the
+                // region that owns the `CATCH` would run it a second time
+                // (ADR-0072, #16030).
+                let mut on_demand_quit_err: Option<RuntimeError> = None;
                 // A `supply { }` block with no live `whenever` ends with its
                 // body (#12873): falling off the end, an explicit `done` or a
                 // `die`. Its CLOSE phasers then run once, here, rather than
@@ -458,8 +464,9 @@ impl Interpreter {
                             err.exception
                                 .as_deref()
                                 .cloned()
-                                .unwrap_or_else(|| Value::str(err.message.into_owned())),
+                                .unwrap_or_else(|| Value::str(err.message.to_string())),
                         );
+                        on_demand_quit_err = Some(err);
                     }
 
                     // Separate whenever subscription registrations from plain
@@ -1419,7 +1426,8 @@ impl Interpreter {
                         // throwing out of `.share`.
                         supplier_quit(sid, quit_reason);
                     } else {
-                        return Err(Self::runtime_error_from_supply_reason(quit_reason));
+                        return Err(on_demand_quit_err
+                            .unwrap_or_else(|| Self::runtime_error_from_supply_reason(quit_reason)));
                     }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));

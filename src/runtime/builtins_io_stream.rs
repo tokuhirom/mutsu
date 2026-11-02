@@ -297,16 +297,13 @@ impl Interpreter {
                     _ => {}
                 }
             }
-            if limit.is_none() {
-                // No limit: return a lazy word iterator so a partial consumer
-                // (e.g. `words($fh, :close)[1,2]`) leaves the handle open, while a
-                // full consumer triggers close-on-exhaust when `:close` was given.
-                if close_after {
-                    self.with_handle_mut(&handle, |state| {
-                        state.close_on_exhaust = true;
-                        Ok(())
-                    })?;
-                }
+            // No limit: read eagerly like `IO::Handle.words`, except `:close`
+            // (see `io_handle_words`).
+            if limit.is_none() && close_after {
+                self.with_handle_mut(&handle, |state| {
+                    state.close_on_exhaust = true;
+                    Ok(())
+                })?;
                 return Ok(Value::lazy_io_lines(handle, false, true));
             }
             let mut words = Vec::new();
