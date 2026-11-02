@@ -28,7 +28,7 @@ pub(super) fn is_marker(field: &RakuAstField) -> bool {
 /// `Num(EXPR)` -> the call on the type term; `None` when `name` is not a type
 /// name. `args` is absent for `Int()`.
 // Cost: O(k + n), k = length of `name`, n = size of the arguments.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     name: &str,
     args: &[Expr],
@@ -36,7 +36,7 @@ pub(super) fn convert(
     if !name.starts_with(char::is_uppercase) {
         return Ok(None);
     }
-    let Some(base) = bareword::convert(names, name) else {
+    let Some(base) = bareword::view(names, name) else {
         return Ok(None);
     };
     if base.class != RakuAstClass::TypeSimple {

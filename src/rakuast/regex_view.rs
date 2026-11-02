@@ -13,7 +13,7 @@ use crate::value::{RuntimeError, Value};
 pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     let (class, fields) = match node {
         RegexNode::Extension(extension) => {
-            return super::regex_extension::convert(names, extension);
+            return super::regex_extension::view(names, extension);
         }
         RegexNode::Literal(text) => (
             RakuAstClass::RegexLiteral,
@@ -289,7 +289,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
                 .as_ref()
                 .map(|separator| regex_node(names, &separator.node))
                 .transpose()?;
-            return super::regex_quantifier::convert(
+            return super::regex_quantifier::view(
                 names,
                 regex_node(names, atom)?,
                 quantifier,
@@ -312,9 +312,9 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
         RegexNode::AnchorRightWordBoundary => {
             (RakuAstClass::RegexAnchorRightWordBoundary, Vec::new())
         }
-        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
+        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::view(atom)),
         RegexNode::CharClassAssertion(elements) => {
-            return super::regex_enumeration::convert(names, elements);
+            return super::regex_enumeration::view(names, elements);
         }
         RegexNode::InternalModifier {
             kind,

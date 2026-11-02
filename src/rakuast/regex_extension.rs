@@ -17,7 +17,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// `extension` as its RakuAST node.
 // Cost: O(n), n = size of the construct.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     extension: &RegexExtension,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -208,7 +208,7 @@ pub(super) fn convert(
             array,
             gaps,
             regex,
-        } => super::regex_variable_alias::convert(
+        } => super::regex_variable_alias::view(
             names,
             (name, *sequential, *array),
             gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),

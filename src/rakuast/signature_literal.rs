@@ -84,7 +84,7 @@ fn constraint() -> RakuAstNode {
 }
 
 // Cost: O(s), s = size of the literal value.
-pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = expr else {
         return Err(unsupported("nonconstant signature literal postconstraint"));
     };
@@ -147,6 +147,6 @@ pub(super) fn lower(names: &NameScope, param: &RakuAstNode) -> Result<SignatureV
         var.per_var_type_constraint = Some(super::type_lower::type_constraint(names, param, ty)?);
     }
     // Validate the value through the same conversion used by the read side.
-    convert(names, var.literal_value.as_ref().unwrap())?;
+    view(names, var.literal_value.as_ref().unwrap())?;
     Ok(var)
 }

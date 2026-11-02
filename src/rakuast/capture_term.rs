@@ -13,7 +13,7 @@ use crate::value::RuntimeError;
 
 /// An [`Expr::CaptureLiteral`] as its `Term::Capture` node.
 // Cost: O(n), n = nodes of the items.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     items: &[Expr],
     parenthesized: bool,

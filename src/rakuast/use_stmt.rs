@@ -638,7 +638,7 @@ fn take_proto_operand(
 }
 
 /// `RakuAST::Statement::Need` -> `Stmt::Need`. Only the one-module form the
-/// converter renders; several names or a version colonpair stay the boundary.
+/// view renders; several names or a version colonpair stay the boundary.
 pub(super) fn lower_need(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let names = list_field(node, "module-names")?;
     let [only] = names else {

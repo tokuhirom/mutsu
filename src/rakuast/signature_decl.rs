@@ -13,7 +13,7 @@
 //!
 //! The parser expands the declaration (`parser::stmt::decl::destructure::desugar`)
 //! and keeps the source form as the expansion's first statement (ADR-10723
-//! Stage 1), so both directions go through that record: `convert` reads it,
+//! Stage 1), so both directions go through that record: `view` reads it,
 //! and `lower` builds one and hands it to the same expansion. An element can
 //! have a type (`Int $a`), a `where`, one of `is rw` / `raw` / `copy` /
 //! `readonly`, a sigilless target (`\c`, a `ParameterTarget::Term`), a name
@@ -77,7 +77,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     decl: &SignatureDecl,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -210,7 +210,7 @@ fn parameter(
     is_binding: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if let Some(literal) = &var.literal_value {
-        return super::signature_literal::convert(names, literal);
+        return super::signature_literal::view(names, literal);
     }
     let target = if var.sigilless {
         RakuAstNode {

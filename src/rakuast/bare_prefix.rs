@@ -27,7 +27,7 @@ pub(super) fn bare_statement_node(
     inner: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     // `do STATEMENT`: the statement under `StatementPrefix::Do`, whatever it is
-    // (the converter's own `DoStmt` arm only takes loops and conditionals).
+    // (the view's own `DoStmt` arm only takes loops and conditionals).
     if let Expr::DoStmt(stmt) = inner {
         let statement = super::view::view_stmt(names, stmt)?
             .ok_or_else(|| super::view::unsupported("an empty `do` statement"))?;

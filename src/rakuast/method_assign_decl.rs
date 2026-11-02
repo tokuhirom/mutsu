@@ -9,7 +9,7 @@ use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     form: &MethodAssignDecl,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -44,7 +44,7 @@ pub(super) fn convert(
         None,
         form.anonymous,
     )?;
-    decl_traits::insert(&mut decl, decl_traits::convert(names, &form.custom_traits)?);
+    decl_traits::insert(&mut decl, decl_traits::view(names, &form.custom_traits)?);
     if let Some(dims) = &form.shape {
         super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }

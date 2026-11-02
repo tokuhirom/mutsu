@@ -6,7 +6,7 @@
 //! `Block`) holds only the statements, and mutsu has no deparser to turn them
 //! back into text, so a declaration lowered from a tree would run its blocks as
 //! `{}`. Rakudo keeps an `origin` on every node, which is how it can name the
-//! source a node was parsed from; the converter therefore keeps the block's
+//! source a node was parsed from; the view therefore keeps the block's
 //! spelling in a hidden `source` field, the way a statement keeps its line
 //! (`origin`) and a named capture its sigil (`array`), and `lower` puts it back.
 //! A hand-built node has none, so its block lowers to an empty spelling as it

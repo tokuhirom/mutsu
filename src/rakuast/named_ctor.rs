@@ -2,7 +2,7 @@
 //! named arguments (ADR-10723: a tree built in Raku equals the parsed one).
 //!
 //! Each class lists its arguments in the order rakudo 2026.09's `.raku` prints
-//! them, which is the order the read direction (`convert.rs`) stores the
+//! them, which is the order the read direction (`view.rs`) stores the
 //! fields in, so a constructed node renders and lowers exactly like a parsed
 //! one. Which arguments are required, and the defaults rakudo fills in
 //! (`Statement::For`'s `mode => "serial"`, `Term::Reduce`'s

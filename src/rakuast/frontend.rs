@@ -5,7 +5,7 @@
 //! in place before it is compiled ([`super::finalize`]): the typed nodes of the
 //! migrated families are lowered where they stand. There is no opt-out.
 //!
-//! The coverage of the `convert` and `lower` arms that the `MUTSU_RAKUAST=convert`
+//! The coverage of the `view` and `lower` arms that the `MUTSU_RAKUAST=convert`
 //! test level used to give (the whole unit converted to a `RakuAstNode` tree and
 //! lowered back) is now two ratchets over the public API: `EVAL(slurp($f).AST)`
 //! over every listed `t/` file (`scripts/rakuast-frontend.sh eval-check`), and the

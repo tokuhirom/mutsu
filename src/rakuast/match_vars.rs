@@ -23,7 +23,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// `$<name>` as `Var::NamedCapture`.
 // Cost: O(|name|).
-pub(super) fn convert(name: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view(name: &str) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarNamedCapture,

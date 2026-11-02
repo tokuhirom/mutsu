@@ -14,7 +14,7 @@
 //! The parser keeps the variable forms as [`Expr::SymbolicDeref`] /
 //! [`Expr::SymbolicDerefAssign`] (the sigil and the name expression) and the
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
-//! assignment, is `Expr::IndirectTypeLookup`, handled in `convert.rs`).
+//! assignment, is `Expr::IndirectTypeLookup`, handled in `view.rs`).
 
 use super::view::{view_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
@@ -39,7 +39,7 @@ pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
 
 /// `$::($n)` as `Var::Package`.
 // Cost: O(n), n = nodes of the name expression.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     sigil: &str,
     expr: &Expr,

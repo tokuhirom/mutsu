@@ -2,10 +2,10 @@
 //!
 //! The inverse of `view::build_type_node`: the parser keeps a type
 //! constraint as one string (`Int`, `Str:D`, `Int()`, `Hash[Str, Int]`), and
-//! the converter renders that string as `Type::Simple`, `Type::Definedness`,
+//! the view renders that string as `Type::Simple`, `Type::Definedness`,
 //! `Type::Coercion` or `Type::Parameterized`. Every lowering site that reads a
 //! `type`, a `returns` or a trait's type goes through [`type_constraint`], so
-//! a type spelling the converter can render is one every site can lower.
+//! a type spelling the view can render is one every site can lower.
 
 use super::lower::{
     lower_expr, named_child, named_child_or_positional, regex_subrule_argument_source, unsupported,

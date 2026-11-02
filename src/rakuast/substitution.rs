@@ -43,7 +43,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// `s///`, `S///` and `tr///` as their RakuAST nodes.
 // Cost: O(n), n = size of the pattern and replacement.
-pub(super) fn convert(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Subst {
             samespace,

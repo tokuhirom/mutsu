@@ -13,7 +13,7 @@
 //! `Z` and `X` are list-associative, so a chain of the same operator is one
 //! flat operand list; `R` is a list application only over a list-associative
 //! base operator (`,`, `min`, `(|)`, ...). mutsu keeps every one of them as a
-//! left-nested [`Expr::MetaOp`], so the converter flattens the chain and the
+//! left-nested [`Expr::MetaOp`], so the view flattens the chain and the
 //! lowering folds the operands back.
 
 use super::view::{view_expr, node_field, plain_infix, unsupported as unsupported_expr};
@@ -161,7 +161,7 @@ fn view_assign(
 
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     meta: &str,
     op: &str,

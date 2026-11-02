@@ -5,7 +5,7 @@
 //! and the aliased atom is gone, from the tree and from the match. Mutsu's
 //! matcher runs the pattern from its text, which keeps the atom, so dropping it
 //! at the boundary would change what the round-tripped regex matches. The
-//! converter therefore renders the same public node as rakudo and carries the
+//! view therefore renders the same public node as rakudo and carries the
 //! aliased atom in a hidden `source-alias` field (the way a code block keeps
 //! its `source`); `lower` restores the alias from it. A hand-built
 //! `Regex::Interpolation` has no such field and stays a plain interpolation.
@@ -29,7 +29,7 @@ const GAP_AFTER: &str = "source-alias-gap-after";
 
 /// `$name=regex` as the node rakudo renders, with the aliased atom hidden.
 // Cost: O(n), n = size of the aliased atom.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     (name, sequential, array): (&str, bool, bool),
     gap: (&str, &str),
@@ -71,7 +71,7 @@ pub(super) fn view_spaced(
     else {
         return Err(super::view::unsupported("spaced regex variable alias"));
     };
-    convert(
+    view(
         names,
         (name, *sequential, *array),
         gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),

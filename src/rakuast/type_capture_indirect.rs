@@ -3,7 +3,7 @@
 //! Rakudo renders it as `Parameter.type-captures` holding a `Type::Capture`
 //! whose `Name` is one `Name::Part::Expression(EXPR)` (no leading empty part,
 //! unlike the term `::(EXPR)`). The parser keeps the whole capture as the text
-//! `::(EXPR)` in the parameter's `type_constraint`, so the converter reparses
+//! `::(EXPR)` in the parameter's `type_constraint`, so the view reparses
 //! the expression text and lowering spells a plain string literal back.
 
 use super::view::{view_expr, node_field, unsupported};
@@ -23,7 +23,7 @@ pub(super) fn is_indirect(name: &str) -> bool {
 pub(super) fn capture_node(names: &NameScope, name: &str) -> Result<RakuAstNode, RuntimeError> {
     let inner = &name[1..name.len() - 1];
     let expr = crate::parser::parse_adverb_argument(inner)
-        .ok_or_else(|| unsupported("indirect type capture the converter cannot reparse"))?;
+        .ok_or_else(|| unsupported("indirect type capture the view cannot reparse"))?;
     let part = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::NamePartExpression,

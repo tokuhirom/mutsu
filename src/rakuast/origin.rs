@@ -6,7 +6,7 @@
 //! `warn` or a backtrace reports came out wrong, and a `return` raised in an
 //! `EVAL` string escaped the routine that called it.
 //!
-//! Rakudo keeps an `origin` on every node. The statement nodes `convert`
+//! Rakudo keeps an `origin` on every node. The statement nodes `view`
 //! builds carry the line their statement began on as a hidden `origin` field,
 //! and `lower` puts the `SetLine` back in front of the statement it lowers. A
 //! hand-built node has none, so a hand-built tree lowers without markers, as

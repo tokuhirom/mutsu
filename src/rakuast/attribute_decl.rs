@@ -13,7 +13,7 @@ use crate::ast::Stmt;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, ValueView};
 
-pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn view(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     let Stmt::HasDecl {
         name,
         is_public,
@@ -45,7 +45,7 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
         ..
     } = stmt
     else {
-        unreachable!("attribute converter requires HasDecl");
+        unreachable!("attribute view requires HasDecl");
     };
     // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
     // `scope => "has"` and a `twigil` (`.` public accessor / `!`
@@ -141,7 +141,7 @@ pub(super) fn convert(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNo
     Ok(Some(statement_expression(decl)))
 }
 
-/// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The converter renders
+/// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The view renders
 /// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
 /// `twigil` (`.` public / `!` private, none for the alias `has $x`); `our $.x`
 /// has the `our` scope and `my $.x` none. Its traits are read by
@@ -249,7 +249,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         is_public,
         // A typed attribute carries an implicit default in the internal AST
         // (its type object, or a native type's zero); the parser plants it,
-        // and the converter skips it on the way out, so re-plant the same one
+        // and the view skips it on the way out, so re-plant the same one
         // here to keep the two sides symmetric.
         default_is_seed: type_seed.is_some(),
         default_is_trait,

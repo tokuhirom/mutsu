@@ -14,7 +14,7 @@
 //! The parser keeps them as [`Expr::DynamicMethodCall`] (`name_expr` is the
 //! variable, or a `CodeVar` for the `&f` spelling) and
 //! [`Expr::HyperMethodCallDynamic`]. A `.^$n()` loses its `^` in rakudo's tree,
-//! and a quoted name is a `Call::QuotedMethod` (see `convert.rs`).
+//! and a quoted name is a `Call::QuotedMethod` (see `view.rs`).
 
 use super::view::{
     arg_list, view_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
@@ -154,7 +154,7 @@ pub(super) fn call_assign_initializer(
 
 /// `$o.$name(args)` / `$o.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     target: &Expr,
     name_expr: &Expr,

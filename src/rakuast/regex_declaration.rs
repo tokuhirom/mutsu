@@ -9,7 +9,7 @@ use crate::value::{RuntimeError, Value};
 /// `[my|our] token NAME(SIG) { … }`: scope precedes the method-style signature
 /// and body; the default `has` scope is omitted.
 // Cost: O(r + p), r = size of the regex, p = size of the parameters.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     class: RakuAstClass,
     name: &str,
@@ -30,7 +30,7 @@ pub(super) fn convert(
     )
 }
 
-/// [`convert`] over an already converted body (the `{*}` of a proto).
+/// [`view`] over an already converted body (the `{*}` of a proto).
 // Cost: O(p), p = size of the parameters.
 pub(super) fn with_body(
     names: &NameScope,

@@ -15,7 +15,7 @@ use crate::value::{RuntimeError, Value};
 
 /// The declaration statement with its `will` phasers as its traits.
 // Cost: O(n), n = size of the declaration and the phaser bodies.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     decl: &Stmt,
     phasers: &[(PhaserKind, Vec<Stmt>)],

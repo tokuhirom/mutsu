@@ -40,7 +40,7 @@ pub(super) struct RoleDecl<'a> {
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
-pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
     // Any plain trait name is a trait of the program's own (`is array_type(T)`),
     // rendered by name.
@@ -52,7 +52,7 @@ pub(super) fn convert(names: &NameScope, role: RoleDecl<'_>) -> Result<RakuAstNo
         || role.is_export != !role.export_tags.is_empty()
     {
         return Err(unsupported(
-            "role with a trait the converter does not render",
+            "role with a trait the view does not render",
         ));
     }
     // The fallback parameter parser (defaults such as `::T = my role { }`)

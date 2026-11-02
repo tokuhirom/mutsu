@@ -67,7 +67,7 @@ pub(super) fn var_node(names: &NameScope, var: &AtomicVar) -> Result<RakuAstNode
 /// The node of the atomic operator the call `name(args)` is, or `None` when it
 /// is not one.
 // Cost: O(n), n = size of the operands.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     name: &str,
     args: &[Expr],

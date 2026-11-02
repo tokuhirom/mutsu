@@ -1,6 +1,6 @@
 //! Lowering of the infixes whose RakuAST form the parser desugars (#14912): the
 //! precomposed negated set glyphs (`∉`) and the left-exclusive sequences
-//! (`^...`). The read direction is in `convert.rs`.
+//! (`^...`). The read direction is in `view.rs`.
 
 use super::RakuAstNode;
 use crate::ast::Expr;

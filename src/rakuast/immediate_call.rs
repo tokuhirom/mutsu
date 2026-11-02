@@ -2,7 +2,7 @@
 //! Call::Term)` (measured on rakudo 2026.09).
 //!
 //! The parser keeps the written form (`ParsedStmt::ImmediateCall`); the
-//! converter renders it from the declaration and the call arguments, and the
+//! view renders it from the declaration and the call arguments, and the
 //! lowering hands a measured node back to the same expansion function
 //! (`ast::immediate_call::expand`), so the routine is declared in the
 //! enclosing scope as the parsed program declares it.
@@ -17,7 +17,7 @@ use crate::value::RuntimeError;
 /// The `ApplyPostfix` node of an immediate call: the routine `sub_decl` and the
 /// arguments of the call.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     sub_decl: &Stmt,
     args: &[Expr],

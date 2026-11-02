@@ -189,7 +189,7 @@ pub struct RakuAstNode {
     pub origin: NodeOrigin,
 }
 
-/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `convert`
+/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `view`
 /// made below the statement level), and the origins of the empty nodes its
 /// absent fields stand for ([`empty_fields`]). It takes no part in a node's
 /// equality: two trees that differ only in where they were written are the
@@ -226,7 +226,7 @@ pub enum RakuAstFieldValue {
     Adverb(&'static str),
 }
 
-/// Every known RakuAST node kind. Exhaustive `match` on this in the converter
+/// Every known RakuAST node kind. Exhaustive `match` on this in the view
 /// and renderer (and, later, the lowerer) keeps the layer honest as it grows —
 /// adding a kind is a compile error until every site handles it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

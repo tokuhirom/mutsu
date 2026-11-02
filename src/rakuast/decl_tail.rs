@@ -9,7 +9,7 @@
 //! ```
 //!
 //! The parser splits it into a head and a tail that re-reads the variable
-//! ([`crate::ast::decl_tail`]), so the converter puts the head back in place of
+//! ([`crate::ast::decl_tail`]), so the view puts the head back in place of
 //! that re-read, and lowering takes it out again.
 
 use super::view::{
@@ -28,7 +28,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// Lowering leaves a postfix out on purpose: rakudo drops the parentheses of a
 /// postfix's operand, so `(my @a).push(1)` and `my @a.push(1)` are the same
 /// node and cannot be told apart again. They compute the same thing, so the
-/// converter may build that node for either, and lowering reads it back the
+/// view may build that node for either, and lowering reads it back the
 /// parenthesized way.
 // Cost: O(1).
 fn leading_operand(node: &RakuAstNode, postfix: bool) -> Option<&RakuAstNode> {
@@ -120,7 +120,7 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 
 /// A head and its loose tail as the one expression they were written as.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     head: &Stmt,
     tail: &Expr,
@@ -149,7 +149,7 @@ pub(super) fn convert(
 
         let decl =
             crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
-        let declaration = super::signature_decl::convert(names, decl)?;
+        let declaration = super::signature_decl::view(names, decl)?;
         replace_group_seed(&converted, &declaration).ok_or_else(unsupported_statement)
     })()
 }

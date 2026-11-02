@@ -9,7 +9,7 @@
 //! No `RakuAstNode` is built for the rest of the unit.
 //!
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
-//! nodes themselves (`convert`, `lower`).
+//! nodes themselves (`view`, `lower`).
 
 use crate::scope::NameScope;
 use std::cell::Cell;

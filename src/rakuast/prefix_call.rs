@@ -11,7 +11,7 @@
 //! sink { 1 }     StatementPrefix::Sink(Block(...))
 //! ```
 //!
-//! `start STATEMENT` reaches the converter as the same one-statement
+//! `start STATEMENT` reaches the view as the same one-statement
 //! `AnonSub` a `start { STATEMENT }` does, so it renders in the block form
 //! (raku keeps the bare statement); the parser does not record which was
 //! written.
@@ -35,7 +35,7 @@ fn prefix_class(name: &str) -> Option<RakuAstClass> {
 /// The statement prefix a call named `name` with `args` spells, or `None` for
 /// any other call.
 // Cost: O(n), n = size of the argument.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     name: &str,
     args: &[Expr],

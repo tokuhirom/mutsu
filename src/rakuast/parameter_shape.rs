@@ -11,7 +11,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// Build Rakudo's `array-shape` predicate block from the parser's dimensions.
 // Cost: O(d), d = number of dimensions and their expression trees.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     pd: &ParamDef,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {

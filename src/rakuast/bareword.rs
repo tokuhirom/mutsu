@@ -4,7 +4,7 @@
 //! name *is*: a type object renders as `Type::Simple`, a constant or other
 //! defined term as `Term::Name`, a setting enum value as `Term::Enum`, and a
 //! routine called without arguments as `Call::Name::WithoutParentheses`.
-//! mutsu's parser leaves all of these as `Expr::BareWord`, so the converter
+//! mutsu's parser leaves all of these as `Expr::BareWord`, so the view
 //! re-derives which is which from the setting (the generated name lists) and
 //! from the compilation unit's own declarations. A bareword none of those
 //! resolves stays the conversion boundary: guessing would render a wrong node.
@@ -449,7 +449,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
 // Cost: O(k + d), k = length of `name`, d = parser scope depth.
-pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
+pub(super) fn view(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
@@ -494,7 +494,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
         .strip_suffix(":D")
         .or_else(|| name.strip_suffix(":U"))
         .or_else(|| name.strip_suffix(":_"))
-        && convert(names, base).is_some_and(|node| {
+        && view(names, base).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
@@ -512,7 +512,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("GLOBAL::")
         .or_else(|| name.strip_prefix("CORE::"))
-        && let Some(node) = convert(names, rest)
+        && let Some(node) = view(names, rest)
     {
         match node.class {
             RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
@@ -525,7 +525,7 @@ pub(super) fn convert(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && convert(names, rest).is_some_and(|node| {
+        && view(names, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName

@@ -8,7 +8,7 @@
 //! the first comparison's boolean with the next operand (`0 <= 9 < 3` is then
 //! `True < 3`).
 //!
-//! Only the nesting the converter itself renders is a chain: the left operand
+//! Only the nesting the view itself renders is a chain: the left operand
 //! is an unparenthesized comparison, which for a negated link
 //! (`a !before b before c`) is `ApplyPrefix(!, ApplyInfix)`. A parenthesized
 //! left operand is a `Circumfix::Parentheses` node and stays a plain

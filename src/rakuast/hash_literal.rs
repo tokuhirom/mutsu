@@ -25,7 +25,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for a hash literal with literal keys.
 // Cost: O(p), p = pairs of the literal (plus converting their values).
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     pairs: &[(String, Option<Expr>)],
     spelling: HashSpelling,

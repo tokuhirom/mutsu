@@ -7,7 +7,7 @@
 //!
 //! mutsu also keeps the phaser's argument as verbatim source text
 //! (`Stmt::Phaser::condition`): `X::Phaser::PrePost.condition` and its message
-//! quote it, and no deparse of the tree can reproduce it. The converter keeps
+//! quote it, and no deparse of the tree can reproduce it. The view keeps
 //! that text in a hidden `condition-source` field, the way a statement keeps
 //! its line (`origin`) and a regex code block its spelling (`regex_code`), and
 //! `lower` puts it back. A hand-built node has none, so its phaser lowers with
@@ -40,7 +40,7 @@ pub(super) fn is_source(node: &RakuAstNode, field: &RakuAstField) -> bool {
 /// The node of a `PRE` / `POST` phaser whose body is `body` and whose argument
 /// was written `condition`.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     kind: &PhaserKind,
     body: &[Stmt],

@@ -35,7 +35,7 @@ type CustomTraits = Vec<(String, Option<Expr>)>;
 /// The trait name of `is dynamic`.
 const DYNAMIC: &str = "dynamic";
 
-/// Whether the converter renders `custom_traits` entry `(name, arg)`.
+/// Whether the view renders `custom_traits` entry `(name, arg)`.
 pub(super) fn is_rendered(names: &NameScope, name: &str, arg: &Option<Expr>) -> bool {
     match arg {
         Some(_) => name == DEFAULT || is_custom_name(name),
@@ -79,7 +79,7 @@ pub(super) fn type_node(names: &NameScope, name: &str) -> Result<RakuAstNode, Ru
 /// The `traits` items for a declaration's rendered custom traits, in source
 /// order.
 // Cost: O(t), t = custom traits of the declaration.
-pub(super) fn convert(
+pub(super) fn view(
     names: &NameScope,
     custom_traits: &[(String, Option<Expr>)],
 ) -> Result<Vec<Value>, RuntimeError> {
@@ -247,7 +247,7 @@ pub(super) fn lower(
     Ok((traits, dynamic))
 }
 
-/// Whether `name` is a class trait the converter renders as a `Trait::Is` by
+/// Whether `name` is a class trait the view renders as a `Trait::Is` by
 /// its name: a plain, user-level one, not one of the parser's internal marks.
 // Cost: O(|name|).
 pub(super) fn is_class_trait(name: &str) -> bool {
