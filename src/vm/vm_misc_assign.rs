@@ -471,7 +471,23 @@ impl Interpreter {
         } else {
             None
         };
-        let mut val = if name.starts_with('%') {
+        // `%!a ∪= %x` on an `is SetHash`/`is BagHash`/`is MixHash` attribute:
+        // the assignment writes INTO the QuantHash, which keeps its own type,
+        // exactly as the statement-position store does (CRDT's LWW-Hash).
+        let quanthash_store = if name.starts_with("%!") || name.starts_with("%.") {
+            let stored =
+                self.coerce_typed_container_assignment(None, &name, raw_val.clone(), false)?;
+            matches!(
+                stored.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
+            .then_some(stored)
+        } else {
+            None
+        };
+        let mut val = if let Some(stored) = quanthash_store {
+            stored
+        } else if name.starts_with('%') {
             self.coerce_object_to_hash(raw_val)
         } else if name.starts_with('@') {
             // A by-name aggregate assignment (for example the anonymous

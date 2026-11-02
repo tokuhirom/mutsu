@@ -280,6 +280,9 @@ impl Interpreter {
     ///
     // Cost: O(c), c = chars of the string.
     pub(super) fn numeric_comparison_operand(v: &Value) -> Result<Option<Value>, RuntimeError> {
+        if let Some(len) = range_numeric_len(v) {
+            return Ok(Some(len));
+        }
         let ValueView::Str(s) = v.view() else {
             return Ok(None);
         };
@@ -371,6 +374,10 @@ impl Interpreter {
                         == crate::runtime::utils::list_items_len(&r),
                 ));
             }
+            // A Range against a non-collection number: `Range.Numeric` is its
+            // element count (the both-collections case was handled above).
+            let l = range_numeric_len(&l).unwrap_or(l);
+            let r = range_numeric_len(&r).unwrap_or(r);
             // `Map.Numeric` / `Setty.Numeric` are `.elems`, so two such
             // values are equal when they hold the same number of entries.
             // Cost: O(1), the entry count is read in place.
@@ -769,4 +776,20 @@ fn unordered_elems_len(value: &Value) -> Option<usize> {
         ValueView::Set(data, _) => Some(data.len()),
         _ => None,
     }
+}
+
+/// `Range.Numeric` is `.elems`: a Range meeting a number in a numeric
+/// comparison (`5 == 3..7`, `5 <=> 3..7`) compares by its element count.
+/// `None` for any other value.
+// Cost: O(e), e = elements (expanded to count them).
+fn range_numeric_len(v: &Value) -> Option<Value> {
+    matches!(
+        v.view(),
+        ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+    )
+    .then(|| Value::int(crate::runtime::utils::list_items_len(v) as i64))
 }
