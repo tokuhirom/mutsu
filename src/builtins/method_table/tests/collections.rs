@@ -6,7 +6,7 @@ use super::*;
 fn seq_state_rows_refuse_consumed_lazy_queries_without_a_cascade() {
     use crate::value::{SeqBody, SeqSource};
     let body = SeqBody::deferred(SeqSource::Iterator(Value::int(0)));
-    body.take_iterator_source().unwrap();
+    assert!(body.take_iterator_source().is_ok());
     let target = Value::seq_body(body);
     for owner in ["Seq", "Mu"] {
         let answer = invoke_owner_pure(&[owner], &target, Symbol::intern("is-lazy"));
@@ -24,16 +24,13 @@ fn seq_state_rows_keep_an_already_indexed_io_stream_without_a_cascade() {
         words: false,
         kv: true,
     });
-    let answer = invoke_owner_pure(&["Any"], &target, Symbol::intern("kv"))
-        .expect("Any.kv is a pure row")
-        .unwrap();
-    let (crate::value::ValueView::Seq(answer), crate::value::ValueView::Seq(original)) =
-        (answer.view(), target.view())
-    else {
-        panic!("the indexed stream must remain a Seq");
-    };
+    let answer = invoke_owner_pure(&["Any"], &target, Symbol::intern("kv"));
     assert!(
-        std::sync::Arc::ptr_eq(&answer, &original),
+        matches!(answer, Some(Ok(answer)) if matches!(
+            (answer.view(), target.view()),
+            (crate::value::ValueView::Seq(answer), crate::value::ValueView::Seq(original))
+                if std::sync::Arc::ptr_eq(&answer, &original)
+        )),
         "the VM's indexed stream must retain its body"
     );
 }
@@ -44,15 +41,14 @@ fn seq_state_rows_request_cache_without_a_cascade() {
     let body = SeqBody::deferred(SeqSource::Iterator(Value::int(0)));
     let target = Value::seq_body(body.clone());
     assert!(!body.is_cached());
-    let answer = invoke_owner_pure(&["Seq"], &target, Symbol::intern("cache"))
-        .expect("Seq.cache is a pure row")
-        .unwrap();
+    let answer = invoke_owner_pure(&["Seq"], &target, Symbol::intern("cache"));
     assert!(body.is_cached());
     assert!(
         body.has_deferred_source(),
         "requesting cache must not pull its source"
     );
-    assert_eq!(crate::runtime::utils::value_type_name(&answer), "List");
+    assert!(matches!(answer, Some(Ok(answer))
+        if crate::runtime::utils::value_type_name(&answer) == "List"));
 }
 
 #[test]
