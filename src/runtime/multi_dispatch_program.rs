@@ -169,7 +169,7 @@ impl Interpreter {
                             arg: idx,
                             constraint: tc.to_string(),
                         });
-                    } else if !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
+                    } else if !self.native_dispatch_arg_matches(tc, args, Some(idx))
                         || !self.param_constraint_accepts(tc, &arg)
                     {
                         nominal_ok = false;

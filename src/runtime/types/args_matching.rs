@@ -818,7 +818,6 @@ impl Interpreter {
                             &resolved_constraint,
                             args,
                             arg_idx,
-                            &dispatch_arg,
                         ))
                         || !self.param_constraint_accepts(&resolved_constraint, &dispatch_arg)
                     {
@@ -1359,13 +1358,12 @@ impl Interpreter {
 
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
-    /// come from the source VarRef metadata or the call-site literal mask.
+    /// come from the source VarRef metadata; a literal is always boxed.
     pub(crate) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],
         arg_idx: Option<usize>,
-        value: &Value,
     ) -> bool {
         let base = Self::constraint_base_name(constraint);
         if crate::runtime::native_types::native_family(base).is_none() {
@@ -1415,16 +1413,10 @@ impl Interpreter {
             }
         }
 
-        // A literal has no VarRef, but the compiler records its source shape
-        // separately so `multi f(int)` can outrank `multi f(Int)` for `f(5)`.
-        arg_idx.is_some_and(|idx| {
-            idx < 32
-                && self.literal_native_args & (1 << idx) != 0
-                && matches!(
-                    value.view(),
-                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
-                )
-        })
+        // A literal is a boxed value, not a native one (rakudo 2026.09, #13065):
+        // `multi n(byte $a)` does not accept `n(1)` ("will never work"), and
+        // beside a boxed candidate the boxed one wins.
+        false
     }
 
     /// [`Self::resolved_type_capture_name`] for a parameter's constraint, except
