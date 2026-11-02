@@ -408,6 +408,8 @@ pub(crate) fn local_timezone_offset_secs() -> i64 {
 pub(crate) struct ProtectBlockOps {
     pub(crate) assigned_slots: std::collections::HashSet<usize>,
     pub(crate) global_names: Vec<String>,
+    /// `global_names`, interned once with the scan (parallel to it).
+    pub(crate) global_syms: Vec<crate::symbol::Symbol>,
 }
 
 /// ADR-0037 §2.3: how `EVAL ..., context => $ctx`'s `return` classifies,

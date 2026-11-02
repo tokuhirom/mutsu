@@ -1188,11 +1188,17 @@ impl Interpreter {
         };
         // The part that does depend on this closure: which of those names its
         // captured env holds.
+        // The locals' symbols were interned when the block was compiled; a
+        // hand-built chunk has none, and interns here as before. Probing by
+        // `&str` re-hashed every local's name on every `protect` call.
         let captured_bindings: Vec<(usize, String)> = compiled
             .locals
             .iter()
             .enumerate()
-            .filter(|(_, name)| data.env.contains_key(name))
+            .filter(|(idx, name)| match compiled.locals_sym.get(*idx) {
+                Some(sym) => data.env.contains_key_sym(*sym),
+                None => data.env.contains_key(name),
+            })
             .map(|(idx, name)| (idx, name.clone()))
             .collect();
         let writeback_bindings: Vec<(usize, String)> = captured_bindings
@@ -1204,8 +1210,8 @@ impl Interpreter {
             .iter()
             .map(|(_, name)| name.clone())
             .collect();
-        for name in &ops.global_names {
-            if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
+        for (name, sym) in ops.global_names.iter().zip(&ops.global_syms) {
+            if data.env.contains_key_sym(*sym) && !captured_names.contains(name) {
                 captured_names.push(name.clone());
             }
         }
@@ -1258,9 +1264,14 @@ impl Interpreter {
                 global_names.push(name.to_string());
             }
         }
+        let global_syms = global_names
+            .iter()
+            .map(|name| crate::symbol::Symbol::intern(name))
+            .collect();
         ProtectBlockOps {
             assigned_slots,
             global_names,
+            global_syms,
         }
     }
 
