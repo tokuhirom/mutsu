@@ -3628,7 +3628,9 @@ impl Interpreter {
                             if matches!(
                                 inner.view(),
                                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
-                            ) || self.mixin_composes_method(&val, "iterator") =>
+                            ) || self.mixin_composes_method(&val, "iterator")
+                                // `Q.new but R` over an Iterable class (#15973).
+                                || self.instance_decomposes_on_array_assign(inner) =>
                         {
                             Value::scalar(val)
                         }
