@@ -129,6 +129,10 @@ pub(crate) struct ReductionSpec {
     /// callable is a runtime question — so [`Self::base`] can still carry a
     /// leading `R` that the VM strips.
     pub(crate) reverse: bool,
+    /// Whether the operand is a bare `$` variable: one item of the argument
+    /// list, so an `is Range` / `is Seq` subclass instance in it is not read as
+    /// the list it carries (set by the compiler, never by `lower`).
+    pub(crate) item_operand: bool,
     /// The base operator, with the markers above removed and the Unicode
     /// aliases folded to their ASCII spelling.
     pub(crate) base: Symbol,
@@ -432,6 +436,7 @@ impl ReductionSpec {
             negate,
             shortcircuit,
             reverse,
+            item_operand: false,
             base: Symbol::intern(base),
         }
     }

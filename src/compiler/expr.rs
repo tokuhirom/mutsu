@@ -1345,13 +1345,9 @@ impl Compiler {
                 // of an `is Range` / `is Seq` subclass in it is NOT read as the
                 // list it carries (`my $q = Q.new(1, 3); [+] $q` is 3, while
                 // `[+] Q.new(1, 3)` is 6, #15322). An instance has no itemized
-                // form, so the one-element list the item rule builds carries it.
-                let item_operand = !is_scan && Self::expr_is_scalar_var(expr);
-                if item_operand {
-                    self.code.emit(OpCode::Itemize);
-                    self.code.emit(OpCode::MakeArray(1));
-                }
-                let spec = ReductionSpec::lower(op.as_str());
+                // form, so the spec records where the operand came from.
+                let mut spec = ReductionSpec::lower(op.as_str());
+                spec.item_operand = !is_scan && Self::expr_is_scalar_var(expr);
                 self.emit_lex_import_meta(spec.base);
                 let op_idx = self.code.add_reduction_spec(spec);
                 self.code.emit(OpCode::Reduction(op_idx));
@@ -1898,6 +1894,7 @@ impl Compiler {
             negate: false,
             shortcircuit: true,
             reverse: false,
+            item_operand: false,
             base: crate::symbol::Symbol::intern(op),
         });
         self.code.emit(OpCode::Reduction(op_idx));

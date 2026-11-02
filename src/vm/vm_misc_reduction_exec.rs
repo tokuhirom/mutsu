@@ -88,7 +88,8 @@ impl Interpreter {
             vec![derefed_operand]
         } else if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(&ll)?
-        } else if crate::builtins::native_base::has_iterable_payload(&list_value)
+        } else if !spec.item_operand
+            && crate::builtins::native_base::has_iterable_payload(&list_value)
             && let Some(items) = self.try_iterable_instance_items(&list_value)?
         {
             // An instance of an `is Range` / `is Seq` subclass is the list it
@@ -142,13 +143,6 @@ impl Interpreter {
                     items.iter().cloned().collect()
                 }
                 ValueView::Seq(items) => items.iter().cloned().collect(),
-                // A `$`-held Seq is still iterated by a reduction.
-                ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => {
-                    match inner.view() {
-                        ValueView::Seq(items) => items.iter().cloned().collect(),
-                        _ => vec![only.clone()],
-                    }
-                }
                 ValueView::LazyList(ll) => {
                     if let Ok(items) = self.force_lazy_list_vm(&ll) {
                         items
