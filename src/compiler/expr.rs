@@ -716,6 +716,23 @@ impl Compiler {
                     sugar: false,
                 });
             }
+            // `*<a>:k` / `*[1]:v` / `*<a>:p`: the bare `*` target makes the
+            // whole adverb call a WhateverCode. Prime it around the call, as the
+            // `:exists` form does around its node (#15446); the curry replaces the
+            // `*`, so the inner call no longer matches this arm.
+            Expr::Call {
+                name,
+                args,
+                listop,
+            } if name.with_str(|n| n == "__mutsu_subscript_adverb")
+                && matches!(args.first(), Some(Expr::WhateverArg)) =>
+            {
+                self.compile_expr(&Expr::WhateverCurry(Box::new(Expr::Call {
+                    name: *name,
+                    args: args.clone(),
+                    listop: *listop,
+                })));
+            }
             Expr::Call { name, args, .. } => {
                 if name.with_str(|n| n == "EVAL") {
                     self.note_eval_scope_names();
