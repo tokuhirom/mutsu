@@ -39,12 +39,17 @@ impl ScopeRoutines {
             let was_anon = prev_was_anon;
             prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
             let Stmt::SubDecl {
-                name, multi, body, ..
+                name,
+                multi,
+                body,
+                supersede,
+                ..
             } = stmt
             else {
                 continue;
             };
-            if was_anon {
+            // `anon sub` declares nothing, `supersede sub` replaces on purpose.
+            if was_anon || *supersede {
                 continue;
             }
             let name = name.resolve().to_string();
