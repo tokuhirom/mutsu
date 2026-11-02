@@ -921,6 +921,12 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            // A role whose type parameters all have defaults (`role R[::T = Int]`)
+            // is punned with those defaults bound, as `R.new` does; `new` on the
+            // unspecialized type object left the capture to whatever was in scope.
+            let type_obj = self
+                .default_parametric_role_pun(&type_obj)?
+                .unwrap_or(type_obj);
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Computed after `new`: a bare role (`role R is Hash`) is punned by
             // `new`, and only the punned class's MRO reaches `Hash`.
