@@ -610,6 +610,20 @@ impl Interpreter {
         if self.has_type_direct(name) {
             return None;
         }
+        // A class declared with a compound name outside its parent prefix
+        // (`class Y::Errno` at file scope) is not declared inside `Y`, so its
+        // own short name is no lexical binding for code running inside the
+        // class: `has Errno $.errno` there names the imported `Errno`, not
+        // the class itself (#16035).
+        if self.is_compound_declared_name(target)
+            && self
+                .current_package_sym()
+                .as_str()
+                .strip_prefix(target.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
+        {
+            return None;
+        }
         (self.has_type_direct(target) || self.is_published_outer_package(name, target))
             .then(|| target.clone())
     }
