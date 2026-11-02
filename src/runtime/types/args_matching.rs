@@ -764,7 +764,8 @@ impl Interpreter {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
                         // never a nominal check.
                     } else if pd.is_type_only()
-                        && !self.is_resolvable_type(&resolved_constraint)
+                        && (!self.is_resolvable_type(&resolved_constraint)
+                            || self.names_value_constant(&resolved_constraint))
                     {
                         // Bare identifier param (e.g., enum value) -- resolve from env and compare.
                         // An enum key's bare spelling lives in the enum-key namespace
