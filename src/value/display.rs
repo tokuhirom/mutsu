@@ -534,21 +534,33 @@ impl Value {
                 // An unbounded or very large range keeps range notation, with
                 // `*` for an infinite end (as rakudo's `1..Inf`.Str is `1..*`).
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}..{}", int_range_end_text(a, true), int_range_end_text(b, false))
+                    format!(
+                        "{}..{}",
+                        int_range_end_text(a, true),
+                        int_range_end_text(b, false)
+                    )
                 } else {
                     (a..=b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
             ValueView::RangeExcl(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}..^{}", int_range_end_text(a, true), int_range_end_text(b, false))
+                    format!(
+                        "{}..^{}",
+                        int_range_end_text(a, true),
+                        int_range_end_text(b, false)
+                    )
                 } else {
                     (a..b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
             ValueView::RangeExclStart(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}^..{}", int_range_end_text(a, true), int_range_end_text(b, false))
+                    format!(
+                        "{}^..{}",
+                        int_range_end_text(a, true),
+                        int_range_end_text(b, false)
+                    )
                 } else {
                     (a + 1..=b)
                         .map(|i| i.to_string())
@@ -558,7 +570,11 @@ impl Value {
             }
             ValueView::RangeExclBoth(a, b) => {
                 if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
-                    format!("{}^..^{}", int_range_end_text(a, true), int_range_end_text(b, false))
+                    format!(
+                        "{}^..^{}",
+                        int_range_end_text(a, true),
+                        int_range_end_text(b, false)
+                    )
                 } else {
                     (a + 1..b)
                         .map(|i| i.to_string())
