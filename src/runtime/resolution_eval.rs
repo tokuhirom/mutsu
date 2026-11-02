@@ -1187,7 +1187,37 @@ impl Interpreter {
             std::sync::Arc::new(Self::scan_protect_block_ops(&compiled))
         };
         // The part that does depend on this closure: which of those names its
-        // captured env holds.
+        // captured env holds. A function of (body, set of names held), so a
+        // body with at most 64 locals and 64 global names is memoized by the
+        // two membership bitmasks: a loop that builds a closure per iteration
+        // then reuses one result instead of cloning the name `String`s and
+        // rebuilding three `Arc<Vec<..>>` every call.
+        let mask_key = (stable
+            && compiled.locals.len() <= 64
+            && ops.global_names.len() <= 64)
+            .then(|| {
+                let mut locals_mask = 0u64;
+                for idx in 0..compiled.locals.len() {
+                    if let Some(sym) = compiled.local_sym(idx)
+                        && data.env.contains_key_sym(sym)
+                    {
+                        locals_mask |= 1 << idx;
+                    }
+                }
+                let mut globals_mask = 0u64;
+                for (idx, name) in ops.global_names.iter().enumerate() {
+                    if data.env.contains_key(name.as_str()) {
+                        globals_mask |= 1 << idx;
+                    }
+                }
+                (std::sync::Arc::as_ptr(&compiled) as usize, locals_mask, globals_mask)
+            });
+        if let Some(key) = mask_key
+            && let Some((_, hit)) = self.caches.protect_block_bindings.get(&key)
+        {
+            let hit = hit.clone();
+            return (compiled, compiled_fns, hit.captured, hit.writeback, hit.names);
+        }
         let captured_bindings: Vec<(usize, String)> = compiled
             .locals
             .iter()
@@ -1209,12 +1239,27 @@ impl Interpreter {
                 captured_names.push(name.clone());
             }
         }
+        let bindings = ProtectBlockBindings {
+            captured: std::sync::Arc::new(captured_bindings),
+            writeback: std::sync::Arc::new(writeback_bindings),
+            names: std::sync::Arc::new(captured_names),
+        };
+        if let Some(key) = mask_key {
+            // One entry per (literal, held-names set): small in practice;
+            // dropped wholesale if a program somehow produces thousands.
+            if self.caches.protect_block_bindings.len() >= 4096 {
+                self.caches.protect_block_bindings.clear();
+            }
+            self.caches
+                .protect_block_bindings
+                .insert(key, (compiled.clone(), bindings.clone()));
+        }
         (
             compiled,
             compiled_fns,
-            std::sync::Arc::new(captured_bindings),
-            std::sync::Arc::new(writeback_bindings),
-            std::sync::Arc::new(captured_names),
+            bindings.captured,
+            bindings.writeback,
+            bindings.names,
         )
     }
 
