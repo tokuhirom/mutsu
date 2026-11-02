@@ -644,7 +644,7 @@ impl Interpreter {
         self.resolve_code_var_scoped(name, false)
     }
 
-    fn resolve_code_var_scoped(&self, name: &str, consult_env_amp: bool) -> Value {
+    pub(super) fn resolve_code_var_scoped(&self, name: &str, consult_env_amp: bool) -> Value {
         // `&Alias::sub` where `Alias` is a constant naming a package.
         if let Some(real) = self.resolve_package_alias_prefix(name) {
             return self.resolve_code_var_scoped(&real, consult_env_amp);
@@ -736,58 +736,7 @@ impl Interpreter {
         }
         let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
-            // Skip pointy-block entries to find the enclosing routine
-            let entry = self
-                .routine_stack
-                .iter()
-                .rev()
-                .find(|frame| frame.name != "<pointy-block>");
-            if let Some(frame) = entry {
-                // Anonymous subs are pushed with "<anon>" as the sentinel name.
-                // Return the block_stack Sub directly so callers can invoke it.
-                if frame.name.is_empty() || frame.name == "<anon>" {
-                    if let Some(val) = self.block_stack_top()
-                        && matches!(val.view(), ValueView::Sub(_))
-                    {
-                        return val;
-                    }
-                    return Value::NIL;
-                }
-                if frame.is_submethod {
-                    let mut env = crate::env::Env::new();
-                    env.insert(
-                        "__mutsu_callable_type".to_string(),
-                        Value::str_from("Submethod"),
-                    );
-                    env.insert(
-                        "__mutsu_routine_name".to_string(),
-                        Value::str(
-                            crate::qualified::qualified(frame.package, frame.name)
-                                .as_str()
-                                .to_string(),
-                        ),
-                    );
-                    return Value::make_sub(
-                        frame.package,
-                        frame.name,
-                        Vec::new(),
-                        Vec::new(),
-                        Vec::new(),
-                        false,
-                        env,
-                    );
-                }
-                // A named sub's `&?ROUTINE` is the routine `&name` denotes, the
-                // same object (`&?ROUTINE === &f`), not a fresh by-name stub.
-                if !frame.is_method && !crate::qualified::is_qualified(frame.name) {
-                    let by_name = self.resolve_code_var_scoped(frame.name.as_str(), true);
-                    if matches!(by_name.view(), ValueView::Sub(_)) {
-                        return by_name;
-                    }
-                }
-                return Value::routine_parts(frame.package, frame.name, false);
-            }
-            return Value::NIL;
+            return self.enclosing_routine_value();
         }
         // When SETTING:: (or similar) pseudo-packages are present, resolve to
         // the builtin directly — these refer to the outer setting scope, not

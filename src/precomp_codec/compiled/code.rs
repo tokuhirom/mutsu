@@ -144,6 +144,7 @@ impl Encode for CompiledCode {
             static_name_lookup,
             uses_dispatcher,
             may_observe_named_slurpy,
+            reads_routine_magical,
             is_supply_block_body,
             eval_context_target_callable_id,
             supply_emitter_sym,
@@ -310,6 +311,7 @@ impl Encode for CompiledCode {
         static_name_lookup.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
         may_observe_named_slurpy.encode(encoder)?;
+        reads_routine_magical.encode(encoder)?;
         is_supply_block_body.encode(encoder)?;
         eval_context_target_callable_id.encode(encoder)?;
         supply_emitter_sym.encode(encoder)?;
@@ -463,6 +465,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             static_name_lookup: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,
             may_observe_named_slurpy: Decode::decode(decoder)?,
+            reads_routine_magical: Decode::decode(decoder)?,
             is_supply_block_body: Decode::decode(decoder)?,
             eval_context_target_callable_id: Decode::decode(decoder)?,
             supply_emitter_sym: Decode::decode(decoder)?,

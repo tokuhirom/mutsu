@@ -114,6 +114,17 @@ impl Interpreter {
         for (sym, val) in lexsub_bindings {
             env.insert_sym(sym, val);
         }
+        // `&?ROUTINE` is a lexical: the closure means the routine it is
+        // written in, whenever and from wherever it runs.
+        if compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.reads_routine_magical)
+        {
+            let routine = self.enclosing_routine_value();
+            if !routine.is_nil() {
+                env.insert(Self::CAPTURED_ROUTINE_KEY.to_string(), routine);
+            }
+        }
         if spec.freeze_readonly_captures {
             self.freeze_readonly_owned_captures(
                 code,
