@@ -401,28 +401,35 @@ impl Interpreter {
                             // was registered (#15958); adopt that result.
                             let prerun = whenever_id
                                 .and_then(|id| self.async_state.prerun_on_demand.remove(&id));
-                            let (emitter_supplier_id, done_promise) = match &prerun {
-                                Some(pre) => (pre.emitter_supplier_id, pre.done_promise.clone()),
+                            let (emitter_supplier_id, done_promise, stream_idx) = match &prerun {
+                                // Its streaming consumer was registered before
+                                // the body ran, at the `whenever`.
+                                Some(pre) => (
+                                    pre.emitter_supplier_id,
+                                    pre.done_promise.clone(),
+                                    pre.stream_idx,
+                                ),
                                 None => {
                                     let id = next_supplier_id();
                                     let dp = crate::value::SharedPromise::new();
                                     supplier_register_promise(id, dp.clone());
-                                    (id, dp)
+                                    // Register a streaming consumer so that `emit`
+                                    // inside the supply body delivers values to this
+                                    // whenever's callback synchronously (so a
+                                    // synchronously infinite body terminates when the
+                                    // consumer signals `done`).
+                                    self.async_state
+                                        .supply_stream_consumers
+                                        .push(StreamConsumer {
+                                            supplier_id: id,
+                                            consumer_cb: callback.clone(),
+                                            done: false,
+                                        });
+                                    (id, dp, self.async_state.supply_stream_consumers.len() - 1)
                                 }
                             };
-                            // Register a streaming consumer so that `emit` inside
-                            // the supply body delivers values to this whenever's
-                            // callback synchronously (so a synchronously infinite
-                            // body terminates when the consumer signals `done`).
-                            self.async_state
-                                .supply_stream_consumers
-                                .push(StreamConsumer {
-                                    supplier_id: emitter_supplier_id,
-                                    consumer_cb: callback.clone(),
-                                    done: false,
-                                });
-                            let stream_idx = self.async_state.supply_stream_consumers.len() - 1;
-                            stream_base.get_or_insert(stream_idx);
+                            let base = stream_base.map_or(stream_idx, |b| b.min(stream_idx));
+                            *stream_base = Some(base);
                             let (od_res, emitted, body_ran_done) = match prerun {
                                 Some(pre) => (pre.result, pre.emitted, pre.body_ran_done),
                                 None => loan_env!(

@@ -174,7 +174,7 @@ impl Interpreter {
     /// `build_react_subscriptions` (see [`PreRunOnDemand`]). A source backed by
     /// a channel or a supplier is live already and is left alone.
     // Cost: O(b), b = the cost of running the supply body once.
-    fn prerun_cold_supply_source(&mut self, source: &Value, whenever_id: u64) {
+    fn prerun_cold_supply_source(&mut self, source: &Value, whenever_id: u64, callback: &Value) {
         let ValueView::Instance {
             class_name,
             attributes,
@@ -202,12 +202,23 @@ impl Interpreter {
             emitter_supplier_id,
             done_promise.clone(),
         );
+        // The body's plain emits stream to the `whenever` callback as they
+        // happen, so a synchronously infinite body ends when it signals `done`.
+        self.async_state
+            .supply_stream_consumers
+            .push(StreamConsumer {
+                supplier_id: emitter_supplier_id,
+                consumer_cb: callback.clone(),
+                done: false,
+            });
+        let stream_idx = self.async_state.supply_stream_consumers.len() - 1;
         let (result, emitted, body_ran_done) =
             self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
         self.async_state.prerun_on_demand.insert(
             whenever_id,
             super::async_state::PreRunOnDemand {
                 emitter_supplier_id,
+                stream_idx,
                 done_promise,
                 result,
                 emitted,
@@ -387,7 +398,7 @@ impl Interpreter {
                 .last()
                 .is_some_and(|f| f.is_react)
             {
-                self.prerun_cold_supply_source(&supply_val, whenever_id);
+                self.prerun_cold_supply_source(&supply_val, whenever_id, &callback_with_id);
             }
             if let Some(last) = self.async_state.supply_emit_buffer.last_mut() {
                 // A react body tapping a live supplier: its producers now wait

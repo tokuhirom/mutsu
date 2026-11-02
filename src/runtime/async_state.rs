@@ -145,6 +145,9 @@ impl AsyncState {
 /// The outcome of running a cold `supply { }` body at `whenever` time.
 pub(crate) struct PreRunOnDemand {
     pub(crate) emitter_supplier_id: u64,
+    /// Index of the `StreamConsumer` registered before the body ran, so its
+    /// plain emits reach the `whenever` callback as they happen.
+    pub(crate) stream_idx: usize,
     pub(crate) done_promise: crate::value::SharedPromise,
     pub(crate) result: Result<Value, RuntimeError>,
     pub(crate) emitted: Vec<Value>,
