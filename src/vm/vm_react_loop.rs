@@ -427,7 +427,10 @@ impl Interpreter {
                                 Some(pre) => (pre.result, pre.emitted, pre.body_ran_done),
                                 None => loan_env!(
                                     self,
-                                    run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
+                                    run_on_demand_body(
+                                        on_demand_cb.clone(),
+                                        Some(emitter_supplier_id),
+                                    )
                                 ),
                             };
                             // A `whenever <Promise>` registered by the body is not
