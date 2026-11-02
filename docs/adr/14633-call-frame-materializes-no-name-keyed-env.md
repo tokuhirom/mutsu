@@ -2,7 +2,8 @@
 
 - **Status**: Accepted (user decision 2026-10-23; proposed 2026-10-22). Accepted with two
   amendments made on review: the fixtures live on a parallel stack, not in `RoutineFrame`
-  (§2.1), and the new frame state is frame-core state under ADR-10779 (§2.3).
+  (§2.1), and the new frame state is frame-core state under ADR-10779 (§2.3). Amendment A1
+  (§8, accepted 2026-11-02) replaces §2.2's mechanism and defers building the lazy `Env`.
 - **Date**: 2026-10-22
 - **Issue**: [#14633](https://github.com/tokuhirom/mutsu/issues/14633), a child of
   [#12529](https://github.com/tokuhirom/mutsu/issues/12529). It carries the close
@@ -424,9 +425,9 @@ callgrind_annotate --inclusive=yes --tree=calling --threshold=99.9 tmp/cg_method
 Run each workload twice and use the second (the module cache is cold after a rebuild,
 `perf-tuning` §0).
 
-## 8. Amendment A1 (Proposed, 2026-11-02): the lazy frame needs its own handle, and is not worth it alone
+## 8. Amendment A1 (Accepted, 2026-11-02): the lazy frame needs its own handle, and is not worth it alone
 
-Status of this amendment: **Proposed**. It supersedes §2.2's *mechanism* ("the frame's `Env`
+Status of this amendment: **Accepted** (user decision 2026-11-02; proposed the same day). It supersedes §2.2's *mechanism* ("the frame's `Env`
 handle is the caller's handle with the frame bits set") and records the decision on whether
 to build §2.2 now. §2.1 (fixtures), §2.3 (saved registers) and §2.4 are unchanged and
 shipped; this concerns only the lazy `Env`.
