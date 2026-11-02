@@ -10,6 +10,27 @@
 use super::*;
 
 impl Interpreter {
+    /// Register the loading unit's own `$=pod` (just established under
+    /// `env["=pod"]`) as a compunit lexical of `unit`, so a mainline read
+    /// finds it before the free-variable walk climbs to an ancestor package's
+    /// already-registered document.
+    // Cost: O(1).
+    pub(crate) fn register_unit_pod_before_mainline(&mut self, unit: Option<&str>) {
+        let Some(unit) = unit else { return };
+        let Some(pod) = self.env.get("=pod").cloned() else {
+            return;
+        };
+        let cell = if pod.is_container_ref() {
+            pod
+        } else {
+            pod.into_container_ref()
+        };
+        self.unit_lexicals_cow_mut()
+            .entry(unit.to_string())
+            .or_default()
+            .insert("=pod".to_string(), cell);
+    }
+
     /// A lexical pad over `entries`: a hash typed `BOOTContext`, which the
     /// `nqp::` hash and iteration ops accept (see `value::type_name`).
     // Cost: O(1) beyond moving `entries`.
