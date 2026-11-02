@@ -14,6 +14,11 @@ pub(crate) struct AsyncState {
     /// The loop adopts them on its next round; see
     /// `Interpreter::adopt_newly_registered_subscriptions`.
     pub(crate) pending_react_subscriptions: Vec<Value>,
+    /// Cold `supply { }` bodies a react-mode `whenever` already ran at
+    /// `whenever` time (rakudo taps the source there), keyed by the
+    /// `whenever` id; the drive loop's `build_react_subscriptions` adopts the
+    /// result instead of running the body a second time.
+    pub(crate) prerun_on_demand: HashMap<u64, PreRunOnDemand>,
     /// Emitter `Supplier`s of the `supply` blocks whose code is currently on the
     /// stack, innermost last. `emit` is caught by the innermost *dynamically*
     /// enclosing supply, so a `sub` that is not lexically inside the block still
@@ -135,4 +140,16 @@ impl AsyncState {
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self::default()
     }
+}
+
+/// The outcome of running a cold `supply { }` body at `whenever` time.
+pub(crate) struct PreRunOnDemand {
+    pub(crate) emitter_supplier_id: u64,
+    /// Index of the `StreamConsumer` registered before the body ran, so its
+    /// plain emits reach the `whenever` callback as they happen.
+    pub(crate) stream_idx: usize,
+    pub(crate) done_promise: crate::value::SharedPromise,
+    pub(crate) result: Result<Value, RuntimeError>,
+    pub(crate) emitted: Vec<Value>,
+    pub(crate) body_ran_done: bool,
 }
