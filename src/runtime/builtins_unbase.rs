@@ -74,7 +74,12 @@ impl Interpreter {
                 return Err(err);
             }
             let text = arg.to_string_value();
-            let parsed = unbase_parse_with_overrides(&text, radix)?;
+            // A malformed body is a soft `X::Str::Numeric` Failure, not a throw:
+            // `:8($s) // 0` and `:8($s).so` must be usable on bad input.
+            let parsed = match unbase_parse_with_overrides(&text, radix) {
+                Ok(v) => v,
+                Err(_) => unbase_failure(&text, radix),
+            };
             out.push(parsed);
         }
 
@@ -240,4 +245,50 @@ fn unbase_parse_with_overrides(text: &str, default_radix: u32) -> Result<Value, 
         "Cannot parse '{}' as base {}",
         text, default_radix
     )))
+}
+
+/// The lazy `X::Str::Numeric` Failure `:N($str)` yields for a body that is
+/// not a radix number (rakudo: `base-8 number must begin with valid digits or
+/// '.'`, or `malformed ':8' style radix number, expecting '>' after the body`
+/// once a valid prefix was read).
+// Cost: O(d), d = chars of `text`.
+fn unbase_failure(text: &str, radix: u32) -> Value {
+    let body = text.trim();
+    let valid = body
+        .chars()
+        .take_while(|c| is_valid_digit_for_base(*c, radix) || *c == '_' || *c == '.')
+        .count();
+    let (reason, pos) = if valid == 0 {
+        (
+            format!("base-{radix} number must begin with valid digits or '.'"),
+            0,
+        )
+    } else {
+        (
+            format!("malformed ':{radix}' style radix number, expecting '>' after the body"),
+            valid,
+        )
+    };
+    // With no valid prefix rakudo echoes the text untouched (blanks included).
+    let body = if valid == 0 { text } else { body };
+    let split = body
+        .char_indices()
+        .nth(pos)
+        .map_or(body.len(), |(i, _)| i);
+    let message = format!(
+        "Cannot convert string to number: {reason} in ':{radix}<{}<HERE>{}>' (indicated by <HERE>)",
+        &body[..split],
+        &body[split..]
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("source".to_string(), Value::str(text.to_string()));
+    attrs.insert("pos".to_string(), Value::int(pos as i64));
+    attrs.insert("reason".to_string(), Value::str(reason));
+    attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
+    attrs.insert("message".to_string(), Value::str(message));
+    let exception = Value::make_instance(Symbol::intern("X::Str::Numeric"), attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }

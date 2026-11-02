@@ -141,6 +141,22 @@ pub(crate) fn slip(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
                 .map(|(k, v)| items.typed_pair(k, v.clone()))
                 .collect(),
         ))),
+        // A Buf/Blob is `Positional`: `Buf.Slip` slips its elements
+        // (`Buf.allocate($n, 0).Slip`), as `Buf.List` lists them.
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
+            // Cost: O(e), e = elements.
+            let items = crate::value::value_buf::buf_elems_as_array(
+                &attributes.as_map(),
+                crate::value::ArrayKind::List,
+            )
+            .map(|list| crate::runtime::utils::value_to_list(&list))
+            .unwrap_or_default();
+            Some(Ok(Value::slip(items)))
+        }
         _ => Some(Ok(Value::slip(vec![target.clone()]))),
     }
 }
