@@ -670,7 +670,11 @@ impl Interpreter {
     /// [`Self::str_leg`] without the user-candidate probe: the CORE operator
     /// (`&CORE::infix:<leg>`, #15922).
     // Cost: as `str_leg`.
-    pub(crate) fn str_leg_core(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn str_leg_core(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(runtime::make_order(crate::builtins::str_prim::str_order(
