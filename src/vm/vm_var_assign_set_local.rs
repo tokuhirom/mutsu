@@ -1555,6 +1555,17 @@ impl Interpreter {
             // exactly the `:=` source→target slot pairs of this frame, so it
             // does not match the capture-boxed loop local this clear exists for
             // (whose cell is shared with a CLOSURE, not with a sibling slot).
+            //
+            // A dynamic declaration (`my $*X`) is the exception: a `:=` that read
+            // the CALLER's `$*X` (`my $h := $*X` before the block that declares
+            // `my $*X`) is not a sibling lexical of the new variable, and its pair
+            // would make the fresh `$*X`'s writes land in `$h` (#14875).
+            if code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*')
+            {
+                self.local_bind_pairs.retain(|&(source, _)| source != idx);
+            }
             let bound_by_sibling_lexical = self
                 .local_bind_pairs
                 .iter()
