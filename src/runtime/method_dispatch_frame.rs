@@ -126,10 +126,7 @@ impl Interpreter {
             ValueView::Package(_) | ValueView::Mixin(..)
         ) && !Self::invocant_carries_native_storage(&invocant)
             && self.has_user_method(receiver_class, method_name)
-            && {
-                let mro = self.class_mro(receiver_class);
-                Self::builtin_method_level(&mro, method_name).is_some()
-            };
+            && self.class_reaches_builtin_method(receiver_class, method_name);
         let grammar_rule_override = super::regex::regex_builtin_rule::is_builtin_rule_name(method_name)
             && matches!(invocant.view(), ValueView::Instance { .. })
             && self.class_is_grammar(receiver_class)
