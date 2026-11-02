@@ -872,8 +872,10 @@ impl Interpreter {
     }
 
     /// The elements of an instance of a `Seq` or `Range` subclass: the value
-    /// it carries, read through its `list` (the inherited `Seq.list` /
-    /// `Range.list`).
+    /// it carries, read through the base type's own `list`. Iteration (`for`,
+    /// `map`, `@`-assignment) reads `self.iterator`, never a `list` the subclass
+    /// declares -- that one answers an explicit `.list` only (#16013); a
+    /// subclass with its own `iterator` is iterated through it (#15353).
     // Cost: O(n), n = the sequence's elements.
     fn iterable_payload_items(
         &mut self,
@@ -882,15 +884,28 @@ impl Interpreter {
         if !crate::builtins::native_base::has_iterable_payload(iterable) {
             return Ok(None);
         }
-        // A subclass with its own `iterator` (and no `list`) is iterated through
-        // it: `Range.list` / `Seq.list` read `self.iterator` (#15353).
-        if let ValueView::Instance { class_name, .. } = iterable.view() {
-            let cn = class_name.resolve();
-            if self.has_user_method(&cn, "iterator") && !self.has_user_method(&cn, "list") {
-                return Ok(None);
-            }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterable.view()
+        else {
+            return Ok(None);
+        };
+        let cn = class_name.resolve();
+        if self.has_user_method(&cn, "iterator") {
+            return Ok(None);
         }
-        let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+        let payload = {
+            let map = attributes.as_map();
+            map.get(crate::builtins::native_base::RANGE_PAYLOAD)
+                .or_else(|| map.get(crate::builtins::native_base::SEQ_PAYLOAD))
+                .cloned()
+        };
+        let Some(payload) = payload else {
+            return Ok(None);
+        };
+        let list = self.try_compiled_method_or_interpret(payload, "list", vec![])?;
         Ok(Some(crate::runtime::utils::value_to_list(&list)))
     }
 
