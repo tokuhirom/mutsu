@@ -497,6 +497,20 @@ impl Interpreter {
         class_name: &str,
         saved: &mut Vec<(String, Option<Value>)>,
     ) {
+        self.inject_class_body_statics_saving_except(class_name, saved, &[]);
+    }
+
+    /// [`Self::inject_class_body_statics_saving`] leaving alone the names in
+    /// `except`: the callee's free variables that an enclosing routine of the
+    /// callee declares (`CompiledCode::routine_scoped_free`). Those are that
+    /// routine's own bindings, not the class body's same-named `my` (#16077).
+    // Cost: O(s * e), s = class-body statics, e = |except| (usually 0).
+    pub(crate) fn inject_class_body_statics_saving_except(
+        &mut self,
+        class_name: &str,
+        saved: &mut Vec<(String, Option<Value>)>,
+        except: &[Symbol],
+    ) {
         let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
             return;
         };
@@ -508,6 +522,9 @@ impl Interpreter {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, v) in to_inject {
+            if except.iter().any(|sym| sym.with_str(|n| n == k)) {
+                continue;
+            }
             saved.push((k.clone(), self.env.get(&k).cloned()));
             self.env.insert(k, v);
         }
