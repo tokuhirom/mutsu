@@ -1134,9 +1134,18 @@ impl Interpreter {
                             // too, so its `BUILD`/methods see `T` as the argument
                             // this role forwarded (`role Q[::U] does R[U]` composed
                             // as `Q[Array]` binds R's `T` to `Array`, #15588).
-                            cx.out
-                                .class_role_param_bindings
-                                .insert(param.clone(), Value::package(Symbol::intern(arg)));
+                            // Only a type-named argument: a literal (`R["g"]`) is a
+                            // value the role registration already bound.
+                            if arg
+                                .chars()
+                                .next()
+                                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                                && !arg.contains(['"', '\''])
+                            {
+                                cx.out
+                                    .class_role_param_bindings
+                                    .insert(param.clone(), Value::package(Symbol::intern(arg)));
+                            }
                         }
                         self.propagate_composed_role_parent_specs(
                             cx,
