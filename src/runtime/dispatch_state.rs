@@ -44,6 +44,10 @@ pub(crate) struct DispatchState {
     /// imported, in scope for the op `OpCode::LexImportBuiltinOp` is running
     /// (ADR-8751 stage 2): `try_user_infix` answers from them first.
     pub(crate) lexical_operator_scopes: Vec<LexicalOperatorScope>,
+    /// Set while a string interpolation folds its pieces through a user
+    /// `infix:<~>` (`exec_string_concat_op`, #15932): an interpolation inside
+    /// that candidate's own body stringifies plainly instead of re-entering it.
+    pub(crate) string_concat_user_fold: bool,
     /// Active proto bodies a `{*}` may dispatch from (#10746).
     pub(crate) proto_dispatch_stack: Vec<ProtoDispatchFrame>,
     /// How many method calls are in progress (the VM's method-call opcodes,
