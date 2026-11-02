@@ -206,6 +206,12 @@ impl Interpreter {
             {
                 return Some(text.to_string_value());
             }
+            // The row table's own builder first: it names the values of a
+            // hand-built `X::TypeCheck::Assignment` (the thrown message is
+            // stamped from here, #16047).
+            if let Some(formatted) = crate::builtins::method_table::exception_formatted_message(target) {
+                return Some(formatted);
+            }
             if let Some(formatted) =
                 crate::value::exception_message::format_exception_message(&cn, &map)
             {
