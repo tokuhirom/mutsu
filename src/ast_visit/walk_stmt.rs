@@ -60,8 +60,8 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             next_ph,
             exit_ph,
         } => {
-            super::walk_stmts(v, next_ph);
-            super::walk_stmts(v, exit_ph);
+            v.visit_stmts(next_ph);
+            v.visit_stmts(exit_ph);
         }
         Stmt::LoopExitGuardEnd => {}
         Stmt::NestedMethodCapture {
@@ -122,7 +122,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             }
             names(v, export_tags, NameKind::Module);
             traits(v, custom_traits);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::TokenDecl {
             name,
@@ -154,7 +154,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 walk_regex_tree(v, tree);
             }
             names(v, export_tags, NameKind::Module);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::ProtoToken { name, .. } => v.visit_name(name.as_str(), NameKind::Decl),
         Stmt::TrustsDecl { name } => v.visit_name(name.as_str(), NameKind::Type),
@@ -168,10 +168,10 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
             traits(v, custom_traits);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         // The declaration itself is visited where the prologue keeps it.
-        Stmt::PackageRuntimeBody { body, .. } => super::walk_stmts(v, body),
+        Stmt::PackageRuntimeBody { body, .. } => v.visit_stmts(body),
         Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
@@ -200,7 +200,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             names(v, flat, NameKind::BlockParam);
             params(v, params_def);
             names(v, label.iter(), NameKind::Label);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::Say(items) | Stmt::Put(items) | Stmt::Print(items) | Stmt::Note(items) => {
             exprs(v, items)
@@ -249,7 +249,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         | Stmt::React { body, .. }
         | Stmt::Default(body)
         | Stmt::Catch(body)
-        | Stmt::Control(body) => super::walk_stmts(v, body),
+        | Stmt::Control(body) => v.visit_stmts(body),
         Stmt::If {
             cond,
             then_branch,
@@ -261,8 +261,8 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         } => {
             v.visit_expr(cond);
             names(v, binding_var.iter(), NameKind::BlockParam);
-            super::walk_stmts(v, then_branch);
-            super::walk_stmts(v, else_branch);
+            v.visit_stmts(then_branch);
+            v.visit_stmts(else_branch);
         }
         Stmt::While {
             cond,
@@ -274,7 +274,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         } => {
             v.visit_expr(cond);
             names(v, label.iter(), NameKind::Label);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::Loop {
             init,
@@ -293,7 +293,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 v.visit_expr(e);
             }
             names(v, label.iter(), NameKind::Label);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::Whenever {
             supply,
@@ -304,7 +304,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             v.visit_expr(supply);
             names(v, flat, NameKind::BlockParam);
             params(v, param_defs);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::Last(label) | Stmt::Next(label) | Stmt::Redo(label) => {
             names(v, label.iter(), NameKind::Label)
@@ -321,7 +321,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             is_statement_modifier: _,
         } => {
             v.visit_expr(cond);
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::DocPhaser(inner) => v.visit_stmt(inner),
         Stmt::Label { name, stmt } => {
@@ -376,7 +376,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             for r in does_roles {
                 v.visit_name(r.as_str(), NameKind::Type);
             }
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::SubsetDecl {
             spans: _,
@@ -407,7 +407,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             condition: _,
             end_index: _,
             bare: _,
-        } => super::walk_stmts(v, body),
+        } => v.visit_stmts(body),
         Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,
             is_hoisted_copy: _,
@@ -434,7 +434,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             for e in trait_args.iter().filter_map(|(_, a)| a.as_ref()) {
                 v.visit_expr(e);
             }
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         Stmt::Let {
             name,

@@ -519,6 +519,9 @@ pub(crate) struct ModuleState {
     /// shadowing rules; the unit's top level still sees the caller's names as
     /// ones it may not redeclare.
     pub(crate) eval_unit_block_depth: usize,
+    /// `routine_stack` depth when the innermost `EVAL` unit started: a routine
+    /// entered since then declares its own lexical subs (#15869).
+    pub(crate) eval_unit_routine_depth: usize,
     /// Classes whose declaration died while an `EVAL` unit was compiling it
     /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
     /// compile, so `isolated_eval_unit` does not merge these into the
@@ -779,6 +782,7 @@ impl ModuleState {
             eval_import_chain: None,
             eval_import_unit: None,
             eval_unit_block_depth: 0,
+            eval_unit_routine_depth: 0,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
             eval_prerun_sets: Vec::new(),
@@ -893,6 +897,7 @@ impl ModuleState {
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
             eval_unit_block_depth: self.eval_unit_block_depth,
+            eval_unit_routine_depth: self.eval_unit_routine_depth,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_prerun_sets: self.eval_prerun_sets.clone(),

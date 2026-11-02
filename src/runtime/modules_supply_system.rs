@@ -13,6 +13,7 @@ mod supply_promise;
 mod supply_transform;
 mod system;
 mod system_eval_names;
+mod eval_scope_redecl;
 mod system_eval_redecl;
 mod system_eval_string;
 mod system_eval_vars;
