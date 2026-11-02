@@ -13,7 +13,7 @@ use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
 pub(super) use super::regex_view::regex_node;
 use super::regex_declaration::{
-    view as regex_declaration, with_body as regex_declaration_with_body,
+    view_node as regex_declaration, with_body as regex_declaration_with_body,
 };
 pub(super) use super::routine_source::routine_node;
 use super::source_identifier::{named_routine_call, written_identifier, written_variable};
