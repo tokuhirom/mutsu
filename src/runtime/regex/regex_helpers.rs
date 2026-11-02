@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
-use unicode_segmentation::UnicodeSegmentation;
+use crate::grapheme_break::UnicodeSegmentation;
 
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };

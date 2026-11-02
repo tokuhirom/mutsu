@@ -4,8 +4,8 @@ pub(crate) use crate::ucd::numeric::{
 };
 
 pub(crate) fn titlecase_string(s: &str) -> String {
+    use crate::grapheme_break::UnicodeSegmentation;
     use unicode_normalization::UnicodeNormalization;
-    use unicode_segmentation::UnicodeSegmentation;
 
     let mut result = String::new();
     let mut graphemes = s.graphemes(true);
@@ -23,8 +23,8 @@ pub(crate) fn titlecase_string(s: &str) -> String {
 /// (e.g., ligature ff -> FF), combining marks are placed after the first
 /// resulting base character.
 pub(crate) fn grapheme_uppercase(s: &str) -> String {
+    use crate::grapheme_break::UnicodeSegmentation;
     use unicode_normalization::UnicodeNormalization;
-    use unicode_segmentation::UnicodeSegmentation;
 
     let mut result = String::new();
     for g in s.graphemes(true) {
@@ -507,8 +507,8 @@ pub(crate) fn full_case_fold(cp: u32) -> Option<&'static str> {
 }
 
 pub(crate) fn grapheme_foldcase(s: &str) -> String {
+    use crate::grapheme_break::UnicodeSegmentation;
     use unicode_normalization::UnicodeNormalization;
-    use unicode_segmentation::UnicodeSegmentation;
 
     let mut result = String::new();
     for g in s.graphemes(true) {
@@ -697,8 +697,8 @@ pub(crate) fn samecase_string(source: &str, pattern: &str) -> String {
 }
 
 pub(crate) fn samemark_string(target: &str, source: &str) -> String {
+    use crate::grapheme_break::UnicodeSegmentation;
     use unicode_normalization::UnicodeNormalization;
-    use unicode_segmentation::UnicodeSegmentation;
 
     if source.is_empty() {
         return target.to_string();

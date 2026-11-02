@@ -10,7 +10,7 @@
 
 use super::regex_types::{RegexAtom, RegexQuant, RegexToken};
 use unicode_normalization::UnicodeNormalization;
-use unicode_segmentation::UnicodeSegmentation;
+use crate::grapheme_break::UnicodeSegmentation;
 
 /// Split `text` into one atom per grapheme cluster: a cluster of a single
 /// codepoint stays a [`RegexAtom::Literal`], a longer one becomes a

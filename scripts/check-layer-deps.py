@@ -46,7 +46,7 @@ LOWER = [
     # Leaf modules below all of them: name and key construction (including the
     # sigil-less constant term keys), native type names, and the Unicode
     # tables the parser reads.
-    "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs",
+    "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs", "grapheme_break.rs", "grapheme_break_data.rs",
     "native_types.rs", "term_names.rs", "ucd", "stats_gate.rs",
     # The built-in types' static MRO/roles catalog (ADR-0051).
     "builtin_types",

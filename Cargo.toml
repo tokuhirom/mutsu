@@ -90,8 +90,6 @@ num-traits = "0.2"
 # KEEP: floored div/mod and gcd on BigInt. It is a dependency of num-bigint
 # anyway, so dropping the direct use would remove nothing from the graph.
 num-integer = "0.1"
-# KEEP (a): grapheme cluster segmentation (UAX #29), tracking Unicode versions.
-unicode-segmentation = "1.13.3"
 # KEEP (a): NFC/NFD/NFKC/NFKD normalization, tracking Unicode versions.
 unicode-normalization = "0.1"
 # KEEP (b): REPL line editing (native only).
