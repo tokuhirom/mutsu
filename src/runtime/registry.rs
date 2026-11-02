@@ -162,17 +162,27 @@ impl Clone for LexicalKeyScans {
 impl LexicalKeyScans {
     // Cost: O(1) expected.
     pub(crate) fn get(&self, qualified: &str) -> Option<Option<String>> {
-        self.0.lock().unwrap().get(qualified).cloned()
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(qualified)
+            .cloned()
     }
 
     // Cost: O(1) expected.
     pub(crate) fn insert(&self, qualified: &str, answer: Option<String>) {
-        self.0.lock().unwrap().insert(qualified.into(), answer);
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(qualified.into(), answer);
     }
 
     // Cost: O(entries).
     fn clear(&mut self) {
-        self.0.get_mut().unwrap().clear();
+        self.0
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 }
 
