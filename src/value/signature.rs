@@ -1086,6 +1086,30 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
             _ => "Any",
         })),
     };
+    // `.nominal_type` drops a coercion's source type (`Int(Str)` is `Int`),
+    // `.coerce_type` is that target type (`Mu` when the type is no coercion),
+    // and `.of` is the type itself.
+    let (nominal_type, coerce_type) = match type_val.view() {
+        ValueView::Package(name) => match name.resolve().split_once('(') {
+            Some((target, _)) if !target.is_empty() => (
+                Value::Package(Symbol::intern(target)),
+                Value::Package(Symbol::intern(target)),
+            ),
+            _ => (type_val.clone(), Value::Package(Symbol::intern("Mu"))),
+        },
+        _ => (type_val.clone(), Value::Package(Symbol::intern("Mu"))),
+    };
+    attrs.insert("nominal_type".to_string(), nominal_type);
+    attrs.insert("coerce_type".to_string(), coerce_type);
+    attrs.insert("of".to_string(), type_val.clone());
+    attrs.insert(
+        "untyped".to_string(),
+        Value::Bool(p.type_constraint.as_deref() == Some("Mu")),
+    );
+    attrs.insert("onearg".to_string(), Value::Bool(p.onearg));
+    // TODO: `is item` is not a parameter trait here yet (the declaration is
+    // refused), so no parameter is itemized.
+    attrs.insert("is-item".to_string(), Value::FALSE);
     attrs.insert("type".to_string(), type_val);
     attrs.insert("type_captures".to_string(), Value::array(type_captures));
 
