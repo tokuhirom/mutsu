@@ -196,10 +196,7 @@ impl Interpreter {
         // (#15322); the pure flattener cannot, so expand those elements first.
         if method_sym.as_str() == "flat"
             && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Array(..) | ValueView::Seq(..)
-            )
+            && matches!(target.view(), ValueView::Array(..) | ValueView::Seq(..))
         {
             match self.expand_iterable_instances(target) {
                 Ok(Some(expanded)) => {
