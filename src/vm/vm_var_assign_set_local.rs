@@ -113,6 +113,12 @@ impl Interpreter {
             return Ok(raw_popped.clone());
         }
         let decontained_popped = raw_popped.deref_container();
+        // An itemized `$a` (`my $a = [5, 6, 7] but M`) reaches the bind as a
+        // `Scalar` around the mixin: the Positional check reads what it holds.
+        let decontained_popped = match decontained_popped.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => decontained_popped,
+        };
         // `but`/`does` wraps the value in a `Mixin` view, which none of the
         // arms below matched — so `my @p := <a b> but R` failed the bind even
         // though `$p ~~ Positional` (a different oracle) answered True. A
