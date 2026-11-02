@@ -167,9 +167,6 @@ impl Interpreter {
         let owner_obj = Value::package(Symbol::intern(&task.owner));
         let inited = || Self::nqp_attr_inited(instance, Some(&owner_obj), &task.name);
         match task.code {
-            // TODO: `is built(:bind)` should bind the caller's container; the
-            // named arguments reach a plan decontainerized, so a bound
-            // attribute is stored like an assigned one (#14260).
             INIT_OBJ..=INIT_STR | BIND_OBJ => {
                 let Some(arg_name) = task.payload.as_ref().map(|p| p.to_string_value()) else {
                     return Ok(());
@@ -179,7 +176,13 @@ impl Interpreter {
                     _ => None,
                 });
                 if let Some(value) = provided {
-                    let value = self.plan_store_value(task, value)?;
+                    let value = if task.code == BIND_OBJ {
+                        let (_, bare) = task.sigil_and_bare();
+                        self.check_attr_store_type(&task.owner, bare, '$', value.deref_container())?;
+                        value
+                    } else {
+                        self.plan_store_value(task, value.deref_container())?
+                    };
                     self.plan_bind_attr(instance, task, value);
                 }
             }
@@ -240,6 +243,9 @@ impl Interpreter {
         } else {
             payload
         };
+        if task.code == task_code::BIND_DEFAULT_OBJ {
+            return Ok(value);
+        }
         let value = Self::coerce_attr_value_by_sigil(value, sigil);
         Ok(Self::itemize_attr_store_value(sigil, value))
     }
@@ -331,6 +337,10 @@ impl Interpreter {
             Some(def) => attribute_storage_key(&def.attributes, bare, sigil),
             None => Symbol::intern(bare),
         };
-        attributes.insert(key, value);
+        if matches!(task.code, task_code::BIND_OBJ | task_code::BIND_DEFAULT_OBJ) {
+            attributes.with_map_mut(|attrs| Self::bind_constructor_attribute(attrs, key, bare, value));
+        } else {
+            attributes.insert(key, value);
+        }
     }
 }

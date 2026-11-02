@@ -11,6 +11,7 @@ impl Compiler {
             where_constraint,
             is_default,
             unknown_traits,
+            is_built,
             ..
         } = stmt
         else {
@@ -18,7 +19,13 @@ impl Compiler {
         };
         AttrDeclChunks {
             is_default: is_default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
-            default: default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
+            default: default.as_ref().map(|expr| {
+                if *is_built == Some(crate::ast::BuiltTrait::Bind) {
+                    self.compile_bound_attribute_default(expr)
+                } else {
+                    self.compile_decl_trait_arg(expr)
+                }
+            }),
             where_constraint: where_constraint
                 .as_deref()
                 .map(|e| self.compile_decl_trait_arg(e)),
@@ -35,6 +42,24 @@ impl Compiler {
                     .collect(),
             ),
         }
+    }
+
+    /// A bound default returns the location it evaluates to, just as an
+    /// `is raw` routine tail does; the constructor decides whether to bind it.
+    // Cost: O(n), n = expression size.
+    fn compile_bound_attribute_default(
+        &self,
+        expr: &crate::ast::Expr,
+    ) -> crate::opcode::DeclTraitArg {
+        if let crate::ast::Expr::Literal(value) = expr {
+            return crate::opcode::DeclTraitArg::Literal(value.clone());
+        }
+        let mut compiler = self.new_decl_chunk_compiler();
+        compiler.rw_tail = true;
+        crate::opcode::DeclTraitArg::Compiled(Self::compile_decl_chunk(
+            compiler,
+            &[Stmt::Expr(expr.clone())],
+        ))
     }
 }
 

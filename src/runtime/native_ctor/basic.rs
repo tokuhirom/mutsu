@@ -66,6 +66,7 @@ impl Interpreter {
     /// signature is `:@list, :%hash`, so a `list`/`hash` named arg populates the
     /// Capture's positional/named parts; every other named arg is dropped (bless
     /// ignores unknown attributes), yielding an empty `\()`.
+    // Cost: O(a + p + n), a = arguments, p = positional items, n = named entries.
     pub(super) fn ctor_capture(
         &mut self,
         _c: &CtorCall<'_>,
@@ -80,8 +81,9 @@ impl Interpreter {
         let mut named = ValueMap::default();
         for a in &args {
             if let ValueView::Pair(k, v) = a.view() {
+                let v = v.deref_container().deitemize_for_sigil_bind();
                 match k.as_str() {
-                    "list" => positional = Self::value_to_list(v),
+                    "list" => positional = Self::value_to_list(&v),
                     "hash" => {
                         if let ValueView::Hash(h) = v.view() {
                             for (hk, hv) in h.iter() {

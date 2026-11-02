@@ -8,9 +8,9 @@ impl Compiler {
     /// (or a colonpair, which parses to the same shape; ADR-0021 I2/I3),
     /// which keeps the named marker, else `MakePair`, which an imported
     /// `infix:<=>>` candidate may replace (ADR-8751 stage 2).
-    fn emit_make_pair(&mut self, mint_named_pair: bool) {
+    fn emit_make_pair(&mut self, mint_named_pair: bool, readonly: bool) {
         if mint_named_pair {
-            self.code.emit(OpCode::MakeNamedArg);
+            self.code.emit(OpCode::MakeNamedArg { readonly });
         } else {
             self.emit_lex_import_builtin_op(&OpCode::MakePair);
             self.code.emit(OpCode::MakePair);
@@ -901,7 +901,7 @@ impl Compiler {
             self.compile_expr(left);
             self.compile_expr(right);
             self.emit_wrap_var_ref(&name);
-            self.emit_make_pair(mint_named_pair);
+            self.emit_make_pair(mint_named_pair, false);
             return;
         }
 
@@ -915,7 +915,7 @@ impl Compiler {
             self.anon_scalar_as_cell = true;
             self.compile_expr(right);
             self.anon_scalar_as_cell = false;
-            self.emit_make_pair(mint_named_pair);
+            self.emit_make_pair(mint_named_pair, false);
             return;
         }
 
@@ -941,7 +941,7 @@ impl Compiler {
             self.compile_expr(right);
             self.scalar_bind_autovivify = saved_av;
             self.bind_terminal = saved_term;
-            self.emit_make_pair(mint_named_pair);
+            self.emit_make_pair(mint_named_pair, false);
             return;
         }
         if let Some(opcode) = Self::binary_opcode(op) {
@@ -997,7 +997,7 @@ impl Compiler {
                     self.code.emit(opcode);
                 }
             } else if matches!(opcode, OpCode::MakePair) {
-                self.emit_make_pair(mint_named_pair);
+                self.emit_make_pair(mint_named_pair, self.is_readonly_param_operand(right));
             } else if let Some(unsigned) = native_unsigned {
                 let op = match opcode {
                     OpCode::Add => crate::opcode::CompoundBaseOp::Add,

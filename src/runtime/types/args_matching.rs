@@ -1232,7 +1232,7 @@ impl Interpreter {
                     // An `@` parameter binds a Seq through its cached List view
                     // (see `bind_param_value`), so the `where` clause must see
                     // the List, not the Seq (`:@d! where @d ~~ List:D`).
-                    let val = match val.view() {
+                    let val = match val.deref_container().view() {
                         ValueView::Seq(body) if pd.name.starts_with('@') => {
                             let body = std::sync::Arc::clone(&body);
                             body.mark_cache_requested();

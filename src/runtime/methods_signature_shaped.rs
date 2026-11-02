@@ -5,12 +5,13 @@ use super::methods_signature_errors::{
 use super::*;
 
 impl Interpreter {
+    // Cost: O(a + d), a = arguments, d = shape dimensions.
     pub(super) fn shaped_dims_from_new_args(
         &self,
         args: &[Value],
     ) -> Result<Option<Vec<usize>>, RuntimeError> {
         let shape_val = match args.iter().find_map(|arg| match arg.view() {
-            ValueView::Pair(name, value) if name == "shape" => Some(value.clone()),
+            ValueView::Pair(name, value) if name == "shape" => Some(value.deref_container()),
             _ => None,
         }) {
             Some(v) => v,

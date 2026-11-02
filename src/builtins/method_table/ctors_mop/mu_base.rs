@@ -176,7 +176,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Interp(|interp, target, args, _named| {
             interp.mu_new_base(target.clone(), args[1..].to_vec())
         }),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::DEFERRAL_BASE),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::DEFERRAL_BASE)
+            .or(RowFlags::RAW_NAMED),
         named: &[],
     },
 ];

@@ -2237,8 +2237,9 @@ pub(crate) enum OpCode {
     /// literal's named-lane element `\(:$a)`) that intends the in-band
     /// named marker to reach the callee's binder. Same payload and runtime
     /// shape as `MakePair` (pop value, pop key, push a Pair) — only the
-    /// resulting flavour differs.
-    MakeNamedArg,
+    /// resulting flavour differs. `readonly` records a plain readonly scalar
+    /// parameter operand, whose binding remains readonly through transport.
+    MakeNamedArg { readonly: bool },
     /// Convert Pair(k,v) → ValuePair(Str(k),v) so it's treated as positional arg
     ContainerizePair,
 
