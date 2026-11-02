@@ -237,7 +237,7 @@ impl Interpreter {
             ValueView::ContainerRef(_) => {
                 return target.with_deref(|inner| self.dispatch_what(inner, args));
             }
-            ValueView::ContainerView(_) => "Scalar",
+            ValueView::ContainerView(cell) => crate::value::container_view_class(&cell),
         };
         let visible_type_name = if crate::value::is_nameless_anon_type_name(type_name) {
             ""

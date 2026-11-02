@@ -998,6 +998,18 @@ impl Interpreter {
             self.stack.push(Value::container_view(cell.clone()));
             return Ok(());
         }
+        // `.of` of a reflected element cell (`($t,)[0].VAR.of`) is the type the
+        // cell was declared with, `Mu` for an unconstrained one: the cell's own
+        // `of`, not the `of` of the value it holds (#15853).
+        if method == "of"
+            && args.is_empty()
+            && let ValueView::ContainerView(cell) = target.view()
+        {
+            let of = crate::value::lookup_container_constraint(&cell)
+                .unwrap_or_else(|| "Mu".to_string());
+            self.stack.push(Value::package(Symbol::intern(&of)));
+            return Ok(());
+        }
         // A method invocant that is a first-class element container
         // (`ContainerRef`, e.g. a `.grep` rw alias / `:=`-bound slot extracted via
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it

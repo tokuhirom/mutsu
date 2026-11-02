@@ -344,7 +344,10 @@ impl Interpreter {
             } else if target_var.starts_with('&') {
                 "Sub"
             } else {
-                "Scalar"
+                // A native-typed lexical's container is a native reference.
+                self.var_type_constraint(target_var)
+                    .and_then(|tc| crate::native_types::native_lex_ref_class(&tc))
+                    .unwrap_or("Scalar")
             };
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::str(display_name));
