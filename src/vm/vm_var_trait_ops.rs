@@ -176,6 +176,19 @@ impl Interpreter {
                 self.ensure_parametric_role_pun_class(&base_name.resolve(), type_args)
         {
             punned
+        } else if (name.starts_with('%') || name.starts_with('@'))
+            && !trait_name.contains('[')
+            && self.registry().roles.contains_key(&trait_name)
+            && !self.registry().classes.contains_key(&trait_name)
+            // A bare role whose type parameters all have defaults is punned
+            // with those defaults bound, as `Q.new` does (`role Q[::T = Int]`:
+            // `my %h is Q` sees `T` as `Int`, #15991).
+            && let Ok(Some(punned)) = self.default_parametric_role_pun(&Value::package(
+                crate::symbol::Symbol::intern(&trait_name),
+            ))
+            && let ValueView::Package(punned_name) = punned.view()
+        {
+            punned_name.resolve()
         } else {
             trait_name
         };
