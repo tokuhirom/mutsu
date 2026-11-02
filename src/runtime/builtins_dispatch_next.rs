@@ -615,6 +615,17 @@ impl Interpreter {
                 }));
             }
         }
+        // `Array.BIND-POS` binds the element in the backing storage's shared
+        // node (an overriding `method BIND-POS($i, \v) { nextsame }` reaches
+        // it as the base candidate, #15989). A list refuses the bind.
+        if is_array
+            && method_name == "BIND-POS"
+            && let Some(outcome) = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                Self::array_pos_late(storage, method_name, args)
+            })?
+        {
+            return Some(outcome);
+        }
         let method_sym = Symbol::intern(method_name);
         // `Array.AT-POS` answers the element's container (rw), so an
         // overriding `method AT-POS($i) is rw { callsame }` stays assignable.
