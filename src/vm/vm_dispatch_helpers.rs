@@ -351,7 +351,7 @@ impl Interpreter {
     pub(super) fn value_needs_numeric_bridge(value: &Value) -> bool {
         matches!(
             value.view(),
-            ValueView::Instance { .. } | ValueView::ContainerRef(_)
+            ValueView::Instance { .. } | ValueView::ContainerRef(_) | ValueView::Package(_)
         )
     }
 
@@ -359,7 +359,10 @@ impl Interpreter {
     /// `Stringy`/`Str`. `coerce_stringy_operand` hands every other shape back
     /// untouched, so there is nothing to gain by routing them through it.
     pub(super) fn value_needs_stringy_bridge(value: &Value) -> bool {
-        matches!(value.view(), ValueView::Instance { .. })
+        matches!(
+            value.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        )
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
