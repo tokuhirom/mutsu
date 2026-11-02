@@ -18,6 +18,9 @@
 //!   `CompUnit::Repository::Installation` and Pakku walk `bin/` and `resources/`
 //!   with). `:dir` / `:file` are matchers for the basename of each
 //!   subdirectory entered / each file listed.
+//! - `NORMALIZE_ENCODING`: the canonical spelling of an encoding name, as the
+//!   socket and handle layers of ecosystem code call it
+//!   (IO::Socket::Async::SSL's `:enc`).
 //! - `Rakudo::Sorting.MERGESORT-str`: sorts a native `str` array (an
 //!   `nqp::list_s`) by codepoint and returns the sorted native array
 //!   (ValueMap's `WHICH` sorts its keys with it).
@@ -80,6 +83,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &["dir", "file"],
     },
     row!(
+        "Rakudo::Internals",
+        "NORMALIZE_ENCODING",
+        1,
+        Handler::Narrow(normalize_encoding),
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
+    row!(
         "Rakudo::Sorting",
         "MERGESORT-str",
         1,
@@ -108,6 +118,36 @@ fn inittime(_: &Value, _: &[Value]) -> Answer {
 // Cost: O(n), n = number of `-I` paths.
 fn include(interp: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
     Some(Ok(interp.rakudo_internals_include()))
+}
+
+/// `Rakudo::Internals.NORMALIZE_ENCODING($name)`: rakudo's canonical spelling
+/// of an encoding name. The names it knows (any letter case) map to one
+/// spelling (`UTF-8` -> `utf8`, `latin-1` -> `iso-8859-1`, `utf-16-le` ->
+/// `utf16le`, `windows1252` -> `windows-1252`); any other name comes back
+/// lowercased, and an undefined argument is `utf8`.
+// Cost: O(n), n = length of the name.
+fn normalize_encoding(_: &Value, args: &[Value]) -> Answer {
+    let [name] = args else {
+        return None;
+    };
+    // `Str` (a type object) is the undefined argument.
+    if matches!(name.view(), ValueView::Package(_)) || name.is_nil() {
+        return Some(Ok(Value::str_from("utf8")));
+    }
+    let lower = name.to_string_value().to_lowercase();
+    let canonical = match lower.as_str() {
+        "utf8" | "utf-8" => "utf8",
+        "utf8-c8" | "utf-8-c8" => "utf8-c8",
+        "utf16" | "utf-16" => "utf16",
+        "utf16le" | "utf-16le" | "utf16-le" | "utf-16-le" => "utf16le",
+        "utf16be" | "utf-16be" | "utf16-be" | "utf-16-be" => "utf16be",
+        "iso-8859-1" | "latin-1" | "latin1" => "iso-8859-1",
+        "windows-1251" | "windows1251" => "windows-1251",
+        "windows-1252" | "windows1252" => "windows-1252",
+        "windows-932" | "windows932" => "windows-932",
+        other => return Some(Ok(Value::str(other.to_string()))),
+    };
+    Some(Ok(Value::str_from(canonical)))
 }
 
 /// `Rakudo::Sorting.MERGESORT-str(@str)`: the keys sorted by codepoint, as a
