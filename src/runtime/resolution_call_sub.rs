@@ -233,6 +233,35 @@ impl Interpreter {
             })
     }
 
+    /// Whether every candidate in `captured` is still one of the candidates
+    /// the family `name` resolves to right now: the family only GREW since
+    /// the dispatcher was captured (a `multi` declared after
+    /// `&f.wrap(...)` or `my &g = &f`, which rakudo sees at compile time,
+    /// #15925). The same identity test as
+    /// [`Self::captured_candidates_are_live`], applied per candidate.
+    // Cost: O(c * k), c = live candidates, k = captured candidates.
+    pub(crate) fn captured_candidates_are_live_subset(
+        &self,
+        name: &str,
+        captured: &[Value],
+    ) -> bool {
+        let live = self.resolve_all_multi_candidates(name);
+        !captured.is_empty()
+            && captured.iter().all(|captured| {
+                let ValueView::Sub(data) = captured.view() else {
+                    return false;
+                };
+                live.iter().any(|live| {
+                    data.package == live.package
+                        && data.name == live.name
+                        && match (&data.compiled_routine, live.compiled_fn()) {
+                            (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
+                            _ => true,
+                        }
+                })
+            })
+    }
+
     /// Whether `v` is a multi dispatcher code value of the family `name`.
     // Cost: O(1).
     pub(crate) fn is_family_dispatcher_of(v: &Value, name: &str) -> bool {
@@ -901,7 +930,8 @@ impl Interpreter {
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {
-                    let captured_match = self.captured_candidates_are_live(&name, &candidates);
+                    let captured_match = self.captured_candidates_are_live(&name, &candidates)
+                        || self.captured_candidates_are_live_subset(&name, &candidates);
                     // A live single routine of that name is the same family
                     // only when it is one of the captured candidates: a
                     // same-named routine imported later into the caller
