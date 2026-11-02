@@ -504,6 +504,25 @@ pub(crate) fn submit_ordered_or_reject(
     submit_task(on_fresh_stack(task), Some(Box::new(reject)), true);
 }
 
+/// The call the compiler plants as the first statement of a literal `start`
+/// block: it passes the start-order gate ([`begin_ordered_body`]) at the
+/// block's own first instruction instead of before its frame is set up, so
+/// the gate releases only when the block really begins.
+pub(crate) const START_GATE_FN: &str = "__mutsu_start_gate";
+
+/// Whether `block` is a closure whose body begins with the planted
+/// [`START_GATE_FN`] call.
+// Cost: O(1).
+pub(crate) fn has_start_gate(block: &crate::value::Value) -> bool {
+    use crate::ast::{Expr, Stmt};
+    let crate::value::ValueView::Sub(data) = block.view() else {
+        return false;
+    };
+    data.body.first().is_some_and(|stmt| {
+        matches!(stmt, Stmt::Expr(Expr::Call { name, .. }) if name.as_str() == START_GATE_FN)
+    })
+}
+
 /// Start-order gate of an ordered pool task: park until the ordered tasks
 /// submitted before this one have begun their user code, then let the next one
 /// begin. A no-op off the pool and on wasm32 (the cooperative scheduler runs

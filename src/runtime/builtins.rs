@@ -514,6 +514,12 @@ impl Interpreter {
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_sig_bind" => self.builtin_sig_bind(&args),
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
+            // First statement of a literal `start` block: the start-order
+            // gate (#15967, `worker_pool::begin_ordered_body`).
+            "__mutsu_start_gate" => {
+                crate::runtime::worker_pool::begin_ordered_body();
+                Ok(Value::NIL)
+            }
             "__mutsu_bind_positional_element" => self.builtin_bind_positional_element(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),

@@ -419,8 +419,13 @@ impl Interpreter {
                 // aborting the process.
                 // Two `start` blocks submitted back to back begin in that order
                 // (#15967): wait for the earlier ones to reach this point.
+                // A literal block passes the gate at its own first statement
+                // (`START_GATE_FN`); any other callable passes it here.
+                let gated_in_block = crate::runtime::worker_pool::has_start_gate(&block);
                 let result = crate::vm::guard_worker_panic(|| {
-                    crate::runtime::worker_pool::begin_ordered_body();
+                    if !gated_in_block {
+                        crate::runtime::worker_pool::begin_ordered_body();
+                    }
                     thread_interp.call_value(block, vec![])
                 });
                 // Transfer any handles opened by this thread back to the awaiter.

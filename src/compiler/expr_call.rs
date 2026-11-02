@@ -298,7 +298,35 @@ impl Compiler {
             self.compile_expr_call_inner(name, &named, false);
             return;
         }
+        if let Some(gated) = Self::start_block_with_gate(name, args) {
+            self.compile_expr_call_inner(name, &gated, false);
+            return;
+        }
         self.compile_expr_call_inner(name, args, false);
+    }
+
+    /// `start { ... }` with the start-order gate call planted as the block's
+    /// first statement (#15967): two `start` blocks submitted back to back
+    /// begin in that order. `None` for every other call, and for a `start`
+    /// whose argument is not a literal block.
+    // Cost: O(b), b = the block's statements (the body is cloned once).
+    fn start_block_with_gate(name: &Symbol, args: &[Expr]) -> Option<Vec<Expr>> {
+        if name.resolve() != "start" || args.len() != 1 {
+            return None;
+        }
+        let gate = Stmt::Expr(Expr::Call {
+            name: Symbol::intern(crate::runtime::worker_pool::START_GATE_FN),
+            args: Vec::new(),
+            listop: false,
+        });
+        let mut block = args[0].clone();
+        match &mut block {
+            Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
+                body.insert(0, gate);
+            }
+            _ => return None,
+        }
+        Some(vec![block])
     }
 
     /// The arguments of a `__mutsu_subscript_adverb` call plus the marker that
