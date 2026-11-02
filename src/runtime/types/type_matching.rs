@@ -1627,7 +1627,10 @@ impl Interpreter {
                                 || inner_base == "Mu"
                                 || inner_base == "Any";
                         }
-                        return items.iter().all(|v| self.type_matches_value(inner, v));
+                        // An untyped Array/List is a distinct type from
+                        // `Array[Int]`, however well its elements fit (#15336).
+                        let _ = items;
+                        return false;
                     }
                     // `Positional[Int]` / `Associative[Int]` are builtin roles:
                     // their type object is a `ParametricRole`, compared with the
