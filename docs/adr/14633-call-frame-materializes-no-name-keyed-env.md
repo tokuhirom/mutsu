@@ -423,3 +423,57 @@ callgrind_annotate --inclusive=yes --tree=calling --threshold=99.9 tmp/cg_method
 
 Run each workload twice and use the second (the module cache is cold after a rebuild,
 `perf-tuning` §0).
+
+## 8. Amendment A1 (Proposed, 2026-11-02): the lazy frame needs its own handle, and is not worth it alone
+
+Status of this amendment: **Proposed**. It supersedes §2.2's *mechanism* ("the frame's `Env`
+handle is the caller's handle with the frame bits set") and records the decision on whether
+to build §2.2 now. §2.1 (fixtures), §2.3 (saved registers) and §2.4 are unchanged and
+shipped; this concerns only the lazy `Env`.
+
+### 8.1 What the re-analysis found
+
+`frame_root`, `owns_routine_state` and `outer_is_unit` are per-handle bits that today
+describe the **frame's own tier**. A lazy frame that reuses the caller's handle would have
+to set them to describe the frame while the same handle still has to answer for the
+**caller's tier** (the caller keeps running on that handle after the call returns). Two
+consequences:
+
+- `Env::get_sym`'s own-overlay-first hit path would answer the *caller's* `$_`, `$/`, `$!`
+  for a frame that owns them: routine-owned names must be answered from the frame record
+  before the overlay probe.
+- Every consumer that enumerates the overlay (`iter`, `keys`, `len`, `overlay_iter`,
+  `frame_writes`, `merge_method_env`, about 80 sites) must learn that a lazy frame's overlay
+  is *empty*, not the caller's.
+
+So the §2.2 wording ("same handle, bits on the handle") is unsound as written. The sound
+form is a **separate virtual-tier handle**: the frame record holds `FrameView { parent:
+Env, bits }` (the frame's identity and bits) and only `materialize_frame()` produces a real
+`Env` from it. Reads on a lazy frame consult the `FrameView` for routine-owned names and
+fall through to `parent`; the handle the caller keeps is never mutated.
+
+### 8.2 What it is worth
+
+Measured on `main` @ `e2a70e8d`, `for ^N { $t = $o.m() }` (zero-argument method returning
+`1`), callgrind, profiling build, slope between N = 1,000 and 3,000: **10.8k Ir per call**
+(14.5k when this ADR was written). The frame's `Env` share is `Env::scoped_child` 211 +
+`Env::clone` ~84 + the `Env` drops ~220-380, i.e. 500-650 Ir. A lazy frame still pays a
+clone of `parent` and its drop, so the realistic gain is **~400 Ir, about 3.7%** of the call.
+No other single item of the plain method call is above ~8% (`pop_call_frame` 876 is the
+largest and is mostly `Vec::truncate`, `FrameFixtures` drop and the dispatch-frame pop).
+
+### 8.3 Decision
+
+1. **Do not build the lazy `Env` now.** By the arithmetic in the `perf-tuning` skill (5a), a
+   3.7% slice against a 10x-rakudo goal is not the structure that moves the ratio, and it
+   carries a contract change over ~80 overlay consumers with a compatibility risk
+   (`CALLER::`, `OUTER::`, `callframe`, `EVAL`) for the gain.
+2. **If it is built later, it is built as §8.1's `FrameView`**, never as bits on the
+   caller's handle, in one PR that also removes the saved-caller-handle clone and drop
+   (`saved_env`), so the ~400 Ir is paid for by deleting the caller-handle bookkeeping and
+   not by adding a second mechanism beside it.
+3. **The trigger to revisit** is the call-site protocol work (the ~5.4k Ir before
+   `call_compiled_method`, §3): once that lands, 400 Ir is ~7% of the remaining call and the
+   change is worth its consumer sweep.
+
+Nothing else in this ADR changes, and no code depends on this amendment.
