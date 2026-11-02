@@ -438,6 +438,7 @@ impl Compiler {
                 post_start: 0,
                 end: 0,
                 is_bare_block: false,
+                decont_result: !(is_rw || is_raw || crate::opcode::body_uses_return_rw(body)),
             });
             // PRE phasers (forward order, before ENTER)
             Self::compile_pre_phasers(&mut sub_compiler, body);
@@ -1595,6 +1596,7 @@ impl Compiler {
                 post_start: 0,
                 end: 0,
                 is_bare_block: false,
+                decont_result: false,
             });
             Self::compile_pre_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_block_pre_end(idx);
