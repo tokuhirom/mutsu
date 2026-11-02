@@ -24,13 +24,11 @@ not all need to edit the same shared file.
 ## Finding the next slice
 
 The slices are planned on the campaign issue (#7564, "Stage 1 slice plan"); take
-the next one from there. `scripts/rakuast-frontend.sh causes` runs every `t/`
-file outside `ci/rakuast-frontend-passing.txt` under `MUTSU_RAKUAST=convert` and
-prints why each fails, by file count: `REFUSE` is the first construct the
-conversion or lowering refuses, `DIFF` is a file that runs but behaves
-differently from the default frontend. A file counts under its first refusal
-only, so a count is an upper bound on what fixing that cause moves into the
-list. The per-file rows are in `tmp/rakuast-causes/results.tsv`.
+the next one from there. `scripts/rakuast-frontend.sh eval-update` runs every
+`t/` file as `EVAL(slurp($file).AST)` and adds the new passes to
+`ci/rakuast-ast-eval-passing.txt`; the files outside that list are the gaps in
+the write direction (run one with `scripts/run-t-ast-eval.sh` to see why it
+fails). A file that reads `$?FILE` names the driver and can never join.
 
 ## Slice checklist
 
