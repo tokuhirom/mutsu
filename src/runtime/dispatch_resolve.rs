@@ -245,9 +245,22 @@ impl Interpreter {
         // string is cloned because that last tie-break is load-bearing:
         // leaving it to the sort's stability would order those defs by however
         // the caller's gather happened to collect them.
+        //
+        // Between the rank and the declaration order sits the number of
+        // positional parameters constrained to exactly `Mu`: the rank counts
+        // neither `Mu` nor `Any` as narrowing (an unconstrained parameter IS
+        // `Any`), but `Any` is narrower than `Mu`, so a family `Mu`, `Any`,
+        // `Int` defers `Int` -> `Any` -> `Mu` whatever the declaration order
+        // (#15721).
         candidates.sort_by_cached_key(|(key, def)| {
+            let mu_params = def
+                .param_defs
+                .iter()
+                .filter(|p| !p.named && p.type_constraint.as_deref() == Some("Mu"))
+                .count();
             (
                 std::cmp::Reverse(self.candidate_specificity_rank(def)),
+                mu_params,
                 def.decl_order,
                 key.clone(),
             )
