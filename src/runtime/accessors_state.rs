@@ -360,7 +360,17 @@ impl Interpreter {
                 self.registry()
                     .has_multi_function(None, &[wrapped.package], name)
             }
-            None => true,
+            // Nothing registered answers `name` here: a call spelled `name`
+            // is a core routine unless the wrapped one is reachable by
+            // scope -- imported (`&name` in env) or declared in this
+            // package. A module-private `sub open` that was `.wrap`ped (or
+            // is native) must not capture the importing script's core
+            // `open` (#16010).
+            None => {
+                self.env.contains_key(&format!("&{name}"))
+                    || crate::qualified::is_global_package(wrapped.package)
+                    || self.current_package_sym() == wrapped.package
+            }
         }
     }
 
