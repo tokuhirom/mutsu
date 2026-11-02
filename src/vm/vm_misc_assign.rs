@@ -510,6 +510,22 @@ impl Interpreter {
                     }
                 }
             }
+            // `@a = list` used as an expression (the tail of an `if` block in a
+            // closure) writes INTO the container `@a` already is, so its
+            // declared/inherited element type (`array[int]`, `Array[Int]`) must
+            // survive, as it does for the statement form (`SetGlobal`).
+            // Shaped arrays keep their shape above; names the statement path
+            // excludes stay excluded.
+            if current_shape.is_none()
+                && name.len() > 1
+                && !name.contains("__")
+                && !name.starts_with("@!")
+                && !name.starts_with("@.")
+                && let Some(old) = self.get_env_with_main_alias(&name)
+                && self.has_container_type_metadata(&old.deref_container())
+            {
+                assigned = self.array_container_writethrough_value(None, &name, assigned, &old)?;
+            }
             if let Some(current) = self.get_env_with_main_alias(&name) {
                 let class_name = match current.view() {
                     ValueView::Instance { class_name, .. } => Some(class_name),

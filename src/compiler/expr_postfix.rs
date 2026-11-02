@@ -24,7 +24,11 @@ impl Compiler {
         let Expr::Call { name, args, .. } = expr else {
             return false;
         };
-        if name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) {
+        // `++nqp::atposref_i(@a, $i)` steps the element reference the op hands
+        // back (Fasta's hot loop); every other `nqp::` op is no lvalue.
+        if name.with_str(|n| {
+            n.starts_with("__mutsu_") || (n.starts_with("nqp::") && !n.starts_with("nqp::atposref_"))
+        }) {
             return false;
         }
         let op_label = match (prefix, inc) {
