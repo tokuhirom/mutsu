@@ -729,6 +729,36 @@ impl Interpreter {
         matches!(name, "pos" | "orig" | "target" | "from" | "to")
     }
 
+    /// [`Self::collect_class_attributes`] without the per-call clone of every
+    /// attribute definition: the merged list is built once per class and
+    /// registry `type_stamp`, and handed out shared. For a caller that only
+    /// reads the list.
+    // Cost: O(1) amortized; O(m * a) on a miss, m = classes in the MRO, a =
+    // attributes per class.
+    pub(crate) fn class_attributes_shared(
+        &mut self,
+        class_name: &str,
+    ) -> std::sync::Arc<Vec<ClassAttributeDef>> {
+        let key = Symbol::intern(class_name);
+        if self.caches.class_attributes_stamp == self.registry().type_stamp()
+            && let Some(attrs) = self.caches.class_attributes_shared.get(&key)
+        {
+            return std::sync::Arc::clone(attrs);
+        }
+        let attrs = std::sync::Arc::new(self.collect_class_attributes(class_name));
+        // Building the list may itself have touched the registry (an MRO
+        // memo): file the entry under the stamp it is valid for now.
+        let stamp = self.registry().type_stamp();
+        if self.caches.class_attributes_stamp != stamp {
+            self.caches.class_attributes_shared.clear();
+            self.caches.class_attributes_stamp = stamp;
+        }
+        self.caches
+            .class_attributes_shared
+            .insert(key, std::sync::Arc::clone(&attrs));
+        attrs
+    }
+
     pub(crate) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();

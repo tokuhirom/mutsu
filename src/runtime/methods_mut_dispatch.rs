@@ -722,7 +722,7 @@ impl Interpreter {
             }
 
             if args.len() == 1 && !self.is_native_method(&class_name.resolve(), method) {
-                let class_attrs = self.collect_class_attributes(&class_name.resolve());
+                let class_attrs = self.class_attributes_shared(&class_name.resolve());
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {
