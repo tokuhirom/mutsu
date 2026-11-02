@@ -1341,6 +1341,16 @@ impl Compiler {
                     }
                 }
                 self.compile_expr(expr);
+                // A `$` variable is one item of the argument list: an instance
+                // of an `is Range` / `is Seq` subclass in it is NOT read as the
+                // list it carries (`my $q = Q.new(1, 3); [+] $q` is 3, while
+                // `[+] Q.new(1, 3)` is 6, #15322). An instance has no itemized
+                // form, so the one-element list the item rule builds carries it.
+                let item_operand = !is_scan && Self::expr_is_scalar_var(expr);
+                if item_operand {
+                    self.code.emit(OpCode::Itemize);
+                    self.code.emit(OpCode::MakeArray(1));
+                }
                 let spec = ReductionSpec::lower(op.as_str());
                 self.emit_lex_import_meta(spec.base);
                 let op_idx = self.code.add_reduction_spec(spec);

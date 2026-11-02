@@ -192,6 +192,23 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // `(C.new, 9).flat` reads the `iterator` of an `Iterable` element
+        // (#15322); the pure flattener cannot, so expand those elements first.
+        if method_sym.as_str() == "flat"
+            && args.is_empty()
+            && matches!(
+                target.view(),
+                ValueView::Array(..) | ValueView::Seq(..)
+            )
+        {
+            match self.expand_iterable_instances(target) {
+                Ok(Some(expanded)) => {
+                    return Some(self.call_method_with_values(expanded, "flat", Vec::new()));
+                }
+                Ok(None) => {}
+                Err(err) => return Some(Err(err)),
+            }
+        }
         // `Any.kv`/`.pairs`/... are `self.list.<method>`: an object that
         // overrides `list` answers from that list, not as one item.
         if let Some(view) = self
