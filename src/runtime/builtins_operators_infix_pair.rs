@@ -218,7 +218,7 @@ impl Interpreter {
             // `min`/`max` have one body each, shared with their opcode and the
             // metaop leaf (`vm_operator_values.rs`, #9447).
             if Self::is_comparison_family_op(op)
-                && let Some(result) = self.comparison_family_values(op, &acc, rhs)
+                && let Some(result) = self.comparison_family_values(op, &acc, rhs, core_only)
             {
                 acc = result?;
                 break 'pair;

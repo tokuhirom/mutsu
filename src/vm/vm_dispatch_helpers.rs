@@ -56,7 +56,7 @@ impl Interpreter {
                     return Ok(v);
                 }
             }
-            if let Some(result) = self.comparison_family_values(canonical, left, right) {
+            if let Some(result) = self.comparison_family_values(canonical, left, right, false) {
                 return result;
             }
         }
