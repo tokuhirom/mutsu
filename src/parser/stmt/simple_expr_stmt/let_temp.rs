@@ -424,8 +424,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 ..
             } = target.as_ref()
             && let element = matches!(invocant.as_ref(), Expr::Index { .. })
-            && let Some(var_name) = temp_method_invocant_name(invocant)
-                .or_else(|| element.then(String::new))
+            && let Some(var_name) =
+                temp_method_invocant_name(invocant).or_else(|| element.then(String::new))
             && let Some(parts) = crate::rakuast::method_lvalue_call_parts(expanded)
         {
             return parse_statement_modifier(
