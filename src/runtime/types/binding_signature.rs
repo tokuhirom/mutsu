@@ -2077,12 +2077,29 @@ impl Interpreter {
                     // *%hash -- collect Pair arguments into a hash,
                     // excluding args already bound to explicit named parameters.
                     let mut hash_items = ValueMap::default();
-                    for arg in args.iter() {
+                    // A named argument read from a caller variable (`:k($v)`)
+                    // keeps that variable's container, so `|%h` hands an
+                    // `is raw` / `is rw` named parameter the caller's own
+                    // cell (#16181; same mechanism as the `|c` capture).
+                    let capture_key = (!pd.name.is_empty()).then_some(binding_name);
+                    for (arg_idx, arg) in args.iter().enumerate() {
                         let arg = unwrap_varref_value(arg.clone());
                         if let ValueView::Pair(k, v) = arg.view()
                             && !explicit_named_keys.contains(k)
                         {
-                            hash_items.insert(k.clone(), v.clone());
+                            let arg_source = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref());
+                            let kept = self.capture_named_container(
+                                k,
+                                v,
+                                arg_source,
+                                capture_key,
+                                &mut rw_bindings,
+                                param_defs,
+                            );
+                            hash_items.insert(k.clone(), kept);
                         }
                     }
                     let slurpy_value = Value::hash_bare_values(hash_items);
