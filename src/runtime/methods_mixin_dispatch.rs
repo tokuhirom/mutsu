@@ -538,43 +538,78 @@ impl Interpreter {
             // `X::TypeCheck::Binding::Parameter`, as rakudo does, rather than
             // a dispatch `X::Multi::NoMatch`.
             let sole_private = is_private_call && overloads.len() == 1 && !overloads[0].is_multi;
-            // The visible multis that do not bind are kept as rivals: they
-            // still shape the tiers of `pick_method_winner` (#12795).
-            let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads
-                .into_iter()
-                // For private calls, only match private methods; for public calls, skip private.
-                .filter(|def| is_private_call == def.is_private)
-                .partition(|def| {
-                    // Use the invocant-aware matcher (not `method_args_match`) so an
-                    // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
-                    // is told apart by the mixin's definedness, matching the ordinary
-                    // MRO dispatch path (`resolve_method_with_owner_impl`). Without
-                    // this, a punned role's `:D:` candidate never won over `:U:`
-                    // because this filter never looked at the invocant at all.
-                    sole_private
-                        || self.method_args_match_for_invocant(
-                            &role_name,
-                            def,
-                            &args,
-                            None,
-                            Some(target),
-                        )
-                });
-            let owner = Symbol::intern(&role_name);
-            let matching: Vec<(Symbol, MethodDef)> =
-                matching.into_iter().map(|def| (owner, def)).collect();
-            let rivals: Vec<(Symbol, Rival)> = rivals
-                .into_iter()
-                .filter(|def| def.is_multi)
-                .map(|def| (owner, Rival::owned(def)))
-                .collect();
-            let Some((_, def)) = self.pick_method_winner(
-                &[Symbol::intern(&role_name)],
-                &args,
-                Some(target),
-                matching,
-                rivals,
-            ) else {
+            // The winner among a role's multi candidates is a function of the
+            // arguments' type keys when every candidate is key-decided: a
+            // CArray element store re-resolved every candidate's parameter
+            // types on each call (505k Ir, #16215).
+            let memo_key = if sole_private {
+                None
+            } else {
+                self.mixin_winner_key(
+                    target,
+                    inner,
+                    &role_name,
+                    lookup_name,
+                    is_private_call,
+                    &overloads,
+                    &role_param_bindings,
+                    &args,
+                )
+            };
+            let memoized = memo_key
+                .as_ref()
+                .and_then(|key| self.caches.mixin_method_winner.get(key).cloned());
+            let picked = match memoized {
+                Some(winner) => winner,
+                None => {
+                    // The visible multis that do not bind are kept as rivals: they
+                    // still shape the tiers of `pick_method_winner` (#12795).
+                    let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads
+                        .into_iter()
+                        // For private calls, only match private methods; for public calls, skip private.
+                        .filter(|def| is_private_call == def.is_private)
+                        .partition(|def| {
+                            // Use the invocant-aware matcher (not `method_args_match`) so an
+                            // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
+                            // is told apart by the mixin's definedness, matching the ordinary
+                            // MRO dispatch path (`resolve_method_with_owner_impl`). Without
+                            // this, a punned role's `:D:` candidate never won over `:U:`
+                            // because this filter never looked at the invocant at all.
+                            sole_private
+                                || self.method_args_match_for_invocant(
+                                    &role_name,
+                                    def,
+                                    &args,
+                                    None,
+                                    Some(target),
+                                )
+                        });
+                    let owner = Symbol::intern(&role_name);
+                    let matching: Vec<(Symbol, MethodDef)> =
+                        matching.into_iter().map(|def| (owner, def)).collect();
+                    let rivals: Vec<(Symbol, Rival)> = rivals
+                        .into_iter()
+                        .filter(|def| def.is_multi)
+                        .map(|def| (owner, Rival::owned(def)))
+                        .collect();
+                    let winner = self.pick_method_winner(
+                        &[Symbol::intern(&role_name)],
+                        &args,
+                        Some(target),
+                        matching,
+                        rivals,
+                    );
+                    if let Some(key) = memo_key {
+                        let memo = &mut self.caches.mixin_method_winner;
+                        if memo.len() >= MIXIN_WINNER_MEMO_CAP {
+                            memo.clear();
+                        }
+                        memo.insert(key, winner.clone());
+                    }
+                    winner
+                }
+            };
+            let Some((_, def)) = picked else {
                 for (name, previous) in saved_role_params {
                     if let Some(prev) = previous {
                         self.env.insert(name, prev);
@@ -969,5 +1004,80 @@ impl Interpreter {
         }
 
         None
+    }
+}
+
+/// Most remembered winners before the table is dropped.
+const MIXIN_WINNER_MEMO_CAP: usize = 4096;
+
+/// What a mixin receiver's role-method winner is computed from.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MixinWinnerKey {
+    /// The registry stamp: a role or class redefinition changes the candidates.
+    stamp: u64,
+    role: Symbol,
+    method: Symbol,
+    private: bool,
+    /// Whether the receiver is a defined value (`::?CLASS:D:` / `:U:`).
+    defined: bool,
+    arg_keys: Vec<Symbol>,
+}
+
+impl Interpreter {
+    /// The memo key for a role method call on a mixin, or `None` when the
+    /// verdict of some candidate reads more than the argument type keys, the
+    /// receiver's definedness and the registry: a `where`, a subset, a type
+    /// capture, a literal, a sub-signature, a role type parameter, a
+    /// constraint that is not a built-in type, or an invocant other than
+    /// `::?CLASS` with a smiley.
+    // Cost: O(c * p + a), c = candidates, p = parameters each, a = arguments.
+    #[allow(clippy::too_many_arguments)]
+    fn mixin_winner_key(
+        &mut self,
+        target: &Value,
+        inner: &Value,
+        role_name: &str,
+        method: &str,
+        private: bool,
+        overloads: &[MethodDef],
+        role_params: &[(String, Value)],
+        args: &[Value],
+    ) -> Option<MixinWinnerKey> {
+        let key_decided = |def: &MethodDef| {
+            !def.param_defs.is_empty()
+                && def.param_defs.iter().all(|pd| {
+                    pd.where_constraint.is_none()
+                        && pd.literal_value.is_none()
+                        && pd.code_signature.is_none()
+                        && pd.outer_sub_signature.is_none()
+                        && (pd.sub_signature.is_none() || pd.named_alias)
+                        && pd.type_capture.is_none()
+                        && pd.default.is_none()
+                        && match pd.type_constraint.as_deref() {
+                            None => !pd.is_invocant,
+                            Some(tc) if pd.is_invocant => {
+                                matches!(tc, "::?CLASS" | "::?CLASS:D" | "::?CLASS:U")
+                            }
+                            Some(tc) => {
+                                let base = tc.strip_suffix(":D").or_else(|| tc.strip_suffix(":U")).unwrap_or(tc);
+                                crate::runtime::utils::is_known_type_constraint(base)
+                                    && !role_params.iter().any(|(name, _)| name == base)
+                                    && !self.constraint_is_subset(base)
+                            }
+                        }
+                })
+        };
+        if !overloads.iter().all(key_decided) {
+            return None;
+        }
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinWinnerKey {
+            stamp: self.registry().type_stamp(),
+            role: Symbol::intern(role_name),
+            method: Symbol::intern(method),
+            private,
+            defined: !matches!(inner.view(), ValueView::Package(_)) && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
     }
 }

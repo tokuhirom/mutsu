@@ -5,6 +5,7 @@ mod flat_iterable_instances;
 mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
+pub(crate) use methods_mixin_dispatch::MixinWinnerKey;
 mod methods_mixin_what_cache;
 mod methods_mut;
 mod methods_mut_dispatch;
