@@ -137,6 +137,23 @@ impl Finalize<'_> {
         assign
     }
 
+    /// A subscript with colonpairs: the subscript and the adverb values are
+    /// lowered where they stand, then the adverbs expand into the shapes the
+    /// compiler executes.
+    fn subscript_adverbs(&mut self, mut adverbs: crate::ast::parsed::SubscriptAdverbs) -> Expr {
+        self.visit_expr_mut(&mut adverbs.subscript);
+        for pair in &mut adverbs.pairs {
+            self.visit_expr_mut(pair);
+        }
+        match super::subscript_adverb::lower_parsed(adverbs.subscript, adverbs.pairs) {
+            Ok(lowered) => lowered,
+            Err(err) => {
+                self.fail(err);
+                Expr::Whatever
+            }
+        }
+    }
+
     fn fail(&mut self, err: RuntimeError) {
         self.failed.get_or_insert(err);
     }
@@ -256,6 +273,16 @@ impl VisitMut for Finalize<'_> {
                 Ok(lowered) => *expr = lowered,
                 Err(err) => self.fail(RuntimeError::new(format!("{err:?}"))),
             }
+            return;
+        }
+        // A subscript with colonpairs: see `Finalize::subscript_adverbs`.
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::SubscriptAdverbs(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            let ParsedExpr::SubscriptAdverbs(adverbs) = *node else {
+                unreachable!("checked above");
+            };
+            *expr = self.subscript_adverbs(adverbs);
             return;
         }
         // A word quote is the runtime's word list; its words are lowered
