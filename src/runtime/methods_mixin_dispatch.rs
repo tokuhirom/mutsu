@@ -221,18 +221,15 @@ impl Interpreter {
         &self,
         mixins: &crate::value::MixinOverrides,
         role_name: &str,
-        role: &RoleDef,
+        role_attrs: &[String],
         inner_cell: Option<&crate::gc::Gc<crate::value::InstanceAttrs>>,
         updated: AttrMap,
     ) {
-        let role_attr_names: Vec<Symbol> = role
-            .attributes
-            .iter()
-            .map(|attr| Symbol::intern(&attr.name))
-            .collect();
-        for attr in &role.attributes {
-            if let Some(value) = updated.get(Symbol::intern(&attr.name)) {
-                mixins.set_role_attribute(role_name, &attr.name, value.clone());
+        let role_attr_names: Vec<Symbol> =
+            role_attrs.iter().map(|name| Symbol::intern(name)).collect();
+        for name in role_attrs {
+            if let Some(value) = updated.get(Symbol::intern(name)) {
+                mixins.set_role_attribute(role_name, name, value.clone());
             }
         }
         let Some(inner_cell) = inner_cell else {
@@ -457,10 +454,23 @@ impl Interpreter {
         };
         let mut role_has_method = false;
         for role_name in role_names {
-            let Some(role) = self.role_def_for_mixin_role(mixins, &role_name) else {
-                continue;
-            };
-            let Some(mut overloads) = role.methods.get(lookup_name).cloned() else {
+            // Only what the call reads, copied out of the borrowed def: the
+            // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
+            let Some((role_id, role_attrs, mut overloads)) = self
+                .with_mixin_role_def(mixins, &role_name, |role| {
+                    role.methods.get(lookup_name).map(|overloads| {
+                        (
+                            role.role_id,
+                            role.attributes
+                                .iter()
+                                .map(|attr| attr.name.clone())
+                                .collect::<Vec<String>>(),
+                            overloads.clone(),
+                        )
+                    })
+                })
+                .flatten()
+            else {
                 continue;
             };
             // A `method m {...}` stub only *requires* `m` (checked when the
@@ -486,7 +496,7 @@ impl Interpreter {
                 .and_then(|candidates| {
                     candidates
                         .iter()
-                        .find(|candidate| candidate.role_def.role_id == role.role_id)
+                        .find(|candidate| candidate.role_def.role_id == role_id)
                 })
                 .map(|candidate| {
                     candidate
@@ -550,7 +560,7 @@ impl Interpreter {
                         target,
                         inner,
                         role_name: &role_name,
-                        role_id: role.role_id,
+                        role_id,
                         method: lookup_name,
                         private: is_private_call,
                     },
@@ -701,9 +711,9 @@ impl Interpreter {
                 }
                 _ => (None, AttrMap::new()),
             };
-            for attr in &role.attributes {
-                if let Some(value) = mixins.role_attribute(&role_name, &attr.name) {
-                    method_attrs.insert(attr.name.clone(), value);
+            for attr_name in &role_attrs {
+                if let Some(value) = mixins.role_attribute(&role_name, attr_name) {
+                    method_attrs.insert(attr_name.clone(), value);
                 }
             }
             for (key, value) in mixins.iter() {
@@ -824,7 +834,7 @@ impl Interpreter {
                 self.commit_mixin_role_method_attrs(
                     mixins,
                     &role_name,
-                    &role,
+                    &role_attrs,
                     inner_cell.as_ref(),
                     updated,
                 );
