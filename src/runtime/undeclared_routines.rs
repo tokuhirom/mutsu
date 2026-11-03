@@ -71,13 +71,21 @@ fn known_without_an_interpreter(
     name: &str,
     declared: &HashSet<String>,
     if_imports: &HashSet<&str>,
+    mode: ScanMode,
 ) -> bool {
-    known_from_the_unit_alone(name, declared) || imported_here(name, if_imports)
+    known_from_the_unit_alone(name, declared, mode) || imported_here(name, if_imports)
 }
 
 /// The part of [`known_without_an_interpreter`] that depends on the unit's
 /// AST alone, so it can be recorded with the unit (ADR-12026 §2.1).
-fn known_from_the_unit_alone(name: &str, declared: &HashSet<String>) -> bool {
+fn known_from_the_unit_alone(name: &str, declared: &HashSet<String>, mode: ScanMode) -> bool {
+    // `pack` / `unpack` are experimental: undeclared unless the unit says
+    // `use experimental :pack`, and a unit that does is not judged at all
+    // (`use experimental` ends the check). An `EVAL` inherits its caller's
+    // pragma, which the snippet cannot see, so it keeps them known (#13346).
+    if mode == ScanMode::Mainline && matches!(name, "pack" | "unpack") {
+        return declared.contains(name);
+    }
     declared.contains(name)
         || Interpreter::is_builtin_function(name)
         || Interpreter::is_test_function_name(name)
@@ -198,7 +206,7 @@ pub(crate) fn record_mainline_calls(stmts: &[Stmt]) -> Option<RecordedCalls> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared))
+        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared, ScanMode::Mainline))
         .collect();
     let mut body_scoped: Vec<String> = body_scoped_calls(&calls, &scan.body_routines)
         .into_iter()
@@ -283,7 +291,7 @@ fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports))
+        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports, mode))
         .collect();
     // An `EVAL`'d snippet's caller may have a routine of the same name, which
     // only the registry knows about.
@@ -393,7 +401,7 @@ fn premature_term_use(stmts: &[Stmt]) -> Option<PrematureTerm> {
     let (name, line) = scan.calls.iter().find(|(name, _)| {
         scan.all_terms.contains(name)
             && !scan.body_routines.contains(name)
-            && !known_without_an_interpreter(name, &scan.declared, &none)
+            && !known_without_an_interpreter(name, &scan.declared, &none, ScanMode::Mainline)
             && !super::eval_name_scans::is_core_term(name)
     })?;
     Some(PrematureTerm {

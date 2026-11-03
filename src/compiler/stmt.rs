@@ -4603,6 +4603,21 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str("attributes".to_string()));
                 self.code.emit(OpCode::SetPragma(name_idx));
             }
+            // `use experimental :pack` lets this file call `pack` / `unpack`
+            // (#13346): recorded when the `use` runs, see `experimental_pragma`.
+            Stmt::Use { module, tags, .. }
+                if module == "experimental" && tags.iter().any(|t| t == "pack") =>
+            {
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
+                let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                let tags_idx = Some(self.code.add_constant(Value::array(entries)));
+                self.code.emit(OpCode::UseModule {
+                    name_idx,
+                    tags_idx,
+                    arg_count: 0,
+                    lexical_set_idx: None,
+                });
+            }
             Stmt::Use { module, .. }
                 if module == "v6"
                     || module == "customtrait"

@@ -98,10 +98,31 @@ fn encode(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> A
     Some(i.dispatch_encode(t, &joined(args, named)))
 }
 
+// Cost: O(1).
+fn experimental_unpack_error() -> crate::value::RuntimeError {
+    let message = "Use of the 'unpack' method is experimental; please 'use experimental :pack;'";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.to_string()));
+    attrs.insert(
+        "feature".to_string(),
+        Value::str("the 'unpack' method".to_string()),
+    );
+    attrs.insert("use".to_string(), Value::str("pack".to_string()));
+    let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Experimental"), attrs);
+    let mut err = crate::value::RuntimeError::new(message.to_string());
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 // Cost: O(b + t), b = bytes of the buffer, t = chars of the template.
-fn unpack(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+fn unpack(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
     if !matches!(t.view(), crate::value::ValueView::Instance { .. }) {
         return None;
+    }
+    // Experimental in Rakudo: refused unless the calling file said
+    // `use experimental :pack` (#13346).
+    if !crate::runtime::experimental_pragma::pack_enabled(i.executing_source_file_sym()) {
+        return Some(Err(experimental_unpack_error()));
     }
     let bytes = Interpreter::extract_buf_bytes(t);
     let template = args.first().map(Value::to_string_value).unwrap_or_default();
