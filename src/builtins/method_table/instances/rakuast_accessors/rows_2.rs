@@ -2,6 +2,9 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Type::Enum", "default-scope"),
+    row!("RakuAST::Type::Enum", "name"),
+    row!("RakuAST::Type::Enum", "of"),
     row!("RakuAST::Type::Enum", "scope"),
     row!("RakuAST::Type::Enum", "term"),
     row!("RakuAST::Type::Parameterized", "args"),
