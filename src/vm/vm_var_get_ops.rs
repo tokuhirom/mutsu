@@ -1047,6 +1047,10 @@ impl Interpreter {
                     || self.export_namespace_exists(name)
                     || Self::is_builtin_type(name)
                     || crate::core_type_names::contains(name)
+                    // `Proc::Async::Pipe:D`: a core type with a definedness smiley.
+                    || crate::core_type_names::contains(
+                        crate::runtime::types::strip_type_smiley(name).0,
+                    )
                     || crate::rakuast::is_registered_type_object(
                         crate::runtime::types::strip_type_smiley(name).0,
                     )
