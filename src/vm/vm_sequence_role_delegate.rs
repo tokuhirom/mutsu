@@ -162,6 +162,35 @@ impl Interpreter {
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
         let need = Self::sequence_prefix_need(method, args);
+        // `map` / `grep` / `first(matcher)` are lazy in Rakudo's `Sequence`: a
+        // lazy `Seq` over the class's own iterator takes the call, so a
+        // following `head(n)` pulls only what it needs and an endless iterator
+        // answers (#16133).
+        if matches!(method, "map" | "grep") || (method == "first" && !args.is_empty()) {
+            let iterator = if self.has_user_method(&cn, "iterator") {
+                self.user_iterator_of(target)
+            } else {
+                Ok(attributes
+                    .as_map()
+                    .get("iterator")
+                    .cloned()
+                    .unwrap_or(Value::NIL))
+            };
+            let iterator = match iterator {
+                Ok(iterator) => iterator,
+                Err(e) => return Some(Err(e)),
+            };
+            let seq = self.try_native_seq_construct(&[iterator]);
+            if method == "first" {
+                // Stops pulling at the first match.
+                return match self.first_over_map_grep_seq(&seq, method, args) {
+                    Ok(Some(hit)) => Some(Ok(hit)),
+                    Ok(None) => Some(self.call_method_with_values(seq, method, args.to_vec())),
+                    Err(e) => Some(Err(e)),
+                };
+            }
+            return Some(self.call_method_with_values(seq, method, args.to_vec()));
+        }
         let items = if self.has_user_method(&cn, "iterator") {
             if matches!(target.view(), ValueView::Mixin(..)) {
                 // The class's own `iterator`, with the mixed value as `self`
