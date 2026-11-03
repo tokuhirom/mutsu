@@ -428,25 +428,29 @@ impl Interpreter {
         // `open` takes an `IO()`-coercible path. When handed an IO::Handle
         // (e.g. `open(IO::Handle.new(:path($p)))`), coerce it to its `.path`
         // so the underlying file is opened, matching rakudo.
-        let path = match path_arg {
+        // An IO::Path / `%?RESOURCES` entry resolves against its captured cwd
+        // (`resolve_io_arg_path`), like `slurp` does.
+        let (path_buf, path) = match path_arg {
             Some(v) => match v.view() {
                 ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } if class_name.resolve() == "IO::Handle" => attributes
-                    .as_map()
-                    .get("path")
-                    .map(|p| p.to_string_value())
-                    .unwrap_or_default(),
-                _ => v.to_string_value(),
+                } if class_name.resolve() == "IO::Handle" => {
+                    let p = attributes
+                        .as_map()
+                        .get("path")
+                        .map(|p| p.to_string_value())
+                        .unwrap_or_default();
+                    (self.resolve_path(&p), p)
+                }
+                _ => self.resolve_io_arg_path(v),
             },
             None => return Err(RuntimeError::new("open requires a path argument")),
         };
         check_null_in_path(&path)?;
         let create = _create;
         let exclusive = _exclusive;
-        let path_buf = self.resolve_path(&path);
         match self.open_file_handle(
             &path_buf,
             read,
