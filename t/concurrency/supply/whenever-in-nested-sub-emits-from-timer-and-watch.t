@@ -6,8 +6,8 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
+my @probe-seen;
 # TEMPORARY PROBE (to be removed): no plan; extra failing numbers encode a swallowed exception.
-our @caught;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -47,7 +47,7 @@ our @caught;
                     emit $_;
                     my $p = .path.IO;
                     add-dir($p) if $p.d && !%watched{$p};
-                    CATCH { default { @caught.push(.^name ~ '|' ~ .message.lines[0]) } }
+                    CATCH { default { } }
                 }
             }
             # What was created before the watcher existed is reported by a
@@ -72,6 +72,7 @@ our @caught;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
+    @probe-seen = @seen;
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
 }
 
@@ -83,7 +84,7 @@ our @caught;
 
 # TEMPORARY PROBE: char i with code c fails test number (tests so far) + 1 + i*256 + c.
 {
-    my $msg = @caught ?? @caught[0] !! 'NONE';
+    my $msg = 'seen=' ~ @probe-seen.join(',');
     my @chars = $msg.substr(0, 60).ords;
     unless $msg eq 'NONE' && False {
         for @chars.kv -> $i, $c {
