@@ -112,7 +112,6 @@ impl Interpreter {
                 .attribute_smileys
                 .insert(attr_name.clone(), ts.clone());
         }
-        Self::note_built_bind_attr(decl.is_built);
         if let Some(built) = decl.is_built {
             class_def.attribute_built.insert(attr_name.clone(), built);
         }
@@ -436,7 +435,6 @@ impl Interpreter {
                 .attribute_smileys
                 .insert(attr_name_str.clone(), ts.clone());
         }
-        Self::note_built_bind_attr(decl.is_built);
         if let Some(built) = decl.is_built {
             cx.class_def
                 .attribute_built

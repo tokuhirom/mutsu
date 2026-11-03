@@ -38,17 +38,8 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
         readonly: bool,
     ) {
-        // While no attribute anywhere is `is built(:bind)`, nothing can use the
-        // caller's container (#16002): skip the capture and bind the value.
-        let capture = Self::built_bind_attr_seen();
-        let (left, right) = if capture {
-            self.pop_pair_operands_capturing(code, true)
-        } else {
-            let right = self.stack.pop().unwrap().unwrap_varref().deref_container();
-            let left = self.stack.pop().unwrap().deitemize_element();
-            (left, right)
-        };
-        let right = if readonly && capture {
+        let (left, right) = self.pop_pair_operands_capturing(code, true);
+        let right = if readonly {
             Value::container_ref(crate::gc::Gc::new(
                 crate::value::ContainerCell::new_readonly_binding(
                     right.deref_container(),

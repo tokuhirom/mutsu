@@ -3736,14 +3736,7 @@ impl Interpreter {
             // Cost: O(c), c = the chunk's container-ref capture names (a linear
             // `Vec::contains`), O(1) when it has none.
             OpCode::WrapVarRef { name_idx, slot } => {
-                // `key => $var` as a named argument: while no attribute is
-                // `is built(:bind)` nothing can use the retained container
-                // (#16002), and `MakeNamedArg` binds the value instead.
-                let named_arg_nobody_binds = !Self::built_bind_attr_seen()
-                    && matches!(code.ops.get(*ip + 1), Some(OpCode::MakeNamedArg { .. }));
-                if !named_arg_nobody_binds {
-                    self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot)?;
-                }
+                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot)?;
                 *ip += 1;
             }
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.

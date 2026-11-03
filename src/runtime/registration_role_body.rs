@@ -155,7 +155,6 @@ impl Interpreter {
         if decl.where_constraint.is_some() {
             Self::mark_attr_where_constraint_seen();
         }
-        Self::note_built_bind_attr(decl.is_built);
         if let Some(built) = decl.is_built {
             cx.role_def
                 .attribute_built

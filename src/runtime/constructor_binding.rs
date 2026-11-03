@@ -2,33 +2,7 @@
 
 use super::*;
 
-/// Whether any class or role attribute anywhere in the program has ever been
-/// declared `is built(:bind)`, process-wide and monotonic. A named argument
-/// retains the caller's container only for such an attribute to bind (#16002),
-/// so while no program text declares one the capture is dead work
-/// (`MakeNamedArg` skips it: ~9 allocations per `x => $var` argument).
-static BUILT_BIND_ATTR_SEEN: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
 impl Interpreter {
-    /// Record a `has $.x is built(:bind)` declaration; called at class/role
-    /// registration (the only place an attribute's `is built` trait is read
-    /// from a declaration, whether it was parsed, loaded from a precompiled
-    /// unit or lowered from RakuAST).
-    // Cost: O(1).
-    pub(crate) fn note_built_bind_attr(built: Option<crate::ast::BuiltTrait>) {
-        if built == Some(crate::ast::BuiltTrait::Bind) {
-            BUILT_BIND_ATTR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-
-    /// Whether a named argument's caller container can matter to any
-    /// constructor yet.
-    // Cost: O(1).
-    pub(crate) fn built_bind_attr_seen() -> bool {
-        BUILT_BIND_ATTR_SEEN.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
     /// A bound Proxy is the attribute's container; ordinary construction
     /// FETCHes it at the assignment boundary.
     // Cost: O(a), a = constructor arguments, plus any Proxy FETCH calls.
