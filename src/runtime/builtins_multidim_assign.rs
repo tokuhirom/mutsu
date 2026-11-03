@@ -1026,6 +1026,32 @@ impl Interpreter {
         Ok(removed)
     }
 
+    /// `temp $obj.attr = v`: remember what `$obj.attr` holds now, to put back
+    /// through the same rw accessor when the scope exits (#16144). Arguments:
+    /// invocant, method name, method arguments (an array). Answers `Nil`.
+    // Cost: O(1) plus the accessor call and the snapshot of its value.
+    pub(super) fn builtin_temp_method_save(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_temp_method_save expects target, method name and method args",
+            ));
+        }
+        let target = args[0].clone();
+        let method = args[1].to_string_value();
+        let method_args = match args[2].view() {
+            ValueView::Array(items, ..) => items.to_vec(),
+            ValueView::Nil => Vec::new(),
+            _ => vec![args[2].clone()],
+        };
+        let old = self.call_method_with_values(target.clone(), &method, method_args.clone())?;
+        let old = old.deref_container();
+        self.let_saves_push_method_attr(target, method, method_args, old);
+        Ok(Value::NIL)
+    }
+
     pub(super) fn builtin_assign_method_lvalue(
         &mut self,
         args: &[Value],

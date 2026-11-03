@@ -5110,16 +5110,9 @@ impl Compiler {
                 method_name,
                 method_args,
                 value,
-                is_attribute: _,
-                type_invocant: _,
+                is_attribute,
+                type_invocant,
             } => {
-                let slot = self.local_map.get(var_name).copied();
-                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                self.code.emit(OpCode::LetSave {
-                    name_idx,
-                    is_temp: true,
-                    slot,
-                });
                 // `self` is a term, not a variable (`temp self.x = v`,
                 // `temp $.x ~= v`).
                 let invocant = if var_name == "self" {
@@ -5127,6 +5120,33 @@ impl Compiler {
                 } else {
                     Expr::Var(var_name.clone())
                 };
+                // `temp $obj.attr = v` temporizes the ATTRIBUTE: its old value
+                // goes back through the same rw accessor, so `$obj` stays the
+                // one shared object. Saving the variable instead restored it to
+                // a detached copy that no other holder of the object saw
+                // (#16144). `self`, `$.x` and a type invocant keep the variable
+                // save: they restore through the frame's invocant / a write-back.
+                if var_name != "self" && !*is_attribute && !*type_invocant {
+                    let save = Expr::Call {
+                        name: Symbol::intern("__mutsu_temp_method_save"),
+                        args: vec![
+                            invocant.clone(),
+                            Expr::Literal(Value::str(method_name.clone())),
+                            Expr::ArrayLiteral(method_args.clone()),
+                        ],
+                        listop: false,
+                    };
+                    self.compile_expr(&save);
+                    self.code.emit(OpCode::Pop);
+                } else {
+                    let slot = self.local_map.get(var_name).copied();
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::LetSave {
+                        name_idx,
+                        is_temp: true,
+                        slot,
+                    });
+                }
                 let value = match value {
                     Expr::Unary {
                         op: TokenKind::Pipe,
