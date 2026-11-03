@@ -920,27 +920,26 @@ impl Interpreter {
     /// The `Iterator` a user class's `iterator` method answers for `iterable`
     /// (with the mixed value as `self` under a `but` mixin).
     // Cost: O(1) plus the user `iterator` method's own cost.
-    pub(crate) fn user_iterator_of(
-        &mut self,
-        iterable: &Value,
-    ) -> Result<Value, RuntimeError> {
-        Ok(if matches!(iterable.view(), ValueView::Mixin(..))
-            && self.is_iterator_sequence_instance(iterable)
-        {
-            self.call_user_iterator_on_mixin(iterable)?
-        } else if matches!(iterable.view(), ValueView::Mixin(..))
-            && !self.mixin_composes_method(iterable, "iterator")
-        {
-            // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
-            // run it with the mixed value as `self` (#15973).
-            self.call_user_iterator_on_mixin(iterable)?
-        } else if let Some(result) =
-            self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
-        {
-            result?
-        } else {
-            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
-        })
+    pub(crate) fn user_iterator_of(&mut self, iterable: &Value) -> Result<Value, RuntimeError> {
+        Ok(
+            if matches!(iterable.view(), ValueView::Mixin(..))
+                && self.is_iterator_sequence_instance(iterable)
+            {
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if matches!(iterable.view(), ValueView::Mixin(..))
+                && !self.mixin_composes_method(iterable, "iterator")
+            {
+                // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
+                // run it with the mixed value as `self` (#15973).
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if let Some(result) =
+                self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
+            {
+                result?
+            } else {
+                self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
+            },
+        )
     }
 
     /// [`Self::drive_user_iterator_items`] that stops pulling after `limit`

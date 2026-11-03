@@ -185,11 +185,11 @@ impl Interpreter {
                 // Stops pulling at the first match.
                 return match self.first_over_map_grep_seq(&seq, method, args) {
                     Ok(Some(hit)) => Some(Ok(hit)),
-                    Ok(None) => Some(self.call_method_with_values(seq, method, args.to_vec())),
+                    Ok(None) => Some(self.dispatch_on_list_value(seq, method_sym, args)),
                     Err(e) => Some(Err(e)),
                 };
             }
-            return Some(self.call_method_with_values(seq, method, args.to_vec()));
+            return Some(self.dispatch_on_list_value(seq, method_sym, args));
         }
         let items = if self.has_user_method(&cn, "iterator") {
             if matches!(target.view(), ValueView::Mixin(..)) {
@@ -223,9 +223,21 @@ impl Interpreter {
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
-        if let Some(r) = self.try_native_method(&list, method_sym, args) {
-            return Some(r);
+        Some(self.dispatch_on_list_value(list, method_sym, args))
+    }
+
+    /// `method(args)` on the list-ish `value` the sequence's items became:
+    /// the native method first, then the compiled/interpreted dispatch.
+    // Cost: that of the method called.
+    fn dispatch_on_list_value(
+        &mut self,
+        value: Value,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(r) = self.try_native_method(&value, method_sym, args) {
+            return r;
         }
-        Some(self.try_compiled_method_or_interpret_sym(list, method_sym, args.to_vec()))
+        self.try_compiled_method_or_interpret_sym(value, method_sym, args.to_vec())
     }
 }
