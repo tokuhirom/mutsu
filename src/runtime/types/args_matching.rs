@@ -260,7 +260,7 @@ impl Interpreter {
                 let supplied = args.iter().any(|a| {
                     let a = a.unwrap_varref();
                     a.is_string_pair_value()
-                        && matches!(a.view(), ValueView::Pair(key, _) if pd.answers_named_key(&key))
+                        && matches!(a.view(), ValueView::Pair(key, _) if pd.answers_named_key(key))
                 });
                 if !supplied {
                     return true;
