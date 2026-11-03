@@ -427,6 +427,11 @@ fn render_node_value(value: &Value, indent: usize) -> Option<String> {
                 return Some(super::subclass::gist_at(display.as_ref(), node, indent));
             }
             ValueView::Mixin(inner, _) => current = inner,
+            // A `config` entry of a `Doc::Block`.
+            ValueView::Pair(key, value) => {
+                let rendered = render_node_value(value, indent)?;
+                return Some(format!(":{key}({rendered})"));
+            }
             _ => return None,
         }
     }

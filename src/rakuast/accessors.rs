@@ -110,6 +110,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             _ => {}
         }
     }
+    if let Some(value) = super::doc_block::accessor(node, method) {
+        return Some(value);
+    }
     for f in &node.fields {
         if f.name == Some(method) && !is_unvisited_field(node, f) {
             return Some(field_to_value(&f.value));
