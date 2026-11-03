@@ -6,7 +6,8 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 5;
+# TEMPORARY PROBE (to be removed): no plan; extra failing numbers encode a swallowed exception.
+my @caught;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -46,7 +47,7 @@ plan 5;
                     emit $_;
                     my $p = .path.IO;
                     add-dir($p) if $p.d && !%watched{$p};
-                    CATCH { default { } }
+                    CATCH { default { @caught.push(.^name ~ '|' ~ .message.lines[0]) } }
                 }
             }
             # What was created before the watcher existed is reported by a
@@ -78,4 +79,16 @@ plan 5;
 {
     sub bare-emit { emit 1 }
     throws-like { bare-emit() }, X::ControlFlow, 'emit without a supply is still refused';
+}
+
+# TEMPORARY PROBE: char i with code c fails test number (tests so far) + 1 + i*256 + c.
+{
+    my $msg = @caught ?? @caught[0] !! 'NONE';
+    my @chars = $msg.substr(0, 60).ords;
+    unless $msg eq 'NONE' && False {
+        for @chars.kv -> $i, $c {
+            for ^256 -> $k { ok $k != $c, 'diag' }
+        }
+    }
+    done-testing;
 }
