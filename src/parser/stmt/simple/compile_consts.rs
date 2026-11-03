@@ -223,6 +223,27 @@ pub(crate) fn restore_worries() {
     });
 }
 
+/// Record `use experimental :cached` in the current scope, for the rest of it
+/// and the scopes nested in it.
+// Cost: O(1).
+pub(crate) fn enable_experimental_cached() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.experimental_cached = true;
+        }
+    });
+}
+
+/// Whether `use experimental :cached` is in effect in the current scope.
+// Cost: O(1).
+pub(crate) fn experimental_cached_enabled() -> bool {
+    SCOPES.with(|s| {
+        s.borrow()
+            .last()
+            .is_some_and(|scope| scope.experimental_cached)
+    })
+}
+
 /// Returns true when `no worries` is in effect in the current (innermost) scope.
 pub(crate) fn worries_suppressed() -> bool {
     SCOPES.with(|s| {

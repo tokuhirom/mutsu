@@ -148,6 +148,12 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 );
             }
             seen_traits.push(trait_name.to_string());
+            // Experimental in Rakudo: refused unless the scope said
+            // `use experimental :cached` (#16273).
+            if trait_name == "cached" && !crate::parser::stmt::simple::experimental_cached_enabled()
+            {
+                return Err(experimental_cached_error(input));
+            }
             if trait_name == "hidden-from-backtrace" {
                 source_traits.push(RoutineTrait::Is {
                     name: trait_name.to_string(),
@@ -489,4 +495,21 @@ fn trait_spans(start: &str, end: &str) -> crate::ast::parsed::TraitSpans {
         crate::ast::SrcSpan::NONE
     };
     crate::ast::parsed::TraitSpans { whole, name }
+}
+
+/// The fatal `X::Experimental` Rakudo raises at compile time for an
+/// `is cached` trait outside `use experimental :cached` (#16273).
+// Cost: O(1).
+fn experimental_cached_error(input: &str) -> PError {
+    let message =
+        "Use of the 'is cached' trait is experimental; please 'use experimental :cached;'";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.to_string()));
+    attrs.insert(
+        "feature".to_string(),
+        Value::str("the 'is cached' trait".to_string()),
+    );
+    attrs.insert("use".to_string(), Value::str("cached".to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Experimental"), attrs);
+    PError::fatal_with_exception_at(message.to_string(), Box::new(ex), input)
 }
