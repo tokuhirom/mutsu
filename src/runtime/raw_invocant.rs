@@ -151,10 +151,12 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
-        if let Some(defs) = self.mixin_role_method_defs(target, method) {
-            return defs
+        if let Some(defs) = self.mixin_role_method_defs(target, method)
+            && defs
                 .iter()
-                .any(|def| Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def));
+                .any(|def| Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def))
+        {
+            return true;
         }
         let class_name = Self::raw_invocant_class_name(target);
         if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
@@ -214,8 +216,10 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
-        if let Some(defs) = self.mixin_role_method_defs(target, method) {
-            return defs.iter().any(method_def_has_raw_invocant);
+        if let Some(defs) = self.mixin_role_method_defs(target, method)
+            && defs.iter().any(method_def_has_raw_invocant)
+        {
+            return true;
         }
         let class_name = Self::raw_invocant_class_name(target);
         self.resolve_method(&class_name, method, method_args, target)
@@ -305,7 +309,11 @@ impl Interpreter {
         // A `but`-mixed value runs the role's method through the mixin
         // dispatch, which takes the container from the arrival channel (the
         // generic entry does not look through a boxed `Mixin`).
-        let result = if matches!(inner.view(), ValueView::Mixin(..)) {
+        let role_raw = matches!(inner.view(), ValueView::Mixin(..))
+            && self
+                .mixin_role_method_defs(&inner, method)
+                .is_some_and(|defs| defs.iter().any(method_def_has_raw_invocant));
+        let result = if role_raw {
             let previous = self.pending_raw_invocant.replace(Box::new(
                 crate::vm::vm_raw_invocant_arrival::PendingRawInvocant {
                     method: method.to_string(),
