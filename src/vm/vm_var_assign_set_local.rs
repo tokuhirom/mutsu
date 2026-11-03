@@ -3611,11 +3611,15 @@ impl Interpreter {
                 // (writing through would clobber `$h`). An undeclared `$*x := ...`
                 // in a callee rebinds the caller's dynamic, so it keeps writing
                 // through.
-                || (synthetic_index_source
-                    && code
-                        .locals_sym
-                        .get(idx)
-                        .is_some_and(|sym| code.dynamic_declared_sym.contains(sym)))
+                //
+                // The same holds for a rebind to any non-container value
+                // (`my $*OUT = $*ERR; $*OUT := $handle`): writing through would
+                // leave the `$*OUT` twin key naming the old handle, so `say`
+                // kept printing to it (#16173).
+                || code
+                    .locals_sym
+                    .get(idx)
+                    .is_some_and(|sym| code.dynamic_declared_sym.contains(sym))
                 || name.starts_with(['@', '%']))
             && !val.is_container_ref()
             && !name.starts_with('&')
@@ -3625,6 +3629,13 @@ impl Interpreter {
             );
         if rebind_detaches_env_cell {
             self.env_mut().insert(name.to_string(), val.clone());
+            // A dynamic (`my $*OUT`) has a twin key (`$*OUT` / `*OUT`) that
+            // `say` / `put` / `print` read by name: the detached binding
+            // must reach it too, or the output keeps going to the old handle
+            // (#16173).
+            if let Some(twin) = crate::runtime::utils::twigil_dynamic_alias(name) {
+                self.env_mut().insert(twin, val.clone());
+            }
         } else if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
