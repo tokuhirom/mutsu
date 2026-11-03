@@ -110,8 +110,54 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
         ('[', ']')
     };
     if let Some(inside) = bracketed(from, to, brackets) {
-        with_child_at(node, 0, |list| statement_list(list, inside));
+        with_child_at(node, 0, |list| {
+            place_lone_dotty(list, inside);
+            statement_list(list, inside);
+        });
     }
+}
+
+/// `($a .= lc)`: a bracketed list of one statement whose expression is a `.=`
+/// application the parser did not place. The text inside the brackets,
+/// trimmed, is exactly that application.
+// Cost: O(n), n = length of `inside`.
+fn place_lone_dotty(list: &mut RakuAstNode, inside: SrcSpan) {
+    let [field] = list.fields.as_mut_slice() else {
+        return;
+    };
+    let RakuAstFieldValue::Node(held) = &mut field.value else {
+        return;
+    };
+    let ValueView::RakuAst(statement) = held.view() else {
+        return;
+    };
+    if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+        return;
+    }
+    let Some(expression) = child_at(statement, 0) else {
+        return;
+    };
+    if expression.class != RakuAstClass::ApplyDottyInfix || expression.origin.0.is_some() {
+        return;
+    }
+    let Some(span) = super::unit_source::with_text(inside, |text| {
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = text.trim();
+        (!trimmed.is_empty()).then(|| {
+            SrcSpan::new(
+                inside.from as usize + lead,
+                inside.from as usize + lead + trimmed.len(),
+            )
+        })
+    }) else {
+        return;
+    };
+    let mut statement = RakuAstNode::clone(statement);
+    with_child_at(&mut statement, 0, |dotty| {
+        super::origin::set_span(dotty, span);
+        super::call_origins::dotty_assign(dotty, span);
+    });
+    *held = Value::rakuast(Box::new(statement));
 }
 
 /// `operand[...]` / `operand{...}`: the subscript runs from the operand's
