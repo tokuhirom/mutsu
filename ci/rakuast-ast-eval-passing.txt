@@ -1065,6 +1065,7 @@ t/collections/transform/reduce-notandthen.t
 t/collections/transform/reduce-numeric-string-whitespace.t
 t/collections/transform/reduce-reverse-metaop.t
 t/collections/transform/reduce-set-relation-chains.t
+t/collections/transform/reduce-single-element.t
 t/collections/transform/reduce-user-infix-type-object-operands.t
 t/collections/transform/reverse-finite-gather.t
 t/collections/transform/reverse-meta-compound-assign.t
@@ -2501,6 +2502,7 @@ t/lang/eval-caller-frames.t
 t/lang/eval-check-imports.t
 t/lang/eval-class-redeclaration-cross-boundary.t
 t/lang/eval-class-redeclaration.t
+t/lang/eval-code-var-infix-minus.t
 t/lang/eval-compile-checks-nested-positions.t
 t/lang/eval-context-live-target.t
 t/lang/eval-core-term-constant-call-undeclared-class.t
@@ -2658,6 +2660,7 @@ t/lang/operators/metaop-cross-listop-arg-pointy-block.t
 t/lang/operators/metaop-doubled-infix-base.t
 t/lang/operators/metaop-function-compose-inner-op.t
 t/lang/operators/metaop-inner-operator-decoded-once.t
+t/lang/operators/metaop-over-code-var.t
 t/lang/operators/metaop-user-declared-symbol-infix.t
 t/lang/operators/metaop-user-infix-import.t
 t/lang/operators/metaoperators-custom-infix.t
@@ -2689,6 +2692,7 @@ t/lang/operators/prefix-tilde-skips-fallback.t
 t/lang/operators/prefix-tilde-uninit-warning-name.t
 t/lang/operators/prefix-tilde-uses-user-str-on-date-subclass.t
 t/lang/operators/qualified-operator-code-ref.t
+t/lang/operators/quanthash-hyper-funcop.t
 t/lang/operators/reduction-call-form-in-call-args.t
 t/lang/operators/reduction-fat-arrow.t
 t/lang/operators/reduction-scan-slip.t
