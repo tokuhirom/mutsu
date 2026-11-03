@@ -962,7 +962,6 @@ impl Interpreter {
                     | RxOp::Collect { .. }
                     | RxOp::SepEmit { .. }
                     | RxOp::SepNames { .. }
-                    | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
                     | RxOp::EmptyRange

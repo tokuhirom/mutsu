@@ -491,6 +491,23 @@ impl Value {
             .map(|node| Arc::as_ptr(&node.cap) as usize)
     }
 
+    /// Whether this Match presents a capture node whose grammar action already
+    /// ran (ADR-7576). `false` for an eager Match, which has no shared node.
+    // Cost: O(1).
+    pub(crate) fn match_node_reduced(&self) -> bool {
+        self.0
+            .as_match_node()
+            .is_some_and(|node| node.cap.reduced.get())
+    }
+
+    /// Record that this Match's capture node had its grammar action run.
+    // Cost: O(1).
+    pub(crate) fn mark_match_node_reduced(&self) {
+        if let Some(node) = self.0.as_match_node() {
+            node.cap.reduced.set();
+        }
+    }
+
     /// A Match equal to `self` with the given attributes replaced — the
     /// rebuild pattern every post-hoc attribute write (`.made`/`ast`,
     /// `actions`, `capture_alias_map`, `orig`, `named`, `list`) uses.
