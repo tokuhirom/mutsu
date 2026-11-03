@@ -4126,7 +4126,7 @@ impl Interpreter {
                             let cell_key_sym = Symbol::intern(&cell_key);
                             if let Some(proxy) = self
                                 .env
-                                .get_sym_in_frame(cell_key_sym)
+                                .get_sym_in_caller_frame(cell_key_sym)
                                 .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                                 .cloned()
                             {
@@ -4134,7 +4134,7 @@ impl Interpreter {
                             } else {
                                 let existing = self
                                     .env
-                                    .get_sym_in_frame(cell_key_sym)
+                                    .get_sym_in_caller_frame(cell_key_sym)
                                     .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                                     .cloned();
                                 value = match existing {

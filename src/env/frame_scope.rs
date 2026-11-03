@@ -86,6 +86,25 @@ impl Env {
         }
     }
 
+    /// `key`'s binding in the CALLER's own frame: skip the running call
+    /// frame's tiers (down to and including its frame root), then read the
+    /// tiers of the next frame up to and including its root. Never an older
+    /// caller's tier. For a callee binding its arguments: the caller's
+    /// variable of a name is in the caller's frame, and a same-named variable
+    /// of a grand-caller is another variable (#16177). `None` when the running
+    /// frame has no caller frame root above it (the program scope).
+    // Cost: O(d), d = the two frames' tiers.
+    pub(crate) fn get_sym_in_caller_frame(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            let parent = cur.parent.as_deref();
+            if cur.frame_root {
+                return parent?.get_sym_in_frame(key);
+            }
+            cur = parent?;
+        }
+    }
+
     /// A variable's type record (`__mutsu_type::x` and kin) when the running
     /// code declares the variable itself (ADR-13757 step 4): the record was
     /// written in this frame, so the lookup ends at the frame root and never
