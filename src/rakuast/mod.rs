@@ -80,9 +80,7 @@ mod declarator_docs;
 
 /// The `#|` / `#=` docs a node carries (leading, trailing).
 // Cost: O(1).
-pub(crate) fn declarator_docs_of(
-    node: &RakuAstNode,
-) -> Option<(Option<String>, Option<String>)> {
+pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
     declarator_docs::docs_of(node)
 }
 mod declare_how;
