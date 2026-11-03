@@ -311,16 +311,79 @@ multi sub trait_mod:<is>(Attribute:D $attr, :$default!) is export {
 /// demand and keyed by the type's name, so asking for the type's `.WHO` is the
 /// creation step; the method still has to answer `$type_obj`, since the
 /// documented HOW ends `new_type` with it.
-pub(super) const METAMODEL_ROLE_PRELUDE: &str = r#"
+pub(super) const METAMODEL_ROLE_PRELUDE: &[(&str, &str)] = &[
+    (
+        "Naming",
+        r#"
 role GLOBAL::Metamodel::Naming {
     has $!name;
     method name(Mu $obj) { $!name // '' }
     method set_name(Mu $obj, $new_name) { $!name = $new_name }
 }
+"#,
+    ),
+    (
+        "Stashing",
+        r#"
 role GLOBAL::Metamodel::Stashing {
     method add_stash(Mu $type_obj) { $type_obj.WHO; $type_obj }
 }
-"#;
+"#,
+    ),
+    // `DefaultParent`: the type a class gets as its parent when it names none.
+    // Rakudo's methods take the type alone (no `$obj`), and an unset parent
+    // answers `Mu` / `0` (measured on rakudo 2026.09).
+    (
+        "DefaultParent",
+        r#"
+role GLOBAL::Metamodel::DefaultParent {
+    has Mu $!default_parent_type;
+    has $!default_parent_set;
+    method set_default_parent_type(Mu $type) { $!default_parent_set = 1; $!default_parent_type := $type }
+    method get_default_parent_type() { $!default_parent_type }
+    method has_default_parent_type() { $!default_parent_set ?? 1 !! 0 }
+}
+"#,
+    ),
+    // `Mixins`: the flag and attribute a mixin type records. `mixin` itself is
+    // the native HOW's. Arities as rakudo's NQP methods answer them (measured:
+    // `set_is_mixin` takes none, the readers take an optional `$obj`).
+    (
+        "Mixins",
+        r#"
+role GLOBAL::Metamodel::Mixins {
+    has $!is_mixin;
+    has $!mixin_attribute;
+    method set_is_mixin() { $!is_mixin = 1 }
+    method is_mixin(Mu $obj?) { $!is_mixin ?? 1 !! 0 }
+    method set_mixin_attribute($attr) { $!mixin_attribute = $attr }
+    method mixin_attribute(Mu $obj?) { $!mixin_attribute }
+}
+"#,
+    ),
+    // `MultipleInheritance`'s `hidden` flag (`add_parent`, `parents` and the rest
+    // are the native HOW's).
+    (
+        "MultipleInheritance",
+        r#"
+role GLOBAL::Metamodel::MultipleInheritance {
+    has $!hidden;
+    method set_hidden(Mu $obj?) { $!hidden = 1 }
+    method hidden(Mu $obj?) { $!hidden ?? 1 !! 0 }
+}
+"#,
+    ),
+    // The containers and the method dispatch below are composed into the native
+    // `Metamodel::ClassHOW` already: its `add_method`, `add_role`,
+    // `add_attribute`, `find_method`, ... are the roles' methods. A custom HOW
+    // that composes them again gets the role (`.^does`, the name in `does`)
+    // and keeps the inherited behaviour, which re-declaring them here would
+    // shadow.
+    ("MROBasedMethodDispatch", "role GLOBAL::Metamodel::MROBasedMethodDispatch { }\n"),
+    ("RoleContainer", "role GLOBAL::Metamodel::RoleContainer { }\n"),
+    ("AttributeContainer", "role GLOBAL::Metamodel::AttributeContainer { }\n"),
+    ("MethodContainer", "role GLOBAL::Metamodel::MethodContainer { }\n"),
+];
 
 /// Builtin `X::Wrapper` role (Rakudo core since ~2023.10; see
 /// `AttrX::Mooish`'s own `AttrX::Mooish::X::Wrapper` bundled polyfill for
