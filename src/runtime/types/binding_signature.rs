@@ -3554,6 +3554,7 @@ impl Interpreter {
                         && !is_rw
                         && !is_raw
                         && !is_copy
+                        && !alias_plain_container
                         && let Some(source_name) = &source_name
                     {
                         rw_bindings.push((storage_name.to_string(), source_name.clone()));
