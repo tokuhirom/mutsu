@@ -161,6 +161,57 @@ impl Finalize<'_> {
         super::supply_lower::supply_method_call(body)
     }
 
+    /// A typed term whose lowering is one function over its operands: the
+    /// operands are lowered where they stand, then the function runs.
+    fn parsed_term(&mut self, node: ParsedExpr) -> Expr {
+        match node {
+            ParsedExpr::HyperPrefix(mut prefix) => {
+                self.visit_expr_mut(&mut prefix.operand);
+                match super::hyper_prefix::lower_hyper_prefix(&prefix.symbol, prefix.operand) {
+                    Some(lowered) => lowered,
+                    None => {
+                        self.fail(RuntimeError::new(format!(
+                            "hyper prefix `{}` has no lowering",
+                            prefix.symbol
+                        )));
+                        Expr::Whatever
+                    }
+                }
+            }
+            ParsedExpr::AtomicVar(mut atomic) => {
+                if let crate::ast::parsed::AtomicVar::Store { value, .. } = &mut atomic {
+                    self.visit_expr_mut(value);
+                }
+                crate::ast::atomic_op::lower_var(atomic)
+            }
+            ParsedExpr::ObjectHash(mut entries) => {
+                for entry in &mut entries {
+                    self.visit_expr_mut(entry);
+                }
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("__object_hash"),
+                    args: entries,
+                    listop: false,
+                }
+            }
+            ParsedExpr::HyperAssign(mut assign) => {
+                self.visit_expr_mut(&mut assign.target);
+                self.visit_expr_mut(&mut assign.value);
+                super::hyper_assign::lower_hyper_assignment(
+                    assign.target,
+                    assign.value,
+                    assign.dwim_left,
+                    assign.dwim_right,
+                )
+            }
+            ParsedExpr::InlineSubset(mut declaration) => {
+                self.visit_stmt_mut(&mut declaration);
+                crate::ast::inline_subset_term::lower(*declaration)
+            }
+            other => unreachable!("not a one-function term: {other:?}"),
+        }
+    }
+
     fn fail(&mut self, err: RuntimeError) {
         self.failed.get_or_insert(err);
     }
@@ -290,6 +341,20 @@ impl VisitMut for Finalize<'_> {
                 unreachable!("checked above");
             };
             *expr = self.subscript_adverbs(adverbs);
+            return;
+        }
+        // The other typed terms, each lowered by its one function over the
+        // operands lowered where they stand: see `Finalize::parsed_term`.
+        if matches!(expr, Expr::Ast(node) if matches!(
+            node.as_ref(),
+            ParsedExpr::HyperPrefix(_)
+                | ParsedExpr::AtomicVar(_)
+                | ParsedExpr::ObjectHash(_)
+                | ParsedExpr::HyperAssign(_)
+                | ParsedExpr::InlineSubset(_)
+        )) && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            *expr = self.parsed_term(*node);
             return;
         }
         // `supply { ... }`: see `Finalize::supply`.
