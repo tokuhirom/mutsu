@@ -237,7 +237,7 @@ fn unit_pad(
 /// declares none. A handle over a pad answers the pad's `&EXPORT`.
 // Cost: O(1).
 fn export_sub(
-    _interp: &mut Interpreter,
+    interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
     _named: Named<'_>,
@@ -245,8 +245,14 @@ fn export_sub(
     if let Some(Some(pad)) = attr(target, "unit") {
         return Some(Ok(pad.hash_get_str("&EXPORT").unwrap_or(Value::NIL)));
     }
-    attr(target, "unit-name")?;
-    Some(Ok(Value::NIL))
+    let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
+    // The hook the unit's body declared, kept by the load.
+    let hooks = interp.module.module_export_hooks.get(&unit).cloned();
+    Some(Ok(match hooks.as_deref() {
+        None | Some([]) => Value::NIL,
+        Some([hook]) => interp.sub_value_from_function_def((**hook).clone()),
+        Some(candidates) => interp.sub_value_from_multi_candidates("EXPORT", candidates.to_vec()),
+    }))
 }
 
 /// `CompUnit.unit`: the pad of the unit's handle (`CompUnit::Util::unit-to-hash`

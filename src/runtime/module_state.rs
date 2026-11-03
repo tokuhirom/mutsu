@@ -361,6 +361,12 @@ pub(crate) struct ModuleState {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     pub(crate) unit_module_loading_stack: Vec<String>,
+    /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
+    /// name: what `CompUnit::Handle.export-sub` answers once the load is over
+    /// and the registry's `GLOBAL::EXPORT` has been handed back to the
+    /// enclosing compunit (#15371).
+    pub(crate) module_export_hooks:
+        std::sync::Arc<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
     /// The package a `use`/`need` must import INTO, when the statement is run
     /// by a body that is not a compunit mainline: a role's deferred body, or an
     /// `augment` body. Both re-point `current_package` at the declaring package
@@ -768,6 +774,7 @@ impl ModuleState {
             reexported_var_owners: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
+            module_export_hooks: Default::default(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
@@ -885,6 +892,7 @@ impl ModuleState {
             exported_token_defs: self.exported_token_defs.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
+            module_export_hooks: self.module_export_hooks.clone(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,

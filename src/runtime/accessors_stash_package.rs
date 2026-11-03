@@ -58,7 +58,15 @@ impl Interpreter {
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
             let mut symbols: ValueMap = ValueMap::default();
-            if let Some(subs) = self.module.exported_subs.get(module) {
+            if let Some(subs) = self
+                .module
+                .exported_subs
+                .get(module)
+                // A package-less compunit's exports are recorded under GLOBAL;
+                // the module the load attributed them to still names them
+                // (`CompUnit::Handle.export-package`, #15371).
+                .or_else(|| self.module.module_owned_exports.get(module))
+            {
                 for (name, tags) in subs {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
@@ -107,7 +115,15 @@ impl Interpreter {
 
         if let Some(module) = Self::package_export_module(&package_name) {
             let mut tags = std::collections::BTreeSet::new();
-            if let Some(subs) = self.module.exported_subs.get(module) {
+            if let Some(subs) = self
+                .module
+                .exported_subs
+                .get(module)
+                // A package-less compunit's exports are recorded under GLOBAL;
+                // the module the load attributed them to still names them
+                // (`CompUnit::Handle.export-package`, #15371).
+                .or_else(|| self.module.module_owned_exports.get(module))
+            {
                 for tagset in subs.values() {
                     tags.extend(tagset.iter().cloned());
                 }
