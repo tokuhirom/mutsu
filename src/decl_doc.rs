@@ -145,4 +145,8 @@ pub(crate) struct DocComment {
     /// by, so `.WHY` reaches it through the code object instead (see
     /// [`DeclDoc`]), and only `$=pod` lists it here.
     pub(crate) is_anonymous: bool,
+    /// The source offset the declaration starts at (`Str.AST` places the docs
+    /// on the node that starts there).
+    #[serde(default)]
+    pub(crate) start: usize,
 }

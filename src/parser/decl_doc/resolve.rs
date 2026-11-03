@@ -129,6 +129,7 @@ pub(super) fn resolve(t: &Table) -> Vec<DocComment> {
         };
         let mut entry = DocComment {
             doc,
+            start: s,
             ..DocComment::default()
         };
         match &site.ident {
