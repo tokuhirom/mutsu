@@ -766,7 +766,7 @@ impl Interpreter {
     pub(crate) fn sub_state_scope_id(&self, data: &crate::value::SubData) -> u64 {
         let name = data.name.resolve();
         if name.is_empty() || (data.compiled_routine.is_none() && data.compiled_code.is_some()) {
-            return data.id;
+            return data.routine_cell.shared_state_scope().unwrap_or(data.id);
         }
         let key = crate::runtime::Interpreter::callable_id_key_for_syms(data.package, data.name);
         self.registration_callable_id(key)
