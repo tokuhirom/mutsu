@@ -202,9 +202,8 @@ impl VisitMut for Finalize<'_> {
             && self.later_terms.iter().any(|later| later.contains(word))
             && !self.declared_types.contains(word)
         {
-            *expr = Expr::BareWord(
-                crate::qualified::qualified_text("CORE", word.as_str()).resolve(),
-            );
+            *expr =
+                Expr::BareWord(crate::qualified::qualified_text("CORE", word.as_str()).resolve());
             return;
         }
         // An expression the parser's tree cannot stand for (a bareword to
@@ -417,6 +416,34 @@ fn setting_terms_declared_in(body: &[Stmt]) -> std::collections::HashSet<String>
         .collect()
 }
 
+/// The short names of the types a unit declares, wherever.
+// Cost: O(n), n = size of the unit.
+fn unit_type_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
+    use crate::ast_visit::{Visit, walk_stmt};
+    #[derive(Default)]
+    struct Types(std::collections::HashSet<String>);
+    impl<'ast> Visit<'ast> for Types {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if let Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::SubsetDecl { name, .. }
+            | Stmt::Package { name, .. }
+            | Stmt::EnumDecl { name, .. } = stmt
+            {
+                self.0.insert(name.resolve());
+                self.0
+                    .insert(crate::qualified::unqualified_part(*name).resolve());
+            }
+            walk_stmt(self, stmt);
+        }
+    }
+    let mut types = Types::default();
+    for stmt in stmts {
+        types.visit_stmt(stmt);
+    }
+    types.0
+}
+
 #[cfg(test)]
 mod tests {
     use crate::ast::Stmt;
@@ -466,32 +493,4 @@ mod tests {
             crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
         let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");
     }
-}
-
-/// The short names of the types a unit declares, wherever.
-// Cost: O(n), n = size of the unit.
-fn unit_type_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
-    use crate::ast_visit::{Visit, walk_stmt};
-    #[derive(Default)]
-    struct Types(std::collections::HashSet<String>);
-    impl<'ast> Visit<'ast> for Types {
-        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-            if let Stmt::ClassDecl { name, .. }
-            | Stmt::RoleDecl { name, .. }
-            | Stmt::SubsetDecl { name, .. }
-            | Stmt::Package { name, .. }
-            | Stmt::EnumDecl { name, .. } = stmt
-            {
-                self.0.insert(name.resolve());
-                self.0
-                    .insert(crate::qualified::unqualified_part(*name).resolve());
-            }
-            walk_stmt(self, stmt);
-        }
-    }
-    let mut types = Types::default();
-    for stmt in stmts {
-        types.visit_stmt(stmt);
-    }
-    types.0
 }
