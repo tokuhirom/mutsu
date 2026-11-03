@@ -180,6 +180,9 @@ impl Interpreter {
             let (target, args) = self.stack[base..].split_first()?;
             method_table::invoke(row, target, args)?
         } else {
+            // An interpreter row may observe the line (a deprecation notice
+            // names the call site): adopt it here, as the full path does.
+            self.sync_source_line(code, ip);
             // An interpreter row may call back into the VM, which owns the
             // stack the receiver and arguments sit on: it gets copies.
             let target = self.stack[base].clone();
