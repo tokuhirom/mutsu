@@ -1339,6 +1339,29 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         Some(s) => vec![s],
         None => Vec::new(),
     };
+    // `has Int $.a: has Str $.b = "q" if 1;`: the nested declaration is the
+    // arglist of the first, so a modifier written after it governs the whole
+    // statement (rakudo shows it on the first declaration).
+    let stmt = if has_modifier {
+        stmt
+    } else {
+        match take_nested_modifiers(&mut stmts) {
+            Some(moved) => {
+                let node = crate::ast::parsed::ParsedStmt::Modified(crate::ast::parsed::Modified {
+                    stmt: Box::new(stmt),
+                    condition: moved.condition,
+                    loop_: moved.loop_,
+                    // Only the end is recorded; the statement parser places the start.
+                    body: crate::ast::SrcSpan {
+                        from: moved.body.to,
+                        ..moved.body
+                    },
+                });
+                crate::parser::stmt::control::finish(node).map_err(PError::from_typed)?
+            }
+            None => stmt,
+        }
+    };
     stmts.push(stmt);
     Ok((
         colon_rest,
@@ -1444,4 +1467,29 @@ fn bind_adverb(inner: &str) -> Option<bool> {
         return word_end(value).then_some(true);
     }
     word_end(rest).then_some(true)
+}
+
+/// Take the statement modifiers off a nested attribute declaration, leaving
+/// the plain declaration in place.
+// Cost: O(a), a = nested declarations.
+fn take_nested_modifiers(stmts: &mut [Stmt]) -> Option<crate::ast::parsed::Modified> {
+    for slot in stmts.iter_mut() {
+        let Stmt::Ast(node) = slot else { continue };
+        let crate::ast::parsed::ParsedStmt::Modified(m) = node.as_mut() else {
+            continue;
+        };
+        if !matches!(m.stmt.peel_parsed(), Stmt::HasDecl { .. }) {
+            continue;
+        }
+        let moved = crate::ast::parsed::Modified {
+            stmt: Box::new(Stmt::SyntheticBlock(Vec::new())),
+            condition: m.condition.take(),
+            loop_: m.loop_.take(),
+            body: m.body,
+        };
+        let inner = std::mem::replace(m.stmt.as_mut(), Stmt::SyntheticBlock(Vec::new()));
+        *slot = inner;
+        return Some(moved);
+    }
+    None
 }

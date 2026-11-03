@@ -98,7 +98,9 @@ pub(super) fn to_signature(
 
 /// Rakudo displays the declaration before a colon argument list and hides
 /// declarations parsed from that list. Preserve those declarations as hidden
-/// model metadata so evaluating the RakuAST still installs them.
+/// model metadata so evaluating the RakuAST still installs them. The result is
+/// the statement of the visible declaration: a modifier written after the
+/// whole statement (`has Int $.a: has Str $.b = 1 if 1`) is on it.
 // Cost: O(a), a = total size of the declarations and expressions in the colon argument list.
 pub(super) fn view_colon(
     names: &NameScope,
@@ -107,24 +109,44 @@ pub(super) fn view_colon(
     let Some(visible) = attributes.last() else {
         return Err(unsupported("empty attribute colon argument list"));
     };
-    let Some(statement) = super::attribute_decl::view_node(names, visible)? else {
-        return Err(unsupported("attribute colon argument list"));
-    };
-    let mut declaration = super::lower::named_child(&statement, "expression")?.clone();
+    let mut statement = member_statement(names, visible)?;
     let mut members = Vec::with_capacity(attributes.len());
     for attribute in attributes {
-        let Some(member) = super::attribute_decl::view_node(names, attribute)? else {
-            return Err(unsupported("attribute colon argument list"));
-        };
+        let member = member_statement(names, attribute)?;
         members.push(Value::rakuast(Box::new(
             super::lower::named_child(&member, "expression")?.clone(),
         )));
     }
+    let Some(field) = statement
+        .fields
+        .iter_mut()
+        .find(|field| field.name == Some("expression"))
+    else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let ValueView::RakuAst(declaration) = value.view() else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let mut declaration = declaration.clone();
     declaration.fields.push(RakuAstField {
         name: Some(ATTRIBUTES),
         value: RakuAstFieldValue::List(members),
     });
-    Ok(declaration)
+    field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(declaration)));
+    Ok(statement)
+}
+
+/// The statement a member of a colon argument list is: a plain `has`, or one
+/// that carries statement modifiers.
+fn member_statement(names: &NameScope, member: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    match member {
+        Stmt::HasDecl { .. } => super::attribute_decl::view_node(names, member)?,
+        _ => super::view::view_stmt(names, member)?,
+    }
+    .ok_or_else(|| unsupported("attribute colon argument list"))
 }
 
 /// Lower the hidden members back through the parser's shared class-body
