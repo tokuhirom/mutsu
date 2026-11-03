@@ -943,6 +943,17 @@ impl Interpreter {
                 return self.check_registered_subset(constraint, &subset, value, why);
             }
         }
+        // The `stdout`/`stderr` of a `Proc::Async` are `Proc::Async::Pipe`s, a
+        // `Supply` subclass mutsu models as a `Supply` instance carrying the
+        // `proc_pipe` attribute (#15647).
+        if let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint)
+            && base == "Proc::Async::Pipe"
+            && let ValueView::Instance { class_name, attributes, .. } = value.view()
+            && class_name == "Supply"
+            && attributes.as_map().contains_key("proc_pipe")
+        {
+            return smiley != Some(":U");
+        }
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = self.resolve_core_type_alias(constraint);

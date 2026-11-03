@@ -291,6 +291,7 @@ impl Interpreter {
         stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         stdout_supply_attrs.insert("supply_id".to_string(), Value::int(stdout_id as i64));
         stdout_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
+        stdout_supply_attrs.insert("proc_pipe".to_string(), Value::TRUE);
         stdout_supply_attrs.insert("enc".to_string(), enc.clone());
         stdout_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
@@ -301,6 +302,7 @@ impl Interpreter {
         stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         stderr_supply_attrs.insert("supply_id".to_string(), Value::int(stderr_id as i64));
         stderr_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
+        stderr_supply_attrs.insert("proc_pipe".to_string(), Value::TRUE);
         stderr_supply_attrs.insert("enc".to_string(), enc.clone());
         stderr_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
