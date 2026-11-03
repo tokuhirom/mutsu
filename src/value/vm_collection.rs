@@ -122,7 +122,9 @@ impl Value {
     /// [`Self::hllize_for_binding`]).
     #[inline]
     pub(crate) fn needs_hllize_for_binding(&self) -> bool {
-        self.is_vm_collection() || self.is_boot_scalar_box() || self.boot_scalar_type_object().is_some()
+        self.is_vm_collection()
+            || self.is_boot_scalar_box()
+            || self.boot_scalar_type_object().is_some()
     }
 
     /// The high-level type object (`Int` / `Num` / `Str`) a `BOOTInt` /
