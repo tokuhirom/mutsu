@@ -6,6 +6,7 @@
 //! the table. A property the instance does not carry reads as `Nil`.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::value::sig_elem_flags::IS_OPTIONAL;
 use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
@@ -72,9 +73,18 @@ fn attribute(target: &Value, key: &str) -> Answer {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
-    Some(Ok(attributes
-        .as_map()
-        .get(key)
-        .cloned()
-        .unwrap_or(Value::NIL)))
+    let map = attributes.as_map();
+    // `.optional` is the `SIG_ELEM_IS_OPTIONAL` bit of `$!flags`, so a trait
+    // that sets the bit through the MOP changes what the parameter reports.
+    if key == "optional"
+        && let Some(flags) = map.get("flags")
+        && let ValueView::Int(bits) = flags.deref_container().view()
+    {
+        return Some(Ok(if bits & IS_OPTIONAL != 0 {
+            Value::TRUE
+        } else {
+            Value::FALSE
+        }));
+    }
+    Some(Ok(map.get(key).cloned().unwrap_or(Value::NIL)))
 }
