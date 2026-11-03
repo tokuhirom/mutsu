@@ -216,7 +216,9 @@ impl Interpreter {
         // `Mu`'s `Stringy`) stay where they are, so `~$resource` still reaches
         // its `Mu` frame (#16095).
         if class_name == "Distribution::Resource" {
-            return io_path_method_takes_arguments(method_name)
+            return crate::builtins::method_table::distribution_resource::resource_answers(
+                method_name,
+            ) && io_path_method_takes_arguments(method_name)
                 && self.is_native_method("IO::Path", method_name);
         }
         match (probe_key(class_name), probe_key(method_name)) {

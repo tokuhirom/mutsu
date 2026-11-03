@@ -1290,6 +1290,10 @@ impl Interpreter {
                 }
                 if class_attrs.is_empty() {
                     if !self.types.user_declared_classes.contains(&cn)
+                        // A resource keeps its path in the stored map, but has no
+                        // `path` method: rakudo's `Distribution::Resource` is not an
+                        // `IO::Path` (#16206).
+                        && !(cn == "Distribution::Resource" && method == "path")
                         && let Some(val) = attributes.as_map().get(method)
                     {
                         // Check for deprecated attribute accessor
