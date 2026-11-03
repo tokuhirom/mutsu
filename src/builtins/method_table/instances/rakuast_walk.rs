@@ -19,6 +19,7 @@ use super::super::{Handler, MethodRow, Named, RowFlags};
 use super::rakuast_node::children;
 use super::rakuast_visit::native_node;
 use crate::runtime::Interpreter;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -53,6 +54,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Interp(find_nodes),
         flags: RowFlags::OWNER_ONLY,
         named: &["condition", "stopper"],
+    },
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "literalize",
+        arity: 0,
+        handler: Handler::Interp(literalize),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
     },
     MethodRow {
         owner: "RakuAST::Node",
@@ -105,6 +114,38 @@ impl Drop for LineageFrame {
             l.borrow_mut().pop();
         });
     }
+}
+
+/// `literalize`: the value of a node that is a constant (a literal, or a core
+/// operator applied to constants), else the `RakuAST::Node::CannotLiteralize`
+/// type object, which rakudo answers without throwing. `[...]` literalizes to
+/// a `List`.
+// Cost: O(n) in the size of the node plus the evaluation of the constant.
+fn literalize(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let base = native_node(target)?;
+    let ValueView::RakuAst(node) = base.view() else {
+        return None;
+    };
+    let cannot = Value::package(Symbol::intern("RakuAST::Node::CannotLiteralize"));
+    if !crate::rakuast::literalize::is_constant(node) {
+        return Some(Ok(cannot));
+    }
+    let value = match interp.eval_rakuast_node(&base) {
+        Ok(value) => value,
+        Err(_) => return Some(Ok(cannot)),
+    };
+    if crate::rakuast::literalize::is_array_composer(node) {
+        return Some(Ok(match value.view() {
+            ValueView::Array(items, _) => Value::array(items.to_vec()),
+            _ => value,
+        }));
+    }
+    Some(Ok(value))
 }
 
 /// `parent($generation = 0)`: the ancestor of the node a walk is visiting that
