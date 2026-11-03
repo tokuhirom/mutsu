@@ -94,7 +94,10 @@ impl Interpreter {
                     _ => None,
                 })
             };
+            // A base held in a variable (`:refinee($refinee)`) arrives in its
+            // Scalar, like the predicate below.
             let base = named("refinee")
+                .map(Value::into_deref)
                 .map(|v| match v.view() {
                     ValueView::Package(sym) => sym.resolve().to_string(),
                     _ => v.to_string_value(),
