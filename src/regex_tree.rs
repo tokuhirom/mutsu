@@ -2214,6 +2214,14 @@ impl Parser {
                 continue;
             }
             match *ch {
+                // `with'hyphen`: an apostrophe between identifier characters
+                // joins a name's parts, it opens no quote.
+                '\'' if self.pos > start
+                    && self.chars[self.pos - 1].is_alphanumeric()
+                    && self
+                        .chars
+                        .get(self.pos + 1)
+                        .is_some_and(|next| next.is_alphabetic() || *next == '_') => {}
                 '\'' | '"' => quote = Some(*ch),
                 '<' => angle_depth += 1,
                 '>' if angle_depth > 0 => angle_depth -= 1,
@@ -2766,8 +2774,25 @@ fn is_simple_subrule_name(name: &str) -> bool {
     let Some(first) = chars.next() else {
         return false;
     };
-    (first.is_alphabetic() || first == '_')
-        && chars.all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    // A name may join its parts with `-` or `'` (`with'hyphen`), the
+    // apostrophe only between identifier characters as in the main language.
+    let mut previous = first;
+    let mut rest = chars.peekable();
+    while let Some(ch) = rest.next() {
+        let joiner = ch == '\''
+            && previous.is_alphanumeric()
+            && rest
+                .peek()
+                .is_some_and(|next| next.is_alphabetic() || *next == '_');
+        if !(ch.is_alphanumeric() || ch == '_' || ch == '-' || joiner) {
+            return false;
+        }
+        previous = ch;
+    }
+    true
 }
 
 /// A qualified subrule name is a sequence of ordinary identifier segments.
