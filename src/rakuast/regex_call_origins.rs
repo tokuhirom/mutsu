@@ -16,7 +16,7 @@ use crate::scope::NameScope;
 use crate::value::Value;
 
 /// Moves every term range of a fragment by the fragment's offset in the unit.
-struct Shift(usize);
+pub(super) struct Shift(pub(super) usize);
 
 impl VisitMut for Shift {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
