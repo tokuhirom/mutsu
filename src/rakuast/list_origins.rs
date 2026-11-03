@@ -35,9 +35,13 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             _ => None,
         })
         .collect();
-    let Some(ranges) = ranges.filter(|r| r.len() >= 2) else {
+    // One operand is a list only through its trailing comma (`("a",)`).
+    let Some(ranges) = ranges.filter(|r| !r.is_empty()) else {
         return;
     };
+    if ranges.len() == 1 && op != "," {
+        return;
+    }
     // Each gap holds exactly the operator, between whitespace and comments,
     // in one spelling throughout (`…` for `...`).
     let mut last_op = None;
@@ -75,6 +79,7 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             to = comma + 1;
         }
     }
+    // A lone operand with no trailing comma is not a list.
     let Some(op_at) = last_op else {
         return;
     };
