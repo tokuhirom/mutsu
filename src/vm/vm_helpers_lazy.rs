@@ -1271,16 +1271,14 @@ impl Interpreter {
     /// A gather body runs in the dynamic scope of whoever pulls it, not of
     /// whoever created it: the dynamic variables (`$*DB`) the pulling frame
     /// sees replace the captured ones in the body's env (#15112).
-    // Cost: O(e), e = entries of the pulling frame's env (a flatten and one scan).
+    // Cost: O(1) while no env tier holds a dynamic variable; otherwise O(e), e = entries in the
+    // pulling frame's env tiers (a key scan, no value copies).
     pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
-        for (key, value) in puller.flattened().iter() {
-            // `$*x` is keyed `*x`; the other sigils keep theirs (`&*x`).
-            if key.with_str(|name| {
-                name.starts_with('*')
-                    || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')
-            }) {
-                self.env_mut().insert_sym(*key, value.clone());
-            }
+        if !crate::symbol::dynamic_tier_key_seen() {
+            return;
+        }
+        for (key, value) in puller.tier_dynamic_entries() {
+            self.env_mut().insert_sym(key, value);
         }
     }
 

@@ -66,6 +66,11 @@ pub(crate) struct Tier {
     /// overlay, so the memo costs those allocations one pointer rather than the
     /// index inline.
     capture_candidates: OnceLock<Box<CandidateIndex>>,
+    /// Memo of [`Self::dynamic_keys`]: this tier's dynamic-variable keys
+    /// (`*x`, `$*OUT`). The same contract as `capture_candidates`: a superset
+    /// that is reset by every mutator that can ADD a key and left alone by a
+    /// removal, so a reader looks each key up rather than trusting it present.
+    dynamic_keys: OnceLock<Box<[Symbol]>>,
     /// Whether a capture has already walked this tier — see
     /// [`Tier::capture_walk`], which builds the memo only on the SECOND ask.
     capture_asked: AtomicBool,
@@ -144,6 +149,7 @@ impl Clone for Tier {
         Self {
             map: self.map.clone(),
             capture_candidates: self.capture_candidates.clone(),
+            dynamic_keys: self.dynamic_keys.clone(),
             capture_asked: AtomicBool::new(self.capture_asked.load(Ordering::Relaxed)),
             container_ref_keys: self.container_ref_keys.clone(),
             capture_sys: self.capture_sys.clone(),
@@ -257,12 +263,13 @@ impl Tier {
     /// treat a clear bit as a proof of absence.
     pub(crate) fn new(map: SymMap) -> Self {
         for (key, value) in &map {
-            crate::symbol::mark_env_key(*key);
+            crate::symbol::mark_tier_key(*key);
             note_alias_entry(*key, value);
         }
         Self {
             map,
             capture_candidates: OnceLock::new(),
+            dynamic_keys: OnceLock::new(),
             capture_asked: AtomicBool::new(false),
             container_ref_keys: OnceLock::new(),
             capture_sys: OnceLock::new(),
@@ -407,6 +414,19 @@ impl Tier {
         })
     }
 
+    /// This tier's dynamic-variable keys, a superset (a removed key may still
+    /// be listed). Computed on first ask and held until the key set changes.
+    // Cost: O(1) once built; O(t) the first time after a key was added, t = tier entries.
+    pub(crate) fn dynamic_keys(&self) -> &[Symbol] {
+        self.dynamic_keys.get_or_init(|| {
+            self.map
+                .keys()
+                .copied()
+                .filter(|k| k.is_dynamic_var_env_key())
+                .collect()
+        })
+    }
+
     /// This tier's keys that a closure capture has to visit — everything
     /// [`capture_walk_skips`] does not skip. The skipped plain user lexicals
     /// are probed by name by the capture instead. Computed on first ask and
@@ -492,6 +512,7 @@ impl Tier {
         // a plain read. It is reached only from a mutator that really did add a
         // key, which on the hot insert path is the rare case.
         self.capture_candidates.take();
+        self.dynamic_keys.take();
     }
 
     /// Drop every memo (the bulk-write escape hatches).
@@ -510,7 +531,7 @@ impl Tier {
             // A key that was already here was latched when it arrived, so the
             // mark rides along with the index invalidation on the rare
             // (genuinely new key) side rather than costing every value write.
-            crate::symbol::mark_env_key(key);
+            crate::symbol::mark_tier_key(key);
             self.invalidate_key_set();
         }
         prev
@@ -665,6 +686,26 @@ mod tests {
         tier.insert(s("$Y"), Value::int(3));
         assert!(candidates_are_exact(&tier));
         assert_eq!(tier.capture_candidates().len(), 2);
+    }
+
+    #[test]
+    fn the_dynamic_key_memo_lists_dynamics_and_follows_added_keys() {
+        let mut tier = Tier::default();
+        tier.insert(s("$plain"), Value::int(1));
+        tier.insert(s("*dv"), Value::int(2));
+        assert_eq!(tier.dynamic_keys(), &[s("*dv")]);
+        let before = tier.dynamic_keys().as_ptr();
+        // A value overwrite keeps the memo; a new dynamic key rebuilds it.
+        tier.insert(s("*dv"), Value::int(3));
+        assert_eq!(tier.dynamic_keys().as_ptr(), before);
+        tier.insert(s("@*dl"), Value::int(4));
+        let mut got = tier.dynamic_keys().to_vec();
+        got.sort_by_key(|k| k.id());
+        let mut want = vec![s("*dv"), s("@*dl")];
+        want.sort_by_key(|k| k.id());
+        assert_eq!(got, want);
+        // A clone has the same keys, so it carries the memo.
+        assert_eq!(tier.clone().dynamic_keys().len(), 2);
     }
 
     #[test]
