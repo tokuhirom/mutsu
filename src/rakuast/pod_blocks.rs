@@ -17,6 +17,7 @@
 use super::infix_origins::byte_range;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{SrcSpan, Stmt};
+use crate::scope::NameScope;
 use crate::value::Value;
 
 /// The block types whose paragraphs are not plain text.
@@ -43,6 +44,8 @@ struct Block {
     kind: String,
     level: Option<i64>,
     form: Form,
+    /// The `:name(value)` pairs after the type, in written order.
+    config: Vec<(String, RakuAstNode)>,
     parts: Vec<Part>,
     /// The unit offsets the block's text spans, without the blank lines after.
     from: usize,
@@ -50,6 +53,9 @@ struct Block {
 }
 
 struct Lines<'a> {
+    names: &'a NameScope,
+    /// The address of the source's first byte.
+    base: usize,
     text: Vec<&'a str>,
     /// The offset of each line's first byte.
     start: Vec<usize>,
@@ -139,12 +145,12 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
     match name {
         "end" => None,
         "begin" | "for" => {
-            let rest = rest.trim();
+            let rest = rest.trim_start();
             let kind = rest.split_whitespace().next()?;
-            if rest.len() != kind.len() || SPECIAL.contains(&kind) {
-                // Configuration follows the type.
+            if SPECIAL.contains(&kind) {
                 return None;
             }
+            let config = config(lines, &rest[kind.len()..])?;
             let (base, level) = split_level(kind);
             if name == "for" {
                 let (text, next) = paragraph(lines, i + 1, None)?;
@@ -159,6 +165,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                         kind: base,
                         level,
                         form: Form::For,
+                        config,
                         parts,
                         from,
                         to,
@@ -173,6 +180,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     kind: base,
                     level,
                     form: Form::Delimited,
+                    config,
                     parts,
                     from,
                     to,
@@ -200,6 +208,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     kind: base,
                     level,
                     form: Form::Abbreviated,
+                    config: Vec::new(),
                     parts,
                     from,
                     to,
@@ -208,6 +217,84 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             ))
         }
     }
+}
+
+/// The `:name`, `:!name`, `:name(...)` and `:name<...>` pairs written after a
+/// block's type, with the node each value is; `None` for text that is not
+/// such a list.
+// Cost: O(n), n = length of the text, plus the parse of each value.
+fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
+    let mut pairs = Vec::new();
+    let mut rest = text.trim_start();
+    while !rest.is_empty() {
+        let after = rest.strip_prefix(':')?;
+        let (negated, after) = match after.strip_prefix('!') {
+            Some(after) => (true, after),
+            None => (false, after),
+        };
+        let name_len = after
+            .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-')))
+            .unwrap_or(after.len());
+        if name_len == 0 || !after.starts_with(|c: char| c.is_alphabetic()) {
+            return None;
+        }
+        let name = &after[..name_len];
+        let tail = &after[name_len..];
+        let (value, used) = if let Some(inner) = tail.strip_prefix('(') {
+            let len = super::regex_call_origins::args_len(inner)?;
+            (None, 1 + len + 1)
+        } else if let Some(inner) = tail.strip_prefix('<') {
+            (None, 1 + inner.find('>')? + 1)
+        } else {
+            (Some(if negated { "False" } else { "True" }), 0)
+        };
+        let end = rest.len() - tail.len() + used;
+        let pair = &rest[..end];
+        let node = match value {
+            // `:flag` is `True`, `:!flag` is `False`.
+            Some(word) => expression(lines, word, None)?,
+            None => {
+                let at = pair.as_ptr() as usize - lines.base;
+                let pair = expression(lines, pair, Some(at))?;
+                super::infix_origins::child(&pair, "value")?.clone()
+            }
+        };
+        pairs.push((name.to_string(), node));
+        // Pairs are told apart by blanks.
+        let next = &rest[end..];
+        if !next.is_empty() && !next.starts_with(char::is_whitespace) {
+            return None;
+        }
+        rest = next.trim_start();
+    }
+    Some(pairs)
+}
+
+/// The expression `text` is, read as a fragment of the unit at byte `at` of
+/// it (or with no ranges when `at` is `None`).
+// Cost: O(n), n = length of the text, plus the parse.
+fn expression(lines: &Lines, text: &str, at: Option<usize>) -> Option<RakuAstNode> {
+    let (mut stmts, _) = crate::parser::parse_fragment_spelled(text).ok()?;
+    let _origins = match at {
+        Some(at) => {
+            crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);
+            Some(super::expr_origins::strip(&mut stmts))
+        }
+        None => None,
+    };
+    let _statement = at
+        .map(|at| super::expr_origins::InStatement::enter(Some(SrcSpan::new(at, at + text.len()))));
+    let list = super::view::statement_list(lines.names, &stmts).ok()?;
+    let [field] = list.fields.as_slice() else {
+        return None;
+    };
+    let RakuAstFieldValue::Node(statement) = &field.value else {
+        return None;
+    };
+    let crate::value::ValueView::RakuAst(statement) = statement.view() else {
+        return None;
+    };
+    super::infix_origins::child(statement, "expression").cloned()
 }
 
 /// The paragraphs and nested blocks from line `i` up to the `=end` of `kind`,
@@ -257,6 +344,17 @@ impl Block {
             Form::For => fields.push(field("for", Value::TRUE)),
             Form::Delimited => {}
         }
+        if !self.config.is_empty() {
+            let pairs = self
+                .config
+                .iter()
+                .map(|(key, node)| Value::pair(key.clone(), Value::rakuast(Box::new(node.clone()))))
+                .collect();
+            fields.push(RakuAstField {
+                name: Some("config"),
+                value: RakuAstFieldValue::List(pairs),
+            });
+        }
         if !self.parts.is_empty() {
             let parts = self
                 .parts
@@ -284,7 +382,7 @@ impl Block {
 /// Put the Pod blocks of `source` between the statements of `list`, the unit's
 /// `StatementList`, which was converted from `stmts`.
 // Cost: O(n + s), n = length of the source, s = statements.
-pub(super) fn insert(list: &mut RakuAstNode, source: &str, stmts: &[Stmt]) {
+pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, stmts: &[Stmt]) {
     if !source.lines().any(|l| l.trim_start().starts_with('=')) {
         return;
     }
@@ -296,6 +394,8 @@ pub(super) fn insert(list: &mut RakuAstNode, source: &str, stmts: &[Stmt]) {
         })
         .collect();
     let mut lines = Lines {
+        names,
+        base: source.as_ptr() as usize,
         text: Vec::new(),
         start: Vec::new(),
     };
