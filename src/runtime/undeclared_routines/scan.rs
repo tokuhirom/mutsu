@@ -268,6 +268,8 @@ impl<'ast> Visit<'ast> for Scan {
                 self.walk_routine_body(stmt);
             }
             Stmt::MethodDecl { .. } => self.walk_routine_body(stmt),
+            // A parser desugaring (`sub a {...} given 3`) is no lexical scope.
+            Stmt::SyntheticBlock(body) => walk_stmts(self, body),
             // A bare lowercase identifier standing alone as a whole statement
             // (`dead;`) is, syntactically, the exact same "no-args routine
             // reference" `record_call` already recognizes for `Stmt::Call` --
