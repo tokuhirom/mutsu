@@ -83,6 +83,13 @@ pub(crate) struct ConformanceCache {
     /// Answers given by the registry or the env (everything but the static
     /// RakuAST / `Mu` / `Any` relations); see [`Interpreter::assign_tiers_memoised`].
     dependent_answers: Cell<u64>,
+    /// Answers the fast path declined and the general walk gave: they read the
+    /// env arbitrarily, so a ranking that saw one is never remembered.
+    opaque_answers: Cell<u64>,
+    /// While a declared index is being built: the env facts the fast path
+    /// answered from (`(name raw id, is_sub)` -> answer), so the index can be
+    /// remembered under them.
+    dep_facts: RefCell<Option<rustc_hash::FxHashMap<(u32, bool), bool>>>,
     tier_memo: RefCell<Vec<TierMemoEntry>>,
     /// `DeclaredKey` -> small id, so a candidate pair is a pair of integers.
     declared_ids: RefCell<rustc_hash::FxHashMap<multi_rank::DeclaredKey, u32>>,
@@ -98,6 +105,7 @@ impl ConformanceCache {
     // Cost: O(1).
     pub(super) fn note_dependent_answer(&self) {
         self.dependent_answers.set(self.dependent_answers.get() + 1);
+        self.opaque_answers.set(self.opaque_answers.get() + 1);
     }
 }
 
@@ -260,7 +268,11 @@ impl Interpreter {
             sup_facts.sup_ok = self.compute_conformance_sup_is_plain(sup);
             sup_facts.sup_serial = serial;
         }
-        if !sup_facts.sup_ok {
+        let sup_ok = sup_facts.sup_ok;
+        if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
+            log.insert((sup.raw(), false), sup_ok);
+        }
+        if !sup_ok {
             return None;
         }
         let sub_facts = names.get_or_default(sub)?;
@@ -268,7 +280,11 @@ impl Interpreter {
             sub_facts.sub_ok = !self.is_int_enum_type_name(&sub.resolve());
             sub_facts.sub_serial = serial;
         }
-        if !sub_facts.sub_ok {
+        let sub_ok = sub_facts.sub_ok;
+        if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
+            log.insert((sub.raw(), true), sub_ok);
+        }
+        if !sub_ok {
             return None;
         }
         let ancestors = sub_facts
@@ -457,13 +473,41 @@ impl Interpreter {
         };
         let (order, pos_of) = declared_index::canonical_order(&ids);
         let sorted_ids: Vec<u32> = order.iter().map(|&i| ids[i]).collect();
-        let cached = cache.declared_index.borrow().get(&sorted_ids);
+        let cached = cache
+            .declared_index
+            .borrow()
+            .get(&sorted_ids, &|deps| self.index_deps_hold(deps));
         let index = cached.unwrap_or_else(|| {
             let canonical: Vec<&MultiRank> = order.iter().map(|&i| &ranks[i]).collect();
             let before = cache.dependent_answers.get();
+            let opaque_before = cache.opaque_answers.get();
+            let outer_log = cache
+                .dep_facts
+                .replace(Some(rustc_hash::FxHashMap::default()));
             let index = Arc::new(declared_index::build(&canonical, &conforms));
+            let facts = cache.dep_facts.replace(outer_log).unwrap_or_default();
             if cache.dependent_answers.get() == before {
-                cache.declared_index.borrow_mut().insert(sorted_ids.clone(), Arc::clone(&index));
+                cache.declared_index.borrow_mut().insert(
+                    sorted_ids.clone(),
+                    Arc::clone(&index),
+                    None,
+                );
+            } else if cache.opaque_answers.get() == opaque_before {
+                // Every non-static answer came from the registry (stamp) or
+                // from a per-name env check recorded in `facts`: the index
+                // holds while both still read the same.
+                let deps = declared_index::IndexDeps {
+                    stamp: self.registry().type_stamp(),
+                    facts: facts
+                        .into_iter()
+                        .map(|((raw, is_sub), ok)| (Symbol::from_raw(raw), is_sub, ok))
+                        .collect(),
+                };
+                cache.declared_index.borrow_mut().insert(
+                    sorted_ids.clone(),
+                    Arc::clone(&index),
+                    Some(deps),
+                );
             }
             index
         });
@@ -504,6 +548,20 @@ impl Interpreter {
             wanted,
             tiers,
         });
+    }
+
+    /// Whether a remembered declared index's registry stamp and per-name env
+    /// facts still read as they did when it was built.
+    // Cost: O(f * c), f = the remembered facts, c = one env binding probe.
+    fn index_deps_hold(&self, deps: &declared_index::IndexDeps) -> bool {
+        deps.stamp == self.registry().type_stamp()
+            && deps.facts.iter().all(|&(name, is_sub, ok)| {
+                if is_sub {
+                    !self.is_int_enum_type_name(&name.resolve()) == ok
+                } else {
+                    self.compute_conformance_sup_is_plain(name) == ok
+                }
+            })
     }
 
     /// Whether `sup` is a RakuAST name without a smiley, the shape the
