@@ -97,28 +97,33 @@ pub(super) fn view_method_assign_stmt(
     else {
         return Err(super::view::unsupported("temp method assignment"));
     };
+    let invocant = if let Some(e) = invocant_expr {
+        (**e).clone()
+    } else if var_name == "self" || *type_invocant {
+        Expr::BareWord(var_name.clone())
+    } else {
+        Expr::Var(var_name.clone())
+    };
     view_method_assign(
         names,
-        var_name,
+        invocant,
         method_name,
         method_args,
         value,
         *is_attribute,
         *type_invocant,
-        invocant_expr.as_deref(),
     )
 }
 
 // Cost: O(e), e = size of the assignment value and method arguments.
 fn view_method_assign(
     names: &NameScope,
-    var_name: &str,
+    invocant: Expr,
     method_name: &str,
     method_args: &[Expr],
     value: &Expr,
     is_attribute: bool,
     type_invocant: bool,
-    invocant_expr: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = if is_attribute {
         RakuAstNode {
@@ -130,13 +135,6 @@ fn view_method_assign(
             )],
         }
     } else {
-        let invocant = if let Some(e) = invocant_expr {
-            e.clone()
-        } else if var_name == "self" || type_invocant {
-            Expr::BareWord(var_name.to_string())
-        } else {
-            Expr::Var(var_name.to_string())
-        };
         // A meta-method call keeps its `^` as the call's modifier.
         let (method_name, modifier) = match method_name.strip_prefix('^') {
             Some(meta) if type_invocant => (meta, Some('^')),
