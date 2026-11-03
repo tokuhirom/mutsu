@@ -6707,6 +6707,7 @@ t/regex/syntax/regex-conjunction-inline-adverbs.t
 t/regex/syntax/regex-conjunction-same-span.t
 t/regex/syntax/regex-contextualizer-nested-rx-charclass-quotes.t
 t/regex/syntax/regex-counted-quantifier-alternation-backtrack.t
+t/regex/syntax/regex-dot-char-class-assertion-ast.t
 t/regex/syntax/regex-end-anchor-then-atom.t
 t/regex/syntax/regex-end-of-string-anchor.t
 t/regex/syntax/regex-frugal-quantifier-nocap-matcher.t

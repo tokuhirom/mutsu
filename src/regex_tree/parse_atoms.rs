@@ -162,7 +162,7 @@ impl Parser {
                     && self
                         .chars
                         .get(self.pos + 2)
-                        .is_some_and(|next| matches!(next, '-' | '+')) =>
+                        .is_some_and(|next| matches!(next, '-' | '+' | '[' | ':')) =>
             {
                 self.parse_char_class_assertion()
             }
