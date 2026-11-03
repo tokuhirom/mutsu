@@ -2334,14 +2334,10 @@ impl Interpreter {
         // shadow exemption must not cover it.
         let allow_lexical_shadow = !is_our
             && (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            // The unit's own top level may not shadow what its caller
+            // declared; a block nested in it shadows as it does outside an
+            // EVAL (#15869).
+            && !self.eval_blocks_lexical_shadow();
         // The CHECK-time inline-package prepass may have installed THIS proto
         // already, so the package's `our multi` candidates could pass their
         // `our`-scope check (`preregister_inline_package_subs`). Its marker

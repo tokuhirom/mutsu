@@ -31,6 +31,9 @@ impl ScopeRoutines {
         // Whether every declaration of the name so far is a `multi`.
         let mut seen: HashMap<String, bool> = HashMap::new();
         let mut stubbed: HashSet<String> = HashSet::new();
+        // Names declared by a `proto sub`: it owns the name, so a second
+        // proto or a plain `sub` of it is a redeclaration.
+        let mut protos: HashSet<String> = HashSet::new();
         let mut prev_was_anon = false;
         for stmt in body {
             if stmt.is_marker() {
@@ -38,6 +41,22 @@ impl ScopeRoutines {
             }
             let was_anon = prev_was_anon;
             prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
+            if let Stmt::ProtoDecl {
+                name,
+                is_method: false,
+                is_our: false,
+                ..
+            } = stmt
+            {
+                let name = name.resolve().to_string();
+                if !name.is_empty()
+                    && (!protos.insert(name.clone()) || seen.get(&name) == Some(&false))
+                {
+                    self.found = Some(RuntimeError::redeclaration_routine(&name));
+                    return;
+                }
+                continue;
+            }
             let Stmt::SubDecl {
                 name,
                 multi,
@@ -56,7 +75,15 @@ impl ScopeRoutines {
             if name.is_empty() {
                 continue;
             }
+            if !*multi && protos.contains(&name) {
+                self.found = Some(RuntimeError::redeclaration_routine(&name));
+                return;
+            }
             let is_stub = is_stub_body(body);
+            // A stub may be declared again before its definition arrives.
+            if is_stub && stubbed.contains(&name) {
+                continue;
+            }
             if stubbed.remove(&name) && !is_stub {
                 continue;
             }
