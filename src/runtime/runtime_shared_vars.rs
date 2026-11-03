@@ -264,6 +264,20 @@ impl Interpreter {
         Some(value)
     }
 
+    /// Publish the result of an atomic-lane element store back to the calling
+    /// frame's own binding of `name`: the compunit-lexical cell, else the env
+    /// binding (written through a cell).
+    // Cost: O(1) amortized, one unit-lexical probe plus one env write.
+    pub(crate) fn store_shared_lane_result(&mut self, name: &str, updated: Value) {
+        if let Some(cell) = self.unit_lexical_container_cell(name) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
+        } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(name).map(Value::view) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
+        } else {
+            self.env.insert(name.to_string(), updated);
+        }
+    }
+
     /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
