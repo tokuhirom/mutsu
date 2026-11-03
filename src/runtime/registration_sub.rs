@@ -226,6 +226,45 @@ impl Interpreter {
             && !self.in_inlined_block_frame()
     }
 
+    /// A routine-local `my sub` is lexical to the routine that declares it, but
+    /// stays in the flat routine registry while that routine's callees run, so
+    /// a callee's `EVAL` found it by name. When the `EVAL` is run by a
+    /// unit-scoped plain sub (declared outside every routine, so it cannot
+    /// see its callers' scopes), take out of the registry the ones registered
+    /// by its dynamic callers; the caller's `restore_routine_registry_eval`
+    /// puts them back (#16099).
+    // Cost: O(s), s = routine-local subs registered (usually 0).
+    pub(super) fn hide_dynamic_callers_local_subs(&mut self) {
+        if self.registry().routine_local_subs.is_empty() {
+            return;
+        }
+        let Some(plain_idx) = self.routine_stack.unit_scoped_sub_index() else {
+            return;
+        };
+        let hidden: Vec<Symbol> = {
+            let registry = self.registry();
+            registry
+                .routine_local_subs
+                .iter()
+                .filter(|(key, (order, depth))| {
+                    *depth <= plain_idx
+                        && registry
+                            .functions
+                            .get(key)
+                            .is_some_and(|def| def.decl_order == *order)
+                })
+                .map(|(key, _)| *key)
+                .collect()
+        };
+        if hidden.is_empty() {
+            return;
+        }
+        let mut registry = self.registry_mut();
+        for key in hidden {
+            registry.functions_mut().remove(&key);
+        }
+    }
+
     /// Whether the running code is the top level of an `EVAL` unit (not a block
     /// or routine nested in it): a `sub` declared there is lexical to the unit
     /// and must not outlive it, whereas a block-scoped `sub` nested in the unit

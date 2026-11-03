@@ -978,6 +978,21 @@ impl Interpreter {
                         Symbol::intern(&resolved_name),
                     ))
                     .cloned();
+                // A real routine, not merely a block frame: a `sub` declared in
+                // a mainline block is lexical to that block, which the
+                // unit-scoped subs defined in it can see.
+                if self.enclosing_routine_exists()
+                    && let Some(def) = &installed
+                {
+                    let depth = self.routine_stack().len();
+                    self.registry_mut().routine_local_subs.insert(
+                        crate::qualified::qualified(
+                            self.current_package_sym(),
+                            Symbol::intern(&resolved_name),
+                        ),
+                        (def.decl_order, depth),
+                    );
+                }
                 let sub_val = if let Some(def) = installed {
                     // Captured as any closure created here would be: the
                     // memoized layers of the enclosing tiers and the sub's own
