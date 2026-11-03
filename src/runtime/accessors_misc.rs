@@ -386,6 +386,27 @@ impl Interpreter {
             is_temp,
             slot,
             elem: None,
+            method_attr: None,
+        });
+    }
+
+    /// Push a method-attribute save: `value` is what `invocant.method(args)`
+    /// held, assigned back through the same rw accessor at scope exit.
+    // Cost: O(1) amortized, plus the snapshot `into_temp_snapshot` takes.
+    pub(crate) fn let_saves_push_method_attr(
+        &mut self,
+        invocant: Value,
+        method: String,
+        args: Vec<Value>,
+        value: Value,
+    ) {
+        self.control.let_saves.push(super::LetSaveEntry {
+            name: String::new(),
+            value: value.into_temp_snapshot(),
+            is_temp: true,
+            slot: None,
+            elem: None,
+            method_attr: Some(Box::new((invocant, method, args))),
         });
     }
 
@@ -404,12 +425,25 @@ impl Interpreter {
             is_temp,
             slot: None,
             elem: Some((container, key)),
+            method_attr: None,
         });
     }
 
     /// Restore one save: an element save writes its element, a variable save
     /// its variable.
     fn restore_let_entry(&mut self, save: super::LetSaveEntry) {
+        if let Some(target) = save.method_attr {
+            let (invocant, method, args) = *target;
+            // The assignment cannot be refused here: it succeeded when the
+            // scope temporized the attribute. A failure leaves it as it is.
+            let _ = self.builtin_assign_method_lvalue(&[
+                invocant,
+                Value::str(method),
+                Value::array(args),
+                save.value,
+            ]);
+            return;
+        }
         match save.elem {
             Some((container, key)) => {
                 // The element existed when it was saved (or was vivified by the

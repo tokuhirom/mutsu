@@ -2947,6 +2947,12 @@ pub(crate) struct LetSaveEntry {
     /// element in place, so the rest of the container -- and every other name
     /// bound to it -- is untouched (#9434).
     pub(crate) elem: Option<(Value, Value)>,
+    /// A method-attribute save (`temp $obj.attr = v`): the invocant object
+    /// (the shared instance, not a copy), the method name and its arguments.
+    /// The restore assigns `value` back through the same rw accessor, so the
+    /// object keeps its identity and every holder of it sees the old value
+    /// again (#16144).
+    pub(crate) method_attr: Option<Box<(Value, String, Vec<Value>)>>,
 }
 
 pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";

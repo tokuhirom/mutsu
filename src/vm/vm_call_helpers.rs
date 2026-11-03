@@ -267,6 +267,7 @@ impl Interpreter {
                 | "fail"
                 | "leave"
                 | "__mutsu_assign_method_lvalue"
+                | "__mutsu_temp_method_save"
                 | "__mutsu_assign_callable_lvalue"
                 | "__mutsu_index_assign_method_lvalue"
                 | "__mutsu_index_delete_method_lvalue"
