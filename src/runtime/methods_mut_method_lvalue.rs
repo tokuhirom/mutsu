@@ -335,6 +335,30 @@ impl Interpreter {
             self.call_method_with_values(target, "ASSIGN-POS", assign_args)?;
             return Ok(value);
         }
+        // `$undefined.AT-POS(i) = v`: `Any.AT-POS` on an undefined scalar
+        // autovivifies an Array into the variable, as `$undefined[i] = v`
+        // does (#16093).
+        if method == "AT-POS"
+            && method_args.len() == 1
+            && let Some(var_name) = target_var
+            && let ValueView::Package(n) = match target.view() {
+                ValueView::Scalar(inner) => inner.view(),
+                _ => target.view(),
+            }
+            && matches!(n.resolve().as_str(), "Any" | "Mu")
+            && let Some(idx) = method_args[0].as_int().and_then(|i| usize::try_from(i).ok())
+        {
+            let mut arr = Self::fresh_autoviv_container(true);
+            if let Some(()) = arr.with_array_mut(|gc, _| {
+                let data = crate::value::gc_data_mut(gc);
+                Self::autoviv_resize_tracking(data, idx, Value::package(Symbol::intern("Any")))
+                    .map(|()| data.items_mut()[idx] = value.clone())
+                    .ok()
+            }).flatten() {
+                self.env.insert_through(var_name.to_string(), arr);
+                return Ok(value);
+            }
+        }
         // Handle AT-KEY assignment on Hash: h.AT-KEY("k") = v  =>  ASSIGN-KEY("k", v)
         if method == "AT-KEY" && method_args.len() == 1 {
             let inner = match target.view() {
