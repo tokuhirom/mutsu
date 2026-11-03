@@ -44,6 +44,12 @@ type OwnerChain = (&'static str, &'static [&'static str]);
 include!("registry.rs");
 include!("owner_registry.rs");
 
+#[cfg(test)]
+pub(crate) fn declares_generated(owner: &str, name: &str) -> bool {
+    ROWS.iter()
+        .any(|row| row.owner == owner && row.name == name)
+}
+
 // Cost: O(log c), c = native model classes; computed once per class symbol.
 fn class_index(class: &str) -> u16 {
     OWNER_CHAINS
@@ -210,6 +216,14 @@ mod tests {
                 super::super::super::owner_row(Symbol::intern(owner), Symbol::intern(name), 0)
                     .is_some(),
                 "declared accessor row missing: {owner}.{name}"
+            );
+            let index = usize::from(class_index(model) - 1);
+            let selected = resolve_owner_row(OWNER_CHAINS[index].1, Symbol::intern(name))
+                .map(|id| super::super::super::row(id).owner);
+            assert_eq!(
+                selected,
+                Some(owner),
+                "wrong accessor owner: {model}.{name}"
             );
         }
         assert_eq!(

@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 15;
+plan 20;
 
 my $first = RakuAST::IntLiteral.new(7);
 my $second = RakuAST::IntLiteral.new(19);
@@ -34,3 +34,14 @@ is RakuAST::StatementPrefix::Phaser::Begin.^can('original-blorst').elems, 0,
 ok RakuAST::StatementPrefix::Phaser::First.^can('original-blorst'),
     'FIRST retains original-blorst';
 is $first.^can('missing-accessor').elems, 0, 'unknown names remain absent';
+
+is RakuAST::ArgList.new($first, $second).args.elems, 2,
+    'variadic constructor payloads have registered accessors';
+is Q[1, 2, 3].AST.statements[0].expression.operands.elems, 3,
+    'named constructor fields participate in row generation';
+ok Q[Int:D].AST.statements[0].expression.definite,
+    'type constructor fields retain their accessor';
+is Q[for 1 { 2 }].AST.statements[0].mode, 'serial',
+    'default constructor fields retain their accessor';
+nok RakuAST::Method.new.meta,
+    'scope defaults do not hide class-specific derived accessors';

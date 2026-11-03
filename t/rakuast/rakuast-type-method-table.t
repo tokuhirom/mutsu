@@ -4,10 +4,11 @@ use experimental :rakuast;
 plan 10;
 
 my %int-methods = RakuAST::IntLiteral.^method_table;
-is %int-methods.keys.sort.join(','), 'new,value',
+is %int-methods.keys.sort.join(','), 'new',
     'literal method table exposes the model API';
 is %int-methods<new>.name, 'new', 'constructor entry is a Method object';
-is %int-methods<value>.name, 'value', 'accessor entry is a Method object';
+is RakuAST::Literal.^method_table<value>.name, 'value',
+    'the declaring parent has the accessor Method object';
 is %int-methods.values.map(*.^name).unique.join(','), 'Method',
     'method table values use ordinary Method introspection objects';
 
@@ -16,15 +17,15 @@ is %apply-methods.keys.sort.join(','), 'add-colonpair,colonpairs,infix,left,new,
     'multi-field node exposes constructor, mutator and accessors';
 
 is RakuAST::Name.^method_table.keys.sort.join(','),
-    'colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
+    'canonicalize,colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
     'named constructor appears in the method table';
 is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
-is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new,operator',
-    'a class with a constructor and a computed method lists both';
+is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new',
+    'Assignment inherits its operator accessor from Infix';
 
 my $node = RakuAST::IntLiteral.new(42);
-is $node.^method_table.keys.sort.join(','), 'new,value',
+is $node.^method_table.keys.sort.join(','), 'new',
     'node values share their type object method table';
-is $node.^method_table<value>.name, 'value',
-    'node value method table contains usable metadata';
+is $node.^lookup('value').name, 'value',
+    'node lookup retains usable inherited accessor metadata';

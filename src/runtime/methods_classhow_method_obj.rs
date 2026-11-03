@@ -101,7 +101,7 @@ impl Interpreter {
         // RakuAST model classes are native type objects and therefore have no
         // ClassDef entry. Keep method_table in lockstep with
         // `.^methods(:local)` by deriving both from the same model metadata.
-        if let Some(names) = crate::rakuast::local_method_names(class_name) {
+        if let Some(names) = crate::builtins::method_table::rakuast_reflection::local_method_names(class_name) {
             for name in names {
                 table.insert(
                     name.to_string(),
@@ -946,7 +946,7 @@ impl Interpreter {
         // `.^method_table` by consulting their shared model metadata. Like an
         // ordinary `.^can` this spans the whole MRO, not just the receiver's
         // own class, so an inherited model method is found too.
-        if let Some(names) = crate::rakuast::inherited_method_names(&class_name) {
+        if let Some(names) = crate::builtins::method_table::rakuast_reflection::inherited_method_names(&class_name) {
             return if names.contains(&method_name) {
                 vec![Value::routine_parts(
                     Symbol::intern(&class_name),

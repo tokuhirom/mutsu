@@ -1,16 +1,15 @@
-//! RakuAST model method declarations shared by reflection and method rows.
+//! Constructor metadata and the accessor schema used to generate method rows.
 
 use super::*;
 
-/// The implemented constructors, getters and mutators declared by a model
-/// class, used by reflection even when it has no ordinary registry entry.
-// Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local model methods.
-pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
+/// Constructors exposed by a model class; getter declarations live in rows.
+// Cost: O(c), c = model classes.
+pub fn constructor_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     let class = class_from_name(class_name);
     if class.is_none() && hierarchy::entry(class_name).is_none() {
         return None;
     }
-    let mut names = crate::builtins::method_table::owner_row_names(class_name);
+    let mut names = Vec::new();
     if let Some(class) = class {
         match class.constructor() {
             Constructor::FromIdentifier
@@ -31,10 +30,33 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     Some(names)
 }
 
-/// Getter metadata shared by reflection and static row generation.
+/// Getter schema used to generate and verify static method rows.
 // Cost: O(f log f), f = accessor names of the class.
+#[cfg(test)]
 pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
     let mut names = accessor_names(class);
+    names.extend(named_ctor::field_names(class));
+    if let Some((_, fields)) = multi_field_schema(class.printed_name(), "new") {
+        names.extend(fields);
+    }
+    if let Some((_, fields)) = control_signature::constructor_schema(class.printed_name()) {
+        names.extend(fields);
+    }
+    if class == RakuAstClass::ArgList {
+        names.push("args");
+    }
+    match class {
+        RakuAstClass::TypeDefinedness => names.extend(["base-type", "definite"]),
+        RakuAstClass::TypeAnyDefinedness => names.push("base-type"),
+        RakuAstClass::TypeCoercion => names.extend(["base-type", "constraint"]),
+        RakuAstClass::Heredoc => names.push("stop"),
+        RakuAstClass::Block => names.push("implicit-topic"),
+        _ => {}
+    }
+    // Term::Self accepts private constructor state, not a public getter.
+    if class == RakuAstClass::TermSelf {
+        names.retain(|name| *name != "variable");
+    }
     // The accessor over a class's single positional field (`Infix.operator`).
     if let Some(accessor) = fields::positional_accessor(class)
         && !names.contains(&accessor)

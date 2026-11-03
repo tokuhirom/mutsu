@@ -9,10 +9,11 @@ use crate::value::{Value, ValueView};
 
 /// The names [`call`] answers for `class`, for `.^can` / `.^methods`.
 // Cost: O(1).
-pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
+#[cfg(test)]
+pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
     use RakuAstClass::*;
-    if default_scope_rule(class).is_some() {
-        return match class {
+    let mut names = if default_scope_rule(class).is_some() {
+        let scope: &[&'static str] = match class {
             Class | Role | Grammar | Module | Package | Native => &[
                 "default-scope",
                 "scope",
@@ -24,8 +25,11 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
             ],
             _ => &["default-scope", "scope"],
         };
-    }
-    match class {
+        scope.to_vec()
+    } else {
+        Vec::new()
+    };
+    let specific: &[&'static str] = match class {
         Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
         CallMethod => &["dispatch", "dispatcher", "macroish"],
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
@@ -68,7 +72,9 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         StatementPrefixPhaserFirst | StatementPrefixPhaserPost => &["type", "original-blorst"],
         _ if statement_prefix_type(class).is_some() => &["type"],
         _ => &[],
-    }
+    };
+    names.extend(specific);
+    names
 }
 
 /// The keyword of a statement prefix or phaser (`.type`): rakudo answers the

@@ -149,7 +149,7 @@ impl Interpreter {
         // concrete leaf. Reflection must retain that owner in the Method.
         if let Some(mro) = crate::rakuast::type_object_mro(&class_name_str) {
             return mro.iter().find_map(|owner| {
-                crate::rakuast::local_method_names(owner)
+                crate::builtins::method_table::rakuast_reflection::local_method_names(owner)
                     .filter(|names| names.contains(&method_name))
                     .map(|_| self.make_native_method_object(method_name, owner))
             });

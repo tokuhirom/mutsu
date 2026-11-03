@@ -2,9 +2,75 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Var::Attribute::Public", "args"),
+    row!("RakuAST::Var::Attribute::Public", "name"),
+    row!("RakuAST::Var::Compiler::File", "file"),
+    row!("RakuAST::Var::Compiler::Line", "line"),
+    row!("RakuAST::Var::Compiler::Lookup", "name"),
+    row!("RakuAST::Var::Dynamic", "is-resolved"),
+    row!("RakuAST::Var::Dynamic", "name"),
+    row!("RakuAST::Var::Dynamic", "resolution"),
+    row!("RakuAST::Var::Dynamic", "sigil"),
+    row!("RakuAST::Var::Lexical", "is-resolved"),
+    row!("RakuAST::Var::Lexical", "name"),
+    row!("RakuAST::Var::Lexical", "resolution"),
+    row!("RakuAST::Var::Lexical", "sigil"),
+    row!("RakuAST::Var::NamedCapture", "index"),
+    row!("RakuAST::Var::NamedCapture", "sigil"),
+    row!("RakuAST::Var::Package", "name"),
+    row!("RakuAST::Var::Package", "sigil"),
+    row!("RakuAST::Var::PositionalCapture", "index"),
+    interp_row!(
+        "RakuAST::VarDeclaration::Constant",
+        "compile-time-value",
+        compiled_value
+    ),
+    row!("RakuAST::VarDeclaration::Constant", "default-scope"),
+    row!("RakuAST::VarDeclaration::Constant", "initializer"),
+    row!("RakuAST::VarDeclaration::Constant", "name"),
+    row!("RakuAST::VarDeclaration::Constant", "scope"),
+    row!("RakuAST::VarDeclaration::Constant", "traits"),
+    row!("RakuAST::VarDeclaration::Constant", "type"),
+    row!(
+        "RakuAST::VarDeclaration::Placeholder::Named",
+        "lexical-name"
+    ),
+    row!(
+        "RakuAST::VarDeclaration::Placeholder::Positional",
+        "lexical-name"
+    ),
+    row!(
+        "RakuAST::VarDeclaration::Placeholder::SlurpyArray",
+        "lexical-name"
+    ),
+    row!(
+        "RakuAST::VarDeclaration::Placeholder::SlurpyHash",
+        "lexical-name"
+    ),
+    row!("RakuAST::VarDeclaration::Signature", "default-scope"),
+    row!("RakuAST::VarDeclaration::Signature", "initializer"),
+    row!("RakuAST::VarDeclaration::Signature", "scope"),
+    row!("RakuAST::VarDeclaration::Signature", "signature"),
+    row!("RakuAST::VarDeclaration::Signature", "type"),
+    row!("RakuAST::VarDeclaration::Simple", "compile-time-value"),
+    row!("RakuAST::VarDeclaration::Simple", "container-type"),
+    row!("RakuAST::VarDeclaration::Simple", "default-scope"),
+    row!("RakuAST::VarDeclaration::Simple", "desigilname"),
+    row!("RakuAST::VarDeclaration::Simple", "initializer"),
+    row!("RakuAST::VarDeclaration::Simple", "original-type"),
+    row!("RakuAST::VarDeclaration::Simple", "return-type"),
+    row!("RakuAST::VarDeclaration::Simple", "scope"),
+    row!("RakuAST::VarDeclaration::Simple", "shape"),
+    row!("RakuAST::VarDeclaration::Simple", "sigil"),
+    row!("RakuAST::VarDeclaration::Simple", "traits"),
+    row!("RakuAST::VarDeclaration::Simple", "twigil"),
+    row!("RakuAST::VarDeclaration::Simple", "type"),
     row!("RakuAST::VarDeclaration::Simple", "where"),
     row!("RakuAST::VarDeclaration::Term", "default-scope"),
+    row!("RakuAST::VarDeclaration::Term", "initializer"),
+    row!("RakuAST::VarDeclaration::Term", "name"),
     row!("RakuAST::VarDeclaration::Term", "scope"),
+    row!("RakuAST::VarDeclaration::Term", "type"),
     row!("RakuAST::WhateverCode::Argument", "is-hyper"),
     row!("RakuAST::WhateverCode::Argument", "name"),
 ];

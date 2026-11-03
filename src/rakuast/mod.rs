@@ -11,7 +11,7 @@ mod model_methods;
 pub use accessors::node_accessor;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
-pub use model_methods::local_method_names;
+pub use model_methods::constructor_method_names;
 mod anon_state;
 mod assign_lower;
 mod assign_target;
@@ -3775,32 +3775,9 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
     )
 }
 
-/// The public methods a RakuAST model class exposes *including* the ones it
-/// inherits, for `.^methods` (whose default, per
-/// `Type/Metamodel/MethodContainer.rakudoc`, is "methods of the class and its
-/// parents, stopping at Cool/Any/Mu" — `:local` is the narrower set
-/// [`local_method_names`] returns). Walks the model MRO and drops the `Any` /
-/// `Mu` tail, so the result grows automatically as the abstract RakuAST classes
-/// gain model methods of their own.
-pub fn inherited_method_names(class_name: &str) -> Option<Vec<&'static str>> {
-    let mro = type_object_mro(class_name)?;
-    let mut names = Vec::new();
-    for cls in &mro {
-        if cls == "Any" || cls == "Mu" {
-            break;
-        }
-        if let Some(local) = local_method_names(cls) {
-            names.extend(local);
-        }
-    }
-    names.sort_unstable();
-    names.dedup();
-    Some(names)
-}
-
 /// Model fields declared directly by a RakuAST class, for `.^attributes(:local)`.
 ///
-/// As with [`local_method_names`], these are mutsu's public model fields rather
+/// These are mutsu's public model fields rather
 /// than Rakudo's backend storage slots.
 pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
     if let Some(names) = inherited_fields::local_names(class_name) {

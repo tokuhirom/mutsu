@@ -64,6 +64,7 @@ mod mutating;
 pub(crate) mod native_array_result;
 mod owner_pure;
 mod place;
+pub(crate) mod rakuast_reflection;
 pub(crate) mod receiver_step;
 mod row;
 pub(crate) mod scalars;

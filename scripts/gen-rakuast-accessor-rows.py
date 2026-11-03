@@ -9,7 +9,6 @@ as JSON for the editor. --check verifies an already generated tree.
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,10 +17,7 @@ CHUNK = 200
 
 
 def artifacts(data):
-    previous = set()
-    for path in (ROOT / TARGET).glob("rows_*.rs"):
-        previous.update(re.findall(r'(?:row|interp_row)!\(\s*"([^"]+)",\s*"([^"]+)"', path.read_text()))
-    explicit = set(map(tuple, data["registered"])) - previous
+    explicit = set(map(tuple, data["registered"]))
     facts = []
     for row in data["records"]:
         owner = row["owner"]
