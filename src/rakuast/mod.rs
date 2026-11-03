@@ -46,6 +46,7 @@ pub(crate) mod list_infix;
 pub(crate) mod literalize;
 mod loop_bind;
 pub(crate) mod nested_methods;
+pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
 pub(crate) mod pointy_bind;
