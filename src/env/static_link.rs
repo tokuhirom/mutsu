@@ -618,6 +618,34 @@ impl Env {
         }
     }
 
+    /// A block-scoped `sub`'s code object (`BLOCK_LEXICAL_SUB_PREFIX` key) as
+    /// the running code sees it: the frame's own tiers, then -- for a frame
+    /// root with a static link, a routine declared at the top of a compunit --
+    /// only its own capture, never the frames that called it. The sub is the
+    /// declaring body's lexical, so a callee reading `&name` reflectively
+    /// (`EVAL q[&helper]`) must not find the caller's. A frame without a
+    /// static link (a block or closure running inside its lexical outer)
+    /// walks the whole chain, as [`Self::get_sym`] does.
+    // Cost: O(d + l), d = the frame's tiers, l = the capture's layers.
+    pub(crate) fn get_block_sub_sym(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            if cur.frame_root {
+                if cur.has_static_outer() && !suppressed() {
+                    return cur.fallback.as_deref()?.get(&key);
+                }
+                return self.get_sym(key);
+            }
+            match cur.parent.as_deref() {
+                Some(parent) => cur = parent,
+                None => return self.get_sym(key),
+            }
+        }
+    }
+
     /// The value this frame root's own capture gives `key`, when its static
     /// link puts the capture ahead of the program scope.
     // Cost: O(l), l = the capture's layers.

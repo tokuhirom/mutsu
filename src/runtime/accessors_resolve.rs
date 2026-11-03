@@ -869,9 +869,10 @@ impl Interpreter {
         if def.is_none()
             && !has_packages
             && self.inside_routine()
-            && let Some(sub_val) = self
-                .env
-                .get(&format!("{}{lookup_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
+            && let Some(sub_val) = self.env.get_block_sub_sym(Symbol::intern(&format!(
+                "{}{lookup_name}",
+                crate::env::BLOCK_LEXICAL_SUB_PREFIX
+            )))
         {
             return sub_val.clone();
         }
