@@ -309,11 +309,10 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 };
                 return Ok(Some(statement_expression(view_expr(names, &method)?)));
             }
-            let args = call_args_as_exprs(args)?;
-            Ok(Some(statement_expression(call_name(
+            Ok(Some(statement_expression(super::stmt_call::call(
                 names,
                 name.as_str(),
-                &args,
+                args,
                 *listop,
             )?)))
         }
@@ -6524,7 +6523,7 @@ fn literal_hash_index_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
 /// A statement call's `CallArg`s in the argument-expression form an
 /// `Expr::Call` carries: a named argument is the `name => value` pair the
 /// expression parser builds for it (a bare `:name` being `name => True`).
-fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
+pub(super) fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
     use crate::ast::CallArg;
     args.iter()
         .map(|arg| match arg {
@@ -6548,7 +6547,7 @@ fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, Runtime
         .collect()
 }
 
-fn is_injected_named_arg(arg: &Expr) -> bool {
+pub(super) fn is_injected_named_arg(arg: &Expr) -> bool {
     let pair = match arg {
         Expr::PositionalPair(inner) => match inner.as_ref() {
             Expr::Grouped(g) => g.as_ref(),

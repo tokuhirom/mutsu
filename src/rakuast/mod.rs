@@ -56,6 +56,7 @@ mod regex_call_origins;
 mod regex_origins;
 pub(crate) mod sections;
 pub(crate) mod signature_expand;
+mod stmt_call;
 mod trait_is_constructor;
 mod with_branch;
 use constructor_positional::single_positional_class;
