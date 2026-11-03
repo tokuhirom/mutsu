@@ -8,3 +8,6 @@ its `branch` stage and the session stop hook reported uncommitted changes
 it changes into the temporary directory first, builds the relative `IO::Path`
 there, and so still checks that `slurp`/`spurt` resolve a path captured before
 a `chdir` against the cwd it was captured in.
+
+The stray file was added to `main` by mistake in 8d480a9a (#15869); removing it
+is intended.
