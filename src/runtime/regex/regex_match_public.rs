@@ -357,9 +357,10 @@ impl Interpreter {
                 super::super::regex_parse_core::scalar_names_in_decl(decl)
             })
             .collect();
-        // A `$var` written after a code block is read where the cursor reaches
-        // it, since the block can assign it (ADR-12917, direction 2).
-        for name in super::regex_late_scalars::scalars_after_code_block(&remaining_pattern) {
+        // A `$var` of a pattern with a code block is read where the cursor
+        // reaches it, since the block can assign it, and a loop can re-enter
+        // an atom written before the block (ADR-12917, direction 2).
+        for name in super::regex_late_scalars::scalars_in_block_pattern(&remaining_pattern) {
             if self.late_scalar_reads_at_match_time(&name) && !hoisted_scalars.contains(&name) {
                 hoisted_scalars.push(name);
             }
