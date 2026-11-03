@@ -893,7 +893,20 @@ impl Compiler {
         // still a block literal the enclosing block re-clones on every run, so
         // its `state` still restarts per execution (`if 1 { state $n; ++$n }`).
         let state_reset = self.emit_branch_state_reset(stmts, is_statement_modifier);
-        self.compile_resolved_branch_body(stmts, is_statement_modifier);
+        // A branch's own `my $*x` ends with the branch: run it as a real block,
+        // as `compile_if_construct` does for a branch it jumps to (#16199).
+        // (A branch that also declares a lexical type keeps the branch scope
+        // that takes the type back, which a `do` wrapper does not.)
+        let dynamic_block =
+            if is_statement_modifier || super::body_scans::declares_lexical_type(stmts) {
+                None
+            } else {
+                super::body_scans::scope_dynamic_branch(stmts, false)
+            };
+        self.compile_resolved_branch_body(
+            dynamic_block.as_deref().unwrap_or(stmts),
+            is_statement_modifier,
+        );
         self.patch_nested_block_state_reset(state_reset);
     }
 
