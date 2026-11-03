@@ -118,7 +118,7 @@ impl Interpreter {
     /// a hole and trailing holes are trimmed, so deleting the last element
     /// shrinks the array. Shared by the single- and multi-dimension forms
     /// (`multidim_delete_pos` reaches the innermost level and calls this).
-    /// Returns the deleted element's value, or `Nil` past the end.
+    /// Returns the deleted element's value, or the element type object past the end.
     // Cost: O(t), t = trailing holes trimmed.
     pub(crate) fn delete_pos_in_array_data(
         data: &mut crate::value::ArrayData,
@@ -126,7 +126,9 @@ impl Interpreter {
         shaped: bool,
     ) -> Value {
         if index >= data.items().len() {
-            return Value::NIL;
+            // Past the end answers what a hole reads: the element type object
+            // (`Any`, `Int` for `my Int @a`), as rakudo's `DELETE-POS` does.
+            return Self::native_fill_for_constraint(data.value_type.as_deref());
         }
         // ADR-0049 slice 5: the vacated slot gets the standard
         // `Package("Any")` gap marker, not a raw `Value::NIL` -- `Nil` is
