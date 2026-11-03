@@ -66,7 +66,12 @@ pub(super) fn args_len(text: &str) -> Option<usize> {
 /// Give the `args` of `node`, the call assertion whose argument text `inner`
 /// starts at byte `at` of the unit, their ranges.
 // Cost: O(n), n = length of the argument text, plus the parse of it.
-pub(super) fn place(names: &NameScope, node: &mut RakuAstNode, inner: &str, at: usize) -> Option<()> {
+pub(super) fn place(
+    names: &NameScope,
+    node: &mut RakuAstNode,
+    inner: &str,
+    at: usize,
+) -> Option<()> {
     let lead = inner.len() - inner.trim_start().len();
     let text = inner.trim();
     if text.is_empty() {
