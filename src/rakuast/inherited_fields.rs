@@ -17,7 +17,6 @@ pub(super) fn local_names(class_name: &str) -> Option<Vec<&'static str>> {
             "grep",
             "first",
             "find-nodes",
-            "literalize",
         ]),
         "RakuAST::Statement" => Some(STATEMENT_FIELDS.iter().map(|(name, _)| *name).collect()),
         _ => None,
