@@ -1107,7 +1107,11 @@ impl Interpreter {
                         self.commit_mixin_role_method_attrs(
                             mixins,
                             qualifier,
-                            &role,
+                            &role
+                                .attributes
+                                .iter()
+                                .map(|attr| attr.name.clone())
+                                .collect::<Vec<String>>(),
                             inner_cell.as_ref(),
                             updated,
                         );
