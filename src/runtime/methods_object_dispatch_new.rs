@@ -45,6 +45,9 @@ pub(crate) fn attribute_facts_from_args(args: &[Value]) -> impl Iterator<Item = 
         let ValueView::Pair(key, value) = arg.view() else {
             return Vec::new();
         };
+        // A named argument given as a variable arrives as its container
+        // (`:package(minted)`, #16230): record the value it holds.
+        let value = &value.deref_container();
         match key.as_str() {
             "name" => {
                 // Storage key is the BARE name (sigil+twigil stripped),
