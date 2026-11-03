@@ -434,8 +434,15 @@ pub(in crate::parser) fn colonpair_run_item(input: &str, closer: char) -> Option
     }
     let (rest, pair) = crate::parser::primary::misc::colonpair_expr(input).ok()?;
     let after = rest.trim_start();
-    (after.is_empty() || after.starts_with([',', ';', closer]) || looks_like_colonpair_start(after))
-        .then_some((rest, pair))
+    if !(after.is_empty()
+        || after.starts_with([',', ';', closer])
+        || looks_like_colonpair_start(after))
+    {
+        return None;
+    }
+    // This path bypasses `primary`, which notes a term's range.
+    crate::parser::primary::note_origin(input, rest, &pair);
+    Some((rest, pair))
 }
 
 pub(in crate::parser) fn looks_like_colonpair_start(input: &str) -> bool {
