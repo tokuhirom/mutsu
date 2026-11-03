@@ -126,7 +126,10 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         Expr::Spelled(spelled) => !is_empty_statement(spelled),
         Expr::Ast(node) => match node.as_ref() {
             ParsedExpr::CompoundAssign(compound) => compound_carried(compound),
-            ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_) => true,
+            ParsedExpr::Assign(_)
+            | ParsedExpr::WordList(_)
+            | ParsedExpr::WordsAtom(_)
+            | ParsedExpr::SubscriptAdverbs(_) => true,
             _ => false,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass

@@ -207,6 +207,41 @@ pub(super) fn lower(
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
+    apply_adverbs(subscript, &adverbs).ok_or_else(|| unsupported(postfix))
+}
+
+/// [`lower`] for the adverbs the parser kept (`ParsedExpr::SubscriptAdverbs`):
+/// `subscript` and the values of `pairs` are already lowered; each pair is the
+/// colonpair expression the source spells (`key => value`).
+// Cost: O(a), a = adverbs.
+pub(super) fn lower_parsed(subscript: Expr, pairs: Vec<Expr>) -> Result<Expr, RuntimeError> {
+    let mut adverbs = Vec::with_capacity(pairs.len());
+    for pair in pairs {
+        let Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+            ..
+        } = pair
+        else {
+            return Err(RuntimeError::new("subscript adverb: not a colonpair"));
+        };
+        let Expr::Literal(key) = *left else {
+            return Err(RuntimeError::new("subscript adverb: the key is not a name"));
+        };
+        let ValueView::Str(key) = key.view() else {
+            return Err(RuntimeError::new("subscript adverb: the key is not a name"));
+        };
+        adverbs.push((key.to_string(), *right));
+    }
+    apply_adverbs(subscript, &adverbs)
+        .ok_or_else(|| RuntimeError::new("subscript adverb: unsupported combination"))
+}
+
+/// `subscript` with the builtin or user adverbs `adverbs` (key, value) applied:
+/// the shapes the compiler executes. `None` for a combination with no shape.
+// Cost: O(a), a = adverbs.
+fn apply_adverbs(subscript: Expr, adverbs: &[(String, Expr)]) -> Option<Expr> {
     if let Expr::Index {
         target,
         index,
@@ -214,11 +249,11 @@ pub(super) fn lower(
         ..
     } = &subscript
         && matches!(index.as_ref(), Expr::HyperWhatever)
-        && let [(key, Expr::Literal(value))] = adverbs.as_slice()
+        && let [(key, Expr::Literal(value))] = adverbs
         && matches!(value.view(), ValueView::Bool(true))
         && let Some(adverb) = hyperslice::adverb(key)
     {
-        return Ok(Expr::HyperSlice {
+        return Some(Expr::HyperSlice {
             target: target.clone(),
             adverb,
         });
@@ -238,15 +273,14 @@ pub(super) fn lower(
                     form: Default::default(),
                 })
                 .collect(),
-        )
-        .ok_or_else(|| unsupported(postfix));
+        );
     }
     if let Some(expanded) = subscript_adverb::expand(
         subscript.clone(),
-        &adverbs,
+        adverbs,
         crate::parser::current_language_version().starts_with("6.e"),
     ) {
-        return Ok(expanded);
+        return Some(expanded);
     }
     if adverbs
         .iter()
@@ -271,7 +305,7 @@ pub(super) fn lower(
                 }
             })
             .collect::<Vec<_>>();
-        return Ok(subscript_adverb::build_adverb_error_call(
+        return Some(subscript_adverb::build_adverb_error_call(
             what,
             &target.sigiled_var_name().unwrap_or_default(),
             Some(target),
@@ -279,7 +313,7 @@ pub(super) fn lower(
             &[],
         ));
     }
-    Err(unsupported(postfix))
+    None
 }
 
 /// `RakuAST::Postcircumfix::ArrayIndex.new(index => …, colonpairs => (…),

@@ -258,6 +258,25 @@ impl VisitMut for Finalize<'_> {
             }
             return;
         }
+        // A subscript with colonpairs: the subscript and the adverb values are
+        // lowered where they stand, then the adverbs expand into the shapes the
+        // compiler executes.
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::SubscriptAdverbs(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            let ParsedExpr::SubscriptAdverbs(mut adverbs) = *node else {
+                unreachable!("checked above");
+            };
+            self.visit_expr_mut(&mut adverbs.subscript);
+            for pair in &mut adverbs.pairs {
+                self.visit_expr_mut(pair);
+            }
+            match super::subscript_adverb::lower_parsed(adverbs.subscript, adverbs.pairs) {
+                Ok(lowered) => *expr = lowered,
+                Err(err) => self.fail(err),
+            }
+            return;
+        }
         // A word quote is the runtime's word list; its words are lowered
         // where they stand.
         if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)))
