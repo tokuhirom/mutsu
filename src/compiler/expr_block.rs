@@ -1452,7 +1452,9 @@ impl Compiler {
                         },
                     );
                 } else {
-                    self.compile_expr(arg);
+                    // An inline `my $x` argument (`&f(my $x)`, `&f :k(my $x)`)
+                    // takes a real lexical slot, as in a plain sub call.
+                    self.with_call_arg_decl_slot(arg, |s| s.compile_expr(arg));
                     self.maybe_promote_attr_arg_read(arg);
                     self.mark_call_on_arg(
                         crate::opcode::RwArgCallee::CodeVar {

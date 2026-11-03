@@ -1307,6 +1307,13 @@ impl Interpreter {
                     // A `|c` capture element read from a caller scalar
                     // (`capture_param_containers`) writes back the cell's
                     // final value.
+                    if let Some((key, name)) =
+                        crate::runtime::types::decode_capture_named_rw_param(param_name)
+                    {
+                        return self
+                            .capture_rw_named(key, name)
+                            .map(|val| (source_name.clone(), val));
+                    }
                     if let Some((key, elem_idx, None)) =
                         crate::runtime::types::decode_slurpy_rw_param(param_name)
                     {

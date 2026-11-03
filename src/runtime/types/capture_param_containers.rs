@@ -20,7 +20,9 @@
 //! records reuses this routine (`runtime::call_capture`).
 
 use super::*;
-use crate::runtime::types::signature::{encode_slurpy_rw_param, indexed_varref_from_value};
+use crate::runtime::types::signature::{
+    encode_capture_named_rw_param, encode_slurpy_rw_param, indexed_varref_from_value,
+};
 
 impl Interpreter {
     /// The value a `|c` capture stores for positional argument `raw_arg`
@@ -40,6 +42,32 @@ impl Interpreter {
         elem_idx: usize,
         rw_bindings: &mut Vec<(String, String)>,
         callee_params: &[ParamDef],
+    ) -> Value {
+        self.capture_container_impl(
+            raw_arg,
+            arg_source,
+            capture_key,
+            elem_idx,
+            rw_bindings,
+            callee_params,
+            false,
+        )
+    }
+
+    /// [`Self::capture_positional_container`]. `source_is_variable` is set when
+    /// the call site already said `arg_source` is a variable (a `:key($var)`
+    /// named argument), so an undefined `$var` -- which reads as a type
+    /// object -- is not mistaken for a bare type name.
+    #[allow(clippy::too_many_arguments)]
+    fn capture_container_impl(
+        &mut self,
+        raw_arg: &Value,
+        arg_source: Option<&String>,
+        capture_key: Option<&str>,
+        elem_idx: usize,
+        rw_bindings: &mut Vec<(String, String)>,
+        callee_params: &[ParamDef],
+        source_is_variable: bool,
     ) -> Value {
         let value = unwrap_varref_value(raw_arg.clone());
         // A cell the caller already handed over (a forwarded capture's element,
@@ -79,7 +107,8 @@ impl Interpreter {
         // A type object read through a name that is not a local (`f(Int)`,
         // `f(C1)`) is a value, not a variable; nor is a readonly / sigilless
         // value binding (`my \t = Person`) or a Proxy the caller holds.
-        if matches!(value.view(), ValueView::Package(_))
+        if !source_is_variable
+            && matches!(value.view(), ValueView::Package(_))
             && raw_arg.varref_slot().is_none_or(|slot| slot == u32::MAX)
         {
             return value;
@@ -92,6 +121,22 @@ impl Interpreter {
         // its slot only, and the callee's env no longer sees the caller's
         // names): that cell is the caller's container (#13921).
         if let Some(cell) = self.caller_slot_cell(&source, raw_arg.varref_slot()) {
+            return cell;
+        }
+        // A by-name caller lexical (`wrap :deps(my $d), { ... $d ... }`, a
+        // mainline declaration made inside an argument) that an escaping
+        // closure shares lives as a cell in the CALLER's env, which a callee
+        // frame of its own (a pointy block) does not see: use that cell, or the
+        // block would read a snapshot while the call runs (#16121).
+        if self.env.get(&source).is_none()
+            && let Some(cell) = self
+                .caller_env_stack
+                .last()
+                .and_then(|env| env.get(&source).cloned())
+                .filter(|cell| matches!(cell.view(), ValueView::ContainerRef(_)))
+        {
+            crate::value::name_container_cell(&cell, &source);
+            rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));
             return cell;
         }
         let cell = match self.env.get(&source).cloned() {
@@ -116,6 +161,47 @@ impl Interpreter {
         };
         crate::value::name_container_cell(&cell, &source);
         rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));
+        cell
+    }
+
+    /// The value a `|c` capture stores for the named argument `key` => `val`.
+    /// `arg_source` is the call's source descriptor for it (`key=var` for
+    /// `:key($var)`); a plain scalar caller variable becomes the same shared
+    /// cell a positional one does, with its writeback keyed by the name, so
+    /// `sub f(|c) { g(|c) }; f(:p($a))` lets an `is raw` / `is rw` named
+    /// parameter of `g` write `$a` (#16121, Deps' `deps-root :deps(my $root)`).
+    // Cost: O(1).
+    pub(in crate::runtime) fn capture_named_container(
+        &mut self,
+        key: &str,
+        val: &Value,
+        arg_source: Option<&String>,
+        capture_key: Option<&str>,
+        rw_bindings: &mut Vec<(String, String)>,
+        callee_params: &[ParamDef],
+    ) -> Value {
+        let (Some(capture_key), Some(var)) = (
+            capture_key,
+            arg_source
+                .and_then(|source| source.split_once('='))
+                .filter(|(k, _)| *k == key)
+                .map(|(_, var)| var.to_string()),
+        ) else {
+            return val.clone();
+        };
+        let mut recorded = Vec::new();
+        let cell = self.capture_container_impl(
+            val,
+            Some(&var),
+            Some(capture_key),
+            0,
+            &mut recorded,
+            callee_params,
+            true,
+        );
+        for (_, source) in recorded {
+            rw_bindings.push((encode_capture_named_rw_param(capture_key, key), source));
+        }
         cell
     }
 

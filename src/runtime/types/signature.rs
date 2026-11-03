@@ -438,6 +438,23 @@ pub(in crate::runtime) fn encode_slurpy_rw_param(
     format!("{SLURPY_RW_MARKER}{slurpy_key}\u{1}{elem_idx}\u{1}{src}")
 }
 
+const CAPTURE_NAMED_RW_MARKER: &str = "\u{1}N\u{1}";
+
+/// Encode the writeback of a NAMED argument a `|c` capture keeps as the
+/// caller's container (`capture_named_container`): `capture_key` is the
+/// callee env key of the capture, `name` the named argument's key.
+pub(in crate::runtime) fn encode_capture_named_rw_param(capture_key: &str, name: &str) -> String {
+    format!("{CAPTURE_NAMED_RW_MARKER}{capture_key}\u{1}{name}")
+}
+
+/// Decode [`encode_capture_named_rw_param`]: `(capture_key, name)`, or `None`
+/// for any other `rw_bindings` param-name.
+pub(crate) fn decode_capture_named_rw_param(param: &str) -> Option<(&str, &str)> {
+    param
+        .strip_prefix(CAPTURE_NAMED_RW_MARKER)?
+        .split_once('\u{1}')
+}
+
 /// Decode a slurpy element writeback param-name. Returns
 /// `(slurpy_key, elem_idx, src_idx)` or `None` if `param` is an ordinary
 /// rw-binding param name.
