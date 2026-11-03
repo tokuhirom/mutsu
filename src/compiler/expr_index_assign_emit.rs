@@ -32,6 +32,9 @@ impl Compiler {
             concat_append,
             element_share,
         } = flags;
+        // A user `postcircumfix` candidate a block's `use` imported decides
+        // which element the store addresses (`remap_index_through_user_postcircumfix`).
+        self.emit_lex_import_subscript(is_positional);
         self.code.emit(match target_slot {
             Some(slot) => OpCode::IndexAssignLocal {
                 slot,

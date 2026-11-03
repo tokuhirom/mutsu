@@ -316,6 +316,11 @@ impl Interpreter {
         index: Value,
         is_positional: bool,
     ) -> Result<Value, RuntimeError> {
+        // A user candidate probed for the element an assignment addresses
+        // (`vm_user_subscript_lvalue`): note the index it delegated with.
+        if let Some(capture) = self.dispatch.subscript_lvalue_capture.as_mut() {
+            *capture = Some(index.clone());
+        }
         self.stack.push(target);
         self.stack.push(index);
         self.dispatch.skip_postcircumfix_overload = true;
