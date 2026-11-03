@@ -219,9 +219,10 @@ impl Interpreter {
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
-            let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-                pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
-            }) && !Self::fast_invocant_constraints_trivial(method_def, &base, owner_class);
+            let has_invocant_constraint =
+                method_def.param_defs.iter().any(|pd| {
+                    pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
+                }) && !Self::fast_invocant_constraints_trivial(method_def, &base, owner_class);
             // A `::T` type capture has to be BOUND before the body runs, and the
             // fast path has no binder step that does it. It used to be kept out
             // by accident: the capture lived in `type_constraint`, so either
