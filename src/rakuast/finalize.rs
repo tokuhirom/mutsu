@@ -375,23 +375,34 @@ impl Finalize<'_> {
 }
 
 /// The sigilless terms a statement declares in its own list: a `constant`, an
-/// enum's values, a `my \x`.
+/// enum's values, a `my \x`; a parser desugaring's statements count as the
+/// list's own.
 // Cost: O(1) for a statement, O(v) for an enum, v = its values.
 fn declared_terms(stmt: &Stmt) -> Vec<String> {
     match stmt {
-        Stmt::VarDecl {
-            name,
-            constant: Some(crate::ast::ConstantSigil::Term),
-            ..
-        } => vec![name.clone()],
-        Stmt::EnumDecl { variants, .. } => crate::parser::enum_value_names(variants),
-        Stmt::SyntheticBlock(inner) => inner.iter().flat_map(declared_terms).collect(),
-        Stmt::Ast(node) => match node.as_ref() {
-            ParsedStmt::SigillessDecl(decl) => vec![decl.name.clone()],
-            _ => Vec::new(),
-        },
-        _ => Vec::new(),
+        Stmt::SyntheticBlock(inner) => inner.iter().flat_map(declared_terms_one).collect(),
+        _ => declared_terms_one(stmt),
     }
+}
+
+fn declared_terms_one(stmt: &Stmt) -> Vec<String> {
+    if let Stmt::VarDecl {
+        name,
+        constant: Some(crate::ast::ConstantSigil::Term),
+        ..
+    } = stmt
+    {
+        return vec![name.clone()];
+    }
+    if let Stmt::EnumDecl { variants, .. } = stmt {
+        return crate::parser::enum_value_names(variants);
+    }
+    if let Stmt::Ast(node) = stmt
+        && let ParsedStmt::SigillessDecl(decl) = node.as_ref()
+    {
+        return vec![decl.name.clone()];
+    }
+    Vec::new()
 }
 
 /// The capitalised terms `body` declares: a use before the declaration can only
