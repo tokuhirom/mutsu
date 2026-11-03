@@ -74,12 +74,12 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
     anon_state_is_per_call, clear_current_scope_self_available, current_scope_anon_state_count,
-    current_scope_anon_state_names_from, finish_block_anon_states, is_test_assertion_callable,
-    lookup_compile_time_constant, mark_current_scope_routine_body,
-    mark_current_scope_self_available, pop_scope, prepend_anon_state_decls, push_scope,
-    record_anon_state_name, register_compile_time_constant, enable_experimental_cached,
-    experimental_cached_enabled, register_use_exports, restore_worries,
-    self_available, set_trace_pragma, suppress_worries, trace_pragma_active, worries_suppressed,
+    current_scope_anon_state_names_from, enable_experimental_cached, experimental_cached_enabled,
+    finish_block_anon_states, is_test_assertion_callable, lookup_compile_time_constant,
+    mark_current_scope_routine_body, mark_current_scope_self_available, pop_scope,
+    prepend_anon_state_decls, push_scope, record_anon_state_name, register_compile_time_constant,
+    register_use_exports, restore_worries, self_available, set_trace_pragma, suppress_worries,
+    trace_pragma_active, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};

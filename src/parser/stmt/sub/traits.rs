@@ -501,7 +501,8 @@ fn trait_spans(start: &str, end: &str) -> crate::ast::parsed::TraitSpans {
 /// `is cached` trait outside `use experimental :cached` (#16273).
 // Cost: O(1).
 fn experimental_cached_error(input: &str) -> PError {
-    let message = "Use of the 'is cached' trait is experimental; please 'use experimental :cached;'";
+    let message =
+        "Use of the 'is cached' trait is experimental; please 'use experimental :cached;'";
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.to_string()));
     attrs.insert(
