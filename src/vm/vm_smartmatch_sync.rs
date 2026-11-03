@@ -230,7 +230,10 @@ impl Interpreter {
             if let Some(ValueView::RegexWithAdverbs(adverbs)) =
                 code.constants.get(*idx as usize).map(Value::view)
             {
-                merge_names(&mut names, regex_pattern_var_names(adverbs.pattern.as_str()));
+                merge_names(
+                    &mut names,
+                    regex_pattern_var_names(adverbs.pattern.as_str()),
+                );
             }
         }
         names
