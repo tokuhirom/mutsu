@@ -670,6 +670,20 @@ impl Interpreter {
                 };
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                // A role accessor that binds its invocant raw
+                // (`method AT-POS(\SELF: $i) is raw { SELF.substr-rw(...) }`)
+                // works on the variable's own container, so what it hands
+                // back writes through to the variable (ADR-0067 slice 3).
+                let target = if self.method_returns_raw_invocant(
+                    &target,
+                    at_method,
+                    std::slice::from_ref(&idx_arg),
+                ) {
+                    self.capture_lvalue_invocant_cell(code, &var_name, target.clone(), None)
+                        .unwrap_or(target)
+                } else {
+                    target
+                };
                 let assigned = self.assign_method_lvalue_with_values(
                     Some(&var_name),
                     target,
