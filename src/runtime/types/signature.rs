@@ -1005,6 +1005,18 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         if bind_name.is_empty() {
             continue;
         }
+        // A `@`/`%` leaf takes the aggregate itself, not the cell of the scalar
+        // variable that held it: `np(33, :$k)` reaches `:offset(:@k)!` through
+        // an exported proto's capture as a `ContainerRef` (Math::NumberTheory).
+        let deref_leaf;
+        let value = if bind_name.starts_with(['@', '%'])
+            && matches!(value.view(), ValueView::ContainerRef(_))
+        {
+            deref_leaf = value.deref_container();
+            &deref_leaf
+        } else {
+            value
+        };
         // An `@` leaf binds a Seq through `.cache` exactly like a plain `:@x`
         // (`check_and_coerce_param_type`): the wrapper `ParamDef` carries the
         // caller-facing key, so its sigil never triggers that coercion.
