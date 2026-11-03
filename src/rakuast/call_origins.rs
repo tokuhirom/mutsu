@@ -175,7 +175,10 @@ fn place_call(
     let class = call.class;
     if !matches!(
         class,
-        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod | RakuAstClass::CallNameAsMethod
+        RakuAstClass::CallMethod
+            | RakuAstClass::CallPrivateMethod
+            | RakuAstClass::CallNameAsMethod
+            | RakuAstClass::CallMetaMethod
     ) || call.origin.0.is_some()
     {
         return;
