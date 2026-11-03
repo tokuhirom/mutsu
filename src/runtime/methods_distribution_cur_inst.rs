@@ -67,7 +67,15 @@ impl Interpreter {
         for dir in [&dist_dir, &sources_dir, &resources_dir, &bin_dir] {
             std::fs::create_dir_all(dir).ok();
         }
-        let (meta, dist_prefix) = match dist.view() {
+        // A distribution a plugin mixed a role into (`$dist but Role`, zef's
+        // candidates) is its class's instance underneath.
+        let dist_inner = dist.clone().deref_container();
+        let dist_inner = match dist_inner.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+            _ => dist_inner,
+        };
+        let dist_view = dist_inner.view();
+        let (meta, dist_prefix) = match dist_view {
             ValueView::Instance { attributes, .. } => {
                 let m = attributes
                     .as_map()

@@ -25,6 +25,12 @@ pub(super) fn body_references_topic(input: &str) -> bool {
     // nesting, so the string stays at the current depth.
     let mut depth = 1u32;
     let mut in_d = false;
+    // Braces opened inside the double-quoted string being scanned: an
+    // interpolation `{ … }` is a closure of its own, so a `$_` inside it is that
+    // closure's topic, never this body's (`{ a => "x{$_}" }` is a Hash in
+    // rakudo, `{ a => "x$_" }` a Block). A `"` inside such braces opens an
+    // inner string, not the end of this one.
+    let mut str_brace = 0u32;
     while i < bytes.len() {
         let c = bytes[i];
         if in_d {
@@ -33,9 +39,12 @@ pub(super) fn body_references_topic(input: &str) -> bool {
                     i += 2;
                     continue;
                 }
-                b'"' => in_d = false,
+                b'{' => str_brace += 1,
+                b'}' => str_brace = str_brace.saturating_sub(1),
+                b'"' if str_brace == 0 => in_d = false,
                 b'$' | b'@' | b'%'
                     if depth == 1
+                        && str_brace == 0
                         && bytes.get(i + 1) == Some(&b'_')
                         && !bytes
                             .get(i + 2)
