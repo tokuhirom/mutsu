@@ -77,11 +77,8 @@ impl Interpreter {
                         else {
                             return false;
                         };
-                        let name = name.resolve();
-                        name.rsplit_once("::")
-                            .is_some_and(|(parent, _)| {
-                                self.is_known_package(parent)
-                            })
+                        crate::qualified::package_parent(*name)
+                            .is_some_and(|parent| self.is_known_package(parent.as_str()))
                     })
                 }) {
                     self.load_module_from_path(&short_name_str, source_path.clone())?;
