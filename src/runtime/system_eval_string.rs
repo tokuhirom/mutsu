@@ -72,7 +72,7 @@ impl Interpreter {
         let saved_unit_routine_depth =
             std::mem::replace(&mut self.module.eval_unit_routine_depth, self.routine_stack.len());
         let routine_snapshot = self.snapshot_routine_registry();
-        self.hide_dynamic_callers_local_subs();
+        let hidden_local_subsets = self.hide_dynamic_callers_local_subs();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
         // reinstates module-owned routines so a later re-use can find the
@@ -228,6 +228,7 @@ impl Interpreter {
         // snippet: a later EVAL starts in the caller's package again (#12135).
         self.set_current_package(saved_package);
         self.restore_routine_registry_eval(routine_snapshot);
+        self.restore_hidden_local_subsets(hidden_local_subsets);
         let eval_main_keys: Vec<Symbol> = self
             .registry()
             .functions
