@@ -935,10 +935,7 @@ impl Interpreter {
             // that unit and must NOT stay callable afterwards
             // (`EVAL q|sub zzz9 {…}|; zzz9()` dies in raku —
             // `t/undeclared-routine-compile-time.t`).
-            let in_eval = self
-                .env()
-                .get("__mutsu_in_eval")
-                .is_some_and(|v| v.truthy());
+            let in_eval = self.at_eval_unit_top_level();
             if (self.block_scope_depth() > 0 || self.inside_routine())
                 && !in_eval
                 // An exported sub is part of its module's interface, installed
