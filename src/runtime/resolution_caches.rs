@@ -508,6 +508,12 @@ pub(crate) struct ResolutionCaches {
     /// is one refcount bump and leaves the table untouched.
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
+    /// The winning candidate of a role method called on a mixin, by what the
+    /// verdict reads (see `Interpreter::mixin_winner_key`).
+    pub(crate) mixin_method_winner: rustc_hash::FxHashMap<
+        crate::runtime::MixinWinnerKey,
+        Option<(Symbol, crate::runtime::MethodDef)>,
+    >,
     /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
     /// probe every typed store makes (`var_type_constraint_value_sym`). The
     /// mapping is a pure function of the name, so caching it is sound
