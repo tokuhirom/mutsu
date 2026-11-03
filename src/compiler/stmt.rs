@@ -4900,7 +4900,12 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = marks.anon;
+                // The parser mints a globally-unique `__ANON_CLASS_<n>__` for a
+                // nameless `class :: { ... }` / `class { ... }` declaration; it can
+                // never be a real redeclaration, but an expression that compiles
+                // its operand more than once (`class :: {...}.new xx 2`, Test::Selector)
+                // reaches this site twice in one scope.
+                let is_anon_decl = marks.anon || name.as_str().starts_with("__ANON_CLASS_");
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the

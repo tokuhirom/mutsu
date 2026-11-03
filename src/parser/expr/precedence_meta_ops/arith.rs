@@ -570,6 +570,28 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
         {
             break;
         }
+        // The hyper form of `**` (`»**»`, `«**«`, ...) has `**`'s precedence, tighter
+        // than a prefix operator: `^256 »**» 2` is `^(256 »**» 2)`
+        // (MIDI::Make's `Pow2`). Hyper operators are otherwise parsed at the
+        // concatenation level, after the prefix has bound.
+        if let Some((op, dwim_left, dwim_right, len)) = super::hyper_spelling::parse_hyper_op(r)
+            && op == "**"
+        {
+            let (r, _) = ws(&r[len..])?;
+            let (r, exp) = prefix_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after hyper operator", r.len())
+            })?;
+            base = Expr::HyperOp {
+                op,
+                left: Box::new(base),
+                right: Box::new(exp),
+                dwim_left,
+                dwim_right,
+            };
+            base_is_own_chain = false;
+            rest = r;
+            continue;
+        }
         // Leave the compound-assignment form `**=` for the assignment parser so
         // an indexed lvalue (`@a[0] **= 2`) reaches it as the bare operand
         // instead of the `**` here eating the base op and stranding the `=`.
