@@ -33,7 +33,21 @@ impl Interpreter {
         if columns.is_empty() || !columns.iter().any(is_infinite_operand) {
             return None;
         }
-        let operands: Vec<PullOperand> = columns.iter().map(pull_operand_of).collect();
+        // An itemized operand (`@b.item X ...`, `$(1, 2) X ...`) is one element
+        // of its column, as on the finite path (`cross_operand_list`), not its
+        // items.
+        let operands: Vec<PullOperand> = columns
+            .iter()
+            .map(|c| {
+                if super::vm_helpers_lazy_adaptor::is_item_seq(c)
+                    || matches!(c.view(), ValueView::Array(_, kind) if kind.is_itemized())
+                {
+                    PullOperand::Segments(vec![c.clone()])
+                } else {
+                    pull_operand_of(c)
+                }
+            })
+            .collect();
         let pos = vec![0; operands.len()];
         Some(Self::adaptor_pipe_value(
             columns[0].clone(),
