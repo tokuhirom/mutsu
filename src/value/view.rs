@@ -115,6 +115,7 @@ pub enum ValueView<'a> {
         storer: &'a Value,
         subclass: &'a Option<(Symbol, ProxySubclassAttrs)>,
         decontainerized: bool,
+        var_object: bool,
     },
     ParametricRole {
         base_name: Symbol,
@@ -682,6 +683,7 @@ impl Value {
             storer: Box::new(storer),
             subclass,
             decontainerized,
+            var_object: false,
         })
     }
 
@@ -742,6 +744,14 @@ impl Value {
     #[inline]
     pub(crate) fn is_proxy_value(&self) -> bool {
         self.0.is_proxy()
+    }
+
+    /// Whether this is a `Proxy` that `.VAR` produced: the container object
+    /// itself, which a store lands as a value instead of FETCHing it.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_proxy_var_object(&self) -> bool {
+        matches!(self.view(), ValueView::Proxy { var_object: true, .. })
     }
 
     /// Whether this is a string-keyed `Pair` (`ValueView::Pair`). A pure tag
@@ -1022,6 +1032,7 @@ impl Value {
                 storer,
                 subclass,
                 decontainerized,
+                ..
             } => Some((*fetcher, *storer, subclass, decontainerized)),
             _ => None,
         }

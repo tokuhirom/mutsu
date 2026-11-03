@@ -569,6 +569,7 @@ fn every_variant_roundtrips_losslessly() {
                 crate::value::proxy_subclass_attrs(Symbol::intern("MyProxy"), AttrMap::new()),
             )),
             decontainerized: true,
+            var_object: false,
         },
         ValueRepr::ParametricRole {
             base_name: Symbol::intern("R1"),

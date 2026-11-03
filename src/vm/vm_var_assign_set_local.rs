@@ -1161,7 +1161,8 @@ impl Interpreter {
         // installs the Proxy itself, which is what makes `$p = 1` fire `STORE`.
         // See `Interpreter::fetch_proxy_for_store`.
         if !is_bind && !is_rebind && !scalar_bind && !param_raw_bind {
-            raw_popped = self.fetch_proxy_for_store(raw_popped)?;
+            // `my $v = $q.VAR` keeps the Proxy object as a value (#15893).
+            raw_popped = self.fetch_proxy_for_scalar_store(raw_popped)?;
         }
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Assigning it to an `@`/`%` container reifies the Seq (raku list

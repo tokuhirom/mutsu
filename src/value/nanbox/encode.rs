@@ -204,6 +204,7 @@ impl NanBox {
                 storer,
                 subclass,
                 decontainerized,
+                var_object,
             } => pack_arc(
                 Kind::Proxy,
                 Arc::new(ProxyBox {
@@ -211,6 +212,7 @@ impl NanBox {
                     storer,
                     subclass,
                     decontainerized,
+                    var_object,
                 }),
             ),
             ValueRepr::ParametricRole {

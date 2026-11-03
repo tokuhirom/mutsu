@@ -1293,6 +1293,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     storer: &p.storer,
                     subclass: &p.subclass,
                     decontainerized: p.decontainerized,
+                    var_object: p.var_object,
                 }
             }
             Kind::ParametricRole => {

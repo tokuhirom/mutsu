@@ -2882,6 +2882,9 @@ pub(in crate::value) enum ValueRepr {
         subclass: Option<(Symbol, ProxySubclassAttrs)>,
         /// When true, this Proxy has been decontainerized via .VAR and should not auto-FETCH
         decontainerized: bool,
+        /// Set only by `.VAR`: the Proxy is its own container *object*, so a
+        /// store boundary lands it as a value (no FETCH) instead of reading it.
+        var_object: bool,
     },
     /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
     /// `base_name` is the role name, `type_args` are the type arguments.
