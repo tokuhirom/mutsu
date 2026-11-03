@@ -961,30 +961,17 @@ impl Interpreter {
                 //
                 // The parse failed, but subrules reduced along the way — raku
                 // already ran their actions. Dispatch the longest partial tree
-                // (which includes the start rule's own action) when there is one,
-                // then replay whatever reduced outside it.
+                // (which includes the start rule's own action) when there is one.
                 let partial_end = partial_match.as_ref().map_or(0, |caps| caps.to);
-                if let Some(ref mut actions) = actions_obj {
-                    match partial_match.take() {
-                        Some(mut caps) => {
-                            if let Some(frame) = active_start_dynvars.as_ref() {
-                                self.record_live_grammar_rule_dynvars(frame, &mut caps);
-                            }
-                            let pt = caps.target_or_new(&text);
-                            self.reduce_regex_captures_made_for_rule(
-                                &mut caps,
-                                Some(&pt),
-                                Some(&start_rule),
-                            );
-                            self.dispatch_partial_parse_actions(
-                                &caps,
-                                actions,
-                                &start_rule,
-                                &text,
-                            )?;
-                        }
-                        None => {}
+                if let Some(ref mut actions) = actions_obj
+                    && let Some(mut caps) = partial_match.take()
+                {
+                    if let Some(frame) = active_start_dynvars.as_ref() {
+                        self.record_live_grammar_rule_dynvars(frame, &mut caps);
                     }
+                    let pt = caps.target_or_new(&text);
+                    self.reduce_regex_captures_made_for_rule(&mut caps, Some(&pt), Some(&start_rule));
+                    self.dispatch_partial_parse_actions(&caps, actions, &start_rule, &text)?;
                 }
                 if let Some(outcome) =
                     self.goal_failure_outcome(package_name, failure_pattern.as_deref(), &text)
