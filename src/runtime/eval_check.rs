@@ -294,7 +294,14 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let declared = Self::unit_declared_types(stmts).types;
+        // The types the unit's own `use` statements bring in count too
+        // (`use NativeCall; has Pointer[Pointer] $.p`): they have not run yet
+        // when this check does, as for the undeclared-name check.
+        let types = self.eval_declared_types(stmts);
+        if types.imports_through_export_hook {
+            return Ok(());
+        }
+        let declared = types.types;
         if let Some(name) = scan(TypeArgs::new(self, &declared), stmts).found {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(
