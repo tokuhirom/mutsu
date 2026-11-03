@@ -1150,7 +1150,7 @@ impl Interpreter {
         }
         matches!(
             self.env
-                .get(&Self::type_capture_marker_key(name))
+                .get_sym(MetaNs::TypeCaptureBound.key_for_str(name))
                 .map(Value::view),
             Some(ValueView::Bool(true))
         )
