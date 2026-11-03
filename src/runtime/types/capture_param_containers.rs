@@ -118,6 +118,10 @@ impl Interpreter {
         // A type object read through a name that is not a local (`f(Int)`,
         // `f(C1)`) is a value, not a variable; nor is a readonly / sigilless
         // value binding (`my \t = Person`) or a Proxy the caller holds.
+        // A name the calling frame declares as a local is a variable, whatever
+        // it holds (an undefined one reads as a type object); a bare type name
+        // is not a local.
+        let source_is_variable = source_is_variable || self.caller_declares_local(&source);
         if !source_is_variable
             && matches!(value.view(), ValueView::Package(_))
             && raw_arg.varref_slot().is_none_or(|slot| slot == u32::MAX)
@@ -213,6 +217,24 @@ impl Interpreter {
             rw_bindings.push((encode_capture_named_rw_param(capture_key, key), source));
         }
         cell
+    }
+
+    /// Whether the frame that issued the call being bound declares a local
+    /// named `source`.
+    // Cost: O(l), l = the caller's locals.
+    fn caller_declares_local(&self, source: &str) -> bool {
+        let Some(frame) = self.call_frames.last() else {
+            return false;
+        };
+        if frame.caller_code == 0 {
+            return false;
+        }
+        // SAFETY: `caller_code` is the address of the `CompiledCode` the
+        // caller was running when it pushed this frame; that caller is
+        // suspended until the frame pops, so its code is alive while the
+        // frame is on `call_frames` (as in `caller_slot_cell`).
+        let caller = unsafe { &*(frame.caller_code as *const crate::opcode::CompiledCode) };
+        caller.locals.iter().any(|name| name == source)
     }
 
     /// The shared cell the calling frame's slot of its local `source` holds:
