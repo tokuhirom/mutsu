@@ -175,6 +175,12 @@ impl Interpreter {
                 .entry(short.to_string())
                 .or_insert_with(|| canonical.clone());
         }
+        if is_my && self.enclosing_routine_exists() {
+            let depth = self.routine_stack.len();
+            self.registry_mut()
+                .routine_local_subsets
+                .insert(name.to_string(), (def.clone(), depth));
+        }
         self.registry_mut().subsets.insert(name.to_string(), def);
         if !self.qualified_identity_binding_is_redundant(name, &canonical) {
             self.env

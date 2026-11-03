@@ -3,6 +3,7 @@ use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::cell::RefCell;
+use std::sync::Arc;
 use std::collections::HashSet;
 
 /// Outcome of a `register_sub_decl` call, distinguishing a genuine
@@ -226,42 +227,79 @@ impl Interpreter {
             && !self.in_inlined_block_frame()
     }
 
-    /// A routine-local `my sub` is lexical to the routine that declares it, but
-    /// stays in the flat routine registry while that routine's callees run, so
-    /// a callee's `EVAL` found it by name. When the `EVAL` is run by a
-    /// unit-scoped plain sub (declared outside every routine, so it cannot
-    /// see its callers' scopes), take out of the registry the ones registered
-    /// by its dynamic callers; the caller's `restore_routine_registry_eval`
-    /// puts them back (#16099).
-    // Cost: O(s), s = routine-local subs registered (usually 0).
-    pub(super) fn hide_dynamic_callers_local_subs(&mut self) {
-        if self.registry().routine_local_subs.is_empty() {
-            return;
+    /// A routine-local `my sub` or `my subset` is lexical to the routine that
+    /// declares it, but stays in the flat routine / subset registry while that
+    /// routine's callees run, so a callee's `EVAL` found it by name. When the
+    /// `EVAL` is run by a unit-scoped plain sub (declared outside every
+    /// routine, so it cannot see its callers' scopes), take out of the
+    /// registries the ones registered by its dynamic callers: the subs come
+    /// back with the caller's `restore_routine_registry_eval`, the subsets are
+    /// returned for [`Self::restore_hidden_local_subsets`] (#16099).
+    // Cost: O(s), s = routine-local subs and subsets registered (usually 0).
+    pub(super) fn hide_dynamic_callers_local_subs(&mut self) -> Vec<(String, Arc<SubsetDef>)> {
+        let none = Vec::new();
+        {
+            let registry = self.registry();
+            if registry.routine_local_subs.is_empty() && registry.routine_local_subsets.is_empty()
+            {
+                return none;
+            }
         }
         let Some(plain_idx) = self.routine_stack.unit_scoped_sub_index() else {
-            return;
+            return none;
         };
-        let hidden: Vec<Symbol> = {
+        let (hidden, hidden_subsets): (Vec<Symbol>, Vec<String>) = {
             let registry = self.registry();
-            registry
-                .routine_local_subs
-                .iter()
-                .filter(|(key, (order, depth))| {
-                    *depth <= plain_idx
-                        && registry
-                            .functions
-                            .get(key)
-                            .is_some_and(|def| def.decl_order == *order)
-                })
-                .map(|(key, _)| *key)
-                .collect()
+            (
+                registry
+                    .routine_local_subs
+                    .iter()
+                    .filter(|(key, (order, depth))| {
+                        *depth <= plain_idx
+                            && registry
+                                .functions
+                                .get(key)
+                                .is_some_and(|def| def.decl_order == *order)
+                    })
+                    .map(|(key, _)| *key)
+                    .collect(),
+                registry
+                    .routine_local_subsets
+                    .iter()
+                    .filter(|(name, (def, depth))| {
+                        *depth <= plain_idx
+                            && registry
+                                .subsets
+                                .get(name.as_str())
+                                .is_some_and(|cur| Arc::ptr_eq(cur, def))
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect(),
+            )
         };
-        if hidden.is_empty() {
-            return;
+        if hidden.is_empty() && hidden_subsets.is_empty() {
+            return none;
         }
         let mut registry = self.registry_mut();
         for key in hidden {
             registry.functions_mut().remove(&key);
+        }
+        hidden_subsets
+            .into_iter()
+            .filter_map(|name| registry.subsets.remove(&name).map(|def| (name, def)))
+            .collect()
+    }
+
+    /// Put back the subsets [`Self::hide_dynamic_callers_local_subs`] took out,
+    /// unless the `EVAL` unit declared one of the same name meanwhile.
+    // Cost: O(h), h = hidden subsets.
+    pub(super) fn restore_hidden_local_subsets(&mut self, hidden: Vec<(String, Arc<SubsetDef>)>) {
+        if hidden.is_empty() {
+            return;
+        }
+        let mut registry = self.registry_mut();
+        for (name, def) in hidden {
+            registry.subsets.entry(name).or_insert(def);
         }
     }
 

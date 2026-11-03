@@ -196,6 +196,12 @@ pub(crate) struct Registry {
     /// from the registered definition's.
     pub(crate) routine_local_subs:
         std::collections::HashMap<crate::symbol::Symbol, (u64, usize)>,
+    /// The same for a `my subset` declared inside a routine body: its bare
+    /// name sits in the global [`Registry::subsets`] with the routine-stack
+    /// depth it was declared at. Stale once the registered definition is no
+    /// longer the recorded `Arc`.
+    pub(crate) routine_local_subsets:
+        std::collections::HashMap<String, (std::sync::Arc<SubsetDef>, usize)>,
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
     /// MONKEY`). A routine of such a unit keeps the pragma when it is called
     /// from another unit, whose env (the one the call runs in) does not carry
