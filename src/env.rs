@@ -3376,7 +3376,7 @@ impl Env {
         let mut keys: HashSet<Symbol> = HashSet::new();
         let mut cur = self;
         loop {
-            keys.extend(cur.inner.keys().filter(|k| k.is_dynamic_var_env_key()));
+            keys.extend(cur.inner.dynamic_keys().iter().copied());
             if let Some(fb) = &cur.fallback {
                 keys.extend(fb.keys().filter(|k| k.is_dynamic_var_env_key()));
             }
