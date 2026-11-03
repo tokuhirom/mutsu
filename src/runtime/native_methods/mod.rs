@@ -40,7 +40,8 @@ pub(crate) mod thread_lock_count;
 
 // Re-export pub(crate) items accessed from outside `runtime` module
 pub(crate) use state::{
-    SupplyEvent, has_supply_channel, is_whenever_closed, next_whenever_id,
+    SupplyEvent, bind_whenever_close_flag, has_supply_channel, is_whenever_closed, next_whenever_id,
+    unbind_whenever_close_flag,
     split_supply_chunks_into_lines, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
