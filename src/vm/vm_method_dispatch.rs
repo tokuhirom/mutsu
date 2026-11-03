@@ -221,7 +221,7 @@ impl Interpreter {
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
                 pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
-            });
+            }) && !Self::fast_invocant_constraints_trivial(method_def, &base, owner_class);
             // A `::T` type capture has to be BOUND before the body runs, and the
             // fast path has no binder step that does it. It used to be kept out
             // by accident: the capture lived in `type_constraint`, so either
@@ -1885,6 +1885,44 @@ impl Interpreter {
             // Journaled — dropped again at `pop_call_frame`.
             self.mark_readonly_sym(sym);
         }
+    }
+
+    /// Whether every explicit invocant constraint of `method_def` is trivially
+    /// met by `base`, so the fast binder may skip the nominal check the full
+    /// binder runs: a plain defined instance against `Mu`, `::?CLASS` (the
+    /// class the method was resolved on) or its own class / the owner (with or
+    /// without `:D`). An invocant that captures a type, a `:U` / `:_`
+    /// smiley, a coercion or any other type keeps the full binder (which
+    /// also raises the concreteness / type-check errors).
+    // Cost: O(i), i = the method's invocant parameters (one).
+    fn fast_invocant_constraints_trivial(
+        method_def: &crate::runtime::MethodDef,
+        base: &Value,
+        owner_class: &str,
+    ) -> bool {
+        let ValueView::Instance { class_name, .. } = base.view() else {
+            return false;
+        };
+        method_def
+            .param_defs
+            .iter()
+            .filter(|pd| pd.is_invocant)
+            .all(|pd| {
+                if pd.type_capture.is_some() {
+                    return false;
+                }
+                let Some(constraint) = pd.type_constraint.as_deref() else {
+                    return true;
+                };
+                let (name, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+                if !matches!(smiley, None | Some(":D")) {
+                    return false;
+                }
+                name == "Mu"
+                    || name == "::?CLASS"
+                    || name == owner_class
+                    || name == class_name.as_str()
+            })
     }
 
     /// Fast path for read-only compiled methods. Bypasses all env_mut() calls
