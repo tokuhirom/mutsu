@@ -22,6 +22,7 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         | RakuAstClass::ContextualizerList
         | RakuAstClass::ContextualizerHash => contextualizer(node),
         RakuAstClass::ColonPairValue => colonpair_value(node),
+        RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairNumber => colonpair_term(node),
         RakuAstClass::FatArrow => fat_arrow(node),
         _ => {}
     }
@@ -161,10 +162,26 @@ fn colonpair_value(node: &mut RakuAstNode) {
     let Some(value) = child(node, "value") else {
         return;
     };
+    let open = from + 1 + key.len();
+    // `:key<a b>`: the value is the word quote after the key.
+    if value.class == RakuAstClass::QuotedString && value.origin.0.is_none() {
+        let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            text.strip_prefix(':')?
+                .strip_prefix(key.as_str())?
+                .starts_with('<')
+                .then_some(())
+        });
+        if written.is_some() && open < to {
+            with_child(node, "value", |value| {
+                super::origin::set_span(value, SrcSpan::new(open, to));
+                super::origin::quoted_text(value, SrcSpan::new(open, to));
+            });
+        }
+        return;
+    }
     if value.class != RakuAstClass::CircumfixParentheses || value.origin.0.is_some() {
         return;
     }
-    let open = from + 1 + key.len();
     let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let rest = text.strip_prefix(':')?.strip_prefix(key.as_str())?;
         (rest.starts_with('(') && rest.ends_with(')')).then_some(())
@@ -173,6 +190,39 @@ fn colonpair_value(node: &mut RakuAstNode) {
         with_child(node, "value", |value| {
             super::origin::set_span(value, SrcSpan::new(open, to));
             super::list_origins::circumfix(value);
+        });
+    }
+}
+
+/// `:$x` / `:5h`: the value is the text after the colon (the variable with
+/// its sigil, the number without its trailing key).
+// Cost: O(n), n = length of the pair's source.
+fn colonpair_term(node: &mut RakuAstNode) {
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(value) = child(node, "value") else {
+        return;
+    };
+    if value.origin.0.is_some() {
+        return;
+    }
+    let end = if node.class == RakuAstClass::ColonPairNumber {
+        let Some(len) = super::unit_source::with_text(SrcSpan::new(from + 1, to), |text| {
+            let digits = text
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(text.len());
+            (digits > 0).then_some(digits)
+        }) else {
+            return;
+        };
+        from + 1 + len
+    } else {
+        to
+    };
+    if from + 1 < end {
+        with_child(node, "value", |value| {
+            super::origin::set_span(value, SrcSpan::new(from + 1, end))
         });
     }
 }
