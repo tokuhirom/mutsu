@@ -819,15 +819,12 @@ impl ParamDef {
             return true;
         }
         self.named_alias
-            && self
-                .sub_signature
-                .as_ref()
-                .is_some_and(|aliases| {
-                    aliases
-                        .iter()
-                        .filter(|a| a.named && !a.slurpy)
-                        .any(|a| a.answers_named_key(key))
-                })
+            && self.sub_signature.as_ref().is_some_and(|aliases| {
+                aliases
+                    .iter()
+                    .filter(|a| a.named && !a.slurpy)
+                    .any(|a| a.answers_named_key(key))
+            })
     }
 
     /// The spelling that carries this parameter's sigil.
