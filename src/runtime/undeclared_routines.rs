@@ -250,7 +250,11 @@ fn body_scoped_calls(calls: &[(String, i64)], body_routines: &HashSet<String>) -
 }
 
 fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
-    let mut scan = Scan::new(mode == ScanMode::Eval);
+    scan_unit_ordered(stmts, mode, false)
+}
+
+fn scan_unit_ordered(stmts: &[Stmt], mode: ScanMode, term_order: bool) -> Scan {
+    let mut scan = Scan::new(mode == ScanMode::Eval, term_order);
     if scan.eval {
         scan.walk_unit(stmts);
     } else {
@@ -310,6 +314,7 @@ pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
     let scan = scan_unit(stmts, ScanMode::Eval);
     let mut declared = scan.declared;
     declared.extend(scan.body_routines);
+    declared.extend(scan.all_terms);
     declared
 }
 
@@ -326,6 +331,7 @@ pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
 pub(crate) fn check_undeclared_routines_without_interpreter(
     stmts: &[Stmt],
 ) -> Result<(), RuntimeError> {
+    check_terms_in_source_order(stmts)?;
     let Some(found) = unexplained_calls(stmts, ScanMode::Mainline) else {
         return Ok(());
     };
@@ -342,6 +348,59 @@ pub(crate) fn check_undeclared_routines_without_interpreter(
         *line,
         suggestions,
     ))
+}
+
+/// A term used before its declaration (ADR-15760 Amendment 1, slice 1b):
+/// `say x; my \x = 1`. Rakudo hoists routines only, so a sigilless variable,
+/// a `constant` or an enum key is visible from its declaration on, in the
+/// statement list that declares it and the lists nested in it; a bareword
+/// naming one earlier is `Undeclared routine` unless something else explains
+/// it. The ordinary check cannot see this: it runs on the phaser-reordered
+/// tree, which has hoisted the declarations, so this one runs on the unit as
+/// parsed. It judges the calls the unit's terms would have excused and
+/// nothing else (the ordinary check reports the rest), and gives up exactly
+/// where that check does.
+// Cost: O(n + c), n = size of the unit's AST, c = bareword calls.
+pub(crate) fn check_terms_in_source_order(stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    match premature_term_use(stmts) {
+        Some(found) => Err(found.into_error()),
+        None => Ok(()),
+    }
+}
+
+/// The first bareword that names a term of the unit before the term's
+/// declaration, and nothing else explains.
+struct PrematureTerm {
+    name: String,
+    line: i64,
+    declared_routines: HashSet<String>,
+}
+
+impl PrematureTerm {
+    fn into_error(self) -> RuntimeError {
+        let suggestions = Interpreter::static_routine_suggestions(&self.name, &self.declared_routines);
+        Interpreter::undeclared_routine_error(&self.name, self.line, suggestions)
+    }
+}
+
+// Cost: O(n + c), as `check_terms_in_source_order`.
+fn premature_term_use(stmts: &[Stmt]) -> Option<PrematureTerm> {
+    let scan = scan_unit_ordered(stmts, ScanMode::Mainline, true);
+    if scan.bail || scan.all_terms.is_empty() || !scan.conditional_uses.is_empty() {
+        return None;
+    }
+    let none = HashSet::new();
+    let (name, line) = scan.calls.iter().find(|(name, _)| {
+        scan.all_terms.contains(name)
+            && !scan.body_routines.contains(name)
+            && !known_without_an_interpreter(name, &scan.declared, &none)
+            && !super::eval_name_scans::is_core_term(name)
+    })?;
+    Some(PrematureTerm {
+        name: name.clone(),
+        line: *line,
+        declared_routines: scan.declared_routines,
+    })
 }
 
 impl Interpreter {
@@ -365,6 +424,23 @@ impl Interpreter {
             err.set_line(Some(line as usize));
         }
         err
+    }
+
+    /// [`check_terms_in_source_order`] for an `EVAL`'d unit: a routine the
+    /// caller (or the registry) has under that name explains the bareword.
+    // Cost: O(n + r), n = size of the unit's AST, r = cost of one registry lookup.
+    pub(crate) fn check_eval_terms_in_source_order(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let Some(found) = premature_term_use(stmts) else {
+            return Ok(());
+        };
+        if self.has_function(&found.name)
+            || self.has_multi_function_unindexed(&found.name)
+            || self.has_proto(&found.name)
+            || self.env().contains_key(&format!("&{}", found.name))
+        {
+            return Ok(());
+        }
+        Err(found.into_error())
     }
 
     /// Reject a mainline call to a routine that is declared nowhere in the
@@ -525,6 +601,17 @@ mod tests {
     fn an_attribute_does_not_declare_a_routine() {
         assert!(check(&parse("class C { has $.foo; method m { foo() } }")).is_err());
         assert!(check(&parse("class C { has $.foo; method m { $.foo } }")).is_ok());
+    }
+
+    #[test]
+    fn a_term_is_visible_from_its_declaration_on() {
+        assert!(check(&parse("say x; my \\x = 1")).is_err());
+        assert!(check(&parse("say x; constant x = 1")).is_err());
+        assert!(check(&parse("say x; enum E <x y>")).is_err());
+        assert!(check(&parse("{ my \\x = 1 }; say x")).is_err());
+        assert!(check(&parse("my \\x = 1; { say x }")).is_ok());
+        assert!(check(&parse("say x; sub x { 1 }")).is_ok());
+        assert!(check(&parse("say pi; constant pi = 3")).is_ok());
     }
 
     #[test]

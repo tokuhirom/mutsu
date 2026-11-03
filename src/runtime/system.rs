@@ -93,6 +93,7 @@ impl Interpreter {
         if !imports_unseen {
             self.check_eval_undeclared_names(stmts)?;
             self.check_eval_undeclared_routines(stmts)?;
+            self.check_eval_terms_in_source_order(stmts)?;
         }
         Self::check_eval_routine_magicals(stmts)?;
         crate::rakuast::post_declared::check(stmts, &crate::scope::NameScope::default())?;

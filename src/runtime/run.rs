@@ -586,6 +586,9 @@ impl Interpreter {
             &stmts,
             &crate::scope::NameScope::default(),
         );
+        // A term used before its declaration, judged in source order for the
+        // same reason (ADR-15760 Amendment 1, 1b).
+        let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // A top-level END is dropped from the body outright: it is installed
@@ -688,6 +691,7 @@ impl Interpreter {
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
                 post_declared?;
+                premature_term?;
                 forward_vars?;
                 Ok(guards)
             });
