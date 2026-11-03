@@ -5,7 +5,7 @@ use NativeCall;
 # through a role multi method on a mixin receiver. The memoized `.WHAT` and
 # borrowed role lookups on that path (#16215) must not change the results.
 
-plan 12;
+plan 15;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^5;
@@ -35,3 +35,12 @@ $l[$_] = $_ * 2e0 for ^6;
 is-deeply $l.list.Array, [0e0, 2e0, 4e0, 6e0, 8e0, 10e0], '.list round trip';
 is $l.Array.elems, 6, '.Array has every element';
 is $l.Array[5], 10e0, '.Array reads the last element';
+
+# A role method with a leading invocant binds the remaining parameters as
+# declared; core-typed arguments pass their own constraints.
+role R { multi method m(::?CLASS:D: Int:D $a, Str:D $b) { "int-str:$a$b" }
+         multi method m(::?CLASS:D: Num:D $a, Any:D $b) { "num-any:$a$b" } }
+my $o = Mu.new but R;
+is $o.m(1, "x"), 'int-str:1x', 'Int:D / Str:D candidate wins for (Int, Str)';
+is $o.m(1.5e0, 7), 'num-any:1.57', 'Num:D / Any:D candidate wins for (Num, Int)';
+throws-like { $o.m("s", 1) }, X::Multi::NoMatch, 'no candidate for (Str, Int)';
