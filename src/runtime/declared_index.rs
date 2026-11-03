@@ -30,6 +30,9 @@ pub(crate) struct IndexDeps {
     pub(crate) stamp: u64,
     /// `(name, is_sub, answer)`; `is_sub` picks the `sub_ok` check, else `sup_ok`.
     pub(crate) facts: Vec<(Symbol, bool, bool)>,
+    /// `(sub, sup, answer)` pairs the fast path declined; the general walk's
+    /// answer, re-asked on every reuse.
+    pub(crate) opaque: Vec<(Symbol, Symbol, bool)>,
 }
 
 #[derive(Default)]

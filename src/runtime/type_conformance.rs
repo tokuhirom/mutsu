@@ -89,7 +89,7 @@ pub(crate) struct ConformanceCache {
     /// While a declared index is being built: the env facts the fast path
     /// answered from (`(name raw id, is_sub)` -> answer), so the index can be
     /// remembered under them.
-    dep_facts: RefCell<Option<rustc_hash::FxHashMap<(u32, bool), bool>>>,
+    dep_facts: RefCell<Option<DepLog>>,
     tier_memo: RefCell<Vec<TierMemoEntry>>,
     /// `DeclaredKey` -> small id, so a candidate pair is a pair of integers.
     declared_ids: RefCell<rustc_hash::FxHashMap<multi_rank::DeclaredKey, u32>>,
@@ -103,10 +103,24 @@ pub(crate) struct ConformanceCache {
 
 impl ConformanceCache {
     // Cost: O(1).
-    pub(super) fn note_dependent_answer(&self) {
+    pub(super) fn note_opaque_answer(&self, sub: Symbol, sup: Symbol, answer: bool) {
         self.dependent_answers.set(self.dependent_answers.get() + 1);
-        self.opaque_answers.set(self.opaque_answers.get() + 1);
+        if let Some(log) = self.dep_facts.borrow_mut().as_mut() {
+            log.opaque.insert((sub.raw(), sup.raw()), answer);
+        } else {
+            self.opaque_answers.set(self.opaque_answers.get() + 1);
+        }
     }
+}
+
+/// What a declared index under construction was answered from.
+#[derive(Default)]
+pub(crate) struct DepLog {
+    /// `(name raw id, is_sub)` -> the per-name env check's answer.
+    facts: rustc_hash::FxHashMap<(u32, bool), bool>,
+    /// `(sub, sup)` raw ids -> the general walk's answer for a pair the fast
+    /// path declined; re-asked on reuse, since it reads the env arbitrarily.
+    opaque: rustc_hash::FxHashMap<(u32, u32), bool>,
 }
 
 /// The tiers `assign_tiers` gave one candidate set, keyed by the ranks it
@@ -270,7 +284,7 @@ impl Interpreter {
         }
         let sup_ok = sup_facts.sup_ok;
         if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
-            log.insert((sup.raw(), false), sup_ok);
+            log.facts.insert((sup.raw(), false), sup_ok);
         }
         if !sup_ok {
             return None;
@@ -282,7 +296,7 @@ impl Interpreter {
         }
         let sub_ok = sub_facts.sub_ok;
         if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
-            log.insert((sub.raw(), true), sub_ok);
+            log.facts.insert((sub.raw(), true), sub_ok);
         }
         if !sub_ok {
             return None;
@@ -483,9 +497,9 @@ impl Interpreter {
             let opaque_before = cache.opaque_answers.get();
             let outer_log = cache
                 .dep_facts
-                .replace(Some(rustc_hash::FxHashMap::default()));
+                .replace(Some(DepLog::default()));
             let index = Arc::new(declared_index::build(&canonical, &conforms));
-            let facts = cache.dep_facts.replace(outer_log).unwrap_or_default();
+            let log = cache.dep_facts.replace(outer_log).unwrap_or_default();
             if cache.dependent_answers.get() == before {
                 cache.declared_index.borrow_mut().insert(
                     sorted_ids.clone(),
@@ -498,9 +512,15 @@ impl Interpreter {
                 // holds while both still read the same.
                 let deps = declared_index::IndexDeps {
                     stamp: self.registry().type_stamp(),
-                    facts: facts
+                    facts: log
+                        .facts
                         .into_iter()
                         .map(|((raw, is_sub), ok)| (Symbol::from_raw(raw), is_sub, ok))
+                        .collect(),
+                    opaque: log
+                        .opaque
+                        .into_iter()
+                        .map(|((sub, sup), ok)| (Symbol::from_raw(sub), Symbol::from_raw(sup), ok))
                         .collect(),
                 };
                 cache.declared_index.borrow_mut().insert(
@@ -552,7 +572,8 @@ impl Interpreter {
 
     /// Whether a remembered declared index's registry stamp and per-name env
     /// facts still read as they did when it was built.
-    // Cost: O(f * c), f = the remembered facts, c = one env binding probe.
+    // Cost: O(f * c + q * h), f = the remembered facts, c = one env binding probe,
+    // q = the remembered declined pairs, h = one general hierarchy walk.
     fn index_deps_hold(&self, deps: &declared_index::IndexDeps) -> bool {
         deps.stamp == self.registry().type_stamp()
             && deps.facts.iter().all(|&(name, is_sub, ok)| {
@@ -562,6 +583,10 @@ impl Interpreter {
                     self.compute_conformance_sup_is_plain(name) == ok
                 }
             })
+            && deps
+                .opaque
+                .iter()
+                .all(|&(sub, sup, ok)| self.nominal_type_conforms_general(sub, sup) == ok)
     }
 
     /// Whether `sup` is a RakuAST name without a smiley, the shape the
