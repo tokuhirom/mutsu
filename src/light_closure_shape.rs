@@ -12,6 +12,12 @@ pub(crate) struct LightClosureShape {
     /// value of the closure being called; a missing one is read by name on
     /// the untyped entry.
     pub(crate) upvalues: Box<[u32]>,
+    /// The body carries `OpCode::LexImportBuiltinOp` prefixes: every built-in
+    /// operator in a unit with a `use` does (ADR-8751 stage 2). Such a prefix
+    /// does nothing while no import set in the process binds an operator, so
+    /// the light call admits the body only then
+    /// (`Interpreter::closure_light_admits`).
+    pub(crate) lex_import_ops: bool,
 }
 
 impl LightClosureShape {
@@ -49,9 +55,11 @@ impl LightClosureShape {
             }
         }
         let mut upvalues = Vec::new();
+        let mut lex_import_ops = false;
         for op in &cc.ops {
             match op {
                 OpCode::GetUpvalue { index, .. } => upvalues.push(*index),
+                OpCode::LexImportBuiltinOp { .. } => lex_import_ops = true,
                 OpCode::GetLocal(idx) if (*idx as usize) < cc.locals.len() => {}
                 op if Self::op_is_pure(op) => {}
                 _ => return None,
@@ -61,6 +69,7 @@ impl LightClosureShape {
         upvalues.dedup();
         Some(LightClosureShape {
             upvalues: upvalues.into_boxed_slice(),
+            lex_import_ops,
         })
     }
 

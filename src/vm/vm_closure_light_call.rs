@@ -184,6 +184,7 @@ impl Interpreter {
                     .locals
                     .iter()
                     .any(|name| Self::atomic_name_possible(name)))
+            || (shape.lex_import_ops && !self.module.lexical_operator_import_sets.is_empty())
             || self.rw_return_context
             || !self.lexicals.escaping_our_lexical_names.is_empty()
             || !data.assumed_positional.is_empty()

@@ -152,6 +152,24 @@ fn an_atomic_variable_elsewhere_keeps_the_light_closure_call() {
     }
 }
 
+/// A `use` in the unit puts a `LexImportBuiltinOp` prefix before every
+/// built-in operator of a closure body (ADR-8751 stage 2). It does nothing
+/// while no import set binds an operator, so the light call admits the body
+/// then; once an import binds one, the prefix is live and the body takes the
+/// general call (#9170: with `use JSON::Fast` a trivial closure call cost ~4x,
+/// ~14x with `use Cro::HTTP2::RequestParser`).
+#[test]
+fn a_use_in_the_unit_keeps_the_light_closure_call() {
+    let (out50, c50) = run(&light_closure_loop("use JSON::Fast;", 50));
+    let (out150, c150) = run(&light_closure_loop("use JSON::Fast;", 150));
+    assert_eq!(out50, "1275\n");
+    assert_eq!(out150, "11325\n");
+    assert_eq!(
+        c150.scoped_overlays, c50.scoped_overlays,
+        "100 more light closure calls must chain no overlay under a `use`"
+    );
+}
+
 /// ... and a closure whose own parameter IS the atomic name keeps declining,
 /// because its slot read must reach the atomic lane.
 #[test]
