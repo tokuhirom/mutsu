@@ -25,6 +25,12 @@ impl Interpreter {
         if !var_name.starts_with('%') {
             return None;
         }
+        // A routine's own `our %h` lives in the package mirror, which every read
+        // resolves before the name-keyed lanes; the lane commit would write a
+        // copy nothing reads back (#16221). The slow path writes the mirror.
+        if self.our_package_container_key(var_name).is_some() {
+            return None;
+        }
         let stack_len = self.stack.len();
         if stack_len < 2 {
             return None;
@@ -122,6 +128,11 @@ impl Interpreter {
         }
         let var_name = Self::const_str(code, name_idx);
         if !var_name.starts_with('@') {
+            return None;
+        }
+        // See `try_shared_hash_element_assign`: an `our @a` is read from the
+        // package mirror, not the lane.
+        if self.our_package_container_key(var_name).is_some() {
             return None;
         }
         let stack_len = self.stack.len();
@@ -882,8 +893,19 @@ impl Interpreter {
             // A store path that already wrote through the cell re-installs
             // the cell itself under the name; storing that into the cell
             // would make it contain itself.
+            // A store that went through the cross-thread atomic lane
+            // (`shared_hash_elem_set`) wrote the result into the cell itself
+            // and left the seeded env copy untouched; storing that stale copy
+            // back would undo the write (#16221).
+            let lane_wrote_cell = seeded_inner.as_ref().is_some_and(|inner| {
+                !crate::vm::vm_method_dispatch::cheaply_unchanged(inner, &cell.load())
+            });
             if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned())
                 && !matches!(mutated.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell))
+                && !(lane_wrote_cell
+                    && seeded_inner.as_ref().is_some_and(|inner| {
+                        crate::vm::vm_method_dispatch::cheaply_unchanged(inner, &mutated)
+                    }))
             {
                 cell.store(mutated);
             }
