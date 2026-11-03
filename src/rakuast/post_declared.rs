@@ -69,6 +69,11 @@ impl PostDeclared<'_> {
     /// The type names a statement declares: its own name, and for a qualified
     /// one (`class X::Y::Z`) the namespaces it makes (`X`, `X::Y`).
     fn declared_names(stmt: &Stmt) -> Vec<String> {
+        // A type a `use`d module declared (a stub `role R {...}` included) is
+        // the unit's from the `use` on: its own later `role R` completes it.
+        if let Stmt::Use { module, .. } = stmt {
+            return crate::parser::module_declared_types(module);
+        }
         let name = match crate::ast::package_header::declaration(stmt).unwrap_or(stmt) {
             Stmt::ClassDecl { name, .. }
             | Stmt::RoleDecl { name, .. }
@@ -98,13 +103,7 @@ impl PostDeclared<'_> {
         // the symbol is still missing when the code executes), and a module
         // like Directory refers to an exception class it declares further
         // down the file. Only a single-segment name is a lexical type name.
-        // A type a `use`d module declared (a stub `role R {...}` included) is
-        // the unit's from the `use` on: its own later `role R` completes it.
-        if self.found.is_some()
-            || crate::qualified::is_qualified_str(name)
-            || self.is_core(name)
-            || crate::parser::is_module_imported_type(name)
-        {
+        if self.found.is_some() || crate::qualified::is_qualified_str(name) || self.is_core(name) {
             return;
         }
         for frame in self.frames.iter().rev() {

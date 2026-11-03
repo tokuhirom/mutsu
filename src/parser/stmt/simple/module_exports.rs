@@ -141,6 +141,12 @@ struct ModuleScanResult {
 }
 
 thread_local! {
+    /// The type names each `use`d module declared (stubs included), by module
+    /// name, as the scan that registered its imports saw them. Not scoped to
+    /// a parse: the post-declared-type check asks it per `use` statement of
+    /// the unit it checks.
+    static MODULE_DECLARED_TYPES: RefCell<HashMap<String, Rc<Vec<String>>>> =
+        RefCell::new(HashMap::new());
     /// Scan results memoized by resolved module file path. Keyed by path, not
     /// module name, so a `use lib` that changes resolution mid-parse gets a
     /// fresh scan for the newly-resolved file.
@@ -265,6 +271,18 @@ pub(crate) fn source_declares_export_hook(source: &str) -> bool {
 /// For the natively-provided JSON modules, and for `Test`, uses a hardcoded list
 /// (see [`TEST_EXPORTS`]). For all other modules, dynamically scans the module
 /// file to extract `is export` subs.
+/// The type names the module `module` declared, as its last import scan saw
+/// them (a stub `role R {...}` included); empty when it was never scanned.
+// Cost: O(n), n = length of `module` plus the names returned.
+pub(crate) fn module_declared_types(module: &str) -> Vec<String> {
+    MODULE_DECLARED_TYPES.with(|m| {
+        m.borrow()
+            .get(module)
+            .map(|names| names.as_ref().clone())
+            .unwrap_or_default()
+    })
+}
+
 pub(crate) fn register_module_exports(module: &str) {
     register_module_exports_with_tags(module, None);
 }
@@ -315,6 +333,10 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
         record_scanned_exports(module, &scan);
         apply_scan_types(&scan, import_tags);
+        MODULE_DECLARED_TYPES.with(|m| {
+            m.borrow_mut()
+                .insert(module.to_string(), Rc::new(scan.type_names.clone()));
+        });
         nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
         if scan.dynamic_export_stash {
