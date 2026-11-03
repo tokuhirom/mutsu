@@ -21,6 +21,7 @@ pub(crate) mod lazy_slip;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod math_prim;
 pub(crate) mod method_introspection;
+mod method_snapshot_index_gen;
 pub(crate) mod method_table;
 pub(crate) mod methods_0arg;
 mod methods_narg;
