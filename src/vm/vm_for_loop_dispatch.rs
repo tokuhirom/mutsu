@@ -914,6 +914,18 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.drive_user_iterator_items_upto(iterable, None)
+    }
+
+    /// [`Self::drive_user_iterator_items`] that stops pulling after `limit`
+    /// items (`None` pulls to `IterationEnd`): a consumer that needs only a
+    /// prefix (`.head(3)`) must not drain an endless iterator (#15081).
+    // Cost: O(min(n, limit)) pull-one calls, n = items the iterator yields.
+    pub(crate) fn drive_user_iterator_items_upto(
+        &mut self,
+        iterable: &Value,
+        limit: Option<usize>,
+    ) -> Result<Vec<Value>, RuntimeError> {
         // The class's own `iterator` of a `but`-mixed `does Sequence` instance
         // runs with the mixed value as `self`; the `Sequence` role's `iterator`
         // would wrap the instance (#14921).
@@ -934,7 +946,7 @@ impl Interpreter {
         } else {
             self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
         };
-        self.drive_iterator_value_items(iterator)
+        self.drive_iterator_value_items_upto(iterator, limit)
             .map(|(items, _)| items)
     }
 
@@ -945,6 +957,18 @@ impl Interpreter {
     pub(crate) fn drive_iterator_value_items(
         &mut self,
         iterator: Value,
+    ) -> Result<(Vec<Value>, Value), RuntimeError> {
+        self.drive_iterator_value_items_upto(iterator, None)
+    }
+
+    /// [`Self::drive_iterator_value_items`] that stops after `limit` items
+    /// (`None`: until `IterationEnd`); the advanced iterator comes back, so the
+    /// unread rest stays available.
+    // Cost: O(min(n, limit)) pull-one calls, n = items yielded.
+    pub(crate) fn drive_iterator_value_items_upto(
+        &mut self,
+        iterator: Value,
+        limit: Option<usize>,
     ) -> Result<(Vec<Value>, Value), RuntimeError> {
         // Drive `pull-one` through a temp *variable*, not a bare value: a user
         // `Iterator` instance keeps its cursor in its own attributes, and an
@@ -957,6 +981,9 @@ impl Interpreter {
         self.set_env_with_main_alias(tmp, iterator);
         let mut items = Vec::new();
         let result = loop {
+            if limit.is_some_and(|l| items.len() >= l) {
+                break Ok(());
+            }
             let cur = self.get_env_with_main_alias(tmp).unwrap_or(Value::NIL);
             let val = match self.call_method_mut_with_values(tmp, cur, "pull-one", vec![]) {
                 Ok(v) => v,
