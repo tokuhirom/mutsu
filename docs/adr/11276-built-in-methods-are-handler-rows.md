@@ -5860,3 +5860,21 @@ The oracle also found a separate timing difference: `IO::Handle.words.kv`
 advances Rakudo's handle immediately but remains unpulled in mutsu. The
 indexed values agree. This pre-existing difference is tracked by #16012;
 `lines.kv` remains unpulled on both interpreters.
+
+### 9.202 Slice 5 inventory: RakuAST accessor entry (2026-11-03)
+
+`refactor/11276-rakuast-accessor-entry` audits the two remaining RakuAST
+branches in `dispatch_core`: a native node and a user instance carrying its
+native node payload both call `rakuast::node_accessor` by method name. The
+existing opaque `RakuAstNode` shape registers the shared Node operations,
+but has no rows for the model's per-class accessors.
+
+The deletion unit is both direct accessor calls. Accessors will use static
+rows and the existing pure owner-chain entry, with the declaring MRO level
+measured against Rakudo. A closure in each row can carry its static field
+name to the shared reader, so no new handler ABI or startup-time registry
+builder is needed. Native nodes and subclass payloads must share this entry.
+The existing model schema remains the accessor declaration source; generated
+row data must be checked against it. Snapshot ownership is measured with
+Rakudo 2026.09, installed as an isolated reference binary because the host's
+ordinary `raku` is 2026.07.
