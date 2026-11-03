@@ -549,6 +549,7 @@ impl Interpreter {
                     target,
                     inner,
                     &role_name,
+                    role.role_id,
                     lookup_name,
                     is_private_call,
                     &overloads,
@@ -1013,8 +1014,12 @@ const MIXIN_WINNER_MEMO_CAP: usize = 4096;
 /// What a mixin receiver's role-method winner is computed from.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct MixinWinnerKey {
-    /// The registry stamp: a role or class redefinition changes the candidates.
-    stamp: u64,
+    /// The role declaration and the identity of each candidate's body (the
+    /// `Arc`s stay alive in the role while it exists, so an address is not
+    /// reused): a redefinition or an `augment` changes the candidates. Not the
+    /// registry stamp, which a mixin dispatch itself moves on every call.
+    role_id: u64,
+    bodies: Vec<usize>,
     role: Symbol,
     method: Symbol,
     private: bool,
@@ -1037,6 +1042,7 @@ impl Interpreter {
         target: &Value,
         inner: &Value,
         role_name: &str,
+        role_id: u64,
         method: &str,
         private: bool,
         overloads: &[MethodDef],
@@ -1072,7 +1078,11 @@ impl Interpreter {
         }
         let arg_keys = self.multi_arg_type_keys_with_named(args)?;
         Some(MixinWinnerKey {
-            stamp: self.registry().type_stamp(),
+            role_id,
+            bodies: overloads
+                .iter()
+                .map(|def| std::sync::Arc::as_ptr(&def.body) as usize)
+                .collect(),
             role: Symbol::intern(role_name),
             method: Symbol::intern(method),
             private,
