@@ -7,7 +7,7 @@ use Test;
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
 # TEMPORARY PROBE (to be removed): no plan; extra failing numbers encode a swallowed exception.
-my @caught;
+our @caught;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
