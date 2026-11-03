@@ -25,15 +25,17 @@ my $r = do {
 };
 is $r, 'mynativeshort', '"my native Name is Type { }" also parses';
 
-# --- trait_mod:<is> dispatch: `ctype` (no dedicated field) still reaches
-# user code from a `native` declaration, same as it does from a class.
+# --- `ctype` (like `nativesize` and `unsigned`) is owned by the `native`
+# declarator (`runtime::native_decl`): it turns into the type's C-type and is
+# never dispatched to a user `trait_mod:<is>`. (This used to assert the
+# opposite on `@log.grep(...)`, which passed only because an unread grep Seq
+# counted as true.)
 
 my @log;
 multi sub trait_mod:<is>(Mu:U $t, :$ctype!) { @log.push("{$t.^name}:ctype:{$ctype}") }
 
 native mynativelong is Int is ctype<long> { }
-ok @log.grep('mynativelong:ctype:long'),
-    'native: is ctype<long> reaches trait_mod:<is>, same as a class';
+nok @log.elems, 'native: is ctype<long> is consumed by the declarator, not dispatched to a user trait_mod';
 
 # --- an ordinary method still works on a `native`-declared type, confirming
 # the body parses exactly like a class body (not just the declarator line).
