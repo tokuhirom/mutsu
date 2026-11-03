@@ -1441,6 +1441,15 @@ impl Interpreter {
             let export_terms =
                 std::mem::replace(&mut self.module.module_export_terms, saved_export_terms);
             module_scope_names.extend(export_terms);
+            // Qualified terms a hook module handed to this one (`importer_export_terms`).
+            if !self.module.importer_export_terms.is_empty() {
+                let (mine, others): (Vec<_>, Vec<_>) =
+                    std::mem::take(&mut self.module.importer_export_terms)
+                        .into_iter()
+                        .partition(|(importer, ..)| importer == module);
+                self.module.importer_export_terms = others;
+                module_scope_names.extend(mine.into_iter().map(|(_, key, value)| (key, value)));
+            }
             // `module_imported_names` records the ENV KEY the import landed under,
             // because the restore loop below has to undo that exact key. The two
             // scope tables it feeds are keyed by the same text: an enum key stays
@@ -1678,6 +1687,13 @@ impl Interpreter {
                 && !unit_lex_names.is_empty()
             {
                 for name in &unit_lex_names {
+                    // A package-qualified name here is a term a hook's import bound
+                    // (`'Graph::Grid' => Graph::Grid`, via its term key), not a
+                    // file-scope variable: it stays in the module's scope table, which
+                    // the module's routines read it from.
+                    if crate::qualified::is_qualified_str(name) {
+                        continue;
+                    }
                     module_scope_names.remove(name);
                     let value = self.env.get(name).cloned().unwrap_or(Value::NIL);
                     let cell = if value.is_container_ref() {

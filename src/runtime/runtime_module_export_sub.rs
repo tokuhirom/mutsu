@@ -201,7 +201,7 @@ impl Interpreter {
         let saved_unit = self.current_unit;
         self.current_unit = self.unit_of_declaring_file(def.source_file.as_deref());
         let hook_args = export_args.clone();
-        let result = self.compile_and_call_function_def(&def, export_args, &empty_fns);
+        let result = self.call_export_hook_def(&def, export_args, &empty_fns);
         self.current_unit = saved_unit;
         let result = result?;
         self.restore_caller_env_keeping_dynamics(caller_env);
@@ -224,6 +224,36 @@ impl Interpreter {
                 .insert(m, ModuleExportDef::Sub(candidates, module_env));
         }
         Ok(())
+    }
+
+    /// Call a module's `sub EXPORT` hook in the package it was written in.
+    ///
+    /// The hook is declared at its file's top level, so its body runs in that
+    /// file's package (GLOBAL), not in the importer's: a `class Graph::Grid` it
+    /// declares must not be nested under whatever package the `use` sits in
+    /// (`unit module Graph::RandomMaze`, which would otherwise own a
+    /// `Graph::RandomMaze::Graph::Grid` that its own routines cannot name). The
+    /// def was registered while the importing package was current, so its
+    /// declaring package is rewritten for the call.
+    // Cost: O(|def|) when the def's package is not GLOBAL (a def clone), else O(1).
+    fn call_export_hook_def(
+        &mut self,
+        def: &Arc<FunctionDef>,
+        export_args: Vec<Value>,
+        fns: &crate::opcode::CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let global = crate::symbol::wk::global_package();
+        let saved_package = self.current_package_sym();
+        self.set_current_package_sym(global);
+        let result = if def.package == global {
+            self.compile_and_call_function_def(def, export_args, fns)
+        } else {
+            let mut at_top_level = (**def).clone();
+            at_top_level.package = global;
+            self.compile_and_call_function_def(&Arc::new(at_top_level), export_args, fns)
+        };
+        self.set_current_package_sym(saved_package);
+        result
     }
 
     /// Re-run an already-loaded module's remembered EXPORT for a new import
@@ -277,7 +307,7 @@ impl Interpreter {
                 // through `UNIT::` (#11246).
                 let reinstated = self.reinstate_own_families(module);
                 self.module.module_scope_runs += 1;
-                let r = self.compile_and_call_function_def(&d, export_args, &empty_fns);
+                let r = self.call_export_hook_def(&d, export_args, &empty_fns);
                 self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
@@ -419,6 +449,26 @@ impl Interpreter {
             return;
         }
         let sigil = key.chars().next();
+        // A package-qualified term handed to a module (`'Graph::Grid' =>
+        // Graph::Grid`) belongs to the importing module's scope, not to the
+        // hook module whose load is innermost here: file it for the importer,
+        // which folds it into its own scope when its load finishes. An
+        // unqualified term reaches the importer's routines through its lexical
+        // import set instead.
+        if let Some(importer) = inner_export_importer
+            && sigil.is_none_or(|c| c.is_alphanumeric() || c == '_')
+            && crate::qualified::is_qualified_str(&key)
+        {
+            // Under its term key as well: a routine reads the name through it.
+            let term_key = crate::runtime::term_names::term_key(&key);
+            for k in [term_key, key.clone()] {
+                self.module.importer_export_terms.push((
+                    importer.to_string(),
+                    k,
+                    value.clone(),
+                ));
+            }
+        }
         // A hook that hands out the candidates of a built-in operator adds to
         // the operator, as an `is export` import does: a call none of them
         // accepts (`!` of a Failure, with only `Red::AST` candidates) is the
