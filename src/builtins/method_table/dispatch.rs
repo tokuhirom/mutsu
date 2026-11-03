@@ -428,6 +428,14 @@ fn dispatch(
     let allomorph = target;
     let (target, id) = match Receiver::of_settled(target) {
         Some(receiver) => match super::resolve(receiver, method, arity) {
+            // A `%?RESOURCES` entry shares the `IO::Path` rows but answers a short
+            // list of them (#16206).
+            Some(id)
+                if super::row(id).owner == "IO::Path"
+                    && super::distribution_resource::declines(target, method) =>
+            {
+                return None;
+            }
             Some(id) => (target, id),
             None => {
                 let refusal = type_object_refusal(receiver, target, method, arity)?;

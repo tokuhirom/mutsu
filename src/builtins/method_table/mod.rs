@@ -51,6 +51,7 @@ pub(crate) mod carried_state;
 mod collections;
 mod ctors_mop;
 mod dispatch;
+pub(crate) mod distribution_resource;
 mod implicit_named;
 pub(crate) mod index_arg;
 mod instances;

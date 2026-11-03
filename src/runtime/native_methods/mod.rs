@@ -508,6 +508,7 @@ impl Interpreter {
         // table's own entry declined (an `IO::Path` argument is not a plain one)
         // finds them here by that owner, as it does for an `IO::Path` receiver.
         let dispatch_class = if class_name == "Distribution::Resource"
+            && crate::builtins::method_table::distribution_resource::resource_answers(method)
             && super::class_introspection::io_path_method_takes_arguments(method)
         {
             Some("IO::Path".to_string())
