@@ -446,13 +446,16 @@ pub(crate) fn declared_name_kind(name: &str) -> Option<DeclaredNameKind> {
 }
 
 /// Whether a `use`d module declared the type `name` (a stub included), as the
-/// parse of this unit saw it.
-// Cost: O(d), d = number of open parse scopes.
+/// parse of the unit being checked saw it. Only the innermost scope is asked:
+/// the outermost one also holds what the unit that loaded this one imported,
+/// which is not this unit's (`use Bad` imports `Late`, and `Bad` itself must
+/// still not use `Late` before declaring it).
+// Cost: O(1).
 pub(crate) fn is_module_imported_type(name: &str) -> bool {
     SCOPES.with(|s| {
         s.borrow()
-            .iter()
-            .any(|scope| scope.imported_types.contains(name))
+            .last()
+            .is_some_and(|scope| scope.imported_types.contains(name))
     })
 }
 
