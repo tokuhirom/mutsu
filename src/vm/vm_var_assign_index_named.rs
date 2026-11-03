@@ -591,6 +591,27 @@ impl Interpreter {
             && !self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
+            // A key-list slice store (`%h<a b c> = 1, 2, 3`) is one `ASSIGN-KEY` call
+            // per key, each taking the next value (Nil past the end), as rakudo's
+            // slice assignment is. Hash::LRU's `is LRU` hashes override `ASSIGN-KEY`.
+            if !is_positional
+                && let ValueView::Array(items, _) = idx.view()
+                && items.len() > 1
+            {
+                let keys: Vec<Value> = items.iter().cloned().collect();
+                let values = self.assignment_rhs_values(&val)?;
+                for (offset, key) in keys.into_iter().enumerate() {
+                    let value = values.get(offset).cloned().unwrap_or(Value::NIL);
+                    self.call_method_with_values(
+                        target.clone(),
+                        assign_method,
+                        vec![key, Self::itemize_value(value)],
+                    )?;
+                }
+                self.apply_pending_rw_writeback(code);
+                self.stack.push(val);
+                return Ok(());
+            }
             let idx_arg = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
                 _ => idx.clone(),

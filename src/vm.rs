@@ -365,6 +365,7 @@ mod vm_zen_slice;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_decl_lane;
 mod vm_hash_key_user_str;
+mod vm_incdec_mixin_subscript;
 mod vm_method_value;
 mod vm_named_root_guard;
 mod vm_object_hash_keys;
