@@ -7,24 +7,35 @@
 //! Rakudo reads an interpolated scalar when the cursor reaches it, so a code
 //! block earlier in the pattern can change what the atom matches. Splicing the
 //! value into the pattern text before the match starts cannot see that write.
-//! Before the first code block nothing can have run, so the splice and the
-//! match-time read agree; from the first block on, the scalars the pattern
-//! names are declared as match-time lexicals (the same declaration block a
+//! A pattern with a code block reads every scalar it names at match time: the
+//! block can assign it, and a loop re-enters atoms written before the block.
+//! Those scalars are declared as match-time lexicals (the same declaration block a
 //! rule's parameters use, see `regex_rule_params`), which the interpolation
 //! pre-pass leaves in the text and the structural parser lowers to a
 //! `RegexAtom::VarInterp`.
 
-/// The plain scalar names (`$name`, no twigil) the pattern `text` writes at its
-/// top level after its first code block, in order of first use. Quoted
-/// literals, escapes, character classes and the code blocks themselves are not
-/// scanned. Empty when the text has no code block.
+/// The plain scalar names the pattern `text` writes anywhere at its top level
+/// when it contains a code block. A scalar before the block can still be read
+/// after the block ran, when a loop (`[ $x { $x = "b" } ]+`) re-enters it, so
+/// every scalar of a pattern with a block is a match-time read. Empty when the
+/// text has no code block.
 // Cost: O(n), n = the text's length.
-pub(crate) fn scalars_after_code_block(text: &str) -> Vec<String> {
-    if !text.contains('{') {
+pub(crate) fn scalars_in_block_pattern(text: &str) -> Vec<String> {
+    let (names, saw_block) = scan_scalars(text);
+    if !saw_block {
         return Vec::new();
     }
+    names.into_iter().map(|(name, _)| name).collect()
+}
+
+/// Every plain scalar name in order of first use, flagged by whether it was
+/// written after a code block, and whether the text had a code block at all.
+fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
+    if !text.contains('{') {
+        return (Vec::new(), false);
+    }
     let chars: Vec<char> = text.chars().collect();
-    let mut names: Vec<String> = Vec::new();
+    let mut names: Vec<(String, bool)> = Vec::new();
     let mut seen_block = false;
     let mut i = 0usize;
     while i < chars.len() {
@@ -70,8 +81,7 @@ pub(crate) fn scalars_after_code_block(text: &str) -> Vec<String> {
                     i += 1;
                 }
             }
-            '$' if seen_block
-                && chars
+            '$' if chars
                     .get(i + 1)
                     .is_some_and(|c| c.is_alphabetic() || *c == '_') =>
             {
@@ -90,15 +100,17 @@ pub(crate) fn scalars_after_code_block(text: &str) -> Vec<String> {
                     }
                 }
                 let name: String = chars[start..j].iter().collect();
-                if !names.contains(&name) {
-                    names.push(name);
+                match names.iter_mut().find(|(n, _)| *n == name) {
+                    // Written after a block anywhere: late.
+                    Some(entry) => entry.1 |= seen_block,
+                    None => names.push((name, seen_block)),
                 }
                 i = j;
             }
             _ => i += 1,
         }
     }
-    names
+    (names, seen_block)
 }
 
 impl super::super::Interpreter {
@@ -131,12 +143,13 @@ impl super::super::Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use super::scalars_after_code_block;
+    use super::scalars_in_block_pattern;
 
     #[test]
-    fn only_scalars_after_the_first_code_block_are_late() {
-        assert_eq!(scalars_after_code_block("$a { $b = 1 } $c $c $d"), ["c", "d"]);
-        assert!(scalars_after_code_block("$a $b").is_empty());
-        assert!(scalars_after_code_block("{ $b } '$q' \\$e <[$f]>").is_empty());
+    fn every_scalar_of_a_block_pattern_is_late() {
+        assert_eq!(scalars_in_block_pattern("$a { 1 } $b"), ["a", "b"]);
+        assert!(scalars_in_block_pattern("$a $b").is_empty());
+        assert!(scalars_in_block_pattern("{ $b } '$q' \\$e <[$f]>").is_empty());
+        assert_eq!(scalars_in_block_pattern("$a { 1 } $a $c"), ["a", "c"]);
     }
 }

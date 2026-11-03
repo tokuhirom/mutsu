@@ -2,7 +2,7 @@ use Test;
 
 # ADR-12917 direction 2: an interpolated `$var` is read when the cursor reaches
 # it, so a code block earlier in the pattern can change what it matches.
-plan 7;
+plan 9;
 
 my $x = "a";
 is ~("xb" ~~ / x { $x = "b" } $x /), 'xb', 'a block assigns the variable read after it';
@@ -24,3 +24,10 @@ is ~("xb" ~~ / x '{' ** 0 { $q = "b" } $q /), 'xb', 'a quoted brace is not a blo
 
 my $early = "a";
 is ~("ab" ~~ / $early { 1 } b /), 'ab', 'before the block the value is what it was';
+
+# A loop re-enters an atom written before the block, after the block ran.
+my $l = "a";
+is ~("aab" ~~ / [ $l { $l = "b" } ]+ /), 'a', 'a loop re-reads a scalar written before its block';
+
+my $m = "a"; my $k = 0;
+is ~("abbb" ~~ / [ $m { $m = "b" if $k++ == 0 } ]+ /), 'abbb', 'the loop sees the updated value on later passes';
