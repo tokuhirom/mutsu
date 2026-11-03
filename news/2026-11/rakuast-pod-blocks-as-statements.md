@@ -9,3 +9,9 @@ parser skips Pod, so `pod_blocks.rs` reads the blocks from the source text and p
 the statements by offset; `EVAL` of such a tree runs nothing for a block. Blocks with configuration,
 markup (`B<...>`), indented (implicit code) lines or a verbatim/tabular type (`code`, `table`, ...)
 are not read yet and stay out of the tree, as before. Part of #14880.
+
+A `;` inside a comment between statements (`# L<S02/Bare identifiers/"$x.foo;">`) no longer yields a
+`Statement::Empty` in `.AST` (the separator run counted every `;`, comments included). That stray
+statement used to stand in, by accident, for the Pod block rakudo has at the same index; with the
+block now present it shifted every later statement of such a file, which the `ast-text-corpus`
+ratchet caught on `roast/S12-methods/calling_syntax.t`.

@@ -163,9 +163,31 @@ pub(super) fn empty_statements(run_start: &str, resume: &str, open_terminator: b
         return;
     }
     let skip = usize::from(open_terminator);
-    for (at, _) in run.match_indices(';').skip(skip) {
+    for at in separator_offsets(run).into_iter().skip(skip) {
         let _ = record_statement_attempt(&run_start[at..]);
     }
+}
+
+/// The offsets of the `;` in a separator run (`;`, `,`, blanks and comments):
+/// a `;` inside a comment is no separator.
+// Cost: O(n), n = length of the run.
+fn separator_offsets(run: &str) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut at = 0;
+    while at < run.len() {
+        let rest = &run[at..];
+        if rest.starts_with(';') {
+            offsets.push(at);
+            at += 1;
+        } else if let Ok((after, _)) = crate::parser::helpers::ws(rest)
+            && after.len() < rest.len()
+        {
+            at = run.len() - after.len();
+        } else {
+            at += rest.chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    offsets
 }
 
 /// The `;` of the run `run_start` .. `resume` that terminate no statement
@@ -180,9 +202,10 @@ pub(super) fn empty_statement_tails<'a>(
     let Some(run) = text_before(run_start, resume) else {
         return Vec::new();
     };
-    run.match_indices(';')
+    separator_offsets(run)
+        .into_iter()
         .skip(usize::from(open_terminator))
-        .map(|(at, _)| &run_start[at..])
+        .map(|at| &run_start[at..])
         .collect()
 }
 
