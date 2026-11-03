@@ -157,18 +157,19 @@ impl Interpreter {
                 _ => positional.push(arg),
             }
         }
-        let source = positional
+        // `resolve_io_arg_path` reads an IO::Path (or a `%?RESOURCES` entry,
+        // which shares its rows) for the file it names, and stringifies
+        // anything else.
+        let (src_buf, source) = positional
             .first()
-            .map(|v| v.to_string_value())
+            .map(|v| self.resolve_io_arg_path(v))
             .ok_or_else(|| RuntimeError::new("copy requires a source path"))?;
-        let dest = positional
+        let (dest_buf, dest) = positional
             .get(1)
-            .map(|v| v.to_string_value())
+            .map(|v| self.resolve_io_arg_path(v))
             .ok_or_else(|| RuntimeError::new("copy requires a destination path"))?;
         check_null_in_path(&source)?;
         check_null_in_path(&dest)?;
-        let src_buf = self.resolve_path(&source);
-        let dest_buf = self.resolve_path(&dest);
         Ok(self.copy_file_op(&src_buf, &dest_buf, createonly))
     }
 
