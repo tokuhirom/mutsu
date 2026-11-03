@@ -213,7 +213,10 @@ impl Interpreter {
                     p.sub_signature.is_some(),
                     p.literal_value.is_some(),
                     p.traits.iter().any(|t| t == "rw"),
-                    p.traits.iter().any(|t| t == "raw"),
+                    // `is raw` is no dispatch distinction: rakudo ties
+                    // `multi f($v is raw)` with `multi f($v)` and `f(Any:U)`,
+                    // so `is default` can break the tie (PDF::COS `COERCE`).
+                    false,
                     p.traits.iter().any(|t| t == "copy"),
                 )
             })

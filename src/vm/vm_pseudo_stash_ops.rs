@@ -214,7 +214,8 @@ impl Interpreter {
     /// anything else builds the stash exactly as `GetPseudoStash` does. Either
     /// way the ordinary `Index` performs the read, so the result is the same.
     // Cost: O(k) for a sigiled key of an ordinary package, k = interned qualified
-    // names ending in the key's bare name (`qualified_tail_index`); otherwise as
+    // names ending in the key's bare name (`qualified_tail_index`); O(1) for a
+    // `$`/`@`/`%` key of `GLOBAL::` (`global_stash_variable`); otherwise as
     // `GetPseudoStash` plus `Index`, O(v), v = env entries. Rakudo: O(1) -- see #9171.
     pub(super) fn exec_get_pseudo_stash_keyed_op(
         &mut self,

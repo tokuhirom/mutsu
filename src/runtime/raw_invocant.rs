@@ -151,6 +151,13 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
+        if let Some(defs) = self.mixin_role_method_defs(target, method)
+            && defs
+                .iter()
+                .any(|def| Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def))
+        {
+            return true;
+        }
         let class_name = Self::raw_invocant_class_name(target);
         if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
@@ -209,10 +216,41 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
+        if let Some(defs) = self.mixin_role_method_defs(target, method)
+            && defs.iter().any(method_def_has_raw_invocant)
+        {
+            return true;
+        }
         let class_name = Self::raw_invocant_class_name(target);
         self.resolve_method(&class_name, method, method_args, target)
             .as_ref()
             .is_some_and(method_def_has_raw_invocant)
+    }
+
+    /// The candidates a `but`-mixed value's composed roles declare for
+    /// `method`: a `Mixin` (`"abc" but R`) has no class of its own to resolve
+    /// against, its method is a role's (the dispatch
+    /// `dispatch_mixin_method_call` runs). `None` when `target` is no `Mixin`
+    /// or no composed role declares the method.
+    // Cost: O(r), r = roles composed onto the value (a registry lookup each).
+    fn mixin_role_method_defs(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Option<Vec<crate::runtime::decl_types::MethodDef>> {
+        let ValueView::Mixin(_, mixins) = target.view() else {
+            return None;
+        };
+        let lookup = method.strip_prefix('!').unwrap_or(method);
+        let role_names: Vec<String> = mixins
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+            .map(str::to_string)
+            .collect();
+        role_names.iter().find_map(|role_name| {
+            self.role_def_for_mixin_role(mixins, role_name)
+                .and_then(|role| role.methods.get(lookup).cloned())
+        })
     }
 
     /// The class name a method is resolved against for an lvalue invocant.
@@ -268,7 +306,28 @@ impl Interpreter {
         // first parameter. This call site supplies values, not source names.
         // Mirrors `try_rw_method_container_lvalue`.
         let saved_sources = self.take_pending_call_arg_sources();
-        let result = self.call_method_with_values(target.clone(), method, method_args.to_vec());
+        // A `but`-mixed value runs the role's method through the mixin
+        // dispatch, which takes the container from the arrival channel (the
+        // generic entry does not look through a boxed `Mixin`).
+        let role_raw = matches!(inner.view(), ValueView::Mixin(..))
+            && self
+                .mixin_role_method_defs(&inner, method)
+                .is_some_and(|defs| defs.iter().any(method_def_has_raw_invocant));
+        let result = if role_raw {
+            let previous = self.pending_raw_invocant.replace(Box::new(
+                crate::vm::vm_raw_invocant_arrival::PendingRawInvocant {
+                    method: method.to_string(),
+                    cell: target.clone(),
+                    raw_parameter: true,
+                    implicit_self: false,
+                },
+            ));
+            let result = self.call_method_with_values(inner.clone(), method, method_args.to_vec());
+            self.pending_raw_invocant = previous;
+            result
+        } else {
+            self.call_method_with_values(target.clone(), method, method_args.to_vec())
+        };
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         let result = result?;

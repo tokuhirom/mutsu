@@ -722,7 +722,15 @@ impl Interpreter {
                 // falling back to it here is correct, just not incremental
                 // for that (uncommon) case.
                 let mut live_tap_handles = Vec::new();
-                for sid in [stdout_supply_id, stderr_supply_id].into_iter().flatten() {
+                // The merged `.Supply` is served live too when it was requested
+                // with `:bin`: its replay off the collected text could only
+                // deliver `Str`, while the reader threads emit `Buf` chunks
+                // into its channel (#15647).
+                let merged_live = (stdout_bin && stderr_bin).then_some(merged_supply_id).flatten();
+                for sid in [stdout_supply_id, stderr_supply_id, merged_live]
+                    .into_iter()
+                    .flatten()
+                {
                     if !self.async_state.supply_emit_buffer.is_empty()
                         || self.async_state.react_active > 0
                     {
@@ -1362,6 +1370,15 @@ impl Interpreter {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
                 }
                 attrs.insert("supply_selected".to_string(), Value::TRUE);
+                // `.Supply(:bin)` delivers the merged output as `Buf`s: both
+                // readers emit bytes into the merged channel.
+                let requested_bin = args.iter().any(
+                    |arg| matches!(arg.view(), ValueView::Pair(key, value) if key == "bin" && value.truthy()),
+                );
+                if requested_bin {
+                    attrs.insert("stdout_mode".to_string(), Value::str_from("bin"));
+                    attrs.insert("stderr_mode".to_string(), Value::str_from("bin"));
+                }
                 Ok((attrs.get("supply").cloned().unwrap_or(Value::NIL), attrs))
             }
             ProcAsyncOp::Print | ProcAsyncOp::Put | ProcAsyncOp::Say => {

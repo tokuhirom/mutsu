@@ -173,10 +173,101 @@ impl Interpreter {
         args: &[Value],
         def: &FunctionDef,
     ) -> bool {
+        if self.candidate_shape_excludes(args, &def.param_defs) {
+            return false;
+        }
         let package = def.package;
         self.with_candidate_scope(def, |this| {
             this.args_match_param_types_inner(args, &def.param_defs, true, Some(package))
         })
+    }
+
+    /// Whether `param_defs` cannot take `args` by SHAPE alone -- the positional
+    /// arity, a required named parameter nobody supplied, a named argument no
+    /// parameter consumes -- so the candidate can be refused before its scope
+    /// is entered and before the matcher allocates its working vectors and
+    /// snapshots the env. Each test is the one `args_match_param_types_inner`
+    /// makes (same counting of variadics, captures and `%`-slurpies); it only
+    /// moves them first. A refusal there happens before any argument value is
+    /// looked at, so nothing is skipped that could have run user code, except
+    /// for the named-argument tests, which in the matcher follow the positional
+    /// type checks: those are applied only when no `subset` exists and no
+    /// parameter carries a `where` or a sub-signature, i.e. when the checks
+    /// they would have followed cannot run user code.
+    // Cost: O(p + a * p), p = parameters of the candidate, a = arguments.
+    fn candidate_shape_excludes(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        if param_defs.is_empty() {
+            return false;
+        }
+        let mut required = 0usize;
+        let mut max_positional = 0usize;
+        let mut variadic = false;
+        for pd in param_defs {
+            if pd.named || (pd.slurpy && pd.name.starts_with('%')) {
+                continue;
+            }
+            if pd.is_variadic()
+                || pd.name == "_capture"
+                || (pd.slurpy && pd.sigilless)
+                || pd.is_capture_subsignature()
+            {
+                variadic = true;
+                continue;
+            }
+            max_positional += 1;
+            if pd.default.is_none() && !pd.optional_marker {
+                required += 1;
+            }
+        }
+        let positional = args
+            .iter()
+            .filter(|arg| !arg.unwrap_varref().is_string_pair_value())
+            .count();
+        if positional < required || (!variadic && positional > max_positional) {
+            return true;
+        }
+        if !self.registry().subsets.is_empty()
+            || param_defs.iter().any(|pd| {
+                pd.where_constraint.is_some()
+                    || pd.code_signature.is_some()
+                    || (pd.sub_signature.is_some() && !pd.named_alias)
+            })
+        {
+            return false;
+        }
+        let has_named_slurpy = param_defs.iter().any(|pd| {
+            pd.is_capture_subsignature() || (pd.slurpy && (pd.name.starts_with('%') || pd.sigilless))
+        });
+        if !has_named_slurpy {
+            for arg in args {
+                let arg = arg.unwrap_varref();
+                if let ValueView::Pair(key, _) = arg.view() {
+                    let consumed = param_defs.iter().any(|pd| {
+                        if pd.named {
+                            pd.answers_named_key(key)
+                        } else {
+                            pd.name.strip_prefix(':') == Some(key.as_str())
+                        }
+                    });
+                    if !consumed {
+                        return true;
+                    }
+                }
+            }
+        }
+        for pd in param_defs.iter().filter(|pd| pd.named) {
+            if pd.required && pd.default.is_none() {
+                let supplied = args.iter().any(|a| {
+                    let a = a.unwrap_varref();
+                    a.is_string_pair_value()
+                        && matches!(a.view(), ValueView::Pair(key, _) if pd.answers_named_key(key))
+                });
+                if !supplied {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Run `f` in candidate `def`'s declaring package and compilation unit:
@@ -1086,12 +1177,23 @@ impl Interpreter {
                             .is_some_and(|encoded| encoded.contains('='))
                             || varref_from_value(a).is_some()
                             || varref_from_value(val).is_some()
-                            || matches!(
-                                val.view(),
-                                ValueView::ContainerRef(_)
-                                    | ValueView::HashEntryRef { .. }
-                                    | ValueView::Proxy { .. }
-                            )
+                            || match val.view() {
+                                // `:$x` forwarding a read-only parameter
+                                // (`sub f(Str :$x!)`) carries that parameter's
+                                // cell, flagged as a read-only binding alias:
+                                // no writable lvalue, so the `is rw` candidate
+                                // yields to its `is copy` sibling (PDF::COS
+                                // `coerce`).
+                                ValueView::ContainerRef(cell) => !matches!(
+                                    cell.readonly_kind(),
+                                    Some(
+                                        crate::ast::ReadonlyKind::Alias
+                                            | crate::ast::ReadonlyKind::Immutable
+                                    )
+                                ),
+                                ValueView::HashEntryRef { .. } | ValueView::Proxy { .. } => true,
+                                _ => false,
+                            }
                     });
                     if !writable {
                         return false;

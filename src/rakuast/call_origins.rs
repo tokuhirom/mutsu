@@ -95,7 +95,75 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if let Some((operand_from, _)) = operand.as_ref().and_then(super::infix_origins::byte_range) {
         operand_end = past_parens(span, operand_from, operand_end);
     }
-    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("postfix")) else {
+    place_call(node, "postfix", operand_end as usize, span, false);
+}
+
+/// Give the pieces of a `.=` application written at `span`
+/// (`ApplyDottyInfix(left, CallAssign, Method)`) their origins, as Rakudo
+/// does: the `.=` operator, the method call (from its name to the end) with
+/// its `Name` and `ArgList`, and a simple variable on the left. Only the
+/// plain `VAR .= name`, `VAR .= name(...)` and `VAR .= name: ...` spellings
+/// are placed; anything else is left alone.
+// Cost: O(n), n = length of the application's source.
+pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    use super::RakuAstClass;
+    if node.class != RakuAstClass::ApplyDottyInfix || !span.is_some() {
+        return;
+    }
+    let is_call_assign = super::infix_origins::child(node, "infix")
+        .is_some_and(|i| i.class == RakuAstClass::DottyInfixCallAssign);
+    if !is_call_assign {
+        return;
+    }
+    // `VAR .= rest`: the variable, blanks, then the operator.
+    let Some((var_len, op_at)) = super::unit_source::with_text(span, |text| {
+        let var_len = text
+            .find(|c: char| c.is_whitespace() || c == '.')
+            .filter(|n| *n > 1)?;
+        let var = &text[..var_len];
+        let simple = var.starts_with(['$', '@', '%'])
+            && var[1..]
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':' | '\''));
+        let after_var = text[var_len..].trim_start();
+        let op_at = text.len() - after_var.len();
+        (simple && after_var.starts_with(".=")).then_some((var_len, op_at))
+    }) else {
+        return;
+    };
+    let from = span.from as usize;
+    for f in node.fields.iter_mut() {
+        let at = match f.name {
+            Some("left") => (from, from + var_len),
+            Some("infix") => (from + op_at, from + op_at + 2),
+            _ => continue,
+        };
+        if let RakuAstFieldValue::Node(v) = &mut f.value
+            && let ValueView::RakuAst(part) = v.view()
+            && part.origin.0.is_none()
+        {
+            let mut part = RakuAstNode::clone(part);
+            set_span(&mut part, crate::ast::SrcSpan::new(at.0, at.1));
+            *v = Value::rakuast(Box::new(part));
+        }
+    }
+    place_call(node, "right", from + op_at + 2, span, true);
+}
+
+/// Place the method call held in field `field` of `node`, which starts after
+/// `from` and ends with `span`: its own origin, its `Name`'s and its
+/// `ArgList`'s. `dotty` is the `.=` form, where the name follows the operator
+/// directly.
+// Cost: O(n), n = length of the call's source.
+fn place_call(
+    node: &mut RakuAstNode,
+    field: &str,
+    from: usize,
+    span: crate::ast::SrcSpan,
+    dotty: bool,
+) {
+    use super::RakuAstClass;
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some(field)) else {
         return;
     };
     let RakuAstFieldValue::Node(held) = &mut field.value else {
@@ -112,13 +180,13 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     {
         return;
     }
-    let from = operand_end as usize;
     let Some((name, args)) =
         super::unit_source::with_text(crate::ast::SrcSpan::new(from, span.to as usize), |text| {
             let after_ws = text.trim_start();
             let after_op = match class {
                 RakuAstClass::CallPrivateMethod => after_ws.strip_prefix('!'),
                 RakuAstClass::CallNameAsMethod => after_ws.strip_prefix(".&"),
+                _ if dotty => Some(after_ws),
                 _ => after_ws
                     .strip_prefix('.')
                     .map(|r| r.strip_prefix(['?', '+', '*', '^']).unwrap_or(r))

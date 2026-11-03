@@ -744,7 +744,13 @@ impl Interpreter {
             let invocant = self
                 .pending_raw_invocant
                 .as_ref()
-                .filter(|pending| pending.implicit_self && pending.method == lookup_name)
+                // A raw invocant parameter (`method m(\SELF:)`, ADR-0067 slice 3b)
+                // binds the named receiver's container, as an implicit `self`
+                // of an aggregate does.
+                .filter(|pending| {
+                    (pending.implicit_self || pending.raw_parameter)
+                        && pending.method == lookup_name
+                })
                 .map(|pending| pending.cell.clone())
                 .unwrap_or_else(|| target.clone());
             let method_result = self.run_resolved_method_compiled_or_treewalk(

@@ -1018,6 +1018,9 @@ impl Interpreter {
                 | ValueView::ContainerRef(_)
                 | ValueView::Array(..)
                 | ValueView::Hash(_)
+                // A `but`-mixed value may carry a user `succ`/`pred` (a boxed
+                // `Pointer`): the generic step below would drop the mixin.
+                | ValueView::Mixin(..)
         ) {
             return Ok(false);
         }

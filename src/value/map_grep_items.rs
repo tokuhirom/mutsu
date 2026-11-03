@@ -40,6 +40,17 @@ struct MapGrepChainState {
     source: crate::value::SeqSource,
 }
 
+/// Whether a chain's upstream can still produce elements: a not-yet-run
+/// `.map`/`.grep`, or an `IO::Handle.lines`/`.words` read piped one line at a
+/// time (#16065).
+// Cost: O(1).
+fn is_live_upstream(source: &crate::value::SeqSource) -> bool {
+    matches!(
+        source,
+        crate::value::SeqSource::MapGrep { .. } | crate::value::SeqSource::IoLines { .. }
+    )
+}
+
 impl std::fmt::Debug for MapGrepChain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MapGrepChain").finish_non_exhaustive()
@@ -67,7 +78,7 @@ impl MapGrepChain {
     /// Whether the upstream has nothing left to produce.
     // Cost: O(1).
     pub(crate) fn exhausted(&self) -> bool {
-        !matches!(self.lock().source, crate::value::SeqSource::MapGrep { .. })
+        !is_live_upstream(&self.lock().source)
     }
 
     /// A fresh upstream source for a full, side-effect-free chain pull. A
@@ -101,7 +112,7 @@ impl MapGrepChain {
     ) -> Result<usize, crate::value::RuntimeError> {
         let mut source = {
             let mut state = self.lock();
-            if !matches!(state.source, crate::value::SeqSource::MapGrep { .. }) {
+            if !is_live_upstream(&state.source) {
                 return Ok(0);
             }
             std::mem::replace(&mut state.source, crate::value::SeqSource::Taken)

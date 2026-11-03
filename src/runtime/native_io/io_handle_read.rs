@@ -127,7 +127,15 @@ impl Interpreter {
         } else {
             // No limit: return a lazy IO lines iterator so that
             // consumers (e.g. for-loop) can read on demand and
-            // $fh.tell reflects the current position.
+            // $fh.tell reflects the current position. `:close` closes the
+            // handle once a read reaches EOF (`close_on_exhaust`), so a
+            // partial consumer leaves it open (#16128).
+            if close_after {
+                self.with_handle_mut(target_val, |state| {
+                    state.close_on_exhaust = true;
+                    Ok(())
+                })?;
+            }
             Ok(Value::lazy_io_lines(target_val.clone(), false, false))
         }
     }

@@ -73,7 +73,17 @@ impl Interpreter {
         let suffix: String = chars[end..].concat();
         let new_str = format!("{}{}{}", prefix, replacement, suffix);
 
-        let result = Value::str(new_str);
+        // A `but`-mixed Str keeps its mixin: the splice rewrites the string,
+        // not the roles the value does (`"abc" but R` stays `Str+{R}`).
+        let result = match target.view() {
+            ValueView::Mixin(_, mixins) => {
+                Value::mixin_parts(
+                    std::sync::Arc::new(Value::str(new_str)),
+                    crate::gc::Gc::new((**mixins).clone()),
+                )
+            }
+            _ => Value::str(new_str),
+        };
         if let Some(container) = container {
             if let Some(stored) = self.assign_lvalue_container(&container, result) {
                 stored?;

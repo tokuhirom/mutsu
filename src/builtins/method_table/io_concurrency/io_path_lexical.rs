@@ -124,6 +124,27 @@ fn str_interp_row(
     Some(Ok(Value::str(ctx.path)))
 }
 
+/// `Mu.Stringy` (what `~$r` and interpolation call) of a `%?RESOURCES` entry:
+/// rakudo reaches `Str` from inside `Mu.rakumod`, so the deprecation's
+/// `seen at:` names that frame and not the user's line (#16095). `None` for any
+/// other receiver, which takes the ordinary `Str` call.
+// Cost: O(p), p = chars of the path.
+pub(crate) fn resource_stringy(target: &Value) -> Option<Value> {
+    let ctx = PathCtx::of(target)?;
+    if ctx.class != "Distribution::Resource" {
+        return None;
+    }
+    crate::runtime::deprecation::record_deprecation(
+        "Method",
+        "Str",
+        "Distribution::Resource",
+        "%?RESOURCES<key> directly",
+        "SETTING::src/core.c/Mu.rakumod",
+        867,
+    );
+    Some(Value::str(ctx.path))
+}
+
 /// `IO::Path.gist`: the path as the `.IO` call that makes it.
 // Cost: O(p), p = chars of the path.
 fn gist_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {

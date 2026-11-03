@@ -288,6 +288,9 @@ pub(crate) fn builtin_type_attributes(type_name: &str) -> &'static [(&'static st
             ("day", "Int"),
             ("daycount", "Int"),
         ],
+        // A Parameter's boolean properties live in one `Int` bit field
+        // (`nqp::const::SIG_ELEM_*`), which MOP code reads and writes.
+        "Parameter" => &[("flags", "Int")],
         "Backtrace::Frame" => &[
             ("file", "Str"),
             ("line", "Int"),

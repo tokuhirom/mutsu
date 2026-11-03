@@ -133,6 +133,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "Pod::Item"
             | "Pod::Raw"
             | "Proc::Async"
+            | "Proc::Async::Pipe"
             // Exception types
             | "X::AdHoc"
             | "X::Adverb"

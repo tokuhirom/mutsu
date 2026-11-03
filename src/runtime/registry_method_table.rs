@@ -192,7 +192,7 @@ impl Registry {
     /// Raise [`Registry::any_raw_invocant_method`] if any of `defs` declares a
     /// raw invocant (ADR-0067 slice 3a). Set-only: see that field's doc for why
     /// the flag is never lowered.
-    fn note_raw_invocant_methods(&mut self, defs: &[MethodDef]) {
+    pub(crate) fn note_raw_invocant_methods(&mut self, defs: &[MethodDef]) {
         if !self.any_raw_invocant_method
             && defs
                 .iter()

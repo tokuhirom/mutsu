@@ -125,7 +125,8 @@ A `-` in a percentage column means *not sampled* — never `0.0%`, which would b
 measurement that says "no time", a different claim.
 
 `EXCLUDED` is time deliberately kept **out** of the tables above: a GC collect, a
-stop-the-world park. It is measured rather than sampled, and it is named instead
+stop-the-world park (`gc`), or a thread blocked in a native wait such as a
+`sleep`, a thread join or a socket read (`blocked`). It is measured rather than sampled, and it is named instead
 of being left as a gap between the wall clock and the sampled total.
 
 ## The JSON document

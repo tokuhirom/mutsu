@@ -76,6 +76,25 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
                             out.push(ch);
                         }
                     }
+                    // `"a{ $x; 1 }b"`: an interpolated code block, spelled back
+                    // as the block it was written as.
+                    crate::ast::Expr::DoStmt(stmt)
+                        if let crate::ast::Stmt::Block(body) = stmt.as_ref() =>
+                    {
+                        let mut statements = Vec::new();
+                        for stmt in body {
+                            match stmt {
+                                crate::ast::Stmt::SetLine(..) => {}
+                                crate::ast::Stmt::Expr(expr) => {
+                                    statements.push(expression_source(expr)?);
+                                }
+                                _ => return None,
+                            }
+                        }
+                        out.push('{');
+                        out.push_str(&statements.join("; "));
+                        out.push('}');
+                    }
                     other => {
                         out.push('{');
                         out.push_str(&expression_source(other)?);

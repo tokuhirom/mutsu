@@ -518,7 +518,7 @@ impl Interpreter {
             // the env as a container of the type it captured, and is not a
             // declared type named `T`.
             let alias = self
-                .term_value(name)
+                .term_binding(name)
                 .map(|v| v.deref_container())
                 .or_else(|| self.env.get(name).cloned())
                 .or_else(|| self.package_symbol_alias(name).map(|v| v.deref_container()));

@@ -21,6 +21,13 @@ impl Interpreter {
         let ValueView::Seq(body) = target.view() else {
             return Ok((None, target));
         };
+        if chain
+            && body.has_io_lines_pipe_source()
+            && let Some(source) = body.take_io_lines_pipe_source()
+        {
+            let items = MapGrepItems::Chain(crate::value::MapGrepChain::new(Vec::new(), source));
+            return Ok((Some(items), target));
+        }
         if !body.has_map_grep_stream_source() {
             return Ok((None, target));
         }

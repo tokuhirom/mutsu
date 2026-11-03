@@ -141,7 +141,6 @@ unless noted.
 | No oracle | `S02-names-vars/names.t` | **153/156, runs to the end**; notok 144, 147, 148 | SORRY (unfudged line) | Now runs the whole file (it used to abort at line 153). Failing: 144 "no Null PMC access when printing a variable typed as ::foo" (line 142); 147/148 — `my module foo {}; sub foo() {…}` in one scope: bare `foo` must be the module type object (`.HOW ~~ Metamodel::ModuleHOW`) and `foo()` a coercion type (`Metamodel::CoercionHOW`), while `&foo()` calls the sub (149 passes). raku SORRYs on a fudge-dependent line (a bare `$`). The `can use compile-time variables in names` subtest (BEGIN-time adverb interpolation, `news/2026-09/begin-time-adverb-value-interpolation.md`) now runs and passes |
 | No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 (2026-10-14, unchanged) | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 (aborts: `Dynamic variable $*OS not found`) | 0/8 (aborts too, `$*OS`; same on v2026.09) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
-| No oracle | `S32-basics/xxPOS.t` | aborts at 11/64 | 53/64 (raku also aborts; same on v2026.09) | Stops at test 12 because the loop's sigilless `-> \a` is overwritten by the later `my $a` in the same body — #13474 (see the investigation note) |
 | Non-goal | `S05-capture/hash.t` | rejected (matches raku) | SORRY (removed) | Hash captures in regexes `%<name>=(...)` are removed/reserved in the current spec. mutsu also gives a compile error, matching raku = **no implementation needed** |
 | Non-goal | `S05-mass/rx.t` | **SORRY** (was: aborts at test 20) | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI. **Regressed** to a compile-time failure: mutsu rejects `^` after another atom (`/def \n ^ abc/`, line 596) as an unrecognized metacharacter instead of an anchor — #13470, a general regex bug. Behind it: `<commit>`, `::`/`:::` cuts, the compile-time exceptions for removed metacharacters |
 | Non-goal | `S05-metasyntax/angle-brackets.t` | aborts at 51/95 (2026-10-14, unchanged) | SORRY (v2026.06 rejects `<*xyz>` at compile time) | All 51 reachable subtests pass. test 52's code-string subrule (turning a string containing `{...}` into a regex) also kills old raku = requires the equivalent of MONKEY-SEE-NO-EVAL. New raku does not even run due to the unfudged `<*xyz>` at line 267 |
@@ -182,14 +181,6 @@ completed fix history lives in `news/`.
   assertions are **stale old-Rakudo expectations that mutsu correctly diverges from** — do NOT
   "fix" them (stale line numbers from an older file layout; `Control::Caller()` gist format;
   unqualified `subname`). `caller` is not even a routine in modern Rakudo.
-- **`S32-basics/xxPOS.t`** — blocker 1 (file-stopper at test 12): **sigilless variable naming
-  collision**, now narrowed to the pointy-block form (#13474). The plain
-  `my \a = (1,2,3); my $a = 45; say a;` case is fixed (prints `(1 2 3)`), and so is a sub param
-  `sub f(\a) { my $a = 45; a }`; what remains is a `for … -> \a { my $a = 45; a }` param, which the
-  later `my $a` in the same body still overwrites (mutsu `(Int)`, raku `(Array)`). Also: tests 43-53 need xxPOS autovivification on undefined `$a`; 61-63 need
-  multi-dimensional EXISTS-POS with Failure from a negative index; 64 needs a `but` mixin with a
-  role implementing AT-POS + `substr-rw`. (BIND-POS/DELETE-POS and the shared-cell BIND-POS are
-  done — pin: t/bind-pos-shared-cell.t.)
 - **`S12-traits/basic.t`** — tests 2-4 need the obsolete `trait_auxiliary:<is>` feature; tests
   5-8 (class role composition) would pass but the EVAL on line 32 kills the program first.
 

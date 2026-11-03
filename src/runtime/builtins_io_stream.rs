@@ -246,7 +246,14 @@ impl Interpreter {
                 // No limit: return a lazy IO lines iterator so that
                 // consumers (e.g. for-loop) can read on demand.
                 // This allows `last` in `-ne` mode to exit without
-                // waiting for stdin EOF.
+                // waiting for stdin EOF. `:close` closes the handle once a
+                // read reaches EOF (#16128).
+                if close_after {
+                    self.with_handle_mut(&handle, |state| {
+                        state.close_on_exhaust = true;
+                        Ok(())
+                    })?;
+                }
                 return Ok(Value::lazy_io_lines(handle, false, false));
             }
             let mut lines = Vec::new();

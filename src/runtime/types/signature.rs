@@ -1106,7 +1106,18 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
             bind_named_rename_sub_signature(interpreter, nested, value, wrapper_traits)?;
         } else {
             mark_leaf_readonly(interpreter, bind_name);
-            interpreter.bind_param_value(bind_name, value.clone());
+            // `:f(:$format) is copy` owns a fresh container: a forwarded
+            // read-only cell (`:$format` from a caller's plain param, reaching
+            // here through a `|%args` slip) must not be bound as is, or the
+            // body's `$format = ...` hits the caller's read-only cell (WWW::Ollama).
+            let copy_only = wrapper_traits.iter().any(|t| t == "copy")
+                && !wrapper_traits.iter().any(|t| t == "rw" || t == "raw");
+            let bound = if copy_only && !bind_name.starts_with(['@', '%']) {
+                value.deref_container()
+            } else {
+                value.clone()
+            };
+            interpreter.bind_param_value(bind_name, bound);
             interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
         }
     }

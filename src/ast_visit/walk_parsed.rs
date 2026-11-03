@@ -3,7 +3,7 @@
 //! passes, so every child is visited exactly as the lowered statement's would
 //! be.
 
-use super::{Visit, VisitMut, params, params_mut};
+use super::{NameKind, Visit, VisitMut, params, params_mut};
 use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt, WordItem};
 
 /// Visits every child of `node`.
@@ -107,6 +107,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let ParsedStmt::SigillessDecl(d) = node {
+        v.visit_name(&d.name, NameKind::VarDecl);
         v.visit_expr(&d.expr);
         return;
     }
