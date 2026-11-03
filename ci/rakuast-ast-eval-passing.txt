@@ -5635,6 +5635,7 @@ t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
+t/rakuast/rakuast-deparse.t
 t/rakuast/rakuast-deprecated-anon-sub-call.t
 t/rakuast/rakuast-deprecated-computed-message.t
 t/rakuast/rakuast-derived-methods-2.t
@@ -5944,6 +5945,7 @@ t/rakuast/rakuast-reverse-set-compound-node.t
 t/rakuast/rakuast-roast-tap-cohort.t
 t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-composition-boundaries.t
+t/rakuast/rakuast-role-deparse-method-body.t
 t/rakuast/rakuast-role-hidden-traits.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
@@ -6972,6 +6974,7 @@ t/routines/dispatch/core-infix-user-candidate-fallbacks.t
 t/routines/dispatch/defer-multi-cross-level-proto-block.t
 t/routines/dispatch/defer-multi-plain-cross-level.t
 t/routines/dispatch/defer-multi-single-class.t
+t/routines/dispatch/deparse-repeated-dispatch.t
 t/routines/dispatch/dispatch-control.t
 t/routines/dispatch/dynamic-code-var-imported-test-multi.t
 t/routines/dispatch/enum-multiline-wordlist.t
