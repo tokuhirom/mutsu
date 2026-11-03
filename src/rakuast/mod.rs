@@ -51,6 +51,7 @@ pub(crate) mod nested_methods;
 pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
+mod pod_blocks;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
 mod regex_call_origins;
@@ -1825,6 +1826,7 @@ pub fn str_dot_ast_checked(
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
+    pod_blocks::insert(&mut node, source, &stmts);
     Ok(Value::rakuast(Box::new(node)))
 }
 

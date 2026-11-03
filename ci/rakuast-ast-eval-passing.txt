@@ -6504,6 +6504,7 @@ t/regex/regex-my-var-assertion.t
 t/regex/regex-my-var-in-subpattern.t
 t/regex/regex-my-var-interp-after-code-block.t
 t/regex/regex-my-var-interpolation.t
+t/regex/regex-name-apostrophe-ast.t
 t/regex/regex-named-atom-spec-forms.t
 t/regex/regex-negated-class-crlf.t
 t/regex/regex-negated-class-grapheme-cluster.t

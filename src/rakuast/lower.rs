@@ -129,6 +129,10 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
                 if child.class == RakuAstClass::StatementEmpty {
                     continue;
                 }
+                // A Pod block runs nothing (`$=pod` is built from the source).
+                if child.class == RakuAstClass::DocBlock {
+                    continue;
+                }
                 super::infix_func::note_declaration(child);
                 super::shadowed_terms::note_keyword_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
