@@ -260,6 +260,10 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // `use experimental :cached` lets the rest of this scope say `is cached`.
+    if module == "experimental" && use_tags.iter().any(|t| t == "cached") {
+        crate::parser::stmt::simple::enable_experimental_cached();
+    }
     // Handle `use lib "path"` or `use lib $*PROGRAM.parent(N).add("path")` at
     // parse time. A list (`use lib "a", "b"` / `use lib <a b>`) adds each path.
     if module == "lib"
