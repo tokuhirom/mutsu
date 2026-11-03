@@ -253,6 +253,9 @@ const fn build_names() -> NameIndex {
     index
 }
 
+// Like ROWS, this feeds other const computations; only the individual static
+// arrays below are emitted at runtime, not a copied NameIndex per access.
+#[allow(clippy::large_const_arrays)]
 const NAME_INDEX: NameIndex = build_names();
 
 /// The distinct method names, sorted bytewise.
