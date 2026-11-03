@@ -93,7 +93,12 @@ impl PostDeclared<'_> {
     }
 
     fn use_name(&mut self, name: &str) {
-        if self.found.is_some() || self.is_core(name) {
+        // A qualified name (`X::Y::Z`) is looked up in its package when it
+        // runs: rakudo compiles a use before the declaration (it fails only if
+        // the symbol is still missing when the code executes), and a module
+        // like Directory refers to an exception class it declares further
+        // down the file. Only a single-segment name is a lexical type name.
+        if self.found.is_some() || crate::qualified::is_qualified_str(name) || self.is_core(name) {
             return;
         }
         for frame in self.frames.iter().rev() {
@@ -183,5 +188,10 @@ mod tests {
         assert!(!verdict("say Set; class Set {}"));
         assert!(!verdict("sub f { B.new }; sub g { }"));
         assert!(!verdict("class X::Y::Z { }; my \\x = X::Y; class X::Y { }"));
+        // a qualified name is resolved when the code runs
+        assert!(!verdict(
+            "class A { method m { X::B::C.new } }; class X::B::C {}"
+        ));
+        assert!(!verdict("sub f { B::C.new }; class B::C { }"));
     }
 }
