@@ -82,7 +82,9 @@ plan 5;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
-    ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
+    my $reported = so @seen.grep('.cro.yml');
+    diag "events seen: {@seen.raku}; tmpdir {$*TMPDIR}; dir listing {$dir.dir.map(*.basename).raku} / {$dir.add('svc').dir.map(*.basename).raku}" unless $reported;
+    ok $reported, 'a file created inside it is reported by the nested watcher';
 }
 
 # An `emit` outside every supply still raises, as before.
