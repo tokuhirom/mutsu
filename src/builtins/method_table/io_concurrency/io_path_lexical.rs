@@ -60,6 +60,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     row0!("gist", gist_row),
     row0!("IO", io_row),
+    row0!("platform-library-name", platform_library_name_row),
     row0!("SPEC", spec_row),
     row0!("basename", basename_row, RowFlags::DEFINITE),
     row0!("dirname", dirname_row, RowFlags::DEFINITE),
@@ -187,6 +188,22 @@ fn io_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
         ctx.class
     };
     Some(Ok(Value::make_instance(class, ctx.attributes)))
+}
+
+/// `Distribution::Resource.platform-library-name`: the IO::Path of the resource's
+/// platform library file (`%?RESOURCES<libraries/foo>` already resolves to
+/// `libfoo.so`/`.dylib`). Only a resource answers it; `None` for a real
+/// `IO::Path`, which has no such method (NativeCall's `guess_library_name`).
+// Cost: O(a), a = attributes of the instance.
+fn platform_library_name_row(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let ctx = PathCtx::of(target)?;
+    if ctx.class != "Distribution::Resource" {
+        return None;
+    }
+    io_row(target, args)
 }
 
 /// `IO::Path.SPEC`: the `IO::Spec` type object the path follows.
