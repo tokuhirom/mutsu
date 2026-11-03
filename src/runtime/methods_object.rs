@@ -611,6 +611,13 @@ impl Interpreter {
         let has_subset_attr = type_constraints
             .values()
             .any(|tc| self.constraint_is_user_subset(tc));
+        let new_skips_phases = (has_build || has_tweak)
+            && self.class_mro(cn_resolved).iter().any(|c| {
+                matches!(
+                    c.as_str(),
+                    "Hash" | "Map" | "Array" | "List" | "Set" | "Bag" | "Mix" | "SetHash" | "BagHash" | "MixHash"
+                )
+            });
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             alias_attributes,
@@ -626,6 +633,7 @@ impl Interpreter {
             type_constraints,
             has_build,
             has_tweak,
+            new_skips_phases,
             has_smiley,
             has_subset_attr,
             attrs_fully_known,

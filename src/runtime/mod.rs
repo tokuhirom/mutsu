@@ -1224,6 +1224,12 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) type_constraints: Arc<HashMap<String, String>>,
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
+    /// Whether the default `.new` of this class skips `BUILD`/`TWEAK`: the
+    /// class derives from a built-in container (`Hash`, `Map`, `Array`,
+    /// `List`, `Set`, `Bag`, `Mix`, ...) whose `new` builds the object
+    /// without `bless`, so Rakudo never runs the submethods for it (only an
+    /// explicit `self.bless` does). `bless` ignores this.
+    pub(crate) new_skips_phases: bool,
     pub(crate) has_smiley: bool,
     /// True when some attribute is typed with a user `subset`, whose predicate
     /// is checked at construction (defaults included) like a `where` clause.

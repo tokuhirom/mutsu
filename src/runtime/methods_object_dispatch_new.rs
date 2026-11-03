@@ -1549,7 +1549,7 @@ impl Interpreter {
                 let class_mro = self.class_mro(class_key);
                 // When BUILD is defined, it controls attribute initialization,
                 // so we skip automatic named-arg-to-attribute mapping.
-                let any_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
+                let any_build = !ctor_plan.new_skips_phases && class_mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && self.registry().user_method_overloads(cn, "BUILD").is_some()
@@ -1560,7 +1560,7 @@ impl Interpreter {
                 // The plan's `has_build` counts them, from the class shape
                 // (re-ordering every role's submethods per construction was
                 // most of a `.new`, #12917).
-                let has_build_phase = any_build || ctor_plan.has_build;
+                let has_build_phase = any_build || (ctor_plan.has_build && !ctor_plan.new_skips_phases);
                 // A custom BUILD takes over named-arg → attribute mapping only
                 // for the attributes of the MRO layer declaring it; other
                 // layers still auto-assign (see `build_owning_attr_names`).
@@ -1997,7 +1997,11 @@ impl Interpreter {
                 // inline here).
                 inv_cell.commit_attrs(attrs);
                 self.push_build_write_frame(&inv);
-                let build_result = self.run_build_phase(*class_name, &inv, &args);
+                let build_result = if ctor_plan.new_skips_phases {
+                    Ok(Ok(()))
+                } else {
+                    self.run_build_phase(*class_name, &inv, &args)
+                };
                 let build_writes = self.pop_build_write_frame();
                 match build_result? {
                     Ok(()) => {}
@@ -2048,7 +2052,7 @@ impl Interpreter {
                 }
                 // A class or role-composed TWEAK anywhere in the MRO, from the
                 // class shape (see `has_build_phase`).
-                if ctor_plan.has_tweak {
+                if ctor_plan.has_tweak && !ctor_plan.new_skips_phases {
                     // `fail` inside TWEAK yields a Failure `.new` returns.
                     if let Err(failure) = self.run_tweak_phase(*class_name, &inv, &args)? {
                         return Ok(failure);

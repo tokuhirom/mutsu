@@ -24,7 +24,7 @@ impl Interpreter {
         let class_attrs = &*plan.class_attrs;
         let type_constraints = &*plan.type_constraints;
 
-        let has_build = plan.has_build;
+        let has_build = plan.has_build && !plan.new_skips_phases;
         let mut attrs = match self.native_ctor_named_attrs(cn_resolved, args, plan)? {
             Ok(attrs) => attrs,
             Err(error) => return Some(Err(error)),
@@ -355,7 +355,7 @@ impl Interpreter {
         // applies defaults before BUILD). `has_build` was computed above (it
         // gates the named-arg auto-assignment); the TWEAK check is cheap so the
         // common no-submethod case pays nothing extra.
-        let has_tweak = plan.has_tweak;
+        let has_tweak = plan.has_tweak && !plan.new_skips_phases;
         // Enforce `where` constraints at attribute-assignment time, i.e. *before*
         // BUILD/TWEAK run (matches the interpreter's pre-BUILD enforcement): a
         // provided/defaulted value that fails its `where` is rejected here, and a
