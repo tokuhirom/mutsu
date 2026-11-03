@@ -308,6 +308,11 @@ fn every_row_is_reached_and_answers() {
             if super::receiver_step::claims(&target, row.name) {
                 continue;
             }
+            // `platform-library-name` is `Distribution::Resource`'s, a class that
+            // shares the IoPath rows: a plain IO::Path sample declines it.
+            if row.owner == "IO::Path" && row.name == "platform-library-name" {
+                continue;
+            }
             let result = try_dispatch(&target, Symbol::intern(row.name), &args);
             if !row.handler.is_pure() {
                 // An interpreter row is answered by the entries that have an
@@ -478,6 +483,9 @@ fn rows_are_declared_by_rakudo() {
         .filter(|row| !(row.owner == "Rakudo::Internals" && row.name == "IS-MACOS"))
         // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
         .filter(|row| row.name != "DESTROY")
+        // Rakudo declares `platform-library-name` on `Distribution::Resource`,
+        // which mutsu serves from the IoPath rows it shares with `IO::Path`.
+        .filter(|row| !(row.owner == "IO::Path" && row.name == "platform-library-name"))
         // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),
         // which current Rakudo no longer declares (ADR-11276 §9.116).
         .filter(|row| !(row.owner == "Uni" && matches!(row.name, "chars" | "comb")))
