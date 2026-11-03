@@ -11129,8 +11129,16 @@ impl CompiledCode {
                     self.constants.get(idx as usize).map(Value::view)
             {
                 for item in items.iter() {
-                    // Entries are either `Str(name)` or `Pair(name, Int(slot))`.
-                    let name = match item.view() {
+                    // Entries are `Str(name)` or `Pair(name, Int(slot))`; a
+                    // named argument wraps its descriptor as
+                    // `[FALSE, descriptor]` (`add_arg_sources_constant`), and
+                    // `f :p($y)` can write `$y` through an `is rw`/`is raw`
+                    // parameter just as `f $y` can.
+                    let descriptor = match item.view() {
+                        ValueView::Array(parts, ..) if parts.len() == 2 => parts[1].clone(),
+                        _ => item.clone(),
+                    };
+                    let name = match descriptor.view() {
                         ValueView::Str(s) => Some(s.to_string()),
                         ValueView::Pair(k, _) => Some(k.to_string()),
                         _ => None,
@@ -11145,6 +11153,11 @@ impl CompiledCode {
                     // `&f = ...` rebind is a name-write and is still caught; an
                     // `is raw` param rebinding a passed `&`-arg remains a known
                     // gap of this analysis.
+                    // A named argument's source is encoded `key=var`.
+                    let name = name.map(|n| match n.split_once('=') {
+                        Some((_, var)) => var.to_string(),
+                        None => n,
+                    });
                     if let Some(name) = name
                         && !name.starts_with('&')
                     {
