@@ -67,6 +67,10 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         topic_call(node, span);
         return;
     }
+    if node.class == RakuAstClass::ApplyDottyInfix && span.is_some() {
+        dotty_assign(node, span);
+        return;
+    }
     if node.class != RakuAstClass::ApplyPostfix || !span.is_some() {
         return;
     }
