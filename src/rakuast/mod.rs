@@ -1782,10 +1782,29 @@ pub(crate) fn parameter_param_def(
     lower::lower_parameter_def(names, node)
 }
 
-/// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
-pub fn str_dot_ast(names: &NameScope, source: &str) -> Result<Value, RuntimeError> {
+/// A check over the parsed unit, in source order, that the frontend itself
+/// cannot make (it needs the runtime's name tables).
+pub type UnitCheck<'a> = &'a dyn Fn(&[crate::ast::Stmt]) -> Result<(), RuntimeError>;
+
+/// No extra check.
+pub fn no_unit_check(_: &[crate::ast::Stmt]) -> Result<(), RuntimeError> {
+    Ok(())
+}
+
+/// Entry point for `Str.AST`: parse the source, run `unit_check` on the parsed
+/// statements, convert, wrap in `Value::RakuAst`.
+pub fn str_dot_ast_checked(
+    names: &NameScope,
+    source: &str,
+    unit_check: UnitCheck<'_>,
+) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    // Rakudo's `.AST` raises the compile errors running the code does
+    // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
+    // declaration.
+    post_declared::check(&stmts, names)?;
+    unit_check(&stmts)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
@@ -1802,7 +1821,7 @@ pub fn compile_time_compunit(
     source: &str,
     imported: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
-    let cu = str_dot_ast_compunit(names, source)?;
+    let cu = str_dot_ast_compunit(names, source, &no_unit_check)?;
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
@@ -1819,11 +1838,15 @@ pub fn compile_time_compunit(
 /// different names); mutsu derives one from the source and a process-wide
 /// counter, which keeps that distinctness.
 // Cost: O(n), n = source length (the parse dominates).
-pub fn str_dot_ast_compunit(names: &NameScope, source: &str) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_compunit(
+    names: &NameScope,
+    source: &str,
+    unit_check: UnitCheck<'_>,
+) -> Result<Value, RuntimeError> {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast(names, source)?;
+    let statement_list = str_dot_ast_checked(names, source, unit_check)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1867,9 +1890,10 @@ pub fn str_dot_ast_with_slang(
     names: &NameScope,
     source: &str,
     slang: Option<&str>,
+    unit_check: UnitCheck<'_>,
 ) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
-        return str_dot_ast(names, source);
+        return str_dot_ast_checked(names, source, unit_check);
     };
     let module = format!("L10N::{slang}");
     let activation = crate::runtime::slang_activation::run_slang_activation(
@@ -1884,7 +1908,7 @@ pub fn str_dot_ast_with_slang(
     let result = (|| {
         crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
-        str_dot_ast(names, source)
+        str_dot_ast_checked(names, source, unit_check)
     })();
     crate::parser::set_l10n_preseed(None);
     crate::parser::restore_slang_state(saved_modes, saved_vocabulary);
