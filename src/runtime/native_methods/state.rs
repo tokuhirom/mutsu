@@ -168,9 +168,10 @@ struct DescriptorForward {
 const ENDED_STREAM_KEEP: usize = 32;
 const ENDED_STREAM_MAX: usize = 1 << 20;
 
-fn ended_streams() -> &'static std::sync::Mutex<std::collections::VecDeque<(u64, Vec<u8>)>> {
-    static ENDED: OnceLock<std::sync::Mutex<std::collections::VecDeque<(u64, Vec<u8>)>>> =
-        OnceLock::new();
+type EndedStreams = std::sync::Mutex<std::collections::VecDeque<(u64, Vec<u8>)>>;
+
+fn ended_streams() -> &'static EndedStreams {
+    static ENDED: OnceLock<EndedStreams> = OnceLock::new();
     ENDED.get_or_init(|| std::sync::Mutex::new(std::collections::VecDeque::new()))
 }
 
