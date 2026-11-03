@@ -226,6 +226,19 @@ impl Interpreter {
             && !self.in_inlined_block_frame()
     }
 
+    /// Whether the running code is the top level of an `EVAL` unit (not a block
+    /// or routine nested in it): a `sub` declared there is lexical to the unit
+    /// and must not outlive it, whereas a block-scoped `sub` nested in the unit
+    /// closes over its block like one outside any `EVAL` (#16198).
+    // Cost: O(1).
+    pub(crate) fn at_eval_unit_top_level(&self) -> bool {
+        self.env
+            .get("__mutsu_in_eval")
+            .is_some_and(|v| v.truthy())
+            && self.block_scope_depth <= self.module.eval_unit_block_depth
+            && self.routine_stack.len() <= self.module.eval_unit_routine_depth
+    }
+
     /// Insert a multi-overload `def` into the function registry under `base_key`,
     /// falling back to the first free `base_key__m{N}` suffix when `base_key` is
     /// already taken. Uses a SINGLE write guard for all probes — the previous

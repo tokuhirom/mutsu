@@ -71,12 +71,8 @@ plan 5;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
-    # Fails only when the file runs as `EVAL(slurp($file).AST)` (the CI
-    # `RakuAST EVAL($ast) ratchet`): a `sub` declared in a `supply` block is
-    # `Unknown function` from the whenever callback's thread there (#16198). The
-    # two real races found on the way are fixed and pinned in
-    # t/concurrency/supply/whenever-watch-reports-changes-made-after-the-whenever.t.
-    todo 'sub in a supply block unresolved from a callback under EVAL($ast), #16198', 1;
+    # Also holds as `EVAL(slurp($file).AST)`: a `sub` nested in an EVAL unit's
+    # `supply` block stays callable from the whenever callback's thread (#16198).
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
 }
 
