@@ -22,8 +22,8 @@ use super::*;
 fn arg_binding_value(arg: &Value) -> std::borrow::Cow<'_, Value> {
     let v = arg.unwrap_varref();
     // Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` (ADR-12666).
-    if v.is_vm_collection() {
-        return std::borrow::Cow::Owned(v.clone().hllize_vm_collection());
+    if v.needs_hllize_for_binding() {
+        return std::borrow::Cow::Owned(v.clone().hllize_for_binding());
     }
     if !v.is_container_ref() {
         return std::borrow::Cow::Borrowed(v);

@@ -287,10 +287,10 @@ impl Interpreter {
                 LightBind::Def(params) => Self::apply_scalar_param_bind(params[i].bind(), arg),
                 LightBind::Placeholders => Self::itemize_scalar_store_value(arg),
                 LightBind::Legacy => Self::itemize_scalar_store_value(
-                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection(),
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_for_binding(),
                 ),
                 LightBind::Topic => {
-                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection()
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_for_binding()
                 }
             };
             if !val.is_plain_local_read() {

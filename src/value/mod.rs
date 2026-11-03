@@ -696,6 +696,7 @@ mod vm_collection;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
+pub(crate) use vm_collection::BOOT_SCALAR_VALUE_ATTR;
 pub(crate) mod list_gen;
 pub(crate) mod list_gen_rotor;
 mod map_grep_items;

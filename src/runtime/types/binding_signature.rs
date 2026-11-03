@@ -1083,8 +1083,8 @@ impl Interpreter {
         // Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` argument
         // into the `List`/`Hash` over the same storage (ADR-12666).
         let hllized: Vec<Value>;
-        let args = if args.iter().any(Value::is_vm_collection) {
-            hllized = args.iter().cloned().map(Value::hllize_vm_collection).collect();
+        let args = if args.iter().any(Value::needs_hllize_for_binding) {
+            hllized = args.iter().cloned().map(Value::hllize_for_binding).collect();
             hllized.as_slice()
         } else {
             args

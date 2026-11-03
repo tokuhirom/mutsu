@@ -163,8 +163,8 @@ impl Interpreter {
     /// opcodes, whose callees bind through several tiers.
     // Cost: O(a), a = arguments (one tag probe each); O(a) moves when one is raw.
     pub(super) fn hllize_call_args(args: Vec<Value>) -> Vec<Value> {
-        if args.iter().any(Value::is_vm_collection) {
-            args.into_iter().map(Value::hllize_vm_collection).collect()
+        if args.iter().any(Value::needs_hllize_for_binding) {
+            args.into_iter().map(Value::hllize_for_binding).collect()
         } else {
             args
         }
