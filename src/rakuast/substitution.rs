@@ -430,6 +430,18 @@ fn parenthesized_expression(node: &RakuAstNode) -> Option<&RakuAstNode> {
     named_child(rakuast_node_of(v)?, "expression").ok()
 }
 
+/// Whether `text`, read as the `qq` source of a replacement, is just itself:
+/// nothing in it starts an escape, an interpolation or a block.
+// Cost: O(n), n = length of `text`.
+fn is_plain_qq_source(text: &str) -> bool {
+    !text.chars().any(|c| {
+        matches!(
+            c,
+            '\\' | '$' | '@' | '%' | '&' | '{' | '}' | '\u{ab}' | '\u{bb}'
+        )
+    })
+}
+
 /// `Substitution` as the parser's `Expr::Subst` / `Expr::NonDestructiveSubst`.
 // Cost: O(n), n = size of the pattern and replacement.
 pub(super) fn lower_substitution(
@@ -470,17 +482,34 @@ pub(super) fn lower_substitution(
         crate::parser::subst_pattern_source(regex.to_source(), &adverbs, samespace)
             .ok_or_else(|| unsupported(node))?;
     let replacement = lower_expr(names, named_child(node, "replacement")?)?;
-    let thunk = Some(Box::new(match compound_op {
-        Some(op) => SubstThunk {
-            expr: crate::parser::subst_compound_thunk(&op, replacement),
-            infix: Some(op.into()),
+    // A replacement that is a constant string with nothing in it a `qq` source
+    // would read (`s:g/\d+/#/`) is the parser's own shape: the text, and no
+    // thunk. The thunk evaluates the replacement once per match with `$/`
+    // bound, which a constant never needs (#15157).
+    let constant = match (&compound_op, &replacement) {
+        (None, Expr::Literal(value)) => match value.view() {
+            ValueView::Str(text) if is_plain_qq_source(&text) => Some(text.to_string()),
+            _ => None,
         },
-        None => SubstThunk {
-            expr: replacement,
-            infix: None,
-        },
-    }));
-    let (replacement, tree) = (String::new(), None);
+        _ => None,
+    };
+    let (replacement, thunk) = match constant {
+        Some(text) => (text, None),
+        None => (
+            String::new(),
+            Some(Box::new(match compound_op {
+                Some(op) => SubstThunk {
+                    expr: crate::parser::subst_compound_thunk(&op, replacement),
+                    infix: Some(op.into()),
+                },
+                None => SubstThunk {
+                    expr: replacement,
+                    infix: None,
+                },
+            })),
+        ),
+    };
+    let tree = None;
     let crate::parser::SubstFlags {
         samecase,
         sigspace,
