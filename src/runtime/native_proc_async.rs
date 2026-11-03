@@ -5,9 +5,10 @@ use crate::builtins::stream_decoder::{ChunkDecoder, Codec};
 use crate::value::AttrMap;
 use std::io::{Read, Write};
 
-/// Create a Buf Value from raw bytes.
+/// Create a `Buf[uint8]` Value from raw bytes, the type rakudo delivers for a
+/// process stream's `:bin` chunks (#16150).
 fn make_buf_value(bytes: &[u8]) -> Value {
-    crate::value::value_buf::make_buf_from_u8(bytes)
+    crate::value::value_buf::make_buf_from_bytes(Symbol::intern("Buf[uint8]"), bytes)
 }
 
 /// The Supply channels one Proc::Async reader thread emits its decoded chunks to.
