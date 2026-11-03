@@ -10,4 +10,4 @@ the directory) could be lost if it landed between the listing and the tap. The
 (what it reports queues for the first tap); the retirement rules still wait for
 the real tap. The watcher's baseline is also taken at the `.watch` call itself
 instead of when its helper thread first runs, so a file created in between (a
-loaded runner starts the thread late) is reported. Closes #16198.
+loaded runner starts the thread late) is reported. Refs #16198 (its `EVAL($ast)` failure is a separate cause).
