@@ -86,7 +86,26 @@ impl Interpreter {
             && (self.has_user_method(&cn, "iterator") || attributes.contains_key("iterator"))
     }
 
-    // Cost: O(n) to drain the iterator, n = items the iterator yields.
+    /// How many items `method(args)` of a `Sequence` needs from its iterator:
+    /// `Some(n)` for a prefix consumer (`head(n)`, `head`, a bare `first`,
+    /// `AT-POS(i)`), `None` when it needs the whole sequence. Rakudo's
+    /// `Sequence` pulls these lazily, so an endless iterator still answers.
+    // Cost: O(1).
+    fn sequence_prefix_need(method: &str, args: &[Value]) -> Option<usize> {
+        let int_arg = |v: &Value| match v.deref_container().view() {
+            ValueView::Int(i) if i >= 0 => usize::try_from(i).ok(),
+            _ => None,
+        };
+        match (method, args) {
+            ("head", []) | ("first", []) => Some(1),
+            ("head", [n]) => int_arg(n),
+            ("AT-POS", [i]) => int_arg(i).and_then(|i| i.checked_add(1)),
+            _ => None,
+        }
+    }
+
+    // Cost: O(n) to drain the iterator, n = items the iterator yields; a
+    // prefix consumer (`head(k)`, `AT-POS(i)`) pulls only that prefix, O(k).
     pub(crate) fn try_sequence_role_delegate(
         &mut self,
         target: &Value,
@@ -142,15 +161,16 @@ impl Interpreter {
         }
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
+        let need = Self::sequence_prefix_need(method, args);
         let items = if self.has_user_method(&cn, "iterator") {
             if matches!(target.view(), ValueView::Mixin(..)) {
                 // The class's own `iterator`, with the mixed value as `self`
                 // (not the Sequence role's, which would wrap the instance).
                 self.call_user_iterator_on_mixin(target)
-                    .and_then(|iterator| self.drive_iterator_value_items(iterator))
+                    .and_then(|iterator| self.drive_iterator_value_items_upto(iterator, need))
                     .map(|(items, _)| items)
             } else {
-                self.drive_user_iterator_items(target)
+                self.drive_user_iterator_items_upto(target, need)
             }
         } else {
             let iterator = attributes
@@ -158,7 +178,7 @@ impl Interpreter {
                 .get("iterator")
                 .cloned()
                 .unwrap_or(Value::NIL);
-            self.drive_iterator_value_items(iterator)
+            self.drive_iterator_value_items_upto(iterator, need)
                 .map(|(items, advanced)| {
                     // The cursor lives in the iterator: keep the moved one, so a
                     // second `.List` continues where the first stopped.

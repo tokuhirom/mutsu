@@ -53,6 +53,34 @@ impl SeqBody {
             && matches!(state.source, SeqSource::MapGrep { .. })
     }
 
+    /// Whether this body is an untouched `IO::Handle.lines` / `.words` Seq
+    /// that a `.map` / `.grep` / `.pairs` / `.antipairs` can pipe from on
+    /// demand ([`SeqBody::take_io_lines_pipe_source`]) instead of reading the
+    /// whole handle first (#16065). The `.kv` flavour counts elements itself
+    /// and stays on the eager path.
+    // Cost: O(1).
+    pub(crate) fn has_io_lines_pipe_source(&self) -> bool {
+        let state = self.lock_state();
+        !state.cache_requested
+            && !state.retained
+            && matches!(state.source, SeqSource::IoLines { kv: false, .. })
+    }
+
+    /// Steal the handle source of [`SeqBody::has_io_lines_pipe_source`], leaving
+    /// the body `Taken` (a `.map` consumes its receiver), as the
+    /// [`SeqSource::IoLines`] a pipe stage then pulls one line at a time.
+    // Cost: O(1).
+    pub(crate) fn take_io_lines_pipe_source(&self) -> Option<SeqSource> {
+        let mut state = self.lock_state();
+        if state.cache_requested
+            || state.retained
+            || !matches!(state.source, SeqSource::IoLines { kv: false, .. })
+        {
+            return None;
+        }
+        Some(std::mem::replace(&mut state.source, SeqSource::Taken))
+    }
+
     /// Advance the [`SeqSource::MapGrep`] of a stream body built from
     /// [`SeqBody::take_map_grep_stream_source`]: hand it to `pull`, which
     /// advances its `pos` and returns the elements it produced plus whether
