@@ -2520,6 +2520,7 @@ pub(super) fn view_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
         origin::named_term(&mut node, span);
         origin::quoted_text(&mut node, span);
         super::call_origins::postfix_call(&mut node, span);
+        super::call_origins::dotty_assign(&mut node, span);
     }
     super::infix_origins::derive(names, &mut node);
     Ok(node)
@@ -2549,6 +2550,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 origin::set_span(&mut node, *span);
                 origin::quoted_text(&mut node, *span);
                 super::call_origins::postfix_call(&mut node, *span);
+                super::call_origins::dotty_assign(&mut node, *span);
                 Ok(node)
             }
             Spelling::SourceIdentifier => written_identifier(names, &spelled.expr),
