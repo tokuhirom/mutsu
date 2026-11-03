@@ -82,11 +82,17 @@ pub(crate) enum Region {
     /// tags a sample, because GC time is subtracted from the sample weight
     /// rather than charged to the line that reached the safepoint.
     Gc,
+    /// A thread blocked in a native wait (`sleep`, a thread join, a socket
+    /// read, a child-process wait). Excluded-time only, like [`Region::Gc`]:
+    /// it is not time a Raku line is running, but it is not collector time
+    /// either, and calling it `gc` made a join-heavy run report nearly its
+    /// whole wall clock as GC (#15577).
+    Blocked,
 }
 
 impl Region {
     /// How many tags there are, for the fixed-size accumulators.
-    pub(crate) const COUNT: usize = 8;
+    pub(crate) const COUNT: usize = 9;
 
     /// The spelling the report and the tests use. Kebab-case, matching the
     /// names ADR-0106 D4 writes.
@@ -100,6 +106,7 @@ impl Region {
             Region::Regex => "regex",
             Region::Parse => "parse",
             Region::Gc => "gc",
+            Region::Blocked => "blocked",
         }
     }
 
@@ -116,6 +123,7 @@ impl Region {
             5 => Region::Regex,
             6 => Region::Parse,
             7 => Region::Gc,
+            8 => Region::Blocked,
             _ => Region::Interp,
         }
     }
