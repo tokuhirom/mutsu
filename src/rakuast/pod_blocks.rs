@@ -9,10 +9,9 @@
 //! next blank line or directive, a paragraph keeping the blank lines after
 //! it). The blocks are then placed between the statements by their offsets.
 //!
-//! Only the plain shape is read: a block with configuration, markup
-//! (`B<...>`), indented (implicit code) lines, one of the verbatim or tabular
-//! types (`code`, `table`, ...), or one a statement starts inside, is left
-//! out as before. Exact or absent.
+//! The verbatim types (`code`, `input`, `output`, `comment`) are read; the
+//! tabular ones (`table`, `defn`, ...) and a block a statement starts inside
+//! are left out as before. Exact or absent.
 
 use super::infix_origins::byte_range;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -22,9 +21,13 @@ use crate::value::Value;
 
 /// The block types whose paragraphs are not plain text.
 const SPECIAL: &[&str] = &[
-    "code", "input", "output", "comment", "table", "defn", "config", "formula", "row", "column",
-    "cell", "nested", "toc", "semantic", "alias",
+    "table", "defn", "config", "formula", "row", "column", "cell", "nested", "toc", "semantic",
+    "alias",
 ];
+
+/// The block types whose delimited content is one verbatim string (directives
+/// and blank lines inside it included).
+const VERBATIM: &[&str] = &["code", "input", "output", "comment"];
 
 /// How a block was written.
 #[derive(Clone, Copy, PartialEq)]
@@ -234,6 +237,16 @@ fn parse_atoms(
 /// `Doc::Paragraph` of its atoms when it holds a formatting code.
 // Cost: O(n), n = length of the text.
 fn part_of(text: String) -> Option<Part> {
+    part_in("", text)
+}
+
+/// [`part_of`] for a block of type `kind`: a `comment` is never read for
+/// formatting codes.
+// Cost: O(n), n = length of the text.
+fn part_in(kind: &str, text: String) -> Option<Part> {
+    if kind == "comment" {
+        return Some(Part::Text(text));
+    }
     if !text.chars().any(|c| matches!(c, '<' | '«')) {
         return Some(Part::Text(text));
     }
@@ -300,7 +313,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
-                    vec![part_of(text)?]
+                    vec![part_in(&base, text)?]
                 };
                 let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
                 return Some((
@@ -317,7 +330,11 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     next,
                 ));
             }
-            let (parts, end) = content(lines, i + 1, kind)?;
+            let (parts, end) = if VERBATIM.contains(&kind) {
+                verbatim(lines, i + 1, kind)?
+            } else {
+                content(lines, i + 1, kind)?
+            };
             let to = lines.end(end);
             Some((
                 Block {
@@ -346,7 +363,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
-                vec![part_of(text)?]
+                vec![part_in(&base, text)?]
             };
             let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
             Some((
@@ -529,6 +546,37 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
             }
         }
     }
+}
+
+/// The content of a verbatim block from line `i`: every line up to its
+/// `=end` as one string, without the blank lines before the first.
+/// `None` when the block is not closed.
+// Cost: O(b), b = lines of the block.
+fn verbatim(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)> {
+    while i < lines.text.len() && lines.blank(i) {
+        i += 1;
+    }
+    let mut text = String::new();
+    loop {
+        if i >= lines.text.len() {
+            return None;
+        }
+        if let Some(("end", rest)) = lines.directive(i) {
+            if rest.trim() != kind {
+                return None;
+            }
+            break;
+        }
+        text.push_str(lines.text[i]);
+        text.push('\n');
+        i += 1;
+    }
+    let parts = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![part_in(kind, text)?]
+    };
+    Some((parts, i))
 }
 
 /// The `Doc::Paragraph` of `atoms`.
