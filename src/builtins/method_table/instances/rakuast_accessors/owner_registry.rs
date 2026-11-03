@@ -13,6 +13,8 @@ mod owners_12;
 mod owners_13;
 #[path = "owners_14.rs"]
 mod owners_14;
+#[path = "owners_15.rs"]
+mod owners_15;
 #[path = "owners_2.rs"]
 mod owners_2;
 #[path = "owners_3.rs"]
@@ -46,8 +48,9 @@ const OWNER_PARTS: &[&[OwnerChain]] = &[
     owners_12::CHAINS,
     owners_13::CHAINS,
     owners_14::CHAINS,
+    owners_15::CHAINS,
 ];
-const OWNER_N: usize = 300;
+const OWNER_N: usize = 301;
 static OWNER_CHAINS: [OwnerChain; OWNER_N] = flatten_owners();
 
 const fn flatten_owners() -> [OwnerChain; OWNER_N] {

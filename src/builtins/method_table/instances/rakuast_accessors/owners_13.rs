@@ -3,6 +3,15 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Trait::Hides",
+        &[
+            "RakuAST::Trait::Hides",
+            "RakuAST::Trait::Type",
+            "RakuAST::Trait",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Trait::Is",
         &["RakuAST::Trait::Is", "RakuAST::Trait", "RakuAST::Node"],
     ),
@@ -180,18 +189,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Var::Compiler::Block",
         &[
             "RakuAST::Var::Compiler::Block",
-            "RakuAST::Var",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Var::Compiler::Distribution",
-        &[
-            "RakuAST::Var::Compiler::Distribution",
-            "RakuAST::Var::Lexical",
             "RakuAST::Var",
             "RakuAST::Term",
             "RakuAST::Termish",

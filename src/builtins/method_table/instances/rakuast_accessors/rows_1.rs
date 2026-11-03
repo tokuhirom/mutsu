@@ -2,6 +2,15 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Regex::BackReference::Positional", "index"),
+    row!("RakuAST::Regex::BacktrackModifiedAtom", "atom"),
+    row!("RakuAST::Regex::BacktrackModifiedAtom", "backtrack"),
+    row!("RakuAST::Regex::Block", "block"),
+    row!("RakuAST::Regex::Branching", "branches"),
+    row!("RakuAST::Regex::CapturingGroup", "regex"),
+    row!("RakuAST::Regex::CharClass::Negatable", "negated"),
+    row!("RakuAST::Regex::CharClass::Specified", "characters"),
+    row!("RakuAST::Regex::CharClassElement", "negated"),
     row!("RakuAST::Regex::CharClassElement::Enumeration", "elements"),
     row!("RakuAST::Regex::CharClassElement::Property", "inverted"),
     row!("RakuAST::Regex::CharClassElement::Property", "predicate"),
@@ -200,17 +209,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Type::Simple", "is-resolved"),
     row!("RakuAST::Type::Simple", "name"),
     row!("RakuAST::Type::Simple", "resolution"),
-    interp_row!(
-        "RakuAST::Type::Subset",
-        "compile-time-value",
-        compiled_value
-    ),
-    row!("RakuAST::Type::Subset", "default-scope"),
-    row!("RakuAST::Type::Subset", "is-resolved"),
-    row!("RakuAST::Type::Subset", "name"),
-    row!("RakuAST::Type::Subset", "of"),
-    row!("RakuAST::Type::Subset", "resolution"),
-    row!("RakuAST::Type::Subset", "scope"),
-    row!("RakuAST::Type::Subset", "traits"),
-    row!("RakuAST::Type::Subset", "where"),
 ];

@@ -62,7 +62,9 @@ pub(super) fn accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                     }
                 }
             }
-            Some(Value::hash(map))
+            let mut data = crate::value::HashData::new(map);
+            data.declared_type = Some("Map".into());
+            Some(Value::hash_bare_values(data))
         }
         _ => None,
     }
