@@ -76,6 +76,46 @@ pub(crate) fn close_whenever(id: u64) {
     if let Ok(mut closed) = closed_whenever_map().lock() {
         closed.entry(id).or_insert(seq);
     }
+    // A competing source (a connection's read Supply) reads only while a tap
+    // listens, so the closed subscription must stop listening now (#16092).
+    if let Some(flags) = whenever_close_flag_map()
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&id))
+    {
+        for flag in flags {
+            flag.store(true, Ordering::Release);
+        }
+    }
+}
+
+type WheneverCloseFlagMap = std::sync::Mutex<HashMap<u64, Vec<Arc<AtomicBool>>>>;
+
+fn whenever_close_flag_map() -> &'static WheneverCloseFlagMap {
+    static MAP: OnceLock<WheneverCloseFlagMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Tie a `react` subscription's receiver queue to its `whenever`: closing the
+/// tap (`close_whenever`) then closes the queue, so a competing source such as
+/// a connection's read Supply notices that nobody listens and leaves the next
+/// chunk in the kernel buffer for the next `.Supply` tap (rakudo reads only
+/// while a tap listens). A tap closed before this call closes the queue now.
+// Cost: O(1) expected.
+pub(crate) fn bind_whenever_close_flag(id: u64, flag: Arc<AtomicBool>) {
+    if is_whenever_closed(id) {
+        flag.store(true, Ordering::Release);
+    } else if let Ok(mut m) = whenever_close_flag_map().lock() {
+        m.entry(id).or_default().push(flag);
+    }
+}
+
+/// Forget `id`'s bound queues once its drive loop is done with them.
+// Cost: O(1) expected.
+pub(crate) fn unbind_whenever_close_flag(id: u64) {
+    if let Ok(mut m) = whenever_close_flag_map().lock() {
+        m.remove(&id);
+    }
 }
 
 pub(crate) fn is_whenever_closed(id: u64) -> bool {
