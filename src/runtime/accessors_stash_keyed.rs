@@ -235,11 +235,17 @@ impl Interpreter {
     /// build's env, export, our, enum order.
     // Cost: O(k + c), k = interned qualified names ending in the key's bare
     // name (`qualified_tail_index`), c = this routine's multi candidates;
-    // plus O(e), e = the package's members, when it is an enum.
+    // plus O(e), e = the package's members, when it is an enum. O(1) for a
+    // `$`/`@`/`%` key of GLOBAL (`global_stash_variable`).
     pub(crate) fn package_stash_symbol(&self, package: &str, key: &str) -> Option<Option<Value>> {
         let package_name = Self::normalize_stash_package(package);
         if Self::stash_needs_whole_build(package, &package_name) {
-            return None;
+            // The root stash answers a sigiled `$x` / `@x` / `%x` key per key
+            // too (#9171); every other whole-build package, and `GLOBAL`'s
+            // routines and types, still build the stash.
+            return (Symbol::intern(&package_name) == crate::symbol::wk::global_package())
+                .then(|| self.global_stash_variable(package, key))
+                .flatten();
         }
         let sigil = key.chars().next()?;
         if !matches!(sigil, '$' | '@' | '%' | '&') {
@@ -328,6 +334,126 @@ impl Interpreter {
         // The remaining stores (classes, roles, the `EXPORT` member) only ever
         // contribute unsigiled keys.
         Some(None)
+    }
+
+    /// `GLOBAL::<$x>` / `<@x>` / `<%x>`: the one entry the root stash would
+    /// hold under a sigiled variable `key`, without scanning the env and the
+    /// `our` store (#9171). `None` when this read cannot be answered per key
+    /// (a routine or type key, an operator-shaped name) and the caller builds
+    /// the whole stash.
+    ///
+    /// The whole build gets a sigiled key from exactly three stores, in this
+    /// order: the `our` store (first entry wins), the env plus the modules'
+    /// top-level package symbols (overwrites), and the exported variables
+    /// (never overwrites). A root symbol is spelled bare (`x`), self-qualified
+    /// (`GLOBAL::x`) or with its sigil (`@x`), so those spellings are the
+    /// only keys that can contribute; each goes through the same membership
+    /// helper the whole build runs. The routine, class, role and package loops
+    /// only publish unsigiled and `&` members.
+    // Cost: O(1): four spellings, each a hashed probe plus `env_stash_member`'s
+    // O(|key|) rules. Debug builds also check the answer against the whole
+    // stash.
+    fn global_stash_variable(&self, package: &str, key: &str) -> Option<Option<Value>> {
+        let sigil = key.chars().next()?;
+        if !matches!(sigil, '$' | '@' | '%') {
+            return None;
+        }
+        let bare = &key[1..];
+        if bare.is_empty() || bare.contains(':') || bare.contains('/') {
+            return None;
+        }
+        let global_bare = format!("GLOBAL::{bare}");
+        let global_key = format!("GLOBAL::{key}");
+        let spellings: [&str; 4] = [bare, global_bare.as_str(), key, global_key.as_str()];
+        let found = self.global_stash_variable_in(&spellings, key);
+        #[cfg(debug_assertions)]
+        if Self::global_stash_check_enabled() {
+            // The per-key answer must agree with the whole build (presence).
+            // Off by default (it builds the whole stash on every read); run
+            // the suite with `MUTSU_CHECK_GLOBAL_STASH=1` to verify it.
+            let whole = self.package_stash_value(package);
+            let expected = match whole.view() {
+                ValueView::Instance { attributes, .. } => {
+                    attributes.as_map().get("symbols").and_then(|sym| match sym.view() {
+                        ValueView::Hash(map) => map.get(key).cloned(),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            };
+            debug_assert_eq!(
+                found.is_some(),
+                expected.is_some(),
+                "GLOBAL::<{key}>: keyed read and whole stash disagree on presence"
+            );
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = package;
+        Some(found)
+    }
+
+    /// Whether debug builds check the per-key `GLOBAL` stash read against the
+    /// whole stash (`MUTSU_CHECK_GLOBAL_STASH`).
+    #[cfg(debug_assertions)]
+    fn global_stash_check_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("MUTSU_CHECK_GLOBAL_STASH").is_some())
+    }
+
+    /// [`Self::global_stash_variable`]'s lookup over the candidate spellings.
+    // Cost: O(1) (see above).
+    fn global_stash_variable_in(&self, spellings: &[&str; 4], key: &str) -> Option<Value> {
+        // 2. (overwrites 1.) The env, then the modules' top-level symbols an
+        // env key of the same name shadows.
+        for spelling in spellings {
+            let Some(sym) = Symbol::lookup(spelling) else {
+                continue;
+            };
+            let value = self.env.overlay_get_sym(sym).or_else(|| {
+                self.module
+                    .module_toplevel
+                    .package_symbols
+                    .get(&sym)
+                    .filter(|_| !self.env.contains_key_sym(sym))
+            });
+            let Some(value) = value else { continue };
+            if let Some(EnvStashMember::Value(stash_key)) =
+                self.env_stash_member(spelling, "GLOBAL")
+                && stash_key == key
+            {
+                return Some(value.clone());
+            }
+        }
+        // 1. The `our` store: a root `our` lives in a shared cell under
+        // `GLOBAL::x`, which the stash entry publishes in place of the mirror.
+        for spelling in spellings {
+            let Some(val) = self.get_our_var(spelling) else {
+                continue;
+            };
+            let effective = spelling.strip_prefix("GLOBAL::").unwrap_or(spelling);
+            if Self::add_sigil_prefix(effective) != key {
+                continue;
+            }
+            let global = crate::qualified::qualified(
+                Symbol::intern("GLOBAL"),
+                Symbol::intern(effective),
+            );
+            return Some(match self.env.get(global.as_str()) {
+                Some(cell) if cell.is_container_ref() => cell.clone(),
+                _ => val.clone(),
+            });
+        }
+        // 3. Exported variables of the root.
+        let term_key = crate::runtime::term_names::term_key(key);
+        if let Some(vars) = self.module.exported_vars.get("GLOBAL")
+            && let Some(export_name) = [key, term_key.as_str()]
+                .into_iter()
+                .find(|name| vars.contains_key(*name))
+            && let Some(value) = self.exported_var_value("GLOBAL", export_name)
+        {
+            return Some(value);
+        }
+        None
     }
 
     /// `package::<key>` as a one-entry stash (empty when there is no such

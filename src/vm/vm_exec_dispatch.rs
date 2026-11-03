@@ -1287,8 +1287,9 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(k), k = interned qualified names ending in the key's bare name, for a
-            // sigiled key of an ordinary package; any other key or stash is built whole as
-            // GetPseudoStash, O(v), v = env entries (-- see #9171); plus the one-key Index.
+            // sigiled key of an ordinary package, O(1) for a `$`/`@`/`%` key of GLOBAL::; any
+            // other key or stash is built whole as GetPseudoStash, O(v), v = env entries
+            // (-- see #9171); plus the one-key Index.
             // Rakudo: O(1).
             OpCode::GetPseudoStashKeyed(name_idx) => {
                 self.exec_get_pseudo_stash_keyed_op(code, *name_idx)?;
