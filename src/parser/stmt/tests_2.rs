@@ -249,8 +249,8 @@ fn parse_sub_decl() {
 }
 
 #[test]
-fn parse_sub_decl_with_compact_anonymous_sigil_params() {
-    let (rest, stmts) = program("sub foo($$$$) { 1 }").unwrap();
+fn parse_sub_decl_with_anonymous_sigil_params() {
+    let (rest, stmts) = program("sub foo($, $, $, $) { 1 }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
@@ -266,19 +266,25 @@ fn parse_sub_decl_with_compact_anonymous_sigil_params() {
 }
 
 #[test]
-fn parse_forward_sub_declaration_with_semicolon() {
-    let (rest, stmts) = program("sub foo($$$$); sub foo($$$$) { 1 }").unwrap();
+fn parse_sub_decl_with_compact_anonymous_sigil_params_is_malformed() {
+    // rakudo: X::Syntax::Malformed, "Malformed parameter" (#16210).
+    let err = program("sub foo($$$$) { 1 }").expect_err("expected parse error");
+    assert!(err.to_string().contains("Malformed parameter"), "{err}");
+}
+
+#[test]
+fn parse_forward_sub_declaration_with_semicolon_is_invalid() {
+    // Only `sub MAIN(...);` may end in a semicolon; a forward declaration is
+    // spelled `sub foo(...) {...}` (#16210).
+    let err = program("sub foo($a, $b); sub foo($a, $b) { 1 }").expect_err("expected parse error");
+    assert!(err.to_string().contains("X::UnitScope::Invalid"));
+}
+
+#[test]
+fn parse_forward_sub_declaration_with_stub_body() {
+    let (rest, stmts) = program("sub foo($a, $b) {...} sub foo($a, $b) { 1 }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    if let Stmt::SubDecl {
-        body, param_defs, ..
-    } = &stmts[0]
-    {
-        assert!(body.is_empty());
-        assert_eq!(param_defs.len(), 4);
-    } else {
-        panic!("expected SubDecl");
-    }
 }
 
 #[test]

@@ -426,7 +426,11 @@ pub(crate) fn sub_decl_body(
                 "sub",
             ));
         }
-        if name == "MAIN" && !allow_main_semicolon_decl {
+        // Only `sub MAIN(...);` (the unit-scoped form) may end in a semicolon:
+        // rakudo rejects every other bodiless `sub f(...);` as
+        // X::UnitScope::Invalid, a forward declaration being spelled
+        // `sub f(...) {...}` (#16210).
+        if !(name == "MAIN" && allow_main_semicolon_decl) {
             return Err(PError::raw_with_what(
                 "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
                  Please use the block form. If you did not mean to declare a unit-scoped sub, \
