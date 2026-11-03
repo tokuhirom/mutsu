@@ -13,6 +13,16 @@
 //! import makes it reachable from outside its scope.
 //! Types and variables stay scope-blind: a `class K` in a routine body is
 //! `our`-scoped and reachable from outside.
+//!
+//! A *term* — a sigilless variable (`my \x`), a `constant`, an enum key — is
+//! visible from its declaration on, in the statement list that declares it and
+//! the lists nested in it (ADR-15760 Amendment 1, slice 1b). Rakudo hoists
+//! routines only, so `say x; my \x = 1` is `Undeclared routine` there. A scan
+//! made in *term order* (`Scan::term_order`, over a unit still in source
+//! order) excuses a call by a term only if the term's list is still open and
+//! the term was declared before the call. The ordinary scan runs on the
+//! phaser-reordered tree, where declarations have been hoisted and the order
+//! is gone, so it takes every term as declared everywhere.
 
 use crate::ast::{CallArg, Expr, ParamDef, Stmt};
 use crate::ast_visit::{
@@ -54,6 +64,18 @@ pub(super) struct Scan {
     /// The name of the `proto` whose declaration is being walked: the visitor
     /// reports it as a plain `Decl`, but it declares a routine.
     proto_name: Option<String>,
+    /// Judge terms by their position (see the module docs).
+    pub(super) term_order: bool,
+    /// The terms in scope at the walk's position: one set per open statement
+    /// list, outermost first (never empty).
+    terms: Vec<HashSet<String>>,
+    /// Every term the unit declares, wherever: `declared`'s share that is
+    /// order-aware for the call check but scope-blind for the `EVAL`
+    /// undeclared-name check.
+    pub(super) all_terms: HashSet<String>,
+    /// The keys of the enum being walked, which the visitor reports as plain
+    /// `Decl`s after [`Scan::declare_term`] has taken them.
+    enum_keys: Vec<String>,
     line: i64,
     /// The unit imports names the walker cannot see (use/require/...): skip
     /// the whole check rather than risk a false positive.
@@ -73,9 +95,11 @@ fn bare_name(name: &str) -> &str {
 }
 
 impl Scan {
-    pub(super) fn new(eval: bool) -> Self {
+    pub(super) fn new(eval: bool, term_order: bool) -> Self {
         Scan {
             line: 1,
+            term_order,
+            terms: vec![HashSet::new()],
             eval,
             ..Default::default()
         }
@@ -153,6 +177,27 @@ impl Scan {
         self.declared_routines.insert(bare.to_string());
     }
 
+    /// Record a term declaration: visible to the calls after it in the
+    /// current statement list and the lists nested in it.
+    fn declare_term(&mut self, name: &str) {
+        let bare = bare_name(name);
+        if bare.is_empty() {
+            return;
+        }
+        self.all_terms.insert(bare.to_string());
+        if !self.term_order {
+            self.declare(name);
+            return;
+        }
+        if let Some(open) = self.terms.last_mut() {
+            open.insert(bare.to_string());
+        }
+    }
+
+    fn term_in_scope(&self, name: &str) -> bool {
+        self.terms.iter().any(|open| open.contains(name))
+    }
+
     fn declare(&mut self, name: &str) {
         let bare = bare_name(name);
         if bare.is_empty() {
@@ -193,6 +238,9 @@ impl Scan {
         {
             return;
         }
+        if self.term_in_scope(name) {
+            return;
+        }
         self.calls.push((name.to_string(), self.line));
         self.call_frames.push(self.current);
     }
@@ -202,6 +250,12 @@ impl Scan {
 fn term_name(bare: &str) -> Option<&str> {
     bare.strip_prefix("term:<")
         .and_then(|s| s.strip_suffix('>'))
+}
+
+/// Whether a declared variable name is a sigilless term (`my \x`, `constant x`).
+fn is_term_decl(name: &str) -> bool {
+    let bare = name.strip_prefix('\\').unwrap_or(name);
+    !bare.is_empty() && !bare.starts_with(['$', '@', '%', '&'])
 }
 
 impl<'ast> Visit<'ast> for Scan {
@@ -214,7 +268,9 @@ impl<'ast> Visit<'ast> for Scan {
             routines: HashSet::new(),
         });
         self.current = Some(self.frames.len() - 1);
+        self.terms.push(HashSet::new());
         walk_stmts(self, body);
+        self.terms.pop();
         self.current = parent;
     }
 
@@ -270,6 +326,15 @@ impl<'ast> Visit<'ast> for Scan {
             Stmt::MethodDecl { .. } => self.walk_routine_body(stmt),
             // A parser desugaring (`sub a {...} given 3`) is no lexical scope.
             Stmt::SyntheticBlock(body) => walk_stmts(self, body),
+            // The keys of an enum are terms from the declaration on.
+            Stmt::EnumDecl { variants, .. } => {
+                for (key, _) in variants {
+                    self.declare_term(key);
+                    self.enum_keys.push(key.clone());
+                }
+                walk_stmt(self, stmt);
+                self.enum_keys.clear();
+            }
             // A bare lowercase identifier standing alone as a whole statement
             // (`dead;`) is, syntactically, the exact same "no-args routine
             // reference" `record_call` already recognizes for `Stmt::Call` --
@@ -345,6 +410,8 @@ impl<'ast> Visit<'ast> for Scan {
                 self.proto_name = None;
                 self.declare_routine(name);
             }
+            NameKind::Decl if self.enum_keys.iter().any(|k| k == name) => {}
+            NameKind::VarDecl if is_term_decl(name) => self.declare_term(name),
             // Declarations are collected scope-blind. Assignment targets are
             // not declarations, but suppressing calls to an assigned name is
             // the safe (false-negative) direction. A callable parameter

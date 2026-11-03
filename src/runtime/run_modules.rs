@@ -1030,6 +1030,9 @@ impl Interpreter {
             None => {
                 let (mut stmts, precompiled, effects) =
                     self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
+                // A term used before its declaration, judged in source order,
+                // before the BEGIN-time effects move to the head.
+                crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts)?;
                 // The module's BEGIN-time effects run first, in source order (ADR-0134).
                 let order = |stmts: &mut Vec<crate::ast::Stmt>| {
                     crate::runtime::begin_prologue::order_unit(stmts)
