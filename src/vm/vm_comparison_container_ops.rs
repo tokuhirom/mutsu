@@ -227,7 +227,18 @@ impl Interpreter {
 
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
     /// binding root for a variable name.
-    pub(crate) fn resolve_alias_root(&self, name: &str) -> String {
+    // Cost: O(1) when `name` is not an alias (no allocation); O(c) for a chain
+    // of c aliases.
+    pub(crate) fn resolve_alias_root<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
+        let key = crate::runtime::sigilless_alias_key(name);
+        if !matches!(self.env().get_sym(key).map(Value::view), Some(ValueView::Str(_))) {
+            return std::borrow::Cow::Borrowed(name);
+        }
+        std::borrow::Cow::Owned(self.resolve_alias_chain(name))
+    }
+
+    // Cost: O(c) for a chain of c aliases.
+    fn resolve_alias_chain(&self, name: &str) -> String {
         let mut current = name.to_string();
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
