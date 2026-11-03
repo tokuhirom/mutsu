@@ -1043,6 +1043,19 @@ pub(crate) fn next_supplier_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+/// A `whenever` registered the supply `supply_id` as its source: its tap comes
+/// when the enclosing block's body returns, so a source that starts at the
+/// first tap (a filesystem watcher) starts now, as under rakudo's immediate
+/// tap (#16198).
+// Cost: O(1) (one registry probe).
+pub(in crate::runtime) fn note_whenever_source_registered(supply_id: u64) {
+    if let Ok(map) = supply_channel_map().lock()
+        && let Some(rx) = map.get(&supply_id)
+    {
+        rx.note_pending_tap();
+    }
+}
+
 pub(in crate::runtime) fn register_supply_tap(supply_id: u64, tap: Value) {
     register_supply_tap_with_lines(supply_id, tap, None);
 }
