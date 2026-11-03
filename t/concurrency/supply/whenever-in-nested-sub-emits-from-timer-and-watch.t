@@ -6,7 +6,7 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 8;
+plan 12;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -37,16 +37,20 @@ plan 8;
     LEAVE { try { for $dir.dir -> $d { $d.d ?? (for $d.dir { .unlink }; $d.rmdir) !! $d.unlink }; $dir.rmdir } }
     $dir.mkdir;
 
+    my $diag = Channel.new;
     my $s = supply {
         my %watched;
         sub add-dir(IO::Path $d, :$initial) {
+            $diag.send('add');
             %watched{$d} = True;
             with $d.watch -> $w {
                 whenever $w {
+                    $diag.send('body');
                     emit $_;
                     my $p = .path.IO;
+                    $diag.send('isdir') if $p.d;
                     add-dir($p) if $p.d && !%watched{$p};
-                    CATCH { default { } }
+                    CATCH { default { $diag.send('caught') } }
                 }
             }
             # What was created before the watcher existed is reported by a
@@ -98,6 +102,11 @@ plan 8;
     $ftap.close;
     ok @fs.grep('diag7.txt').elems > 0, 'diag7: a fresh watcher sees a new file';
     ok @seen.grep('svc').elems > 0, 'diag8: svc was reported';
+    my @dg; while $diag.poll -> $m { @dg.push($m) }
+    ok @dg.grep('add').elems >= 2, 'diag9: add-dir ran for the new directory';
+    nok @dg.grep('caught').elems, 'diag10: nothing was thrown in the whenever body';
+    ok @dg.grep('isdir').elems >= 1, 'diag11: the event path is a directory';
+    ok @dg.grep('body').elems >= 2, 'diag12: whenever bodies ran at least twice (root + nested)';
 }
 
 # An `emit` outside every supply still raises, as before.
