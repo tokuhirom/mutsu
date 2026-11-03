@@ -751,7 +751,13 @@ impl Value {
     // Cost: O(1).
     #[inline]
     pub(crate) fn is_proxy_var_object(&self) -> bool {
-        matches!(self.view(), ValueView::Proxy { var_object: true, .. })
+        matches!(
+            self.view(),
+            ValueView::Proxy {
+                var_object: true,
+                ..
+            }
+        )
     }
 
     /// Whether this is a string-keyed `Pair` (`ValueView::Pair`). A pure tag
