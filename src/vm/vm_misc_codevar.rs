@@ -263,7 +263,8 @@ impl Interpreter {
             && let Some(word) = name
                 .strip_prefix("infix:<")
                 .and_then(|rest| rest.strip_suffix('>'))
-            && !word.is_empty()
+            // A word, not the symbolic `-`: at least one letter.
+            && word.chars().any(|c| c.is_ascii_lowercase())
             && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
             && !crate::parser::is_known_word_infix(word)
             && !self.env().contains_key(&format!("&{name}"))
