@@ -202,6 +202,13 @@ impl VisitMut for Finalize<'_> {
             && self.later_terms.iter().any(|later| later.contains(word))
             && !self.declared_types.contains(word)
         {
+            if !names_setting_item(word) {
+                // The setting has no such name either: as undeclared as a
+                // lowercase one, at compile time.
+                let line = self.line.unwrap_or(0);
+                self.fail(undeclared_routine(word, line));
+                return;
+            }
             *expr =
                 Expr::BareWord(crate::qualified::qualified_text("CORE", word.as_str()).resolve());
             return;
@@ -414,6 +421,29 @@ fn setting_terms_declared_in(body: &[Stmt]) -> std::collections::HashSet<String>
         .flat_map(declared_terms)
         .filter(|name| name.starts_with(|c: char| c.is_uppercase()))
         .collect()
+}
+
+/// Whether the setting has a type, term or package of this name.
+// Cost: O(k), k = length of the name.
+fn names_setting_item(name: &str) -> bool {
+    crate::known_types::is_known_type_constraint(name)
+        || super::core_term_names::kind(name).is_some()
+        || matches!(name, "X" | "Metamodel" | "CORE")
+}
+
+/// Rakudo's compile-time answer to a bareword nothing declares.
+// Cost: O(k), k = length of the name.
+fn undeclared_routine(name: &str, line: i64) -> RuntimeError {
+    let mut err = RuntimeError::undeclared_routine_symbols(
+        name,
+        format!("Undeclared routine:\n    {name} used at line {line}"),
+        Vec::new(),
+    );
+    err.set_code(Some(crate::value::RuntimeErrorCode::ParseGeneric));
+    if line > 0 {
+        err.set_line(Some(line as usize));
+    }
+    err
 }
 
 /// The short names of the types a unit declares, wherever.
