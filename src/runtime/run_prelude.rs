@@ -7,6 +7,32 @@ use super::source_code_text::CodeText;
 use super::*;
 
 impl Interpreter {
+    /// Prepend every builtin prelude the unit's text `code` asks for. One
+    /// list for every entry that runs a unit's statements (the program and an
+    /// `EVAL`'d string or tree), so a unit that needs a prelude gets it on
+    /// each of them (#16203).
+    // Cost: O(g * n), g = number of gates, n = size of the unit's text view.
+    pub(super) fn inject_unit_preludes(code: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        Self::inject_prelude_roles(code, stmts);
+        Self::inject_iosocket_prelude(code, stmts);
+        Self::inject_repository_spec_prelude(code, stmts);
+        Self::inject_distribution_locally_prelude(code, stmts);
+        Self::inject_trait_mod_does_prelude(code, stmts);
+        Self::inject_trait_mod_of_prelude(code, stmts);
+        Self::inject_trait_mod_is_default_prelude(code, stmts);
+        Self::inject_trait_mod_is_export_prelude(code, stmts);
+        Self::inject_metamodel_role_prelude(code, stmts);
+        Self::inject_enumeration_prelude(code, stmts);
+        Self::inject_iterator_role_prelude(code, stmts);
+        Self::inject_hash_ordered_prelude(code, stmts);
+        Self::inject_x_wrapper_prelude(code, stmts);
+        Self::inject_x_comp_prelude(code, stmts);
+        Self::inject_precomp_api_prelude(code, stmts);
+        Self::inject_formatter_syntax_prelude(code, stmts);
+        Self::inject_deparse_prelude(code, stmts);
+        Self::inject_container_descriptor_prelude(code, stmts);
+    }
+
     /// Prepend builtin prelude role definitions to `stmts` when the source
     /// references them. Currently this provides the parametric `Rational` role
     /// for user classes written as `does Rational[...]`. The prelude is parsed
