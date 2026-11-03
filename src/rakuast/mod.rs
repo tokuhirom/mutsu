@@ -77,6 +77,12 @@ pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
 mod decl_traits;
 mod declarator_docs;
+
+/// The `#|` / `#=` docs a node carries (leading, trailing).
+// Cost: O(1).
+pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
+    declarator_docs::docs_of(node)
+}
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
@@ -293,6 +299,7 @@ pub enum RakuAstClass {
     RegexInterpolation,
     DocBlock,
     DocMarkup,
+    DocDeclarator,
     DocParagraph,
     RegexAlternation,
     RegexSequentialAlternation,
@@ -688,6 +695,7 @@ impl RakuAstClass {
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             DocBlock => "RakuAST::Doc::Block",
             DocMarkup => "RakuAST::Doc::Markup",
+            DocDeclarator => "RakuAST::Doc::Declarator",
             DocParagraph => "RakuAST::Doc::Paragraph",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
@@ -1218,6 +1226,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexInterpolation,
     RakuAstClass::DocBlock,
     RakuAstClass::DocMarkup,
+    RakuAstClass::DocDeclarator,
     RakuAstClass::DocParagraph,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,

@@ -70,6 +70,9 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Doc::Block", "margin"),
     row!("RakuAST::Doc::Block", "paragraphs"),
     row!("RakuAST::Doc::Block", "type"),
+    row!("RakuAST::Doc::Declarator", "WHEREFORE"),
+    row!("RakuAST::Doc::Declarator", "leading"),
+    row!("RakuAST::Doc::Declarator", "trailing"),
     row!("RakuAST::Doc::Markup", "atoms"),
     row!("RakuAST::Doc::Markup", "closer"),
     row!("RakuAST::Doc::Markup", "letter"),
@@ -199,7 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Regex::Assertion::InterpolatedBlock", "sequential"),
     row!("RakuAST::Regex::Assertion::InterpolatedVar", "sequential"),
     row!("RakuAST::Regex::Assertion::InterpolatedVar", "var"),
-    row!("RakuAST::Regex::Assertion::Lookahead", "assertion"),
-    row!("RakuAST::Regex::Assertion::Lookahead", "negated"),
-    row!("RakuAST::Regex::Assertion::Named", "capturing"),
 ];

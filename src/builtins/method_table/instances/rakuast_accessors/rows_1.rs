@@ -2,6 +2,9 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Regex::Assertion::Lookahead", "assertion"),
+    row!("RakuAST::Regex::Assertion::Lookahead", "negated"),
+    row!("RakuAST::Regex::Assertion::Named", "capturing"),
     row!("RakuAST::Regex::Assertion::Named", "name"),
     row!("RakuAST::Regex::Assertion::Named::Args", "args"),
     row!("RakuAST::Regex::Assertion::Named::RegexArg", "regex-arg"),
@@ -206,7 +209,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Type::Coercion", "constraint"),
     row!("RakuAST::Type::Definedness", "definite"),
     row!("RakuAST::Type::Derived", "base-type"),
-    row!("RakuAST::Type::Enum", "default-scope"),
-    row!("RakuAST::Type::Enum", "name"),
-    row!("RakuAST::Type::Enum", "of"),
 ];

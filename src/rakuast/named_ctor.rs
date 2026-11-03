@@ -167,6 +167,14 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("meta", List, Omit),
             ],
         ),
+        "RakuAST::Doc::Declarator" => (
+            C::DocDeclarator,
+            &[
+                ("WHEREFORE", Node, Required),
+                ("leading", List, Omit),
+                ("trailing", List, Omit),
+            ],
+        ),
         "RakuAST::Statement::Catch" => (C::StatementCatch, &[("body", Node, Required)]),
         "RakuAST::Statement::Control" => (C::StatementControl, &[("body", Node, Required)]),
         "RakuAST::Statement::Default" => (C::StatementDefault, &[LABELS, ("body", Node, Required)]),
