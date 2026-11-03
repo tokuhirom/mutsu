@@ -102,6 +102,9 @@ impl Interpreter {
             ..
         } = arg.view()
             && (class_name == "IO::Path"
+                // A `%?RESOURCES` entry shares the IO::Path rows without being
+                // an IO::Path: `slurp(%?RESOURCES<x.json>)` reads its file.
+                || class_name == "Distribution::Resource"
                 || self
                     .class_mro(&class_name.resolve())
                     .iter()
