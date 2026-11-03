@@ -658,6 +658,14 @@ impl Interpreter {
         {
             return Ok(target);
         }
+        // `.pairs` / `.antipairs` / `.rotor` / ... on a `Seq.new($iterator)`
+        // nothing has pulled are lazy stages over it as well (#16132): the
+        // iterator is pulled by the stage's consumer, not by the call.
+        if body.unpulled_iterator().is_some()
+            && crate::builtins::method_table::lazy_stream::stream_of(&target, method).is_some()
+        {
+            return Ok(target);
+        }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }
