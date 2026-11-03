@@ -6,7 +6,7 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 5;
+plan 8;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -85,6 +85,19 @@ plan 5;
     my $reported = so @seen.grep('.cro.yml');
     diag "events seen: {@seen.raku}; tmpdir {$*TMPDIR}; dir listing {$dir.dir.map(*.basename).raku} / {$dir.add('svc').dir.map(*.basename).raku}" unless $reported;
     ok $reported, 'a file created inside it is reported by the nested watcher';
+    # TEMPORARY DIAGNOSTICS (CI shows only failed test numbers): 6 = the file exists,
+    # 7 = a fresh plain watcher on the dir sees a file created now, 8 = the root
+    # watcher's own events included 'svc'.
+    ok $dir.add('svc/.cro.yml').e, 'diag6: file exists';
+    my $fresh = Channel.new;
+    my $ftap = $dir.add('svc').watch.tap: -> $e { $fresh.send($e.path.IO.basename) };
+    sleep 0.5;
+    spurt $dir.add('svc/diag7.txt'), "y\n";
+    my @fs; my $fd = now + 5;
+    while now < $fd { if $fresh.poll -> $n { @fs.push($n) } else { sleep 0.05 }; last if @fs.grep('diag7.txt') }
+    $ftap.close;
+    ok @fs.grep('diag7.txt').elems > 0, 'diag7: a fresh watcher sees a new file';
+    ok @seen.grep('svc').elems > 0, 'diag8: svc was reported';
 }
 
 # An `emit` outside every supply still raises, as before.
