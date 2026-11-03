@@ -978,6 +978,18 @@ impl Interpreter {
                         Symbol::intern(&resolved_name),
                     ))
                     .cloned();
+                if self.inside_routine()
+                    && let Some(def) = &installed
+                {
+                    let depth = self.routine_stack().len();
+                    self.registry_mut().routine_local_subs.insert(
+                        crate::qualified::qualified(
+                            self.current_package_sym(),
+                            Symbol::intern(&resolved_name),
+                        ),
+                        (def.decl_order, depth),
+                    );
+                }
                 let sub_val = if let Some(def) = installed {
                     // Captured as any closure created here would be: the
                     // memoized layers of the enclosing tiers and the sub's own

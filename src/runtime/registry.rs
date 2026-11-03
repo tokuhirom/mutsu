@@ -188,6 +188,14 @@ impl LexicalKeyScans {
 
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// Registry keys of `my sub`s declared inside a routine body that stayed
+    /// registry-resolved (not frame lexicals), each with the definition's
+    /// `decl_order` and the routine-stack depth it was registered at. An
+    /// `EVAL` run by a unit-scoped plain sub hides the ones registered by its
+    /// dynamic callers (#16099). An entry is stale once `decl_order` differs
+    /// from the registered definition's.
+    pub(crate) routine_local_subs:
+        std::collections::HashMap<crate::symbol::Symbol, (u64, usize)>,
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
     /// MONKEY`). A routine of such a unit keeps the pragma when it is called
     /// from another unit, whose env (the one the call runs in) does not carry

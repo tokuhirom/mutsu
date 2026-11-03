@@ -184,6 +184,21 @@ impl RoutineStack {
         None
     }
 
+    /// The stack index of the running routine when it is a unit-scoped plain
+    /// sub (see [`RoutineFrame::unit_scoped`]), looking through the block
+    /// frames it runs. A routine-local `my sub` registered while the stack was
+    /// no deeper than this index belongs to a dynamic caller, not to this
+    /// sub's lexical scope (#16099).
+    // Cost: O(b), b = the consecutive block frames on top.
+    pub(crate) fn unit_scoped_sub_index(&self) -> Option<usize> {
+        for (idx, f) in self.frames.iter().enumerate().rev() {
+            if !f.is_block {
+                return (f.unit_scoped && !f.is_method).then_some(idx);
+            }
+        }
+        None
+    }
+
     /// The record of the innermost frame that has one (the fixture rule of
     /// ADR-14633 §2.1).
     // Cost: O(1).

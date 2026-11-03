@@ -72,6 +72,7 @@ impl Interpreter {
         let saved_unit_routine_depth =
             std::mem::replace(&mut self.module.eval_unit_routine_depth, self.routine_stack.len());
         let routine_snapshot = self.snapshot_routine_registry();
+        self.hide_dynamic_callers_local_subs();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
         // reinstates module-owned routines so a later re-use can find the
