@@ -103,7 +103,10 @@ fn experimental_unpack_error() -> crate::value::RuntimeError {
     let message = "Use of the 'unpack' method is experimental; please 'use experimental :pack;'";
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.to_string()));
-    attrs.insert("feature".to_string(), Value::str("the 'unpack' method".to_string()));
+    attrs.insert(
+        "feature".to_string(),
+        Value::str("the 'unpack' method".to_string()),
+    );
     attrs.insert("use".to_string(), Value::str("pack".to_string()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Experimental"), attrs);
     let mut err = crate::value::RuntimeError::new(message.to_string());
