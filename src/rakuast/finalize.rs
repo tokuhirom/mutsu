@@ -202,7 +202,9 @@ impl VisitMut for Finalize<'_> {
             && self.later_terms.iter().any(|later| later.contains(word))
             && !self.declared_types.contains(word)
         {
-            *expr = Expr::BareWord(format!("CORE::{word}"));
+            *expr = Expr::BareWord(
+                crate::qualified::qualified_text("CORE", word.as_str()).resolve(),
+            );
             return;
         }
         // An expression the parser's tree cannot stand for (a bareword to
@@ -480,11 +482,9 @@ fn unit_type_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
             | Stmt::Package { name, .. }
             | Stmt::EnumDecl { name, .. } = stmt
             {
-                let full = name.resolve();
-                if let Some((_, short)) = full.rsplit_once("::") {
-                    self.0.insert(short.to_owned());
-                }
-                self.0.insert(full);
+                self.0.insert(name.resolve());
+                self.0
+                    .insert(crate::qualified::unqualified_part(*name).resolve());
             }
             walk_stmt(self, stmt);
         }
