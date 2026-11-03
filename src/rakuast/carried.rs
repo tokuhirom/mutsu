@@ -130,7 +130,12 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             | ParsedExpr::WordList(_)
             | ParsedExpr::WordsAtom(_)
             | ParsedExpr::SubscriptAdverbs(_)
-            | ParsedExpr::Supply(_) => true,
+            | ParsedExpr::Supply(_)
+            | ParsedExpr::HyperPrefix(_)
+            | ParsedExpr::AtomicVar(_)
+            | ParsedExpr::ObjectHash(_)
+            | ParsedExpr::HyperAssign(_)
+            | ParsedExpr::InlineSubset(_) => true,
             _ => false,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass
