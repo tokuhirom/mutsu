@@ -1,7 +1,7 @@
 use super::Value;
 use super::ValueView;
-use super::user_facing_type_name;
 use super::sig_elem_flags;
+use super::user_facing_type_name;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::AttrMap;

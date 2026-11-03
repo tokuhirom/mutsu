@@ -80,7 +80,11 @@ fn attribute(target: &Value, key: &str) -> Answer {
         && let Some(flags) = map.get("flags")
         && let ValueView::Int(bits) = flags.deref_container().view()
     {
-        return Some(Ok(if bits & IS_OPTIONAL != 0 { Value::TRUE } else { Value::FALSE }));
+        return Some(Ok(if bits & IS_OPTIONAL != 0 {
+            Value::TRUE
+        } else {
+            Value::FALSE
+        }));
     }
     Some(Ok(map.get(key).cloned().unwrap_or(Value::NIL)))
 }
