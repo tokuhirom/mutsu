@@ -95,7 +95,7 @@ impl Interpreter {
             self.check_eval_undeclared_routines(stmts)?;
         }
         Self::check_eval_routine_magicals(stmts)?;
-        self.check_eval_post_declared_types(stmts)?;
+        crate::rakuast::post_declared::check(stmts, &crate::scope::NameScope::default())?;
         self.check_eval_begin_forward_calls(stmts)?;
         self.check_eval_param_type_constraints(stmts)?;
         self.check_type_capture_inheritance(stmts)

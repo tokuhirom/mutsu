@@ -579,6 +579,13 @@ impl Interpreter {
         crate::runtime::begin_prologue::lift_package_var_traits(&mut stmts);
         crate::runtime::begin_prologue::lift_unit_var_traits(&mut stmts);
         crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
+        // A type used before the statement that declares it: judged on the
+        // statements in source order, before the phasers move (a CHECK block
+        // that names a class declared above it is not a use before it).
+        let post_declared = crate::rakuast::post_declared::check(
+            &stmts,
+            &crate::scope::NameScope::default(),
+        );
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // A top-level END is dropped from the body outright: it is installed
@@ -680,6 +687,7 @@ impl Interpreter {
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
+                post_declared?;
                 forward_vars?;
                 Ok(guards)
             });
