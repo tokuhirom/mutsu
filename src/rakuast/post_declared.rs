@@ -66,16 +66,24 @@ struct PostDeclared<'n> {
 }
 
 impl PostDeclared<'_> {
-    /// The type name a statement declares, if it declares one.
-    fn declared_name(stmt: &Stmt) -> Option<String> {
-        match crate::ast::package_header::declaration(stmt).unwrap_or(stmt) {
+    /// The type names a statement declares: its own name, and for a qualified
+    /// one (`class X::Y::Z`) the namespaces it makes (`X`, `X::Y`).
+    fn declared_names(stmt: &Stmt) -> Vec<String> {
+        let name = match crate::ast::package_header::declaration(stmt).unwrap_or(stmt) {
             Stmt::ClassDecl { name, .. }
             | Stmt::RoleDecl { name, .. }
             | Stmt::SubsetDecl { name, .. }
             | Stmt::EnumDecl { name, .. }
-            | Stmt::Package { name, .. } => Some(name.resolve().to_string()),
-            _ => None,
-        }
+            | Stmt::Package { name, .. } => name.resolve().to_string(),
+            _ => return Vec::new(),
+        };
+        let mut names: Vec<String> = name
+            .match_indices("::")
+            .map(|(at, _)| name[..at].to_string())
+            .filter(|prefix| !prefix.is_empty())
+            .collect();
+        names.push(name);
+        names
     }
 
     fn is_core(&self, name: &str) -> bool {
@@ -104,7 +112,7 @@ impl<'ast> Visit<'ast> for PostDeclared<'_> {
     fn visit_stmts(&mut self, body: &'ast [Stmt]) {
         let mut declared_at = HashMap::new();
         for (index, stmt) in body.iter().enumerate() {
-            if let Some(name) = Self::declared_name(stmt) {
+            for name in Self::declared_names(stmt) {
                 declared_at.entry(name).or_insert(index);
             }
         }
@@ -174,5 +182,6 @@ mod tests {
         assert!(!verdict("class A { method m { A.new } }"));
         assert!(!verdict("say Set; class Set {}"));
         assert!(!verdict("sub f { B.new }; sub g { }"));
+        assert!(!verdict("class X::Y::Z { }; my \\x = X::Y; class X::Y { }"));
     }
 }

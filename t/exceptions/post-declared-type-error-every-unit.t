@@ -6,7 +6,7 @@ use Test;
 # module, an EVAL string; and also inside a nested block or a routine body.
 # Declared-first, stubbed and core-named types are fine.
 
-plan 13;
+plan 14;
 
 sub main-run(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -43,7 +43,8 @@ throws-like q[sub f { EvalTwo.new }; class EvalTwo {}], X::Undeclared::Symbols, 
 for 'class A {}; say A',
     'role R {...}; say R; role R { }',
     'class A { method m { A.new } }',
-    'say Set; class Set {}' -> $code {
+    'say Set; class Set {}',
+    'class Ns::Y::Z { }; my \x = Ns::Y; class Ns::Y { }' -> $code {
     my ($rc, $err) = main-run($code);
     ok $rc == 0, "accepted: $code";
 }
