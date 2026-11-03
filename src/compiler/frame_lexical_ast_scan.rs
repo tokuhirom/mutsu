@@ -47,11 +47,20 @@ pub(super) struct AstScan {
     pub(super) values: HashSet<String>,
     pub(super) rejected: HashSet<String>,
     pub(super) reject_all: bool,
+    /// Names the body's own class/role/enum/subset declarations introduce
+    /// (an enum's keys included): a `my sub` whose declaration mentions one
+    /// resolves its types per call and is not a frame lexical.
+    pub(super) local_types: HashSet<String>,
 }
 
 impl AstScan {
     // Cost: O(n), n = size of `body`'s AST.
     pub(super) fn scan(&mut self, body: &[Stmt]) {
+        let mut collect = LocalTypes::default();
+        for stmt in body {
+            collect.visit_stmt(stmt);
+        }
+        self.local_types = collect.names;
         for stmt in body {
             self.visit_stmt(stmt);
         }
@@ -63,20 +72,22 @@ impl<'ast> Visit<'ast> for AstScan {
         if self.reject_all {
             return;
         }
-        // A lexical type declaration makes a parameter's type constraint
-        // resolve differently per call, which the once-per-interpreter
-        // derivation could not follow.
-        if matches!(
-            stmt,
-            Stmt::ClassDecl { .. }
-                | Stmt::RoleDecl { .. }
-                | Stmt::EnumDecl { .. }
-                | Stmt::SubsetDecl { .. }
-                | Stmt::Package { .. }
-                | Stmt::AugmentClass { .. }
-        ) {
+        // A package or an `augment` can reach any name, so it disqualifies
+        // the body.
+        if matches!(stmt, Stmt::Package { .. } | Stmt::AugmentClass { .. }) {
             self.reject_all = true;
             return;
+        }
+        // A lexical type declaration makes a parameter's type constraint
+        // resolve differently per call, which the once-per-interpreter
+        // derivation could not follow: a `my sub` that MENTIONS one of the
+        // body's own types is not a frame lexical, the others are (#16099: a
+        // `my sub` beside a `my subset` must stay invisible to a callee's
+        // `EVAL`, which only the frame-lexical route guarantees).
+        if let Stmt::SubDecl { name, .. } = stmt
+            && self.local_types.iter().any(|t| stmt_names(stmt, t))
+        {
+            self.rejected.insert(name.as_str().to_string());
         }
         walk_stmt(self, stmt);
     }
@@ -157,6 +168,30 @@ impl<'ast> Visit<'ast> for AstScan {
         if tail != s && self.names.contains(tail) {
             self.rejected.insert(tail.to_string());
         }
+    }
+}
+
+/// The names the type declarations of a body introduce.
+#[derive(Default)]
+struct LocalTypes {
+    names: HashSet<String>,
+}
+
+impl<'ast> Visit<'ast> for LocalTypes {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        match stmt {
+            Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::SubsetDecl { name, .. } => {
+                self.names.insert(name.as_str().to_string());
+            }
+            Stmt::EnumDecl { name, variants, .. } => {
+                self.names.insert(name.as_str().to_string());
+                self.names.extend(variants.iter().map(|(v, _)| v.clone()));
+            }
+            _ => {}
+        }
+        walk_stmt(self, stmt);
     }
 }
 
