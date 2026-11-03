@@ -504,7 +504,12 @@ impl Interpreter {
             );
             return self.run_builtin_method_wrap(class_name, &invocant, method, &args, &chain);
         }
-        let dispatch_class = if matches!(
+        // A `%?RESOURCES` entry shares the `IO::Path` rows (#15818): a call the
+        // table's own entry declined (an `IO::Path` argument is not a plain one)
+        // finds them here by that owner, as it does for an `IO::Path` receiver.
+        let dispatch_class = if class_name == "Distribution::Resource" {
+            Some("IO::Path".to_string())
+        } else if matches!(
             class_name,
             "IO::Path"
                 | "IO::Handle"

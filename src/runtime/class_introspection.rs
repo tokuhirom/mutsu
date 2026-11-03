@@ -208,6 +208,11 @@ impl Interpreter {
         if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
+        // A `%?RESOURCES` entry shares the `IO::Path` rows without an
+        // `IO::Path` in its MRO (#15818): its native methods are the path's.
+        if class_name == "Distribution::Resource" {
+            return self.is_native_method("IO::Path", method_name);
+        }
         match (probe_key(class_name), probe_key(method_name)) {
             (Some(class), Some(method)) => self.is_native_method_memo(class, method),
             _ => self.is_native_method_uncached(class_name, method_name),
