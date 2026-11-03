@@ -48,7 +48,7 @@ pub(in crate::runtime) use signature::{
 // like the re-exports above): the light-call fast paths in `crate::vm` reuse
 // it directly (#8686 Phase 0).
 pub(crate) use signature::{
-    decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
+    decode_capture_named_rw_param, decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
     wrap_native_int_for_binding,
 };
 pub(crate) use type_registry::{ROLE_PRETENDS_TO_BE, is_builtin_role_name};
@@ -680,6 +680,17 @@ impl Interpreter {
         Some(elem.deref_container())
     }
 
+    /// The final value of the named argument `name` of the `|c` capture bound
+    /// as `capture_key` in the running env (`capture_named_container`).
+    // Cost: O(1).
+    pub(crate) fn capture_rw_named(&self, capture_key: &str, name: &str) -> Option<Value> {
+        let elem = self.env.get(capture_key).and_then(|v| match v.view() {
+            ValueView::Capture { named, .. } => named.get(name).cloned(),
+            _ => None,
+        })?;
+        Some(elem.deref_container())
+    }
+
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
@@ -690,6 +701,20 @@ impl Interpreter {
             // body-mutated) element from the callee's slurpy array and write it
             // back to its caller source — a scalar (`$a`) or an array element
             // (`@arr[idx]`).
+            if let Some((capture_key, name)) = decode_capture_named_rw_param(param_name) {
+                if let Some(elem) = self.capture_rw_named(capture_key, name) {
+                    if let Some(ValueView::ContainerRef(arc)) =
+                        target_env.get(source_name).map(Value::view)
+                        && !elem.is_container_ref()
+                    {
+                        arc.store(elem.clone());
+                    } else {
+                        target_env.insert(source_name.clone(), elem.clone());
+                    }
+                    Self::mirror_twigil_alias_writeback(target_env, source_name, &elem);
+                }
+                continue;
+            }
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
                 // A `|c` capture records its variable-sourced positionals the
                 // same way (`capture_param_containers`).

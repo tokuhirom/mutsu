@@ -905,6 +905,23 @@ impl Compiler {
             return;
         }
 
+        // `key => (my $x)` written as a call argument (`f :deps(my $x)`): the
+        // declaration took a real slot (`call_arg_decl_slots`), so the Pair's
+        // value is tagged with it like `key => $x` is, and a `|c` capture or an
+        // `is raw` parameter reaches the declared variable itself (#16121).
+        if matches!(op, TokenKind::FatArrow)
+            && !self.suppress_pair_capture
+            && let Some(name) = Self::method_arg_decl_slot_name(right)
+            && self.call_arg_decl_slots.contains(&name)
+            && !self.promoted_expr_decl_names.contains(&name)
+        {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            self.emit_wrap_var_ref(&name);
+            self.emit_make_pair(mint_named_pair, false);
+            return;
+        }
+
         // `key => my $ = v`: the Pair's value is the anonymous scalar's
         // container, so `.value = x` writes it (`anon_scalar_as_cell`).
         if matches!(op, TokenKind::FatArrow)

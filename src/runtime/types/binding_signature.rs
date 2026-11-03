@@ -1978,7 +1978,19 @@ impl Interpreter {
                         let arg = unwrap_varref_value(raw_arg.clone());
                         if let ValueView::Pair(key, val) = arg.view() {
                             if !explicit_named_keys.contains(key) {
-                                named.insert(key.clone(), val.clone());
+                                let arg_source = arg_sources
+                                    .as_ref()
+                                    .and_then(|names| names.get(arg_idx))
+                                    .and_then(|n| n.as_ref());
+                                let kept = self.capture_named_container(
+                                    key,
+                                    val,
+                                    arg_source,
+                                    capture_key,
+                                    &mut rw_bindings,
+                                    param_defs,
+                                );
+                                named.insert(key.clone(), kept);
                             }
                         } else {
                             let arg_source = arg_sources
