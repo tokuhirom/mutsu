@@ -1452,11 +1452,31 @@ impl Compiler {
                         },
                     );
                 } else {
-                    // The same argument compile as a plain sub call: an inline
-                    // `my $x` takes a real lexical slot, and a variable is
-                    // tagged with it (`WrapVarRef`), so a `|c` parameter of the
-                    // callee keeps the caller's container (#16179).
-                    self.compile_call_arg(arg);
+                    // An inline `my $x` argument (`&f(my $x)`, `&f :k(my $x)`)
+                    // takes a real lexical slot, as in a plain sub call.
+                    self.with_call_arg_decl_slot(arg, |s| s.compile_expr(arg));
+                    // A plain scalar variable is tagged with its slot like a
+                    // plain sub call's argument, so a `|c` parameter of the
+                    // callee keeps the caller's container, and an undefined
+                    // variable is not read as a type name (#16179).
+                    let tagged_name = match arg {
+                        Expr::Var(name)
+                            if !name.contains("::")
+                                && !name.starts_with(['@', '%', '&'])
+                                && !self.is_readonly_param_operand(arg) =>
+                        {
+                            Some(name.clone())
+                        }
+                        Expr::DoStmt(_) => Self::method_arg_decl_slot_name(arg)
+                            .filter(|name| !self.promoted_expr_decl_names.contains(name)),
+                        _ => None,
+                    };
+                    if let Some(name) = tagged_name
+                        && self.local_map.contains_key(name.as_str())
+                    {
+                        self.emit_wrap_var_ref(&name);
+                    }
+                    self.maybe_promote_attr_arg_read(arg);
                     self.mark_call_on_arg(
                         crate::opcode::RwArgCallee::CodeVar {
                             name_idx: code_var_idx,

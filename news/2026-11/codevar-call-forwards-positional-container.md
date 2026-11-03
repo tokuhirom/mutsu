@@ -4,7 +4,8 @@
 arguments of a call through a code variable were compiled without the
 `WrapVarRef` tag a plain sub call gives them, so an undefined variable read as
 a bare type name and a `|c` parameter kept no container for it. The code-variable
-call now compiles its arguments with the same routine as a sub call, so an
+call now tags a plain scalar variable (and an inline `my $x`) argument the same
+way, so an
 `is raw` / `is rw` parameter reached through `|c` writes the caller's
 variable (#16179). A block argument that reads the variable while the call is
 still running still sees the old value; that is recorded on the issue.
