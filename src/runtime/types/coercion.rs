@@ -254,6 +254,23 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
+        // A `%?RESOURCES` entry answers `.IO` natively, so `IO()` coerces it
+        // to the IO::Path of its file (`sub f(IO() $css)` given `%?RESOURCES<x.css>`).
+        if base_target == "IO"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = value.view()
+            && class_name == "Distribution::Resource"
+        {
+            let path = attributes
+                .as_map()
+                .get("path")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            return Ok(self.make_io_path_instance(&path));
+        }
         // The same rule for a TYPE OBJECT. A coercion type calls the named
         // method on its argument, and a method call on a type object dispatches
         // like any other, so `sub f(Str() $g)` given `class C { method Str
