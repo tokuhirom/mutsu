@@ -81,7 +81,11 @@ impl LazyList {
         env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
         // An `IO::Handle.lines` / `.words` source (#16065) is finite: the
         // stage over it is as lazy as that Seq, not `.lazy`-marked.
-        if !matches!(source.view(), ValueView::Seq(body) if body.has_io_lines_pipe_source()) {
+        // A `Seq.new($iterator)` whose iterator is not `is-lazy` (#16132) is too.
+        if !matches!(source.view(), ValueView::Seq(body)
+            if body.has_io_lines_pipe_source()
+                || (body.unpulled_iterator().is_some() && !body.is_lazy()))
+        {
             env.insert(
                 "__mutsu_preserve_lazy_on_array_assign".to_string(),
                 Value::TRUE,
