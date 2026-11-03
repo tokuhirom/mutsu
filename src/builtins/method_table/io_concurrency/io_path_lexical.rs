@@ -50,7 +50,14 @@ macro_rules! rown {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row0!("Str", str_row),
+    MethodRow {
+        owner: "IO::Path",
+        name: "Str",
+        arity: 0,
+        handler: Handler::Interp(str_interp_row),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     row0!("gist", gist_row),
     row0!("IO", io_row),
     row0!("SPEC", spec_row),
@@ -95,10 +102,25 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
 ];
 
-/// `IO::Path.Str`: the path as given.
+/// `IO::Path.Str`: the path as given. `Str` of a `%?RESOURCES` entry
+/// (`Distribution::Resource`) is deprecated in rakudo and records its notice
+/// at the call site (#16055); an interpreter row because the notice needs the
+/// callsite's file and line.
 // Cost: O(p), p = chars of the path.
-fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+fn str_interp_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
+    if ctx.class == "Distribution::Resource" {
+        interp.check_deprecation_for_method(
+            "Str",
+            "Distribution::Resource",
+            "%?RESOURCES<key> directly",
+        );
+    }
     Some(Ok(Value::str(ctx.path)))
 }
 
