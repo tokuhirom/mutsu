@@ -1086,12 +1086,23 @@ impl Interpreter {
                             .is_some_and(|encoded| encoded.contains('='))
                             || varref_from_value(a).is_some()
                             || varref_from_value(val).is_some()
-                            || matches!(
-                                val.view(),
-                                ValueView::ContainerRef(_)
-                                    | ValueView::HashEntryRef { .. }
-                                    | ValueView::Proxy { .. }
-                            )
+                            || match val.view() {
+                                // `:$x` forwarding a read-only parameter
+                                // (`sub f(Str :$x!)`) carries that parameter's
+                                // cell, flagged as a read-only binding alias:
+                                // no writable lvalue, so the `is rw` candidate
+                                // yields to its `is copy` sibling (PDF::COS
+                                // `coerce`).
+                                ValueView::ContainerRef(cell) => !matches!(
+                                    cell.readonly_kind(),
+                                    Some(
+                                        crate::ast::ReadonlyKind::Alias
+                                            | crate::ast::ReadonlyKind::Immutable
+                                    )
+                                ),
+                                ValueView::HashEntryRef { .. } | ValueView::Proxy { .. } => true,
+                                _ => false,
+                            }
                     });
                     if !writable {
                         return false;
