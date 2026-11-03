@@ -122,7 +122,7 @@ impl Interpreter {
         // `multi chomp()` that dies vs `multi chomp(*@a is raw)`).
         let writable_trait_count = params
             .iter()
-            .filter(|p| !p.is_variadic() && p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
+            .filter(|p| !p.is_variadic() && p.traits.iter().any(|t| t == "rw"))
             .count();
         (
             // NOMINAL tier. A literal parameter is not merely a refinement:
