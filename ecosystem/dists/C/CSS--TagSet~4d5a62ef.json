@@ -40,66 +40,69 @@
   "dist": "CSS::TagSet",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Impossible coercion from 'Distribution::Resource' into 'IO': no acceptable coercion method found",
         "nok": 0,
-        "ok": 22,
-        "plan": 22,
-        "secs": 6.65,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/tag-set-pango.t",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 40.42,
+        "secs": 122.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Impossible coercion from 'Distribution::Resource' into 'IO': no acceptable coercion method found",
         "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 39.76,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/tag-set-pdf.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 8.08,
+        "secs": 14.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Impossible coercion from 'Distribution::Resource' into 'IO': no acceptable coercion method found",
         "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 20.73,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.89,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/tag-set-xhtml.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 7.77,
+        "secs": 18.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,10 +117,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-01",
+    "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "37e174ee",
+    "mutsu_commit": "27ca5e64",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -128,13 +131,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_TAGSET/095dbd2cdc57ece26ec7cdf31726aabd1d0a88df.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 45,
     "baseline_files": 3,
-    "mutsu_assertions": 45,
-    "parity_files": 3,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 3
   },
   "version": "0.1.4"
 }

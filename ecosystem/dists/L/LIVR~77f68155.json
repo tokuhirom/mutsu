@@ -26,29 +26,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 7.75,
+        "secs": 8.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "PROCESSING: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-t9cbeobx/dist/LIVR-2.2.1/t/test_suite/positive",
         "nok": 0,
-        "ok": 70,
-        "plan": 70,
-        "secs": 1.87,
+        "ok": 2,
+        "plan": null,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-livr-test-suite.t",
       "raku": {
         "nok": 0,
         "ok": 70,
         "plan": 70,
-        "secs": 3.11,
+        "secs": 3.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +61,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.39,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +71,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.98,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +83,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.5,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +93,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.41,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +105,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.33,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +115,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.48,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +127,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.34,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +137,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.32,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +149,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +159,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.83,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +171,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.32,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +181,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.67,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +194,7 @@
         "nok": 0,
         "ok": 11,
         "plan": null,
-        "secs": 0.41,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +204,7 @@
         "nok": 0,
         "ok": 40,
         "plan": 40,
-        "secs": 2.55,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -224,10 +225,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-01",
+    "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "37e174ee",
+    "mutsu_commit": "27ca5e64",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -242,9 +243,9 @@
   "totals": {
     "baseline_assertions": 127,
     "baseline_files": 9,
-    "mutsu_assertions": 98,
-    "parity_files": 8,
-    "regressed_files": 1
+    "mutsu_assertions": 30,
+    "parity_files": 7,
+    "regressed_files": 2
   },
   "version": "2.2.1"
 }

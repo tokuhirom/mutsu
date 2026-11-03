@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.18,
+        "secs": 3.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-pax.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/evwnzscubadmrikltpgy: Read-only file system",
+        "first_failure": "Failed to open file /tmp/lgrnefcyjkdxuqaswtzm: Read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 5,
-        "secs": 1.09,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,34 +48,33 @@
       "cmp": "no_baseline",
       "path": "t/02-gittar.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/sqjxbcfklmegiadnvrwp: Read-only file system",
+        "first_failure": "Failed to open file /tmp/hjcdkfabyrxuqmeosigw: Read-only file system",
         "nok": 0,
         "ok": 16,
         "plan": 33,
-        "secs": 1.46,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot parse '' as base 8",
         "nok": 0,
-        "ok": 1,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.2,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-refuse.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.68,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,11 +84,11 @@
       "cmp": "no_baseline",
       "path": "t/04-peek.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/ibhoyxnvugswepfjmcrt: Read-only file system",
+        "first_failure": "Failed to open file /tmp/flpzjuxqsiybamkghcdw: Read-only file system",
         "nok": 0,
         "ok": 9,
         "plan": 18,
-        "secs": 1.48,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,11 +98,11 @@
       "cmp": "no_baseline",
       "path": "t/05-write-peek.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/sramdjgtkyieqzuchlwo: Read-only file system",
+        "first_failure": "Failed to open file /tmp/jcwkimzqevluboxyrgdp: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.42,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,10 +116,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-01",
+    "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "37e174ee",
+    "mutsu_commit": "27ca5e64",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -131,13 +130,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RC/ARCHIVE_TAR_PP/e89f5b41639825cb52b10d4a2cc31ec1dd4fe160.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 3,
     "baseline_files": 2,
-    "mutsu_assertions": 2,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 3,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "v0.0.1"
 }

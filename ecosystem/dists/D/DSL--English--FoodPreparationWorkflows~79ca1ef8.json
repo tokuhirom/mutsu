@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 94.94,
+        "secs": 38.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 26,
-        "secs": 1.93,
+        "secs": 3.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 2.32,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 2.29,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 2.32,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 2.33,
+        "secs": 3.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
     }
   ],
   "load": {
-    "DSL::English::FoodPreparationWorkflows": "ok",
+    "DSL::English::FoodPreparationWorkflows": "raku_also_fails",
     "DSL::English::FoodPreparationWorkflows::Actions::Bulgarian::Standard": "ok",
     "DSL::English::FoodPreparationWorkflows::Actions::R::Ecosystem": "ok",
     "DSL::English::FoodPreparationWorkflows::Actions::Raku::Ecosystem": "ok",
@@ -129,10 +129,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-01",
+    "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "37e174ee",
+    "mutsu_commit": "27ca5e64",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

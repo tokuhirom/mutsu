@@ -27,6 +27,7 @@
       "Pod::Load",
       "Pod::To::HTML",
       "Pod::To::Man",
+      "Pod::To::Markdown",
       "Syntax::Highlighters",
       "Template::Mustache",
       "Term::ReadKey",
@@ -48,7 +49,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.33,
+        "secs": 0.27,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +59,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 0.83,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -70,10 +71,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-01",
+    "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "37e174ee",
+    "mutsu_commit": "27ca5e64",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
