@@ -741,6 +741,14 @@ impl Interpreter {
                     self.get_env_with_main_alias(&name)
                         .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                 });
+            // A variable bound to the Proxy object `.VAR` hands back has no
+            // container to assign into (#16299).
+            if current_proxy
+                .as_ref()
+                .is_some_and(Value::is_proxy_var_object)
+            {
+                return Err(RuntimeError::readonly_variable());
+            }
             if let Some(ValueView::Proxy { storer, .. }) = current_proxy.as_ref().map(Value::view)
                 && !storer.is_nil()
             {

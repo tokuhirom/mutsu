@@ -3330,6 +3330,12 @@ impl Interpreter {
             && let ValueView::Proxy { storer, .. } = self.locals[idx].view()
             && !storer.is_nil()
         {
+            // A variable bound to the Proxy object `.VAR` hands back has no
+            // container to assign into (`my $b := $q.VAR; $b = 5`): Rakudo dies
+            // with the readonly-variable error and never calls STORE (#16299).
+            if self.locals[idx].is_proxy_var_object() {
+                return Err(RuntimeError::readonly_variable());
+            }
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             // A Proxy STORE wrote the referent caller lexical by name; drain the
