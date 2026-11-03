@@ -1,6 +1,7 @@
 use super::Value;
 use super::ValueView;
 use super::user_facing_type_name;
+use super::sig_elem_flags;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -1136,6 +1137,31 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
 
     // optional
     attrs.insert("optional".to_string(), Value::Bool(p.is_optional()));
+
+    // `$!flags`: the same properties as rakudo's one-word bit field, so the
+    // MOP can read and write them (`Parameter.^attributes`).
+    let flags = sig_elem_flags::flags_word(&sig_elem_flags::FlagInputs {
+        sigil,
+        twigil: extract_twigil(&variable_param(p).name),
+        invocant: p.is_invocant,
+        multi_invocant: p.multi_invocant,
+        rw: is_rw,
+        copy: is_copy,
+        raw: is_raw || p.is_capture,
+        optional: p.is_optional() && !is_slurpy_any && !p.is_capture,
+        capture: p.is_capture,
+        slurpy_pos: p.slurpy && !p.double_slurpy && !p.onearg && sigil != '%',
+        slurpy_named: p.slurpy && sigil == '%',
+        slurpy_lol: p.double_slurpy,
+        slurpy_onearg: p.onearg,
+        definedness: definedness_modifier(p.type_constraint.as_deref()),
+        coercive: p
+            .type_constraint
+            .as_deref()
+            .is_some_and(|t| t.ends_with(')') && t.contains('(')),
+        default_is_literal: matches!(p.default_expr.as_deref(), Some(Expr::Literal(_))),
+    });
+    attrs.insert("flags".to_string(), Value::int(flags));
 
     // invocant
     attrs.insert("invocant".to_string(), Value::Bool(p.is_invocant));
