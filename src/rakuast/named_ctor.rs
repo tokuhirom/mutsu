@@ -157,6 +157,16 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("paragraphs", List, Omit),
             ],
         ),
+        "RakuAST::Doc::Markup" => (
+            C::DocMarkup,
+            &[
+                ("letter", Node, Required),
+                ("opener", Node, DefaultStr("<")),
+                ("closer", Node, DefaultStr(">")),
+                ("atoms", List, Omit),
+                ("meta", List, Omit),
+            ],
+        ),
         "RakuAST::Statement::Catch" => (C::StatementCatch, &[("body", Node, Required)]),
         "RakuAST::Statement::Control" => (C::StatementControl, &[("body", Node, Required)]),
         "RakuAST::Statement::Default" => (C::StatementDefault, &[LABELS, ("body", Node, Required)]),
@@ -269,6 +279,7 @@ pub(super) fn is_supported(class: RakuAstClass) -> bool {
         class,
         RakuAstClass::Assignment
             | RakuAstClass::StatementSequence
+            | RakuAstClass::DocParagraph
             | RakuAstClass::Nqp
             | RakuAstClass::Label
             | RakuAstClass::FakeSignature
@@ -383,6 +394,8 @@ fn positional(class_name: &str, args: &[Value]) -> Option<Result<Value, RuntimeE
         "RakuAST::StatementSequence" => {
             node(RakuAstClass::StatementSequence, positional_fields(args))
         }
+        // The atoms of a paragraph: strings and `Doc::Markup` nodes.
+        "RakuAST::Doc::Paragraph" => node(RakuAstClass::DocParagraph, positional_fields(args)),
         // rakudo's signature is `(str $name)`, and `.raku` prints it that
         // way: a positional field, as the read direction stores it. A
         // `name => ...` spelling fills the same field.

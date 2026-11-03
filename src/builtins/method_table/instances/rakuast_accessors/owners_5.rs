@@ -3,6 +3,28 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::Anchor::RightWordBoundary",
+        &[
+            "RakuAST::Regex::Anchor::RightWordBoundary",
+            "RakuAST::Regex::Anchor",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Assertion::Alias",
+        &[
+            "RakuAST::Regex::Assertion::Alias",
+            "RakuAST::Regex::Assertion",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::Assertion::Callable",
         &[
             "RakuAST::Regex::Assertion::Callable",
@@ -186,26 +208,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Regex::BacktrackModifiedAtom",
         &[
             "RakuAST::Regex::BacktrackModifiedAtom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Block",
-        &[
-            "RakuAST::Regex::Block",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::CapturingGroup",
-        &[
-            "RakuAST::Regex::CapturingGroup",
-            "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
             "RakuAST::Node",

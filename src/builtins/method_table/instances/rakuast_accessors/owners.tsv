@@ -118,6 +118,12 @@ RakuAST::Doc::Block	level	RakuAST::Doc::Block
 RakuAST::Doc::Block	margin	RakuAST::Doc::Block
 RakuAST::Doc::Block	paragraphs	RakuAST::Doc::Block
 RakuAST::Doc::Block	type	RakuAST::Doc::Block
+RakuAST::Doc::Markup	atoms	RakuAST::Doc::Markup
+RakuAST::Doc::Markup	closer	RakuAST::Doc::Markup
+RakuAST::Doc::Markup	letter	RakuAST::Doc::Markup
+RakuAST::Doc::Markup	meta	RakuAST::Doc::Markup
+RakuAST::Doc::Markup	opener	RakuAST::Doc::Markup
+RakuAST::Doc::Paragraph	atoms	RakuAST::Doc::Paragraph
 RakuAST::FakeSignature	signature	RakuAST::FakeSignature
 RakuAST::FatArrow	key	RakuAST::FatArrow
 RakuAST::FatArrow	named-arg-name	RakuAST::FatArrow

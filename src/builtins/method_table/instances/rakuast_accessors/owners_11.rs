@@ -3,6 +3,31 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::StatementPrefix::Phaser::End",
+        &[
+            "RakuAST::StatementPrefix::Phaser::End",
+            "RakuAST::StatementPrefix::Phaser::Sinky",
+            "RakuAST::StatementPrefix::Phaser",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Phaser::Enter",
+        &[
+            "RakuAST::StatementPrefix::Phaser::Enter",
+            "RakuAST::StatementPrefix::Phaser",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::StatementPrefix::Phaser::First",
         &[
             "RakuAST::StatementPrefix::Phaser::First",
@@ -228,28 +253,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::StatementSequence",
             "RakuAST::StatementList",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StrLiteral",
-        &[
-            "RakuAST::StrLiteral",
-            "RakuAST::Literal",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Stub::Die",
-        &[
-            "RakuAST::Stub::Die",
-            "RakuAST::Stub",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
             "RakuAST::Node",
         ],
     ),

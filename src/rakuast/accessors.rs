@@ -143,6 +143,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 RakuAstClass::StatementList | RakuAstClass::SemiList
             ))
         || (method == "args" && node.class == RakuAstClass::ArgList)
+        || (method == "atoms" && node.class == RakuAstClass::DocParagraph)
     {
         let items = node
             .fields

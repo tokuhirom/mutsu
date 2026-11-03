@@ -5,10 +5,12 @@ use Test;
 # delimited block runs to its `=end`, an extended or abbreviated one to the
 # next blank line or directive, a paragraph keeps the blank lines after it, and
 # `head1` is a `head` of level 1, and `:name(...)` configuration is kept as the
-# value nodes. Indented paragraphs are implicit code blocks (`margin`). Blocks with markup
-# are not read yet and stay out of the tree.
+# value nodes. Indented paragraphs are implicit code blocks (`margin`), and a paragraph with
+# formatting codes is a `Doc::Paragraph` of strings and `Doc::Markup`. Codes
+# with metadata (`X<a|b>`, `L<..|..>`) and `E<...>` are not read yet and leave
+# their block out of the tree.
 
-plan 29;
+plan 42;
 
 use experimental :rakuast;
 
@@ -16,6 +18,8 @@ use experimental :rakuast;
 sub margins(Str $src) {
     $src.AST.statements[0].paragraphs.grep(RakuAST::Doc::Block).map(*.margin.raku).join(' ')
 }
+
+sub flat-text(Str $text) { $text.subst(/\s+/, ' ', :g) }
 
 sub flat-statements(Str $src) {
     $src.AST.statements.map(*.raku.subst(/\s+/, ' ', :g)).join("\n")
@@ -89,6 +93,45 @@ is flat-statements("=begin pod\n\ttab\n\tmore\n=end pod\n"),
     "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Block.new( margin => \"\\t\", type => \"implicit-code\", paragraphs => ( \"tab\\nmore\\n\", ) ), ) )",
     "tab indentation";
 is margins("=begin pod\n\ttab\n\tmore\n=end pod\n"), "\"\\t\"", 'the margins';
+
+is flat-statements("=begin pod\nB<bold> and I<it>\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"bold\", ) ), \" and \", RakuAST::Doc::Markup.new( letter => \"I\", opener => \"<\", closer => \">\", atoms => ( \"it\", ) ), \"\\n\" ), ) )",
+    "formatting codes in a paragraph";
+is flat-statements("=begin pod\nB<I<nested>> x\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( RakuAST::Doc::Markup.new( letter => \"I\", opener => \"<\", closer => \">\", atoms => ( \"nested\", ) ), ) ), \" x\\n\" ), ) )",
+    "nested formatting codes";
+is flat-statements("=begin pod\nB«guillemets» C<<a b>>\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"«\", closer => \"»\", atoms => ( \"guillemets\", ) ), \" \", RakuAST::Doc::Markup.new( letter => \"C\", opener => \"<<\", closer => \">>\", atoms => ( \"a b\", ) ), \"\\n\" ), ) )",
+    "guillemets and a doubled opener";
+is flat-statements("=begin pod\nplain B<x>\nsecond line\n\nnext\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( \"plain \", RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"x\", ) ), \"\\nsecond line\\n\\n\" ), \"next\\n\", ) )",
+    "text around a code over several lines";
+is flat-statements("=head1 The B<bold> title\n"),
+    "RakuAST::Doc::Block.new( type => \"head\", level => 1, abbreviated => True, paragraphs => ( RakuAST::Doc::Paragraph.new( \"The \", RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"bold\", ) ), \" title\\n\" ), ) )",
+    "a code in an abbreviated block";
+is flat-statements("=begin pod\nB<multi\nline> here\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"multi\\nline\", ) ), \" here\\n\" ), ) )",
+    "a code over two lines";
+is flat-statements("=begin pod\na < b and c > d\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( \"a < b and c > d\\n\", ) )",
+    "a bare < and > are text";
+is flat-statements("=begin pod\nx B<y> z B<w>\n\nB<only>\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( \"x \", RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"y\", ) ), \" z \", RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"w\", ) ), \"\\n\\n\" ), RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"only\", ) ), \"\\n\" ), ) )",
+    "two paragraphs, one with codes";
+is flat-statements("=begin pod\nB<B<deep> mixed I<it> text>\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Paragraph.new( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( RakuAST::Doc::Markup.new( letter => \"B\", opener => \"<\", closer => \">\", atoms => ( \"deep\", ) ), \" mixed \", RakuAST::Doc::Markup.new( letter => \"I\", opener => \"<\", closer => \">\", atoms => ( \"it\", ) ), \" text\", ) ), \"\\n\" ), ) )",
+    "text and a code inside a code";
+
+# The new classes: constructors, `.raku` and accessors.
+my $m = RakuAST::Doc::Markup.new(letter => "B", atoms => ("bold",));
+is flat-text($m.raku), 'RakuAST::Doc::Markup.new( letter => "B", opener => "<", closer => ">", atoms => ( "bold", ) )',
+    'Doc::Markup defaults the delimiters';
+is ($m.letter, $m.opener, $m.closer, $m.atoms.raku, $m.meta.raku).join('|'), 'B|<|>|("bold",)|()', 'its accessors';
+my $p = RakuAST::Doc::Paragraph.new("a ", $m, "\n");
+is $p.atoms.elems, 3, 'Doc::Paragraph keeps its atoms';
+is flat-text($p.raku),
+    'RakuAST::Doc::Paragraph.new( "a ", RakuAST::Doc::Markup.new( letter => "B", opener => "<", closer => ">", atoms => ( "bold", ) ), "\n" )',
+    'and prints them';
 
 # The ranges of the blocks and of the unit's list.
 sub ranges(Str $src) {

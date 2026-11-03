@@ -2,6 +2,12 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Type::Enum", "scope"),
+    row!("RakuAST::Type::Enum", "term"),
+    row!("RakuAST::Type::Parameterized", "args"),
+    row!("RakuAST::Type::Simple", "is-resolved"),
+    row!("RakuAST::Type::Simple", "name"),
+    row!("RakuAST::Type::Simple", "resolution"),
     interp_row!(
         "RakuAST::Type::Subset",
         "compile-time-value",
