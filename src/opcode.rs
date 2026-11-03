@@ -11129,8 +11129,16 @@ impl CompiledCode {
                     self.constants.get(idx as usize).map(Value::view)
             {
                 for item in items.iter() {
-                    // Entries are either `Str(name)` or `Pair(name, Int(slot))`.
-                    let name = match item.view() {
+                    // Entries are `Str(name)` or `Pair(name, Int(slot))`; a
+                    // named argument wraps its descriptor as
+                    // `[FALSE, descriptor]` (`add_arg_sources_constant`), and
+                    // `f :p($y)` can write `$y` through an `is rw`/`is raw`
+                    // parameter just as `f $y` can.
+                    let descriptor = match item.view() {
+                        ValueView::Array(parts, ..) if parts.len() == 2 => parts[1].clone(),
+                        _ => item.clone(),
+                    };
+                    let name = match descriptor.view() {
                         ValueView::Str(s) => Some(s.to_string()),
                         ValueView::Pair(k, _) => Some(k.to_string()),
                         _ => None,
