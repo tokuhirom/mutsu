@@ -62,9 +62,20 @@ plan 5;
     $s.tap: -> $e { $events.send($e.path.IO.basename) };
     sleep 0.5;
     mkdir $dir.add('svc');
-    spurt $dir.add('svc/.cro.yml'), "x: 1\n";
     my @seen;
-    my $deadline = now + 5;
+    my $deadline = now + 10;
+    # Wait for the directory's own event, then give the watcher the new
+    # directory got a moment to register before the file appears in it: a file
+    # created before it exists would only be found by the listing (which the
+    # test is not about), and a watcher that starts after the file is created
+    # misses it.
+    while now < $deadline {
+        if $events.poll -> $name { @seen.push($name) }
+        else { sleep 0.05 }
+        last if @seen.grep('svc');
+    }
+    sleep 1;
+    spurt $dir.add('svc/.cro.yml'), "x: 1\n";
     while now < $deadline {
         if $events.poll -> $name { @seen.push($name) }
         else { sleep 0.05 }
