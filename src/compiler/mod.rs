@@ -3808,7 +3808,14 @@ impl Compiler {
                     Expr::BareWord(s) => Some(s.as_str()),
                     _ => None,
                 };
-                let val_name = Self::extract_inner_varname(right);
+                // A sigilless alias value (`:p(alias)`) is stored under its
+                // term key, as a positional one is (#16230).
+                let val_name = match right.as_ref() {
+                    Expr::BareWord(n) if self.names_sigilless_binding(n) => {
+                        Some(crate::runtime::term_names::term_key(n))
+                    }
+                    _ => Self::extract_inner_varname(right),
+                };
                 if let (Some(k), Some(v)) = (key, val_name) {
                     Some(format!("{}={}", k, v))
                 } else {
