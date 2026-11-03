@@ -438,6 +438,14 @@ impl Compiler {
         Symbol::intern(&format!("{}{EVAL_UNIT_MARK}", id.resolve()))
     }
 
+    /// Open the import region of an `EVAL` unit's own scope for the code
+    /// compiled next (the routines it declares list it among their
+    /// `enclosing_import_regions`).
+    // Cost: O(1).
+    pub(crate) fn seed_import_region(&mut self, region: Symbol) {
+        self.import_region_chain.push(region);
+    }
+
     /// Start this (EVAL) unit inside the import sets `innermost_first` of the
     /// blocks running around its `EVAL` call (ADR-8751).
     pub(crate) fn seed_lexical_import_chain(&mut self, innermost_first: Vec<Symbol>) {

@@ -9,5 +9,8 @@ declares is. `scope_encloses_code` now counts the `EVAL` unit's own scope as enc
 the routines compiled from that unit. A `use` inside a block of the unit stays hidden
 from a sub outside the block.
 
-The `EVAL(Q{...}.AST)` entry still hides the names: its routines carry the file of the
-program that EVALs (tracked on #16207).
+`EVAL(Q{...}.AST)` goes the same way: the lowered unit's routines carry the file of the
+program that EVALs it, so the unit's import scope now has a region key of its own
+(`ModuleState::eval_unit_region`) that the compile of the unit's statements opens
+(`Compiler::seed_import_region`), and `scope_encloses_code` finds it among the routine's
+`enclosing_import_regions`. Six more `t/` files run as `EVAL(slurp($f).AST)`.
