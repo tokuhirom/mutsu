@@ -2568,7 +2568,12 @@ impl Interpreter {
         // block scopes) from being prematurely introduced into the env,
         // which would cause bare-word class name resolution to fail when
         // a later block declares `my $x` and the class is named `x`.
-        if !self.env().contains_key(name) {
+        // A slot that already holds a value is the exception: a slot-only
+        // lexical (`my $re = "met"`) that the regex names has no `env` entry yet,
+        // and the engine resolves `m:i/$re/` by name, so skipping it left the
+        // pattern's variable undeclared (`<!>`, never matching) until some other
+        // match published it. Only a still-unset slot (`Nil`) is a later scope's.
+        if !self.env().contains_key(name) && self.locals[i].is_nil() {
             return;
         }
         // Never clobber a name that is currently bound as a readonly param
