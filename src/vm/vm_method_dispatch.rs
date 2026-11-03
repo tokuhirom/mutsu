@@ -394,9 +394,10 @@ impl Interpreter {
                 && !needs_default_eval
                 && !has_arg_mismatch
                 && !Self::method_binds_seq_into_array_param(method_def, &args)
-                // The fast path reads attributes off `self`'s own cell; a
-                // `Proxy` subclass's live in the cell passed separately.
-                && !matches!(base.view(), ValueView::Proxy { .. })
+                // A `Proxy` without a subclass cell has no attribute store to
+                // read; a subclass instance's lives in the same kind of cell
+                // an ordinary instance carries (`self_instance_attrs`).
+                && !matches!(base.view(), ValueView::Proxy { subclass: None, .. })
             {
                 // The fast binder below checks the parameter types itself;
                 // hand it this call's #10986 trust.
