@@ -3013,6 +3013,7 @@ t/modules/eval-module-lexical-subs.t
 t/modules/eval-our-sub-package-stash.t
 t/modules/eval-package-enum-result.t
 t/modules/eval-package-tail-value.t
+t/modules/eval-require-declares-module.t
 t/modules/eval-sees-global-stash-bound-module-type.t
 t/modules/eval-stub-package-does-not-leak.t
 t/modules/eval-unit-package-scope.t
@@ -3225,6 +3226,7 @@ t/modules/import-export/require-in-block-binds-lexically.t
 t/modules/import-export/require-in-method-keeps-module-type-alias.t
 t/modules/import-export/require-in-param-default-keeps-imports.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
+t/modules/import-export/require-missing-module-stub.t
 t/modules/import-export/require-path-package-less-types-global.t
 t/modules/import-export/require-quote-keyword-module-name.t
 t/modules/import-export/require-single-var-import.t
@@ -3232,8 +3234,10 @@ t/modules/import-export/require-statement-imports-multi-only-routine.t
 t/modules/import-export/require-top-level-binds-lexically.t
 t/modules/import-export/require-top-level-class-file.t
 t/modules/import-export/require-toplevel-multi-candidate-not-leaked.t
+t/modules/import-export/require-undeclared-bareword.t
 t/modules/import-export/require-unit-proto.t
 t/modules/import-export/require-with-same-named-term-sub.t
+t/modules/import-export/require.t
 t/modules/import-export/role-body-constant-for-exported-sub.t
 t/modules/import-export/role-body-exported-class-and-constant.t
 t/modules/import-export/role-body-exported-subset.t
