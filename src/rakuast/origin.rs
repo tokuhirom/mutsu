@@ -97,6 +97,7 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
     {
         let mut expression = RakuAstNode::clone(expression);
         set_span(&mut expression, span);
+        super::call_origins::dotty_assign(&mut expression, span);
         super::infix_origins::derive(names, &mut expression);
         *held = Value::rakuast(Box::new(expression));
     }
