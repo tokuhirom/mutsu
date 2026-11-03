@@ -81,11 +81,15 @@ impl Interpreter {
             .get(package_name)
             .cloned()?;
         let pkg = Symbol::intern(package_name);
+        // `find_method`'s invocant is the cursor the rule is looked up on, an
+        // instance of the grammar (a wrapper may call `$meth($obj, |args)`).
+        let chars: Vec<char> = text.chars().collect();
+        let cursor = self.new_grammar_cursor(&chars, pos, pkg);
         let found = self.run_regex_sub_call_here(Some(pkg), |interp| {
             interp.call_method_with_values(
                 how,
                 "find_method",
-                vec![Value::package(pkg), Value::str(start_rule.to_string())],
+                vec![cursor.clone(), Value::str(start_rule.to_string())],
             )
         });
         let meth = match found {
@@ -95,8 +99,6 @@ impl Interpreter {
         if !matches!(meth.view(), ValueView::Sub(_)) {
             return None;
         }
-        let chars: Vec<char> = text.chars().collect();
-        let cursor = self.new_grammar_cursor(&chars, pos, pkg);
         CUSTOM_HOW_START.with(|slot| {
             *slot.borrow_mut() = Some(CustomHowStart {
                 package: package_name.to_string(),

@@ -7,6 +7,8 @@ use v6;
 
 our %timing;
 our %cursor-names;
+our %obj-names;
+our $matched;
 
 my class ProfiledGrammarHOW is Metamodel::GrammarHOW {
 
@@ -16,6 +18,7 @@ my class ProfiledGrammarHOW is Metamodel::GrammarHOW {
             $meth !!
             -> $c, |args {
                 %cursor-names{$c.^name}++;
+                %obj-names{$obj.^name}++;
                 my $grammar = $obj.WHAT.raku;
                 %timing{$grammar} //= {};
                 %timing{$grammar}{$meth.name} //= {};
@@ -24,6 +27,7 @@ my class ProfiledGrammarHOW is Metamodel::GrammarHOW {
                 my $result := $meth($c, |args);
                 %t<time> += now - $start;
                 %t<calls>++;
+                $matched++ if $result.MATCH;
                 $result
             }
     }
@@ -35,7 +39,9 @@ my class ProfiledGrammarHOW is Metamodel::GrammarHOW {
 }
 
 sub get-timing is export { %timing }
-sub reset-timing is export { %timing = (); %cursor-names = () }
+sub reset-timing is export { %timing = (); %cursor-names = (); %obj-names = (); $matched = 0 }
+sub get-obj-names is export { %obj-names }
+sub get-matched is export { $matched }
 sub get-cursor-names is export { %cursor-names }
 
 my module EXPORTHOW { }

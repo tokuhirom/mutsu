@@ -9,7 +9,7 @@ use GrammarProfilerFixture;
 # Grammar::Profiler::Simple t/csv.rakutest, whose per-rule counts were keyed
 # under `Match` and never counted `TOP`.
 
-plan 11;
+plan 13;
 
 grammar CSV {
     token TOP { ^ <line>+ % "\n" $ }
@@ -44,3 +44,5 @@ is-deeply (calls(%t, 'TOP'), calls(%t, 'line'), calls(%t, 'value')), (1, 1, 1),
 reset-timing;
 ok ?CSV.parse("a"), 'parse once more';
 is get-cursor-names().keys.sort.List, ('CSV',), "the wrapper's cursor is a CSV, not a Match";
+is get-obj-names().keys.sort.List, ('CSV',), "find_method's invocant is a CSV cursor";
+ok get-matched() > 0, 'the wrapper can call .MATCH on the result of the rule';

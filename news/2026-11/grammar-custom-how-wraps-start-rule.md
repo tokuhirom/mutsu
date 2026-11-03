@@ -16,3 +16,8 @@ things differed from rakudo:
 
 `Grammar::Profiler::Simple` `t/csv.rakutest` is 5/5 like rakudo. Pinned by
 `t/grammar/grammar-custom-how-wraps-start-rule.t`. `.subparse` is not wrapped yet.
+
+`Grammar::Tracer::Compact` (same kind of `find_method` wrapper) needed two more
+pieces: `find_method`'s invocant is the cursor (a grammar instance, so the
+wrapper's `$meth($obj, |args)` can run), and a cursor answers `.MATCH`. Its
+`t/tracer.t` passes like rakudo.
