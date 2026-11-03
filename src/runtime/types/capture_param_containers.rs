@@ -24,6 +24,16 @@ use crate::runtime::types::signature::{
     encode_capture_named_rw_param, encode_slurpy_rw_param, indexed_varref_from_value,
 };
 
+/// Which lane of a `|c` capture an argument lands in.
+enum CapturePosition {
+    /// The `n`th positional element.
+    Positional(usize),
+    /// A named argument whose call-site source is a variable by construction
+    /// (`:key($var)`): an undefined `$var` reads as a type object, but it is
+    /// not a bare type name.
+    Named,
+}
+
 impl Interpreter {
     /// The value a `|c` capture stores for positional argument `raw_arg`
     /// (already known not to be a named Pair). `source` is the caller's
@@ -47,28 +57,29 @@ impl Interpreter {
             raw_arg,
             arg_source,
             capture_key,
-            elem_idx,
+            CapturePosition::Positional(elem_idx),
             rw_bindings,
             callee_params,
-            false,
         )
     }
 
-    /// [`Self::capture_positional_container`]. `source_is_variable` is set when
-    /// the call site already said `arg_source` is a variable (a `:key($var)`
-    /// named argument), so an undefined `$var` -- which reads as a type
-    /// object -- is not mistaken for a bare type name.
-    #[allow(clippy::too_many_arguments)]
+    /// [`Self::capture_positional_container`] for either lane. For a
+    /// [`CapturePosition::Named`] argument the call site already said
+    /// `arg_source` is a variable (`:key($var)`), so an undefined `$var` --
+    /// which reads as a type object -- is not mistaken for a bare type name.
     fn capture_container_impl(
         &mut self,
         raw_arg: &Value,
         arg_source: Option<&String>,
         capture_key: Option<&str>,
-        elem_idx: usize,
+        position: CapturePosition,
         rw_bindings: &mut Vec<(String, String)>,
         callee_params: &[ParamDef],
-        source_is_variable: bool,
     ) -> Value {
+        let (elem_idx, source_is_variable) = match position {
+            CapturePosition::Positional(idx) => (idx, false),
+            CapturePosition::Named => (0, true),
+        };
         let value = unwrap_varref_value(raw_arg.clone());
         // A cell the caller already handed over (a forwarded capture's element,
         // a `deepmap` leaf) is kept as is: it already is the caller's container.
@@ -194,10 +205,9 @@ impl Interpreter {
             val,
             Some(&var),
             Some(capture_key),
-            0,
+            CapturePosition::Named,
             &mut recorded,
             callee_params,
-            true,
         );
         for (_, source) in recorded {
             rw_bindings.push((encode_capture_named_rw_param(capture_key, key), source));
