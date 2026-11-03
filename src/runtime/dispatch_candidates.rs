@@ -167,12 +167,15 @@ impl Interpreter {
             );
             return fast;
         }
-        self.caches.type_conformance.note_dependent_answer();
-        self.nominal_type_conforms_general(sub, sup)
+        let answer = self.nominal_type_conforms_general(sub, sup);
+        self.caches
+            .type_conformance
+            .note_opaque_answer(sub, sup, answer);
+        answer
     }
 
     // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
-    fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
+    pub(super) fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
         if sub == sup {
             return true;
         }
