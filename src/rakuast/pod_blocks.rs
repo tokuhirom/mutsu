@@ -44,6 +44,8 @@ struct Block {
     kind: String,
     level: Option<i64>,
     form: Form,
+    /// The indentation an implicit code block was written with.
+    margin: Option<String>,
     /// The `:name(value)` pairs after the type, in written order.
     config: Vec<(String, RakuAstNode)>,
     parts: Vec<Part>,
@@ -116,17 +118,28 @@ fn has_markup(text: &str) -> bool {
 /// A paragraph of plain lines from `i`: the text lines, then the blank ones.
 /// `None` for a line the plain reader does not take.
 // Cost: O(p), p = lines of the paragraph.
-fn paragraph(lines: &Lines, mut i: usize, first: Option<&str>) -> Option<(String, usize)> {
+fn paragraph(
+    lines: &Lines,
+    mut i: usize,
+    first: Option<&str>,
+    inside_delimited: bool,
+) -> Option<(String, usize)> {
     let mut text = String::new();
     if let Some(first) = first {
         text.push_str(first);
         text.push('\n');
     }
     while i < lines.text.len() && !lines.blank(i) && lines.directive(i).is_none() {
-        if lines.indent(i) > 0 {
+        // In a delimited block a later line of a paragraph may be indented (its
+        // blanks are dropped); elsewhere that is not read.
+        if lines.indent(i) > 0 && !inside_delimited {
             return None;
         }
-        text.push_str(lines.text[i]);
+        text.push_str(if inside_delimited {
+            lines.text[i].trim_start()
+        } else {
+            lines.text[i]
+        });
         text.push('\n');
         i += 1;
     }
@@ -153,7 +166,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             let config = config(lines, &rest[kind.len()..])?;
             let (base, level) = split_level(kind);
             if name == "for" {
-                let (text, next) = paragraph(lines, i + 1, None)?;
+                let (text, next) = paragraph(lines, i + 1, None, false)?;
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
@@ -165,6 +178,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                         kind: base,
                         level,
                         form: Form::For,
+                        margin: None,
                         config,
                         parts,
                         from,
@@ -180,6 +194,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     kind: base,
                     level,
                     form: Form::Delimited,
+                    margin: None,
                     config,
                     parts,
                     from,
@@ -196,7 +211,8 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 return None;
             }
             let first = rest.trim();
-            let (text, next) = paragraph(lines, i + 1, (!first.is_empty()).then_some(first))?;
+            let (text, next) =
+                paragraph(lines, i + 1, (!first.is_empty()).then_some(first), false)?;
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
@@ -208,6 +224,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     kind: base,
                     level,
                     form: Form::Abbreviated,
+                    margin: None,
                     config: Vec::new(),
                     parts,
                     from,
@@ -297,6 +314,58 @@ fn expression(lines: &Lines, text: &str, at: Option<usize>) -> Option<RakuAstNod
     super::infix_origins::child(statement, "expression").cloned()
 }
 
+/// The implicit code block of the indented lines from `i`: the margin is the
+/// first line's indentation, a deeper line keeps what is beyond it, and a
+/// blank run belongs to the block when more of it follows. `None` for
+/// indentation made of other characters than the margin's.
+// Cost: O(b), b = lines of the block.
+fn code(lines: &Lines, i: usize) -> Option<(Block, usize)> {
+    let first = lines.text[i];
+    let margin = &first[..first.len() - first.trim_start().len()];
+    let mut text = String::new();
+    let (mut j, mut last) = (i, i);
+    while j < lines.text.len() {
+        if lines.blank(j) {
+            let mut k = j;
+            while k < lines.text.len() && lines.blank(k) {
+                k += 1;
+            }
+            text.push_str(&"\n".repeat(k - j));
+            let more = k < lines.text.len()
+                && lines.directive(k).is_none()
+                && lines.text[k].starts_with(margin);
+            j = k;
+            if more {
+                continue;
+            }
+            break;
+        }
+        if lines.directive(j).is_some() {
+            break;
+        }
+        let line = lines.text[j];
+        match line.strip_prefix(margin) {
+            Some(rest) => text.push_str(rest),
+            None if lines.indent(j) >= margin.len() => return None,
+            None => break,
+        }
+        text.push('\n');
+        last = j;
+        j += 1;
+    }
+    let block = Block {
+        kind: "implicit-code".to_string(),
+        level: None,
+        form: Form::Delimited,
+        margin: Some(margin.to_string()),
+        config: Vec::new(),
+        parts: vec![Part::Text(text)],
+        from: lines.start[i],
+        to: lines.end(last),
+    };
+    Some((block, j))
+}
+
 /// The paragraphs and nested blocks from line `i` up to the `=end` of `kind`,
 /// and the line of that `=end`.
 // Cost: O(b), b = lines of the block.
@@ -318,8 +387,13 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
                 parts.push(Part::Block(nested));
                 i = next;
             }
+            None if lines.indent(i) > 0 => {
+                let (code, next) = code(lines, i)?;
+                parts.push(Part::Block(code));
+                i = next;
+            }
             None => {
-                let (text, next) = paragraph(lines, i, None)?;
+                let (text, next) = paragraph(lines, i, None, true)?;
                 parts.push(Part::Text(text));
                 i = next;
             }
@@ -335,7 +409,11 @@ impl Block {
             name: Some(name),
             value: RakuAstFieldValue::Node(value),
         };
-        let mut fields = vec![field("type", Value::str(self.kind.clone()))];
+        let mut fields = Vec::new();
+        if let Some(margin) = &self.margin {
+            fields.push(field("margin", Value::str(margin.clone())));
+        }
+        fields.push(field("type", Value::str(self.kind.clone())));
         if let Some(level) = self.level {
             fields.push(field("level", Value::int(level)));
         }
@@ -374,7 +452,10 @@ impl Block {
             class: RakuAstClass::DocBlock,
             fields,
         };
-        super::origin::set_span(&mut node, SrcSpan::new(self.from, self.to));
+        // Rakudo gives an implicit code block no range.
+        if self.margin.is_none() {
+            super::origin::set_span(&mut node, SrcSpan::new(self.from, self.to));
+        }
         node
     }
 }

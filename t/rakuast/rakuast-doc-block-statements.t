@@ -5,12 +5,17 @@ use Test;
 # delimited block runs to its `=end`, an extended or abbreviated one to the
 # next blank line or directive, a paragraph keeps the blank lines after it, and
 # `head1` is a `head` of level 1, and `:name(...)` configuration is kept as the
-# value nodes. Blocks with markup or indented lines are not read yet and stay
-# out of the tree.
+# value nodes. Indented paragraphs are implicit code blocks (`margin`). Blocks with markup
+# are not read yet and stay out of the tree.
 
-plan 17;
+plan 29;
 
 use experimental :rakuast;
+
+# The margins of the implicit code blocks directly inside the first block.
+sub margins(Str $src) {
+    $src.AST.statements[0].paragraphs.grep(RakuAST::Doc::Block).map(*.margin.raku).join(' ')
+}
 
 sub flat-statements(Str $src) {
     $src.AST.statements.map(*.raku.subst(/\s+/, ' ', :g)).join("\n")
@@ -59,6 +64,31 @@ is flat-statements("=begin pod :a(1,2) :b('a)b')\nx\n=end pod\n"),
 is flat-statements("=begin pod :a<x>\n=end pod\n"),
     "RakuAST::Doc::Block.new( type => \"pod\", config => ( :a(RakuAST::QuotedString.new( processors => <words val>, segments => ( RakuAST::StrLiteral.new(\"x\"), ) )), ) )",
     "an empty block with configuration";
+
+is flat-statements("=begin pod\n  indented line\n  more\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Block.new( margin => \" \", type => \"implicit-code\", paragraphs => ( \"indented line\\nmore\\n\", ) ), ) )",
+    "an indented paragraph is implicit code; the margin is its first line's indentation";
+is margins("=begin pod\n  indented line\n  more\n=end pod\n"), "\"  \"", 'the margins';
+is flat-statements("=begin pod\ntext\n\n  code here\n  and here\n\nafter\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( \"text\\n\\n\", RakuAST::Doc::Block.new( margin => \" \", type => \"implicit-code\", paragraphs => ( \"code here\\nand here\\n\\n\", ) ), \"after\\n\", ) )",
+    "code after text, a deeper line keeps what is beyond the margin";
+is margins("=begin pod\ntext\n\n  code here\n  and here\n\nafter\n=end pod\n"), "\"  \"", 'the margins';
+is flat-statements("=begin pod\n  a\n\n    b deeper\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Block.new( margin => \" \", type => \"implicit-code\", paragraphs => ( \"a\\n\\n b deeper\\n\", ) ), ) )",
+    "a blank line inside code, then a deeper line";
+is margins("=begin pod\n  a\n\n    b deeper\n=end pod\n"), "\"  \"", 'the margins';
+is flat-statements("=begin pod\n    four\n  two\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Block.new( margin => \" \", type => \"implicit-code\", paragraphs => ( \"four\\n\", ) ), RakuAST::Doc::Block.new( margin => \" \", type => \"implicit-code\", paragraphs => ( \"two\\n\", ) ), ) )",
+    "a less indented line starts another block";
+is margins("=begin pod\n    four\n  two\n=end pod\n"), "\"    \" \"  \"", 'the margins';
+is flat-statements("=begin pod\ntext\n  indented continuation\nmore\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( \"text\\nindented continuation\\nmore\\n\", ) )",
+    "an indented line inside a text paragraph is joined to it";
+is margins("=begin pod\ntext\n  indented continuation\nmore\n=end pod\n"), "", 'the margins';
+is flat-statements("=begin pod\n\ttab\n\tmore\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", paragraphs => ( RakuAST::Doc::Block.new( margin => \"\\t\", type => \"implicit-code\", paragraphs => ( \"tab\\nmore\\n\", ) ), ) )",
+    "tab indentation";
+is margins("=begin pod\n\ttab\n\tmore\n=end pod\n"), "\"\\t\"", 'the margins';
 
 # The ranges of the blocks and of the unit's list.
 sub ranges(Str $src) {
