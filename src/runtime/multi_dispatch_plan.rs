@@ -114,7 +114,7 @@ impl Interpreter {
         // cache keyed may build one (an unkeyed plan is per call).
         let program = if plan.keyed && !plan.stage.is_empty() {
             plan.program
-                .get_or_init(|| self.build_stage_program(arg_values, &plan.stage))
+                .get_or_init(|| self.build_stage_program(arg_values, &plan.stage, false))
                 .as_ref()
         } else {
             None
@@ -506,10 +506,24 @@ impl Interpreter {
                 plan
             }
         };
-        Some(
-            self.choose_from_plan_stage(family, args, &plan.stage)
-                .map(|winner| winner.map(|w| (w, plan.captured_remaining.clone()))),
-        )
+        // The stage's program answers the key-decided checks once per key; a
+        // stage it cannot cover, or a call the core-IO candidate rule
+        // re-ranks, takes the general bind walk.
+        let program = if plan.keyed
+            && !plan.stage.is_empty()
+            && !Self::core_io_path_candidate_applies(family, args)
+        {
+            plan.program
+                .get_or_init(|| self.build_stage_program(args, &plan.stage, true))
+                .as_ref()
+        } else {
+            None
+        };
+        let winner = match program {
+            Some(program) => self.run_stage_program(family, args, program),
+            None => self.choose_from_plan_stage(family, args, &plan.stage),
+        };
+        Some(winner.map(|winner| winner.map(|w| (w, plan.captured_remaining.clone()))))
     }
 
     /// The plan of a captured dispatcher's candidates against `args`' types.
