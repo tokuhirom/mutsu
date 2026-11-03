@@ -774,6 +774,13 @@ impl Interpreter {
                     .unwrap_or(Value::NIL)
             };
             let delegate = self.fetch_proxy_delegate(delegate)?;
+            // An `is built(:bind)` attribute holds the caller's container; the
+            // delegate is the value in it (`+$obj` with `handles <Numeric>`).
+            let delegate = if attr_var_name.starts_with('&') {
+                delegate
+            } else {
+                delegate.deref_container()
+            };
             let is_method_based = attr_var_name.starts_with('&');
             let attr_key = attr_var_name
                 .trim_start_matches('&')
