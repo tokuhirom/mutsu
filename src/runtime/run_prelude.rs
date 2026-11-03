@@ -220,35 +220,51 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend the `Metamodel::Naming` / `Metamodel::Stashing` metaroles
-    /// ([`METAMODEL_ROLE_PRELUDE`]) to a program that composes either of them.
+    /// Prepend the metaroles a custom HOW composes ([`METAMODEL_ROLE_PRELUDE`]:
+    /// `Naming`, `Stashing`, `DefaultParent`, `Mixins`, ...) to a program or
+    /// module that names them.
     ///
-    /// Gated on the role names themselves rather than on a bare `Metamodel`:
+    /// Gated on each role's own name rather than on a bare `Metamodel`:
     /// `Metamodel::Primitives` is dispatched natively and needs nothing
     /// injected, and `.^name`/`.^compose` mention no `Metamodel::` name at all,
-    /// so keying on the prefix would prepend two role declarations to most
-    /// programs that merely introspect. A program declaring its own role of
-    /// either name keeps it (the prelude would collide with it), exactly as
-    /// [`Self::inject_prelude_roles`] treats `role Rational`.
+    /// so keying on the prefix would prepend role declarations to most
+    /// programs that merely introspect. A role is injected when the source
+    /// names it, and not when the source declares its own role of that name
+    /// (the prelude would collide with it), exactly as
+    /// [`Self::inject_prelude_roles`] treats `role Rational`. Injected for
+    /// modules too: a custom HOW usually lives in one (`UI::HTMLWindow`'s
+    /// `class WindowHOW is Metamodel::ClassHOW does Metamodel::DefaultParent`).
     pub(super) fn inject_metamodel_role_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        let wants_naming =
-            source.contains("Metamodel::Naming") && !source.contains("role Metamodel::Naming");
-        let wants_stashing =
-            source.contains("Metamodel::Stashing") && !source.contains("role Metamodel::Stashing");
-        if !wants_naming && !wants_stashing {
-            return;
-        }
         use std::sync::OnceLock;
-        static METAMODEL_ROLE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = METAMODEL_ROLE_STMTS.get_or_init(|| {
-            crate::runtime::prelude_source::parse_prelude_source(METAMODEL_ROLE_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default()
-        });
-        if prelude.is_empty() {
+        static METAMODEL_ROLE_STMTS: OnceLock<Vec<(String, Vec<Stmt>)>> = OnceLock::new();
+        let mentions_metamodel = source.contains("Metamodel::");
+        if !mentions_metamodel {
             return;
         }
-        let mut combined = prelude.clone();
+        let roles = METAMODEL_ROLE_STMTS.get_or_init(|| {
+            METAMODEL_ROLE_PRELUDE
+                .iter()
+                .map(|(name, code)| {
+                    let parsed = crate::runtime::prelude_source::parse_prelude_source(code)
+                        .map(|(s, _)| s)
+                        .unwrap_or_default();
+                    (format!("Metamodel::{name}"), parsed)
+                })
+                .collect()
+        });
+        let mut combined: Vec<Stmt> = Vec::new();
+        for (full_name, prelude) in roles {
+            if prelude.is_empty()
+                || !source.contains(full_name.as_str())
+                || source.contains(format!("role {full_name}").as_str())
+            {
+                continue;
+            }
+            combined.extend(prelude.iter().cloned());
+        }
+        if combined.is_empty() {
+            return;
+        }
         combined.append(stmts);
         *stmts = combined;
     }
