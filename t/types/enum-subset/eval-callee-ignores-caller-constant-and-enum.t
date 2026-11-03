@@ -1,13 +1,16 @@
 use Test;
 
-# A `my enum` / lowercase `my constant` of a routine is that routine's lexical:
-# a callee that EVALs the name must not find the CALLER's (ADR-12529, #16099).
-# (An uppercase `my constant` still leaks; see #16099.)
+# A `my enum` / `my constant` of a routine is that routine's lexical: a callee
+# that EVALs the name must not find the CALLER's (ADR-12529, #16099).
 
-plan 7;
+plan 8;
 
+sub reads-const { (try EVAL q[SECRETC]) // 'not visible' }
 sub reads-lower { (try EVAL q[secretc]) // 'not visible' }
 sub reads-enum  { (try EVAL q[Red]) // 'not visible' }
+
+sub with-const { my constant SECRETC = 5; reads-const() }
+is with-const(), 'not visible', 'an uppercase `my constant` of the caller';
 
 sub with-lower { my constant secretc = 5; reads-lower() }
 is with-lower(), 'not visible', 'a lowercase `my constant` of the caller';
