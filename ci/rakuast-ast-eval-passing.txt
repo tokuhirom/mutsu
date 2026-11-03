@@ -7744,7 +7744,6 @@ t/routines/trir-routine-owned-implicits.t
 t/routines/undeclared-routine-compile-time.t
 t/routines/undeclared-routine-found-in-every-position.t
 t/routines/undeclared-routine-suggests-unit-own-subs.t
-t/routines/undeclared-routine-term-order.t
 t/routines/user-declared-control-keyword-subroutines.t
 t/routines/whatever-curry-fatarrow.t
 t/routines/whatever-curry-list-infix-operator.t
