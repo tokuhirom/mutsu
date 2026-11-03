@@ -6,7 +6,7 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 12;
+plan 25;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -50,7 +50,7 @@ plan 12;
                     my $p = .path.IO;
                     $diag.send('isdir') if $p.d;
                     add-dir($p) if $p.d && !%watched{$p};
-                    CATCH { default { $diag.send('caught') } }
+                    CATCH { default { $diag.send('caught'); $diag.send('msg:' ~ .^name ~ '|' ~ .message.lines[0].substr(0, 60)) } }
                 }
             }
             # What was created before the watcher existed is reported by a
@@ -105,6 +105,11 @@ plan 12;
     my @dg; while $diag.poll -> $m { @dg.push($m) }
     ok @dg.grep('add').elems >= 2, 'diag9: add-dir ran for the new directory';
     nok @dg.grep('caught').elems, 'diag10: nothing was thrown in the whenever body';
+    my $m = @dg.first(*.starts-with('msg:')) // '';
+    # message probe: each candidate is a separate numbered assertion
+    for ('No such method', 'Undeclared', 'Cannot', 'Too', 'IO', 'path', 'Type check', 'not found', 'Unknown', 'X::AdHoc', 'X::Method::NotFound', 'X::IO', 'X::TypeCheck') -> $needle {
+        ok !$m.contains($needle), "diag-msg: no '$needle'";
+    }
     ok @dg.grep('isdir').elems >= 1, 'diag11: the event path is a directory';
     ok @dg.grep('body').elems >= 2, 'diag12: whenever bodies ran at least twice (root + nested)';
 }
