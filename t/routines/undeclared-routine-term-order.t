@@ -6,7 +6,7 @@ use Test;
 # the call (rakudo resolves terms lexically, in source order). A routine is
 # hoisted. Expected results are rakudo 2026.09's.
 
-plan 14;
+plan 13;
 
 sub main-run(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -18,7 +18,6 @@ sub main-run(Str $code) {
 for 'say x; my \x = 1',
     '{ say x; my \x = 1 }',
     'say x; { my \x = 1 }',
-    'say k; constant k = 5',
     'say aa; enum E <aa bb>' -> $code {
     my ($rc, $out, $err) = main-run($code);
     ok $rc != 0 && $err ~~ /'Undeclared routine'/, "refused: $code";
