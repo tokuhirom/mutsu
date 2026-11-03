@@ -148,7 +148,7 @@ impl Interpreter {
                 let sources: Vec<Value> = items.iter().cloned().collect();
                 let mut fetched = Vec::with_capacity(sources.len());
                 for item in sources {
-                    fetched.push(self.fetch_proxy_for_store(item)?);
+                    fetched.push(self.fetch_proxy_for_scalar_store(item)?);
                 }
                 value.with_array_mut(|items, _kind| {
                     let data = crate::gc::Gc::make_mut(items);
@@ -163,7 +163,7 @@ impl Interpreter {
                 let mut fetched = Vec::with_capacity(sources.len());
                 for (k, v) in sources {
                     if v.is_proxy_value() {
-                        let v = self.fetch_proxy_for_store(v)?;
+                        let v = self.fetch_proxy_for_scalar_store(v)?;
                         fetched.push((k, v));
                     }
                 }
