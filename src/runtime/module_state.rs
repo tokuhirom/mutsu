@@ -290,6 +290,12 @@ pub(crate) struct ModuleState {
     /// `module_imported_lexical_names`, whose entries beat a same-keyed
     /// `$scalar`. Saved/restored around each nested load (#9389).
     pub(crate) module_export_terms: Vec<(String, Value)>,
+    /// Package-qualified terms a loaded module's `sub EXPORT` hook handed to
+    /// the module that `use`d it, as `(importer, key, value)`. The hook runs
+    /// inside the hook module's own load, so `module_export_terms` (the
+    /// innermost load's list) would file them under the wrong module; the
+    /// importer drains its own rows when its load finishes.
+    pub(crate) importer_export_terms: Vec<(String, String, Value)>,
     /// The env keys of the variables, constants and types the module being
     /// loaded binds in its mainline's pad for its own top-level `use`s
     /// (`lexical_imports::MODULE_UNIT_MARK`). When the load finishes they
@@ -747,6 +753,7 @@ impl ModuleState {
             module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
@@ -863,6 +870,7 @@ impl ModuleState {
             module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),

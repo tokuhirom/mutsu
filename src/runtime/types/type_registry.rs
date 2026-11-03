@@ -641,10 +641,13 @@ impl Interpreter {
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
             || !self.module.module_scope_lexicals.contains_name(name)
-            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }
+        // A qualified key is held only when a `sub EXPORT` hook handed out a term
+        // under that exact spelling (`Map.new: 'Graph::Grid' => Graph::Grid`);
+        // the table is keyed by the full text, so the exact-name probe above is
+        // the whole test.
         self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
     }
 
