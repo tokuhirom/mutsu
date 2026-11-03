@@ -349,7 +349,7 @@ impl Interpreter {
         // The rest of the pattern reads a hoisted `:my`/`:let`/`:our` scalar
         // at match time (see `add_runtime_names`), as it would had the
         // declaration stayed in it.
-        let hoisted_scalars: Vec<String> = declarators
+        let mut hoisted_scalars: Vec<String> = declarators
             .iter()
             .filter(|(decl_name, _)| matches!(decl_name.as_str(), "my" | "let" | "our"))
             .flat_map(|(_, stmt_src)| {
@@ -357,10 +357,17 @@ impl Interpreter {
                 super::super::regex_parse_core::scalar_names_in_decl(decl)
             })
             .collect();
+        // A `$var` written after a code block is read where the cursor reaches
+        // it, since the block can assign it (ADR-12917, direction 2).
+        for name in super::regex_late_scalars::scalars_after_code_block(&remaining_pattern) {
+            if self.late_scalar_reads_at_match_time(&name) && !hoisted_scalars.contains(&name) {
+                hoisted_scalars.push(name);
+            }
+        }
         let remaining_pattern =
             super::regex_rule_params::add_runtime_names(&hoisted_scalars, &remaining_pattern);
         if declarators.is_empty() {
-            let result = self.regex_match_with_captures_core(pattern, text);
+            let result = self.regex_match_with_captures_core(&remaining_pattern, text);
             if let Some(caps) = &result {
                 self.persist_embedded_my_decls(caps, &HashSet::new());
             }
