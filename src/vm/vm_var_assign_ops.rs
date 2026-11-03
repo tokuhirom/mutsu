@@ -178,6 +178,17 @@ impl Interpreter {
             } else {
                 idx.to_string_value()
             };
+            // A `:=` of a literal (`%h<k> := 42`) arrives as a read-only cell,
+            // which the entry keeps (rakudo refuses a later `%h<k> = v` on it);
+            // a plain store into an entry that was bound that way is refused.
+            if let ValueView::ContainerRef(cell) = val.view() {
+                if cell.is_readonly() {
+                    inner.hash_assign_at(&key, val.clone());
+                    return Ok(Some(target.clone()));
+                }
+            } else {
+                Self::check_assign_key_writable(&hash, &key)?;
+            }
             inner.hash_assign_at(&key, Self::itemize_value(val.clone()));
             return Ok(Some(target.clone()));
         }
