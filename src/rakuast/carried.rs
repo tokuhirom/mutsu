@@ -103,11 +103,16 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // A desugaring's temporary (`__ANON_ARRAY__`) is the compiler's own
         // name, carried as the parser built it.
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
-            plain_name(name) || name.starts_with("__")
+            plain_name(name) || name.starts_with("__") || context_free_name(expr, name)
         }
+        // `*` alone: the priming scope that curries it is planted by the
+        // enclosing `WhateverCurry`, so the term itself lowers to itself.
+        Expr::Whatever => true,
         // A type name: the spelled parse leaves a lowercase bareword to
         // the lowering, which resolves it against what the unit imported.
         Expr::BareWord(word) => {
+            // `self` is a keyword: nothing the unit declares changes it.
+            word == "self" ||
             // `Pointer[int8]` is a parameterized type name as the parser wrote it.
             word.starts_with(|c: char| c.is_uppercase())
                 && (word.ends_with(']') && word.contains('[')
@@ -202,6 +207,25 @@ fn plain_name(name: &str) -> bool {
         Some('*' | '?') => chars.next().is_some_and(|c| c.is_alphabetic()),
         Some(c) => c.is_alphabetic(),
         None => false,
+    }
+}
+
+/// A variable the lowering hands back unchanged whatever the unit declares:
+/// the match and error variables (`$/`, `$!`) and an attribute (`$!x`). A
+/// placeholder (`$^a`), a capture (`$0`) and a code variable (`&f`, which the
+/// unit's routines classify) are still read by the conversion.
+// Cost: O(1).
+fn context_free_name(expr: &Expr, name: &str) -> bool {
+    if matches!(expr, Expr::CodeVar(_)) {
+        return false;
+    }
+    match name {
+        "/" | "!" => true,
+        _ => name.strip_prefix('!').is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+        }),
     }
 }
 
