@@ -144,6 +144,23 @@ impl Interpreter {
         {
             return self.pull_map_grep_chain_into(source, needed, out);
         }
+        // A handle piped into a downstream stage (#16065): read `needed`
+        // lines (all of them for `usize::MAX`) and report whether the end was
+        // reached, so the chain marks the upstream spent.
+        if let SeqSource::IoLines {
+            handle,
+            words,
+            kv: false,
+        } = source
+        {
+            let (lines, exhausted) = if needed == usize::MAX {
+                (self.pull_io_lines_to_vec(handle.clone(), *words, false)?, true)
+            } else {
+                self.pull_io_lines_prefix_to_vec(handle, *words, needed)?
+            };
+            out.produced.extend(lines);
+            return Ok(exhausted);
+        }
         let SeqSource::MapGrep {
             items,
             pos,
