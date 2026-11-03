@@ -98,7 +98,7 @@ impl PostDeclared<'_> {
         // the symbol is still missing when the code executes), and a module
         // like Directory refers to an exception class it declares further
         // down the file. Only a single-segment name is a lexical type name.
-        if self.found.is_some() || name.contains("::") || self.is_core(name) {
+        if self.found.is_some() || crate::qualified::is_qualified_str(name) || self.is_core(name) {
             return;
         }
         for frame in self.frames.iter().rev() {
