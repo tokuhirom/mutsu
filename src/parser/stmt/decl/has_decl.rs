@@ -1469,10 +1469,16 @@ fn bind_adverb(inner: &str) -> Option<bool> {
     word_end(rest).then_some(true)
 }
 
-/// Take the statement modifiers off a nested attribute declaration, leaving
-/// the plain declaration in place.
+/// The statement modifiers of a nested attribute declaration, taken off it:
+/// the declaration stays in place, plain.
+struct MovedModifiers {
+    condition: Option<crate::ast::parsed::StatementModifier>,
+    loop_: Option<crate::ast::parsed::StatementModifier>,
+    body: crate::ast::SrcSpan,
+}
+
 // Cost: O(a), a = nested declarations.
-fn take_nested_modifiers(stmts: &mut [Stmt]) -> Option<crate::ast::parsed::Modified> {
+fn take_nested_modifiers(stmts: &mut [Stmt]) -> Option<MovedModifiers> {
     for slot in stmts.iter_mut() {
         let Stmt::Ast(node) = slot else { continue };
         let crate::ast::parsed::ParsedStmt::Modified(m) = node.as_mut() else {
@@ -1481,13 +1487,12 @@ fn take_nested_modifiers(stmts: &mut [Stmt]) -> Option<crate::ast::parsed::Modif
         if !matches!(m.stmt.peel_parsed(), Stmt::HasDecl { .. }) {
             continue;
         }
-        let moved = crate::ast::parsed::Modified {
-            stmt: Box::new(Stmt::SyntheticBlock(Vec::new())),
+        let moved = MovedModifiers {
             condition: m.condition.take(),
             loop_: m.loop_.take(),
             body: m.body,
         };
-        let inner = std::mem::replace(m.stmt.as_mut(), Stmt::SyntheticBlock(Vec::new()));
+        let inner = (*m.stmt).clone();
         *slot = inner;
         return Some(moved);
     }
