@@ -143,6 +143,11 @@ pub(crate) fn register_imported_type(name: &str) {
         scopes
             .first_mut()
             .expect("scope stack should never be empty")
+            .imported_types
+            .insert(name.to_string());
+        scopes
+            .first_mut()
+            .expect("scope stack should never be empty")
             .user_types
             .insert(name.to_string());
         scopes

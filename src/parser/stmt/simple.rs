@@ -128,7 +128,7 @@ pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapsho
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(crate) use user_ops::is_user_declared_value_term;
-pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
+pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind, is_module_imported_type};
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
     is_user_declared_postfix_sub, is_user_declared_prefix_sub, is_user_defined_infix,
@@ -168,6 +168,10 @@ pub(in crate::parser) struct LexicalScope {
     /// User-declared class/role/grammar/enum names. Used to disambiguate
     /// identifiers like `S` from the `S///` substitution operator.
     user_types: HashSet<String>,
+    /// The subset of `user_types` a `use`d module declared (a stub
+    /// `role R {...}` included): the unit sees them from the `use` on, so a
+    /// later declaration of the same name in the unit is no post-declaration.
+    imported_types: HashSet<String>,
     /// The *values* of user-declared enums (`enum E <FOO BAR>` → `FOO`, `BAR`),
     /// including those of an enum a `use`d module exports. An enum value is by
     /// construction a complete nullary term, never the head of a listop call,

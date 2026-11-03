@@ -98,7 +98,13 @@ impl PostDeclared<'_> {
         // the symbol is still missing when the code executes), and a module
         // like Directory refers to an exception class it declares further
         // down the file. Only a single-segment name is a lexical type name.
-        if self.found.is_some() || crate::qualified::is_qualified_str(name) || self.is_core(name) {
+        // A type a `use`d module declared (a stub `role R {...}` included) is
+        // the unit's from the `use` on: its own later `role R` completes it.
+        if self.found.is_some()
+            || crate::qualified::is_qualified_str(name)
+            || self.is_core(name)
+            || crate::parser::is_module_imported_type(name)
+        {
             return;
         }
         for frame in self.frames.iter().rev() {
