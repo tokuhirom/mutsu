@@ -7,7 +7,7 @@ use Test;
 # baseline past the change: the Cro `watch-recursive` shape lost a file created
 # between the listing and the tap (#16198, CI only).
 
-plan 4;
+plan 5;
 
 sub fresh-dir(Str $tag) {
     my $dir = $*TMPDIR.add("mutsu-whenever-watch-$tag-" ~ $*PID ~ "-" ~ (^1000000).pick);
@@ -28,6 +28,23 @@ sub cleanup($dir) { try { .unlink for $dir.dir; $dir.rmdir } }
     $s.tap: -> $n { @got.push($n) };
     sleep 1.5;
     ok @got.grep('late.txt').elems >= 1, 'a file written by the block body after the whenever is reported';
+    cleanup($dir);
+}
+
+# No settling sleep: the file is written right after the whenever, possibly
+# before the watcher's helper thread first looks at the directory. The baseline
+# is the directory as of the `.watch` call, so it is still reported.
+{
+    my $dir = fresh-dir('quick');
+    my $s = supply {
+        whenever $dir.watch -> $e { emit $e.path.IO.basename }
+        spurt $dir.add('quick.txt'), 'x';
+        sleep 0.4;
+    }
+    my @got;
+    $s.tap: -> $n { @got.push($n) };
+    sleep 1.5;
+    ok @got.grep('quick.txt').elems >= 1, 'a file written right after the whenever is reported';
     cleanup($dir);
 }
 
