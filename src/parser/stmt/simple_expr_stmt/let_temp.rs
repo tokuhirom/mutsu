@@ -362,6 +362,28 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: parts.value.clone(),
                     is_attribute: matches!(parts.invocant, Expr::Var(name) if name == "__ANON_STATE#"),
                     type_invocant: false,
+                    invocant_expr: None,
+                },
+            );
+        }
+        // `temp @a[0].n = value` / `temp %h<k>.n = value`: the invocant is an
+        // element, so the object it holds (not a variable) is what the
+        // attribute is saved on and restored through (#16165).
+        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
+            && let Expr::Call { args, .. } = &expr
+            && args.len() == 5
+            && matches!(parts.invocant, Expr::Index { .. })
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::TempMethodAssign {
+                    var_name: String::new(),
+                    method_name: parts.method_name.to_string(),
+                    method_args: parts.method_args.to_vec(),
+                    value: parts.value.clone(),
+                    is_attribute: false,
+                    type_invocant: false,
+                    invocant_expr: Some(Box::new(parts.invocant.clone())),
                 },
             );
         }
@@ -383,6 +405,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: parts.value.clone(),
                     is_attribute: false,
                     type_invocant: true,
+                    invocant_expr: None,
                 },
             );
         }
@@ -400,7 +423,9 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 args: method_args,
                 ..
             } = target.as_ref()
+            && let element = matches!(invocant.as_ref(), Expr::Index { .. })
             && let Some(var_name) = temp_method_invocant_name(invocant)
+                .or_else(|| element.then(String::new))
             && let Some(parts) = crate::rakuast::method_lvalue_call_parts(expanded)
         {
             return parse_statement_modifier(
@@ -412,6 +437,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: parts.value.clone(),
                     is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE#"),
                     type_invocant: false,
+                    invocant_expr: element.then(|| invocant.clone()),
                 },
             );
         }
@@ -440,6 +466,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: (**value).clone(),
                     is_attribute: true,
                     type_invocant: false,
+                    invocant_expr: None,
                 },
             );
         }
@@ -464,6 +491,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: rhs_expr,
                     is_attribute: false,
                     type_invocant: false,
+                    invocant_expr: None,
                 },
             );
         }

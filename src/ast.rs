@@ -3263,6 +3263,11 @@ pub(crate) enum Stmt {
         /// restored by a write-back rather than by a variable snapshot.
         #[serde(default)]
         type_invocant: bool,
+        /// The invocant is an element, not a variable (`temp @a[0].n = v`,
+        /// `temp %h<k>.n = v`): `var_name` is then empty and this expression
+        /// names the object whose attribute is saved and restored (#16165).
+        #[serde(default)]
+        invocant_expr: Option<Box<Expr>>,
     },
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,

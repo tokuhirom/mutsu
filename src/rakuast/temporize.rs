@@ -92,6 +92,7 @@ pub(super) fn view_method_assign_stmt(
         value,
         is_attribute,
         type_invocant,
+        invocant_expr,
     } = stmt
     else {
         return Err(super::view::unsupported("temp method assignment"));
@@ -104,6 +105,7 @@ pub(super) fn view_method_assign_stmt(
         value,
         *is_attribute,
         *type_invocant,
+        invocant_expr.as_deref(),
     )
 }
 
@@ -116,6 +118,7 @@ fn view_method_assign(
     value: &Expr,
     is_attribute: bool,
     type_invocant: bool,
+    invocant_expr: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = if is_attribute {
         RakuAstNode {
@@ -127,7 +130,9 @@ fn view_method_assign(
             )],
         }
     } else {
-        let invocant = if var_name == "self" || type_invocant {
+        let invocant = if let Some(e) = invocant_expr {
+            e.clone()
+        } else if var_name == "self" || type_invocant {
             Expr::BareWord(var_name.to_string())
         } else {
             Expr::Var(var_name.to_string())
@@ -380,6 +385,7 @@ fn lower_method_assign(
         return Ok(None);
     }
     let operand = named_child(prefix, "operand")?;
+    let mut invocant_expr = None;
     let (var_name, method_name, method_args, is_attribute, type_invocant) = if operand.class
         == RakuAstClass::VarAttributePublic
         && !operand
@@ -416,6 +422,11 @@ fn lower_method_assign(
             Expr::Var(name) => (name.clone(), false),
             Expr::BareWord(name) if name == "self" => ("self".to_string(), false),
             Expr::BareWord(name) => (name.clone(), true),
+            // `temp @a[0].n = v`: the element is the object saved (#16165).
+            Expr::Index { .. } => {
+                invocant_expr = Some(target.clone());
+                (String::new(), false)
+            }
             _ => return Err(unsupported(node)),
         };
         let method_name = match modifier {
@@ -458,6 +469,7 @@ fn lower_method_assign(
         value,
         is_attribute,
         type_invocant,
+        invocant_expr,
     }))
 }
 
