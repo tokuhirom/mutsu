@@ -225,8 +225,21 @@ fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value
             bytes.truncate(new_size);
             Ok(make_buf(class_name, bytes))
         }
-        // A `splice` of a temporary has nothing to remove from; the cascade
-        // answers it.
+        // A `splice` of a receiver with no binding (`write-uint32(...).splice(1)`,
+        // an accessor's `Buf`): the removed elements are the answer, and a mutable
+        // `Buf` loses them through its shared storage, as `append` above does. A
+        // `Blob` is immutable and has no `splice`.
+        "splice" if !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) => {
+            let mut bytes = buf_elems_or_empty(&attributes);
+            let removed = Interpreter::splice_buf_bytes(&mut bytes, args);
+            Value::write_back_sharing(
+                &attributes,
+                class_name,
+                crate::value::value_buf::buf_attrs(class_name, bytes),
+                id,
+            );
+            Ok(make_buf(class_name, removed))
+        }
         _ => return None,
     })
 }
