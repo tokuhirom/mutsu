@@ -41,6 +41,26 @@ impl Interpreter {
                         pairs.push((k.clone(), v.clone()));
                     }
                 }
+                // A `Stash` is a `Map` of its symbols (`%h.append(Pkg::)`, CompUnit::Util's
+                // `%sym.append($EXPORT<DEFAULT>.WHO)`).
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::value::types::is_stash_class_name(class_name.as_str())
+                    && attributes
+                        .as_map()
+                        .get("symbols")
+                        .is_some_and(|v| matches!(v.view(), ValueView::Hash(_))) =>
+                {
+                    if let Some(symbols) = attributes.as_map().get("symbols")
+                        && let ValueView::Hash(h) = symbols.view()
+                    {
+                        for (k, v) in h.iter() {
+                            pairs.push((k.clone(), v.clone()));
+                        }
+                    }
+                }
                 _ => {
                     // Alternating key, value
                     let key = arg.to_string_value();
@@ -87,6 +107,24 @@ impl Interpreter {
                             .and_then(|o| o.get(k).cloned())
                             .unwrap_or_else(|| Value::str(k.clone()));
                         pairs.push((key, v.clone()));
+                    }
+                }
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::value::types::is_stash_class_name(class_name.as_str())
+                    && attributes
+                        .as_map()
+                        .get("symbols")
+                        .is_some_and(|v| matches!(v.view(), ValueView::Hash(_))) =>
+                {
+                    if let Some(symbols) = attributes.as_map().get("symbols")
+                        && let ValueView::Hash(h) = symbols.view()
+                    {
+                        for (k, v) in h.map.iter() {
+                            pairs.push((Value::str(k.clone()), v.clone()));
+                        }
                     }
                 }
                 _ => {

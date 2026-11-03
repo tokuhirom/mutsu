@@ -260,6 +260,18 @@ impl Interpreter {
             let spellings = export_alias_spellings(package, owner.as_deref(), tags);
             self.install_export_aliases(&spellings, name, &candidates);
         }
+        // A package-less compunit (`sub foo is export {...}` in a bare file)
+        // registers under GLOBAL, whose `EXPORT::<tag>` stashes are not
+        // public; its own are `Mod::EXPORT::<tag>`, which
+        // `CompUnit::Handle.export-package` reads (CompUnit::Util's
+        // `capture-import`, #15371).
+        if self.declared_unit_module_here().is_none()
+            && crate::qualified::is_global_name(package)
+            && let Some(module) = self.module.module_load_stack.last().cloned()
+        {
+            self.declare_export_namespaces(&module, tags);
+            record_export_tags(&mut self.module.exported_subs, &module, name, tags);
+        }
         if recorded {
             return;
         }

@@ -1857,6 +1857,17 @@ impl Interpreter {
             // install the symbols it returns into the caller's scope. The
             // enclosing compunit's hook comes back either way -- an aborted
             // load must not leave it hidden.
+            // Keep what this compunit's own `sub EXPORT` is before `apply_module_export`
+            // consumes it: `CompUnit::Handle.export-sub` reads it.
+            let own_hooks: Vec<Arc<FunctionDef>> = self
+                .export_routine_candidates()
+                .into_iter()
+                .map(|(_, def)| def)
+                .collect();
+            if !own_hooks.is_empty() {
+                crate::runtime::cow_table_mut(&mut self.module.module_export_hooks)
+                    .insert(module.to_string(), own_hooks);
+            }
             let export_result = match result {
                 Ok(()) => {
                     // `$*CU` in the module's `sub EXPORT` is the importing unit.
