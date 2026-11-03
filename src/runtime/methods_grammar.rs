@@ -1,4 +1,3 @@
-use super::methods_grammar_replay_spans::maximal_span_indices;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
@@ -778,22 +777,13 @@ impl Interpreter {
             &mut self.regex_state.current_grammar_actions,
             actions_obj.clone(),
         );
-        // Activate the reduce-time dyn-var overlay for action-driven parses so an
-        // action that writes a `$*` dynamic var mid-parse (e.g. a delimiter
-        // finalizer) affects subsequent subrule matching. No-op overlay cost
-        // until a pattern actually interpolates a `$*` var (see the SEEN gate in
-        // `interpolate_regex_scalars`). Dropped at scope end, restoring any outer
-        // parse's overlay.
-        let _dynvar_overlay_guard = actions_obj
+        // Each subrule's action runs the moment it reduces and is never undone
+        // by backtracking or by a failed parse, as in Rakudo (ADR-7576). The
+        // start rule's own action, and any node the matcher did not file as a
+        // subrule, is the post-parse walk's.
+        let _reduce_dispatch_guard = actions_obj
             .is_some()
-            .then(super::regex::regex_helpers::RegexDynvarOverlayGuard::activate);
-        // Log every subrule reduce so that a parse which fails overall can still
-        // dispatch the actions of the subrules that DID match — Rakudo dispatches
-        // at reduce time and does not undo it on backtracking, whereas mutsu's
-        // post-pass walks the (nonexistent) final tree. See `REDUCED_SUBRULES`.
-        let _reduced_subrule_guard = actions_obj
-            .is_some()
-            .then(super::regex::regex_helpers::ReducedSubruleGuard::activate);
+            .then(super::regex::regex_helpers::ReduceDispatchGuard::arm);
         // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
         // declare, so action methods run during the match share them (`%*PLAYED`).
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
@@ -920,11 +910,6 @@ impl Interpreter {
             let mut matched: Option<(RegexCaptures, Option<String>)> = None;
             for (pattern, sym) in candidates {
                 let candidate_dynvars = self.enter_grammar_rule_dynvars(&start_rule);
-                // Candidate selection above may have run a preliminary match that
-                // evolved the reduce-time dyn-var overlay (e.g. fired a delimiter
-                // finalizer). Each real candidate match must begin from the initial
-                // dynamic-var state in `self.env`, just as a backtracking retry does.
-                super::regex::regex_helpers::dynvar_overlay_reset_scan();
                 let mut candidate_partial = None;
                 let captures = if method == "parse" || method == "parsefile" {
                     self.regex_match_with_captures_full_from_start_tracking_partial(
@@ -998,7 +983,7 @@ impl Interpreter {
                                 &text,
                             )?;
                         }
-                        None => self.replay_backtracked_reduce_actions(actions, None, &text)?,
+                        None => {}
                     }
                 }
                 if let Some(outcome) =
@@ -1045,9 +1030,6 @@ impl Interpreter {
             if let Some(want) = required_from
                 && captures.cursor_from() != want
             {
-                if let Some(ref mut actions) = actions_obj {
-                    self.replay_backtracked_reduce_actions(actions, None, &text)?;
-                }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
                     return Ok(self.parse_failure_for_pattern(&text, failure_pattern.as_deref()));
@@ -1121,27 +1103,13 @@ impl Interpreter {
             self.env.assign_match_var(match_obj.clone());
 
             // Invoke action methods if :actions was provided
-            let deferred_repeats = if actions_obj.is_some() {
-                Some(self.replay_repeated_reduce_actions(&text, &captures))
-            } else {
-                None
-            };
             let match_obj = if let Some(ref mut actions) = actions_obj {
                 // Action methods run with `self` bound to the actions object.
                 // Restore the caller's `self` afterwards so a nested sub in the
                 // caller (which resolves `self` from env via `GetSelfOrNoSelf`)
                 // doesn't see the actions object leaked in. (Same hazard the
                 // stringify path fixes for `try_compiled_method_or_interpret`.)
-                let result = self
-                    .invoke_grammar_actions(match_obj, actions, &start_rule)
-                    .and_then(|walked| {
-                        self.flush_all_deferred_repeats(actions)?;
-                        Ok(walked)
-                    });
-                if let Some(saved) = deferred_repeats {
-                    self.restore_deferred_repeats(saved);
-                }
-                let result = result?;
+                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule)?;
                 // Update the actions attribute on the final Match to reflect
                 // any mutations that occurred during action method dispatch.
                 if let ValueView::Instance {
@@ -1246,20 +1214,6 @@ impl Interpreter {
         )
     }
 
-    /// [`Self::match_object_from_captures`] for a stored capture node.
-    fn match_object_from_cap_node(node: &CapNode, target: &MatchTarget) -> Value {
-        let kids = node.kids();
-        Value::make_match_object_full_with_regex_vars(
-            node.from as i64,
-            node.to as i64,
-            &kids.positional,
-            &kids.named,
-            &kids.regex_vars,
-            kids.cursor.clone(),
-            target.clone(),
-        )
-    }
-
     /// Run the actions over the match tree of a parse that FAILED because the
     /// start rule covered only part of the input: Rakudo dispatched every one of
     /// them at reduce time, including the start rule's own. Anything that reduced
@@ -1272,90 +1226,9 @@ impl Interpreter {
         start_rule: &str,
         text: &str,
     ) -> Result<(), RuntimeError> {
-        let covered = (caps.from, caps.to);
         let partial = Self::match_object_from_captures(caps, text);
         self.invoke_grammar_actions(partial, actions, start_rule)?;
-        self.replay_backtracked_reduce_actions(actions, Some(covered), text)
-    }
-
-    /// Dispatch the action methods of subrules that reduced during a parse whose
-    /// OVERALL verdict is failure.
-    ///
-    /// Rakudo calls an action the moment its rule matches and never un-calls it
-    /// when the enclosing pattern backtracks past it, so a failed `.parse` still
-    /// leaves every matched subrule's action effects behind. mutsu instead walks
-    /// the finished match tree, which on a failed parse is either absent or covers
-    /// only a prefix — so those actions were never run at all. `REDUCED_SUBRULES`
-    /// logs each reduce during matching and this replays the ones the surviving
-    /// tree does not already account for.
-    ///
-    /// `covered` is the span of the surviving (partial) match: its own action walk
-    /// handles everything inside, so entries there are skipped. Of the rest only
-    /// the *maximal* spans are dispatched — a nested subrule is reached by its
-    /// parent's `invoke_grammar_actions` walk, which also gives it the bottom-up
-    /// order and `.made` propagation Rakudo has.
-    pub(crate) fn replay_backtracked_reduce_actions(
-        &mut self,
-        actions: &mut Value,
-        covered: Option<(usize, usize)>,
-        text: &str,
-    ) -> Result<(), RuntimeError> {
-        let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_entries();
-        self.replay_reduce_action_entries(entries, actions, covered, text, false)
-    }
-
-    /// Park the reductions of backtracked alternatives that a later node
-    /// superseded, to be dispatched from inside the successful match tree's
-    /// action walk at their chronological position (see
-    /// `methods_grammar_deferred_repeats`).  Raku runs those actions as soon as
-    /// each branch reduces, so their effects interleave with the surviving
-    /// branch's own.
-    pub(crate) fn replay_repeated_reduce_actions(
-        &mut self,
-        text: &str,
-        captures: &crate::value::regex_caps::RegexCaptures,
-    ) -> super::methods_grammar_deferred_repeats::DeferredSlot {
-        let entries =
-            super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries(captures);
-        self.defer_repeated_reduce_actions(entries, text)
-    }
-
-    pub(super) fn replay_reduce_action_entries(
-        &mut self,
-        entries: Vec<(String, std::sync::Arc<CapNode>)>,
-        actions: &mut Value,
-        covered: Option<(usize, usize)>,
-        text: &str,
-        ignore_action_errors: bool,
-    ) -> Result<(), RuntimeError> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-        let outside: Vec<(String, std::sync::Arc<CapNode>)> = entries
-            .into_iter()
-            .filter(|(_, caps)| {
-                !covered.is_some_and(|(from, to)| caps.from >= from && caps.to <= to)
-            })
-            .collect();
-        let maximal: Vec<&(String, std::sync::Arc<CapNode>)> = maximal_span_indices(&outside)
-            .into_iter()
-            .map(|i| &outside[i])
-            .collect();
-        let mut result = Ok(());
-        let rtarget = MatchTarget::new(text);
-        for (rule, caps) in maximal {
-            let mut caps = (**caps).clone();
-            self.reduce_cap_node_for_rule(&mut caps, Some(&rtarget), None);
-            let match_obj = Self::match_object_from_cap_node(&caps, &rtarget);
-            let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
-            if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch)
-                && !ignore_action_errors
-            {
-                result = Err(e);
-                break;
-            }
-        }
-        result
+        Ok(())
     }
 
     /// Extract `action_name` from a Match object (set for aliased captures).
@@ -1603,6 +1476,23 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<Value, RuntimeError> {
+        let result = self.invoke_grammar_actions_unmarked(match_obj.clone(), actions, rule_name);
+        // Whoever dispatched this node (the walk, an assertion's `.made` probe),
+        // no later pass runs its action again.
+        match_obj.mark_match_node_reduced();
+        result
+    }
+
+    fn invoke_grammar_actions_unmarked(
+        &mut self,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        // Already dispatched at its reduction (ADR-7576): its subtree was too.
+        if match_obj.match_node_reduced() {
+            return Ok(match_obj);
+        }
         // Fast path: a childless leaf whose rule has no action method — the
         // overwhelming majority of nodes in a leaf-heavy parse (one node per
         // matched character in a quoted-scalar run). Returning it untouched
@@ -1769,11 +1659,6 @@ impl Interpreter {
             // `.made` it writes is the node's, so both slots read it.
             let mut seen: Vec<usize> = Vec::new();
             for (child_name, child_match) in children {
-                if let Some(child_from) = child_match.match_from() {
-                    restore_on_error!(
-                        self.flush_deferred_repeats(actions, |from, _| from as i64 <= child_from)
-                    );
-                }
                 let Some(child_name) = child_name else {
                     let dispatch_name = Self::get_action_name(&child_match).unwrap_or_default();
                     restore_on_error!(self.invoke_grammar_actions(
@@ -1829,12 +1714,6 @@ impl Interpreter {
         // with the captured children. Silent results have no public slot.
         if named_hash.is_none() {
             restore_on_error!(self.dispatch_silent_action_caps(silent_v.as_ref(), actions));
-        }
-
-        // Backtracked reductions inside this node's span ran before its own
-        // action, which fires once the whole node has reduced.
-        if let Some(node_to) = match_obj.match_to() {
-            restore_on_error!(self.flush_deferred_repeats(actions, |_, to| to as i64 <= node_to));
         }
 
         // Interior node with no action method of its own: the children (and

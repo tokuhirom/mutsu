@@ -1,6 +1,6 @@
 # ADR-7576: Dispatch grammar actions at subrule reductions
 
-- **Status**: Proposed
+- **Status**: Accepted (dispatch landed 2026-11-03; the performance claim is still unmeasured)
 - **Issue**: [#7576](https://github.com/tokuhirom/mutsu/issues/7576).
 - **Relates to**: [ADR-0009](0009-regex-code-assertion-execution-model.md)
   (observable code runs only in the real match),
@@ -140,6 +140,40 @@ What this changes in the plan:
   (`make_match_object_full` over the live `MatchTarget`); the dispatch can reuse
   it, but it runs on a deep copy of the actions object, so the real dispatch must
   write the action's attribute changes back to `current_grammar_actions`.
+
+## Implementation (2026-11-03)
+
+The reduction event is the real-match filing of a subrule candidate, and the
+dispatch is there (`regex_reduce_dispatch.rs`, called from
+`file_named_candidate` for both the named and the silent-marker branch). It
+follows the shape the measurement above proposed:
+
+- Gate: an action-driven `Grammar.parse` armed `REDUCE_DISPATCH`
+  (`ReduceDispatchGuard`), and the matcher is neither in `LTM_DECLARATIVE_MODE`
+  nor `CODE_ATOMS_INERT`. A node whose rule has no action method is left alone.
+- The action runs on the real actions object (taken out of
+  `regex_state.current_grammar_actions` for the call and put back, so attribute
+  writes accumulate), through `invoke_grammar_actions` on the node's lazy
+  `Match`. `$/`, `$_` and `made` are restored afterwards; a caller lexical the
+  action rebound is reported through `pending_local_updates`, as an embedded
+  `{ ... }` block does. An exception is parked in `PENDING_REGEX_ERROR`.
+- Identity: `CapNode::reduced` (a flag a clone copies) marks a node whose
+  action ran. `invoke_grammar_actions` returns a marked node untouched and marks
+  every node it dispatches, so the walk, an assertion's `.made` probe and a
+  later clone of the node never run an action twice. An alias files one node
+  under both names and so dispatches once.
+- Removed, because the dispatch makes them redundant: the `ReducedSubruleLog`
+  and its failure/repeat replay, `methods_grammar_deferred_repeats`, the
+  surviving-span bookkeeping, the `RxOp::ReduceAction` copy-run of an action for
+  `$*` writes and the dyn-var overlay it fed (the action's `$*` write now lands
+  in the live env, which pattern interpolation reads).
+
+Left for the post-parse walk: the start rule's own action and nodes that are not
+filed as subrules (positional groups). Not yet done: the hazard of
+`build_named_candidates_from_inner` filing every end of a non-ratchet subrule
+eagerly measured benign on `regex w { a+ }` and `<w> <w>` probes (action counts
+and order equal `raku`), but is not proved for every shape; and the performance
+re-profile of plan step 3.
 
 ## Semantics that the prototype must preserve
 
