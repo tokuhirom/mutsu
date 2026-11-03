@@ -26,14 +26,14 @@ impl Interpreter {
                 // module ran under `unit module LoadMe`. So unlike
                 // `need` below, this never calls `run_block` --
                 // only the shared `parse_module_source` compile step.
-                // Rakudo also rejects an absolute path outright
-                // (searched against the registered `$*REPO` chain,
-                // which a repo built with `.new` was never added
-                // to); mutsu instead accepts one when it canonicalizes
-                // to somewhere under this repo's own prefix, which
-                // covers the zef `Staging` fallback's own use (an
-                // absolute path it already resolved from this same
-                // prefix) without reproducing that unrelated chain.
+                // An absolute path is loaded as given, wherever it is, as
+                // Rakudo does (verified against `raku`: `$*REPO.load` of a file
+                // outside every repository prefix compiles it, with the absolute
+                // path as the short-name). Zef's `Staging` fallback loads the
+                // core distribution's `CompUnit::Repository::Staging` this way
+                // through `$*REPO`, a repository whose prefix is elsewhere
+                // (#16149). The path is one the program named itself, not a
+                // search location.
                 let file_str = file_arg.to_string_value();
                 let prefix = attributes
                     .get("prefix")
@@ -43,9 +43,7 @@ impl Interpreter {
                     .unwrap_or_else(|_| std::path::PathBuf::from(&prefix));
                 let requested = std::path::Path::new(&file_str);
                 let resolved = if requested.is_absolute() {
-                    std::fs::canonicalize(requested)
-                        .ok()
-                        .filter(|p| p.starts_with(&canonical_prefix))
+                    std::fs::canonicalize(requested).ok()
                 } else {
                     let candidate = canonical_prefix.join(requested);
                     candidate.exists().then_some(candidate)
@@ -64,7 +62,30 @@ impl Interpreter {
                     .unwrap_or(&source_path)
                     .to_string_lossy()
                     .to_string();
-                self.parse_module_source(&short_name_str, &source_path)?;
+                let (stmts, _) = self.parse_module_source(&short_name_str, &source_path)?;
+                // A package the file declares *inside one that already exists*
+                // (`class CompUnit::Repository::Staging`) is installed into that
+                // existing stash, so it is reachable by name after the load; a
+                // new top-level package (`unit module LoadMe`) stays in the
+                // compunit's own GLOBAL (verified against `raku` for both).
+                // Zef's `Staging` fallback relies on the first.
+                if stmts.iter().any(|stmt| {
+                    crate::ast::package_header::declaration(stmt).is_some_and(|decl| {
+                        let (crate::ast::Stmt::ClassDecl { name, .. }
+                        | crate::ast::Stmt::Package { name, .. }
+                        | crate::ast::Stmt::RoleDecl { name, .. }) = decl
+                        else {
+                            return false;
+                        };
+                        let name = name.resolve();
+                        name.rsplit_once("::")
+                            .is_some_and(|(parent, _)| {
+                                self.is_known_package(parent)
+                            })
+                    })
+                }) {
+                    self.load_module_from_path(&short_name_str, source_path.clone())?;
+                }
                 let mut attrs = HashMap::new();
                 attrs.insert("from".to_string(), Value::str_from("Perl6"));
                 attrs.insert("repo".to_string(), repo.clone());

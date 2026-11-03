@@ -181,6 +181,35 @@ impl Interpreter {
             ValueView::Hash(map) => {
                 let mut m = (**map).clone();
                 m.insert("files".to_string(), files.clone());
+                // An installed distribution's `provides` maps a module name to
+                // `{ <path> => { file => .., time => .. } }`, and callers read the
+                // path back with `.keys.head` (`Zef::Client.make-install` loads
+                // `CompUnit::Repository::Staging` from the core distribution this
+                // way). The META6.json's plain `Name => path` strings would make
+                // that `.keys.head` the string's own key, `0` (#16149).
+                if let Some(provides) = meta.hash_get_str("provides")
+                    && let ValueView::Hash(entries) = provides.view()
+                {
+                    let mut installed = (**entries).clone();
+                    for (name, path) in entries.iter() {
+                        let mut entry = ValueMap::default();
+                        entry.insert("file".to_string(), path.clone());
+                        entry.insert("time".to_string(), Value::int(0));
+                        let mut by_path = ValueMap::default();
+                        by_path.insert(
+                            path.to_string_value(),
+                            Value::hash_with_data(Value::hash_arc(entry)),
+                        );
+                        installed.insert(
+                            name.to_string(),
+                            Value::hash_with_data(Value::hash_arc(by_path)),
+                        );
+                    }
+                    m.insert(
+                        "provides".to_string(),
+                        Value::hash_with_data(Value::hash_arc(installed)),
+                    );
+                }
                 // Rakudo's core repo holds the `rakudo` distribution, at the
                 // compiler's version (ADR-0104). The vendored battery keeps its
                 // own name and version; only this view of it is renamed.
