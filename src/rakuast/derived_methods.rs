@@ -65,9 +65,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         TypeSubset => &["of"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
-        StatementPrefixPhaserFirst | StatementPrefixPhaserPost => {
-            &["type", "original-blorst"]
-        }
+        StatementPrefixPhaserFirst | StatementPrefixPhaserPost => &["type", "original-blorst"],
         _ if statement_prefix_type(class).is_some() => &["type"],
         _ => &[],
     }

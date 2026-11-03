@@ -29,8 +29,11 @@
 # The snapshot is the run-time source of these facts: `.^can`, `.^methods`,
 # `.^lookup` and the `augment` conflict read it, gated by the method rows
 # (src/builtins/method_introspection.rs, ADR-14032). Owners
-# that are not classes in Rakudo (roles such as Blob, RakuAST model nodes that
-# mutsu models separately) are skipped. Regenerate with
+# that are not classes in Rakudo (roles such as Blob) are skipped. RakuAST
+# owners use the companion Python oracle, with static type spellings (some
+# nested RakuAST packages have a raw NQP WHO that dynamic :: lookup cannot read).
+# `--only-requested` emits only the named owners when extending the snapshot.
+# Regenerate with
 #
 #   raku scripts/gen-rakudo-method-tables.raku [Owner...] > tmp/tables.txt
 #   mv tmp/tables.txt src/builtins/rakudo_method_tables.txt
@@ -44,7 +47,11 @@ my $snapshot = $*PROGRAM.parent.parent.add('src/builtins/rakudo_method_tables.tx
 my @listed = $snapshot.e
     ?? $snapshot.lines.grep(!*.starts-with('#')).map({ .split("\t")[1] }).grep(*.defined)
     !! ();
-my @owners = (|@listed, |@*ARGS).grep(!*.starts-with('RakuAST::')).unique.sort;
+my $only-requested = so @*ARGS.grep(* eq '--only-requested');
+my @requested = @*ARGS.grep(* ne '--only-requested');
+my @inputs = (|($only-requested ?? () !! @listed), |@requested).unique.sort;
+my @owners = @inputs.grep(!*.starts-with('RakuAST::'));
+my @rakuast-owners = @inputs.grep(*.starts-with('RakuAST::'));
 
 sub clean(@names) { @names.grep({ .defined && $_ ne '' && !/\s/ }).unique.sort }
 
@@ -77,7 +84,8 @@ for @owners -> $owner {
 # only extends (under 6.e `::('Exception')` does not resolve to the class).
 my $helper = $*PROGRAM.parent.add('rakudo-method-tables-e.raku');
 my %e;
-for run($*EXECUTABLE, $helper, |@*ARGS, :out).out.lines -> $line {
+for run($*EXECUTABLE, $helper,
+    |($only-requested ?? ('--only-requested',) !! ()), |@requested, :out).out.lines -> $line {
     my ($kind, $owner, *@names) = $line.split("\t");
     %e{$owner}{$kind} = @names;
 }
@@ -95,4 +103,12 @@ for %e.keys.sort -> $owner {
     my %lists = %e{$owner};
     next unless all(<declared methods only>.map({ %lists{$_}.defined }));
     say join "\t", "$_.e", $owner, |%lists{$_} for <declared methods only>;
+}
+
+if @rakuast-owners {
+    my $oracle = $*PROGRAM.parent.add('rakuast-accessor-owners.py');
+    my $process = run 'python3', $oracle, '--raku', $*EXECUTABLE,
+        '--facts-only', |@rakuast-owners, :out;
+    .say for $process.out.lines;
+    exit $process.exitcode if $process.exitcode;
 }

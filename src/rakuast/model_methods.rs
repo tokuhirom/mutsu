@@ -4,56 +4,27 @@ use super::*;
 
 /// The implemented constructors, getters and mutators declared by a model
 /// class, used by reflection even when it has no ordinary registry entry.
-// Cost: O(f log f), f = local model methods.
+// Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local model methods.
 pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
-    if let Some(names) = inherited_fields::local_names(class_name) {
-        return Some(names);
+    let class = class_from_name(class_name);
+    if class.is_none() && hierarchy::entry(class_name).is_none() {
+        return None;
     }
-    // The core declarations a resolved lookup answers (see [`resolve`]).
-    if matches!(
-        class_name,
-        "RakuAST::Declaration::External::Setting"
-            | "RakuAST::Declaration::External::Constant"
-            | "RakuAST::Declaration::Import"
-            | "RakuAST::Declaration::LexicalPackage"
-    ) {
-        return Some(vec!["compile-time-value"]);
-    }
-    let class = class_from_name(class_name)?;
-    let mut names = Vec::new();
-
-    match class.constructor() {
-        Constructor::FromIdentifier
-            if matches!(class, RakuAstClass::Name | RakuAstClass::TermEnum) =>
-        {
-            names.push("from-identifier");
-            if class == RakuAstClass::Name {
-                names.push("from-identifier-parts");
-                names.push("new");
+    let mut names = crate::builtins::method_table::owner_row_names(class_name);
+    if let Some(class) = class {
+        match class.constructor() {
+            Constructor::FromIdentifier
+                if matches!(class, RakuAstClass::Name | RakuAstClass::TermEnum) =>
+            {
+                names.push("from-identifier");
+                if class == RakuAstClass::Name {
+                    names.push("from-identifier-parts");
+                    names.push("new");
+                }
             }
+            Constructor::New if constructor_is_supported(class) => names.push("new"),
+            _ => {}
         }
-        Constructor::New if constructor_is_supported(class) => names.push("new"),
-        _ => {}
-    }
-    names.extend(accessor_method_names(class));
-    if class == RakuAstClass::CompUnit {
-        names.extend(["add-check-code", "add-sorry", "add-worry", "replace-statement-list"]);
-    }
-    if class == RakuAstClass::StatementExpression {
-        names.push("set-expression");
-    }
-    if class == RakuAstClass::ArgList {
-        names.push("push");
-    }
-    if matches!(
-        class,
-        RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix
-    ) {
-        names.push("add-colonpair");
-    }
-    if class == RakuAstClass::StatementList {
-        names.push("add-statement");
-        names.push("unshift-statement");
     }
     names.sort_unstable();
     names.dedup();
@@ -156,10 +127,14 @@ pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
 
 #[cfg(test)]
 pub(crate) fn accessor_schema() -> Vec<(&'static str, &'static str, Vec<&'static str>)> {
-    let mut schema: Vec<_> = RAKUAST_CLASSES.iter().map(|&class| {
-        let name = class.printed_name();
-        (name, measured_name(name), accessor_method_names(class))
-    }).collect();
+    let mut schema: Vec<_> = RAKUAST_CLASSES
+        .iter()
+        .map(|&class| {
+            let name = class.printed_name();
+            (name, measured_name(name), accessor_method_names(class))
+        })
+        .collect();
     schema.push(("RakuAST::Statement", "RakuAST::Statement", vec!["labels"]));
+    schema.push(("RakuAST::Node", "RakuAST::Node", vec!["origin"]));
     schema
 }

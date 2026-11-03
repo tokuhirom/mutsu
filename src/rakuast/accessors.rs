@@ -2,7 +2,7 @@
 
 use super::*;
 
-// Cost: O(f + c + b), f = fields inspected, c = child values copied, b = text bytes produced.
+// Cost: O(f + c + b), f = fields inspected, c = child values copied, b = text bytes produced. Rakudo: O(c + b) -- see #16130.
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);

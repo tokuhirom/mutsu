@@ -407,14 +407,13 @@ pub(crate) fn owner_has_row(owner: &str, method: &str) -> bool {
 
 /// The names of the rows `owner` declares, in registration order, each once:
 /// the method table of an owner Rakudo's snapshot does not list (ADR-14032).
-// Cost: O(r), r = rows (a scan; introspection only).
+// Cost: O(log p + r) expected, p = builtin owners, r = this owner's rows.
 pub(crate) fn owner_row_names(owner: &str) -> Vec<&'static str> {
     let mut names: Vec<&'static str> = Vec::new();
-    for row in ALL
-        .iter()
-        .filter(|row| row.owner == owner && row.flags.in_force())
-    {
-        if !names.contains(&row.name) {
+    let mut seen = rustc_hash::FxHashSet::default();
+    for &id in super::table_const::rows_of_owner(owner) {
+        let row = ALL[usize::from(id)];
+        if row.flags.in_force() && seen.insert(row.name) {
             names.push(row.name);
         }
     }

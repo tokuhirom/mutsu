@@ -321,27 +321,16 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
 }
 
 fn dispatch_core(target: &Value, method_sym: Symbol) -> Option<Result<Value, RuntimeError>> {
-    let method = method_sym.as_str();
     // A code value reaches its registered row through its class's owner
     // chain, including the pure entry (ADR-14477).
     if let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method_sym) {
         return Some(answer);
     }
 
-    // RakuAST node accessors (Phase 3): `.condition`, `.expression`, `.args`,
-    // `.statements`, etc. return the node's field values. `.gist`/`.raku`/`.^name`
-    // are handled elsewhere, so a non-accessor method name falls through.
-    if let ValueView::RakuAst(node) = target.view()
-        && let Some(v) = crate::rakuast::node_accessor(node, method)
+    if let Some(answer) =
+        crate::builtins::method_table::rakuast_accessors::pure_answer(target, method_sym)
     {
-        return Some(Ok(v));
-    }
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(base) = attributes.rakuast_base()
-        && let ValueView::RakuAst(node) = base.view()
-        && let Some(value) = crate::rakuast::node_accessor(node, method)
-    {
-        return Some(Ok(value));
+        return Some(answer);
     }
 
     // `Instant` and `Duration` (`do Real`) answer from the rows of the method

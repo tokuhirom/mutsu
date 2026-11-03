@@ -309,6 +309,19 @@ const fn build_owners() -> OwnerIndex {
 
 const OWNER_INDEX: OwnerIndex = build_owners();
 
+static OWNER_NAMES: [&str; P] = OWNER_INDEX.owners;
+static OWNER_STARTS: [u16; P + 1] = OWNER_INDEX.start;
+static OWNER_ROWS: [u16; N] = OWNER_ORDER;
+
+/// Runtime reflection uses the same compile-time owner index as shape lookup.
+// Cost: O(log p), p = builtin owners; no scan of unrelated rows.
+pub(super) fn rows_of_owner(owner: &str) -> &'static [u16] {
+    let Ok(index) = OWNER_NAMES.binary_search(&owner) else {
+        return &[];
+    };
+    &OWNER_ROWS[usize::from(OWNER_STARTS[index])..usize::from(OWNER_STARTS[index + 1])]
+}
+
 /// The positions in `OWNER_ORDER` of the rows `owner` declares.
 const fn owner_range(owner: &str) -> (usize, usize) {
     let mut p = 0;

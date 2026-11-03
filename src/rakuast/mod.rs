@@ -5,13 +5,13 @@
 //! existing compiler input. ADR-10723 proposes making this model the frontend
 //! IR; its round-trip mode currently exercises that boundary.
 
-mod adverb_origins;
 mod accessors;
+mod adverb_origins;
 mod model_methods;
 pub use accessors::node_accessor;
-pub use model_methods::local_method_names;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
+pub use model_methods::local_method_names;
 mod anon_state;
 mod assign_lower;
 mod assign_target;
@@ -3774,7 +3774,6 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
             | RakuAstClass::Native
     )
 }
-
 
 /// The public methods a RakuAST model class exposes *including* the ones it
 /// inherits, for `.^methods` (whose default, per

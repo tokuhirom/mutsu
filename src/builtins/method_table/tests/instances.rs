@@ -4,6 +4,7 @@
 #[ignore = "input for scripts/gen-rakuast-accessor-rows.py"]
 fn dump_rakuast_accessor_schema() {
     for (class, measured, names) in crate::rakuast::accessor_schema() {
+        println!("MODEL_CLASS\t{class}\t{measured}");
         for name in names {
             println!("MODEL_ACCESSOR\t{class}\t{measured}\t{name}");
         }
