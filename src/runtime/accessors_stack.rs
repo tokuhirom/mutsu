@@ -891,7 +891,9 @@ impl Interpreter {
     /// an absent `?ROLE` env key is.
     // Cost: O(1).
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
-        let fixtures = self.frame_fixtures()?;
+        let Some(fixtures) = self.frame_fixtures() else {
+            return self.declaration_site_fixture(sym);
+        };
         if sym == crate::symbol::wk::self_() {
             fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
@@ -900,6 +902,25 @@ impl Interpreter {
             fixtures.role.map(Value::package)
         } else {
             None
+        }
+    }
+
+    /// `?CLASS` / `?ROLE` of a plain named sub (no record of its own): the
+    /// package it was declared in, when that is a class or role body. `self`
+    /// has no declaration-site value (#16099).
+    // Cost: O(1).
+    fn declaration_site_fixture(&self, sym: Symbol) -> Option<Value> {
+        let package = self.routine_stack.plain_sub_frame()?.package;
+        let is_class_decl = sym == crate::symbol::wk::class_decl();
+        let is_role_decl = sym == crate::symbol::wk::role_decl();
+        if !(is_class_decl || is_role_decl) || package.as_str().is_empty() {
+            return None;
+        }
+        let name = package.as_str();
+        if self.is_role(name) {
+            is_role_decl.then(|| Value::package(package))
+        } else {
+            (is_class_decl && self.has_class(name)).then(|| Value::package(package))
         }
     }
 

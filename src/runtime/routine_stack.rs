@@ -162,11 +162,33 @@ impl RoutineStack {
         self.fixtures.truncate(len);
     }
 
+    /// The plain named-sub frame that is running, when no method record sits
+    /// between it and the top of the stack: such a sub does not continue its
+    /// CALLER's method record, `self` / `$?CLASS` / `$?ROLE` being lexical to
+    /// the declaration, not dynamic (#16099). Block and closure frames (an
+    /// `EVAL`'s, an inlined bare block's) continue the enclosing record, so
+    /// look through them to the routine that runs them.
+    // Cost: O(b), b = the consecutive record-less block frames on top.
+    pub(crate) fn plain_sub_frame(&self) -> Option<&RoutineFrame> {
+        for f in self.frames.iter().rev() {
+            if f.fixtures != 0 || f.is_method {
+                return None;
+            }
+            if !f.is_block {
+                return Some(f);
+            }
+        }
+        None
+    }
+
     /// The record of the innermost frame that has one (the fixture rule of
     /// ADR-14633 §2.1).
     // Cost: O(1).
     #[inline]
     pub(crate) fn top_fixtures(&self) -> Option<&FrameFixtures> {
+        if self.plain_sub_frame().is_some() {
+            return None;
+        }
         self.fixtures.last()
     }
 
