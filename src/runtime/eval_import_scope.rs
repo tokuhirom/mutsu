@@ -83,13 +83,21 @@ impl Interpreter {
                 // (`unit_env_imports`, the alias removal of
                 // `with_eval_import_scope`) takes them out again when the unit
                 // ends. That is the expected end of a region whose env was
-                // flattened. An env that still has the layer but is not the
-                // region's tier is a real mismatch.
-                debug_assert!(
-                    !replaced.has_import_layer(region.id),
-                    "an import region's env was replaced while its layer was still in the chain"
-                );
-                *self.env_mut() = replaced;
+                // flattened.
+                //
+                // A block that bound a name in the region's layer while its own
+                // tier sat above it (`try { require Foo::Bar }` declares a
+                // lexical stub there) copied the tiers between the two, and
+                // the block's exit then took the whole env back as it stood
+                // (`close_block_env_tier`'s fallback): the block's tier is
+                // still above the region's. Those tiers hold by-name writes
+                // that outlive their block, so the end of the region folds the
+                // chain into one flat tier, the same end as a flattened env.
+                *self.env_mut() = if replaced.has_import_layer(region.id) {
+                    replaced.flattened()
+                } else {
+                    replaced
+                };
             }
         }
     }

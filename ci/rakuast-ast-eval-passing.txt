@@ -1912,6 +1912,7 @@ t/exceptions/error-reporting-quality.t
 t/exceptions/error-var-owned-by-routine.t
 t/exceptions/error-var-try-catch-timing.t
 t/exceptions/eval-compile-error-line-and-filename.t
+t/exceptions/eval-import-region-try-require-stub.t
 t/exceptions/eval-parse-error-diagnostic.t
 t/exceptions/eval-stub-error-not-reraised.t
 t/exceptions/exception-adhoc-message.t
