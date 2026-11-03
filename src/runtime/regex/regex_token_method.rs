@@ -635,6 +635,13 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
+        // The failure probe and the LTM measurement walk the rules for their
+        // shape only: user wrapper code must not run (and count) there.
+        if super::regex_helpers::CODE_ATOMS_INERT.get()
+            || super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+        {
+            return None;
+        }
         let how = self
             .registry()
             .grammar_custom_how
@@ -652,12 +659,15 @@ impl Interpreter {
         // User `find_method` / wrapper code runs in the grammar's package over
         // an isolated copy of the env (as `grammar_method_call` runs a grammar method).
         // Shared-cell values (module `our` vars) keep mutations visible.
-        let typeobj = Value::package(pkg);
+        // The invocant is the in-progress cursor, an instance of the grammar
+        // (`$c.^name` is the grammar, as in rakudo); a wrapper may call
+        // `$meth($obj, |args)` on it.
+        let cursor = self.new_grammar_cursor(chars, pos, pkg);
         let found = self.run_regex_sub_call_here(Some(pkg), |interp| {
             interp.call_method_with_values(
                 how,
                 "find_method",
-                vec![typeobj, Value::str(spec.lookup_name.clone())],
+                vec![cursor.clone(), Value::str(spec.lookup_name.clone())],
             )
         });
         let meth = match found {
@@ -673,13 +683,6 @@ impl Interpreter {
         if !matches!(meth.view(), ValueView::Sub(_)) {
             return None;
         }
-        let cursor = Value::make_match_object_full(
-            pos as i64,
-            pos as i64,
-            &[],
-            &Default::default(),
-            MatchTarget::from_chars(chars),
-        );
         let mut call_args = vec![cursor];
         call_args.extend(arg_values.iter().cloned());
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
