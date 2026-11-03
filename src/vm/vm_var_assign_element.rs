@@ -1148,7 +1148,14 @@ impl Interpreter {
                 // ADR-0040's store boundary, Proxy half: an element is a
                 // `Scalar` container, so a `Proxy` rvalue is FETCHed here and
                 // the plain value is what lands (`@a[0] = Proxy.new(...)`).
-                let old = self.fetch_proxy_for_store(old)?;
+                // Rakudo keeps the Proxy object `.VAR` hands back in a HASH
+                // value (`%h<k> = $q.VAR`) but FETCHes it into an array
+                // element (#15893).
+                let old = if is_positional {
+                    self.fetch_proxy_for_store(old)?
+                } else {
+                    self.fetch_proxy_for_scalar_store(old)?
+                };
                 // An element ASSIGNMENT stores a COPY; only a `:=` bind (which
                 // arrives wrapped in a bind marker, so it is
                 // untouched here) aliases. The RHS can BE a first-class element
