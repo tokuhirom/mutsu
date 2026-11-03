@@ -178,6 +178,13 @@ impl Interpreter {
             }
             let b = self.call_user_io_read(target, 1)?;
             if b.is_empty() {
+                // A `READ` that answers nothing is the end of the stream, even
+                // when the handle's `EOF` has not said so yet: with no
+                // characters read for this line there is no line (a PipeFD
+                // reader only learns of the end from this empty read).
+                if line.is_empty() {
+                    return Ok(None);
+                }
                 break;
             }
             line.extend(&b);

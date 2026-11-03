@@ -506,29 +506,6 @@ impl Interpreter {
                 // object for it.
                 publish.publish(&attrs);
 
-                if let Some(ValueView::Instance {
-                    attributes: stdout_attrs,
-                    ..
-                }) = attrs.get("stdout").map(Value::view)
-                    && let Some(ValueView::Promise(promise)) = stdout_attrs
-                        .as_map()
-                        .get("native_descriptor_promise")
-                        .map(Value::view)
-                {
-                    promise.try_keep(Value::int(1)).ok();
-                }
-                if let Some(ValueView::Instance {
-                    attributes: stderr_attrs,
-                    ..
-                }) = attrs.get("stderr").map(Value::view)
-                    && let Some(ValueView::Promise(promise)) = stderr_attrs
-                        .as_map()
-                        .get("native_descriptor_promise")
-                        .map(Value::view)
-                {
-                    promise.try_keep(Value::int(2)).ok();
-                }
-
                 // Resolve ready promise if set
                 if let Some(ValueView::Promise(ready)) = attrs.get("ready_promise").map(Value::view)
                 {
@@ -829,6 +806,11 @@ impl Interpreter {
                                     let mut quit = false;
                                     crate::runtime::proc_spawn::pump_pipe(stdout, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
+                                        if let Some(sid) = sid {
+                                            crate::runtime::native_methods::forward_stream_bytes(
+                                                sid, &raw, false,
+                                            );
+                                        }
                                         if bin_mode {
                                             if !sinks.is_empty() {
                                                 sinks.emit(make_buf_value(chunk));
@@ -852,6 +834,9 @@ impl Interpreter {
                                     // (the channel/`collected` path above only handles the
                                     // default UTF-8 case).
                                     if let Some(sid) = sid {
+                                        crate::runtime::native_methods::forward_stream_bytes(
+                                            sid, &raw, true,
+                                        );
                                         set_supply_collected_bytes(sid, raw);
                                     }
                                     collected
@@ -882,6 +867,11 @@ impl Interpreter {
                                     let mut quit = false;
                                     crate::runtime::proc_spawn::pump_pipe(stderr, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
+                                        if let Some(sid) = sid {
+                                            crate::runtime::native_methods::forward_stream_bytes(
+                                                sid, &raw, false,
+                                            );
+                                        }
                                         if bin_mode {
                                             if !sinks.is_empty() {
                                                 sinks.emit(make_buf_value(chunk));
@@ -901,6 +891,9 @@ impl Interpreter {
                                         }
                                     }
                                     if let Some(sid) = sid {
+                                        crate::runtime::native_methods::forward_stream_bytes(
+                                            sid, &raw, true,
+                                        );
                                         set_supply_collected_bytes(sid, raw);
                                     }
                                     collected
