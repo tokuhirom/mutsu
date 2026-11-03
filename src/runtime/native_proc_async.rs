@@ -534,8 +534,8 @@ impl Interpreter {
                         Some(ValueView::Int(sid)) => {
                             let sid = sid as u64;
                             crate::runtime::native_methods::native_descriptor_requested(sid)
-                                || (attrs.get(&format!("{name}_selected")).is_some_and(Value::truthy)
-                                    && attrs.get(&format!("{name}_bind")).is_none_or(Value::is_nil)
+                                || (attrs.get(format!("{name}_selected")).is_some_and(Value::truthy)
+                                    && attrs.get(format!("{name}_bind")).is_none_or(Value::is_nil)
                                     && crate::runtime::native_methods::get_supply_taps(sid)
                                         .is_empty())
                         }
