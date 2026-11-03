@@ -124,6 +124,52 @@ fn counters_track_calls_and_closure_creations() {
     }
 }
 
+/// A trivial pointy closure called `n` times, in a program that declared the
+/// given extra statement first.
+fn light_closure_loop(prefix: &str, n: u32) -> String {
+    format!(
+        "{prefix}\nmy $c = -> $x {{ $x + 1 }};\nmy $s = 0; for ^{n} {{ $s += $c($_) }}; say $s;"
+    )
+}
+
+/// The light closure call (#8335) chains no overlay over the caller. A
+/// `my atomicint` anywhere in the process used to turn it off for EVERY
+/// closure, because the slot-read latch it consults is process-wide; it is a
+/// per-name fact (as `GetLocal`'s fast path already treats it, #12120), so a
+/// closure whose own parameters are not atomic keeps the light call (#9170:
+/// loading Cro, which declares one, made every closure call ~12x dearer).
+#[test]
+fn an_atomic_variable_elsewhere_keeps_the_light_closure_call() {
+    for prefix in ["", "my atomicint $cnt = 0;"] {
+        let (out50, c50) = run(&light_closure_loop(prefix, 50));
+        let (out150, c150) = run(&light_closure_loop(prefix, 150));
+        assert_eq!(out50, "1275\n");
+        assert_eq!(out150, "11325\n");
+        assert_eq!(
+            c150.scoped_overlays, c50.scoped_overlays,
+            "100 more light closure calls must chain no overlay (prefix {prefix:?})"
+        );
+    }
+}
+
+/// ... and a closure whose own parameter IS the atomic name keeps declining,
+/// because its slot read must reach the atomic lane.
+#[test]
+fn a_closure_with_an_atomic_named_parameter_still_takes_the_general_call() {
+    let src = |n: u32| {
+        format!(
+            "my atomicint $cnt = 0;\nmy $c = -> $cnt {{ $cnt + 1 }};\n\
+             my $s = 0; for ^{n} {{ $s += $c($_) }}; say $s;"
+        )
+    };
+    let (_, c50) = run(&src(50));
+    let (_, c150) = run(&src(150));
+    assert!(
+        c150.scoped_overlays - c50.scoped_overlays >= 100,
+        "the general call chains an overlay per call"
+    );
+}
+
 #[test]
 fn no_stats_line_without_the_switch() {
     // Without MUTSU_VM_STATS nothing is printed; the counters' gate is the

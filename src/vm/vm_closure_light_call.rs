@@ -170,7 +170,20 @@ impl Interpreter {
         // Per-process latches the slot read and the upvalue read consult by
         // name once set, and the lvalue context a `GetLocal` serves a
         // container for.
-        if !crate::vm::vm_jit::local_read_unspoiled()
+        //
+        // The atomic-variable source of the slot-read latch is a per-NAME
+        // fact, so once an atomic exists somewhere only a closure whose own
+        // parameters could be one declines, as `GetLocal`'s fast path decides
+        // (#12120). Declining for the whole process sent every closure call in
+        // a program that loaded a module with one `my atomicint` (Cro's
+        // `$current-id`) through the general call, ~12x the cost (#9170).
+        let unspoiled = crate::vm::vm_jit::local_read_unspoiled();
+        if !(unspoiled || crate::vm::vm_jit::local_read_unspoiled_by_any_name())
+            || (!unspoiled
+                && cc
+                    .locals
+                    .iter()
+                    .any(|name| Self::atomic_name_possible(name)))
             || self.rw_return_context
             || !self.lexicals.escaping_our_lexical_names.is_empty()
             || !data.assumed_positional.is_empty()
