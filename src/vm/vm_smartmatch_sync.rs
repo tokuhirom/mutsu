@@ -209,7 +209,41 @@ impl Interpreter {
     // Cost: O(n), n = names.
     pub(super) fn apply_smartmatch_sync(&mut self, code: &CompiledCode, names: &[String]) {
         if !names.is_empty() {
-            self.sync_regex_interpolation_env_for_names(code, names);
+            self.sync_regex_interpolation_env_for_names(code, names, false);
+        }
+    }
+
+    /// The variables the regex-with-adverbs literals (`m:i/$re/`) in the RHS
+    /// ops `[rhs_start, rhs_end)` can name. Their pattern text is resolved by
+    /// name, so unlike a plain regex literal they need a slot-only local that
+    /// holds a value published too.
+    // Cost: O(r + p), r = ops of the RHS, p = total pattern length of its
+    // adverbed regex literals.
+    pub(super) fn smartmatch_rhs_adverb_names(
+        code: &CompiledCode,
+        rhs_start: usize,
+        rhs_end: usize,
+    ) -> Vec<String> {
+        let mut names = Vec::new();
+        for op in code.ops.get(rhs_start..rhs_end).unwrap_or(&[]) {
+            let OpCode::LoadConst(idx) = op else { continue };
+            if let Some(ValueView::RegexWithAdverbs(adverbs)) =
+                code.constants.get(*idx as usize).map(Value::view)
+            {
+                merge_names(
+                    &mut names,
+                    regex_pattern_var_names(adverbs.pattern.as_str()),
+                );
+            }
+        }
+        names
+    }
+
+    /// Publish the set slots [`Self::smartmatch_rhs_adverb_names`] named.
+    // Cost: O(n), n = names.
+    pub(super) fn apply_smartmatch_adverb_sync(&mut self, code: &CompiledCode, names: &[String]) {
+        if !names.is_empty() {
+            self.sync_regex_interpolation_env_for_names(code, names, true);
         }
     }
 }

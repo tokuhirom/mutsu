@@ -166,6 +166,8 @@ impl Interpreter {
         // write-throughs at their own sites).
         let rhs_names = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
         self.apply_smartmatch_sync(code, &rhs_names);
+        let adverb_names = Self::smartmatch_rhs_adverb_names(code, rhs_start, rhs_end);
+        self.apply_smartmatch_adverb_sync(code, &adverb_names);
         let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
         self.topic_state.in_smartmatch_rhs = true;
         self.topic_state.transliterate_in_smartmatch = false;

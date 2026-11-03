@@ -2528,6 +2528,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         names: &[String],
+        publish_set_slots: bool,
     ) {
         let saved_suppress = self.threads.suppress_shared_publish;
         self.threads.suppress_shared_publish = true;
@@ -2536,7 +2537,7 @@ impl Interpreter {
                 continue;
             };
             for &slot in code.local_slots_of(sym) {
-                self.sync_regex_interpolation_slot(code, slot as usize);
+                self.sync_regex_interpolation_slot(code, slot as usize, publish_set_slots);
             }
         }
         self.threads.suppress_shared_publish = saved_suppress;
@@ -2545,7 +2546,12 @@ impl Interpreter {
     /// Publish local slot `i` into env for a by-name reader in the regex
     /// engine, unless it is match state or must not be broadcast by name.
     // Cost: O(1).
-    fn sync_regex_interpolation_slot(&mut self, code: &CompiledCode, i: usize) {
+    fn sync_regex_interpolation_slot(
+        &mut self,
+        code: &CompiledCode,
+        i: usize,
+        publish_set_slots: bool,
+    ) {
         let Some(name) = code.locals.get(i) else {
             return;
         };
@@ -2568,7 +2574,13 @@ impl Interpreter {
         // block scopes) from being prematurely introduced into the env,
         // which would cause bare-word class name resolution to fail when
         // a later block declares `my $x` and the class is named `x`.
-        if !self.env().contains_key(name) {
+        // A slot that already holds a value is the exception for a regex WITH
+        // ADVERBS (`publish_set_slots`): a slot-only lexical (`my $re = "met"`)
+        // that `m:i/$re/` names has no `env` entry yet, and that pattern text is
+        // resolved by name, so skipping it left the variable undeclared (`<!>`,
+        // never matching) until some other match published it. Only a still-unset
+        // slot (`Nil`) is a later scope's.
+        if !self.env().contains_key(name) && !(publish_set_slots && !self.locals[i].is_nil()) {
             return;
         }
         // Never clobber a name that is currently bound as a readonly param
