@@ -6,7 +6,8 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 5;
+my %watched;
+# TEMPORARY PROBE: no plan; extra failing numbers encode %watched<err>.
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -38,7 +39,6 @@ plan 5;
     $dir.mkdir;
 
     my $s = supply {
-        my %watched;
         sub add-dir(IO::Path $d, :$initial) {
             %watched{$d} = True;
             with $d.watch -> $w {
@@ -46,7 +46,7 @@ plan 5;
                     emit $_;
                     my $p = .path.IO;
                     add-dir($p) if $p.d && !%watched{$p};
-                    CATCH { default { } }
+                    CATCH { default { %watched<err> = .^name ~ '|' ~ .message.lines[0] } }
                 }
             }
             # What was created before the watcher existed is reported by a
@@ -81,4 +81,14 @@ plan 5;
 {
     sub bare-emit { emit 1 }
     throws-like { bare-emit() }, X::ControlFlow, 'emit without a supply is still refused';
+}
+
+# TEMPORARY PROBE: char i with code c fails test number (tests so far) + 1 + i*256 + c.
+{
+    my $msg = %watched<err> // 'NONE';
+    my @chars = $msg.substr(0, 70).ords;
+    for @chars.kv -> $i, $c {
+        for ^256 -> $k { ok $k != $c, 'diag' }
+    }
+    done-testing;
 }
