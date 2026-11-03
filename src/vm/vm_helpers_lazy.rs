@@ -163,7 +163,7 @@ impl Interpreter {
 
     /// Read every remaining line/word from a file handle (formerly
     /// `force_if_lazy_io_lines`'s body).
-    fn pull_io_lines_to_vec(
+    pub(crate) fn pull_io_lines_to_vec(
         &mut self,
         handle: Value,
         words: bool,
@@ -193,7 +193,7 @@ impl Interpreter {
     /// read on a not-yet-reified `IO::Handle.lines`/`.words` Seq
     /// (`vm_var_index_ops.rs`) so a partial slice (`words($fh, :close)[1,
     /// 2]`) does not trigger `:close`'s close-on-exhaust.
-    fn pull_io_lines_prefix_to_vec(
+    pub(crate) fn pull_io_lines_prefix_to_vec(
         &mut self,
         handle: &Value,
         words: bool,
@@ -645,7 +645,17 @@ impl Interpreter {
         // source (`MapGrepItems::Chain`, #11176) instead of running the
         // upstream callback over everything first: `dispatch_map_method` /
         // `dispatch_grep` steal the source themselves.
-        if matches!(method, "map" | "grep") && body.has_map_grep_stream_source() {
+        if matches!(method, "map" | "grep")
+            && (body.has_map_grep_stream_source() || body.has_io_lines_pipe_source())
+        {
+            return Ok(target);
+        }
+        // `.pairs` / `.rotor` / ... on an untouched `IO::Handle.lines` Seq are
+        // lazy stages over it (`lazy_stream`, #16065): the stage takes the
+        // handle, so the receiver is left alone here.
+        if body.has_io_lines_pipe_source()
+            && crate::builtins::method_table::lazy_stream::stream_of(&target, method).is_some()
+        {
             return Ok(target);
         }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {

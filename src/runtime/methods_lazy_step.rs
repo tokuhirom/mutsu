@@ -33,6 +33,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Value> {
         let stream = crate::builtins::method_table::lazy_stream::stream_of(target, method)?;
+        // A handle's `lines` Seq is consumed by the stage: the stage reads
+        // from a fresh Seq over the same handle, and the receiver is spent.
+        if let ValueView::Seq(body) = target.view() {
+            let source = body.take_io_lines_pipe_source()?;
+            return stream(self, &Value::seq_deferred(source), args);
+        }
         stream(self, target, args)
     }
 

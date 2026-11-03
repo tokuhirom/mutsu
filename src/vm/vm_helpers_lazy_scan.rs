@@ -82,6 +82,13 @@ impl Interpreter {
                     body.extend_gather_prefix(idx + 1, |list, from, n| {
                         self.pull_gather_window(list, from, n)
                     })?;
+                } else if idx >= body.len() {
+                    // An `IO::Handle.lines` / `.words` source reads the lines
+                    // up to `idx` and no further (#16065); any other source
+                    // is left alone.
+                    body.pull_prefix(idx + 1, |handle, words, count| {
+                        self.pull_io_lines_prefix_to_vec(handle, words, count)
+                    })?;
                 }
                 Ok(body.get(idx).cloned())
             }
