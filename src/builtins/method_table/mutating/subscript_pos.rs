@@ -56,7 +56,7 @@ fn index_of(idx: &Value) -> Option<usize> {
 // Cost: O(1) amortized, in place (the element type check reads the container's
 // `value_type`; only a failing check scans the env, for the variable name its
 // message reports).
-fn assign_pos(
+pub(super) fn assign_pos(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
     args: &[Value],
