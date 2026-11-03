@@ -23,6 +23,32 @@
 # ADR's -- never "looks hard". Keep entries sorted by dist, then file.
 
 [[divergence]]
+dist = "App::RaCoCo"
+file = "t/02-ext-proc.rakutest"
+shape = { verdict = "fail", ok = 5, nok = 1, plan = 6, first_failure = "06-autorun-and-tweak-placeholders" }
+issue = 15807
+reason = """App::RaCoCo spawns a literal `raku` and resolves its tools as \
+`$*EXECUTABLE.parent.add('raku')`. rakudo installs `raku` next to `rakudo`/`moar`; mutsu ships \
+only `mutsu` and will not install a `raku` alias (user decision 2026-11-03, #15807), so the \
+sweep's `raku` stays rakudo. The test then prints rakudo's `$*RAKU.compiler.id`, not mutsu's."""
+
+[[divergence]]
+dist = "App::RaCoCo"
+file = "t/15-misc.rakutest"
+shape = { verdict = "fail", ok = 2, nok = 1, plan = 3, first_failure = "03-compiler-id" }
+issue = 15807
+reason = """same as t/02-ext-proc.rakutest: `raku -e 'print $*RAKU.compiler.id'` runs the `raku` \
+on PATH (rakudo), because mutsu installs no `raku` alias (user decision 2026-11-03, #15807)."""
+
+[[divergence]]
+dist = "App::RaCoCo"
+file = "t/19-configuration.rakutest"
+shape = { verdict = "die", ok = 19, nok = 0, plan = 21, first_failure = "Raku bin dir path ｢/home/runner/work/mutsu/mutsu/target/release｣ does not exists." }
+issue = 15807
+reason = """the test requires a `raku` executable in `$*EXECUTABLE.parent`; mutsu installs no \
+`raku` alias (user decision 2026-11-03, #15807)."""
+
+[[divergence]]
 dist = "Code::Coverage"
 file = "t/01-basic.rakutest"
 shape = { verdict = "fail", ok = 9, nok = 5, plan = 14, first_failure = "is the first coverage ok" }
@@ -32,6 +58,16 @@ line-table artefacts: line 1 of the unit (the mainline's entry frame, a comment 
 first of several consecutive `has` declarations (16, never 17/18), and the last statement line \
 seen at compile time (33, a not-taken else branch) for the mainline's implicit return. mutsu \
 will not emulate them (maintainer decision 2026-10-29, #15323)."""
+
+[[divergence]]
+dist = "Dev::ContainerizedService"
+file = "t/clickhouse.t"
+shape = { verdict = "fail", ok = 0, nok = 7, plan = 7, first_failure = "Successfully ran development script" }
+issue = 15525
+reason = """the test probes `require ::('Cro::HTTP::Client')` and skips when it is absent. The \
+oracle rakudo has no Cro, so it skips; mutsu bundles Cro::HTTP::Client, so the test runs its \
+real flow and needs a Docker daemon the sweep sandbox does not have. Hiding the bundled module \
+from `require` would not be a fix (user decision 2026-11-03, #15525)."""
 
 [[divergence]]
 dist = "DSL::Shared"
