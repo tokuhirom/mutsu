@@ -71,6 +71,8 @@ plan 5;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
+    # Formerly lost on a loaded runner: the file can land between the listing and
+    # the nested `whenever`'s tap (#16198, t/concurrency/supply/whenever-watch-reports-changes-made-after-the-whenever.t).
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
 }
 
