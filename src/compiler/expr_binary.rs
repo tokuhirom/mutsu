@@ -905,6 +905,20 @@ impl Compiler {
             return;
         }
 
+        // `key => alias` where `alias` is a sigilless lexical (`my \alias =
+        // $x`): it names the variable's container just like `$x` does, so the
+        // Pair's value is tagged with the term's storage key (#16230).
+        if matches!(op, TokenKind::FatArrow)
+            && !self.suppress_pair_capture
+            && let Some(name) = self.sigilless_local_container_name(right)
+        {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            self.emit_wrap_var_ref(&name);
+            self.emit_make_pair(mint_named_pair, false);
+            return;
+        }
+
         // `key => (my $x)` written as a call argument (`f :deps(my $x)`): the
         // declaration took a real slot (`call_arg_decl_slots`), so the Pair's
         // value is tagged with it like `key => $x` is, and a `|c` capture or an
