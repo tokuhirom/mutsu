@@ -231,7 +231,10 @@ impl Interpreter {
     // of c aliases.
     pub(crate) fn resolve_alias_root<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
         let key = crate::runtime::sigilless_alias_key(name);
-        if !matches!(self.env().get_sym(key).map(Value::view), Some(ValueView::Str(_))) {
+        if !matches!(
+            self.env().get_sym(key).map(Value::view),
+            Some(ValueView::Str(_))
+        ) {
             return std::borrow::Cow::Borrowed(name);
         }
         std::borrow::Cow::Owned(self.resolve_alias_chain(name))
