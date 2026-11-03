@@ -157,6 +157,12 @@ pub struct RuntimeErrorCold {
     /// definite return value at run time (rakudo's `Mu.return` →
     /// `check-signature`); a `return X` from a nested block just returns `X`.
     pub from_method_return: bool,
+    /// The error was thrown by a downstream tap callback while an `emit` was
+    /// delivering to it (`runtime::supply_emit_frame::emit_to_supply`). It
+    /// belongs to the consumer, not to the `supply` block that emitted: the
+    /// block is not quit by it and the error keeps unwinding to whoever drove
+    /// the emission, as in rakudo (#16083).
+    pub from_downstream_tap: bool,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
     /// The compile-time slot of [`Self::container_name`] in the frame that
@@ -320,6 +326,9 @@ impl RuntimeError {
     pub fn is_targeted_return(&self) -> bool {
         self.return_value.is_some() && self.return_target_callable_id().is_some()
     }
+    pub fn from_downstream_tap(&self) -> bool {
+        self.cold.as_ref().is_some_and(|c| c.from_downstream_tap)
+    }
     pub fn from_method_return(&self) -> bool {
         self.cold.as_ref().is_some_and(|c| c.from_method_return)
     }
@@ -401,6 +410,9 @@ impl RuntimeError {
     }
     pub(crate) fn set_return_target_callable_id(&mut self, v: Option<u64>) {
         self.cold_mut().return_target_callable_id = v;
+    }
+    pub(crate) fn set_from_downstream_tap(&mut self) {
+        self.cold_mut().from_downstream_tap = true;
     }
     pub(crate) fn set_from_method_return(&mut self) {
         self.cold_mut().from_method_return = true;

@@ -134,7 +134,10 @@ impl Interpreter {
                     || err.is_last()
                     || err.is_supply_body_done()
                     || err.is_next()
-                    || err.is_redo())
+                    || err.is_redo()
+                    // A consumer's error (a downstream tap that died during
+                    // this body's `emit`) is not the block's own (#16083).
+                    || err.from_downstream_tap())
                     && Self::emitter_supplier_id_of(&e).is_some() =>
             {
                 let reason = err

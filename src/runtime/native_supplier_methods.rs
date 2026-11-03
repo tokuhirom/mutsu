@@ -195,6 +195,13 @@ impl Interpreter {
                                     if err.is_next() {
                                         continue;
                                     }
+                                    // The error is the consumer's: it unwinds to
+                                    // whoever drove this emission, and a
+                                    // `whenever` body of an enclosing supply
+                                    // block that was emitting does not quit the
+                                    // block over it (#16083).
+                                    let mut err = err;
+                                    err.set_from_downstream_tap();
                                     return Err(err);
                                 }
                             }
