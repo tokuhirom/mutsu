@@ -26,7 +26,7 @@ is X::Ouch.^parents.gist, '((Exception))',
 class ControlOuch does X::Control {}
 is ControlOuch.^parents.gist, '((Exception))',
     'built-in X::Control contributes its Exception parent';
-ok ControlOuch.^mro.map(*.^name).grep('Exception'),
+ok ControlOuch.^mro.grep(* eq 'Exception'),
     'built-in role parent appears in the composing class MRO';
 lives-ok { ControlOuch.new.message },
     'built-in role parent methods are callable on the composing class';

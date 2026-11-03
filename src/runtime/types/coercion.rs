@@ -221,13 +221,6 @@ impl Interpreter {
             } else {
                 target
             };
-        // `Bool(Mu)` (Test's `proclaim`) is a boolean chokepoint like `?` and
-        // `if`: `Value::truthy` cannot pull, so a not-yet-run `gather`/`.map`
-        // Seq must have its first element read first, or it coerces to False
-        // (`ok find(...)` of File::Find's lazy result).
-        if base_target == "Bool" {
-            let _ = self.reify_map_grep_prefix(&value, 1);
-        }
         // A coercion type only converts a value that is not already of its
         // target type (Rakudo: `sub f(List() $l)` binds an itemized `$[1, 2]`
         // as that Array). Coercing the item container instead wrapped the
