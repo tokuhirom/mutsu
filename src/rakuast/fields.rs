@@ -384,6 +384,14 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("block", Absent::Required), ("sequential", Absent::False)]
         }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
+        DocMarkup => &[
+            ("letter", Absent::Required),
+            ("opener", Absent::Str("<")),
+            ("closer", Absent::Str(">")),
+            ("atoms", Absent::EmptyList),
+            ("meta", Absent::EmptyList),
+        ],
+        DocParagraph => &[("atoms", Absent::EmptyList)],
         DocBlock => &[
             ("margin", Absent::Str("")),
             ("type", Absent::Required),

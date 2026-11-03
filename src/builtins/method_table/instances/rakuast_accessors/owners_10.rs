@@ -3,6 +3,18 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Statement::Without",
+        &[
+            "RakuAST::Statement::Without",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementList",
+        &["RakuAST::StatementList", "RakuAST::Node"],
+    ),
+    (
         "RakuAST::StatementModifier::For",
         &[
             "RakuAST::StatementModifier::For",
@@ -185,31 +197,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::StatementPrefix::Phaser::Close",
             "RakuAST::StatementPrefix::Phaser::Block",
             "RakuAST::StatementPrefix::Phaser::Sinky",
-            "RakuAST::StatementPrefix::Phaser",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Phaser::End",
-        &[
-            "RakuAST::StatementPrefix::Phaser::End",
-            "RakuAST::StatementPrefix::Phaser::Sinky",
-            "RakuAST::StatementPrefix::Phaser",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Phaser::Enter",
-        &[
-            "RakuAST::StatementPrefix::Phaser::Enter",
             "RakuAST::StatementPrefix::Phaser",
             "RakuAST::StatementPrefix",
             "RakuAST::Term",

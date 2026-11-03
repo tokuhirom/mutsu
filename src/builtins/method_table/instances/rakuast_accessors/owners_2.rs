@@ -3,6 +3,25 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::FatArrow",
+        &[
+            "RakuAST::FatArrow",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Feed",
+        &[
+            "RakuAST::Feed",
+            "RakuAST::Infix",
+            "RakuAST::Infixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::FlipFlop",
         &[
             "RakuAST::FlipFlop",
@@ -152,27 +171,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::MetaPrefix::Hyper",
             "RakuAST::Prefixish",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Method",
-        &[
-            "RakuAST::Method",
-            "RakuAST::Methodish",
-            "RakuAST::Routine",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Mixin",
-        &[
-            "RakuAST::Mixin",
-            "RakuAST::Infix",
-            "RakuAST::Infixish",
             "RakuAST::Node",
         ],
     ),

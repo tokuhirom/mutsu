@@ -37,6 +37,7 @@ enum Form {
 /// A paragraph: its text, or a block nested in a delimited one.
 enum Part {
     Text(String),
+    Para(Vec<Atom>),
     Block(Block),
 }
 
@@ -106,13 +107,113 @@ fn split_level(name: &str) -> (String, Option<i64>) {
     (name.to_string(), None)
 }
 
-/// Whether `text` has a formatting code (`B<`, `X«`).
-// Cost: O(n).
-fn has_markup(text: &str) -> bool {
-    let chars: Vec<char> = text.chars().collect();
-    chars
-        .windows(2)
-        .any(|w| w[0].is_ascii_uppercase() && matches!(w[1], '<' | '«' | '「'))
+/// A formatting code of a paragraph: `B<bold>`.
+struct Markup {
+    letter: char,
+    opener: &'static str,
+    closer: &'static str,
+    atoms: Vec<Atom>,
+}
+
+enum Atom {
+    Text(String),
+    Markup(Markup),
+}
+
+/// The atoms of `text` up to `closer` (or its end), and the length consumed
+/// with the closer. `None` for text the plain reader does not take: a
+/// formatting code with metadata (`|`), an `E<...>`, an unterminated or
+/// ambiguous one.
+// Cost: O(n), n = length of the text.
+fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
+    let mut atoms = Vec::new();
+    let mut buf = String::new();
+    let mut at = 0;
+    let mut previous: Option<char> = None;
+    loop {
+        let rest = &text[at..];
+        let Some(ch) = rest.chars().next() else {
+            if closer.is_some() {
+                return None;
+            }
+            break;
+        };
+        if let Some(closer) = closer
+            && rest.starts_with(closer)
+        {
+            at += closer.len();
+            break;
+        }
+        if ch.is_ascii_uppercase() {
+            let after = &rest[1..];
+            let opener = ["<<", "<", "«"].into_iter().find(|o| after.starts_with(o));
+            if let Some(opener) = opener {
+                // `E<...>` is an entity, and a letter after a word character
+                // is not told apart from its text here.
+                if ch == 'E' || previous.is_some_and(char::is_alphanumeric) {
+                    return None;
+                }
+                let closer = match opener {
+                    "<<" => ">>",
+                    "<" => ">",
+                    _ => "»",
+                };
+                if !buf.is_empty() {
+                    atoms.push(Atom::Text(std::mem::take(&mut buf)));
+                }
+                let (inner, used) = parse_atoms(&after[opener.len()..], Some(closer))?;
+                if inner.is_empty() {
+                    return None;
+                }
+                atoms.push(Atom::Markup(Markup {
+                    letter: ch,
+                    opener: if opener == "<<" {
+                        "<<"
+                    } else if opener == "<" {
+                        "<"
+                    } else {
+                        "«"
+                    },
+                    closer: if closer == ">>" {
+                        ">>"
+                    } else if closer == ">" {
+                        ">"
+                    } else {
+                        "»"
+                    },
+                    atoms: inner,
+                }));
+                at += 1 + opener.len() + used;
+                previous = Some(closer.chars().last()?);
+                continue;
+            }
+        }
+        if closer.is_some() && matches!(ch, '|' | '<' | '>' | '«' | '»') {
+            return None;
+        }
+        buf.push(ch);
+        previous = Some(ch);
+        at += ch.len_utf8();
+    }
+    if !buf.is_empty() {
+        atoms.push(Atom::Text(buf));
+    }
+    Some((atoms, at))
+}
+
+/// The part a paragraph's `text` is: the string itself, or a
+/// `Doc::Paragraph` of its atoms when it holds a formatting code.
+// Cost: O(n), n = length of the text.
+fn part_of(text: String) -> Option<Part> {
+    if !text.chars().any(|c| matches!(c, '<' | '«')) {
+        return Some(Part::Text(text));
+    }
+    let (atoms, _) = parse_atoms(&text, None)?;
+    Some(if atoms.iter().any(|a| matches!(a, Atom::Markup(_))) {
+        Part::Para(atoms)
+    } else {
+        Part::Text(text)
+    })
 }
 
 /// A paragraph of plain lines from `i`: the text lines, then the blank ones.
@@ -147,7 +248,7 @@ fn paragraph(
         text.push('\n');
         i += 1;
     }
-    (!has_markup(&text)).then_some((text, i))
+    Some((text, i))
 }
 
 /// The block that begins at line `i`, and the line after it.
@@ -170,7 +271,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
-                    vec![Part::Text(text)]
+                    vec![part_of(text)?]
                 };
                 let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
                 return Some((
@@ -216,7 +317,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
-                vec![Part::Text(text)]
+                vec![part_of(text)?]
             };
             let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
             Some((
@@ -394,10 +495,60 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
             }
             None => {
                 let (text, next) = paragraph(lines, i, None, true)?;
-                parts.push(Part::Text(text));
+                parts.push(part_of(text)?);
                 i = next;
             }
         }
+    }
+}
+
+/// The `Doc::Paragraph` of `atoms`.
+// Cost: O(size of the atoms).
+fn paragraph_node(atoms: &[Atom]) -> RakuAstNode {
+    let fields = atoms
+        .iter()
+        .map(|atom| RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(match atom {
+                Atom::Text(text) => Value::str(text.clone()),
+                Atom::Markup(markup) => Value::rakuast(Box::new(markup_node(markup))),
+            }),
+        })
+        .collect();
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::DocParagraph,
+        fields,
+    }
+}
+
+/// The `Doc::Markup` of a formatting code.
+// Cost: O(size of the code).
+fn markup_node(markup: &Markup) -> RakuAstNode {
+    let field = |name: &'static str, value: Value| RakuAstField {
+        name: Some(name),
+        value: RakuAstFieldValue::Node(value),
+    };
+    let atoms = markup
+        .atoms
+        .iter()
+        .map(|atom| match atom {
+            Atom::Text(text) => Value::str(text.clone()),
+            Atom::Markup(inner) => Value::rakuast(Box::new(markup_node(inner))),
+        })
+        .collect();
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::DocMarkup,
+        fields: vec![
+            field("letter", Value::str(markup.letter.to_string())),
+            field("opener", Value::str(markup.opener.to_string())),
+            field("closer", Value::str(markup.closer.to_string())),
+            RakuAstField {
+                name: Some("atoms"),
+                value: RakuAstFieldValue::List(atoms),
+            },
+        ],
     }
 }
 
@@ -439,6 +590,7 @@ impl Block {
                 .iter()
                 .map(|part| match part {
                     Part::Text(text) => Value::str(text.clone()),
+                    Part::Para(atoms) => Value::rakuast(Box::new(paragraph_node(atoms))),
                     Part::Block(block) => Value::rakuast(Box::new(block.node())),
                 })
                 .collect();
