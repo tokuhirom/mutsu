@@ -217,7 +217,7 @@ fn parse_atoms(
                 continue;
             }
         }
-        if closer.is_some() && matches!(ch, '|' | '<' | '>' | '«' | '»') {
+        if closer.is_some() && matches!(ch, '<' | '>' | '«' | '»') {
             return None;
         }
         buf.push(ch);
