@@ -205,6 +205,7 @@ t/collections/hash/hash-numeric-key-str.t
 t/collections/hash/hash-odd-number-message-element-container.t
 t/collections/hash/hash-odd-number.t
 t/collections/hash/hash-on-undefined.t
+t/collections/hash/hash-ordered-core-class.t
 t/collections/hash/hash-pair-is-positional-argument.t
 t/collections/hash/hash-positional-assign.t
 t/collections/hash/hash-predicate-iteration.t
@@ -2079,6 +2080,7 @@ t/exceptions/x-comp-position.t
 t/exceptions/x-io-link-message.t
 t/exceptions/x-io-resolve-notachild.t
 t/exceptions/x-typecheck-message.t
+t/exceptions/x-wrapper-role.t
 t/grammar/actions-backtracked-reduce-order.t
 t/grammar/actions-inner-error-propagates.t
 t/grammar/anonymous-grammar-parent.t
@@ -2548,6 +2550,7 @@ t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
 t/lang/eval-type-arg-from-use-import.t
 t/lang/eval-undeclared-block-assign.t
+t/lang/eval-unit-builtin-prelude-by-names.t
 t/lang/eval-unit-deparse-prelude.t
 t/lang/eval-unit-named-sub-sees-use-imports.t
 t/lang/eval-unit-trailing-constant-value.t
@@ -2976,9 +2979,11 @@ t/modules/compunit/cross-compunit-multi-vs-plain-sub-name-collision.t
 t/modules/compunit/cur-install-content-api.t
 t/modules/compunit/cur-resolve-compunit.t
 t/modules/compunit/distribution-locally-role-method-param.t
+t/modules/compunit/distribution-locally-role.t
 t/modules/compunit/distribution-meta-version.t
 t/modules/compunit/distribution-method-rows.t
 t/modules/compunit/distribution-path-content-handle.t
+t/modules/compunit/distribution-resource-method-list.t
 t/modules/compunit/distribution-resource-platform-library-name.t
 t/modules/compunit/distribution-resource-split.t
 t/modules/compunit/distribution-resource-str-deprecated.t
@@ -5016,6 +5021,7 @@ t/oo/mop/metamodel-how-new-instance.t
 t/oo/mop/metamodel-how-subclass-new-type.t
 t/oo/mop/metamodel-introspection.t
 t/oo/mop/metamodel-is-pun.t
+t/oo/mop/metamodel-naming-stashing.t
 t/oo/mop/metamodel-new-type-same-name-distinct.t
 t/oo/mop/metamodel-nqp-parameterizer-ops.t
 t/oo/mop/metamodel-primitives-method-cache.t
@@ -5080,6 +5086,7 @@ t/oo/role/callsame-punned-role-and-hyper-infix-sub.t
 t/oo/role/can-methods-composed-role-methods.t
 t/oo/role/can-role-declared-methods.t
 t/oo/role/class-body-my-role-leaves-no-type-key.t
+t/oo/role/class-does-enumeration-role.t
 t/oo/role/class-does-self-named-role.t
 t/oo/role/class-multi-method-outranks-role-multi-on-tie.t
 t/oo/role/classhow-can-mixin-role.t
@@ -5213,6 +5220,7 @@ t/oo/role/qualified-role-multi-concretization.t
 t/oo/role/qualified-role-new-keeps-invocant.t
 t/oo/role/qualified-runtime-role-default.t
 t/oo/role/raku-container-mixin-role-raku.t
+t/oo/role/rational-role.t
 t/oo/role/real-role-composed-rows.t
 t/oo/role/return-type-imported-parameterized-role.t
 t/oo/role/role-also-is-parent.t
@@ -5494,6 +5502,7 @@ t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/augment-method-custom-trait-typed-method-param.t
 t/oo/trait/augment-method-handles-forwarder.t
 t/oo/trait/cached-trait.t
+t/oo/trait/callable-trait-closure-capture.t
 t/oo/trait/class-body-trait-multi.t
 t/oo/trait/class-expression-is-rw-trait.t
 t/oo/trait/class-how-compose-override-from-method-trait.t
@@ -5504,6 +5513,7 @@ t/oo/trait/class-trait-how-mixin-compose.t
 t/oo/trait/class-traits-see-classhow-after-child-namespace.t
 t/oo/trait/custom-parameter-trait-argument-dispatch.t
 t/oo/trait/custom-parameter-trait.t
+t/oo/trait/custom-var-trait-store-initializer.t
 t/oo/trait/decl-trait-arg-expression.t
 t/oo/trait/default-trait-before-initializer.t
 t/oo/trait/default-trait-expression-decl.t
@@ -5554,7 +5564,10 @@ t/oo/trait/subset-user-trait-mod.t
 t/oo/trait/superseded-how-keeps-attr-trait-mixin.t
 t/oo/trait/trait-arg-declaration-phase.t
 t/oo/trait/trait-argless-declaration-phase.t
+t/oo/trait/trait-does-captured-variable.t
+t/oo/trait/trait-mod-does-callable.t
 t/oo/trait/trait-mod-is-handler-die-fails-method-declaration.t
+t/oo/trait/trait-mod-of-callable.t
 t/oo/trait/trait-mod-routine-sees-return-type.t
 t/oo/trait/trait-name-typed-var-collision.t
 t/oo/trait/unrelated-trait-mod-candidate-does-not-swallow-unknown-trait.t
@@ -6523,6 +6536,7 @@ t/regex/regex-repeat-zero.t
 t/regex/regex-repeated-optional-name-list.t
 t/regex/regex-routine-introspection.t
 t/regex/regex-scalar-interp-metachar-literal.t
+t/regex/regex-scalar-read-after-code-block.t
 t/regex/regex-scan-prefilter-chain.t
 t/regex/regex-scan-prefilter-ignoremark-prop.t
 t/regex/regex-scan-prefilter-subrule.t

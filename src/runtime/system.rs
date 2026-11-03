@@ -388,6 +388,12 @@ impl Interpreter {
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
         Self::inject_deparse_prelude_for_unit(&mut stmts);
+        // The unit has no source text of its own (it may be a tree): the
+        // preludes it needs are asked of the names its tree uses (#16203).
+        Self::inject_unit_preludes(
+            &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
+            &mut stmts,
+        );
         // Reorder so the top-level BEGINs run first, in the EVAL unit's
         // prologue (ADR-0134): a read textually preceding a BEGIN sees
         // its side effects and a later initializer still clobbers it,
