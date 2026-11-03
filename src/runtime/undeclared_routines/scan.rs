@@ -315,6 +315,11 @@ impl<'ast> Visit<'ast> for Scan {
                 self.walk_routine_body(stmt);
             }
             Stmt::MethodDecl { .. } => self.walk_routine_body(stmt),
+            // The wrapper the parser puts around one source declaration
+            // (`my \x := $y` becomes `{ my \x := $y }`): it is no lexical
+            // block of the source, so what it declares belongs to the block
+            // around it.
+            Stmt::SyntheticBlock(body) => walk_stmts(self, body),
             // A bare lowercase identifier standing alone as a whole statement
             // (`dead;`) is, syntactically, the exact same "no-args routine
             // reference" `record_call` already recognizes for `Stmt::Call` --
