@@ -625,17 +625,30 @@ impl Interpreter {
             // nested package owners. Cache the result for the module arm
             // below; local terms were handled by the current-tier probe above.
             let term_key = crate::runtime::term_names::term_key_sym(name_sym);
-            let active_package_term = self
+            let frame_package = self
                 .routine_stack()
                 .last()
-                .and_then(|frame| frame.lexical_package)
-                .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
-                .and_then(|lexicals| {
-                    lexicals
-                        .get(term_key.as_str())
-                        .or_else(|| lexicals.get(name))
-                })
+                .and_then(|frame| frame.lexical_package);
+            // A role body's `my constant` as its composition bound it
+            // (`persist_role_body_lexicals`) is the one binding every method of
+            // the composed role reads. The module table holds the instance the
+            // declaring unit evaluated; preferring it here gave a method with a
+            // `use` (which runs in a module frame) another object than its
+            // siblings (#16255).
+            let composed_role_term = frame_package
+                .and_then(|package| self.lexicals.package_lexicals.get(package.as_str()))
+                .and_then(|lexicals| lexicals.get(term_key.as_str()))
                 .cloned();
+            let active_package_term = composed_role_term.or_else(|| {
+                frame_package
+                    .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
+                    .and_then(|lexicals| {
+                        lexicals
+                            .get(term_key.as_str())
+                            .or_else(|| lexicals.get(name))
+                    })
+                    .cloned()
+            });
             preferred_module_bareword =
                 active_package_term.or_else(|| self.running_module_bareword(name));
             // A term the caller bound is no meaning for a module's own type
