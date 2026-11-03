@@ -751,17 +751,6 @@ impl Interpreter {
                             Ok(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(&display),
                             ))
-                        } else if matches!(name, "?CLASS" | "?ROLE")
-                            && matches!(
-                                self.env().get("__mutsu_in_eval").map(Value::view),
-                                Some(ValueView::Bool(true))
-                            )
-                        {
-                            // An `EVAL` whose running routine has no `?CLASS` /
-                            // `?ROLE` of its own (a plain sub called from a
-                            // method does not continue the method's record,
-                            // #16099): raku reports the variable undeclared.
-                            Err(RuntimeError::undeclared_variable(name))
                         } else if self.module.strict_mode && !Self::strict_read_exempt(name) {
                             // Read-side counterpart of the `SetGlobal` write
                             // check above: a plain scalar name that resolved
