@@ -157,6 +157,40 @@ impl Interpreter {
         Some(result)
     }
 
+    /// Whether one of the `LexImportBuiltinOp` prefixes in the light body is
+    /// live: an import set of the op's own chain binds a dispatcher for its
+    /// operator, which the prefix would then run the op through. The same
+    /// probe the prefix makes (`exec_lex_import_builtin_op_site`); false at
+    /// once while no import set in the process binds an operator.
+    // Cost: O(1) while no set binds an operator; else O(n * c), n = the
+    // body's prefixed ops, c = the chain's import sets.
+    fn light_body_has_live_operator_import(&self, cc: &CompiledCode) -> bool {
+        if self.module.lexical_operator_import_sets.is_empty() {
+            return false;
+        }
+        cc.ops.iter().any(|op| {
+            let OpCode::LexImportBuiltinOp {
+                chain_idx,
+                name_idx,
+            } = op
+            else {
+                return false;
+            };
+            cc.lexical_import_chains
+                .get(*chain_idx as usize)
+                .and_then(|chain| {
+                    self.lexical_import_operator_binding(chain, cc.const_sym(*name_idx))
+                })
+                .is_some_and(|binding| {
+                    matches!(
+                        binding,
+                        crate::runtime::lexical_imports::LexicalImport::Code(value)
+                            if Self::is_builtin_operator_dispatcher(&value)
+                    )
+                })
+        })
+    }
+
     /// Whether the call qualifies, and how its arguments bind. Reads only.
     fn closure_light_admits<'p>(
         &self,
@@ -184,7 +218,7 @@ impl Interpreter {
                     .locals
                     .iter()
                     .any(|name| Self::atomic_name_possible(name)))
-            || (shape.lex_import_ops && !self.module.lexical_operator_import_sets.is_empty())
+            || (shape.lex_import_ops && self.light_body_has_live_operator_import(cc))
             || self.rw_return_context
             || !self.lexicals.escaping_our_lexical_names.is_empty()
             || !data.assumed_positional.is_empty()
