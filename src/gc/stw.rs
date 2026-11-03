@@ -267,8 +267,9 @@ pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
     let _blocking = crate::runtime::worker_pool::enter_blocking();
     // `block_quiescent` wraps exactly the blocking native calls a profile must
     // not attribute to Raku code -- a `sleep`, a join, an OS read -- so it is
-    // also the profiler's "this was not Raku time" boundary.
-    crate::profile::exclude_non_raku(crate::profile::Region::Gc, || block_quiescent_inner(f))
+    // also the profiler's "this was not Raku time" boundary. Its own region:
+    // that time is not the collector's (#15577).
+    crate::profile::exclude_non_raku(crate::profile::Region::Blocked, || block_quiescent_inner(f))
 }
 
 fn block_quiescent_inner<R>(f: impl FnOnce() -> R) -> R {
