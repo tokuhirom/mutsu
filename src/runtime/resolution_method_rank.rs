@@ -67,7 +67,7 @@ impl Interpreter {
             {
                 rank.2 += 1;
             }
-            if !p.is_invocant && p.traits.iter().any(|t| t == "rw" || t == "raw") {
+            if !p.is_invocant && p.traits.iter().any(|t| t == "rw") {
                 rank.3 += 1;
             }
         }
