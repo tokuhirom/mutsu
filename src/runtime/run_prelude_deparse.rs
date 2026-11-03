@@ -58,6 +58,22 @@ impl Interpreter {
         {
             return;
         }
+        Self::prepend_deparse_prelude(stmts);
+    }
+
+    /// [`Self::inject_deparse_prelude`] for an `EVAL`'d unit, whose text may
+    /// be absent (`EVAL($ast)`): the unit mentions the deparser when it calls
+    /// `.DEPARSE` or names `RakuAST::Deparse`.
+    // Cost: O(n), n = size of the unit's AST; O(d) to parse the deparser the
+    // first time it is wanted, d = its source size.
+    pub(super) fn inject_deparse_prelude_for_unit(stmts: &mut Vec<Stmt>) {
+        if INJECTED.load(std::sync::atomic::Ordering::Acquire) || !mentions_deparse(stmts) {
+            return;
+        }
+        Self::prepend_deparse_prelude(stmts);
+    }
+
+    fn prepend_deparse_prelude(stmts: &mut Vec<Stmt>) {
         let Some(class) = DEPARSE_CLASS
             .contains(DEPARSE_CLASS_HEAD)
             .then(|| DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1))
@@ -74,4 +90,39 @@ impl Interpreter {
         combined.append(stmts);
         *stmts = combined;
     }
+}
+
+/// Whether a unit calls `.DEPARSE` or names `RakuAST::Deparse`.
+// Cost: O(n), n = size of the unit's AST.
+fn mentions_deparse(stmts: &[Stmt]) -> bool {
+    use crate::ast::Expr;
+    use crate::ast_visit::{Visit, walk_expr};
+    #[derive(Default)]
+    struct Mentions(bool);
+    impl<'ast> Visit<'ast> for Mentions {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            if let Expr::MethodCall { name, .. } = expr
+                && name.as_str() == "DEPARSE"
+            {
+                self.0 = true;
+            }
+            if !self.0 {
+                walk_expr(self, expr);
+            }
+        }
+
+        fn visit_name(&mut self, name: &str, _kind: crate::ast_visit::NameKind) {
+            if name == "RakuAST::Deparse" {
+                self.0 = true;
+            }
+        }
+    }
+    let mut found = Mentions::default();
+    for stmt in stmts {
+        found.visit_stmt(stmt);
+        if found.0 {
+            return true;
+        }
+    }
+    false
 }

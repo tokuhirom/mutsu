@@ -387,6 +387,7 @@ impl Interpreter {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
+        Self::inject_deparse_prelude_for_unit(&mut stmts);
         // Reorder so the top-level BEGINs run first, in the EVAL unit's
         // prologue (ADR-0134): a read textually preceding a BEGIN sees
         // its side effects and a later initializer still clobbers it,
