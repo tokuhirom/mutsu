@@ -69,6 +69,11 @@ impl PostDeclared<'_> {
     /// The type names a statement declares: its own name, and for a qualified
     /// one (`class X::Y::Z`) the namespaces it makes (`X`, `X::Y`).
     fn declared_names(stmt: &Stmt) -> Vec<String> {
+        // A type a `use`d module declared (a stub `role R {...}` included) is
+        // the unit's from the `use` on: its own later `role R` completes it.
+        if let Stmt::Use { module, .. } = stmt {
+            return crate::parser::module_declared_types(module);
+        }
         let name = match crate::ast::package_header::declaration(stmt).unwrap_or(stmt) {
             Stmt::ClassDecl { name, .. }
             | Stmt::RoleDecl { name, .. }
