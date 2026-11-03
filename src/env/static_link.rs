@@ -87,6 +87,22 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
     f()
 }
 
+/// Run `f` with static links honoured even inside a
+/// [`with_static_links_suppressed`] region (the argument binder reads the
+/// caller's env through the whole chain, but needs ONE read that follows the
+/// caller's own lexical scope, #16177). Restores the depth on unwind.
+pub(crate) fn with_static_links_honoured<R>(f: impl FnOnce() -> R) -> R {
+    struct Guard(u32);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            SUPPRESSED.with(|c| c.set(self.0));
+        }
+    }
+    let saved = SUPPRESSED.with(|c| c.replace(0));
+    let _guard = Guard(saved);
+    f()
+}
+
 /// Whether two bindings of one name hold the same variable: the same value,
 /// or the same container seen through a shared cell (a store into a
 /// captured variable seeds the cell's container under the name).

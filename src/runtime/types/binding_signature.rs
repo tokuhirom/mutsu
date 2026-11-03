@@ -4120,9 +4120,13 @@ impl Interpreter {
                             // Deciding this here — from the container the
                             // parameter binds — is what the callee-name-keyed
                             // `skip_proxy_fetch` list at the call site cannot do.
+                            // The caller's binding of the name lives in the caller's
+                            // own frame: a same-named cell of an OLDER frame on the
+                            // chain is another variable (ADR-12529, #16177).
+                            let cell_key_sym = Symbol::intern(&cell_key);
                             if let Some(proxy) = self
                                 .env
-                                .get(&cell_key)
+                                .get_sym_in_caller_frame(cell_key_sym)
                                 .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                                 .cloned()
                             {
@@ -4130,7 +4134,7 @@ impl Interpreter {
                             } else {
                                 let existing = self
                                     .env
-                                    .get(&cell_key)
+                                    .get_sym_in_caller_frame(cell_key_sym)
                                     .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                                     .cloned();
                                 value = match existing {
