@@ -1666,6 +1666,16 @@ pub(crate) struct RoutineFrame {
     /// for a frame without one. Valid only while the frame is on the stack:
     /// a view that outlives it must clone the record (ADR-14633 §2.1).
     pub fixtures: u32,
+    /// Whether this named-sub frame's routine is declared outside every
+    /// routine and closure body (`CompiledCode::outer_is_unit`): it cannot
+    /// lexically see a method's `self` / `$?CLASS` / `$?ROLE`, so it must not
+    /// continue its CALLER's fixture record (#16099).
+    pub unit_scoped: bool,
+    /// How many fixture records were live when this frame was pushed. A record
+    /// above that count was pushed AFTER the frame (a scoped one: an attribute
+    /// default, a role body) and belongs to code the frame runs, so a
+    /// `unit_scoped` frame does not hide it.
+    pub fixtures_floor: u32,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.

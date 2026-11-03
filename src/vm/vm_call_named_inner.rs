@@ -130,6 +130,7 @@ impl Interpreter {
             cf.source_file_sym(),
             cf.is_hidden_from_backtrace,
             Arc::as_ptr(&cf.code) as usize,
+            cf.code.outer_is_unit,
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
