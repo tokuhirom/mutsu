@@ -1,10 +1,12 @@
-# A callee's `EVAL` no longer reads its caller's `my constant` or `my enum`
+# A callee's `EVAL` no longer reads its caller's `my enum`
 
-`sub callee { EVAL q[SECRETC] }` called from `sub outer { my constant SECRETC = 5; callee() }`
-returned `5` (and `Red` for a caller's `my enum`); `raku` reports both as not visible. A lowercase
-`my constant` and a `my class` were already hidden: the static link that stops a top-level
-routine's reflective lookup at its own scope covered only names its `lexically_scoped` test knew,
-and an uppercase-initial term key (`\SECRETC`) and the bare-enum-key namespace were not among
-them. Both are now lexical names, so the lookup continues at the program scope, past the callers.
+`sub callee { EVAL q[Red] }` called from `sub outer { my enum Col <Red Green>; callee() }` returned
+`Red`; `raku` reports it as not visible. The static link that stops a top-level routine's
+reflective lookup at its own scope covered only names its `lexically_scoped` test knew, and the
+bare enum-key namespace was not among them. It now is, so the lookup continues at the program
+scope, past the callers.
 
-`my subset` (the registry keeps the bare name globally) and `$?ROLE` still leak; see #16099.
+An uppercase `my constant` (`\SECRETC`) still leaks. Making its term key lexical broke a loaded
+module's routines, which read the names they imported through the caller chain
+(`t/nativecall/carray-import-type-check-in-module-sub.t`); that, `my subset` and `$?ROLE` stay on
+#16099.
