@@ -154,6 +154,13 @@ impl Finalize<'_> {
         }
     }
 
+    /// `supply { BODY }`: the body is lowered where it stands, in a lexical
+    /// scope of its own, then wrapped around its emitter.
+    fn supply(&mut self, mut body: Vec<Stmt>) -> Expr {
+        crate::parser::with_rakuast_lexical_scope(|| self.visit_stmts_mut(&mut body));
+        super::supply_lower::supply_method_call(body)
+    }
+
     fn fail(&mut self, err: RuntimeError) {
         self.failed.get_or_insert(err);
     }
@@ -283,6 +290,16 @@ impl VisitMut for Finalize<'_> {
                 unreachable!("checked above");
             };
             *expr = self.subscript_adverbs(adverbs);
+            return;
+        }
+        // `supply { ... }`: see `Finalize::supply`.
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Supply(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            let ParsedExpr::Supply(body) = *node else {
+                unreachable!("checked above");
+            };
+            *expr = self.supply(body);
             return;
         }
         // A word quote is the runtime's word list; its words are lowered
