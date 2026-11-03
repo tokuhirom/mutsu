@@ -15,6 +15,7 @@ impl Value {
                 storer,
                 subclass,
                 decontainerized: true,
+                var_object: true,
             }),
             other => Value::from_repr(other),
         }
