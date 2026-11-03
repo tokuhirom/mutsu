@@ -94,8 +94,13 @@ impl Interpreter {
                 // unconstrained param (raku: unconstrained IS Any) — counting
                 // it made `(Any:D $j, Mu)` outrank `($j, @x)` wholesale
                 // (JSON::Unmarshal's fallback swallowing the Positional
-                // candidate). A smiley (`Any:D`) still counts.
-                let meaningful_type = tc.is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
+                // candidate). A smiley is no narrowness either: rakudo ties
+                // `multi f(Any $x)` with `multi f(Any:D $x)` (ambiguous, or
+                // declaration order once a named parameter is in play), so
+                // `Any:D`/`Mu:U` do not count (#16081).
+                let meaningful_type = tc.is_some_and(|tc| {
+                    !matches!(Self::constraint_base_name(tc), "Mu" | "Any")
+                });
                 meaningful_type
                     // An optional param (`&c = &say`, `@a?`) takes no part in
                     // rakudo's narrowness comparison, so its implied
