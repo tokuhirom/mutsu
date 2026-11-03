@@ -151,10 +151,9 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
-        if let Some(defs) = self.mixin_role_method_defs(target, method)
-            && defs
-                .iter()
-                .any(|def| Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def))
+        if self.mixin_role_method_defs_any(target, method, |def| {
+            Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def)
+        }) == Some(true)
         {
             return true;
         }
@@ -216,8 +215,8 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
-        if let Some(defs) = self.mixin_role_method_defs(target, method)
-            && defs.iter().any(method_def_has_raw_invocant)
+        if self.mixin_role_method_defs_any(target, method, method_def_has_raw_invocant)
+            == Some(true)
         {
             return true;
         }
@@ -227,30 +226,38 @@ impl Interpreter {
             .is_some_and(method_def_has_raw_invocant)
     }
 
-    /// The candidates a `but`-mixed value's composed roles declare for
-    /// `method`: a `Mixin` (`"abc" but R`) has no class of its own to resolve
+    /// Whether `pred` holds for any candidate a `but`-mixed value's composed
+    /// roles declare for `method` (the first role that declares it answers):
+    /// a `Mixin` (`"abc" but R`) has no class of its own to resolve
     /// against, its method is a role's (the dispatch
     /// `dispatch_mixin_method_call` runs). `None` when `target` is no `Mixin`
-    /// or no composed role declares the method.
-    // Cost: O(r), r = roles composed onto the value (a registry lookup each).
-    fn mixin_role_method_defs(
-        &mut self,
+    /// or no composed role declares the method. Borrowed: no `MethodDef` is cloned.
+    // Cost: O(r + m), r = roles composed onto the value (a registry lookup each),
+    // m = candidates of the first role declaring the method.
+    fn mixin_role_method_defs_any(
+        &self,
         target: &Value,
         method: &str,
-    ) -> Option<Vec<crate::runtime::decl_types::MethodDef>> {
+        pred: impl Fn(&crate::runtime::decl_types::MethodDef) -> bool,
+    ) -> Option<bool> {
         let ValueView::Mixin(_, mixins) = target.view() else {
             return None;
         };
         let lookup = method.strip_prefix('!').unwrap_or(method);
-        let role_names: Vec<String> = mixins
+        // Borrowed: this runs on every call of a mixin's method (a CArray
+        // `AT-POS`), and cloning the role's whole method table cost ~18k Ir
+        // each time (#16215).
+        mixins
             .keys()
             .filter_map(|k| k.strip_prefix("__mutsu_role__"))
-            .map(str::to_string)
-            .collect();
-        role_names.iter().find_map(|role_name| {
-            self.role_def_for_mixin_role(mixins, role_name)
-                .and_then(|role| role.methods.get(lookup).cloned())
-        })
+            .find_map(|role_name| {
+                self.with_mixin_role_def(mixins, role_name, |role| {
+                    role.methods
+                        .get(lookup)
+                        .map(|defs| defs.iter().any(&pred))
+                })
+                .flatten()
+            })
     }
 
     /// The class name a method is resolved against for an lvalue invocant.
@@ -258,10 +265,42 @@ impl Interpreter {
     /// Instance/type-object halves of ADR-0059) this answers for *any* value,
     /// because a raw invocant is exactly the case where the invocant is an
     /// ordinary `Int`/`Str`/... and the routine came from `augment class Any`.
+    // Cost: O(1) for an instance, type object or a memoized role-mixed instance;
+    // otherwise `what_type_name`'s.
     pub(crate) fn raw_invocant_class_name(target: &Value) -> String {
         match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),
+            ValueView::Mixin(inner, mixins) => {
+                // A role-mixed class instance: the name is a function of its
+                // override node (never mutated in place) and its class, and
+                // building it renders every role (~20k Ir per call of a
+                // CArray `AT-POS`, #16215). The entry owns a clone of the node
+                // so its address stays this composition's.
+                let ValueView::Instance { class_name, .. } = inner.view() else {
+                    return crate::value::what_type_name(target);
+                };
+                type Memo = rustc_hash::FxHashMap<
+                    (usize, Symbol),
+                    (crate::gc::Gc<crate::value::MixinOverrides>, String),
+                >;
+                thread_local! {
+                    static NAMES: std::cell::RefCell<Memo> = std::cell::RefCell::default();
+                }
+                let key = (&**mixins as *const crate::value::MixinOverrides as usize, class_name);
+                if let Some(hit) = NAMES.with(|m| m.borrow().get(&key).map(|(_, n)| n.clone())) {
+                    return hit;
+                }
+                let name = crate::value::what_type_name(target);
+                NAMES.with(|m| {
+                    let mut m = m.borrow_mut();
+                    if m.len() >= 4096 {
+                        m.clear();
+                    }
+                    m.insert(key, (mixins.clone(), name.clone()));
+                });
+                name
+            }
             _ => crate::value::what_type_name(target),
         }
     }
@@ -310,9 +349,8 @@ impl Interpreter {
         // dispatch, which takes the container from the arrival channel (the
         // generic entry does not look through a boxed `Mixin`).
         let role_raw = matches!(inner.view(), ValueView::Mixin(..))
-            && self
-                .mixin_role_method_defs(&inner, method)
-                .is_some_and(|defs| defs.iter().any(method_def_has_raw_invocant));
+            && self.mixin_role_method_defs_any(&inner, method, method_def_has_raw_invocant)
+                == Some(true);
         let result = if role_raw {
             let previous = self.pending_raw_invocant.replace(Box::new(
                 crate::vm::vm_raw_invocant_arrival::PendingRawInvocant {
