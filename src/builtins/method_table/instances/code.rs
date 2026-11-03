@@ -309,6 +309,13 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
             let mut new_data = (**data).clone();
             new_data.id = crate::value::next_instance_id();
             new_data.routine_cell = new_data.routine_cell.forked();
+            // The copy owns a new state scope, so its disposal is its own to
+            // report (the guard it cloned would reap the ORIGINAL's scope).
+            if new_data._state_scope_guard.is_some() {
+                new_data._state_scope_guard = Some(
+                    crate::value::state_scope_reaper::StateScopeGuard::new(new_data.id),
+                );
+            }
             Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data))))
         }
         _ => Some(Ok(target.clone())),

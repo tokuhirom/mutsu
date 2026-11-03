@@ -247,8 +247,20 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         ValueView::Slip(items) => Some(Ok(
             Value::slip(items.to_vec()).with_slip_itemized(target.slip_is_itemized())
         )),
-        ValueView::Sub(_) => {
-            crate::builtins::method_table::code::pure_answer(target, Symbol::intern("clone"))
+        // `Mu.clone` is the representation-level copy: a distinct code object
+        // that keeps running in the original's `state` scope, unlike the
+        // `Block.clone` method, which starts its own (#15897).
+        ValueView::Sub(orig) => {
+            let cloned =
+                crate::builtins::method_table::code::pure_answer(target, Symbol::intern("clone"));
+            if let Some(Ok(copy)) = &cloned
+                && let ValueView::Sub(copy_data) = copy.view()
+            {
+                copy_data
+                    .routine_cell
+                    .share_state_scope(orig.routine_cell.shared_state_scope().unwrap_or(orig.id));
+            }
+            cloned
         }
         ValueView::Int(_)
         | ValueView::BigInt(_)

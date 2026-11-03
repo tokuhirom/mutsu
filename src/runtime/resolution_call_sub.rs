@@ -714,6 +714,22 @@ impl Interpreter {
             {
                 return self.call_function(&name_str, args);
             }
+            // A method object of `Mu` itself (`Mu.^lookup('clone')`) runs Mu's
+            // own row on its invocant, not whatever the invocant's class
+            // declares under that name: `Mu.clone` of a Block shares its
+            // `state` scope where `Block.clone` starts a fresh one (#15897).
+            if package == "Mu"
+                && let Some((invocant, rest)) = args.split_first()
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    &["Mu"],
+                    &name_str,
+                    rest,
+                    || invocant.clone(),
+                )
+            {
+                return result;
+            }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
             // Only use this when the package is a known class.
             let pkg = package.resolve();

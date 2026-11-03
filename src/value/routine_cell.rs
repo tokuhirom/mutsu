@@ -80,6 +80,11 @@ struct Inner {
     /// declared inside `sub EXPORT` and exported through the returned `Map`),
     /// so `.prec` cannot be read back from the registry alone.
     op_prec: std::sync::OnceLock<crate::op_prec::OpPrec>,
+    /// The state scope this code object runs in when it is not its own: an
+    /// explicit `Mu.clone` makes a distinct code object (its own `SubData::id`)
+    /// that shares the original's `state` variables (#15897). Unset for every
+    /// other code object, whose state scope is its own identity.
+    shared_state_scope: std::sync::OnceLock<u64>,
 }
 
 /// Set once any routine has had a composition stored; never cleared. A
@@ -191,6 +196,18 @@ impl RoutineCell {
             *slot = Some(name);
         }
         self.0.has_renamed.store(true, Ordering::Release);
+    }
+
+    /// The state scope id this code object borrows from another, if any.
+    // Cost: O(1).
+    pub(crate) fn shared_state_scope(&self) -> Option<u64> {
+        self.0.shared_state_scope.get().copied()
+    }
+
+    /// Run in the state scope `scope` (set once, by `Mu.clone`).
+    // Cost: O(1).
+    pub(crate) fn share_state_scope(&self, scope: u64) {
+        let _ = self.0.shared_state_scope.set(scope);
     }
 
     /// A new, unshared cell starting from this one's composition: what a
