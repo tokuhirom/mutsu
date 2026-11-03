@@ -104,7 +104,19 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         self.push_import_scope();
+        // The unit's scope is a region the unit's own routines are compiled
+        // inside (`compile_block_value_opts_under`).
+        static EVAL_REGIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let region = Symbol::intern(&format!(
+            "EVAL-unit\u{1}{}",
+            EVAL_REGIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        if let Some(scope) = self.module.import_scope_stack.last_mut() {
+            scope.region = Some(region);
+        }
+        let saved_region = self.module.eval_unit_region.replace(region);
         let result = body(self);
+        self.module.eval_unit_region = saved_region;
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let ImportScopeSnapshot {
                 unit_env_imports,

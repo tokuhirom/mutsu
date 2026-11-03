@@ -293,6 +293,11 @@ impl Interpreter {
             // An `EVAL`'s own top-level `use` is lexical to the EVAL'd unit,
             // as a block's is to the block: it binds in an import set too.
             compiler.enter_eval_unit_lexical_uses(body);
+            // The routines the unit declares are written inside its import
+            // scope: what the unit's `use` imported is in their lexical outer.
+            if let Some(region) = self.module.eval_unit_region {
+                compiler.seed_import_region(region);
+            }
             if let Some(code) = self.running_code() {
                 compiler.seed_eval_caller_code_vars(code.eval_scope_names.iter().map(String::as_str));
             }

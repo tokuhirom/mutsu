@@ -6,7 +6,7 @@ use Test;
 # anonymous sub or a block of the unit does. A `use` inside a block of the unit
 # stays that block's.
 
-plan 5;
+plan 7;
 
 is EVAL('use NativeCall; sub f() { Pointer }; f().^name'), 'NativeCall::Types::Pointer',
     'a named sub reads the imported type';
@@ -18,3 +18,9 @@ is EVAL('use NativeCall; my $s = sub { Pointer }; $s().^name'), 'NativeCall::Typ
     'an anonymous sub (already worked)';
 is EVAL('{ use NativeCall; 1 }; sub f() { try { Pointer } // "hidden" }; f() ~~ Str ?? "hidden" !! "seen"'),
     'hidden', 'a use inside a block of the unit is not seen by a sub outside it';
+
+# The same through `EVAL` of a RakuAST tree.
+is EVAL(Q{use NativeCall; sub f() { Pointer[int8] }; f().^name}.AST),
+    'NativeCall::Types::Pointer[int8]', 'EVAL of the AST: a named sub reads the imported type';
+is EVAL(Q{{ use NativeCall; 1 }; sub f() { Pointer }; f() ~~ Str ?? "hidden" !! "seen"}.AST),
+    'hidden', 'EVAL of the AST: a use inside a block is not seen by a sub outside it';

@@ -2544,6 +2544,7 @@ t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
 t/lang/eval-undeclared-block-assign.t
 t/lang/eval-unit-deparse-prelude.t
+t/lang/eval-unit-named-sub-sees-use-imports.t
 t/lang/eval-unit-trailing-constant-value.t
 t/lang/eval-use-declares-name-over-sigilless.t
 t/lang/eval-use-rerun-counts-live-dynamic-in-region.t
@@ -3449,6 +3450,7 @@ t/modules/module-sub-package-visibility.t
 t/modules/module-sub-return-type-otf.t
 t/modules/module-sub-user-type-signatures.t
 t/modules/module-subset-same-leaf-signature.t
+t/modules/module-toplevel-enum-keys-off-frame-env.t
 t/modules/module-toplevel-markers-off-frame-env.t
 t/modules/module-toplevel-package-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
@@ -3636,10 +3638,13 @@ t/nativecall/cool-native-int-coerce-warns.t
 t/nativecall/cstruct-attr-constant-alias-type.t
 t/nativecall/cstruct-bodyless-struct-argument-refused.t
 t/nativecall/cstruct-bool-field-true-and-method-reads.t
+t/nativecall/cstruct-carray-expr-index-write.t
+t/nativecall/cstruct-create-set-value-body.t
 t/nativecall/cstruct-field-constant-type-alias.t
 t/nativecall/cstruct-field-enum-write.t
 t/nativecall/cstruct-method-attribute-seed.t
 t/nativecall/cstruct-new-native-body.t
+t/nativecall/cstruct-new-reference-fields.t
 t/nativecall/cstruct-pointer-field-module-class.t
 t/nativecall/cstruct-private-attr-read.t
 t/nativecall/cstruct-returned-arg-body.t
@@ -3795,6 +3800,7 @@ t/nativecall/nativecall-bound-carray-element-arg.t
 t/nativecall/nativecall-box-into-box-target-class.t
 t/nativecall/nativecall-box-target-callsite.t
 t/nativecall/nativecall-buf-lifetime.t
+t/nativecall/nativecall-callback-param.t
 t/nativecall/nativecall-callback-pointer-arg-upstream-type.t
 t/nativecall/nativecall-callback-typed-params.t
 t/nativecall/nativecall-carray.t
@@ -3833,6 +3839,7 @@ t/nativecall/nativecall-pointer-param-and-carray-allocate.t
 t/nativecall/nativecall-pointer.t
 t/nativecall/nativecall-prelude-gate-sees-real-use.t
 t/nativecall/nativecall-refuses-unrepresentable-arg.t
+t/nativecall/nativecall-repr-body.t
 t/nativecall/nativecall-return-constant-aliased-cstruct.t
 t/nativecall/nativecall-rw-cstruct-param-passes-struct-address.t
 t/nativecall/nativecall-rw-numeric-out-param.t
