@@ -183,19 +183,34 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "native-descriptor" => {
+                // A Proc::Async output stream hands out the read end of a pipe
+                // its reader forwards the stream's bytes into; the promise is
+                // kept with that descriptor (#15647). Any other Supply keeps
+                // the placeholder promise.
                 if let Some(ValueView::Int(sid)) = attributes.get("supply_id").map(Value::view)
                     && attributes.contains_key("proc_pipe")
+                    && let Some(ValueView::Promise(promise)) = attributes
+                        .get("native_descriptor_promise")
+                        .map(Value::view)
                 {
-                    crate::runtime::native_methods::request_native_descriptor(sid as u64);
+                    if let Some(fd) =
+                        crate::runtime::native_methods::request_native_descriptor(sid as u64)
+                    {
+                        promise.try_keep(Value::int(fd)).ok();
+                    }
+                    return Ok(attributes
+                        .get("native_descriptor_promise")
+                        .cloned()
+                        .unwrap_or(Value::NIL));
                 }
                 Ok(attributes
-                .get("native_descriptor_promise")
-                .cloned()
-                .unwrap_or_else(|| {
-                    let promise = SharedPromise::new();
-                    promise.keep(Value::int(1), String::new(), String::new());
-                    Value::promise(promise)
-                }))
+                    .get("native_descriptor_promise")
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let promise = SharedPromise::new();
+                        promise.keep(Value::int(1), String::new(), String::new());
+                        Value::promise(promise)
+                    }))
             }
             "tail" => {
                 // A live (Supplier-backed) source has emitted nothing yet, so
