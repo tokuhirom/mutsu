@@ -318,6 +318,7 @@ mod tests {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
         }
     }
 
@@ -398,6 +399,7 @@ mod tests {
                 callable_id: 0,
                 code: 0,
                 fixtures: 0,
+                unit_scoped: false,
             },
             RoutineFrame {
                 package: Symbol::intern("Module"),
@@ -417,6 +419,7 @@ mod tests {
                 callable_id: 0,
                 code: 0,
                 fixtures: 0,
+                unit_scoped: false,
             },
         ];
         buffer.record(1000, at("Module.rakumod", 5), Region::Interp, &stack);

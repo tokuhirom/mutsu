@@ -792,6 +792,7 @@ impl Interpreter {
                 callable_id: 0,
                 code: 0,
                 fixtures: 0,
+                unit_scoped: false,
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);

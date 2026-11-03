@@ -357,7 +357,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
-        self.push_routine_with_visibility(package, name, line, file, def_file, false, 0);
+        self.push_routine_with_visibility(package, name, line, file, def_file, false, 0, false);
     }
 
     /// A routine's `$_` is its own: a typed `$_` the *caller* declared (a
@@ -387,6 +387,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
         is_hidden_from_backtrace: bool,
         code: usize,
+        unit_scoped: bool,
     ) {
         self.drop_inherited_topic_constraint();
         let invocation_id = self.take_invocation_id();
@@ -415,6 +416,7 @@ impl Interpreter {
             callable_id: 0,
             code,
             fixtures: 0,
+            unit_scoped,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -462,6 +464,7 @@ impl Interpreter {
             callable_id,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push_with_fixtures(frame, fixtures);
@@ -532,6 +535,7 @@ impl Interpreter {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -1815,6 +1819,7 @@ mod call_site_file_tests {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
         }
     }
 

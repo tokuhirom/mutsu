@@ -162,7 +162,8 @@ impl RoutineStack {
         self.fixtures.truncate(len);
     }
 
-    /// The plain named-sub frame that is running, when no method record sits
+    /// The unit-scoped named-sub frame (declared outside every routine and
+    /// closure body, see [`RoutineFrame::unit_scoped`]) that is running, when no method record sits
     /// between it and the top of the stack: such a sub does not continue its
     /// CALLER's method record, `self` / `$?CLASS` / `$?ROLE` being lexical to
     /// the declaration, not dynamic (#16099). Block and closure frames (an
@@ -175,7 +176,7 @@ impl RoutineStack {
                 return None;
             }
             if !f.is_block {
-                return Some(f);
+                return f.unit_scoped.then_some(f);
             }
         }
         None
@@ -334,6 +335,7 @@ mod tests {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
         }
     }
 
@@ -345,6 +347,14 @@ mod tests {
         assert_eq!(stack.any_lexical_package(), by_scan);
         let counted = stack.iter().filter(|f| f.lexical_package.is_some()).count();
         assert_eq!(stack.lexical_package_frames, counted);
+    }
+
+    /// A record-less block frame: continues the enclosing record.
+    fn block() -> RoutineFrame {
+        RoutineFrame {
+            is_block: true,
+            ..frame(false)
+        }
     }
 
     fn named(name: &str) -> RoutineFrame {
@@ -457,15 +467,41 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn a_plain_sub_frame_does_not_continue_its_callers_record() {
+        let mut stack = RoutineStack::default();
+        stack.push_with_fixtures(frame(false), fixtures("A"));
+        // A block between the method and the top still sees the record...
+        stack.push(block());
+        assert_eq!(class_of(&stack), "A");
+        // ...a sub declared outside every routine and called from the method
+        // does not, nor does a block the sub runs.
+        let unit_sub = RoutineFrame {
+            unit_scoped: true,
+            ..frame(false)
+        };
+        stack.push(unit_sub);
+        assert!(stack.top_fixtures().is_none());
+        stack.push(block());
+        assert!(stack.top_fixtures().is_none());
+        stack.pop();
+        stack.pop();
+        assert_eq!(class_of(&stack), "A");
+        // A sub declared inside a routine may see that routine's record.
+        stack.push(frame(false));
+        assert_eq!(class_of(&stack), "A");
+    }
+
+    #[test]
     fn records_are_cut_back_with_their_frames() {
         let mut stack = RoutineStack::default();
         assert!(stack.top_fixtures().is_none());
         stack.push_with_fixtures(frame(false), fixtures("A"));
-        stack.push(frame(false));
+        stack.push(block());
         stack.push_with_fixtures(frame(false), fixtures("B"));
         assert_eq!(class_of(&stack), "B");
-        // A frame without a record leaves the innermost record answering.
-        stack.push(frame(false));
+        // A block frame without a record leaves the innermost record answering.
+        stack.push(block());
         assert_eq!(class_of(&stack), "B");
         stack.pop();
         stack.pop();
@@ -488,7 +524,7 @@ mod tests {
     fn a_copied_frame_owns_a_clone_of_the_record() {
         let mut stack = RoutineStack::default();
         stack.push_with_fixtures(frame(false), fixtures("A"));
-        stack.push(frame(false));
+        stack.push(block());
         let original = stack.iter().next().copied().unwrap();
         stack.push_copy(original);
         assert_eq!(class_of(&stack), "A");
