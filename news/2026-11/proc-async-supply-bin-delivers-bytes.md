@@ -8,5 +8,3 @@ channel, and the live tap pump serves the merged Supply too when it was
 requested as `:bin` (the text-mode merge is still replayed from the collected
 text). Pinned by `t/concurrency/supply/proc-async-supply-bin-delivers-bytes.t`.
 
-Not done: the chunk's type name is `Buf`, where rakudo's is `Buf[uint8]` (also
-for `stdout(:bin)`); filed separately.
