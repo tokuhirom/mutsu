@@ -6,7 +6,7 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 5;
+# TEMPORARY PROBE: no plan; trace written to a file, encoded as failing test numbers.
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -40,11 +40,14 @@ plan 5;
     my $s = supply {
         my %watched;
         sub add-dir(IO::Path $d, :$initial) {
+            "/tmp/pr-{ $d.Str.comb(/\d+ '-' \d+/)[0] }.log".IO.spurt("add {$d.basename}\n", :append);
             %watched{$d} = True;
             with $d.watch -> $w {
                 whenever $w {
+                    "/tmp/pr-{ .path.comb(/\d+ '-' \d+/)[0] }.log".IO.spurt("body {.path.IO.basename}\n", :append);
                     emit $_;
                     my $p = .path.IO;
+                    "/tmp/pr-{ .path.comb(/\d+ '-' \d+/)[0] }.log".IO.spurt("after-emit {$p.basename} d={$p.d} w={%watched{$p}}\n", :append);
                     add-dir($p) if $p.d && !%watched{$p};
                     CATCH { default { } }
                 }
@@ -75,6 +78,15 @@ plan 5;
     # lazy Seq): tracked in #16198. It still runs; a pass shows as "TODO passed".
     todo 'CI-only nested watcher registration, #16198', 1;
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
+    my $id = $dir.basename.comb(/\d+ '-' \d+/)[0];
+    my $f = "/tmp/pr-$id.log".IO;
+    my $msg = $f.e ?? $f.slurp.lines.join(';') !! 'NOFILE';
+    $f.unlink if $f.e;
+    my @chars = $msg.substr(0, 150).ords;
+    for @chars.kv -> $i, $c {
+        for ^256 -> $k { ok $k != $c, 'diag' }
+    }
+
 }
 
 # An `emit` outside every supply still raises, as before.
@@ -82,3 +94,5 @@ plan 5;
     sub bare-emit { emit 1 }
     throws-like { bare-emit() }, X::ControlFlow, 'emit without a supply is still refused';
 }
+
+done-testing;
