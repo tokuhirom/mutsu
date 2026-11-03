@@ -2,12 +2,15 @@
 //! declares, and which bareword calls it makes.
 //!
 //! Declarations are collected scope-blind, except a routine (`sub`, `proto`)
-//! declared inside a `sub`/`method`/`proto` body: rakudo installs it in that
-//! body's lexical scope (an `our` one additionally as a package symbol, which
-//! only a qualified call reaches), so a bare call outside the body is
-//! `Undeclared routine` (#13111). Such a routine is recorded in the body's
-//! [`Frame`], and a call is explained by it only when the call sits in that
-//! body — before or after the declaration, since the check runs at CHECK time.
+//! declared inside a statement list other than the unit's own (a `sub`/
+//! `method`/`proto` body, a bare or control-flow block, a package body):
+//! rakudo installs it in that list's lexical scope (an `our` one additionally
+//! as a package symbol, which only a qualified call reaches), so a bare call
+//! outside the list is `Undeclared routine` (#13111, #15861). Such a routine
+//! is recorded in the list's [`Frame`], and a call is explained by it only
+//! when the call sits in that scope — before or after the declaration, since
+//! the check runs at CHECK time. An `is export` routine stays unit-wide: an
+//! import makes it reachable from outside its scope.
 //! Types and variables stay scope-blind: a `class K` in a routine body is
 //! `our`-scoped and reachable from outside.
 
@@ -20,11 +23,11 @@ use std::collections::HashSet;
 
 use super::conditional;
 
-/// The lexical scope of one routine body.
+/// The lexical scope of one statement list below the unit's top level.
 struct Frame {
-    /// The enclosing routine body, if any.
+    /// The enclosing scope, if any.
     parent: Option<usize>,
-    /// The routines declared in this body (outside any nested routine body).
+    /// The routines declared in this scope (outside any nested scope).
     routines: HashSet<String>,
 }
 
@@ -123,11 +126,20 @@ impl Scan {
     /// and a suggestion candidate — or, inside a routine body, a suppressor
     /// for the calls in that body only.
     fn declare_routine(&mut self, name: &str) {
+        self.declare_routine_in(name, self.current);
+    }
+
+    /// Record a routine that an import makes reachable outside its scope.
+    fn declare_unit_wide_routine(&mut self, name: &str) {
+        self.declare_routine_in(name, None);
+    }
+
+    fn declare_routine_in(&mut self, name: &str, scope: Option<usize>) {
         let bare = bare_name(name);
         if bare.is_empty() {
             return;
         }
-        if let Some(i) = self.current {
+        if let Some(i) = scope {
             let routines = &mut self.frames[i].routines;
             routines.insert(bare.to_string());
             // `sub term:<x> {...}` declares the bare term `x`.
@@ -193,6 +205,19 @@ fn term_name(bare: &str) -> Option<&str> {
 }
 
 impl<'ast> Visit<'ast> for Scan {
+    /// Every statement list below the unit's top level is a lexical scope of
+    /// its own.
+    fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        let parent = self.current;
+        self.frames.push(Frame {
+            parent,
+            routines: HashSet::new(),
+        });
+        self.current = Some(self.frames.len() - 1);
+        walk_stmts(self, body);
+        self.current = parent;
+    }
+
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::Package { name, .. } = stmt {
             for parent in crate::qualified::package_ancestors(*name).skip(1) {
@@ -221,8 +246,14 @@ impl<'ast> Visit<'ast> for Scan {
             // The routine's own name belongs to the enclosing scope; the
             // walk reports it again inside the body, where it is harmless
             // (a routine can call itself).
-            Stmt::SubDecl { name, .. } => {
-                self.declare_routine(name.as_str());
+            Stmt::SubDecl {
+                name, is_export, ..
+            } => {
+                if *is_export {
+                    self.declare_unit_wide_routine(name.as_str());
+                } else {
+                    self.declare_routine(name.as_str());
+                }
                 self.walk_routine_body(stmt);
             }
             Stmt::ProtoDecl { name, .. } => {
