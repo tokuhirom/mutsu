@@ -65,10 +65,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         TypeSubset => &["of"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
-        _ if class
-            .printed_name()
-            .starts_with("RakuAST::StatementPrefix::Phaser::") =>
-        {
+        StatementPrefixPhaserFirst | StatementPrefixPhaserPost => {
             &["type", "original-blorst"]
         }
         _ if statement_prefix_type(class).is_some() => &["type"],
@@ -251,12 +248,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (_, "type") => statement_prefix_type(node.class).map(Value::str),
         // The blorst as written (rakudo keeps it apart once a block made
         // around it takes its place; mutsu never replaces it).
-        (_, "original-blorst")
-            if node
-                .class
-                .printed_name()
-                .starts_with("RakuAST::StatementPrefix::Phaser::") =>
-        {
+        (StatementPrefixPhaserFirst | StatementPrefixPhaserPost, "original-blorst") => {
             node_accessor(node, "blorst")
         }
         // nqp `eqaddr` answers: `1` when `optional` was written as that Bool.

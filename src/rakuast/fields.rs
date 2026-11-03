@@ -193,10 +193,14 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         FunctionInfix => &[("function", Absent::Required)],
         ApplyPrefix => &[("prefix", Absent::Required), ("operand", Absent::Required)],
         ApplyPostfix => &[("operand", Absent::Required), ("postfix", Absent::Required)],
-        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex | PostcircumfixHashIndex => &[
+        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex => &[
             ("index", Absent::Required),
             ("colonpairs", Absent::EmptyList),
             ("assignee", EXPRESSION),
+        ],
+        PostcircumfixHashIndex => &[
+            ("index", Absent::Required),
+            ("colonpairs", Absent::EmptyList),
         ],
         Postfix => &[("operator", Absent::Required)],
         Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
