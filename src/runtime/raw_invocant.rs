@@ -265,10 +265,42 @@ impl Interpreter {
     /// Instance/type-object halves of ADR-0059) this answers for *any* value,
     /// because a raw invocant is exactly the case where the invocant is an
     /// ordinary `Int`/`Str`/... and the routine came from `augment class Any`.
+    // Cost: O(1) for an instance, type object or a memoized role-mixed instance;
+    // otherwise `what_type_name`'s.
     pub(crate) fn raw_invocant_class_name(target: &Value) -> String {
         match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),
+            ValueView::Mixin(inner, mixins) => {
+                // A role-mixed class instance: the name is a function of its
+                // override node (never mutated in place) and its class, and
+                // building it renders every role (~20k Ir per call of a
+                // CArray `AT-POS`, #16215). The entry owns a clone of the node
+                // so its address stays this composition's.
+                let ValueView::Instance { class_name, .. } = inner.view() else {
+                    return crate::value::what_type_name(target);
+                };
+                type Memo = rustc_hash::FxHashMap<
+                    (usize, Symbol),
+                    (crate::gc::Gc<crate::value::MixinOverrides>, String),
+                >;
+                thread_local! {
+                    static NAMES: std::cell::RefCell<Memo> = std::cell::RefCell::default();
+                }
+                let key = (&**mixins as *const crate::value::MixinOverrides as usize, class_name);
+                if let Some(hit) = NAMES.with(|m| m.borrow().get(&key).map(|(_, n)| n.clone())) {
+                    return hit;
+                }
+                let name = crate::value::what_type_name(target);
+                NAMES.with(|m| {
+                    let mut m = m.borrow_mut();
+                    if m.len() >= 4096 {
+                        m.clear();
+                    }
+                    m.insert(key, (mixins.clone(), name.clone()));
+                });
+                name
+            }
             _ => crate::value::what_type_name(target),
         }
     }
