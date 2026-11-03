@@ -225,10 +225,21 @@ impl Interpreter {
                 // restore in that case (the compiler gave the declaration its own
                 // slot, which the next entry to the block re-initialises), so the
                 // slot pass below is skipped too.
+                // A dynamic (`my $*OUT`) lives under two spellings (`*OUT` and
+                // `$*OUT`) that `say` / `put` and `$*OUT` reads pick between,
+                // and a declaration writes both: the restore must take both
+                // back, or the body's value outlives it (#16193).
+                let twin = crate::runtime::utils::twigil_dynamic_alias(name_sym.as_str());
                 let Some(val) = val else {
                     self.env_mut().remove_sym(name_sym);
+                    if let Some(twin) = twin {
+                        self.env_mut().remove(&twin);
+                    }
                     continue;
                 };
+                if let Some(twin) = twin {
+                    self.env_mut().insert(twin, val.clone());
+                }
                 // `Some` means the name shadowed an existing outer binding
                 // (recorded in exec_set_local_op), so restoring the captured value
                 // re-exposes the outer `$x` clobbered by the loop body's `my $x`.
