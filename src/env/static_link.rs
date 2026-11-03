@@ -121,6 +121,8 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
         || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
+        // An enum key read by its bare spelling (`my enum Col <Red>`).
+        || key.with_str(|s| s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX))
 }
 
 /// Whether a frame running a loaded module's routine
