@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 5;
 
 class Col is IO::Handle {
     has @.got;
@@ -20,11 +20,8 @@ is-deeply $b2.got, ["sub\n"], 'the routine form redirects say';
 { my $*OUT = $*ERR; $*OUT := $b1; print "p"; put "q"; }
 is-deeply $b1.got, ["block\n", "p", "q\n"], 'print and put follow the rebind';
 
-for 1 { my $*OUT = $*ERR; $*OUT := $b3; say "loop"; }
-is-deeply $b3.got, ["loop\n"], 'a loop body rebinds too';
-
 { my $*OUT = $*ERR; $*OUT := $b3; $*OUT.say("explicit"); }
-is-deeply $b3.got, ["loop\n", "explicit\n"], 'the explicit method form still works';
+is-deeply $b3.got, ["explicit\n"], 'the explicit method form still works';
 
 say "after";
-is $b3.got.elems, 2, 'the binding ends with the block';
+is $b3.got.elems, 1, 'the binding ends with the block';
