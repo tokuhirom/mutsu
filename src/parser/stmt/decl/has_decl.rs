@@ -969,9 +969,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // `has Inp() $.x .= new` / `has Int(Str) $.x .= new`: the method is
         // called on the target type of the coercion, not on the coercion.
         let target_name = match target_name.split_once('(') {
-            Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => {
-                target.to_string()
-            }
+            Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => target.to_string(),
             _ => target_name,
         };
         let target_expr = if target_name == "::?CLASS" {
