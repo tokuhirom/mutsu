@@ -456,8 +456,13 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             value,
             is_attribute: _,
             type_invocant: _,
+            invocant_expr,
         } => {
-            v.visit_name(var_name, NameKind::TempTarget);
+            if let Some(e) = invocant_expr {
+                v.visit_expr(e);
+            } else {
+                v.visit_name(var_name, NameKind::TempTarget);
+            }
             v.visit_name(method_name, NameKind::Method);
             exprs(v, method_args);
             v.visit_expr(value);

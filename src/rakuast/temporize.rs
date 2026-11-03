@@ -92,13 +92,21 @@ pub(super) fn view_method_assign_stmt(
         value,
         is_attribute,
         type_invocant,
+        invocant_expr,
     } = stmt
     else {
         return Err(super::view::unsupported("temp method assignment"));
     };
+    let invocant = if let Some(e) = invocant_expr {
+        (**e).clone()
+    } else if var_name == "self" || *type_invocant {
+        Expr::BareWord(var_name.clone())
+    } else {
+        Expr::Var(var_name.clone())
+    };
     view_method_assign(
         names,
-        var_name,
+        invocant,
         method_name,
         method_args,
         value,
@@ -110,7 +118,7 @@ pub(super) fn view_method_assign_stmt(
 // Cost: O(e), e = size of the assignment value and method arguments.
 fn view_method_assign(
     names: &NameScope,
-    var_name: &str,
+    invocant: Expr,
     method_name: &str,
     method_args: &[Expr],
     value: &Expr,
@@ -127,11 +135,6 @@ fn view_method_assign(
             )],
         }
     } else {
-        let invocant = if var_name == "self" || type_invocant {
-            Expr::BareWord(var_name.to_string())
-        } else {
-            Expr::Var(var_name.to_string())
-        };
         // A meta-method call keeps its `^` as the call's modifier.
         let (method_name, modifier) = match method_name.strip_prefix('^') {
             Some(meta) if type_invocant => (meta, Some('^')),
@@ -380,6 +383,7 @@ fn lower_method_assign(
         return Ok(None);
     }
     let operand = named_child(prefix, "operand")?;
+    let mut invocant_expr = None;
     let (var_name, method_name, method_args, is_attribute, type_invocant) = if operand.class
         == RakuAstClass::VarAttributePublic
         && !operand
@@ -416,6 +420,11 @@ fn lower_method_assign(
             Expr::Var(name) => (name.clone(), false),
             Expr::BareWord(name) if name == "self" => ("self".to_string(), false),
             Expr::BareWord(name) => (name.clone(), true),
+            // `temp @a[0].n = v`: the element is the object saved (#16165).
+            Expr::Index { .. } => {
+                invocant_expr = Some(target.clone());
+                (String::new(), false)
+            }
             _ => return Err(unsupported(node)),
         };
         let method_name = match modifier {
@@ -458,6 +467,7 @@ fn lower_method_assign(
         value,
         is_attribute,
         type_invocant,
+        invocant_expr,
     }))
 }
 

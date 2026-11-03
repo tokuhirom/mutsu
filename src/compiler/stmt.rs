@@ -5112,10 +5112,13 @@ impl Compiler {
                 value,
                 is_attribute,
                 type_invocant,
+                invocant_expr,
             } => {
                 // `self` is a term, not a variable (`temp self.x = v`,
                 // `temp $.x ~= v`).
-                let invocant = if var_name == "self" {
+                let invocant = if let Some(e) = invocant_expr {
+                    (**e).clone()
+                } else if var_name == "self" {
                     Expr::BareWord(var_name.clone())
                 } else {
                     Expr::Var(var_name.clone())
@@ -5126,7 +5129,9 @@ impl Compiler {
                 // a detached copy that no other holder of the object saw
                 // (#16144). `self`, `$.x` and a type invocant keep the variable
                 // save: they restore through the frame's invocant / a write-back.
-                if var_name != "self" && !*is_attribute && !*type_invocant {
+                if (var_name != "self" && !*is_attribute && !*type_invocant)
+                    || invocant_expr.is_some()
+                {
                     let save = Expr::Call {
                         name: Symbol::intern("__mutsu_temp_method_save"),
                         args: vec![
@@ -5161,7 +5166,13 @@ impl Compiler {
                         Expr::Literal(Value::str(method_name.clone())),
                         Expr::ArrayLiteral(method_args.clone()),
                         value,
-                        Expr::Literal(Value::str(var_name.clone())),
+                        // No variable to write the result back to for an
+                        // element invocant.
+                        if invocant_expr.is_some() {
+                            Expr::Literal(Value::NIL)
+                        } else {
+                            Expr::Literal(Value::str(var_name.clone()))
+                        },
                     ],
                     listop: false,
                 };
