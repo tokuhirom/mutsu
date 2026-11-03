@@ -467,7 +467,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn a_plain_sub_frame_does_not_continue_its_callers_record() {
         let mut stack = RoutineStack::default();
         stack.push_with_fixtures(frame(false), fixtures("A"));
