@@ -36,6 +36,13 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_default();
+        // `use experimental :pack` is a pragma, not a module to load.
+        if module == "experimental" {
+            if tags.iter().any(|t| t == "pack") {
+                crate::runtime::experimental_pragma::enable_pack(self.executing_source_file_sym());
+            }
+            return Ok(());
+        }
         // ADR-0019 Phase F box F5 cutover: a module load can install classes
         // and subs, but each such installation already invalidates dispatch
         // caches at its OWN registration site (`exec_register_class_op`
