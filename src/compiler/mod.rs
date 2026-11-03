@@ -1149,6 +1149,7 @@ mod nqp_cond_forms;
 mod nqp_container_test;
 pub(crate) mod nqp_forms;
 mod nqp_lexical_forms;
+mod nqp_loop_control;
 mod nqp_object_forms;
 mod nqp_p6_forms;
 mod numeric_operand_names;

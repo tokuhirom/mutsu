@@ -329,7 +329,11 @@ impl Compiler {
             {
                 let is_until = name.ends_with("until");
                 let repeat = name.starts_with("nqp::repeat_");
-                if sunk {
+                if sunk && super::nqp_loop_control::body_names_loop_control(&args[1]) {
+                    // A `last` / `next` in the body needs a registered loop:
+                    // the ordinary `while` lowering, its value dropped.
+                    self.compile_nqp_controlled_loop(&args[0], &args[1], is_until, repeat);
+                } else if sunk {
                     self.compile_nqp_sunk_loop(&args[0], &args[1], is_until, repeat);
                 } else {
                     self.compile_nqp_value_loop(&args[0], &args[1], is_until, repeat);
@@ -338,6 +342,20 @@ impl Compiler {
             }
             _ => false,
         }
+    }
+
+    /// Whether `e` is a call of one of the `nqp::` loop forms.
+    // Cost: O(1).
+    pub(super) fn is_nqp_loop_call(e: &Expr) -> bool {
+        matches!(
+            e,
+            Expr::Call { name, args, .. }
+                if args.len() == 2
+                    && matches!(
+                        name.as_str(),
+                        "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
+                    )
+        )
     }
 
     /// Run `f` as the compilation of a statement-root expression: a
@@ -390,6 +408,53 @@ impl Compiler {
             self.code.emit(OpCode::Jump(loop_start as i32));
             self.code.patch_jump(jump_end);
         }
+        let nil_idx = self.code.add_constant(Value::NIL);
+        self.code.emit(OpCode::LoadConst(nil_idx));
+    }
+
+    /// A sunk `nqp::` loop whose body names `last` / `next` / `redo`: the same
+    /// `while` / `repeat ... while` statement the parser builds for Raku source,
+    /// which registers the loop for those controls. Yields Nil, as the jump loop does.
+    // Cost: O(1) per iteration (the registered-loop opcodes).
+    fn compile_nqp_controlled_loop(
+        &mut self,
+        cond: &Expr,
+        body: &Expr,
+        is_until: bool,
+        repeat: bool,
+    ) {
+        let body = vec![Stmt::Expr(body.clone())];
+        let cond = if is_until {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(cond.clone()),
+                word: false,
+            }
+        } else {
+            cond.clone()
+        };
+        let stmt = if repeat {
+            Stmt::Loop {
+                init: None,
+                cond: Some(cond),
+                step: None,
+                body,
+                repeat: true,
+                label: None,
+                is_until,
+                is_bare_term: false,
+            }
+        } else {
+            Stmt::While {
+                cond,
+                body,
+                label: None,
+                is_statement_modifier: false,
+                is_until,
+                is_bare_term: false,
+            }
+        };
+        self.with_stmt_root(|c| c.compile_stmt(&stmt));
         let nil_idx = self.code.add_constant(Value::NIL);
         self.code.emit(OpCode::LoadConst(nil_idx));
     }

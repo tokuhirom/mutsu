@@ -541,6 +541,7 @@ impl Compiler {
                 // argument. Read-and-clear before compiling anything, so a
                 // nested list inside an element is not marked as well.
                 let rw_arg_callee = self.pending_rw_arg_list_callee.take();
+                let is_root_list = self.expr_depth <= 1;
                 // Elements are stored into the list -> a closure element escapes.
                 self.with_escape(true, |c| {
                     for (elem_idx, elem) in elems.iter().enumerate() {
@@ -570,7 +571,15 @@ impl Compiler {
                             // `.head` of `<b c>` flattens into a slurpy).
                             c.raw_list_elem_terminal = true;
                         }
-                        c.compile_expr(elem);
+                        // A comma list at statement root is in sink context, and rakudo
+                        // sinks each of its elements: an `nqp::while` there runs eagerly
+                        // (Math::Combinatorics' `(my $j := $!k), nqp::while(...), ...`)
+                        // instead of building a lazy Seq nobody pulls.
+                        if is_root_list && Self::is_nqp_loop_call(elem) {
+                            c.with_stmt_root(|c| c.compile_expr(elem));
+                        } else {
+                            c.compile_expr(elem);
+                        }
                         c.scalar_bind_autovivify = saved_autoviv;
                         c.bind_terminal = saved_terminal;
                         c.raw_list_elem_terminal = saved_raw_list_elem;
