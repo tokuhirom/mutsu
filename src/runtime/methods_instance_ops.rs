@@ -1024,9 +1024,22 @@ impl Interpreter {
                     } else if method != "message" && self.has_user_method(&cn, "message") {
                         // For .Str/.gist, prefer a user-defined `message` method
                         // (it may interpolate attributes).
+                        // A `message` that dies is no message (rakudo's `Str` and
+                        // `gist` swallow it, #16066): `Str` names the class's last
+                        // name part, `gist` the same as for no message at all.
                         let msg =
-                            self.call_method_with_values(target.clone(), "message", vec![])?;
-                        return Ok(with_backtrace(&target, msg.to_string_value()));
+                            match self.call_method_with_values(target.clone(), "message", vec![]) {
+                                Ok(msg) => msg.to_string_value(),
+                                Err(_) if method == "gist" => {
+                                    if attributes.as_map().contains_key("backtrace") {
+                                        format!("Died with {cn}")
+                                    } else {
+                                        format!("Unthrown {cn} with no message")
+                                    }
+                                }
+                                Err(_) => crate::builtins::method_table::exception_no_message_text(&cn),
+                            };
+                        return Ok(with_backtrace(&target, msg));
                     } else if let Some(msg) = attributes.as_map().get("message")
                         // A declared-but-undefined `has $.message` is not a
                         // message; rendering it would print the literal `(Any)`.
