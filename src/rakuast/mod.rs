@@ -51,6 +51,7 @@ pub(crate) mod nested_methods;
 pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
+mod named_docs;
 mod pod_blocks;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
@@ -1822,6 +1823,7 @@ pub fn str_dot_ast_checked(
 ) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
     // declaration.
@@ -1833,6 +1835,7 @@ pub fn str_dot_ast_checked(
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     pod_blocks::insert(names, &mut node, source, &stmts);
+    named_docs::attach(&mut node, unit_docs);
     Ok(Value::rakuast(Box::new(node)))
 }
 
