@@ -7,5 +7,5 @@ to an older frame's `$y` and made THAT the argument: after the call the caller's
 `$y` read the grand-caller's value. Timezones::ZoneInfo's `timesub` hit it
 (`isleap($y)` in a `while` condition after `time2sub` had called `isleap($y)`),
 turning every local-time -> POSIX conversion into -1. The lookup now stays in
-the caller's own frame (`Env::get_sym_in_frame`), so `posix-from-calendar` gives
+the caller's own frame (`Env::get_sym_in_caller_frame`), so `posix-from-calendar` gives
 rakudo's `1577934245`. Closes #16177.

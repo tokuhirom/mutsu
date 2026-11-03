@@ -86,20 +86,21 @@ impl Env {
         }
     }
 
-    /// `key`'s binding in the CALLER's own frame: skip the running call
-    /// frame's tiers (down to and including its frame root), then read the
-    /// tiers of the next frame up to and including its root. Never an older
-    /// caller's tier. For a callee binding its arguments: the caller's
-    /// variable of a name is in the caller's frame, and a same-named variable
-    /// of a grand-caller is another variable (#16177). `None` when the running
-    /// frame has no caller frame root above it (the program scope).
+    /// `key` as the CALLER sees it: skip the running call frame's tiers (down
+    /// to and including its frame root), then look the name up from the
+    /// caller's env, through the caller's own frame and its static link (the
+    /// lexical scopes it is declared in), never through an older caller. For a
+    /// callee binding its arguments: a same-named variable of a grand-caller is
+    /// another variable (#16177), while a free variable the caller reads from
+    /// an enclosing scope is the caller's own. `None` when the running frame
+    /// has no caller above it (the program scope).
     // Cost: O(d), d = the two frames' tiers.
     pub(crate) fn get_sym_in_caller_frame(&self, key: Symbol) -> Option<&Value> {
         let mut cur = self;
         loop {
             let parent = cur.parent.as_deref();
             if cur.frame_root {
-                return parent?.get_sym_in_frame(key);
+                return super::static_link::with_static_links_honoured(|| parent?.get_sym(key));
             }
             cur = parent?;
         }
