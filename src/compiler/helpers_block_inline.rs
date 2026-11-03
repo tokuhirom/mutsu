@@ -467,6 +467,24 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    // A block-final `my $*x = ...` is the statement form's
+                    // declaration too: the hand-inlined arm below stores into
+                    // the ENCLOSING scope's slot for the name (no slot of its
+                    // own), so the block's exit had nothing to take back and
+                    // the declaration outlived its block (#16199).
+                    Stmt::VarDecl {
+                        name,
+                        is_state: false,
+                        is_our: false,
+                        constant: None,
+                        is_dynamic: true,
+                        ..
+                    } if !name.starts_with(['@', '%']) => {
+                        self.compile_stmt(stmt);
+                        self.emit_get_named_var(name);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::VarDecl {
                         name,
                         expr,
