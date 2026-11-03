@@ -282,7 +282,7 @@ fn parse_forward_sub_declaration_with_semicolon_is_invalid() {
 
 #[test]
 fn parse_forward_sub_declaration_with_stub_body() {
-    let (rest, stmts) = program("sub foo($a, $b) {...} sub foo($a, $b) { 1 }").unwrap();
+    let (rest, stmts) = program("sub foo($a, $b) {...}; sub foo($a, $b) { 1 }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
 }

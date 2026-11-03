@@ -3285,7 +3285,7 @@ mod tests {
     fn forward_decl_uses_later_top_level_definition() {
         let mut interp = Interpreter::new();
         let output = interp
-            .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
+            .run("sub foo($a, $b) {...}; say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
     }
