@@ -37,6 +37,7 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod decl_origins;
+mod doc_block;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
@@ -288,6 +289,7 @@ pub enum RakuAstClass {
     RegexAssertionPredicateBlock,
     RegexAssertionInterpolatedBlock,
     RegexInterpolation,
+    DocBlock,
     RegexAlternation,
     RegexSequentialAlternation,
     RegexQuantifiedAtom,
@@ -680,6 +682,7 @@ impl RakuAstClass {
             RegexAssertionPredicateBlock => "RakuAST::Regex::Assertion::PredicateBlock",
             RegexAssertionInterpolatedBlock => "RakuAST::Regex::Assertion::InterpolatedBlock",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
+            DocBlock => "RakuAST::Doc::Block",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -1207,6 +1210,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionPredicateBlock,
     RakuAstClass::RegexAssertionInterpolatedBlock,
     RakuAstClass::RegexInterpolation,
+    RakuAstClass::DocBlock,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,
     RakuAstClass::RegexQuantifiedAtom,

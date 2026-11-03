@@ -38,6 +38,8 @@ pub(super) enum Absent {
     /// An empty list. A `List`-typed field is never undefined in rakudo: an
     /// `if` with no `elsif` answers `()`, not a type object.
     EmptyList,
+    /// An empty `Map`, for a `Map`-typed field (`Doc::Block.config`).
+    EmptyMap,
     /// `False`, for a `Bool` flag the renderer elides when it is false.
     False,
     /// `0`, for an `int` flag (rakudo's `Pragma.off`).
@@ -63,6 +65,7 @@ impl Absent {
         Some(match self {
             Absent::TypeObject(name) => Value::package(Symbol::intern(name)),
             Absent::EmptyList => Value::array(Vec::new()),
+            Absent::EmptyMap => Value::hash(crate::value::ValueMap::default()),
             Absent::False => Value::truth(false),
             Absent::Zero => Value::int(0),
             Absent::Str(s) => Value::str(s.to_string()),
@@ -381,6 +384,16 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("block", Absent::Required), ("sequential", Absent::False)]
         }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
+        DocBlock => &[
+            ("margin", Absent::Str("")),
+            ("type", Absent::Required),
+            ("level", Absent::Str("")),
+            ("directive", Absent::False),
+            ("abbreviated", Absent::False),
+            ("for", Absent::False),
+            ("config", Absent::EmptyMap),
+            ("paragraphs", Absent::EmptyList),
+        ],
         ColonPairVariable | ColonPairValue | ColonPairNumber => {
             &[("key", Absent::Required), ("value", Absent::Required)]
         }

@@ -143,6 +143,20 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("dwim-right", Flag, Omit),
             ],
         ),
+        // `directive` beats `abbreviated` beats `for` (see `exclusive_flags`).
+        "RakuAST::Doc::Block" => (
+            C::DocBlock,
+            &[
+                ("margin", Node, Omit),
+                ("type", Node, Required),
+                ("level", Node, Omit),
+                ("directive", Flag, Omit),
+                ("abbreviated", Flag, Omit),
+                ("for", Flag, Omit),
+                ("config", Node, Omit),
+                ("paragraphs", List, Omit),
+            ],
+        ),
         "RakuAST::Statement::Catch" => (C::StatementCatch, &[("body", Node, Required)]),
         "RakuAST::Statement::Control" => (C::StatementControl, &[("body", Node, Required)]),
         "RakuAST::Statement::Default" => (C::StatementDefault, &[LABELS, ("body", Node, Required)]),
@@ -464,11 +478,38 @@ fn build(
             value,
         });
     }
+    if class == RakuAstClass::DocBlock {
+        exclusive_flags(&mut fields);
+    }
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class,
         fields,
     })))
+}
+
+/// A `Doc::Block` is one of a directive, an abbreviated block, an extended
+/// (`for`) block or a delimited one; rakudo keeps the first of those given,
+/// in that order, and a `level` of 0 is no level.
+// Cost: O(f), f = fields.
+fn exclusive_flags(fields: &mut Vec<RakuAstField>) {
+    let has = |fields: &[RakuAstField], name: &str| fields.iter().any(|f| f.name == Some(name));
+    let keep = ["directive", "abbreviated", "for"]
+        .into_iter()
+        .find(|name| has(fields, name));
+    // The configuration is kept as `key => node` pairs.
+    for f in fields.iter_mut().filter(|f| f.name == Some("config")) {
+        if let RakuAstFieldValue::Node(v) = &f.value
+            && let Some(pairs) = super::doc_block::config_pairs(v)
+        {
+            f.value = RakuAstFieldValue::List(pairs);
+        }
+    }
+    fields.retain(|f| match f.name {
+        Some(flag @ ("directive" | "abbreviated" | "for")) => Some(flag) == keep,
+        Some("level") => !matches!(&f.value, RakuAstFieldValue::Node(v) if v.as_int() == Some(0)),
+        _ => true,
+    });
 }
 
 /// Whether `value` is a `RakuAST::ArgList` with no arguments.

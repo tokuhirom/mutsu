@@ -2,6 +2,17 @@
 use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
+    (
+        "RakuAST::Module",
+        &[
+            "RakuAST::Module",
+            "RakuAST::Package",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
     ("RakuAST::Name", &["RakuAST::Name", "RakuAST::Node"]),
     (
         "RakuAST::Name::Part::Empty",
@@ -124,17 +135,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::ParameterTarget::Var",
             "RakuAST::ParameterTarget",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::PointyBlock",
-        &[
-            "RakuAST::PointyBlock",
-            "RakuAST::Block",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
             "RakuAST::Node",
         ],
     ),

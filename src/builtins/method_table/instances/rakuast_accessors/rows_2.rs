@@ -2,6 +2,19 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    interp_row!(
+        "RakuAST::Type::Subset",
+        "compile-time-value",
+        compiled_value
+    ),
+    row!("RakuAST::Type::Subset", "default-scope"),
+    row!("RakuAST::Type::Subset", "is-resolved"),
+    row!("RakuAST::Type::Subset", "name"),
+    row!("RakuAST::Type::Subset", "of"),
+    row!("RakuAST::Type::Subset", "resolution"),
+    row!("RakuAST::Type::Subset", "scope"),
+    row!("RakuAST::Type::Subset", "traits"),
+    row!("RakuAST::Type::Subset", "where"),
     row!("RakuAST::Var::Attribute", "name"),
     row!("RakuAST::Var::Attribute", "return-type"),
     row!("RakuAST::Var::Attribute::Public", "args"),

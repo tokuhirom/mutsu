@@ -67,6 +67,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         | ColonPairNumber => &["named-arg-name", "named-arg-value"],
         QuotedString => &["has-variables"],
         TypeSubset => &["of"],
+        DocBlock => &["delimited"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
         StatementPrefixPhaserFirst | StatementPrefixPhaserPost => &["type", "original-blorst"],

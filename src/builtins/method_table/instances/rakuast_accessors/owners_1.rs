@@ -152,6 +152,10 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Doc::Block",
+        &["RakuAST::Doc::Block", "RakuAST::Doc", "RakuAST::Node"],
+    ),
+    (
         "RakuAST::DottyInfix::Call",
         &[
             "RakuAST::DottyInfix::Call",
@@ -191,15 +195,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Feed",
         &[
             "RakuAST::Feed",
-            "RakuAST::Infix",
-            "RakuAST::Infixish",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::FlipFlop",
-        &[
-            "RakuAST::FlipFlop",
             "RakuAST::Infix",
             "RakuAST::Infixish",
             "RakuAST::Node",
