@@ -153,6 +153,13 @@ fn supply_collected_map() -> &'static SupplyCollectedMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type NativeDescriptorSet = std::sync::Mutex<std::collections::HashSet<u64>>;
+
+fn native_descriptor_requests() -> &'static NativeDescriptorSet {
+    static SET: OnceLock<NativeDescriptorSet> = OnceLock::new();
+    SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
 type SupplyCollectedBytesMap = std::sync::Mutex<HashMap<u64, Vec<u8>>>;
 
 fn supply_collected_bytes_map() -> &'static SupplyCollectedBytesMap {
@@ -1096,6 +1103,24 @@ pub(in crate::runtime) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
     } else {
         Vec::new()
     }
+}
+
+/// Record that `Proc::Async::Pipe.native-descriptor` was asked of the
+/// stream behind `supply_id`: the process then hands its pipe end over as a raw
+/// descriptor instead of reading it itself (#15647).
+// Cost: O(1).
+pub(in crate::runtime) fn request_native_descriptor(supply_id: u64) {
+    if let Ok(mut set) = native_descriptor_requests().lock() {
+        set.insert(supply_id);
+    }
+}
+
+/// Whether [`request_native_descriptor`] was called for `supply_id`.
+// Cost: O(1).
+pub(in crate::runtime) fn native_descriptor_requested(supply_id: u64) -> bool {
+    native_descriptor_requests()
+        .lock()
+        .is_ok_and(|set| set.contains(&supply_id))
 }
 
 pub(in crate::runtime) fn set_supply_collected_output(supply_id: u64, output: String) {

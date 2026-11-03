@@ -182,14 +182,21 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
-            "native-descriptor" => Ok(attributes
+            "native-descriptor" => {
+                if let Some(ValueView::Int(sid)) = attributes.get("supply_id").map(Value::view)
+                    && attributes.contains_key("proc_pipe")
+                {
+                    crate::runtime::native_methods::request_native_descriptor(sid as u64);
+                }
+                Ok(attributes
                 .get("native_descriptor_promise")
                 .cloned()
                 .unwrap_or_else(|| {
                     let promise = SharedPromise::new();
                     promise.keep(Value::int(1), String::new(), String::new());
                     Value::promise(promise)
-                })),
+                }))
+            }
             "tail" => {
                 // A live (Supplier-backed) source has emitted nothing yet, so
                 // slicing its snapshot would answer an empty supply forever.

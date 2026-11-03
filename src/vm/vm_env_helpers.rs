@@ -2615,13 +2615,16 @@ impl Interpreter {
     /// GetLocal, e.g. `fib`'s `$n`) never reaches env.
     #[inline]
     pub(super) fn flush_local_to_env(&mut self, code: &CompiledCode, idx: usize) {
-        // Slot-only locals (no name-based reader) never need to reach env.
-        if !code.needs_env_sync.get(idx).copied().unwrap_or(true) {
-            return;
-        }
         let Some(name) = code.locals.get(idx) else {
             return;
         };
+        // Slot-only locals (no name-based reader) never need to reach env. A
+        // dynamic (`my $*OUT`) always has one: `say` / `put` / `print` and every
+        // callee read it by name, so an assignment after the declaration must
+        // reach the env (and its `$*OUT` twin) too (#15647).
+        if !code.needs_env_sync.get(idx).copied().unwrap_or(true) && !name.starts_with('*') {
+            return;
+        }
         let sym = code.locals_sym.get(idx).copied();
         // A plain lexical (the overwhelmingly common local: `my $x`, a scalar
         // param) has no aliases to maintain, so it takes the cheap writer. The
