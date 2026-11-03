@@ -24,16 +24,18 @@ for 'say x; my \x = 1',
     ok $rc != 0 && $err ~~ /'Undeclared routine'/, "refused: $code";
 }
 
-for 'my \x = 1; say x' => "1\n",
+my @accepted =
+    'my \x = 1; say x' => "1\n",
     'my \x = 1; { say x }' => "1\n",
     'constant k = 5; say k' => "5\n",
     'enum E <aa bb>; say aa' => "aa\n",
     'for 1,2 -> \w { say w }' => "1\n2\n",
     'sub f(\z) { z }; say f(3)' => "3\n",
     'foo; sub foo { say 1 }' => "1\n",
-    '-> \y { say y }(2)' => "2\n" -> $case {
+    '-> \y { say y }(2)' => "2\n";
+for @accepted -> $case {
     my ($rc, $out, $err) = main-run($case.key);
     is $out, $case.value, "accepted: {$case.key}";
 }
 
-is-deeply EVAL(q[my \q = 4; q + 1]), 5, 'EVAL: a term declared first explains the call';
+is EVAL('my \\q = 4; q + 1'), 5, 'EVAL: a term declared first explains the call';
