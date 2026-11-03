@@ -36,6 +36,7 @@ mod expr_origins;
 pub(crate) mod hyper_assign;
 mod if_branch;
 pub(crate) mod list_infix;
+pub(crate) mod literalize;
 mod loop_bind;
 pub(crate) mod nested_methods;
 mod package_trait_origins;
