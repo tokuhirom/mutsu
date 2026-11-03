@@ -51,6 +51,7 @@ mod package_trait_origins;
 mod parsed_view;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
+mod regex_call_origins;
 mod regex_origins;
 pub(crate) mod sections;
 pub(crate) mod signature_expand;

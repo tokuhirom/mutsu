@@ -256,7 +256,11 @@ impl Walk<'_> {
             RakuAstClass::RegexAnchorEndOfLine => self.eat("$$")?,
             RakuAstClass::RegexNamedCapture => self.named_capture(names, node)?,
             RakuAstClass::RegexAssertionCharClass => self.char_class(node)?,
-            RakuAstClass::RegexAssertionNamed => self.named_assertion(node)?,
+            RakuAstClass::RegexInterpolation => self.interpolation(node, false)?,
+            RakuAstClass::RegexAssertionInterpolatedVar => self.interpolation(node, true)?,
+            RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
+                self.named_assertion(names, node)?
+            }
             _ => return None,
         }
         // `^` must not have been the first half of `^^`, a literal the start
@@ -428,12 +432,11 @@ impl Walk<'_> {
 
     /// `<name>` / `<.name>`: the `Name` is the identifier inside.
     // Cost: O(n), n = length of the assertion.
-    fn named_assertion(&mut self, node: &mut RakuAstNode) -> Option<()> {
-        if node
-            .fields
-            .iter()
-            .any(|f| !matches!(f.name, Some("name" | "capturing")))
-        {
+    fn named_assertion(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
+        let call = node.class == RakuAstClass::RegexAssertionNamedArgs;
+        if node.fields.iter().any(|f| {
+            !(matches!(f.name, Some("name" | "capturing")) || call && f.name == Some("args"))
+        }) {
             return None;
         }
         let capturing = node.fields.iter().any(|f| f.name == Some("capturing"));
@@ -445,9 +448,44 @@ impl Walk<'_> {
         self.eat(if capturing { "<" } else { "<." })?;
         let name_at = self.at;
         self.eat(&name)?;
+        if call {
+            // `<name(ARGS)>`
+            self.eat("(")?;
+            let text: &str = self.text;
+            let len = super::regex_call_origins::args_len(&text[self.at..])?;
+            let inner = &text[self.at..self.at + len];
+            super::regex_call_origins::place(names, node, inner, self.base + self.at)?;
+            self.at += len;
+            self.eat(")")?;
+        }
         self.eat(">")?;
         let at = SrcSpan::new(self.base + name_at, self.base + name_at + name.len());
         super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, at));
+        Some(())
+    }
+
+    /// `$var` / `@var` (`<$var>` / `<@var>` when `bracketed`): the variable
+    /// is the name inside the brackets.
+    // Cost: O(n), n = length of the variable's name.
+    fn interpolation(&mut self, node: &mut RakuAstNode, bracketed: bool) -> Option<()> {
+        let var = super::infix_origins::child(node, "var").and_then(leaf_text)?;
+        if bracketed {
+            self.eat("<")?;
+        }
+        let at = self.at;
+        self.eat(&var)?;
+        let end = self.at;
+        // Not the start of a longer name, nor of a subscript or call.
+        if self.text[end..].starts_with(|c: char| {
+            c.is_alphanumeric() || matches!(c, '_' | '-' | '[' | '{' | '(' | '.' | ':')
+        }) {
+            return None;
+        }
+        if bracketed {
+            self.eat(">")?;
+        }
+        let span = SrcSpan::new(self.base + at, self.base + end);
+        super::infix_origins::with_child(node, "var", |v| super::origin::set_span(v, span));
         Some(())
     }
 
