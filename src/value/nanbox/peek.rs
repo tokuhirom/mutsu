@@ -208,6 +208,22 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::VmIterBuf))
     }
 
+    /// Whether this word is a `BOOTInt` / `BOOTNum` / `BOOTStr` box
+    /// (ADR-11553 §3.1): an `Instance` of one of those three classes.
+    #[inline]
+    pub(in crate::value) fn is_boot_scalar_box(&self) -> bool {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Instance) => {
+                // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
+                let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
+                let class = attrs.class_name();
+                class == "BOOTInt" || class == "BOOTNum" || class == "BOOTStr"
+            }
+            _ => false,
+        }
+    }
+
     /// Whether this word is a raw nqp `VMHash` (ADR-12666).
     #[inline]
     pub(in crate::value) fn is_vm_hash(&self) -> bool {

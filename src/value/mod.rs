@@ -693,6 +693,7 @@ mod value_lazy;
 mod value_lazy_ctors;
 pub(crate) mod version_cmp;
 mod vm_collection;
+pub(crate) use vm_collection::BOOT_SCALAR_VALUE_ATTR;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };

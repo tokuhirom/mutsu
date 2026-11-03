@@ -84,6 +84,14 @@ impl Interpreter {
 
     #[inline]
     pub(super) fn apply_scalar_param_bind(mode: ScalarParamBind, val: Value) -> Value {
+        // Binding a Raku parameter hllizes a raw collection or BOOT scalar box
+        // argument (ADR-12666, #12881). A container (`is rw`, `\v` of a
+        // variable) keeps what it holds.
+        let val = if val.needs_hllize_for_binding() {
+            val.hllize_for_binding()
+        } else {
+            val
+        };
         match mode {
             ScalarParamBind::Itemize => Self::itemize_scalar_store_value(val),
             ScalarParamBind::Keep => val,
