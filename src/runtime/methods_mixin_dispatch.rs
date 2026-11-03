@@ -546,12 +546,14 @@ impl Interpreter {
                 None
             } else {
                 self.mixin_winner_key(
-                    target,
-                    inner,
-                    &role_name,
-                    role.role_id,
-                    lookup_name,
-                    is_private_call,
+                    MixinCallSite {
+                        target,
+                        inner,
+                        role_name: &role_name,
+                        role_id: role.role_id,
+                        method: lookup_name,
+                        private: is_private_call,
+                    },
                     &overloads,
                     &role_param_bindings,
                     &args,
@@ -1011,6 +1013,16 @@ impl Interpreter {
 /// Most remembered winners before the table is dropped.
 const MIXIN_WINNER_MEMO_CAP: usize = 4096;
 
+/// Where a role method is called: the receiver and which role method.
+struct MixinCallSite<'a> {
+    target: &'a Value,
+    inner: &'a Value,
+    role_name: &'a str,
+    role_id: u64,
+    method: &'a str,
+    private: bool,
+}
+
 /// What a mixin receiver's role-method winner is computed from.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct MixinWinnerKey {
@@ -1036,19 +1048,14 @@ impl Interpreter {
     /// constraint that is not a built-in type, or an invocant other than
     /// `::?CLASS` with a smiley.
     // Cost: O(c * p + a), c = candidates, p = parameters each, a = arguments.
-    #[allow(clippy::too_many_arguments)]
     fn mixin_winner_key(
         &mut self,
-        target: &Value,
-        inner: &Value,
-        role_name: &str,
-        role_id: u64,
-        method: &str,
-        private: bool,
+        site: MixinCallSite<'_>,
         overloads: &[MethodDef],
         role_params: &[(String, Value)],
         args: &[Value],
     ) -> Option<MixinWinnerKey> {
+        let MixinCallSite { target, inner, role_name, role_id, method, private } = site;
         let key_decided = |def: &MethodDef| {
             !def.param_defs.is_empty()
                 && def.param_defs.iter().all(|pd| {
