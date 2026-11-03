@@ -514,6 +514,14 @@ pub(crate) struct ResolutionCaches {
         crate::runtime::MixinWinnerKey,
         Option<(Symbol, crate::runtime::MethodDef)>,
     >,
+    /// The `.WHAT` of a role-mixed class instance, by the identity of its
+    /// shared `Gc<MixinOverrides>` node and the instance's class. The entry
+    /// keeps the node alive so the address cannot be reused by another
+    /// composition (`Interpreter::mixin_what_value`).
+    pub(crate) mixin_what_by_node: rustc_hash::FxHashMap<
+        (usize, crate::symbol::Symbol),
+        (crate::gc::Gc<crate::value::MixinOverrides>, crate::value::Value),
+    >,
     /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
     /// probe every typed store makes (`var_type_constraint_value_sym`). The
     /// mapping is a pure function of the name, so caching it is sound
