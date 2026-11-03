@@ -162,6 +162,35 @@ impl Interpreter {
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
         let need = Self::sequence_prefix_need(method, args);
+        // `map` / `grep` / `first(matcher)` are lazy in Rakudo's `Sequence`: a
+        // lazy `Seq` over the class's own iterator takes the call, so a
+        // following `head(n)` pulls only what it needs and an endless iterator
+        // answers (#16133).
+        if matches!(method, "map" | "grep") || (method == "first" && !args.is_empty()) {
+            let iterator = if self.has_user_method(&cn, "iterator") {
+                self.user_iterator_of(target)
+            } else {
+                Ok(attributes
+                    .as_map()
+                    .get("iterator")
+                    .cloned()
+                    .unwrap_or(Value::NIL))
+            };
+            let iterator = match iterator {
+                Ok(iterator) => iterator,
+                Err(e) => return Some(Err(e)),
+            };
+            let seq = self.try_native_seq_construct(&[iterator]);
+            if method == "first" {
+                // Stops pulling at the first match.
+                return match self.first_over_map_grep_seq(&seq, method, args) {
+                    Ok(Some(hit)) => Some(Ok(hit)),
+                    Ok(None) => Some(self.dispatch_on_list_value(seq, method_sym, args)),
+                    Err(e) => Some(Err(e)),
+                };
+            }
+            return Some(self.dispatch_on_list_value(seq, method_sym, args));
+        }
         let items = if self.has_user_method(&cn, "iterator") {
             if matches!(target.view(), ValueView::Mixin(..)) {
                 // The class's own `iterator`, with the mixed value as `self`
@@ -194,9 +223,21 @@ impl Interpreter {
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
-        if let Some(r) = self.try_native_method(&list, method_sym, args) {
-            return Some(r);
+        Some(self.dispatch_on_list_value(list, method_sym, args))
+    }
+
+    /// `method(args)` on the list-ish `value` the sequence's items became:
+    /// the native method first, then the compiled/interpreted dispatch.
+    // Cost: that of the method called.
+    fn dispatch_on_list_value(
+        &mut self,
+        value: Value,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(r) = self.try_native_method(&value, method_sym, args) {
+            return r;
         }
-        Some(self.try_compiled_method_or_interpret_sym(list, method_sym, args.to_vec()))
+        self.try_compiled_method_or_interpret_sym(value, method_sym, args.to_vec())
     }
 }

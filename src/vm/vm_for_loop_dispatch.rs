@@ -917,6 +917,31 @@ impl Interpreter {
         self.drive_user_iterator_items_upto(iterable, None)
     }
 
+    /// The `Iterator` a user class's `iterator` method answers for `iterable`
+    /// (with the mixed value as `self` under a `but` mixin).
+    // Cost: O(1) plus the user `iterator` method's own cost.
+    pub(crate) fn user_iterator_of(&mut self, iterable: &Value) -> Result<Value, RuntimeError> {
+        Ok(
+            if matches!(iterable.view(), ValueView::Mixin(..))
+                && self.is_iterator_sequence_instance(iterable)
+            {
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if matches!(iterable.view(), ValueView::Mixin(..))
+                && !self.mixin_composes_method(iterable, "iterator")
+            {
+                // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
+                // run it with the mixed value as `self` (#15973).
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if let Some(result) =
+                self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
+            {
+                result?
+            } else {
+                self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
+            },
+        )
+    }
+
     /// [`Self::drive_user_iterator_items`] that stops pulling after `limit`
     /// items (`None` pulls to `IterationEnd`): a consumer that needs only a
     /// prefix (`.head(3)`) must not drain an endless iterator (#15081).
@@ -929,23 +954,7 @@ impl Interpreter {
         // The class's own `iterator` of a `but`-mixed `does Sequence` instance
         // runs with the mixed value as `self`; the `Sequence` role's `iterator`
         // would wrap the instance (#14921).
-        let iterator = if matches!(iterable.view(), ValueView::Mixin(..))
-            && self.is_iterator_sequence_instance(iterable)
-        {
-            self.call_user_iterator_on_mixin(iterable)?
-        } else if matches!(iterable.view(), ValueView::Mixin(..))
-            && !self.mixin_composes_method(iterable, "iterator")
-        {
-            // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
-            // run it with the mixed value as `self` (#15973).
-            self.call_user_iterator_on_mixin(iterable)?
-        } else if let Some(result) =
-            self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
-        {
-            result?
-        } else {
-            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
-        };
+        let iterator = self.user_iterator_of(iterable)?;
         self.drive_iterator_value_items_upto(iterator, limit)
             .map(|(items, _)| items)
     }

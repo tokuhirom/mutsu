@@ -161,6 +161,24 @@ impl Interpreter {
         let ValueView::Seq(body) = target.view() else {
             return Ok(None);
         };
+        let matcher = Self::unwrap_callable_mixin(matcher.clone());
+        // A `Seq.new($iterator)` (a `does Sequence` class's own iterator
+        // included): one `pull-one` at a time up to the match, so an endless
+        // iterator answers (#16133).
+        if body.unpulled_iterator().is_some() {
+            let Some(crate::value::PrefixSource::Iterator(iterator)) = body.take_prefix_source()
+            else {
+                return Ok(None);
+            };
+            loop {
+                let Some(item) = self.pull_iterator_prefix_to_vec(&iterator, 1)?.pop() else {
+                    return Ok(Some(Value::NIL));
+                };
+                if VmFirstMatcher(self).item_matches(&matcher, &item)? {
+                    return Ok(Some(item.deref_container()));
+                }
+            }
+        }
         if !body.is_map_grep_source() {
             return Ok(None);
         }
@@ -168,7 +186,6 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        let matcher = Self::unwrap_callable_mixin(matcher.clone());
         loop {
             let (items, exhausted) = self.pull_map_grep_prefix(&mut source, 1)?;
             for item in items {
