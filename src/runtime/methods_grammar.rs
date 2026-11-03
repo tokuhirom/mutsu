@@ -711,8 +711,9 @@ impl Interpreter {
         // must see the call `.parse` makes into it, just as a wrapped subrule
         // does (#9190). Run the wrapper here; its `callsame` re-enters this
         // function with the wrap check bypassed.
+        let start_bypass = super::methods_grammar_wrapped_start::take_start_rule_wrap_bypass();
         if !is_method_start_rule
-            && !super::methods_grammar_wrapped_start::take_start_rule_wrap_bypass()
+            && !start_bypass
             && let Some(chain) = self.token_method_wrap_chain(package_name, &start_rule)
         {
             self.set_current_package(saved_package);
@@ -727,6 +728,40 @@ impl Interpreter {
                 Self::token_wrap_cursor(&text, pos),
                 &chain,
             );
+        }
+        // A custom HOW's `find_method` wrapper around the start rule, as for
+        // every subrule (Grammar::Profiler::Simple counts `TOP` too).
+        if !is_method_start_rule
+            && !start_bypass
+            && !self.registry().grammar_custom_how.is_empty()
+        {
+            let pos = start_pos.or(continue_pos).unwrap_or(0);
+            // The wrapper's own call of the original rule (`$meth($cursor)`)
+            // arrives here as a call of the start rule on the cursor: it is
+            // the `.parse` the wrapper stands for.
+            let result = if let Some(start_call) =
+                super::methods_grammar_wrapped_start::take_custom_how_start(package_name)
+            {
+                Some(self.run_wrapped_start_rule_terminal(
+                    &start_call.package,
+                    &start_call.method,
+                    &start_call.args,
+                ))
+            } else if matches!(method, "parse" | "parsefile") {
+                // TODO: `.subparse` is not wrapped: a rule called on a cursor
+                // (a subrule reached through the custom HOW) enters here as an
+                // internal `subparse` too, and cannot be told apart.
+                self.call_custom_how_start_rule(package_name, &start_rule, (method, args), &text, pos)
+            } else {
+                None
+            };
+            if let Some(result) = result {
+                self.set_current_package(saved_package);
+                if let Some(made) = saved_made {
+                    self.env.insert("made".to_string(), made);
+                }
+                return result;
+            }
         }
         self.env.insert("_".to_string(), Value::str(text.clone()));
         Self::clear_pending_goal_failure();

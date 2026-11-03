@@ -635,6 +635,13 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
+        // The failure probe and the LTM measurement walk the rules for their
+        // shape only: user wrapper code must not run (and count) there.
+        if super::regex_helpers::CODE_ATOMS_INERT.get()
+            || super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+        {
+            return None;
+        }
         let how = self
             .registry()
             .grammar_custom_how
@@ -673,13 +680,9 @@ impl Interpreter {
         if !matches!(meth.view(), ValueView::Sub(_)) {
             return None;
         }
-        let cursor = Value::make_match_object_full(
-            pos as i64,
-            pos as i64,
-            &[],
-            &Default::default(),
-            MatchTarget::from_chars(chars),
-        );
+        // The wrapper's invocant is the in-progress cursor of the grammar, an
+        // instance of it (`$c.^name` is the grammar, as in rakudo), not a Match.
+        let cursor = self.new_grammar_cursor(chars, pos, pkg);
         let mut call_args = vec![cursor];
         call_args.extend(arg_values.iter().cloned());
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
