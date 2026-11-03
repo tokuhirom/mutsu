@@ -602,7 +602,7 @@ impl Interpreter {
                 let values = self.assignment_rhs_values(&val)?;
                 for (offset, key) in keys.into_iter().enumerate() {
                     let value = values.get(offset).cloned().unwrap_or(Value::NIL);
-                    self.call_method_with_values(
+                    self.try_compiled_method_or_interpret(
                         target.clone(),
                         assign_method,
                         vec![key, Self::itemize_value(value)],

@@ -54,7 +54,7 @@ impl Interpreter {
         let read = if is_positional { "AT-POS" } else { "AT-KEY" };
         // One call of the accessor, asked for its container: the value it holds is
         // the old one, and the new one is stored back through the same container.
-        let slot_value = self.call_method_with_values(target, read, vec![key])?;
+        let slot_value = self.try_compiled_method_or_interpret(target, read, vec![key])?;
         let old = slot_value.deref_container();
         let effective = Self::normalize_incdec_source(
             if old.is_nil() || !crate::runtime::types::value_is_defined(&old) {
