@@ -16,7 +16,7 @@ use crate::ast_visit::{
     NameKind, Visit, walk_call_arg, walk_expr, walk_param, walk_regex_node, walk_stmt, walk_stmts,
 };
 use crate::regex_tree::RegexNode;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::conditional;
 
@@ -31,6 +31,21 @@ struct Frame {
 #[derive(Default)]
 pub(super) struct Scan {
     pub(super) declared: HashSet<String>,
+    /// `declared` without the names that only a variable, parameter, label or
+    /// other term declares: those excuse a call by their position
+    /// ([`Scan::term_decls`]), not unit-wide (ADR-15760 Amendment 1, slice 1b).
+    pub(super) call_declared: HashSet<String>,
+    /// For each name a term declares: the pre-order position and the lexical
+    /// block of every declaration.
+    term_decls: HashMap<String, Vec<(usize, usize)>>,
+    /// The enclosing block of each lexical block; block 0 is the unit.
+    blocks: Vec<Option<usize>>,
+    /// The lexical block the walk is in.
+    block: usize,
+    /// Pre-order position of the next call or term declaration.
+    position: usize,
+    /// The position and block of each entry of `calls`.
+    call_positions: Vec<(usize, usize)>,
     /// The subset of `declared` that is a *routine* declaration (`sub`, `multi
     /// sub`). `declared` deliberately also absorbs variables and types, because
     /// suppressing a call on any of them is the safe direction — but a
@@ -74,6 +89,7 @@ impl Scan {
         Scan {
             line: 1,
             eval,
+            blocks: vec![None],
             ..Default::default()
         }
     }
@@ -89,18 +105,38 @@ impl Scan {
     }
 
     /// Drop every call that a routine declared in an enclosing routine body
-    /// explains.
-    // Cost: O(c * d), c = calls, d = routine-body nesting depth.
+    /// explains, and every call that a variable, parameter, label or other
+    /// term explains by being declared before the call in a block that
+    /// encloses it (rakudo resolves those lexically, in source order).
+    // Cost: O(c * (d + t)), c = calls, d = routine-body nesting depth, t =
+    // declarations of the called name.
     pub(super) fn resolve_body_scoped_calls(&mut self) {
         let frames = &self.frames;
+        let blocks = &self.blocks;
+        let term_decls = &self.term_decls;
         let mut call_frames = std::mem::take(&mut self.call_frames).into_iter();
+        let mut positions = std::mem::take(&mut self.call_positions).into_iter();
         self.calls.retain(|(name, _)| {
             let mut frame = call_frames.next().flatten();
+            let (position, block) = positions.next().unwrap_or((0, 0));
             while let Some(i) = frame {
                 if frames[i].routines.contains(name) {
                     return false;
                 }
                 frame = frames[i].parent;
+            }
+            // A term declared earlier in a block that encloses the call.
+            if let Some(decls) = term_decls.get(name) {
+                let mut at = Some(block);
+                while let Some(b) = at {
+                    if decls
+                        .iter()
+                        .any(|&(declared_at, declared_in)| declared_in == b && declared_at < position)
+                    {
+                        return false;
+                    }
+                    at = blocks[b];
+                }
             }
             true
         });
@@ -115,8 +151,18 @@ impl Scan {
             routines: HashSet::new(),
         });
         self.current = Some(self.frames.len() - 1);
+        let outer_block = self.enter_block();
         walk_stmt(self, stmt);
+        self.block = outer_block;
         self.current = parent;
+    }
+
+    /// Enter a new lexical block; returns the one to go back to.
+    fn enter_block(&mut self) -> usize {
+        let outer = self.block;
+        self.blocks.push(Some(outer));
+        self.block = self.blocks.len() - 1;
+        outer
     }
 
     /// Record a routine declaration: both a suppressor (like any other name)
@@ -142,19 +188,42 @@ impl Scan {
     }
 
     fn declare(&mut self, name: &str) {
+        self.declare_with(name, false);
+    }
+
+    /// Declare the name a variable, parameter, label or other term introduces:
+    /// it explains a call by its position (see [`Scan::resolve_body_scoped_calls`]).
+    fn declare_term(&mut self, name: &str) {
+        self.declare_with(name, true);
+    }
+
+    fn declare_with(&mut self, name: &str, ordered: bool) {
         let bare = bare_name(name);
         if bare.is_empty() {
             return;
         }
-        self.declared.insert(bare.to_string());
+        let mut names = vec![bare.to_string()];
         // `constant term:<$bar> = 42` declares `$bar`, which the parser reads
         // as a bare term, sigil and all.
         if bare.len() != name.len() {
-            self.declared.insert(name.to_string());
+            names.push(name.to_string());
         }
         // `sub term:<x> {...}` declares the bare term `x`.
         if let Some(inner) = term_name(bare) {
-            self.declared.insert(inner.to_string());
+            names.push(inner.to_string());
+        }
+        for declared in names {
+            self.declared.insert(declared.clone());
+            if ordered {
+                let at = self.position;
+                self.position += 1;
+                self.term_decls
+                    .entry(declared)
+                    .or_default()
+                    .push((at, self.block));
+            } else {
+                self.call_declared.insert(declared);
+            }
         }
     }
 
@@ -183,6 +252,8 @@ impl Scan {
         }
         self.calls.push((name.to_string(), self.line));
         self.call_frames.push(self.current);
+        self.call_positions.push((self.position, self.block));
+        self.position += 1;
     }
 }
 
@@ -193,10 +264,17 @@ fn term_name(bare: &str) -> Option<&str> {
 }
 
 impl<'ast> Visit<'ast> for Scan {
+    fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        let outer = self.enter_block();
+        walk_stmts(self, body);
+        self.block = outer;
+    }
+
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::Package { name, .. } = stmt {
             for parent in crate::qualified::package_ancestors(*name).skip(1) {
                 self.declared.insert(parent.as_str().to_owned());
+                self.call_declared.insert(parent.as_str().to_owned());
             }
         }
         // The `EVAL` scan keeps walking after a bail: its declarations also
@@ -324,7 +402,7 @@ impl<'ast> Visit<'ast> for Scan {
             | NameKind::BlockParam
             // A label (`L: for ...`) is a term in its scope (`last L`,
             // `:label(L)`).
-            | NameKind::Label => self.declare(name),
+            | NameKind::Label => self.declare_term(name),
             _ => {}
         }
     }

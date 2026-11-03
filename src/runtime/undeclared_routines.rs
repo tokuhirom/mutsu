@@ -198,7 +198,7 @@ pub(crate) fn record_mainline_calls(stmts: &[Stmt]) -> Option<RecordedCalls> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared))
+        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.call_declared))
         .collect();
     let mut body_scoped: Vec<String> = body_scoped_calls(&calls, &scan.body_routines)
         .into_iter()
@@ -279,7 +279,7 @@ fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports))
+        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.call_declared, &if_imports))
         .collect();
     // An `EVAL`'d snippet's caller may have a routine of the same name, which
     // only the registry knows about.
