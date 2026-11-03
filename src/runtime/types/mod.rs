@@ -686,6 +686,9 @@ impl Interpreter {
     pub(crate) fn capture_rw_named(&self, capture_key: &str, name: &str) -> Option<Value> {
         let elem = self.env.get(capture_key).and_then(|v| match v.view() {
             ValueView::Capture { named, .. } => named.get(name).cloned(),
+            // A `*%h` slurpy hash records its variable-sourced named
+            // arguments the same way (#16181).
+            ValueView::Hash(h) => h.get(name).cloned(),
             _ => None,
         })?;
         Some(elem.deref_container())
