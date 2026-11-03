@@ -314,6 +314,15 @@ impl<'ast> Visit<'ast> for Scan {
                 self.proto_name = Some(name.to_string());
                 self.walk_routine_body(stmt);
             }
+            // A `my method` is a lexical routine of the scope it is written in
+            // (`my method m {...}; ... m(self)`): its name belongs to that
+            // scope, not to its own body.
+            Stmt::MethodDecl {
+                name, is_my: true, ..
+            } => {
+                self.declare_routine(name.as_str());
+                self.walk_routine_body(stmt);
+            }
             Stmt::MethodDecl { .. } => self.walk_routine_body(stmt),
             // The wrapper the parser puts around one source declaration
             // (`my \x := $y` becomes `{ my \x := $y }`): it is no lexical
