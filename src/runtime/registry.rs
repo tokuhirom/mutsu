@@ -657,6 +657,13 @@ pub(crate) struct Registry {
     /// `proto sub f(|) {*}` declares one routine for the role — registering
     /// it again would be a redeclaration.
     pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
+    /// `my constant`s of a non-parametric role body a composition has already
+    /// evaluated: (role, constant name). Rakudo initialises a `my constant`
+    /// once, so a later composition reuses the persisted binding (#16255).
+    /// The value is the env bindings the first evaluation left (the constant's
+    /// own name and its term key), put back for the later compositions.
+    pub(crate) role_evaluated_constants:
+        std::collections::HashMap<(String, String), Vec<(String, Value)>>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

@@ -657,6 +657,28 @@ impl Interpreter {
             .flat_map(|op| op.declared_vars.iter().map(|name| name.resolve().to_string()))
             .collect();
         for op in &role.deferred_body {
+            // A lexical `my constant` is initialised once per role, not once
+            // per composing class (#16255): a later composition of a
+            // non-parametric role reuses the binding the first one persisted.
+            // (`my @x = $?CLASS.^attributes` stays per composition.)
+            let constant_key = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if role_arg_values.is_empty() => Some((base_role_name.to_string(), name.clone())),
+                _ => None,
+            };
+            let reused = constant_key
+                .as_ref()
+                .and_then(|key| self.registry().role_evaluated_constants.get(key).cloned());
+            if let Some(bindings) = reused {
+                for (env_key, value) in bindings {
+                    self.env.insert(env_key, value);
+                }
+                continue;
+            }
             // A sub-level `proto` declares one routine per role: registered
             // by the first composition (or, exported, at declaration), never
             // again.
@@ -813,6 +835,18 @@ impl Interpreter {
                 && let Some(key) = sub_proto_key
             {
                 self.registry_mut().role_registered_sub_protos.insert(key);
+            }
+            if r.is_ok()
+                && let Some(key) = constant_key
+            {
+                let term_key = format!("{}{}", crate::term_names::TERM_PREFIX, key.1);
+                let bindings: Vec<(String, Value)> = [key.1.clone(), term_key]
+                    .into_iter()
+                    .filter_map(|k| self.env.get(&k).cloned().map(|v| (k, v)))
+                    .collect();
+                if !bindings.is_empty() {
+                    self.registry_mut().role_evaluated_constants.insert(key, bindings);
+                }
             }
             if r.is_ok()
                 && let (Some(package), Some(name)) =
