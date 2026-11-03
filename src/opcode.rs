@@ -11153,6 +11153,11 @@ impl CompiledCode {
                     // `&f = ...` rebind is a name-write and is still caught; an
                     // `is raw` param rebinding a passed `&`-arg remains a known
                     // gap of this analysis.
+                    // A named argument's source is encoded `key=var`.
+                    let name = name.map(|n| match n.split_once('=') {
+                        Some((_, var)) => var.to_string(),
+                        None => n,
+                    });
                     if let Some(name) = name
                         && !name.starts_with('&')
                     {
