@@ -1901,8 +1901,14 @@ impl Interpreter {
         base: &Value,
         owner_class: &str,
     ) -> bool {
-        let ValueView::Instance { class_name, .. } = base.view() else {
-            return false;
+        let class_name = match base.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            // A `Proxy` subclass instance is as defined as any instance.
+            ValueView::Proxy {
+                subclass: Some((class_name, _)),
+                ..
+            } => *class_name,
+            _ => return false,
         };
         method_def
             .param_defs
