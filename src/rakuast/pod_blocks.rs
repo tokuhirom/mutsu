@@ -113,19 +113,29 @@ struct Markup {
     opener: &'static str,
     closer: &'static str,
     atoms: Vec<Atom>,
+    /// The text after the first `|` of a code that takes metadata (`L`, `X`, ...).
+    meta: Option<String>,
 }
+
+/// The formatting codes that take metadata after a `|`.
+const META_LETTERS: &str = "ADFLMPX";
 
 enum Atom {
     Text(String),
     Markup(Markup),
 }
 
-/// The atoms of `text` up to `closer` (or its end), and the length consumed
-/// with the closer. `None` for text the plain reader does not take: a
-/// formatting code with metadata (`|`), an `E<...>`, an unterminated or
-/// ambiguous one.
+/// The atoms of `text` up to `closer` (or its end), the metadata after a `|`
+/// when `meta_ok`, and the length consumed with the closer. `None` for text
+/// the plain reader does not take: an `E<...>`, an unterminated or ambiguous
+/// code.
 // Cost: O(n), n = length of the text.
-fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
+fn parse_atoms(
+    text: &str,
+    closer: Option<&str>,
+    meta_ok: bool,
+) -> Option<(Vec<Atom>, usize, Option<String>)> {
+    let mut meta = None;
     let mut atoms = Vec::new();
     let mut buf = String::new();
     let mut at = 0;
@@ -142,6 +152,20 @@ fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
             && rest.starts_with(closer)
         {
             at += closer.len();
+            break;
+        }
+        if let Some(closer) = closer
+            && meta_ok
+            && ch == '|'
+        {
+            let tail = &rest[1..];
+            let end = tail.find(closer)?;
+            let text = &tail[..end];
+            if text.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
+                return None;
+            }
+            meta = Some(text.to_string());
+            at += 1 + end + closer.len();
             break;
         }
         if ch.is_ascii_uppercase() {
@@ -161,8 +185,12 @@ fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
                 if !buf.is_empty() {
                     atoms.push(Atom::Text(std::mem::take(&mut buf)));
                 }
-                let (inner, used) = parse_atoms(&after[opener.len()..], Some(closer))?;
-                if inner.is_empty() {
+                let (inner, used, inner_meta) = parse_atoms(
+                    &after[opener.len()..],
+                    Some(closer),
+                    META_LETTERS.contains(ch),
+                )?;
+                if inner.is_empty() && inner_meta.is_none() {
                     return None;
                 }
                 atoms.push(Atom::Markup(Markup {
@@ -182,13 +210,14 @@ fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
                         "»"
                     },
                     atoms: inner,
+                    meta: inner_meta,
                 }));
                 at += 1 + opener.len() + used;
                 previous = Some(closer.chars().last()?);
                 continue;
             }
         }
-        if closer.is_some() && matches!(ch, '|' | '<' | '>' | '«' | '»') {
+        if closer.is_some() && matches!(ch, '<' | '>' | '«' | '»') {
             return None;
         }
         buf.push(ch);
@@ -198,7 +227,7 @@ fn parse_atoms(text: &str, closer: Option<&str>) -> Option<(Vec<Atom>, usize)> {
     if !buf.is_empty() {
         atoms.push(Atom::Text(buf));
     }
-    Some((atoms, at))
+    Some((atoms, at, meta))
 }
 
 /// The part a paragraph's `text` is: the string itself, or a
@@ -208,7 +237,7 @@ fn part_of(text: String) -> Option<Part> {
     if !text.chars().any(|c| matches!(c, '<' | '«')) {
         return Some(Part::Text(text));
     }
-    let (atoms, _) = parse_atoms(&text, None)?;
+    let (atoms, _, _) = parse_atoms(&text, None, false)?;
     Some(if atoms.iter().any(|a| matches!(a, Atom::Markup(_))) {
         Part::Para(atoms)
     } else {
@@ -536,19 +565,28 @@ fn markup_node(markup: &Markup) -> RakuAstNode {
             Atom::Text(text) => Value::str(text.clone()),
             Atom::Markup(inner) => Value::rakuast(Box::new(markup_node(inner))),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let mut fields = vec![
+        field("letter", Value::str(markup.letter.to_string())),
+        field("opener", Value::str(markup.opener.to_string())),
+        field("closer", Value::str(markup.closer.to_string())),
+    ];
+    if !atoms.is_empty() {
+        fields.push(RakuAstField {
+            name: Some("atoms"),
+            value: RakuAstFieldValue::List(atoms),
+        });
+    }
+    if let Some(meta) = &markup.meta {
+        fields.push(RakuAstField {
+            name: Some("meta"),
+            value: RakuAstFieldValue::List(vec![Value::str(meta.clone())]),
+        });
+    }
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::DocMarkup,
-        fields: vec![
-            field("letter", Value::str(markup.letter.to_string())),
-            field("opener", Value::str(markup.opener.to_string())),
-            field("closer", Value::str(markup.closer.to_string())),
-            RakuAstField {
-                name: Some("atoms"),
-                value: RakuAstFieldValue::List(atoms),
-            },
-        ],
+        fields,
     }
 }
 

@@ -7,8 +7,8 @@ use Test;
 # `head1` is a `head` of level 1, and `:name(...)` configuration is kept as the
 # value nodes. Indented paragraphs are implicit code blocks (`margin`), and a paragraph with
 # formatting codes is a `Doc::Paragraph` of strings and `Doc::Markup`. Codes
-# with metadata (`X<a|b>`, `L<..|..>`) and `E<...>` are not read yet and leave
-# their block out of the tree.
+# with metadata (`X<a|b>`, see rakuast-doc-markup-meta.t) are read; `E<...>` is
+# not read yet and leaves its block out of the tree.
 
 plan 42;
 
