@@ -354,10 +354,14 @@ role GLOBAL::Metamodel::DefaultParent {
 role GLOBAL::Metamodel::Mixins {
     has $!is_mixin;
     has $!mixin_attribute;
+    has $!mixin_cache;
     method set_is_mixin() { $!is_mixin = 1 }
     method is_mixin(Mu $obj?) { $!is_mixin ?? 1 !! 0 }
     method set_mixin_attribute($attr) { $!mixin_attribute = $attr }
     method mixin_attribute(Mu $obj?) { $!mixin_attribute }
+    method setup_mixin_cache(Mu $obj) { $!mixin_cache := {}; Nil }
+    method flush_cache(Mu $obj?) { $!mixin_cache := {}; Nil }
+    method generate_mixin(Mu $obj, @roles) { $obj.^mixin(|@roles) }
 }
 "#,
     ),
@@ -368,8 +372,17 @@ role GLOBAL::Metamodel::Mixins {
         r#"
 role GLOBAL::Metamodel::MultipleInheritance {
     has $!hidden;
+    has Mu $!hides;
+    has @!excluded;
     method set_hidden(Mu $obj?) { $!hidden = 1 }
     method hidden(Mu $obj?) { $!hidden ?? 1 !! 0 }
+    method hides(Mu $obj?) { $!hides }
+    method hides_parent(Mu $obj, Mu $parent) {
+        return 0 unless $!hides.defined;
+        for @$!hides -> $h { return 1 if $h === $parent }
+        0
+    }
+    method exclude_parent(Mu $parent) { @!excluded.push($parent); Nil }
 }
 "#,
     ),
