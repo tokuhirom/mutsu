@@ -253,16 +253,15 @@ const fn build_names() -> NameIndex {
     index
 }
 
-// Like ROWS, this feeds other const computations; only the individual static
-// arrays below are emitted at runtime, not a copied NameIndex per access.
-#[allow(clippy::large_const_arrays)]
-const NAME_INDEX: NameIndex = build_names();
+// Later const computations need only the compact per-row name index. The
+// larger string table is emitted once as a static, never copied from a const.
+const ROW_NAME: [u16; N] = build_names().row_name;
 
 /// The distinct method names, sorted bytewise.
-pub(super) static NAMES: [&str; U] = NAME_INDEX.names;
+pub(super) static NAMES: [&str; U] = build_names().names;
 /// `NAME_ROWS[NAME_START[u]..NAME_START[u + 1]]` are the rows named `NAMES[u]`,
 /// in id order.
-pub(super) static NAME_START: [u16; U + 1] = NAME_INDEX.start;
+pub(super) static NAME_START: [u16; U + 1] = build_names().start;
 pub(super) static NAME_ROWS: [u16; N] = NAME_ORDER;
 
 const fn count_owners() -> usize {
@@ -467,7 +466,7 @@ const fn register() -> Registered {
     let mut gen_id = [0u16; G];
     let mut n = 0;
     for_each_registration!(|shape, row, id| {
-        let name = NAME_INDEX.row_name[id as usize] as usize;
+        let name = ROW_NAME[id as usize] as usize;
         let mut arity = row.arity;
         while arity <= arity_hi(row) {
             assert!(arity < 8, "an arity of 8 or more does not fit a mask byte");
@@ -532,7 +531,7 @@ const fn mut_arities() -> [u8; U] {
     while id < N {
         let row = ROWS[id];
         if row.handler.is_mut() {
-            let name = NAME_INDEX.row_name[id] as usize;
+            let name = ROW_NAME[id] as usize;
             let mut arity = row.arity;
             while arity <= arity_hi(row) {
                 out[name] |= 1 << arity;
