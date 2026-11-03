@@ -135,6 +135,18 @@ impl<'ast> Visit<'ast> for ModuleNames {
             self.names.insert(name.to_string());
         }
     }
+
+    // `require Module` declares the name `Module` for the statements after it.
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if let Expr::Call { name, args, .. } = expr
+            && name.as_str() == "require"
+            && let Some(Expr::Literal(module)) = args.first()
+            && let crate::value::ValueView::Package(module) = module.view()
+        {
+            self.names.insert(module.resolve());
+        }
+        walk_expr(self, expr);
+    }
 }
 
 /// The constants, value terms and types the `use`s of a subtree import, by
