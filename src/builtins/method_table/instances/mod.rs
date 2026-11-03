@@ -50,6 +50,7 @@ pub(crate) mod label;
 pub(crate) mod parameter;
 pub(crate) mod rakuast_accessors;
 mod rakuast_locate;
+mod rakuast_rakudoc;
 pub(crate) mod rakuast_node;
 mod rakuast_visit;
 mod rakuast_walk;
@@ -109,6 +110,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     &rakuast_accessors::ROWS,
     rakuast_visit::ROWS,
     rakuast_locate::ROWS,
+    rakuast_rakudoc::ROWS,
     rakuast_walk::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,
