@@ -137,6 +137,12 @@ fn stringy_in(
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
+    // A `%?RESOURCES` entry's deprecated `Str` is seen from inside `Mu` here.
+    if let Some(path) =
+        crate::builtins::method_table::io_concurrency::io_path_lexical::resource_stringy(target)
+    {
+        return Some(Ok(path));
+    }
     // The compiled path finds a user `Str` ahead of a built-in ancestor's
     // native one (a `Date` subclass overriding `Str`).
     Some(interp.try_compiled_method_or_interpret(target.clone(), "Str", Vec::new()))
