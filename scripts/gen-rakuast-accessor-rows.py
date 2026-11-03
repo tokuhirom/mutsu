@@ -21,6 +21,12 @@ def artifacts(data):
     facts = []
     for row in data["records"]:
         owner = row["owner"]
+        # ADR-10723 section 6.92: mutsu implements spec hash capture aliases,
+        # which Rakudo reserves. Its model flag is not Any's hash conversion.
+        if (row["model"], row["method"], owner) == (
+            "RakuAST::Regex::NamedCapture", "hash", "Any"
+        ):
+            owner = row["model"]
         if not owner:
             # An existing native model alias has its own storage spelling;
             # it is not claimed to be a class/method that Rakudo declares.
@@ -126,6 +132,8 @@ const fn flatten_owners() -> [OwnerChain; OWNER_N] {{
 '''
     output[str(TARGET / "owners.tsv")] = (
         f'# Generated from Rakudo {data["version"]}; model, method, declaring owner.\n'
+        '# Existing model extensions: Call::BlockMethod.block; '
+        'Regex::NamedCapture.hash (ADR-10723 section 6.92).\n'
         + "\n".join("\t".join(row) for row in sorted(set(facts))) + "\n"
     )
     for path, content in output.items():

@@ -5879,7 +5879,7 @@ row data must be checked against it. Snapshot ownership is measured with
 Rakudo 2026.09, installed as an isolated reference binary because the host's
 ordinary `raku` is 2026.07.
 
-Both direct calls are removed. The generated family adds 455 rows and 300
+Both direct calls are removed. The generated family adds 457 rows and 300
 immutable model owner chains. A per-class symbol memo caches selected row IDs
 (including interpreter-only barriers), never field values or user-class
 metadata. The reader remains the single existing accessor implementation;
@@ -5887,7 +5887,7 @@ its scalar field scan and copying deficit is tracked separately by #16130.
 Reflection reads the same declaring rows through the compile-time owner
 index. `.^lookup` retains the declaring owner instead of the concrete leaf.
 
-The 2026.09 oracle measured 719 getter declarations. It corrected the former
+The 2026.09 oracle measured 724 getter declarations. It corrected the former
 `Sub.compile-time-value` row to `Routine`, removed the nonexistent HashIndex
 `assignee`, and restricted `original-blorst` to FIRST and POST. The existing
 Call::BlockMethod alias retains its own storage spelling; it is explicitly
@@ -5896,3 +5896,10 @@ now measures RakuAST owners through validated static type spellings, because
 some nested packages have raw NQP namespaces that dynamic lookup cannot read.
 The generated snapshot records these measured declarations; no compiler
 internal methods become available without implementing a row.
+
+The existing hash-capture model extension (ADR-10723 section 6.92) keeps
+`Regex::NamedCapture.hash` on the model class. Rakudo reserves that syntax
+and only inherits Any's conversion method; the generator explicitly records
+the mutsu declaration separately, without altering the measured snapshot.
+Block topic/exception flags also retain the measured undefined Bool defaults
+when omitted, including through PointyBlock inheritance.

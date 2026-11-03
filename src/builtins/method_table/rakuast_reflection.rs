@@ -1,5 +1,12 @@
 //! Reflection combines model constructors with the registered declaring rows.
 
+/// Existing model extensions whose declaration belongs to mutsu, rather
+/// than to the Rakudo snapshot. ADR-10723 section 6.92 records hash captures.
+// Cost: O(1), one fixed owner/name pair.
+pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
+    owner == "RakuAST::Regex::NamedCapture" && name == "hash"
+}
+
 // Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local methods.
 pub(crate) fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     let mut names = crate::rakuast::constructor_method_names(class_name)?;

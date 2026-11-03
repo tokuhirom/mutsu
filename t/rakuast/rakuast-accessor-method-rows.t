@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 20;
+plan 22;
 
 my $first = RakuAST::IntLiteral.new(7);
 my $second = RakuAST::IntLiteral.new(19);
@@ -45,3 +45,7 @@ is Q[for 1 { 2 }].AST.statements[0].mode, 'serial',
     'default constructor fields retain their accessor';
 nok RakuAST::Method.new.meta,
     'scope defaults do not hide class-specific derived accessors';
+nok RakuAST::Block.new.required-topic.defined,
+    'an omitted topic flag reads its measured Bool type object';
+nok RakuAST::PointyBlock.new.exception.defined,
+    'an inherited omitted block flag has the same default';

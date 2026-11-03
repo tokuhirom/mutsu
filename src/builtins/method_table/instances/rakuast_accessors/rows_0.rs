@@ -2,7 +2,6 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
-    row!("Any", "hash"),
     row!("RakuAST::ApplyDottyInfix", "infix"),
     row!("RakuAST::ApplyDottyInfix", "left"),
     row!("RakuAST::ApplyDottyInfix", "right"),
@@ -20,11 +19,13 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::ArgList", "args"),
     row!("RakuAST::Block", "body"),
     interp_row!("RakuAST::Block", "compile-time-value", compiled_value),
+    row!("RakuAST::Block", "exception"),
     row!("RakuAST::Block", "implicit-topic"),
     row!("RakuAST::Block", "is-block-statement"),
     row!("RakuAST::Block", "is-immediate-block-user-body"),
     row!("RakuAST::Block", "may-have-signature"),
     interp_row!("RakuAST::Block", "meta-object", meta_object),
+    row!("RakuAST::Block", "required-topic"),
     row!("RakuAST::Blockoid", "statement-list"),
     row!("RakuAST::BracketedInfix", "infix"),
     row!("RakuAST::Call::BlockMethod", "block"),
@@ -201,5 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Regex::CharClass::Negatable", "negated"),
     row!("RakuAST::Regex::CharClass::Specified", "characters"),
     row!("RakuAST::Regex::CharClassElement", "negated"),
-    row!("RakuAST::Regex::CharClassElement::Enumeration", "elements"),
 ];

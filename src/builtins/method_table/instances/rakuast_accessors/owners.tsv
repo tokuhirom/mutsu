@@ -1,4 +1,5 @@
 # Generated from Rakudo v2026.09; model, method, declaring owner.
+# Existing model extensions: Call::BlockMethod.block; Regex::NamedCapture.hash (ADR-10723 section 6.92).
 RakuAST::ApplyDottyInfix	infix	RakuAST::ApplyDottyInfix
 RakuAST::ApplyDottyInfix	left	RakuAST::ApplyDottyInfix
 RakuAST::ApplyDottyInfix	right	RakuAST::ApplyDottyInfix
@@ -17,11 +18,13 @@ RakuAST::ArgList	args	RakuAST::ArgList
 RakuAST::Assignment	operator	RakuAST::Infix
 RakuAST::Block	body	RakuAST::Block
 RakuAST::Block	compile-time-value	RakuAST::Block
+RakuAST::Block	exception	RakuAST::Block
 RakuAST::Block	implicit-topic	RakuAST::Block
 RakuAST::Block	is-block-statement	RakuAST::Block
 RakuAST::Block	is-immediate-block-user-body	RakuAST::Block
 RakuAST::Block	may-have-signature	RakuAST::Block
 RakuAST::Block	meta-object	RakuAST::Block
+RakuAST::Block	required-topic	RakuAST::Block
 RakuAST::Blockoid	statement-list	RakuAST::Blockoid
 RakuAST::BracketedInfix	infix	RakuAST::BracketedInfix
 RakuAST::Call::BlockMethod	args	RakuAST::Call::Methodish
@@ -241,8 +244,11 @@ RakuAST::ParameterTarget::Var	name	RakuAST::ParameterTarget::Var
 RakuAST::ParameterTarget::Var	scope	RakuAST::ParameterTarget::Var
 RakuAST::PointyBlock	body	RakuAST::Block
 RakuAST::PointyBlock	compile-time-value	RakuAST::Block
+RakuAST::PointyBlock	exception	RakuAST::Block
+RakuAST::PointyBlock	implicit-topic	RakuAST::Block
 RakuAST::PointyBlock	is-block-statement	RakuAST::Block
 RakuAST::PointyBlock	meta-object	RakuAST::Block
+RakuAST::PointyBlock	required-topic	RakuAST::Block
 RakuAST::PointyBlock	signature	RakuAST::PointyBlock
 RakuAST::Postcircumfix::ArrayIndex	assignee	RakuAST::Postcircumfix::ArrayIndex
 RakuAST::Postcircumfix::ArrayIndex	colonpairs	RakuAST::Postfixish
@@ -341,7 +347,7 @@ RakuAST::Regex::Interpolation	sequential	RakuAST::Regex::Interpolation
 RakuAST::Regex::Interpolation	var	RakuAST::Regex::Interpolation
 RakuAST::Regex::Literal	text	RakuAST::Regex::Literal
 RakuAST::Regex::NamedCapture	array	RakuAST::Regex::NamedCapture
-RakuAST::Regex::NamedCapture	hash	Any
+RakuAST::Regex::NamedCapture	hash	RakuAST::Regex::NamedCapture
 RakuAST::Regex::NamedCapture	name	RakuAST::Regex::NamedCapture
 RakuAST::Regex::NamedCapture	regex	RakuAST::Regex::NamedCapture
 RakuAST::Regex::Nested	expr	RakuAST::Regex::Nested

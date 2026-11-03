@@ -191,13 +191,15 @@ fn row_reaches(owner: &str, name: &str, roles: bool) -> bool {
 /// Whether Rakudo declares `name` directly on the built-in `owner` (it is a
 /// key of `::(owner).^method_table`) and a row of `owner` implements it; for
 /// an owner the snapshot does not list, whether a row of `owner` does.
+/// Documented model extensions retain their mutsu declaration separately.
 /// `owner` is matched exactly, never folded: `.^can` asks once per MRO level.
 // Cost: O(k), k = rows named `name`, plus two set probes.
 pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
     owner_has_row(owner, name)
-        && facts()
-            .get(owner)
-            .is_none_or(|facts| facts.has(Kind::Declared, name))
+        && (crate::builtins::method_table::rakuast_reflection::model_extension(owner, name)
+            || facts()
+                .get(owner)
+                .is_none_or(|facts| facts.has(Kind::Declared, name)))
 }
 
 /// Whether `owner` has the method `name` at all: declared there

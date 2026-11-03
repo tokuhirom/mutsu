@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Regex::CharClassElement::Enumeration", "elements"),
     row!("RakuAST::Regex::CharClassElement::Property", "inverted"),
     row!("RakuAST::Regex::CharClassElement::Property", "predicate"),
     row!("RakuAST::Regex::CharClassElement::Property", "property"),
@@ -19,6 +20,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Regex::Interpolation", "var"),
     row!("RakuAST::Regex::Literal", "text"),
     row!("RakuAST::Regex::NamedCapture", "array"),
+    row!("RakuAST::Regex::NamedCapture", "hash"),
     row!("RakuAST::Regex::NamedCapture", "name"),
     row!("RakuAST::Regex::NamedCapture", "regex"),
     row!("RakuAST::Regex::Nested", "expr"),
@@ -211,6 +213,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Type::Subset", "scope"),
     row!("RakuAST::Type::Subset", "traits"),
     row!("RakuAST::Type::Subset", "where"),
-    row!("RakuAST::Var::Attribute", "name"),
-    row!("RakuAST::Var::Attribute", "return-type"),
 ];

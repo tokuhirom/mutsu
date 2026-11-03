@@ -3,14 +3,16 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-plan 15;
+plan 16;
 
 my $source = Q[rx/%<chars>=( \s+ \S+ )+/].AST;
 my $body = $source.statements[0].expression.body;
 isa-ok $body, RakuAST::Regex::NamedCapture,
     'a hash alias has a structural named-capture node';
 is $body.name, 'chars', 'the source alias name is retained';
-ok $body.hash, 'the hash sigil is represented';
+is $body.hash, True, 'the hash sigil is represented';
+is $body.^lookup('hash').package.^name, 'RakuAST::Regex::NamedCapture',
+    'the documented mutsu extension retains its model declaration';
 nok $body.array, 'the hash alias is distinct from an array alias';
 isa-ok $body.regex, RakuAST::Regex::QuantifiedAtom,
     'the aliased group retains its quantifier';

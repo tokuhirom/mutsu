@@ -2,6 +2,8 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Var::Attribute", "name"),
+    row!("RakuAST::Var::Attribute", "return-type"),
     row!("RakuAST::Var::Attribute::Public", "args"),
     row!("RakuAST::Var::Attribute::Public", "name"),
     row!("RakuAST::Var::Compiler::File", "file"),
