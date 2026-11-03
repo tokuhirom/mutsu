@@ -1056,6 +1056,9 @@ impl Interpreter {
                 // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
                 // An entry is written only for a unit that got past this.
                 Self::validate_exporthow_directives(&stmts)?;
+                // A type used before the statement that declares it is a compile
+                // error of the module, as of any unit (ADR-15760 Amendment 1, 1a).
+                crate::rakuast::post_declared::check(&stmts, &crate::scope::NameScope::default())?;
                 let ast = super::module_load_facts::ModuleAst::loaded(stmts, prologue_len, path_text);
                 (ast, facts, effects, precompiled)
             }

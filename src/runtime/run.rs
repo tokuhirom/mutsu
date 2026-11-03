@@ -680,6 +680,7 @@ impl Interpreter {
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
+                crate::rakuast::post_declared::check(&body_main, &crate::scope::NameScope::default())?;
                 forward_vars?;
                 Ok(guards)
             });
