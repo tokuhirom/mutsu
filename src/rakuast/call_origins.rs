@@ -63,6 +63,10 @@ fn past_parens(span: crate::ast::SrcSpan, operand_from: usize, end: u32) -> u32 
 // Cost: O(n), n = length of the call's source.
 pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     use super::RakuAstClass;
+    if node.class == RakuAstClass::TermTopicCall && span.is_some() {
+        topic_call(node, span);
+        return;
+    }
     if node.class != RakuAstClass::ApplyPostfix || !span.is_some() {
         return;
     }
@@ -95,7 +99,15 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if let Some((operand_from, _)) = operand.as_ref().and_then(super::infix_origins::byte_range) {
         operand_end = past_parens(span, operand_from, operand_end);
     }
-    place_call(node, "postfix", operand_end as usize, span, false);
+    place_call(node, Some("postfix"), operand_end as usize, span, false);
+}
+
+/// Give the `Call::Method` of a topic call written at `span` (`.name`,
+/// `.name(...)`: `Term::TopicCall(Call::Method)`) its origin, its `Name`'s and
+/// its `ArgList`'s, as for a postfix call; the text starts at the dot.
+// Cost: O(n), n = length of the call's source.
+fn topic_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    place_call(node, None, span.from as usize, span, false);
 }
 
 /// Give the pieces of a `.=` application written at `span`
@@ -147,7 +159,7 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
             *v = Value::rakuast(Box::new(part));
         }
     }
-    place_call(node, "right", from + op_at + 2, span, true);
+    place_call(node, Some("right"), from + op_at + 2, span, true);
 }
 
 /// Place the method call held in field `field` of `node`, which starts after
@@ -157,13 +169,13 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
 // Cost: O(n), n = length of the call's source.
 fn place_call(
     node: &mut RakuAstNode,
-    field: &str,
+    field: Option<&str>,
     from: usize,
     span: crate::ast::SrcSpan,
     dotty: bool,
 ) {
     use super::RakuAstClass;
-    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some(field)) else {
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == field) else {
         return;
     };
     let RakuAstFieldValue::Node(held) = &mut field.value else {
