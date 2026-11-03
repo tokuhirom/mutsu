@@ -66,16 +66,26 @@ plan 22;
     is nqp::shift($l), 4, 'nqp::unshift puts each element at the front';
 }
 
-# The consuming loop itself, timed at two sizes. Use the fastest of three runs
-# at each size so a scheduler pause in one sample does not distort the ratio.
+# The consuming loop itself, measured in process CPU time at two sizes.
+# Elapsed time includes scheduler pauses under concurrent CI load (#16145).
+# Use the least CPU time of three runs to reduce cache/collection variation.
 # Quadratic would be ~16x for a 4x longer input; linear is ~4x.
+sub cpu-micros(--> Int) {
+    my $usage := nqp::list_i();
+    nqp::getrusage($usage);
+    1_000_000 * (nqp::atpos_i($usage, 0) + nqp::atpos_i($usage, 2))
+        + nqp::atpos_i($usage, 1) + nqp::atpos_i($usage, 3);
+}
+
 sub drain-time(int $n --> Num) {
     my $codes := ('x' x $n).NFD;
-    my $t0 = now;
+    my $t0 = cpu-micros();
     my int $sum = 0;
     nqp::while(nqp::elems($codes), ($sum = nqp::add_i($sum, nqp::shift_i($codes))));
     die "bad sum" unless $sum == 120 * $n;
-    (now - $t0).Num;
+    my $elapsed = cpu-micros() - $t0;
+    die "process CPU clock did not advance" unless $elapsed > 0;
+    ($elapsed / 1_000_000).Num;
 }
 
 drain-time(5000);   # warm up, so the first timed run pays no one-off cost
@@ -86,4 +96,4 @@ for ^3 {
     $large = min($large, drain-time(20000));
 }
 my $ratio = $large / ($small || 1e-9);
-ok $ratio < 9, "draining 4x the codepoints costs ~4x, not ~16x (ratio $ratio.fmt('%.2f'))";
+ok $ratio < 9, "draining 4x the codepoints costs ~4x CPU time, not ~16x (ratio $ratio.fmt('%.2f'))";
