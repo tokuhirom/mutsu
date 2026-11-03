@@ -4,10 +4,11 @@ use Test;
 # statements of its `.AST` (#14880), shaped as rakudo 2026.09 shapes them: a
 # delimited block runs to its `=end`, an extended or abbreviated one to the
 # next blank line or directive, a paragraph keeps the blank lines after it, and
-# `head1` is a `head` of level 1. Blocks with configuration, markup or indented
-# lines are not read yet and stay out of the tree.
+# `head1` is a `head` of level 1, and `:name(...)` configuration is kept as the
+# value nodes. Blocks with markup or indented lines are not read yet and stay
+# out of the tree.
 
-plan 13;
+plan 17;
 
 use experimental :rakuast;
 
@@ -45,6 +46,19 @@ is flat-statements("say 1;\n=head1 X\n\nsay 2;\n=begin pod\nz\n=end pod\nsay 3;\
 is flat-statements("=NAME x\n=for pod\nfoo\n"),
     "RakuAST::Doc::Block.new( type => \"NAME\", abbreviated => True, paragraphs => ( \"x\\n\", ) )\nRakuAST::Doc::Block.new( type => \"pod\", for => True, paragraphs => ( \"foo\\n\", ) )",
     "uppercase names";
+
+is flat-statements("=begin pod :flag :!off :n(3) :s('str') :w<a b> :d(\"x\")\nx\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", config => ( :flag(RakuAST::Term::Enum.from-identifier('True')), :off(RakuAST::Term::Enum.from-identifier('False')), :n(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::IntLiteral.new(3) ) ) )), :s(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::QuotedString.new( segments => ( RakuAST::StrLiteral.new(\"str\"), ) ) ) ) )), :w(RakuAST::QuotedString.new( processors => <words val>, segments => ( RakuAST::StrLiteral.new(\"a b\"), ) )), :d(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::QuotedString.new( segments => ( RakuAST::StrLiteral.new(\"x\"), ) ) ) ) )), ), paragraphs => ( \"x\\n\", ) )",
+    "configuration: flags, numbers, strings and word quotes";
+is flat-statements("=begin foo :kind(\"Type\") :category<basic>\nx\n=end foo\nsay 1;\n=for foo :a(1+2)\nx\n"),
+    "RakuAST::Doc::Block.new( type => \"foo\", config => ( :kind(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::QuotedString.new( segments => ( RakuAST::StrLiteral.new(\"Type\"), ) ) ) ) )), :category(RakuAST::QuotedString.new( processors => <words val>, segments => ( RakuAST::StrLiteral.new(\"basic\"), ) )), ), paragraphs => ( \"x\\n\", ) )\nRakuAST::Statement::Expression.new( expression => RakuAST::Call::Name::WithoutParentheses.new( name => RakuAST::Name.from-identifier(\"say\"), args => RakuAST::ArgList.new( RakuAST::IntLiteral.new(1) ) ) )\nRakuAST::Doc::Block.new( type => \"foo\", for => True, config => ( :a(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::ApplyInfix.new( left => RakuAST::IntLiteral.new(1), infix => RakuAST::Infix.new(\"+\"), right => RakuAST::IntLiteral.new(2) ) ) ) )), ), paragraphs => ( \"x\\n\", ) )",
+    "configuration of a delimited and an extended block";
+is flat-statements("=begin pod :a(1,2) :b('a)b')\nx\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", config => ( :a(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::ApplyListInfix.new( infix => RakuAST::Infix.new(\",\"), operands => ( RakuAST::IntLiteral.new(1), RakuAST::IntLiteral.new(2), ) ) ) ) )), :b(RakuAST::Circumfix::Parentheses.new( RakuAST::SemiList.new( RakuAST::Statement::Expression.new( expression => RakuAST::QuotedString.new( segments => ( RakuAST::StrLiteral.new(\"a)b\"), ) ) ) ) )), ), paragraphs => ( \"x\\n\", ) )",
+    "configuration with an argument list and a bracket in a string";
+is flat-statements("=begin pod :a<x>\n=end pod\n"),
+    "RakuAST::Doc::Block.new( type => \"pod\", config => ( :a(RakuAST::QuotedString.new( processors => <words val>, segments => ( RakuAST::StrLiteral.new(\"x\"), ) )), ) )",
+    "an empty block with configuration";
 
 # The ranges of the blocks and of the unit's list.
 sub ranges(Str $src) {

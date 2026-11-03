@@ -1826,7 +1826,7 @@ pub fn str_dot_ast_checked(
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
-    pod_blocks::insert(&mut node, source, &stmts);
+    pod_blocks::insert(names, &mut node, source, &stmts);
     Ok(Value::rakuast(Box::new(node)))
 }
 
