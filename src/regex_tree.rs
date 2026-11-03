@@ -2812,7 +2812,7 @@ fn subrule_alias_inner_source(
 /// runtime parser already supports both `<name(args)>` and `<name: args>`;
 /// retain the same expression list here so RakuAST can expose the argument
 /// tree without changing that execution path.
-fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>>)> {
+pub(crate) fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>>)> {
     let source = source.trim();
     let colon = source.char_indices().find_map(|(index, ch)| {
         if ch != ':' || index > 0 && source[..index].ends_with(':') {
