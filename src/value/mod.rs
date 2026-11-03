@@ -4421,6 +4421,13 @@ pub(crate) fn name_container_cell(cell: &Value, name: &str) {
     {
         let sigiled = if name.starts_with(['$', '@', '%', '&']) {
             crate::symbol::Symbol::intern(name)
+        } else if name.len() < 63 {
+            // A stack buffer: this runs once per captured container.
+            let mut buf = [0u8; 64];
+            buf[0] = b'$';
+            buf[1..=name.len()].copy_from_slice(name.as_bytes());
+            // `$` + a `&str` is valid UTF-8.
+            crate::symbol::Symbol::intern(std::str::from_utf8(&buf[..=name.len()]).unwrap_or("$"))
         } else {
             crate::symbol::Symbol::intern(&format!("${name}"))
         };

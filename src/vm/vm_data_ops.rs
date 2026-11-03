@@ -595,7 +595,7 @@ impl Interpreter {
         // resolve to themselves at the cost of one env lookup.
         let root = self.resolve_alias_root(name);
         let use_hint = root == name;
-        let name: &str = root.as_str();
+        let name: &str = &root;
         // Prefer the compile-time-resolved slot from the `WrapVarRef` site:
         // shadow slots give several `code.locals` entries the same name, and
         // the by-name `rposition` fallback would pick the LAST one — an inner
