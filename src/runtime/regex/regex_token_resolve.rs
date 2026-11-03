@@ -613,6 +613,7 @@ impl Interpreter {
                 code: 0,
                 fixtures: 0,
                 unit_scoped: false,
+                fixtures_floor: 0,
             };
             interp.record_profile_routine_frame(&frame);
             interp.routine_stack.push(frame);

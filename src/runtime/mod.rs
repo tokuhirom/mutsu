@@ -1671,6 +1671,11 @@ pub(crate) struct RoutineFrame {
     /// lexically see a method's `self` / `$?CLASS` / `$?ROLE`, so it must not
     /// continue its CALLER's fixture record (#16099).
     pub unit_scoped: bool,
+    /// How many fixture records were live when this frame was pushed. A record
+    /// above that count was pushed AFTER the frame (a scoped one: an attribute
+    /// default, a role body) and belongs to code the frame runs, so a
+    /// `unit_scoped` frame does not hide it.
+    pub fixtures_floor: u32,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.

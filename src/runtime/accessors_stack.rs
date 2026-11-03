@@ -417,6 +417,7 @@ impl Interpreter {
             code,
             fixtures: 0,
             unit_scoped,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -465,6 +466,7 @@ impl Interpreter {
             code: 0,
             fixtures: 0,
             unit_scoped: false,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push_with_fixtures(frame, fixtures);
@@ -536,6 +538,7 @@ impl Interpreter {
             code: 0,
             fixtures: 0,
             unit_scoped: false,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -1820,6 +1823,7 @@ mod call_site_file_tests {
             code: 0,
             fixtures: 0,
             unit_scoped: false,
+            fixtures_floor: 0,
         }
     }
 

@@ -98,8 +98,9 @@ impl RoutineStack {
         self.lexical_package_frames != 0
     }
 
-    pub(crate) fn push(&mut self, frame: RoutineFrame) {
+    pub(crate) fn push(&mut self, mut frame: RoutineFrame) {
         debug_assert_eq!(frame.fixtures, 0, "a frame with a record goes through push_with_fixtures");
+        frame.fixtures_floor = self.fixtures.len() as u32;
         if frame.lexical_package.is_some() {
             self.lexical_package_frames += 1;
         }
@@ -176,7 +177,8 @@ impl RoutineStack {
                 return None;
             }
             if !f.is_block {
-                return f.unit_scoped.then_some(f);
+                return (f.unit_scoped && self.fixtures.len() as u32 <= f.fixtures_floor)
+                    .then_some(f);
             }
         }
         None
@@ -336,6 +338,7 @@ mod tests {
             code: 0,
             fixtures: 0,
             unit_scoped: false,
+            fixtures_floor: 0,
         }
     }
 
