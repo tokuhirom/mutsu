@@ -71,6 +71,8 @@ pub(super) fn finalize_unit(
         failed: None,
         line: None,
         top: true,
+        later_terms: Vec::new(),
+        declared_types: unit_type_names(&stmts),
     };
     crate::parser::with_rakuast_lexical_scope(|| {
         finalize.visit_stmts_mut(&mut stmts);
@@ -102,6 +104,14 @@ struct Finalize<'s> {
     line: Option<i64>,
     /// The next list is the unit's own.
     top: bool,
+    /// Per enclosing list, the terms it declares at a later statement that
+    /// are capitalised (`constant X = 3` in a list whose earlier statements say
+    /// `X`). Rakudo hoists routines only: until the
+    /// declaration, `X` is the setting's.
+    later_terms: Vec<std::collections::HashSet<String>>,
+    /// The short names of the types the unit declares anywhere: a bareword of
+    /// that name may be one of them, not the setting's.
+    declared_types: std::collections::HashSet<String>,
 }
 
 impl Finalize<'_> {
@@ -162,6 +172,7 @@ impl VisitMut for Finalize<'_> {
         });
         let top = std::mem::take(&mut self.top);
         let line = self.line.take();
+        self.later_terms.push(setting_terms_declared_in(body));
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
         let _scope = super::bareword::BlockScope::enter(self.names, body);
@@ -176,6 +187,7 @@ impl VisitMut for Finalize<'_> {
         } else {
             self.visit_listed_all(body, false);
         }
+        self.later_terms.pop();
         self.line = line;
     }
 
@@ -183,6 +195,17 @@ impl VisitMut for Finalize<'_> {
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         let names = self.names;
+        // A bareword naming a setting term that a later statement of an
+        // enclosing list redeclares is still the setting's (`say X; constant
+        // X = 3`).
+        if let Expr::BareWord(word) = &*expr
+            && self.later_terms.iter().any(|later| later.contains(word))
+            && !self.declared_types.contains(word)
+        {
+            *expr =
+                Expr::BareWord(crate::qualified::qualified_text("CORE", word.as_str()).resolve());
+            return;
+        }
         // An expression the parser's tree cannot stand for (a bareword to
         // classify, a regex with code, ...) is converted and lowered on its own.
         let mut inner = &*expr;
@@ -338,8 +361,87 @@ impl Finalize<'_> {
             self.line = Some(*line);
             return;
         }
+        // A term is declared where its statement begins, so its own
+        // initializer sees it (`my \S := gather { S.iterator }`). Judged
+        // before the statement is lowered in place.
+        if let Some(later) = self.later_terms.last_mut()
+            && !later.is_empty()
+        {
+            for name in declared_terms(stmt) {
+                later.remove(&name);
+            }
+        }
         self.visit_stmt_mut(stmt);
     }
+}
+
+/// The sigilless terms a statement declares in its own list: a `constant`, an
+/// enum's values, a `my \x`; a parser desugaring's statements count as the
+/// list's own.
+// Cost: O(1) for a statement, O(v) for an enum, v = its values.
+fn declared_terms(stmt: &Stmt) -> Vec<String> {
+    match stmt {
+        Stmt::SyntheticBlock(inner) => inner.iter().flat_map(declared_terms_one).collect(),
+        _ => declared_terms_one(stmt),
+    }
+}
+
+fn declared_terms_one(stmt: &Stmt) -> Vec<String> {
+    if let Stmt::VarDecl {
+        name,
+        constant: Some(crate::ast::ConstantSigil::Term),
+        ..
+    } = stmt
+    {
+        return vec![name.clone()];
+    }
+    if let Stmt::EnumDecl { variants, .. } = stmt {
+        return crate::parser::enum_value_names(variants);
+    }
+    if let Stmt::Ast(node) = stmt
+        && let ParsedStmt::SigillessDecl(decl) = node.as_ref()
+    {
+        return vec![decl.name.clone()];
+    }
+    Vec::new()
+}
+
+/// The capitalised terms `body` declares: a use before the declaration can only
+/// be the setting's.
+// Cost: O(m), m = statements in the list.
+fn setting_terms_declared_in(body: &[Stmt]) -> std::collections::HashSet<String> {
+    body.iter()
+        .flat_map(declared_terms)
+        .filter(|name| name.starts_with(|c: char| c.is_uppercase()))
+        .collect()
+}
+
+/// The short names of the types a unit declares, wherever.
+// Cost: O(n), n = size of the unit.
+fn unit_type_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
+    use crate::ast_visit::{Visit, walk_stmt};
+    #[derive(Default)]
+    struct Types(std::collections::HashSet<String>);
+    impl<'ast> Visit<'ast> for Types {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if let Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::SubsetDecl { name, .. }
+            | Stmt::Package { name, .. }
+            | Stmt::EnumDecl { name, .. } = stmt
+            {
+                self.0.insert(name.resolve());
+                self.0
+                    .insert(crate::qualified::unqualified_part(*name).resolve());
+            }
+            walk_stmt(self, stmt);
+        }
+    }
+    let mut types = Types::default();
+    for stmt in stmts {
+        types.visit_stmt(stmt);
+    }
+    types.0
 }
 
 #[cfg(test)]
