@@ -20,11 +20,10 @@ impl Interpreter {
         // type declaration of the same name (regardless of kind).
         // `bool` value records whether the existing declaration is a forward stub.
         let mut seen_types: HashMap<String, bool> = HashMap::new();
-        // Routine declarations (`sub`) share a separate namespace; a routine may
-        // only be redeclared if every declaration of that name is `multi`.
-        let mut seen_routines: HashMap<String, bool> = HashMap::new();
-        // Routines declared so far only as a `{...}` stub.
-        let mut stubbed_routines: HashSet<String> = HashSet::new();
+        // Keys of `seen_types` that a role declared: roles of one name are the
+        // candidates of one role group (rakudo reports an ambiguity when the
+        // group is used, never a redeclaration at the declaration).
+        let mut role_keys: HashSet<String> = HashSet::new();
         // Nested type names declared directly inside each top-level class body,
         // so that `augment class C { class Nested {} }` can detect redeclaring a
         // nested type that the original `class C { class Nested {} }` declared.
@@ -200,67 +199,12 @@ impl Interpreter {
             }
         };
 
-        // mutsu currently mis-parses `anon sub foo {}` as a bare `anon` term
-        // followed by a normal named SubDecl; an anonymous routine installs no
-        // symbol, so skip the SubDecl that immediately follows a bare `anon`.
-        // TODO: parse `anon sub`/`anon multi` into a genuinely anonymous routine
-        // so this textual heuristic is unnecessary.
-        let mut prev_was_anon = false;
         for stmt in stmts {
             // SetLine markers are interleaved between real statements; they must
             // not reset the "previous statement was `anon`" tracking.
             if stmt.is_marker() {
                 continue;
             }
-            let was_anon = prev_was_anon;
-            prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
-
-            // Routine redeclaration (sub a {}; sub a {} / sub a {}; multi sub a {}).
-            if let Stmt::SubDecl {
-                name, multi, body, ..
-            } = stmt
-            {
-                if was_anon {
-                    continue;
-                }
-                let name = name.resolve().to_string();
-                if name.is_empty() {
-                    continue;
-                }
-                // `sub f {...}` forward-declares `f`; the definition that follows
-                // completes it instead of redeclaring it.
-                if stubbed_routines.contains(&name) && !body_is_stub(body) {
-                    stubbed_routines.remove(&name);
-                    continue;
-                }
-                if body_is_stub(body) && !seen_routines.contains_key(&name) {
-                    stubbed_routines.insert(name.clone());
-                }
-                match seen_routines.get(&name) {
-                    None => {
-                        seen_routines.insert(name, *multi);
-                    }
-                    Some(prev_all_multi) => {
-                        if *prev_all_multi && *multi {
-                            // still all-multi, allowed
-                        } else {
-                            let mut attrs = ValueMap::default();
-                            attrs.insert("symbol".to_string(), Value::str(name.clone()));
-                            attrs.insert("what".to_string(), Value::str("routine".to_string()));
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(format!(
-                                    "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
-                                    name
-                                )),
-                            );
-                            return Err(RuntimeError::typed("X::Redeclaration", attrs));
-                        }
-                    }
-                }
-                continue;
-            }
-
             // `augment class C { class Nested {} }` redeclares a nested type that
             // the original declaration of C already declared.
             if let Stmt::AugmentClass { name, body, .. } = stmt {
@@ -399,6 +343,9 @@ impl Interpreter {
             };
 
             if name.is_empty() {
+                continue;
+            }
+            if matches!(stmt, Stmt::RoleDecl { .. }) && !role_keys.insert(name.clone()) {
                 continue;
             }
 

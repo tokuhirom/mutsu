@@ -5044,6 +5044,7 @@ t/oo/role/mixin-role-application-order.t
 t/oo/role/mixin-role-attr-closure-two-roles.t
 t/oo/role/mixin-role-attribute-cell.t
 t/oo/role/mixin-role-callsame-ranks-class-multis.t
+t/oo/role/mixin-role-group-candidate.t
 t/oo/role/mixin-role-group-method-shadows-builtin.t
 t/oo/role/mixin-role-transitive-does.t
 t/oo/role/mixin-roles-introspection.t
@@ -5274,6 +5275,7 @@ t/oo/role/role-pun-private-attribute.t
 t/oo/role/role-pun-private-code-attribute.t
 t/oo/role/role-pun-with-named-param-default-class-type.t
 t/oo/role/role-punned-is-type.t
+t/oo/role/role-qualified-constraint-type-capture.t
 t/oo/role/role-qualified-is-parent.t
 t/oo/role/role-qualified-method-through-composed-role.t
 t/oo/role/role-required-method-name-based.t
@@ -5351,6 +5353,7 @@ t/oo/slip-pair-mixin-named-argument.t
 t/oo/str-mixin-string-operators-read-payload.t
 t/oo/stub-and-supersede.t
 t/oo/stub-fail-semantics.t
+t/oo/stub-redefine-position.t
 t/oo/subset-base-cycle-is-catchable-not-stack-overflow.t
 t/oo/subset-coercive-nested.t
 t/oo/subset-of-parameterized-array-call.t
@@ -6992,6 +6995,7 @@ t/routines/dispatch/multi-plain-positional-candidates.t
 t/routines/dispatch/multi-pointy-for-shadowing.t
 t/routines/dispatch/multi-positional-light-dispatch.t
 t/routines/dispatch/multi-probe-memo-invalidation.t
+t/routines/dispatch/multi-proto-lexical-scope.t
 t/routines/dispatch/multi-ranking-type-relation-memo.t
 t/routines/dispatch/multi-ranks-proxy-argument-by-fetched-value.t
 t/routines/dispatch/multi-redispatch-compiled-candidate.t
@@ -7136,6 +7140,7 @@ t/routines/dispatch/wrap-candidate-unwrap-restore.t
 t/routines/dispatch/wrap-multi-candidate-scope.t
 t/routines/dispatch/wrap-recursive-redispatch.t
 t/routines/dispatch/wrapped-multi-callee-index.t
+t/routines/do-block-scopes-routine-decls.t
 t/routines/dot-amp-call-routine-named-splice.t
 t/routines/dynamic-callable-var-scope.t
 t/routines/emit-from-a-nested-sub.t
