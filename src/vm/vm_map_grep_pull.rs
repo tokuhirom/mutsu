@@ -154,7 +154,10 @@ impl Interpreter {
         } = source
         {
             let (lines, exhausted) = if needed == usize::MAX {
-                (self.pull_io_lines_to_vec(handle.clone(), *words, false)?, true)
+                (
+                    self.pull_io_lines_to_vec(handle.clone(), *words, false)?,
+                    true,
+                )
             } else {
                 self.pull_io_lines_prefix_to_vec(handle, *words, needed)?
             };
