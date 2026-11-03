@@ -51,6 +51,7 @@ pub(crate) mod parameter;
 pub(crate) mod rakuast_accessors;
 pub(crate) mod rakuast_node;
 mod rakuast_visit;
+mod rakuast_locate;
 mod rakuast_walk;
 pub(crate) mod rakudo_internals;
 pub(crate) mod regex_match;
@@ -107,6 +108,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_node::ROWS,
     &rakuast_accessors::ROWS,
     rakuast_visit::ROWS,
+    rakuast_locate::ROWS,
     rakuast_walk::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,
