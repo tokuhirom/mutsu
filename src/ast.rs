@@ -808,6 +808,28 @@ impl ParamDef {
         keys
     }
 
+    /// Whether `key` is one of [`Self::named_external_keys`], without building
+    /// the list.
+    // Cost: O(a), a = aliases of the parameter.
+    pub(crate) fn answers_named_key(&self, key: &str) -> bool {
+        if !self.named {
+            return false;
+        }
+        if named_param_external_key(&self.name) == key {
+            return true;
+        }
+        self.named_alias
+            && self
+                .sub_signature
+                .as_ref()
+                .is_some_and(|aliases| {
+                    aliases
+                        .iter()
+                        .filter(|a| a.named && !a.slurpy)
+                        .any(|a| a.answers_named_key(key))
+                })
+    }
+
     /// The spelling that carries this parameter's sigil.
     ///
     /// For an aliased named parameter (`:c(:&cb)` or `:c(&cb)`) the outer
