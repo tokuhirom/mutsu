@@ -1452,10 +1452,11 @@ impl Compiler {
                         },
                     );
                 } else {
-                    // An inline `my $x` argument (`&f(my $x)`, `&f :k(my $x)`)
-                    // takes a real lexical slot, as in a plain sub call.
-                    self.with_call_arg_decl_slot(arg, |s| s.compile_expr(arg));
-                    self.maybe_promote_attr_arg_read(arg);
+                    // The same argument compile as a plain sub call: an inline
+                    // `my $x` takes a real lexical slot, and a variable is
+                    // tagged with it (`WrapVarRef`), so a `|c` parameter of the
+                    // callee keeps the caller's container (#16179).
+                    self.compile_call_arg(arg);
                     self.mark_call_on_arg(
                         crate::opcode::RwArgCallee::CodeVar {
                             name_idx: code_var_idx,
