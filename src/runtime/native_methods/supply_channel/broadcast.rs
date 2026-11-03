@@ -117,6 +117,12 @@ pub(super) struct Broadcast {
     /// subscriber (a `Proc::Async` reader thread starts before the react loop
     /// subscribes, and must not lose its first chunk).
     pub(super) ever_subscribed: AtomicBool,
+    /// A `whenever` registered this source: its first tap comes when the
+    /// enclosing block's body returns, but rakudo taps at the `whenever`
+    /// statement, so a producer that starts at the first tap (a filesystem
+    /// watcher) must start now. Unlike `ever_subscribed` this never feeds
+    /// [`Self::all_taps_gone`]: the tap is still to come.
+    pub(super) tap_pending: AtomicBool,
     /// Marks a stream whose consumers *compete* rather than each seeing every
     /// value, so it must keep the old exclusive-transfer behaviour instead of
     /// broadcasting. See `SupplyReceiver::mark_exclusive`.

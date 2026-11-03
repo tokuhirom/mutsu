@@ -435,6 +435,7 @@ impl Interpreter {
                 if let Some(ValueView::Int(sid)) =
                     attributes.as_map().get("supply_id").map(Value::view)
                 {
+                    crate::runtime::native_methods::note_whenever_source_registered(sid as u64);
                     crate::runtime::native_methods::register_supply_tap(
                         sid as u64,
                         callback_with_id.clone(),
