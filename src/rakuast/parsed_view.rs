@@ -125,7 +125,7 @@ pub(super) fn parsed_node(
             statement_expression(super::attribute_group::to_signature(names, attributes)?)
         }
         ParsedStmt::AttributeColonArglist(attributes) => {
-            statement_expression(super::attribute_group::view_colon(names, attributes)?)
+            super::attribute_group::view_colon(names, attributes)?
         }
         ParsedStmt::Temporize(t) => {
             statement_expression(super::temporize::view_temporized(names, t)?)

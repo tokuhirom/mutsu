@@ -43,4 +43,13 @@ for @cases -> $name, $code, $expected {
     like $ast2.gist, /'condition-modifier' .* 'StatementModifier::If' .* 'loop-modifier' .* 'StatementModifier::For'/, 'both modifiers are kept';
 }
 
+# A nested `has` of a colon arglist may carry a modifier (#15600).
+{
+    my $src = 'class E15600 { has Int $.a: has Str $.b = "q" if 1; }; E15600.^attributes.map(*.name).sort.join(",")';
+    is EVAL($src), '$!a,$!b', 'a colon arglist member with a condition modifier declares both attributes';
+    is EVAL($src.subst('E15600', 'E15600t', :g).AST), '$!a,$!b', 'and so does the unit evaluated as a RakuAST tree';
+    my $for = 'class F15600 { has Int $.a: has Str $.b = "q" for 1; }; F15600.^attributes.map(*.name).sort.join(",")';
+    is EVAL($for.AST), '$!a,$!b', 'a loop modifier on the nested member';
+}
+
 done-testing;
