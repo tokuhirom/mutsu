@@ -6,7 +6,9 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-plan 5;
+my %watched;
+my @probe-seen;
+# TEMPORARY PROBE: no plan; extra failing numbers encode what the nested watcher did.
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -38,7 +40,6 @@ plan 5;
     $dir.mkdir;
 
     my $s = supply {
-        my %watched;
         sub add-dir(IO::Path $d, :$initial) {
             %watched{$d} = True;
             with $d.watch -> $w {
@@ -70,6 +71,7 @@ plan 5;
         else { sleep 0.05 }
         last if @seen.grep('.cro.yml');
     }
+    @probe-seen = @seen;
     ok @seen.grep('svc'), 'the new directory itself is reported';
     # CI-only failure of this assertion (it was vacuous before `Bool()` forced a
     # lazy Seq): tracked in #16198. It still runs; a pass shows as "TODO passed".
@@ -81,4 +83,14 @@ plan 5;
 {
     sub bare-emit { emit 1 }
     throws-like { bare-emit() }, X::ControlFlow, 'emit without a supply is still refused';
+}
+
+# TEMPORARY PROBE: char i with code c fails test number (tests so far) + 1 + i*256 + c.
+{
+    my $msg = 'seen=' ~ @probe-seen.join(',') ~ ';watched=' ~ %watched.keys.map(*.IO.basename).sort.join(',');
+    my @chars = $msg.substr(0, 90).ords;
+    for @chars.kv -> $i, $c {
+        for ^256 -> $k { ok $k != $c, 'diag' }
+    }
+    done-testing;
 }
