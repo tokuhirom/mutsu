@@ -699,6 +699,14 @@ impl Interpreter {
         } else {
             target
         };
+        // A stage over a `Seq.new($iterator)` nothing has pulled (#16132): the
+        // consume step above left it untouched, so run the stage before any
+        // eager implementation reads the still-empty body.
+        if matches!(target.view(), ValueView::Seq(ref body) if body.unpulled_iterator().is_some())
+            && let Some(stage) = self.lazy_stream(&target, method, &args)
+        {
+            return Ok(stage);
+        }
         if target_was_seq
             && method == "iterator"
             && matches!(target.view(), ValueView::Instance { .. })
