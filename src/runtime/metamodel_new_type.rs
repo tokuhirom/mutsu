@@ -102,7 +102,11 @@ impl Interpreter {
                 .unwrap_or_else(|| "Any".to_string());
             // Any Callable: a block, or an object with its own `CALL-ME` (Kind's
             // `Refine`), which the subset check invokes like a block.
-            let refinement = named("refinement").filter(|v| !v.is_nil());
+            // A predicate held in a variable (`:refinement($refinement)`) arrives in
+            // its Scalar; the subset check calls the predicate itself.
+            let refinement = named("refinement")
+                .map(Value::into_deref)
+                .filter(|v| !v.is_nil());
             self.register_subset_decl(&name, &base, None, refinement.clone(), refinement, "", false, 0);
         }
         // A role metaclass mints a ROLE: its methods, added with `.^add_method`,
