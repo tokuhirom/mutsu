@@ -95,6 +95,20 @@ pub(crate) fn shape_value_for_sigiled_target(target: &str, val: &Value) -> Value
     {
         return val.clone();
     }
+    // A role mixed into the aliased `@`/`%` variable (`sub f(\h) { h does R }`,
+    // `lock_hash(%h)`) is a `Mixin` over a value that already has the target's
+    // shape; rebuilding it would drop the role the caller must see (#16231).
+    let unwrapped = val.clone().deitemize_element().into_descalarized();
+    if let ValueView::Mixin(inner, _) = unwrapped.view() {
+        let shaped = match target.as_bytes().first() {
+            Some(b'@') => matches!(inner.view(), ValueView::Array(_, k) if k.is_real_array()),
+            Some(b'%') => matches!(inner.view(), ValueView::Hash(_)),
+            _ => false,
+        };
+        if shaped {
+            return unwrapped.clone();
+        }
+    }
     match target.as_bytes().first() {
         Some(b'@') => {
             if matches!(val.view(), ValueView::Array(_, k) if k.is_real_array()) {

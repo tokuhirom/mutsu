@@ -17,9 +17,15 @@ impl<'ast> Visit<'ast> for DoesTargets {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Binary { left, op, .. } = expr
             && matches!(op, TokenKind::Ident(name) if name == "does")
-            && let Expr::Var(name) = left.as_ref()
         {
-            self.0.push(name.clone());
+            match left.as_ref() {
+                Expr::Var(name) => self.0.push(name.clone()),
+                // `@a does R` / `%h does R`: a positional/associative parameter
+                // is named with its sigil (#16231).
+                Expr::ArrayVar(name) => self.0.push(format!("@{name}")),
+                Expr::HashVar(name) => self.0.push(format!("%{name}")),
+                _ => {}
+            }
         }
         walk_expr(self, expr);
     }
@@ -73,7 +79,7 @@ pub(crate) fn mark_does_targets(name: &str, params: &mut [ParamDef], body: &[Stm
             && !pd.slurpy
             && !pd.double_slurpy
             && !pd.sigilless
-            && !pd.name.starts_with(['@', '%', '&'])
+            && !pd.name.starts_with('&')
             && targets.0.contains(&pd.name)
             && !pd.is_does_target()
         {
