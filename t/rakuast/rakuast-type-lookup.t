@@ -20,17 +20,19 @@ use Test;
 # This file is mutsu-only: the method *names* are mutsu's own model API
 # (`local_method_names` documents them as such), not Rakudo's compiler-internal
 # `IMPL-*` surface, so a raku run would legitimately report a different set.
+# Implemented accessors nevertheless retain their measured declaring owner:
+# Literal declares value; IntLiteral inherits it.
 
 plan 11;
 
 # --- .^methods (default) sees the class's own model methods ------------------
 my @m = RakuAST::IntLiteral.^methods.map(*.name).sort;
-is @m, <fileline find-nodes first grep map new value visit visit-children visit-dfs>,
+is @m, <DEPARSE EVAL fileline find-nodes first grep map new origin parent value visit visit-children visit-dfs>,
     '.^methods lists the model constructor, accessor and inherited tree helpers';
 
 # --- .^methods(:local) excludes methods inherited from RakuAST::Node --------
-is RakuAST::IntLiteral.^methods(:local).map(*.name).sort, <new value>,
-    '.^methods(:local) lists only the leaf model methods';
+is RakuAST::IntLiteral.^methods(:local).map(*.name).sort, <new>,
+    '.^methods(:local) excludes the inherited Literal accessor';
 
 # --- :all adds the Any/Mu tail on top ---------------------------------------
 my @all = RakuAST::IntLiteral.^methods(:all).map(*.name);

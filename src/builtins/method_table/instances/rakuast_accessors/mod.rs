@@ -57,7 +57,7 @@ fn class_index(class: &str) -> u16 {
 /// immutable model class metadata; a user override is resolved before here.
 // Cost: O(d) plus the handler on a memo hit, d = payload wrapper depth; O(o * k) once per class/method, o = owners, k = same-named rows.
 pub(crate) fn pure_answer(target: &Value, method: Symbol) -> Option<Result<Value, RuntimeError>> {
-    if !super::super::names_a_row(method, 0) {
+    if !super::super::names_any_row(method) {
         return None;
     }
     let target = native_node(target)?;
@@ -168,6 +168,20 @@ mod tests {
         }
         assert!(matches!(pure_answer(&instance, Symbol::intern("value")),
             Some(Ok(value)) if value == Value::int(13)));
+    }
+
+    #[test]
+    fn rakuast_accessor_entry_accepts_owner_only_names() {
+        let block = Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Block,
+            origin: Default::default(),
+            fields: vec![RakuAstField {
+                name: Some("body"),
+                value: RakuAstFieldValue::Node(literal(31)),
+            }],
+        }));
+        assert!(matches!(pure_answer(&block, Symbol::intern("body")),
+            Some(Ok(value)) if value == literal(31)));
     }
 
     #[test]
