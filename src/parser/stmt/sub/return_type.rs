@@ -381,15 +381,17 @@ pub(crate) fn parse_param_list_with_return_inner(
             rest = r;
             continue;
         }
+        // Parameters are comma-separated (see `parse_param_list_inner`).
         if !r.starts_with(',')
             && starts_with_sigil_param(r)
             && params.last().is_some_and(is_anonymous_sigil_param)
         {
-            let (r, mut p) = parse_single_param(r)?;
-            p.multi_invocant = multi_invocant;
-            params.push(p);
-            rest = r;
-            continue;
+            return Err(PError::raw_with_what(
+                "X::Syntax::Malformed: Malformed parameter".to_string(),
+                Some(r.len()),
+                "X::Syntax::Malformed",
+                "parameter",
+            ));
         }
         if !r.starts_with(',') {
             if let Some(stripped) = r.strip_prefix("-->") {

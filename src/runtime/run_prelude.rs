@@ -616,9 +616,19 @@ mod tests {
     #[test]
     fn forward_declared_sub_installs_with_compiled_bytecode() {
         let mut interp = Interpreter::new();
-        let (stmts, _) =
-            crate::parse_dispatch::parse_source("sub add($a, $b); sub add($a, $b) { $a + $b }")
-                .expect("parse");
+        // The parser no longer produces a bodiless `sub add(...);` (rakudo rejects
+        // it, #16210), but an AST built elsewhere (a RakuAST lowering) can carry
+        // an empty-bodied forward declaration: build that shape from the stub.
+        let (mut stmts, _) = crate::parse_dispatch::parse_source(
+            "sub add($a, $b) {...}; sub add($a, $b) { $a + $b }",
+        )
+        .expect("parse");
+        for stmt in stmts.iter_mut() {
+            if let Stmt::SubDecl { body, .. } = stmt {
+                body.clear();
+                break;
+            }
+        }
         interp
             .preregister_top_level_subs(&stmts)
             .expect("preregister");
