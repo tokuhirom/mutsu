@@ -208,6 +208,17 @@ impl Interpreter {
         if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
+        // A `%?RESOURCES` entry shares the `IO::Path` rows without an
+        // `IO::Path` in its MRO (#15818): its native methods are the path's.
+        // Only the methods that take an argument: the table answers a call with
+        // plain arguments itself, and this is the by-owner fallback for the
+        // others (an `IO::Path` destination). The no-argument rows (`Str`, and
+        // `Mu`'s `Stringy`) stay where they are, so `~$resource` still reaches
+        // its `Mu` frame (#16095).
+        if class_name == "Distribution::Resource" {
+            return io_path_method_takes_arguments(method_name)
+                && self.is_native_method("IO::Path", method_name);
+        }
         match (probe_key(class_name), probe_key(method_name)) {
             (Some(class), Some(method)) => self.is_native_method_memo(class, method),
             _ => self.is_native_method_uncached(class_name, method_name),
@@ -955,6 +966,14 @@ impl Interpreter {
         }
         attrs
     }
+}
+
+/// Whether `IO::Path` declares a row for `method` that takes an argument.
+// Cost: two hash lookups.
+pub(super) fn io_path_method_takes_arguments(method: &str) -> bool {
+    let method = Symbol::intern(method);
+    let owner = Symbol::intern("IO::Path");
+    (1..=2).any(|arity| crate::builtins::method_table::owner_row(owner, method, arity).is_some())
 }
 
 /// Whether one of `owners` has a row for `method` at any arity a native call
