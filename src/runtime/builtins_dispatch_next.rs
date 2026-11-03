@@ -757,8 +757,11 @@ impl Interpreter {
             "ASSIGN-KEY" | "STORE_AT_KEY" | "BIND-KEY" | "DELETE-KEY"
         ) && matches!(inner.view(), ValueView::Hash(..))
         {
-            // `STORE_AT_KEY` and `BIND-KEY` store the value, as `ASSIGN-KEY` does.
-            let method_name = if matches!(method_name, "STORE_AT_KEY" | "BIND-KEY") {
+            // `STORE_AT_KEY` stores the value, as `ASSIGN-KEY` does. `BIND-KEY`
+            // is the `Hash` row's own bind: a bare value lands in a read-only
+            // cell, so a later `ASSIGN-KEY` on the key is refused (Hash::Util's
+            // `lock_value`, #16244).
+            let method_name = if method_name == "STORE_AT_KEY" {
                 "ASSIGN-KEY"
             } else {
                 method_name
