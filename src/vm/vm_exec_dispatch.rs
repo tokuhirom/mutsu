@@ -4990,9 +4990,13 @@ impl Interpreter {
                     // A Proxy in sink context is FETCHed, as Rakudo decontainerizes
                     // it (`$obj.rw-accessor;` runs the FETCH, which may die).
                     // Not for `SinkPopCall`: `f() = 1` on an `is rw` routine
-                    // sinks the assignment, which runs STORE alone.
+                    // sinks the assignment, which runs STORE alone. Not for the
+                    // Proxy object `.VAR` hands back (#15893).
                     let val =
-                        if val.is_proxy_value() && matches!(code.ops[*ip], OpCode::SinkPop(..)) {
+                        if val.is_proxy_value()
+                            && !val.is_proxy_var_object()
+                            && matches!(code.ops[*ip], OpCode::SinkPop(..))
+                        {
                             self.auto_fetch_proxy(&val)?
                         } else {
                             val

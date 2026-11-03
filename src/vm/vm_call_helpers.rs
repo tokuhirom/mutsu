@@ -319,6 +319,11 @@ impl Interpreter {
             if keeps.get(i).copied().unwrap_or(false) && arg.is_proxy_value() {
                 continue;
             }
+            // `.VAR` is the Proxy object itself, passed as the argument
+            // (`f($q.VAR)`), not a container to read (#15893).
+            if arg.is_proxy_var_object() {
+                continue;
+            }
             *arg = loan_env!(self, auto_fetch_proxy(arg))?;
         }
         Ok(args)
@@ -330,6 +335,9 @@ impl Interpreter {
         mut args: Vec<Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
         for arg in &mut args {
+            if arg.is_proxy_var_object() {
+                continue;
+            }
             *arg = loan_env!(self, auto_fetch_proxy(arg))?;
         }
         Ok(args)

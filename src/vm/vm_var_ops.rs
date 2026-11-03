@@ -22,6 +22,11 @@ impl Interpreter {
         if !matches!(val.view(), ValueView::Proxy { .. }) {
             return val;
         }
+        // `.VAR` hands the Proxy object itself: binding it keeps it that, so a
+        // read does not FETCH it (#15893).
+        if val.is_proxy_var_object() {
+            return val;
+        }
         let Some((new_fetcher, mut new_storer, subclass, _)) = val.into_proxy_parts() else {
             unreachable!("probed as Proxy above");
         };
