@@ -679,6 +679,9 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        if core_scalar_satisfies(constraint, value) {
+            return true;
+        }
         // The check recurses through subset bases, parameterizations and type
         // aliases without crossing a Raku call boundary, so the VM's stack
         // guard never sees a cycle among them. Bound the nesting of the check
@@ -2535,5 +2538,28 @@ impl Interpreter {
                         .iter()
                         .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
             })
+    }
+}
+
+/// Whether `value`, a plain `Int` / `Num` / `Str` / `Bool`, trivially satisfies
+/// `constraint` because the constraint names one of the value's own core types
+/// (optionally `:D`): `Int:D` / `Any:D` / `Cool` for an `Int` argument, the
+/// check a CArray element store makes three times per call. Only ever answers
+/// yes -- every other shape goes through the full check.
+// Cost: O(1), a match on the value's kind and the constraint's length.
+#[inline]
+fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
+    let name = constraint.strip_suffix(":D").unwrap_or(constraint);
+    match value.view() {
+        ValueView::Int(_) => matches!(
+            name,
+            "Int" | "Numeric" | "Real" | "Cool" | "Any" | "Mu"
+        ),
+        ValueView::Num(_) => matches!(
+            name,
+            "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu"
+        ),
+        ValueView::Str(_) => matches!(name, "Str" | "Cool" | "Any" | "Mu"),
+        _ => false,
     }
 }

@@ -795,18 +795,35 @@ impl Interpreter {
                     .get(idx)
                     .is_some_and(|pd| pd.is_invocant)
             };
-            let params: Vec<String> = method_def
-                .params
-                .iter()
-                .enumerate()
-                .filter(|(idx, _)| !is_invocant(*idx))
-                .map(|(_, name)| name.clone())
-                .collect();
-            let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
-                .filter(|idx| !is_invocant(*idx))
-                .filter_map(|idx| method_def.param_defs.get(idx).cloned())
-                .collect();
-            (params.into(), defs.into())
+            // The invocant is the leading parameter (`::?CLASS:D:` of every
+            // role method of a CArray): bind the rest as a borrowed slice
+            // instead of cloning each `ParamDef` per call (#16215).
+            let lead = (0..method_def.params.len())
+                .take_while(|idx| is_invocant(*idx))
+                .count();
+            let all_leading = (lead..method_def.params.len()).all(|idx| !is_invocant(idx))
+                && method_def.param_defs.len() >= method_def.params.len();
+            if all_leading {
+                (
+                    std::borrow::Cow::Borrowed(&method_def.params[lead..]),
+                    std::borrow::Cow::Borrowed(
+                        &method_def.param_defs[lead..method_def.params.len()],
+                    ),
+                )
+            } else {
+                let params: Vec<String> = method_def
+                    .params
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, _)| !is_invocant(*idx))
+                    .map(|(_, name)| name.clone())
+                    .collect();
+                let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
+                    .filter(|idx| !is_invocant(*idx))
+                    .filter_map(|idx| method_def.param_defs.get(idx).cloned())
+                    .collect();
+                (params.into(), defs.into())
+            }
         } else {
             (
                 std::borrow::Cow::Borrowed(&method_def.params[..]),
