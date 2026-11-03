@@ -21,8 +21,8 @@
 //! (`native_method_row_table.rs`), whose flags were baked from Rakudo once and
 //! drifted from both Rakudo and the rows (#11271).
 
-use crate::builtins::method_table::{owner_has_row, owner_row_names};
 use super::method_snapshot_index_gen::OWNERS;
+use crate::builtins::method_table::{owner_has_row, owner_row_names};
 use rustc_hash::FxHashSet;
 use std::sync::OnceLock;
 
@@ -354,7 +354,10 @@ mod method_snapshot_index {
             if !line.starts_with('#') {
                 let mut fields = line.splitn(3, '\t');
                 if let (Some(_), Some(owner)) = (fields.next(), fields.next()) {
-                    scanned.entry(owner).or_default().push((pos as u32, end as u32));
+                    scanned
+                        .entry(owner)
+                        .or_default()
+                        .push((pos as u32, end as u32));
                 }
             }
             pos = end + 1;
@@ -363,6 +366,10 @@ mod method_snapshot_index {
             OWNERS.iter().map(|(o, r)| (*o, r.to_vec())).collect();
         let fresh: Vec<(&str, Vec<(u32, u32)>)> = scanned.into_iter().collect();
         assert!(committed == fresh, "method_snapshot_index_gen.rs is stale");
-        assert!(OWNERS.windows(2).all(|w| w[0].0.as_bytes() < w[1].0.as_bytes()));
+        assert!(
+            OWNERS
+                .windows(2)
+                .all(|w| w[0].0.as_bytes() < w[1].0.as_bytes())
+        );
     }
 }
