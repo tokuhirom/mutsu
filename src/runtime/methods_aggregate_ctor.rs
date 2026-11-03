@@ -76,6 +76,13 @@ impl Interpreter {
                 ));
             }
             if let Some(data_val) = data {
+                // `my @a[2;2] = $rows`: a scalar container holding the List is
+                // the List (PDF::Grammar's `xref-section`).
+                let data_val = data_val.deref_container();
+                let data_val = match data_val.view() {
+                    ValueView::Scalar(inner) => inner.clone(),
+                    _ => data_val,
+                };
                 // Populate the shaped array with data
                 let data_items = match data_val.view() {
                     ValueView::Array(items, ..) => items.to_vec(),
