@@ -4338,6 +4338,7 @@ t/oo/exists-adverb-on-mixin.t
 t/oo/fatal-mode-does-not-leak-into-callee.t
 t/oo/for-loop-alias-does-not-leak-into-later-loop.t
 t/oo/for-param-restore-does-not-leak-caller-binding.t
+t/oo/forward-declaration.t
 t/oo/given-readonly-topic-does-not-leak-into-routine.t
 t/oo/grep-promotion-does-not-hide-frames.t
 t/oo/issue-7747-hash-mixin.t
