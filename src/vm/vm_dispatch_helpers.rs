@@ -1107,6 +1107,17 @@ impl Interpreter {
                 && (!matches!(args[0].view(), ValueView::Package(_)) || name_str != "new")
             {
                 let invocant = args[0].clone();
+                // A role mixed into a native value (`my %h does R`, whose `R`
+                // overrides `AT-KEY`): the method object names the core type's
+                // own method, so it runs on the native base and not through the
+                // override that called it (`call_sub_value` does the same;
+                // Hash::Util saves `%h.can('AT-KEY').head` before `does Locked`).
+                if matches!(invocant.view(), ValueView::Mixin(..))
+                    && let Some(result) =
+                        self.mixin_base_native_entry(&invocant, &name_str, &args[1..])
+                {
+                    return result;
+                }
                 return self.try_compiled_method_or_interpret(
                     invocant,
                     &name_str,
