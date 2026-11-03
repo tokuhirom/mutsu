@@ -60,9 +60,7 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         ValueView::Str(_) => Some(&["Str"]),
         // A `but`-mixed Str (`"abc" but R`) is a `Str` to `substr-rw`; the
         // rows decline what they cannot write through.
-        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Str(_)) => {
-            Some(&["Str"])
-        }
+        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Str(_)) => Some(&["Str"]),
         // `Range` refuses the mutators it declares (`X::Immutable`).
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
