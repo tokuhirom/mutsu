@@ -121,6 +121,19 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
         || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
+        // An enum key read by its bare spelling (`my enum Col <Red>`).
+        || key.with_str(|s| s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX))
+        // A sigil-less term (`my constant SECRET`, `my \Thing`) is a lexical
+        // like any other; the lowercase spelling is a plain user lexical
+        // already, the uppercase-initial one is not.
+        || key.with_str(|s| {
+            s.strip_prefix(crate::term_names::TERM_PREFIX).is_some_and(|name| {
+                name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            })
+        })
 }
 
 /// Whether a frame running a loaded module's routine
