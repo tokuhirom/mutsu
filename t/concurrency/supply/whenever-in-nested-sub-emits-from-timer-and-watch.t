@@ -6,8 +6,7 @@ use Test;
 # worker: `Supply.interval` and `IO::Path.watch`. cro's
 # `Cro::Tools::Services.services` (`watch-recursive`) is built this way.
 
-my @probe-seen;
-# TEMPORARY PROBE (to be removed): no plan; extra failing numbers encode a swallowed exception.
+plan 5;
 
 # A Supplier source took this path already; pin it next to the native ones.
 {
@@ -72,7 +71,6 @@ my @probe-seen;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
-    @probe-seen = @seen;
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
 }
 
@@ -80,16 +78,4 @@ my @probe-seen;
 {
     sub bare-emit { emit 1 }
     throws-like { bare-emit() }, X::ControlFlow, 'emit without a supply is still refused';
-}
-
-# TEMPORARY PROBE: char i with code c fails test number (tests so far) + 1 + i*256 + c.
-{
-    my $msg = 'seen=' ~ @probe-seen.join(',');
-    my @chars = $msg.substr(0, 60).ords;
-    unless $msg eq 'NONE' && False {
-        for @chars.kv -> $i, $c {
-            for ^256 -> $k { ok $k != $c, 'diag' }
-        }
-    }
-    done-testing;
 }
