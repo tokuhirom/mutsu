@@ -656,6 +656,34 @@ pub(crate) fn mark_env_key(sym: Symbol) {
     }
 }
 
+/// Set the first time a *dynamic variable's* key (`*x`, `$*OUT`) is written
+/// into an env **tier** (an overlay or a capture layer; the two base tiers of
+/// built-in dynamics do not count). Monotonic and process-wide: a clear flag
+/// proves no env tier anywhere holds a dynamic variable, so a scan for them can
+/// be skipped (`Interpreter::inherit_puller_dynamics`).
+static DYNAMIC_TIER_KEY_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// [`mark_env_key`] for a key written into an env tier: also latches
+/// [`dynamic_tier_key_seen`] when the key names a dynamic variable. Every site
+/// that puts a key into a [`crate::env_tier::Tier`] calls this one.
+// Cost: O(1).
+#[inline]
+pub(crate) fn mark_tier_key(sym: Symbol) {
+    mark_env_key(sym);
+    if sym.flags() & flags::DYNAMIC_VAR_ENV_KEY != 0 {
+        DYNAMIC_TIER_KEY_SEEN.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether any env tier has ever held a dynamic variable's key. `false` is a
+/// proof that none does now.
+// Cost: O(1).
+#[inline]
+pub(crate) fn dynamic_tier_key_seen() -> bool {
+    DYNAMIC_TIER_KEY_SEEN.load(Ordering::Relaxed)
+}
+
 /// [`maybe_env_key`] and [`Symbol::is_routine_owned`] in one read of the flag
 /// word, for the env lookup's miss path, which asks both.
 #[derive(Clone, Copy, PartialEq, Eq)]

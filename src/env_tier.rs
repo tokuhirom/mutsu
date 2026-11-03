@@ -257,7 +257,7 @@ impl Tier {
     /// treat a clear bit as a proof of absence.
     pub(crate) fn new(map: SymMap) -> Self {
         for (key, value) in &map {
-            crate::symbol::mark_env_key(*key);
+            crate::symbol::mark_tier_key(*key);
             note_alias_entry(*key, value);
         }
         Self {
@@ -510,7 +510,7 @@ impl Tier {
             // A key that was already here was latched when it arrived, so the
             // mark rides along with the index invalidation on the rare
             // (genuinely new key) side rather than costing every value write.
-            crate::symbol::mark_env_key(key);
+            crate::symbol::mark_tier_key(key);
             self.invalidate_key_set();
         }
         prev
