@@ -90,6 +90,9 @@ measurable change with its own test; together they address the largest cross-cut
 
 ### D3. Code layout (PGO) as a release-pipeline decision
 
+> **Measured 2026-11-03: not worth shipping** (at most -15% on the Mooish loop even when trained
+> on it, ~0% held out). See [docs/pgo-experiment.md](../pgo-experiment.md); do not repeat it.
+
 Factor (2) is the I1/branch-miss term; the only lever is layout. A PGO step (instrumented run of
 `make test`-style workloads, then `-C profile-use`) in the release workflow, or a
 post-link BOLT step. This changes how every shipped binary is built, so it was put to the
