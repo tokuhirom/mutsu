@@ -1,21 +1,33 @@
 //! Pure zero-argument calls on receivers resolved through an owner chain.
 
-use super::{RowFlags, admits, invoke, owner_row, row};
+use super::{RowFlags, RowId, admits, invoke, owner_row, row};
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Invoke the nearest registered zero-argument row through the common pure
 /// entry. Selecting the row precedes invocation: an interpreter-only method
 /// must decline rather than accidentally invoke a pure ancestor's method.
-// Cost: O(o), o = owners, plus the handler's own cost.
+// Cost: O(o * k), o = owners, k = rows named method, plus the handler's own cost.
 pub(crate) fn invoke_owner_pure(
     owners: &[&str],
     target: &Value,
     method: Symbol,
 ) -> Option<Result<Value, RuntimeError>> {
-    let id = owners
+    invoke_selected(resolve_owner_row(owners, method)?, target)
+}
+
+/// Select the nearest row before invoking it; an interpreter row remains a
+/// barrier even for a pure caller. The builtin table and owners are immutable.
+// Cost: O(o * k), o = owners, k = rows named method.
+pub(crate) fn resolve_owner_row(owners: &[&str], method: Symbol) -> Option<RowId> {
+    owners
         .iter()
-        .find_map(|owner| owner_row(Symbol::intern(owner), method, 0))?;
+        .find_map(|owner| owner_row(Symbol::intern(owner), method, 0))
+}
+
+/// Invoke a selected pure row with the same admission as an uncached lookup.
+// Cost: O(1) plus the handler's own cost.
+pub(crate) fn invoke_selected(id: RowId, target: &Value) -> Option<Result<Value, RuntimeError>> {
     let selected = row(id);
     if !selected.flags.contains(RowFlags::TYPE_OBJECT_OK)
         && let ValueView::Package(name) = target.view()

@@ -25,6 +25,7 @@
 //! undefined; a `Bool` flag answers `False`; an `int` flag answers `0`).
 
 use super::RakuAstClass;
+pub(super) use super::positional_fields::positional_accessor;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -194,16 +195,28 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         FunctionInfix => &[("function", Absent::Required)],
         ApplyPrefix => &[("prefix", Absent::Required), ("operand", Absent::Required)],
         ApplyPostfix => &[("operand", Absent::Required), ("postfix", Absent::Required)],
-        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex | PostcircumfixHashIndex => &[
+        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex => &[
             ("index", Absent::Required),
             ("colonpairs", Absent::EmptyList),
             ("assignee", EXPRESSION),
         ],
+        PostcircumfixHashIndex => &[
+            ("index", Absent::Required),
+            ("colonpairs", Absent::EmptyList),
+        ],
         Postfix => &[("operator", Absent::Required)],
-        Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
+        Block => &[
+            ("body", Absent::TypeObject("RakuAST::Blockoid")),
+            ("implicit-topic", Absent::TypeObject("Bool")),
+            ("required-topic", Absent::TypeObject("Bool")),
+            ("exception", Absent::TypeObject("Bool")),
+        ],
         PointyBlock => &[
             ("signature", Absent::EmptyNode(Signature)),
             ("body", Absent::TypeObject("RakuAST::Blockoid")),
+            ("implicit-topic", Absent::TypeObject("Bool")),
+            ("required-topic", Absent::TypeObject("Bool")),
+            ("exception", Absent::TypeObject("Bool")),
         ],
         Blockoid => &[("statement-list", Absent::Required)],
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => {
@@ -481,104 +494,4 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         | StatementModifierWithout => &[("expression", Absent::Required)],
         _ => &[],
     }
-}
-
-/// The accessor a class exposes over its single positional field. The named
-/// lookup runs first, so a class with a *named* field of the same name (e.g.
-/// `Call::Name.name`) is unaffected.
-pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
-    use RakuAstClass::*;
-    Some(match class {
-        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
-            "value"
-        }
-        FunctionInfix => "function",
-        FakeSignature => "signature",
-        Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
-        VarAttribute => "name",
-        VarLexical | VarDynamic => "name",
-        VarCompilerLookup => "name",
-        VarCompilerFile => "file",
-        VarCompilerLine => "line",
-        Label => "name",
-        NamePartSimple => "name",
-        NamePartExpression => "expr",
-        TermName | TermNamed | ParameterTargetTerm => "name",
-        TermTopicCall => "call",
-        Blockoid => "statement-list",
-        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
-        InitializerAssign | InitializerBind => "expression",
-        InitializerCallAssign => "postfixish",
-        MetaInfixAssign => "infix",
-        MetaInfixNegate | BracketedInfix => "infix",
-        RegexSequentialConjunction => "branches",
-        RegexConjunction => "branches",
-        RegexBackReferencePositional => "index",
-        RegexBackReferenceNamed => "name",
-        RegexStatement => "statement",
-        VarPositionalCapture => "index",
-        VarNamedCapture => "index",
-        MetaPostfixHyper => "postfix",
-        MetaPrefixHyper => "prefix",
-        TermCapture => "source",
-        QuoteWordsAtom => "atom",
-        MetaInfixReverse => "infix",
-        MetaInfixCross => "infix",
-        MetaInfixZip => "infix",
-        TypeSimple | TypeSetting | TypeCapture => "name",
-        TraitReturns | TraitOf | TraitDoes | TraitHides => "type",
-        TraitHandles => "term",
-        RegexLiteral => "text",
-        RegexQuote => "quoted",
-        RegexSequence => "terms",
-        RegexAssertionCharClass => "elements",
-        RegexCharClassEnumerationElementCharacter => "character",
-        RegexAlternation | RegexSequentialAlternation => "branches",
-        RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
-        RegexBlock => "block",
-        StatementLanguageVersion => "version",
-        StatementPrefixReact | StatementPrefixSupply => "blorst",
-        CircumfixHashComposer => "expression",
-        CircumfixArrayComposer | CircumfixParentheses => "semilist",
-        ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
-        ColonPairTrue | ColonPairFalse => "key",
-        StatementModifierFor
-        | StatementModifierWhile
-        | StatementModifierUntil
-        | StatementModifierGiven
-        | StatementModifierIf
-        | StatementModifierUnless
-        | StatementModifierWith
-        | StatementModifierWhen
-        | StatementModifierWithout => "expression",
-        // Every statement prefix wraps its block-or-statement ("blorst")
-        // positionally, and rakudo names it `.blorst` (#9761).
-        StatementPrefixDo
-        | StatementPrefixTry
-        | StatementPrefixGather
-        | StatementPrefixEager
-        | StatementPrefixOnce
-        | StatementPrefixStart
-        | StatementPrefixQuietly
-        | StatementPrefixSink
-        | StatementPrefixLazy
-        | StatementPrefixHyper
-        | StatementPrefixRace
-        | StatementPrefixPhaserBegin
-        | StatementPrefixPhaserCheck
-        | StatementPrefixPhaserClose
-        | StatementPrefixPhaserEnd
-        | StatementPrefixPhaserEnter
-        | StatementPrefixPhaserFirst
-        | StatementPrefixPhaserInit
-        | StatementPrefixPhaserKeep
-        | StatementPrefixPhaserLast
-        | StatementPrefixPhaserLeave
-        | StatementPrefixPhaserNext
-        | StatementPrefixPhaserPost
-        | StatementPrefixPhaserPre
-        | StatementPrefixPhaserQuit
-        | StatementPrefixPhaserUndo => "blorst",
-        _ => return None,
-    })
 }

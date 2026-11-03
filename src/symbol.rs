@@ -539,6 +539,14 @@ impl SymbolMemo {
     // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
     #[inline]
     pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> u16) -> u16 {
+        self.get_with(sym, compute)
+    }
+
+    /// The same memo for a function that also captures this memo's immutable
+    /// owner metadata. Each memo must still map a symbol to one stable value.
+    // Cost: O(1) on a hit; O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get_with(&self, sym: Symbol, compute: impl FnOnce(&str) -> u16) -> u16 {
         let idx = sym.0 as usize;
         let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
             return compute(sym.as_str());

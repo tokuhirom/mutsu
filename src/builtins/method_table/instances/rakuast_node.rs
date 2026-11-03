@@ -153,16 +153,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // `RakuAST::Sub.compile-time-value`: the routine a resolved call of a unit
-    // sub stands for (#15610), read from the interpreter on demand.
-    MethodRow {
-        owner: "RakuAST::Sub",
-        name: "compile-time-value",
-        arity: 0,
-        handler: Handler::Interp(sub_value),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     // `RakuAST::Parameter.meta-object`: the `Parameter` the node declares
     // (`static::Analyzer` reads its type, `rw`, `copy`, ...; #15610).
     MethodRow {
@@ -324,7 +314,7 @@ fn method_value(
 
 /// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
 // Cost: O(1) plus the interpreter's lookup of the name.
-fn sub_value(
+pub(super) fn sub_value(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
@@ -442,7 +432,7 @@ fn sub_value(
 
 /// `Parameter.meta-object` of a `RakuAST::Parameter` node.
 // Cost: O(size of the parameter node).
-fn parameter_meta_object(
+pub(super) fn parameter_meta_object(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],

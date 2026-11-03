@@ -40,6 +40,14 @@ const DEFAULT_SCOPES: &[(&str, &str)] = &[("RakuAST::VarDeclaration::Term", "my"
 
 type Arg = (&'static str, Kind, Missing);
 
+// Cost: O(f), f = declared constructor fields.
+#[cfg(test)]
+pub(super) fn field_names(class: RakuAstClass) -> Vec<&'static str> {
+    schema(class.printed_name()).map_or_else(Vec::new, |(_, fields)| {
+        fields.iter().map(|(name, _, _)| *name).collect()
+    })
+}
+
 use Kind::{Flag, List, Node};
 use Missing::{DefaultFalse, DefaultStr, Omit, Required};
 

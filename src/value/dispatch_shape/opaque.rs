@@ -108,7 +108,7 @@ pub(super) const fn opaque(
                 "RakuAST::Statement::Expression",
                 "RakuAST::ArgList",
                 "RakuAST::ApplyInfix",
-                "RakuAST::Sub",
+                "RakuAST::Routine",
                 "RakuAST::Parameter",
             ],
         ),

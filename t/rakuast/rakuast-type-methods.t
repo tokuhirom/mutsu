@@ -5,11 +5,12 @@ plan 12;
 
 my @int-methods = RakuAST::IntLiteral.^methods(:local).map(*.name);
 ok @int-methods.grep(* eq 'new'), 'literal type object exposes its constructor';
-ok @int-methods.grep(* eq 'value'), 'literal type object exposes its value accessor';
-is @int-methods.sort.join(','), 'new,value', 'literal local method list is model-only';
+ok RakuAST::Literal.^methods(:local).map(*.name).grep(* eq 'value'),
+    'Literal declares the inherited value accessor';
+is @int-methods.sort.join(','), 'new', 'literal local methods retain declaring owners';
 
 my $int = RakuAST::IntLiteral.new(42);
-is $int.^methods(:local).map(*.name).sort.join(','), 'new,value',
+is $int.^methods(:local).map(*.name).sort.join(','), 'new',
     'node value uses the same local method metadata';
 
 my @infix-methods = RakuAST::ApplyInfix.^methods(:local).map(*.name);
@@ -19,7 +20,7 @@ ok @infix-methods.grep(* eq 'infix'), 'multi-field node exposes infix';
 ok @infix-methods.grep(* eq 'right'), 'multi-field node exposes right';
 
 is RakuAST::Name.^methods(:local).map(*.name).sort.join(','),
-    'colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
+    'canonicalize,colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
     'Name exposes its supported constructors and accessor';
 
 is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
@@ -27,8 +28,8 @@ is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
     'StatementList exposes construction, mutation, and its read accessor';
 
 is RakuAST::Statement::Expression.^methods(:local).map(*.name).sort.join(','),
-    'condition-modifier,expression,loop-modifier,new,set-expression',
+    'condition-modifier,expression,is-block-statement,loop-modifier,new,set-expression',
     'statement wrapper exposes constructor and accessors';
 
 is RakuAST::Postfix.^methods(:local).map(*.name).sort.join(','),
-    'colonpairs,is-resolved,new,operator,resolution', 'Postfix exposes its named field as an accessor';
+    'is-resolved,new,operator,resolution', 'Postfix exposes its own accessors';

@@ -11,7 +11,10 @@ my $snapshot = $*PROGRAM.parent.parent.add('src/builtins/rakudo_method_tables.tx
 my @listed = $snapshot.e
     ?? $snapshot.lines.grep(!*.starts-with('#')).map({ .split("\t")[1] }).grep(*.defined)
     !! ();
-my @owners = (|@listed, |@*ARGS).grep(!*.starts-with('RakuAST::')).unique.sort;
+my $only-requested = so @*ARGS.grep(* eq '--only-requested');
+my @requested = @*ARGS.grep(* ne '--only-requested');
+my @owners = (|($only-requested ?? () !! @listed), |@requested)
+    .grep(!*.starts-with('RakuAST::')).unique.sort;
 
 sub clean(@names) { @names.grep({ .defined && $_ ne '' && !/\s/ }).unique.sort }
 

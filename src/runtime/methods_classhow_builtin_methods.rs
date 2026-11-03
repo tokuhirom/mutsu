@@ -52,11 +52,11 @@ impl Interpreter {
         // through to the ordinary built-in list below after seeding the model
         // names — otherwise `RakuAST::IntLiteral.^methods` was empty even
         // though `.^methods(:local)` and `.^can("value")` both found `value`.
-        if local && let Some(names) = crate::rakuast::local_method_names(&class_name) {
+        if local && let Some(names) = crate::builtins::method_table::rakuast_reflection::local_method_names(&class_name) {
             self.push_native_method_objects(&names, &class_name, &mut result);
             return Ok(Value::array(result));
         }
-        if let Some(names) = crate::rakuast::inherited_method_names(&class_name) {
+        if let Some(names) = crate::builtins::method_table::rakuast_reflection::inherited_method_names(&class_name) {
             self.push_native_method_objects(&names, &class_name, &mut result);
             if !all {
                 return Ok(Value::array(result));

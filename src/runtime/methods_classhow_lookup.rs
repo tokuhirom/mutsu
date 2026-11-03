@@ -145,18 +145,13 @@ impl Interpreter {
                 (Symbol::intern(&type_name), type_name)
             }
         };
-        // RakuAST model classes are native type objects with no registry entry,
-        // so the MRO walk below finds nothing for them. Answer from the same
-        // model metadata `.^methods` and `.^can` use, keeping the three in
-        // lockstep — `RakuAST::IntLiteral.^lookup("value")` returned `(Mu)`
-        // while `.^can("value")` found it.
-        if let Some(names) = crate::rakuast::inherited_method_names(&class_name_str) {
-            return names.contains(&method_name).then(|| {
-                Value::routine_parts(
-                    Symbol::intern(&class_name_str),
-                    Symbol::intern(method_name),
-                    false,
-                )
+        // Model rows are declared on their measured MRO owners, not on each
+        // concrete leaf. Reflection must retain that owner in the Method.
+        if let Some(mro) = crate::rakuast::type_object_mro(&class_name_str) {
+            return mro.iter().find_map(|owner| {
+                crate::builtins::method_table::rakuast_reflection::local_method_names(owner)
+                    .filter(|names| names.contains(&method_name))
+                    .map(|_| self.make_native_method_object(method_name, owner))
             });
         }
         // Check user-defined class methods first, walking the receiver's full
