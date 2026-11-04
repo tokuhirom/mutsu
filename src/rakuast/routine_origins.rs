@@ -203,8 +203,19 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
 /// Give the `signature` of the pointy block `block` of a `for` loop
 /// (`for @a -> $x, $y { }`) the ranges the parser recorded for its
 /// parameters, and the signature the span from the first to the last.
+// Cost: O(p + size of the body), p = parameters.
+pub(super) fn for_pointy_block(
+    names: &crate::scope::NameScope,
+    params: &[ParamDef],
+    body: &[crate::ast::Stmt],
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let mut block = super::view::pointy_block(names, params, body, None)?;
+    place_signature(&mut block, params);
+    Ok(block)
+}
+
 // Cost: O(p), p = parameters.
-pub(super) fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
+fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
     let (Some(first), Some(last)) = (params.first(), params.last()) else {
         return;
     };
