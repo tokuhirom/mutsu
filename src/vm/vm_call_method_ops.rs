@@ -249,6 +249,21 @@ impl Interpreter {
         method: &str,
         target: &Value,
     ) -> Result<(), RuntimeError> {
+        // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
+        // methods beyond the meta-object ones; the native `gist`/`raku` lanes
+        // would otherwise answer before the dispatcher's gate sees it.
+        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+            && matches!(
+                method,
+                "raku" | "gist" | "perl" | "Str" | "say" | "put" | "print"
+            )
+        {
+            return Err(
+                crate::runtime::methods_signature_errors::make_method_not_found_error(
+                    method, "NQPMu", false,
+                ),
+            );
+        }
         if !matches!(method, "raku" | "gist") {
             return Ok(());
         }
