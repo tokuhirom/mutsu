@@ -285,9 +285,26 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         "Emoji_Modifier" => Value::truth(is_emoji_modifier(ch)),
         "Emoji_Presentation" => Value::truth(is_emoji_presentation(ch)),
         "Emoji_All" => Value::truth(is_emoji_all(ch)),
-        // Default: general category
-        _ => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
+        // Not a property name: rakudo reads it as a property VALUE and answers
+        // the property that value belongs to (`'a'.uniprop('Latin')` is the
+        // Script, `'a'.uniprop('Na')` the East_Asian_Width). A general
+        // category value, and anything unknown, answers the category.
+        _ => property_of_value_name(ch, prop),
     }
+}
+
+/// `uniprop` with a property VALUE name where a property name belongs.
+// Cost: O(s), s = the script count.
+fn property_of_value_name(ch: char, value: &str) -> Value {
+    if crate::builtins::unicode_script::is_script_name(value) {
+        return Value::str_from(crate::builtins::unicode::unicode_script_name(ch));
+    }
+    if matches!(value, "W" | "Na" | "F" | "H") {
+        return Value::str_from(east_asian_width_short(
+            &super::char_props::unicode_east_asian_width(ch),
+        ));
+    }
+    Value::str_from(crate::builtins::unicode::unicode_general_category(ch))
 }
 
 /// Get the property value for a codepoint (as u32), handling
