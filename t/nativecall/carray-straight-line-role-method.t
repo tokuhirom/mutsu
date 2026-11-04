@@ -7,7 +7,7 @@ use nqp;
 # (CArray's ASSIGN-POS / AT-POS) runs without a method frame (#16215). The
 # observable behaviour must not change.
 
-plan 23;
+plan 31;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^6;
@@ -79,3 +79,27 @@ is $ref, 7, 'a bound element reference reads the live element';
 $ref = 8;
 is $live[1], 8, 'and writes through to the array';
 is-deeply CArray[num64].new.Array, [], 'an empty array lists as empty';
+
+# Reading `$c[$i]` ranks the imported postcircumfix candidates once per
+# composition and argument types (#16373); the winner must not leak between
+# compositions of one class, nor between element types.
+my $r1 = CArray[num64].new; $r1[0] = 1.5e0; $r1[1] = 2.5e0;
+my $r2 = CArray[int32].new; $r2[0] = 7;     $r2[1] = 8;
+is $r1[0], 1.5e0, 'first read of a num64 CArray';
+is $r2[0], 7, 'first read of an int32 CArray';
+is $r1[1], 2.5e0, 'second read of the num64 CArray';
+is $r2[1], 8, 'second read of the int32 CArray';
+is-deeply $r1[0, 1].list, (1.5e0, 2.5e0), 'a list index still takes the Iterable candidate';
+is $r2[*].elems, 2, 'a Whatever index still takes its own candidate';
+
+class Plain { }
+role Mark-A { }
+role Mark-B { }
+multi sub which-mark(Mark-A $) { 'A' }
+multi sub which-mark(Mark-B $) { 'B' }
+my $ma = Plain.new but Mark-A;
+my $mb = Plain.new but Mark-B;
+is-deeply (which-mark($ma), which-mark($mb), which-mark($ma), which-mark($mb)),
+  ('A', 'B', 'A', 'B'),
+  'two role compositions of one class keep their own winners when calls interleave';
+is-deeply (which-mark($ma), which-mark($mb)), ('A', 'B'), 'and on a second round';
