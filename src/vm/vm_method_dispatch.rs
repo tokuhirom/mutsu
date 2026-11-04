@@ -2177,6 +2177,16 @@ impl Interpreter {
         }
 
         self.push_light_call_frame();
+        // The same thread-lane mask as the general method path
+        // (`call_compiled_method`): once the body has spawned a thread, the
+        // method's own `@`/`%` lexicals are published under their bare names,
+        // and on return they must stop answering the caller's same-named
+        // variable (#15020). Dropped, and so undone, on every exit path.
+        let _thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            method_def.param_defs.iter(),
+            &cc.locals,
+        );
         // See `call_compiled_function_named_inner`: an END registered inside this
         // method closes over a frame that dies on return.
         let end_phaser_mark_before = self.end_phaser_capture_mark();
