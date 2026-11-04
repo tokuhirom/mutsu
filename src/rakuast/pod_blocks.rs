@@ -21,7 +21,7 @@ use crate::value::Value;
 
 /// The block types whose paragraphs are not plain text.
 const SPECIAL: &[&str] = &[
-    "table", "config", "row", "column", "cell", "nested", "toc", "semantic", "alias",
+    "config", "row", "column", "cell", "nested", "toc", "semantic", "alias",
 ];
 
 /// The block types whose delimited content is one verbatim string (directives
@@ -43,6 +43,8 @@ enum Part {
     Text(String),
     Para(Vec<Atom>),
     Block(Block),
+    /// A row of a `table` block.
+    Row(super::pod_table::Row),
 }
 
 struct Block {
@@ -362,6 +364,10 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 return None;
             }
             let config = config(lines, &rest[kind.len()..])?;
+            if kind == "table" {
+                let form = if name == "for" { Form::For } else { Form::Delimited };
+                return table_block(lines, i, form, config, from);
+            }
             let (base, level) = split_level(kind);
             if name == "for" {
                 let (text, next) = paragraph(lines, i + 1, None, false)?;
@@ -430,6 +436,9 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             ))
         }
         _ => {
+            if name == "table" && rest.trim().is_empty() {
+                return table_block(lines, i, Form::Abbreviated, Vec::new(), from);
+            }
             let (base, level) = split_level(name);
             // An abbreviated `=formula` keeps only its first line, without
             // formatting codes (not read here).
@@ -462,6 +471,95 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 next,
             ))
         }
+    }
+}
+
+/// The `table` block that begins at line `i`, written as `form`, and the line
+/// after it.
+// Cost: O(b), b = lines of the block.
+fn table_block(
+    lines: &Lines,
+    i: usize,
+    form: Form,
+    mut config: Vec<(String, RakuAstNode)>,
+    from: usize,
+) -> Option<(Block, usize)> {
+    let mut j = i + 1;
+    let (end, next) = if form == Form::Delimited {
+        loop {
+            if j >= lines.text.len() {
+                return None;
+            }
+            match lines.directive(j) {
+                Some(("end", rest)) if rest.trim() == "table" => break,
+                Some(_) => return None,
+                None => j += 1,
+            }
+        }
+        (j, j + 1)
+    } else {
+        while j < lines.text.len() && !lines.blank(j) && lines.directive(j).is_none() {
+            j += 1;
+        }
+        let mut next = j;
+        while next < lines.text.len() && lines.blank(next) {
+            next += 1;
+        }
+        (j.checked_sub(1)?, next)
+    };
+    let table = super::pod_table::read(&lines.text[i + 1..end + usize::from(form != Form::Delimited)])?;
+    if table.header_row {
+        config.push(("header-row".to_string(), expression(lines, "0", None)?));
+    }
+    let parts = table
+        .parts
+        .into_iter()
+        .map(|part| match part {
+            super::pod_table::TablePart::Row(row) => Part::Row(row),
+            super::pod_table::TablePart::Separator(text) => Part::Text(text),
+        })
+        .collect();
+    Some((
+        Block {
+            kind: "table".to_string(),
+            level: None,
+            form,
+            margin: None,
+            config,
+            parts,
+            from,
+            to: lines.end(end),
+        },
+        next,
+    ))
+}
+
+/// The `Doc::LegacyRow` of a table row.
+// Cost: O(size of the row).
+fn row_node(row: &super::pod_table::Row) -> RakuAstNode {
+    let field = |name: &'static str, value: RakuAstFieldValue| RakuAstField {
+        name: Some(name),
+        value,
+    };
+    let mut fields = Vec::new();
+    if let Some(dividers) = &row.dividers {
+        fields.push(field(
+            "column-dividers",
+            RakuAstFieldValue::Node(Value::str(dividers.clone())),
+        ));
+    }
+    fields.push(field(
+        "column-offsets",
+        RakuAstFieldValue::List(row.offsets.iter().map(|&o| Value::int(o)).collect()),
+    ));
+    fields.push(field(
+        "cells",
+        RakuAstFieldValue::List(row.cells.iter().map(|c| Value::str(c.clone())).collect()),
+    ));
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::DocLegacyRow,
+        fields,
     }
 }
 
@@ -773,6 +871,7 @@ impl Block {
                     Part::Text(text) => Value::str(text.clone()),
                     Part::Para(atoms) => Value::rakuast(Box::new(paragraph_node(atoms))),
                     Part::Block(block) => Value::rakuast(Box::new(block.node())),
+                    Part::Row(row) => Value::rakuast(Box::new(row_node(row))),
                 })
                 .collect();
             fields.push(RakuAstField {

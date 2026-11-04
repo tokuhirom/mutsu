@@ -347,6 +347,8 @@ fn render_inline_field(f: &RakuAstField) -> String {
 fn render_field_line(f: &RakuAstField, indent: usize, width: usize) -> String {
     let val = if f.name == Some("processors") {
         render_processors(&f.value, indent)
+    } else if f.name == Some("column-offsets") {
+        render_offsets(&f.value, indent)
     } else {
         render_field_value(&f.value, indent)
     };
@@ -354,6 +356,19 @@ fn render_field_line(f: &RakuAstField, indent: usize, width: usize) -> String {
         Some(key) => format!("{key:width$} => {val}"),
         None => val,
     }
+}
+
+/// A `Doc::LegacyRow`'s `column-offsets` is an `array[int]`, which `.raku`
+/// prints on one line: `(0,3)`, `(4,)`.
+fn render_offsets(fv: &RakuAstFieldValue, indent: usize) -> String {
+    let RakuAstFieldValue::List(items) = fv else {
+        return render_field_value(fv, indent);
+    };
+    let values = items.iter().map(render_leaf).collect::<Vec<_>>();
+    if let [only] = values.as_slice() {
+        return format!("({only},)");
+    }
+    format!("({})", values.join(","))
 }
 
 /// Rakudo renders a QuotedString's processor names as a word list (`<words
