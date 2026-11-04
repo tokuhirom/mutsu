@@ -87,6 +87,10 @@ pub(crate) struct TypeState {
     /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
     /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
     pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
+    /// Per-`(class, role)` memo of `class_does_role`, valid for one
+    /// `registry_write_gen` (the answer reads the registry and the builtin
+    /// catalog only). Its generation is `None` until first used.
+    pub(crate) class_does_role_memo: std::cell::RefCell<ClassDoesRoleMemo>,
     /// Classes/roles hidden from package stash lookups (e.g. `Example2::.keys`).
     /// Populated when a `use X::Y` loads modules whose dependency chain neither
     /// declares a class matching the module name nor includes a `package X {}`
@@ -295,6 +299,7 @@ impl TypeState {
             registry: Arc::new(RwLock::new(Interpreter::shared_builtin_registry())),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             attr_type_constraint_cache: Default::default(),
+            class_does_role_memo: Default::default(),
             package_stash_hidden: Default::default(),
             predictive_seq_iters: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
@@ -355,6 +360,7 @@ impl TypeState {
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             attr_type_constraint_cache: Default::default(),
+            class_does_role_memo: Default::default(),
             package_stash_hidden: self.package_stash_hidden.clone(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             subset_predicate_cache: HashMap::new(),
@@ -399,4 +405,11 @@ impl TypeState {
             user_declared_classes: self.user_declared_classes.clone(),
         }
     }
+}
+
+/// See [`TypeState::class_does_role_memo`].
+#[derive(Default)]
+pub(crate) struct ClassDoesRoleMemo {
+    pub(crate) generation: Option<u64>,
+    pub(crate) answers: rustc_hash::FxHashMap<(crate::symbol::Symbol, crate::symbol::Symbol), bool>,
 }
