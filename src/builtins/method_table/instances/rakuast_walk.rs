@@ -139,16 +139,11 @@ fn literalize(
         Ok(value) => value,
         Err(_) => return Some(Ok(cannot)),
     };
-    if crate::rakuast::literalize::is_array_composer(node) {
-        return Some(Ok(match value.view() {
-            ValueView::Array(items, _) => Value::array(items.to_vec()),
-            _ => value,
-        }));
+    if crate::rakuast::literalize::is_hash_composer(node) && !matches!(value.view(), ValueView::Hash(_))
+    {
+        return Some(Ok(cannot));
     }
-    if crate::rakuast::literalize::is_hash_composer(node) {
-        return Some(crate::builtins::map_hash_coerce::to_map(value).or(Ok(cannot)));
-    }
-    Some(Ok(value))
+    Some(Ok(crate::rakuast::literalize::literal_value(value)))
 }
 
 /// `parent($generation = 0)`: the ancestor of the node a walk is visiting that
