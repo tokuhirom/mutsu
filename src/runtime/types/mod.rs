@@ -1096,6 +1096,7 @@ impl Interpreter {
             return None;
         }
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        note_type_capture_name(name);
         Some((Self::type_capture_marker_key(name), Value::TRUE))
     }
 }
@@ -1103,6 +1104,38 @@ impl Interpreter {
 /// Whether any `::T` type capture has ever been bound (`bind_type_capture`),
 /// process-wide and monotonic. Gates `has_type_capture_binding`.
 static TYPE_CAPTURE_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A bloom filter (256 bits, one hash) over the names a `::T` capture marker
+/// was ever written for. A name whose bit is clear has no marker anywhere, so
+/// `has_type_capture_binding` answers without interning the name and probing
+/// the env (every typed parameter binding asked, several times). Monotonic and
+/// process-global like [`TYPE_CAPTURE_SEEN`].
+static TYPE_CAPTURE_NAME_BITS: [std::sync::atomic::AtomicU64; 4] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
+// Cost: O(n), n = bytes of `name` (FNV-1a).
+fn type_capture_name_bit(name: &str) -> (usize, u64) {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in name.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let bit = (h ^ (h >> 32)) & 255;
+    ((bit >> 6) as usize, 1u64 << (bit & 63))
+}
+
+fn note_type_capture_name(name: &str) {
+    let (word, mask) = type_capture_name_bit(name);
+    TYPE_CAPTURE_NAME_BITS[word].fetch_or(mask, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn type_capture_name_possible(name: &str) -> bool {
+    let (word, mask) = type_capture_name_bit(name);
+    TYPE_CAPTURE_NAME_BITS[word].load(std::sync::atomic::Ordering::Relaxed) & mask != 0
+}
 
 impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
@@ -1125,6 +1158,7 @@ impl Interpreter {
                 captured,
             );
         }
+        note_type_capture_name(name);
         self.env
             .insert(Self::type_capture_marker_key(name), Value::TRUE);
     }
@@ -1145,7 +1179,7 @@ impl Interpreter {
         // base). Monotonic and process-global for the same reason
         // `ENV_TYPE_CONSTRAINT_SEEN` is: a worker interpreter binds captures
         // into the same env family the parent later reads.
-        if !Self::any_type_capture_seen() {
+        if !Self::any_type_capture_seen() || !type_capture_name_possible(name) {
             return false;
         }
         matches!(
