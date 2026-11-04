@@ -56,7 +56,7 @@ throws-like { class C { submethod m { @_.elems } }; C.new.m(1, 2) },
 # `@_` nested inside a `do {}` in a method body is a pre-existing, already
 # -fixed sibling case (t/placeholder-named-in-method-do.t) -- pinned again
 # here for completeness alongside the direct-usage shapes above.
-throws-like { class F { method m { my $r = do { @_ }; $r.elems } }; F.new.m },
+throws-like { EVAL 'class F { method m { my $r = do { @_ }; $r.elems } }; F.new.m' },
     X::Placeholder::Block,
     '@_ nested in do {} inside a method is still rejected (sibling shape)';
 
