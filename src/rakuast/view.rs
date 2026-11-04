@@ -1075,13 +1075,10 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 fields,
             })))
         }
-        // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`.
-        // raku gives each declarator keyword its own class (there is no shared
-        // node with a `kind` field), and the body is a plain `Block` exactly as
-        // for a class. `grammar` also parses to `Stmt::Package` here, but its
-        // `RakuAST::Grammar` body holds regex declarations this layer does not
-        // model yet, so it stays the boundary. `unit` and `my` scopes carry
-        // extra RakuAST shape, deferred.
+        // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`,
+        // each keyword its own class; the body is a plain `Block` as for a class.
+        // `grammar` also parses to `Stmt::Package` but stays the boundary (its
+        // regex declarations are not modelled here), as do `unit` scopes.
         Stmt::Package {
             name,
             body,
