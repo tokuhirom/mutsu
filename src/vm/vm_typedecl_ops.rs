@@ -658,7 +658,8 @@ impl Interpreter {
                 let class_sym = crate::symbol::Symbol::intern(&storage_name);
                 let mut reg = self.registry_mut();
                 if !reg.frozen_dispatchers.is_empty() {
-                    reg.frozen_dispatchers.retain(|(class, _), _| *class != class_sym);
+                    reg.frozen_dispatchers
+                        .retain(|(class, _), _| *class != class_sym);
                 }
             }
             // Take the rollback snapshot `register_class_decl` leaves behind
