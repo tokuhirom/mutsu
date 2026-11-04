@@ -479,6 +479,16 @@ impl Interpreter {
         // the parameter's bare name readonly. The guard closes the scope on
         // every exit path, including that unwind.
         let _readonly_guard = crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(self);
+        // The light path needs the same thread-lane mask as the general call
+        // path (`vm_call_named_inner.rs`): once the body has spawned a thread,
+        // the routine's own `@`/`%` lexicals are published under their bare
+        // names, and on return they must stop answering the caller's
+        // same-named variable (#15020). Dropped (and so undone) on every exit.
+        let _thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            cf.param_defs.iter(),
+            &cf.code.locals,
+        );
         // A routine gets a fresh, writable `$_` — it does NOT inherit the
         // caller's topic, so a caller `given`/`with`/`for` that marked `_`
         // readonly (a literal/read-only topic) must not leak that mark into this
