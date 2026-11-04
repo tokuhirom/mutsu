@@ -440,6 +440,10 @@ impl Interpreter {
                 let is_stub = self.registry().functions.get(&key).is_some_and(|def| def.is_stub);
                 return Some(Value::truth(is_stub));
             }
+            // A `Method` object (`.^methods`, `.^lookup`) records it as an attribute.
+            ValueView::Instance { attributes, .. } => {
+                return attributes.as_map().get("yada").cloned();
+            }
             _ => return None,
         };
         if data.body.is_empty() && !data.name.is_empty() {
