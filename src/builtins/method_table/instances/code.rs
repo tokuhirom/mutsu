@@ -39,6 +39,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Str", str_),
     MethodRow {
         owner: "Code",
+        name: "POSITIONS",
+        arity: 1,
+        handler: Handler::Interp(positions),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Code",
         name: "set_name",
         arity: 1,
         handler: Handler::Interp(set_name),
@@ -257,6 +265,26 @@ fn str_(
 /// (#9479, PDF::COS::Tie's `&accessor.set_name($key)`). Answers the name.
 // Cost: O(n), n = chars of the new name (interned), plus
 // `Interpreter::rename_code`'s for a routine.
+/// `Code.POSITIONS(\list)`: the index a `WhateverCode` subscript stands for,
+/// the code called with the element count of `list` (`$carray[*-1]` indexes
+/// `$block.POSITIONS(array)`), #16488.
+// Cost: O(1) plus the arguments' `.elems` and the code's own cost.
+fn positions(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    // `list` can be any `Positional`, including a user-level container (a
+    // `CArray` is a Raku class), so its length is asked by method name, as
+    // `elems($list)` does.
+    let elems = match interp.call_method_with_values(args[0].clone(), "elems", vec![]) {
+        Ok(n) => n,
+        Err(e) => return Some(Err(e)),
+    };
+    Some(interp.call_sub_value(target.clone(), vec![elems]))
+}
+
 fn set_name(
     interp: &mut Interpreter,
     target: &Value,
