@@ -133,7 +133,6 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             | ParsedExpr::WordsAtom(_)
             | ParsedExpr::SubscriptAdverbs(_)
             | ParsedExpr::Supply(_)
-            | ParsedExpr::StartBody(_)
             | ParsedExpr::HyperPrefix(_)
             | ParsedExpr::AtomicVar(_)
             | ParsedExpr::ObjectHash(_)

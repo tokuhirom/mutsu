@@ -230,6 +230,65 @@ pub(crate) fn find_regex_code_block_placeholder(stmts: &[Stmt]) -> Option<String
     finder.found
 }
 
+/// Finds a placeholder used directly in the body of a construct that takes no
+/// signature (`do {}`, `try {}`, `once {}`, `gather {}`) anywhere in the unit, routine bodies included: rakudo rejects
+/// it at compile time (`X::Placeholder::Block`), whether the construct sits in
+/// the mainline or inside a sub or method.
+struct StrayBlockPlaceholderFinder {
+    found: Option<String>,
+}
+
+impl StrayBlockPlaceholderFinder {
+    // Cost: O(n), n = size of the body's own placeholder scope.
+    fn check(&mut self, body: &[Stmt]) {
+        // `%_` is legal anywhere in a method body (an implicit `*%_`), and a
+        // routine may be one; the other placeholders never are.
+        if self.found.is_none() {
+            self.found = super::collect_unattached_placeholders(body)
+                .into_iter()
+                .find(|ph| ph != "%_");
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for StrayBlockPlaceholderFinder {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if self.found.is_some() {
+            return;
+        }
+        match expr {
+            Expr::DoBlock {
+                body,
+                origin: super::DoBlockOrigin::SourceBlock,
+                ..
+            }
+            | Expr::Try { body, .. }
+            | Expr::Once { body }
+            | Expr::Gather(body) => self.check(body),
+            _ => {}
+        }
+        walk_expr(self, expr);
+    }
+
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if self.found.is_none() {
+            walk_stmt(self, stmt);
+        }
+    }
+}
+
+/// The first placeholder (`$^c`) used directly inside a signature-less
+/// `do`/`try`/`once`/`gather`/`start`/`supply` body anywhere in `stmts`, or
+/// `None`.
+// Cost: O(n), n = size of `stmts`' subtree.
+pub(crate) fn find_stray_block_placeholder(stmts: &[Stmt]) -> Option<String> {
+    let mut finder = StrayBlockPlaceholderFinder { found: None };
+    for stmt in stmts {
+        finder.visit_stmt(stmt);
+    }
+    finder.found
+}
+
 /// `^a` -> `$^a`; `@^a`, `%^a`, `&^a` already carry their sigil.
 // Cost: O(len).
 pub(crate) fn placeholder_display_name(key: String) -> String {

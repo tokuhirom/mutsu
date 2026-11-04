@@ -66,10 +66,6 @@ fn blorst(names: &NameScope, arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
             origin: crate::ast::DoBlockOrigin::SourceBlock,
             ..
         } => block_node(names, body),
-        Expr::Ast(node) => match node.as_ref() {
-            crate::ast::parsed::ParsedExpr::StartBody(body) => block_node(names, body),
-            _ => Ok(statement_expression(view_expr(names, arg)?)),
-        },
         other => Ok(statement_expression(view_expr(names, other)?)),
     }
 }
