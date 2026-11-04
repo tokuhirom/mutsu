@@ -220,13 +220,29 @@ fn plain_name(name: &str) -> bool {
 }
 
 /// A variable the lowering hands back unchanged whatever the unit declares:
-/// the match and error variables (`$/`, `$!`) and an attribute (`$!x`). A
-/// placeholder (`$^a`), a capture (`$0`) and a code variable (`&f`, which the
-/// unit's routines classify) are still read by the conversion.
+/// the match and error variables (`$/`, `$!`), an attribute (`$!x`), a
+/// placeholder (`$^a`) and a positional capture (`$0`). A code variable (`&f`,
+/// which the unit's routines classify) is still read by the conversion.
 // Cost: O(1).
 fn context_free_name(expr: &Expr, name: &str) -> bool {
+    // A placeholder (`$^a`, `@:n`, `&^cb`) lowers back to the same caret- or
+    // colon-prefixed name whatever the unit declares.
+    if let Some(bare) = name.strip_prefix(['^', ':'])
+        && crate::ast::placeholders::is_placeholder_name(bare)
+    {
+        return true;
+    }
     if matches!(expr, Expr::CodeVar(_)) {
         return false;
+    }
+    // A positional capture (`$0`) reads back as `Var::PositionalCapture`, whose
+    // index is the canonical integer.
+    if matches!(expr, Expr::Var(_))
+        && !name.is_empty()
+        && name.bytes().all(|b| b.is_ascii_digit())
+        && name.parse::<i64>().is_ok_and(|n| n.to_string() == name)
+    {
+        return true;
     }
     match name {
         "/" | "!" => true,
