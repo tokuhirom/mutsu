@@ -1472,7 +1472,22 @@ impl Interpreter {
         if crate::runtime::native_types::native_family(base).is_none() {
             return true;
         }
+        if self.native_source_arg(args, arg_idx) {
+            return true;
+        }
+        // rakudo 2026.09 dispatches a two-argument call that holds a native
+        // argument through the full bind check, where a boxed `Int` binds an
+        // `int` parameter: `multi f(int, int); f 42, my int $y` works, while
+        // `f 42, 7` and a three-argument call with one native do not.
+        args.len() == 2
+            && arg_idx.is_some_and(|idx| idx < 2 && self.native_source_arg(args, Some(1 - idx)))
+    }
 
+    /// Whether the argument at `arg_idx` is a native source: a container with
+    /// a native cell, a variable declared `int` / `num` / `str`, or an
+    /// anonymous native declaration the call site marked.
+    // Cost: O(1) plus the source variable's constraint lookup.
+    fn native_source_arg(&self, args: &[Value], arg_idx: Option<usize>) -> bool {
         // A container argument whose cell is native (a `my byte` variable's
         // cell reached through a List item, ADR-15309) is a native source just
         // as a `VarRef` to that variable is.
