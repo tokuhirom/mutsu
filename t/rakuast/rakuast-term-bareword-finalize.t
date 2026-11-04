@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 10;
+plan 12;
 
 # A plain term the bareword classifier resolves (a sigilless declaration, a
 # constant, a setting term) is lowered by the one term function, without the
@@ -28,3 +28,13 @@ is Empty.elems, 0, 'Empty';
 my $n = 0;
 LOOP1: for 1..3 { for 1..3 { $n++; next LOOP1 } }
 is $n, 3, 'a loop label stays a label';
+# A capitalised word stays the word for the compiler to resolve, so a local
+# declaration of a keyword-like name wins.
+{
+    constant True = 42;
+    is True, 42, 'a local constant named True';
+}
+{
+    my \False = 'no';
+    is False, 'no', 'a sigilless term named False';
+}

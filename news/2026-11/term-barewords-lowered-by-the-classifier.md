@@ -12,3 +12,6 @@ tells the conversion how the parse resolved the word, which the classifier alone
 does not know, so those, a qualified name and a label in scope are still resolved
 by the conversion. `.AST` and `EVAL($ast)` are
 unchanged.
+
+A word the finalization already carries as a type name (capitalised: `True`, `X`)
+is left to the compiler, so a local `constant True = 42` still wins.

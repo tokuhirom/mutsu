@@ -330,18 +330,17 @@ impl VisitMut for Finalize<'_> {
             *expr = call;
             return;
         }
-        // A plain term the classifier resolves (`my \x`, a constant): see
-        // `bareword::term_expr`.
-        // Only an unspelled word: a spelling (`ImportedTerm`, `LabelTerm`) tells
-        // the conversion how the parse resolved it, which the classifier alone
-        // does not know.
-        if let Expr::BareWord(word) = &*expr
-            && let Some(term) = super::bareword::term_expr(names, word)
-        {
-            *expr = term;
-            return;
-        }
         if !carried::expr_carried(inner) {
+            // A plain term the classifier resolves (`my \x`, a constant): see
+            // `bareword::term_expr`. Only a word that is not carried as a type
+            // name, and only unspelled: a spelling (`ImportedTerm`, `LabelTerm`)
+            // tells the conversion how the parse resolved the word.
+            if let Expr::BareWord(word) = &*expr
+                && let Some(term) = super::bareword::term_expr(names, word)
+            {
+                *expr = term;
+                return;
+            }
             match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
             {
