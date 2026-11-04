@@ -1550,9 +1550,7 @@ impl Compiler {
     /// `&infix:<..>(..)` and bare-block calls.
     fn tag_scalar_arg_before_closure(&mut self, args: &[Expr], i: usize) {
         let arg = &args[i];
-        if !matches!(arg, Expr::Var(_))
-            || !args[i + 1..].iter().any(Self::is_closure_literal_arg)
-        {
+        if !matches!(arg, Expr::Var(_)) || !args[i + 1..].iter().any(Self::is_closure_literal_arg) {
             return;
         }
         let Some(name) = self.lvalue_root_key(arg, crate::ast::LvaluePeel::ASSIGN) else {
