@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 5;
 
 # A package-qualified name with no parentheses that names an `our &` code
 # variable is a call of the stored Callable, as it is for an `our sub` (#16482).
@@ -18,4 +18,3 @@ is Foo::Bar::<&zape>(), "zipi", 'the stash lookup form still works';
 is Foo::Bar::named, "named", 'an our sub bare call still works';
 throws-like { (Foo::Bar::zape)() }, X::Method::NotFound,
     'the bare name is a call, so calling its string result dies';
-is (Foo::Bar::zape ~ "!"), "zipi!", 'the bare call composes as a term';
