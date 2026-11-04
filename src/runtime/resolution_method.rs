@@ -342,7 +342,7 @@ impl Interpreter {
         // candidate; the memo lists them so the walk is O(candidate levels),
         // not O(MRO depth) with a registry probe per level.
         let levels = self.method_candidate_levels(class_name, method_name);
-        let augment_cutoff = self.registry().augment_cutoff(&mro, method_name);
+        let augment_cutoff = self.registry().augment_cutoff(mro, method_name);
         for &level in levels.iter() {
             let level = level as usize;
             if level >= mro.len() {
