@@ -69,6 +69,64 @@ pub(super) fn enum_term_node(
     }
 }
 
+/// Give the `term` of the `Type::Enum` `node` the ranges of the text it was
+/// written as: a parenthesized body is parsed again as a fragment and its
+/// ranges copied over, a `<...>` word quote spans the brackets and its literal
+/// the text between them. Anything else keeps no range: exact or absent.
+// Cost: O(n), n = length of the declaration's source, plus the parse of a
+// parenthesized body.
+pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, with_child};
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let located = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
+        let at = text.find(['(', '<'])?;
+        let term = text.get(at..)?.trim_end();
+        let closed = (term.starts_with('(') && term.ends_with(')'))
+            || (term.starts_with('<') && term.ends_with('>') && !term.starts_with("<<"));
+        closed.then(|| (from + at, term.to_string()))
+    });
+    let Some((at, term_text)) = located else {
+        return;
+    };
+    with_child(node, "term", |term| {
+        if term.origin.0.is_some() {
+            return;
+        }
+        match term.class {
+            RakuAstClass::CircumfixParentheses => {
+                super::fragment_origins::expression(names, term, &term_text, at);
+                // The statement inside the parentheses spans their text.
+                super::list_origins::circumfix(term);
+            }
+            RakuAstClass::QuotedString if term_text.starts_with('<') => {
+                let inner = &term_text[1..term_text.len() - 1];
+                super::origin::set_span(
+                    term,
+                    crate::ast::SrcSpan::new(at, at + term_text.len()),
+                );
+                let literal_at = crate::ast::SrcSpan::new(at + 1, at + term_text.len() - 1);
+                if let Some(RakuAstFieldValue::List(segments)) = term
+                    .fields
+                    .iter_mut()
+                    .find(|f| f.name == Some("segments"))
+                    .map(|f| &mut f.value)
+                    && let [only] = segments.as_mut_slice()
+                    && let ValueView::RakuAst(literal) = only.view()
+                    && literal.class == RakuAstClass::StrLiteral
+                    && super::infix_origins::leaf_text(literal).as_deref() == Some(inner)
+                {
+                    let mut literal = RakuAstNode::clone(literal);
+                    super::origin::set_span(&mut literal, literal_at);
+                    *only = Value::rakuast(Box::new(literal));
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
 /// A computed body is the parenthesized term itself.
 fn computed_term(names: &NameScope, body: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let node = view_expr(names, body)?;
