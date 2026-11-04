@@ -498,8 +498,21 @@ impl Interpreter {
                         .map(|name| (name.to_string(), value.clone()))
                 })
                 .collect();
-            let callable_role_params: rustc_hash::FxHashSet<String> = self
-                .registry()
+            // Only a role parameter whose value is a callable (or the
+            // `Callable` type object of an unsupplied `&cb?`) is ever bound
+            // as a callable, so the candidate's parameter list is read only
+            // then (a CArray's `TValue` is a type: nothing to look up).
+            let any_callable_value = role_param_bindings.iter().any(|(_, value)| {
+                match value.view() {
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+                    ValueView::Package(pkg) => pkg == "Callable",
+                    _ => false,
+                }
+            });
+            let callable_role_params: rustc_hash::FxHashSet<String> = if !any_callable_value {
+                Default::default()
+            } else {
+                self.registry()
                 .role_candidates
                 .get(&role_name)
                 .and_then(|candidates| {
@@ -522,7 +535,8 @@ impl Interpreter {
                         })
                         .collect()
                 })
-                .unwrap_or_default();
+                .unwrap_or_default()
+            };
             let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
             for (name, value) in &role_param_bindings {
                 // The role declaration stores callable parameters under their
@@ -715,7 +729,7 @@ impl Interpreter {
             // caller closure's own capture (upstream NativeCall, #11203).
             let mut static_packages = vec![def.lexical_package.resolve()];
             if let Some(ValueView::Array(type_args, _)) = mixins
-                .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
+                .get(MetaNs::RoleTypeargs.str_key_for_str(&role_name))
                 .map(Value::view)
             {
                 let (_, punned_name) =
