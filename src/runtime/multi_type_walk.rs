@@ -181,6 +181,30 @@ impl Interpreter {
         let mut pos_idx = 0usize;
         // The next positional argument (named-argument Pairs are skipped),
         // unwrapped for dispatch, with the source variable's declared type.
+        // A two-argument call holding a native argument binds its boxed `Int`
+        // to an `int` parameter too (see `native_dispatch_arg_matches`), so
+        // the boxed argument ranks as that native type.
+        let pair_native: Option<(usize, String)> = (args.len() == 2)
+            .then(|| {
+                let unwrapped: Vec<(Value, Option<String>)> =
+                    args.iter().map(|a| self.unwrap_arg_for_dispatch(a)).collect();
+                match (&unwrapped[0], &unwrapped[1]) {
+                    ((_, None), (arg, Some(native)))
+                        if matches!(unwrapped[0].0.view(), ValueView::Int(_))
+                            && matches!(arg.view(), ValueView::Int(_)) =>
+                    {
+                        Some((0, native.clone()))
+                    }
+                    ((arg, Some(native)), (_, None))
+                        if matches!(unwrapped[1].0.view(), ValueView::Int(_))
+                            && matches!(arg.view(), ValueView::Int(_)) =>
+                    {
+                        Some((1, native.clone()))
+                    }
+                    _ => None,
+                }
+            })
+            .flatten();
         let next_positional = |pos_idx: &mut usize| -> Option<(Value, Option<String>)> {
             while *pos_idx < args.len() && matches!(args[*pos_idx].view(), ValueView::Pair(..)) {
                 *pos_idx += 1;
@@ -188,7 +212,11 @@ impl Interpreter {
             let idx = *pos_idx;
             let value = args.get(idx)?;
             *pos_idx += 1;
-            Some(self.unwrap_arg_for_dispatch(value))
+            let (arg, var_type) = self.unwrap_arg_for_dispatch(value);
+            match &pair_native {
+                Some((boxed, native)) if *boxed == idx => Some((arg, Some(native.clone()))),
+                _ => Some((arg, var_type)),
+            }
         };
         for pd in params.iter() {
             // A named parameter does not contribute to narrowness (see
