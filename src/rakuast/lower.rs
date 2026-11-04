@@ -5231,6 +5231,10 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 is_bind: true,
             })
         }
+        // `@a »+=» @b`: `MetaInfix::Assign` around the hyper operator.
+        RakuAstClass::ApplyInfix if let Some(lowered) = super::hyper_assign::lower_assign_hyper(names, node) => {
+            lowered
+        }
         // `@a >>+<< @b` -> the hyper operator, keeping both dwim flags.
         RakuAstClass::ApplyInfix
             if named_child(node, "infix")

@@ -7,6 +7,149 @@ use crate::ast::Expr;
 use std::sync::atomic::Ordering;
 
 use super::compound::TMP_INDEX_COUNTER;
+use super::lower::{
+    bool_field, lower_expr, named_child, named_child_or_positional, positional_leaf, unsupported,
+};
+use super::view::{leaf_field, node_field, view_expr};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::scope::NameScope;
+use crate::value::{RuntimeError, Value, ValueView};
+
+/// If `op` is an assignment meta-operator (`+=`, `~=`, `min=`, ...), return the
+/// base operator. Comparison/identity operators that merely *end* in `=` are
+/// excluded.
+pub(crate) fn assignment_metaop_base(op: &str) -> Option<&str> {
+    let base = op.strip_suffix('=')?;
+    if base.is_empty() {
+        return None;
+    }
+    // Exclude operators where the trailing `=` is part of the operator itself.
+    if matches!(
+        op,
+        "==" | "!=" | "<=" | ">=" | "===" | "!==" | "=:=" | "!=:=" | "<=>"
+    ) {
+        return None;
+    }
+    // A base that itself ends in `=`/`<`/`>`/`!` is a comparison-like operator
+    // (`==`, `<=`, `>=`, `!=`), not an assignment meta-op.
+    if base.ends_with(['=', '<', '>', '!']) {
+        return None;
+    }
+    Some(base)
+}
+
+/// A hyper infix `LEFT >>OP<< RIGHT` -> `ApplyInfix(left, MetaInfix::Hyper(
+/// [dwim-left,] infix, [dwim-right]), right)`; raku omits a dwim field whose
+/// value is False, and the hyper assignment's infix is the `Assignment` node.
+/// A hyper compound assignment (`»~=»`) wraps the hyper operator over the base
+/// operator in a `MetaInfix::Assign`, as rakudo does:
+/// `MetaInfix::Assign(MetaInfix::Hyper(Infix("~")))`.
+// Cost: O(n), n = nodes of the operands.
+pub(super) fn hyper_infix(
+    names: &NameScope,
+    left: &Expr,
+    op: &str,
+    right: &Expr,
+    dwim_left: bool,
+    dwim_right: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let compound_base = assignment_metaop_base(op);
+    let mut hyper_fields = Vec::with_capacity(3);
+    if dwim_left {
+        hyper_fields.push(RakuAstField {
+            name: Some("dwim-left"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        });
+    }
+    hyper_fields.push(node_field(
+        Some("infix"),
+        if op == "=" {
+            RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::Assignment,
+                fields: vec![RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Adverb("item"),
+                }],
+            }
+        } else {
+            RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::Infix,
+                fields: vec![leaf_field(
+                    None,
+                    Value::str(compound_base.unwrap_or(op).to_string()),
+                )],
+            }
+        },
+    ));
+    if dwim_right {
+        hyper_fields.push(RakuAstField {
+            name: Some("dwim-right"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        });
+    }
+    let hyper = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::MetaInfixHyper,
+        fields: hyper_fields,
+    };
+    let infix = if compound_base.is_some() {
+        RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::MetaInfixAssign,
+            fields: vec![node_field(None, hyper)],
+        }
+    } else {
+        hyper
+    };
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), view_expr(names, left)?),
+            node_field(Some("infix"), infix),
+            node_field(Some("right"), view_expr(names, right)?),
+        ],
+    })
+}
+
+/// `LEFT »OP=» RIGHT` built the way [`hyper_infix`] builds it
+/// (`ApplyInfix(left, MetaInfix::Assign(MetaInfix::Hyper(Infix(OP))), right)`),
+/// as the hyper operator `»OP=»`; `None` for any other application.
+// Cost: O(n), n = nodes of the operands.
+pub(super) fn lower_assign_hyper(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
+    let assign = named_child(node, "infix")
+        .ok()
+        .filter(|i| i.class == RakuAstClass::MetaInfixAssign)?;
+    let hyper = named_child_or_positional(assign)
+        .ok()
+        .filter(|h| h.class == RakuAstClass::MetaInfixHyper)?;
+    let infix = named_child(hyper, "infix")
+        .ok()
+        .filter(|i| i.class == RakuAstClass::Infix)?;
+    Some((|| {
+        let base = positional_leaf(infix)?;
+        let ValueView::Str(base) = base.view() else {
+            return Err(unsupported(node));
+        };
+        let base = base.to_string();
+        let op = format!("{base}=");
+        if assignment_metaop_base(&op) != Some(base.as_str()) {
+            return Err(unsupported(node));
+        }
+        Ok(Expr::HyperOp {
+            op,
+            left: Box::new(lower_expr(names, named_child(node, "left")?)?),
+            right: Box::new(lower_expr(names, named_child(node, "right")?)?),
+            dwim_left: bool_field(hyper, "dwim-left")?,
+            dwim_right: bool_field(hyper, "dwim-right")?,
+        })
+    })())
+}
 
 /// Build the *shape* operand for a hyper assignment into a literal list of
 /// lvalues.

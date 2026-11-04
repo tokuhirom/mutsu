@@ -4,6 +4,7 @@
 // file to ~565 lines — marginally over the 500-line guideline, but unavoidable
 // without splitting the function body itself.
 use super::*;
+use crate::rakuast::hyper_assign::assignment_metaop_base;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -538,27 +539,4 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
         return None;
     }
     Some((inner, dwim_left, dwim_right))
-}
-
-/// If `op` is an assignment meta-operator (`+=`, `~=`, `min=`, ...), return the
-/// base operator. Comparison/identity operators that merely *end* in `=` are
-/// excluded.
-fn assignment_metaop_base(op: &str) -> Option<&str> {
-    let base = op.strip_suffix('=')?;
-    if base.is_empty() {
-        return None;
-    }
-    // Exclude operators where the trailing `=` is part of the operator itself.
-    if matches!(
-        op,
-        "==" | "!=" | "<=" | ">=" | "===" | "!==" | "=:=" | "!=:=" | "<=>"
-    ) {
-        return None;
-    }
-    // A base that itself ends in `=`/`<`/`>`/`!` is a comparison-like operator
-    // (`==`, `<=`, `>=`, `!=`), not an assignment meta-op.
-    if base.ends_with(['=', '<', '>', '!']) {
-        return None;
-    }
-    Some(base)
 }
