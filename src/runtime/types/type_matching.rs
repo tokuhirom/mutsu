@@ -2551,13 +2551,15 @@ impl Interpreter {
 fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
     let name = constraint.strip_suffix(":D").unwrap_or(constraint);
     match value.view() {
+        // `int` / `num` are the 64-bit native types: every `Int` view is an
+        // `i64`, and a `Num` is a double.
         ValueView::Int(_) => matches!(
             name,
-            "Int" | "Numeric" | "Real" | "Cool" | "Any" | "Mu"
+            "Int" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "int"
         ),
         ValueView::Num(_) => matches!(
             name,
-            "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu"
+            "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "num"
         ),
         ValueView::Str(_) => matches!(name, "Str" | "Cool" | "Any" | "Mu"),
         _ => false,
