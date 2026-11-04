@@ -10194,6 +10194,20 @@ impl CompiledCode {
                 // `::('Foo::Bar')`): a sigiled constant or a name computed at
                 // run time may be a variable of the running frame (#13595).
                 OpCode::IndirectTypeLookup => !self.indirect_lookup_names_type(i),
+                // `PROCESS::<$x>` reads the process's dynamic variables (`$*x`,
+                // the env keys that start with `*`), which are never
+                // slot-only, so no frame has to mirror a local into `env` for
+                // it. One such read (Cro's `UnhandledErrorReporter`) latched
+                // the process-global flag and put every `my` declaration of
+                // every other chunk on the env-mirroring path (#9170).
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx)
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "PROCESS::"
+                    ) =>
+                {
+                    false
+                }
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
                 | OpCode::GetOuterVar { .. }
