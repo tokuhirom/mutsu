@@ -39,6 +39,7 @@ roast/APPENDICES/A02-some-day-maybe/misc.t
 roast/APPENDICES/A02-some-day-maybe/multi-no-match.t
 roast/MISC/bug-coverage-6.d.t
 roast/MISC/bug-coverage-stress.t
+roast/MISC/misc.t
 roast/S01-perl-5-integration/array.t
 roast/S01-perl-5-integration/basic.t
 roast/S01-perl-5-integration/class.t
