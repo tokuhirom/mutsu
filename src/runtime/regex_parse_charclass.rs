@@ -154,8 +154,14 @@ impl Interpreter {
                                 hex.push(ch);
                                 chars.next();
                             }
-                            let result =
-                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32);
+                            let result = u32::from_str_radix(&hex, 16)
+                                .ok()
+                                .and_then(char::from_u32)
+                                .or_else(|| {
+                                    (!is_neg && Self::peek_dotdot(&chars))
+                                        .then(|| range_start_surrogate(&hex))
+                                        .flatten()
+                                });
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
@@ -176,8 +182,14 @@ impl Interpreter {
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
-                            if let Some(ch) =
-                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            if let Some(ch) = u32::from_str_radix(&hex, 16)
+                                .ok()
+                                .and_then(char::from_u32)
+                                .or_else(|| {
+                                    (!is_neg && Self::peek_dotdot(&chars))
+                                        .then(|| range_start_surrogate(&hex))
+                                        .flatten()
+                                })
                             {
                                 if is_neg {
                                     EscResult::NegChar(ch)
@@ -799,13 +811,13 @@ impl Interpreter {
                             hex.push(c);
                             chars.next();
                         }
-                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                        range_end_codepoint(&hex)
                     } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
                         let mut hex = String::new();
                         while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
                             hex.push(chars.next().unwrap());
                         }
-                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                        range_end_codepoint(&hex)
                     } else {
                         Some(esc)
                     }
@@ -1393,4 +1405,27 @@ impl Interpreter {
         }
         s.len()
     }
+}
+
+/// The character a `\x` escape names as the *end* of a class range
+/// (`<[\xA0..\xD8FF]>`). A surrogate is no character (no string holds one), so
+/// a range ending in one ends at the last scalar value below the surrogates,
+/// as rakudo matches it.
+// Cost: O(k), k = number of digits.
+fn range_end_codepoint(hex: &str) -> Option<char> {
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    if (0xD800..=0xDFFF).contains(&value) {
+        return Some('\u{D7FF}');
+    }
+    char::from_u32(value)
+}
+
+/// The start of a class range written as a surrogate (`<[\xD800..\xE000]>`)
+/// begins at the first scalar value above the surrogates.
+// Cost: O(k), k = number of digits.
+fn range_start_surrogate(hex: &str) -> Option<char> {
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    (0xD800..=0xDFFF)
+        .contains(&value)
+        .then_some('\u{E000}')
 }
