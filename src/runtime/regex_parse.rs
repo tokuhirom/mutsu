@@ -766,14 +766,25 @@ pub(super) fn skip_opaque_var_ref(chars: &mut std::iter::Peekable<std::str::Char
                 chars.next();
             }
         }
-        Some(c) if c.is_alphabetic() || c == '_' => {
+        Some(c) if c.is_alphabetic() || c == '_' => loop {
             while chars
                 .peek()
                 .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
             {
                 chars.next();
             }
-        }
+            // `$Pkg::var`: a package-qualified name continues past `::`.
+            let mut ahead = chars.clone();
+            if ahead.next() == Some(':')
+                && ahead.next() == Some(':')
+                && ahead.peek().is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+            {
+                chars.next();
+                chars.next();
+            } else {
+                break;
+            }
+        },
         _ => {}
     }
     // After a variable ref, a trailing `=` is capture aliasing (e.g. `$<x>=(...)`).
