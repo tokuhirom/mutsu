@@ -177,8 +177,8 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
 /// range it already has; the dot is the first non-blank after it.
 // Cost: O(n), n = length of the application's source.
 fn dotty_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
-    let Some((_, left_end)) = super::infix_origins::child(node, "left")
-        .and_then(super::infix_origins::byte_range)
+    let Some((_, left_end)) =
+        super::infix_origins::child(node, "left").and_then(super::infix_origins::byte_range)
     else {
         return;
     };
