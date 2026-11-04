@@ -92,6 +92,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_call: c.has_call,
         markless: false,
         ascii: std::sync::OnceLock::new(),
+        derived: std::sync::Arc::clone(&pattern.derived),
     })
 }
 

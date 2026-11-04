@@ -40,6 +40,13 @@ pub(crate) struct RegexPattern {
 /// repeat per `regex_scan_positions` call.
 #[derive(Default)]
 pub(crate) struct PatternDerived {
+    /// This pattern is the body of a `rule` or `token` (its source began with
+    /// `:ratchet`), so a `<name>` call of it hands its caller ONE match and
+    /// none of its internal choice points, whatever the call site's own
+    /// ratchet is (rakudo ratchets the callee's whole result, even where a
+    /// sigspace term inside it stays backtrackable). Set where the callee's
+    /// body is parsed for a subrule call.
+    pub(crate) declared_ratchet: std::sync::atomic::AtomicBool,
     /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
     /// pattern many times during one match).
     pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
