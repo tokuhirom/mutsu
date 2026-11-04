@@ -29,6 +29,7 @@ fn dummy_method_def() -> MethodDef {
         nested_capture_index: None,
         captured_readonly: None,
         routine_cell: Default::default(),
+        augment_epoch: 0,
     }
 }
 

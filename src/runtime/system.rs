@@ -690,6 +690,7 @@ impl Interpreter {
                     nested_capture_index: None,
                     captured_readonly: None,
                     routine_cell: Default::default(),
+                    augment_epoch: 0,
                 };
                 let owner = crate::symbol::Symbol::intern(&class_name);
                 let method_sym = crate::symbol::Symbol::intern(&resolved_method_name);

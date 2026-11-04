@@ -313,6 +313,7 @@ impl Interpreter {
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
             routine_cell: method_cell,
+            augment_epoch: 0,
         };
         // A role method's custom `is` traits dispatch to a user
         // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --

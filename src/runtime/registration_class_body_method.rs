@@ -253,6 +253,7 @@ impl Interpreter {
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
             routine_cell: method_cell.clone(),
+            augment_epoch: 0,
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.

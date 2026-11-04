@@ -173,6 +173,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         nested_capture_index: None,
         captured_readonly: None,
         routine_cell: Default::default(),
+        augment_epoch: 0,
     }
 }
 
@@ -498,6 +499,7 @@ pub(super) fn substitute_type_params_in_method(
         nested_capture_index: method.nested_capture_index,
         captured_readonly: method.captured_readonly.clone(),
         routine_cell: Default::default(),
+        augment_epoch: 0,
     }
 }
 

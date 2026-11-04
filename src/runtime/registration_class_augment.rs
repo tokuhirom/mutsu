@@ -61,6 +61,35 @@ impl Interpreter {
         }
     }
 
+    /// Record that the user classes inheriting from `owner` which declare a
+    /// `multi` candidate of `method` themselves composed their dispatcher
+    /// before the `augment` stamped `epoch` added a candidate to `owner`:
+    /// Rakudo builds a subclass's dispatcher from its parent's at composition,
+    /// so that candidate never joins it (#16049).
+    // Cost: O(c * m), c = registered classes, m = overloads of `method` per class.
+    fn freeze_subclass_dispatchers(&mut self, owner: Symbol, method: Symbol, epoch: u64) {
+        let frozen: Vec<Symbol> = {
+            let reg = self.registry();
+            reg.classes
+                .iter()
+                .filter(|(_, class_def)| class_def.mro.contains(&owner))
+                .filter(|(name, _)| name.as_str() != owner.as_str())
+                .filter(|(name, _)| {
+                    reg.user_method_overloads(name, method.as_str())
+                        .is_some_and(|defs| defs.iter().any(|d| d.is_multi))
+                })
+                .map(|(name, _)| Symbol::intern(name))
+                .collect()
+        };
+        if frozen.is_empty() {
+            return;
+        }
+        let mut reg = self.registry_mut();
+        for class in frozen {
+            reg.frozen_dispatchers.entry((class, method)).or_insert(epoch);
+        }
+    }
+
     /// Augment an existing class by adding methods (and attributes) from the body.
     /// This implements `augment class ClassName { ... }` (monkey-patching).
     pub(crate) fn augment_class(
@@ -290,6 +319,7 @@ impl Interpreter {
                         nested_capture_index: None,
                         captured_readonly: Some(self.capture_declaring_readonly_state()),
                         routine_cell: method_cell.clone(),
+                        augment_epoch: 0,
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,
@@ -329,6 +359,9 @@ impl Interpreter {
                         let owner = Symbol::intern(name);
                         let method_sym = Symbol::intern(&resolved_method_name);
                         if decl.multi {
+                            let mut def = def;
+                            def.augment_epoch = crate::runtime::resolution::next_decl_order().max(1);
+                            self.freeze_subclass_dispatchers(owner, method_sym, def.augment_epoch);
                             candidate_idx = self.registry_mut().push_user_method(owner, method_sym, def);
                         } else {
                             // Check for duplicate non-multi method
