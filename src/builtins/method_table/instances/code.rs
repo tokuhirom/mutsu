@@ -275,8 +275,9 @@ fn positions(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    // TODO: compile to bytecode -- `.elems` of a user-level container (a
-    // `CArray` is a Raku class) can only be asked through method dispatch.
+    // `list` can be any `Positional`, including a user-level container (a
+    // `CArray` is a Raku class), so its length is asked by method name, as
+    // `elems($list)` does.
     let elems = match interp.call_method_with_values(args[0].clone(), "elems", vec![]) {
         Ok(n) => n,
         Err(e) => return Some(Err(e)),
