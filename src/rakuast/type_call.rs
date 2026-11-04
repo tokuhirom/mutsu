@@ -45,21 +45,15 @@ pub(super) fn view_node(
     // `Int()` / `Int(Str)`: a call whose only argument is a type name is the
     // coercion type (measured on 2026.09), not a call of the type term. A sub
     // of the same name does not change the tree (the type wins `Type()`).
-    {
-        let written: Vec<&Expr> = args
-            .iter()
-            .filter(|a| !super::view::is_injected_named_arg(a))
-            .collect();
-        match written.as_slice() {
-            [] => return coercion_node(names, name, None).map(Some),
-            [Expr::BareWord(constraint)]
-                if bareword::view_node(names, constraint)
-                    .is_some_and(|node| node.class == RakuAstClass::TypeSimple) =>
-            {
-                return coercion_node(names, name, Some(constraint)).map(Some);
-            }
-            _ => {}
-        }
+    let written: Vec<&Expr> = args
+        .iter()
+        .filter(|a| !super::view::is_injected_named_arg(a))
+        .collect();
+    if written.is_empty() {
+        return coercion_node(names, name, None).map(Some);
+    }
+    if let Some(constraint) = single_type_word(names, &written) {
+        return coercion_node(names, name, Some(constraint)).map(Some);
     }
     let mut call_term = RakuAstNode {
         origin: Default::default(),
@@ -157,4 +151,34 @@ pub(super) fn lower_coercion(names: &NameScope, node: &RakuAstNode) -> Result<Ex
         },
         listop: false,
     })
+}
+
+/// A package literal as the parser spells a type shadowed by a same-named sub:
+/// `foo(Any)` is the coercion type `foo()`; any other package is a simple type.
+// Cost: O(k), k = length of the name.
+pub(super) fn package_literal(names: &NameScope, name: &str) -> Result<RakuAstNode, RuntimeError> {
+    let base = name.strip_suffix("(Any)").filter(|base| {
+        !base.is_empty()
+            && base
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':'))
+    });
+    match base {
+        Some(base) => coercion_node(names, base, None),
+        None => Ok(bareword::simple_type_node(name)),
+    }
+}
+
+/// The one written argument when it is a type name (`Str` of `Int(Str)`).
+// Cost: O(k + d), k = length of the name, d = parser scope depth.
+fn single_type_word<'a>(names: &NameScope, written: &[&'a Expr]) -> Option<&'a str> {
+    match written {
+        [Expr::BareWord(word)]
+            if bareword::view_node(names, word)
+                .is_some_and(|node| node.class == RakuAstClass::TypeSimple) =>
+        {
+            Some(word)
+        }
+        _ => None,
+    }
 }
