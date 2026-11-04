@@ -443,6 +443,7 @@ mod vm_var_assign_set_local;
 mod vm_var_assign_typed;
 mod vm_var_bind_container;
 mod vm_var_deferred_token;
+mod vm_var_delete_home;
 mod vm_var_delete_ops;
 mod vm_var_elem_mutate;
 mod vm_var_exists_ops;
