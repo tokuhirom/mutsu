@@ -128,19 +128,12 @@ fn method_signature(method: &RakuAstNode) -> Value {
 /// in field order (after the name, ahead of the traits and the body).
 // Cost: O(f + p), f = fields of `method`, p = written parameters.
 pub(crate) fn method_with_signature(method: &RakuAstNode) -> Option<RakuAstNode> {
-    if !matches!(
-        method.class,
-        RakuAstClass::Method | RakuAstClass::Submethod
-    ) {
+    if !matches!(method.class, RakuAstClass::Method | RakuAstClass::Submethod) {
         return None;
     }
     let signature = method_signature(method);
     let mut out = method.clone();
-    match out
-        .fields
-        .iter()
-        .position(|f| f.name == Some("signature"))
-    {
+    match out.fields.iter().position(|f| f.name == Some("signature")) {
         Some(at) => out.fields[at].value = RakuAstFieldValue::Node(signature),
         None => {
             let at = out
