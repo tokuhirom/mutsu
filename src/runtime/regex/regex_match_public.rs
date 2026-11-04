@@ -363,12 +363,12 @@ impl Interpreter {
         // Without a block nothing can write a variable during the match, so a
         // plain value is read there too only to keep one body per pattern; a
         // `Regex` value keeps the splice, which isolates its captures.
-        let (pattern_scalars, has_block) =
+        let (pattern_scalars, _) =
             super::regex_late_scalars::scalars_in_pattern(&remaining_pattern);
         for name in pattern_scalars {
             // A `constant` is inlined at compile time (its value is part of
             // the declarative prefix), so it stays spliced.
-            if self.late_scalar_reads_at_match_time(&name, has_block)
+            if self.late_scalar_reads_at_match_time(&name, true)
                 && !self.is_compile_time_constant_scalar(&name)
                 && !hoisted_scalars.contains(&name)
             {
