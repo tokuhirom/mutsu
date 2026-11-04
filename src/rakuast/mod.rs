@@ -91,6 +91,7 @@ mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
+pub(crate) mod name_queries;
 mod doc_phaser;
 mod dynamic_method;
 mod enum_term;
