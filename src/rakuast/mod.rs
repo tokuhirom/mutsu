@@ -12,6 +12,7 @@ mod positional_fields;
 pub use accessors::node_accessor;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
+pub(crate) use doc_source::pod_source;
 pub use model_methods::constructor_method_names;
 mod anon_state;
 mod assign_lower;
@@ -92,6 +93,7 @@ mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
+mod doc_source;
 mod doc_phaser;
 mod doc_str;
 mod dynamic_method;
