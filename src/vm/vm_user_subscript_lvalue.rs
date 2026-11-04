@@ -10,6 +10,16 @@
 
 use super::*;
 
+/// What a remembered "no candidate delegated" answer of
+/// `remap_index_through_user_postcircumfix` is keyed by.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct SubscriptCaptureKey {
+    dispatcher_id: usize,
+    kind: u8,
+    target_id: (usize, usize),
+    index_keys: Vec<Symbol>,
+}
+
 impl Interpreter {
     /// Replace the index on top of the stack (`[value, index]`) with the index
     /// a matching user `postcircumfix` candidate hands the CORE subscript
@@ -43,16 +53,83 @@ impl Interpreter {
         }
         let index = self.stack[self.stack.len() - 1].clone();
         let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
+        // Whether a candidate delegates to the CORE routine is a property of
+        // the candidate set and of the kinds of the target and the index, so
+        // once a run for those found no delegation, the same kinds skip the
+        // resolution and the run (a CArray store paid ~1M Ir for NativeCall's
+        // `postcircumfix:<[ ]>(CArray:D \array, $pos)`, which only reads
+        // `array.AT-POS`, #16319).
+        let memo_key = self.subscript_capture_memo_key(op_name, &target, &index);
+        if let Some((key, _)) = &memo_key
+            && self.caches.subscript_no_delegation.contains_key(key)
+        {
+            return Ok(());
+        }
         let args = vec![target, index];
         let outer = self.dispatch.subscript_lvalue_capture.replace(None);
         let result = self.call_user_postcircumfix(op_name, args);
         let captured = std::mem::replace(&mut self.dispatch.subscript_lvalue_capture, outer);
         result?;
-        if let Some(Some(index)) = captured {
-            let top = self.stack.len() - 1;
-            self.stack[top] = index;
+        match captured {
+            Some(Some(index)) => {
+                let top = self.stack.len() - 1;
+                self.stack[top] = index;
+            }
+            _ => {
+                if let Some((key, keepalive)) = memo_key {
+                    let memo = &mut self.caches.subscript_no_delegation;
+                    if memo.len() >= 1024 {
+                        memo.clear();
+                    }
+                    memo.insert(key, keepalive);
+                }
+            }
         }
         Ok(())
+    }
+
+    /// The key a "no candidate delegated" answer is remembered under, with the
+    /// values whose addresses it contains (kept alive by the entry): the
+    /// lexical dispatcher in scope, the target's class (or its composition
+    /// node) and the index's type key. `None` for a shape that is not
+    /// remembered: no lexical dispatcher in scope, an `Array` target, or an
+    /// index without a type key.
+    // Cost: O(s + 1), s = nested operator scopes.
+    fn subscript_capture_memo_key(
+        &mut self,
+        op_name: &str,
+        target: &Value,
+        index: &Value,
+    ) -> Option<(SubscriptCaptureKey, Vec<Value>)> {
+        let dispatcher = self.lexical_operator_dispatcher(op_name)?.clone();
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return None;
+        };
+        let dispatcher_id = &*data as *const _ as usize;
+        let (kind, target_id) = match target.view() {
+            ValueView::Instance { class_name, .. } => (1u8, (class_name.id() as usize, 0)),
+            ValueView::Mixin(inner, mixins) => match inner.view() {
+                ValueView::Instance { class_name, .. } => (
+                    2u8,
+                    (
+                        &**mixins as *const crate::value::MixinOverrides as usize,
+                        class_name.id() as usize,
+                    ),
+                ),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let index_keys = self.multi_arg_type_keys_with_named(std::slice::from_ref(index))?;
+        Some((
+            SubscriptCaptureKey {
+                dispatcher_id,
+                kind,
+                target_id,
+                index_keys,
+            },
+            vec![dispatcher, target.clone()],
+        ))
     }
 
     /// Call the user `postcircumfix` candidate that accepts `args`, the way
