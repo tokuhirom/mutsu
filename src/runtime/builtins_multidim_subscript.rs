@@ -757,7 +757,7 @@ impl Interpreter {
                     // records them, exactly as for a plain `:delete`: an
                     // un-recorded type object is an element that exists.
                     let idx = Value::array(leaves.iter().map(|i| Value::int(*i)).collect());
-                    self.finish_array_slot_delete(var_name, &idx);
+                    self.finish_array_slot_delete(crate::vm::StorePlace::Named, var_name, &idx);
                     // Sync the env mutation back to the local slot (dual store) so
                     // a later read of the array observes the deletion.
                     self.writeback_multidim_var_to_local(var_name);

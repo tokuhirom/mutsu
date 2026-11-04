@@ -57,10 +57,10 @@ impl Interpreter {
     /// gap marker — the same predicate `ArrayData::hole_at` implements.
     /// Explicitly assigned slots are tracked via the array's own embedded
     /// `initialized` set and are NOT trimmed.
-    fn trim_trailing_array_holes(&mut self, var_name: &str) {
+    fn trim_trailing_array_holes(&mut self, place: StorePlace, var_name: &str) {
         // The same root `unmark_initialized_indices` recorded the holes on (a
         // unit lexical slot, or the array inside a `ContainerRef` cell).
-        let Some(container) = self.env_root_descended_mut(var_name) else {
+        let Some(container) = self.place_root_mut(place, var_name) else {
             return;
         };
         container.with_array_mut(|items, kind| {
@@ -93,9 +93,14 @@ impl Interpreter {
     /// trim trailing holes.
     // Cost: O(k + n), k = addressed indices, n = array length (the first
     // delete materializes the `initialized` set; the trim walks the tail).
-    pub(crate) fn finish_array_slot_delete(&mut self, var_name: &str, idx: &Value) {
-        self.unmark_initialized_indices(var_name, idx);
-        self.trim_trailing_array_holes(var_name);
+    pub(crate) fn finish_array_slot_delete(
+        &mut self,
+        place: StorePlace,
+        var_name: &str,
+        idx: &Value,
+    ) {
+        self.unmark_initialized_indices(place, var_name, idx);
+        self.trim_trailing_array_holes(place, var_name);
     }
 
     /// Fast path for simple `%h{$key}:delete` — skip metadata lookups.
@@ -103,6 +108,7 @@ impl Interpreter {
     fn try_fast_hash_delete(
         &mut self,
         code: &CompiledCode,
+        place: StorePlace,
         var_name: &str,
         slot: Option<u32>,
         idx: &Value,
@@ -137,19 +143,23 @@ impl Interpreter {
         // the identical bug fixed in `try_fast_hash_element_assign`,
         // `vm_var_assign_element.rs`).
         {
-            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            let current = self
+                .place_env_get(place, var_name)
+                .cloned()
+                .unwrap_or(Value::NIL);
             if self.has_container_type_metadata(&current) || self.is_readonly(var_name) {
                 return None;
             }
         }
-        let env = self.env();
-        match env.get(var_name).map(Value::view) {
+        match self.place_env_get(place, var_name).map(Value::view) {
             Some(ValueView::Hash(hash_arc)) => {
                 let strong_count = crate::gc::Gc::strong_count_of(&hash_arc);
                 if strong_count > 2 {
                     return None;
                 }
-                let local_slot = if strong_count == 2 {
+                // A `Slot` place mutates the slot's own node; only a `Named`
+                // target keeps a second copy in a local slot to drop first.
+                let local_slot = if strong_count == 2 && place == StorePlace::Named {
                     Some(self.resolve_local_slot(code, slot, var_name)?)
                 } else {
                     None
@@ -166,8 +176,7 @@ impl Interpreter {
                     self.locals[slot] = Value::NIL;
                 }
                 let removed = self
-                    .env_mut()
-                    .get_mut(var_name)
+                    .place_env_get_mut(place, var_name)
                     .and_then(|v| {
                         // Container identity (§3): remove through the shared
                         // backing node.
@@ -180,7 +189,7 @@ impl Interpreter {
                     .or(container_default)
                     .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                 if let Some(slot) = local_slot
-                    && let Some(env_val) = self.env().get(var_name).cloned()
+                    && let Some(env_val) = self.place_env_get(place, var_name).cloned()
                 {
                     self.locals[slot] = env_val;
                 }
@@ -259,8 +268,10 @@ impl Interpreter {
         {
             *top = index;
         }
-        let home = self.enter_delete_home(code, name_idx, slot, &var_name)?;
-        let result = self.exec_delete_index_named_op_inner(code, name_idx, slot);
+        let place = self.store_place(code, slot, false, &var_name);
+        let home = self.enter_delete_home(code, name_idx, slot, &var_name, place)?;
+        let place = home.place;
+        let result = self.exec_delete_index_named_op_inner(code, name_idx, slot, place);
         self.exit_delete_home(code, slot, &var_name, home);
         result
     }
@@ -270,6 +281,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         slot: Option<u32>,
+        place: StorePlace,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::NIL);
@@ -291,8 +303,7 @@ impl Interpreter {
         // one only has the variable name. A `%h`-shaped target is exactly the
         // case that must not numify.
         let target_is_hash = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .map(|v| matches!(v.deref_container().view(), ValueView::Hash(_)))
             .unwrap_or(false);
         let idx = match idx.view() {
@@ -320,8 +331,7 @@ impl Interpreter {
         // target — has no DELETE-POS to dispatch to either: raku's
         // `postcircumfix:<[ ]>` refuses to index with a type object at all.
         let target_is_array = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .map(|v| matches!(v.deref_container().view(), ValueView::Array(..)))
             .unwrap_or(false);
         if target_is_array && Self::is_type_object_index(&idx) {
@@ -334,7 +344,7 @@ impl Interpreter {
         // isn't a registered `MethodDef`, so it would otherwise silently fall
         // through here, `$h<k>:delete` a no-op). `try_hash_storage_delegate_mut`
         // itself defers to a real user override when the class declares one.
-        if let Some(target) = self.env().get(&var_name).cloned()
+        if let Some(target) = self.place_env_get(place, &var_name).cloned()
             && let ValueView::Instance { attributes, .. } = target.view()
             && (attributes.contains_key(crate::symbol::wk::hash_storage())
                 || attributes.contains_key(crate::symbol::wk::baggy_data()))
@@ -375,8 +385,7 @@ impl Interpreter {
         // `Proxy` an rw accessor / subscript handed back (`my $t := $d<a><b>`,
         // Red's JSON items): the delete addresses what that FETCHes to.
         let held = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .cloned()
             .map(|value| value.deref_container());
         let object_target = match held {
@@ -470,7 +479,7 @@ impl Interpreter {
         // Reach it directly before the generic container path, which only
         // recognizes an exact Hash and would otherwise return the wrong value
         // without removing the entry.
-        if let Some(target) = self.env().get(&var_name).cloned()
+        if let Some(target) = self.place_env_get(place, &var_name).cloned()
             && let ValueView::Mixin(inner, _) = target.view()
             && matches!(inner.view(), ValueView::Hash(_))
         {
@@ -485,16 +494,15 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path for simple hash delete
-        if let Some(target) = self.env().get(&var_name).cloned() {
+        if let Some(target) = self.place_env_get(place, &var_name).cloned() {
             self.validate_object_hash_index(&target, &idx)?;
         }
-        if let Some(result) = self.try_fast_hash_delete(code, &var_name, slot, &idx) {
+        if let Some(result) = self.try_fast_hash_delete(code, place, &var_name, slot, &idx) {
             self.stack.push(result?);
             return Ok(());
         }
         let declared_type_del = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
@@ -540,8 +548,7 @@ impl Interpreter {
         }
         // Save type metadata before delete (Arc::make_mut may change pointer)
         let saved_meta = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v));
         // Save container default (pointer-keyed) before delete so we can
@@ -554,12 +561,11 @@ impl Interpreter {
         // an absent key yields the default even when the container arrived via a
         // parameter (whose name does not resolve through the by-name `var_default`).
         let saved_default = self
-            .env()
-            .get(&var_name)
+            .place_env_get(place, &var_name)
             .and_then(|v| self.container_default(v))
             .or_else(|| self.var_default(&var_name).cloned());
         // Resolve WhateverCode indices (e.g. *-1) for array targets
-        let idx = if let Some(container) = self.env().get(&var_name).cloned() {
+        let idx = if let Some(container) = self.place_env_get(place, &var_name).cloned() {
             self.resolve_delete_index_for_array(idx, &container)
         } else {
             idx
@@ -571,11 +577,11 @@ impl Interpreter {
                 .iter()
                 .any(|e| Self::nested_index_elements(e).is_some())
             && matches!(
-                self.env().get(&var_name).map(Value::view),
+                self.place_env_get(place, &var_name).map(Value::view),
                 Some(ValueView::Array(..))
             )
         {
-            return self.exec_nested_slice_delete(code, &var_name, slot, &inner);
+            return self.exec_nested_slice_delete(code, place, &var_name, slot, &inner);
         }
         // For typed arrays (e.g. `my Int @a`), deleted elements become
         // the type object (e.g. `Int`) instead of `Any`.
@@ -599,7 +605,9 @@ impl Interpreter {
             // Convert index value to a Str containing the WHICH key
             let which = self.which_key(&idx);
             // Check if the hash uses WHICH keys or encoded keys
-            if let Some(ValueView::Hash(map)) = self.env().get(&var_name).map(Value::view) {
+            if let Some(ValueView::Hash(map)) =
+                self.place_env_get(place, &var_name).map(Value::view)
+            {
                 if map.contains_key(&which) {
                     Value::str(which)
                 } else {
@@ -620,7 +628,8 @@ impl Interpreter {
                 .iter()
                 .map(|k| {
                     let which = crate::runtime::utils::value_which_key(k);
-                    if let Some(ValueView::Hash(map)) = self.env().get(&var_name).map(Value::view)
+                    if let Some(ValueView::Hash(map)) =
+                        self.place_env_get(place, &var_name).map(Value::view)
                         && map.contains_key(&which)
                     {
                         Value::str(which)
@@ -635,7 +644,10 @@ impl Interpreter {
             // A bare type object key coerces to "" (warning / user .Str) before
             // the delete, matching the store/read/exists paths.
             Value::str(self.coerce_type_object_hash_key(&idx)?)
-        } else if let Some(held) = self.env().get(&var_name).map(|v| v.descalarize().clone()) {
+        } else if let Some(held) = self
+            .place_env_get(place, &var_name)
+            .map(|v| v.descalarize().clone())
+        {
             // A `$` holding an object hash has no key constraint of its own
             // (the constraint belongs to the hash it holds).
             self.object_hash_delete_key(&held, idx)
@@ -644,7 +656,7 @@ impl Interpreter {
         };
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
-        let result = if let Some(container) = self.env_mut().get_mut(&var_name) {
+        let result = if let Some(container) = self.place_env_get_mut(place, &var_name) {
             // A `Map` refuses every removal, including of a key it does not
             // hold. Unlike the quanthashes below it is not an X::Assignment::RO
             // but a plain X::AdHoc, so it has its own guard.
@@ -666,7 +678,7 @@ impl Interpreter {
         } else {
             Self::delete_from_missing_container(idx)
         };
-        self.finish_array_slot_delete(&var_name, &idx_for_unmark);
+        self.finish_array_slot_delete(place, &var_name, &idx_for_unmark);
         // If the deleted value is a hole (Nil or type object like Package("Any")),
         // substitute the container's default value if one was set via `is default(...)`.
         // For a SLICE delete (`%h<a b c>:delete`) the result is a list whose
@@ -709,29 +721,29 @@ impl Interpreter {
         // embed metadata in `HashData`, so the re-tagged value is written back
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
-            && let Some(container) = self.env().get(&var_name).cloned()
+            && let Some(container) = self.place_env_get(place, &var_name).cloned()
             && !self.has_container_type_metadata(&container)
         {
             let tagged = self.tag_container_metadata(container, info);
-            self.env_mut().insert(var_name.to_string(), tagged.clone());
-            self.write_local_slot_or_name(code, slot, &var_name, tagged);
+            self.place_env_insert(place, &var_name, tagged.clone());
+            self.place_write_slot(place, code, slot, &var_name, tagged);
         }
         // Re-register container default if it was lost due to Arc::make_mut.
         // Use the pointer-keyed container_default saved before delete so we
         // don't inherit a leaked default from a same-named variable in an
         // outer scope.
         if let Some(def) = saved_default
-            && let Some(container) = self.env().get(&var_name).cloned()
+            && let Some(container) = self.place_env_get(place, &var_name).cloned()
             && self.container_default(&container).is_none()
         {
             let tagged = self.tag_container_default(container, def);
-            self.env_mut().insert(var_name.clone(), tagged);
+            self.place_env_insert(place, &var_name, tagged);
         }
         // Sync env value to locals so reads through locals see the
         // updated container after delete (Arc::make_mut may have changed
         // the container pointer).
-        if let Some(container) = self.env().get(&var_name).cloned() {
-            self.write_local_slot_or_name(code, slot, &var_name, container);
+        if let Some(container) = self.place_env_get(place, &var_name).cloned() {
+            self.place_write_slot(place, code, slot, &var_name, container);
         }
         self.stack.push(result);
         Ok(())
@@ -743,6 +755,7 @@ impl Interpreter {
     fn exec_nested_slice_delete(
         &mut self,
         code: &CompiledCode,
+        place: StorePlace,
         var_name: &str,
         slot: Option<u32>,
         inner: &[Value],
@@ -754,10 +767,11 @@ impl Interpreter {
         // `initialized` set and element type the live array has. `keep_missing`
         // is true here, so no slot is dropped either way -- but the snapshot
         // must not look like a differently-typed array.
-        let data_snap: crate::value::ArrayData = match self.env().get(var_name).map(Value::view) {
-            Some(ValueView::Array(items, ..)) => crate::value::ArrayData::clone(&**items),
-            _ => crate::value::ArrayData::new(Vec::new()),
-        };
+        let data_snap: crate::value::ArrayData =
+            match self.place_env_get(place, var_name).map(Value::view) {
+                Some(ValueView::Array(items, ..)) => crate::value::ArrayData::clone(&**items),
+                _ => crate::value::ArrayData::new(Vec::new()),
+            };
         let missing = Value::package(crate::symbol::Symbol::intern(&hole_type));
         // Plain `:delete` returns the values, keeping missing slots (as the hole).
         let result = Value::array(Self::format_positional_slice_level(
@@ -772,12 +786,12 @@ impl Interpreter {
         let mut leaves = Vec::new();
         Self::collect_slice_leaf_indices(inner, &mut leaves);
         let flat_idx = Value::array(leaves.iter().map(|i| Value::int(*i)).collect::<Vec<_>>());
-        if let Some(container) = self.env_mut().get_mut(var_name) {
+        if let Some(container) = self.place_env_get_mut(place, var_name) {
             let _ = Self::delete_from_container(container, flat_idx.clone(), &hole_type)?;
         }
-        self.finish_array_slot_delete(var_name, &flat_idx);
-        if let Some(container) = self.env().get(var_name).cloned() {
-            self.write_local_slot_or_name(code, slot, var_name, container);
+        self.finish_array_slot_delete(place, var_name, &flat_idx);
+        if let Some(container) = self.place_env_get(place, var_name).cloned() {
+            self.place_write_slot(place, code, slot, var_name, container);
         }
         self.stack.push(result);
         Ok(())
