@@ -539,6 +539,14 @@ pub(crate) struct ModuleState {
     /// `routine_stack` depth when the innermost `EVAL` unit started: a routine
     /// entered since then declares its own lexical subs (#15869).
     pub(crate) eval_unit_routine_depth: usize,
+    /// The capture bucket key of the innermost running `EVAL` unit (`None`
+    /// outside one): the named subs declared at the unit's top level capture
+    /// the unit's variables in `unit_lexicals[key]`, as a program's own
+    /// mainline subs do in `MAINLINE_UNIT_KEY`'s bucket (ADR-0024). A fresh
+    /// key per `EVAL` run, so two units never share cells.
+    pub(crate) eval_unit_capture_key: Option<std::sync::Arc<str>>,
+    /// Source of [`Self::eval_unit_capture_key`].
+    pub(crate) eval_unit_counter: u64,
     /// Classes whose declaration died while an `EVAL` unit was compiling it
     /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
     /// compile, so `isolated_eval_unit` does not merge these into the
@@ -803,6 +811,8 @@ impl ModuleState {
             eval_unit_region: None,
             eval_unit_block_depth: 0,
             eval_unit_routine_depth: 0,
+            eval_unit_capture_key: None,
+            eval_unit_counter: 0,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
             eval_prerun_sets: Vec::new(),
@@ -921,6 +931,8 @@ impl ModuleState {
             eval_unit_region: self.eval_unit_region,
             eval_unit_block_depth: self.eval_unit_block_depth,
             eval_unit_routine_depth: self.eval_unit_routine_depth,
+            eval_unit_capture_key: self.eval_unit_capture_key.clone(),
+            eval_unit_counter: self.eval_unit_counter,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_prerun_sets: self.eval_prerun_sets.clone(),
