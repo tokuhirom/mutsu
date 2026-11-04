@@ -46,23 +46,22 @@
   "dist": "DOSH::CLI",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "DOSH::CLI module can be use-d ok",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 3.78,
+        "secs": 3.86,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 54.72,
+        "secs": 17.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +73,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.07,
+        "secs": 3.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +83,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 29.64,
+        "secs": 22.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,14 +91,14 @@
     }
   ],
   "load": {
-    "DOSH::CLI": "raku_also_fails"
+    "DOSH::CLI": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -110,13 +109,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/OS/DOSH_CLI/ab45b89e28bec29af7310646cb11983964d89dbd.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 2,
     "baseline_files": 2,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "7.0.0"
 }

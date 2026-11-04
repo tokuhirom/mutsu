@@ -61,14 +61,14 @@
       "cmp": "no_baseline",
       "path": "t/01basic.t",
       "raku": {
-        "first_failure": "No such method 'rel2abs' for invocant of type 'Scalar'. You actually",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 4,
-        "secs": 234.15,
+        "plan": null,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       }
     }
   ],
@@ -77,10 +77,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -44,16 +44,61 @@
     "unresolved": []
   },
   "dist": "dosh",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 59.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 8.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "DOSH::CLI": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-u8xt_3q1/dist/dist/Distribution::Resource<5568>: No such file or directory"
+    "DOSH::CLI": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -64,12 +109,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/OS/DOSH/36881490a723ef6e15dc1bcd14d0f779afdd35bc.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 2,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": ".0.0"

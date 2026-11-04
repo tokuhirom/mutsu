@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.12,
+        "secs": 3.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,10 +48,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -60,7 +60,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/27b302588c22c47959a7c1adfd58a8defe10def1.tar.gz"
+    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/3558111ebb426572a3c8f18b1ca8db586dc12cc3.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -70,5 +70,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "1.0.22"
+  "version": "1.0.31"
 }

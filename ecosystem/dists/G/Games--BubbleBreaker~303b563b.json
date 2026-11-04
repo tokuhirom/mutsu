@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/00-run.t",
       "raku": {
-        "first_failure": "bubble-breaker ran 0.571262185 seconds",
+        "first_failure": "bubble-breaker ran 0.350913753 seconds",
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 1.18,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

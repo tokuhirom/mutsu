@@ -9,23 +9,22 @@
   "dist": "Array::Unsorted::Map",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'Numeric' for invocant of type 'Array'",
         "nok": 0,
-        "ok": 2,
+        "ok": 34,
         "plan": 34,
-        "secs": 0.1,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.41,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +39,7 @@
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -51,13 +50,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RR/ARRAY_UNSORTED_MAP/4daf16121873c2432c02bacd41e3fca6f31d4f81.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 34,
     "baseline_files": 1,
-    "mutsu_assertions": 2,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 34,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

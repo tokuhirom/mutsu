@@ -11,14 +11,14 @@
   "dist": "Slang::Emoji",
   "files": [],
   "load": {
-    "Slang::Emoji": "Runtime error: slang activation for 'Slang::Emoji' failed: Failed to parse module 'Slang::Emoji': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet"
+    "Slang::Emoji": "Runtime error: slang activation for 'Slang::Emoji' failed: Slang activation NYI: grammar rule override 'sigilless-variable' is not supported by this implementation (recognized: term:sym<identifier>, m"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

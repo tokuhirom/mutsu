@@ -15,11 +15,11 @@
       "cmp": "no_baseline",
       "path": "t/01-resize.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<5995701117408>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<4059569496584>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 9.82,
+        "secs": 13.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -29,11 +29,11 @@
       "cmp": "no_baseline",
       "path": "t/02-more.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<4320454646976>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<3368029653384>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.06,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,11 +43,11 @@
       "cmp": "no_baseline",
       "path": "t/03-convert.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<3552714696864>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<5824992389280>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.04,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,11 +57,11 @@
       "cmp": "no_baseline",
       "path": "t/04-scale.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<4379454951104>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<6033329432656>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.08,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

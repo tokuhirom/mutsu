@@ -17,11 +17,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.09,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -31,11 +31,11 @@
       "cmp": "no_baseline",
       "path": "t/02-blob.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.88,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -45,11 +45,11 @@
       "cmp": "no_baseline",
       "path": "t/03-sha256.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.78,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,11 +59,11 @@
       "cmp": "no_baseline",
       "path": "t/04-big.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.72,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,11 +73,11 @@
       "cmp": "no_baseline",
       "path": "t/05-many.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": 500,
-        "secs": 0.71,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,11 +87,11 @@
       "cmp": "no_baseline",
       "path": "t/06-threads.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.03,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,11 +101,11 @@
       "cmp": "no_baseline",
       "path": "t/07-digest-bounds.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/libsha256.so': /home/runner/.cache/mutsu-ecosystem/run/ecosw",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/libsha256.so': /home/runner/.cache/mutsu-ecosystem/run/ecosw",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.1,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,11 +115,11 @@
       "cmp": "no_baseline",
       "path": "t/08-stream.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-15e4br1v/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ixfq5_49/dist/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/run/ecoswee",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -131,7 +131,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.4,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -153,10 +153,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

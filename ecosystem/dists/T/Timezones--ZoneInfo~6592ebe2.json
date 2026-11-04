@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.47,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,53 +24,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 14.81,
+        "secs": 10.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "GMT 2020-01-02T03:04:05 / POSIX 1577934245",
-        "nok": 3,
-        "ok": 0,
+        "nok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 9.4,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-accuracy.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.48,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Random test (765920716)",
-        "nok": 100,
-        "ok": 0,
+        "nok": 0,
+        "ok": 100,
         "plan": 100,
-        "secs": 97.71,
+        "secs": 12.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-roundtrip.t",
       "raku": {
         "nok": 0,
         "ok": 100,
         "plan": 100,
-        "secs": 3.57,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +90,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.41,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +102,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.28,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +112,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.65,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +124,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.11,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +134,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.89,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +146,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.13,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +156,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.25,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,10 +176,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -192,13 +190,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/IM/TIMEZONES_ZONEINFO/02596030af4190478a6e2a7a0d1a8a17bcd6d86a.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 139,
     "baseline_files": 7,
-    "mutsu_assertions": 36,
-    "parity_files": 5,
-    "regressed_files": 2
+    "mutsu_assertions": 139,
+    "parity_files": 7,
+    "regressed_files": 0
   },
   "version": "0.5.0"
 }

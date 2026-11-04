@@ -28,176 +28,184 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 6,
+        "first_failure": "Class Basics",
+        "nok": 1,
+        "ok": 0,
         "plan": 6,
-        "secs": 0.46,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/010-base.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 9.72,
+        "secs": 8.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 6,
+        "first_failure": "Class Basics",
+        "nok": 1,
+        "ok": 0,
         "plan": 6,
-        "secs": 0.52,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/010-base.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.67,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "correct number of elements",
+        "nok": 1,
+        "ok": 6,
         "plan": 7,
-        "secs": 0.18,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/011-arrays.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.87,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "correct number of elements",
+        "nok": 1,
+        "ok": 6,
         "plan": 7,
-        "secs": 0.18,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/011-arrays.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.56,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "Simple",
+        "nok": 1,
+        "ok": 1,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/012-hashes.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.91,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "Simple",
+        "nok": 1,
+        "ok": 1,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/012-hashes.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.91,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 5,
+        "first_failure": "Definite lazy attribute",
+        "nok": 1,
+        "ok": 4,
         "plan": 5,
-        "secs": 0.42,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/013-validations.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.31,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 5,
+        "first_failure": "Definite lazy attribute",
+        "nok": 1,
+        "ok": 4,
         "plan": 5,
-        "secs": 0.4,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/013-validations.rakutest",
       "raku": {
@@ -216,7 +224,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.28,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,7 +234,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.98,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,7 +246,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.34,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +256,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.04,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,7 +268,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.26,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -270,7 +278,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.87,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -282,7 +290,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.27,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -292,29 +300,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/016-filtering.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.82,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -331,51 +317,52 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/016-filtering.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/016-filtering.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.98,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 5,
+        "first_failure": "Role Basics",
+        "nok": 1,
+        "ok": 4,
         "plan": 5,
-        "secs": 0.38,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/020-role.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/020-role.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
@@ -387,132 +374,115 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
+        "first_failure": "Role Basics",
+        "nok": 1,
+        "ok": 4,
+        "plan": 5,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/020-role.rakutest",
+      "raku": {
         "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.54,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Inheritance basics",
+        "nok": 1,
+        "ok": 6,
+        "plan": 7,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
       },
       "path": "t/030-inheritance.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.83,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "Inheritance basics",
+        "nok": 1,
+        "ok": 6,
         "plan": 7,
-        "secs": 0.55,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/030-inheritance.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.82,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "Base Errors",
+        "nok": 1,
+        "ok": 3,
         "plan": 4,
-        "secs": 0.3,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/040-errors.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.06,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "Base Errors",
+        "nok": 1,
+        "ok": 3,
         "plan": 4,
-        "secs": 0.33,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/040-errors.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/050-multi-filter.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/050-multi-filter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.97,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -529,7 +499,7 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/060-composer.custom.rakutest",
+      "path": "t/050-multi-filter.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
@@ -546,7 +516,51 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.26,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/050-multi-filter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/060-composer.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -556,51 +570,53 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.0,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 3,
+        "first_failure": "Typed",
+        "nok": 1,
+        "ok": 2,
         "plan": 3,
         "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/070-typecheck-coerce.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.41,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 3,
+        "first_failure": "Typed",
+        "nok": 1,
+        "ok": 2,
         "plan": 3,
         "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/070-typecheck-coerce.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.21,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -612,7 +628,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.34,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -622,7 +638,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.23,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -634,7 +650,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.28,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -644,7 +660,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -667,7 +683,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 17.35,
+        "secs": 13.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -680,7 +696,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.11,
+        "secs": 240.02,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -690,7 +706,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 18.21,
+        "secs": 12.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -702,7 +718,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.19,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -712,7 +728,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.66,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -734,7 +750,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.59,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -746,7 +762,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -756,7 +772,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.47,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -768,7 +784,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.16,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -778,7 +794,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.59,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -799,7 +815,7 @@
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -814,9 +830,9 @@
   "totals": {
     "baseline_assertions": 214,
     "baseline_files": 34,
-    "mutsu_assertions": 210,
-    "parity_files": 32,
-    "regressed_files": 2
+    "mutsu_assertions": 184,
+    "parity_files": 16,
+    "regressed_files": 18
   },
   "version": "1.0.10"
 }

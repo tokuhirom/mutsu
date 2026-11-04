@@ -43,7 +43,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.22,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.64,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -61,14 +61,21 @@
     }
   ],
   "load": {
-    "App::Doc-N-Save": "ok"
+    "doc-n-save": "ok",
+    "doc-n-save.raku": "ok",
+    "mk-raku-dirs": "ok",
+    "mk-raku-dirs.raku": "ok",
+    "release": "ok",
+    "release-d": "ok",
+    "release-d.raku": "ok",
+    "release.raku": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "27ca5e64",
+    "mutsu_commit": "e4a4fffa",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -77,7 +84,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/A/PP/APP_DOCNSAVE/c86be7778f97a715a93c5e5057f50926d8fb92cc.tar.gz"
+    "url": "https://360.zef.pm/A/PP/APP_DOCNSAVE/843e09b15432b9839b3a7fff9be7e21f3095cb19.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -87,5 +94,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.1.25"
+  "version": "0.1.30"
 }
