@@ -121,6 +121,23 @@ channel-backed `tap`, socket accept and nested `whenever <Promise>` threads use
 supply drivers, `Proc::Async` readers and `.then` chains (no single callback),
 then measuring thread benchmarks.
 
+## Amendment 2026-11-04: S3 needs reachability, not more capture sources
+
+Measured after S2 steps 1-2 (#16427, #16438, #16446, #16458): hard-wiring
+`container_name_is_redeclared` to `false` still fails the same three files
+(`atomic-elem-redeclared-after-start.t` test 12,
+`thread-callee-array-does-not-clobber-caller.t` tests 8-9,
+`thread-uncaptured-container-lane.t` test 19). In each, the spawning frame's `@x`
+is **not referenced by the spawned block**, yet `clone_for_thread_excluding` seeds
+every env aggregate into the lane (transient, ADR-0039 §8.6) because a routine the
+block calls might reach it, and the worker's own `my @x` collides with that entry.
+So "S3 goes green by construction" holds only once the unreferenced-but-reachable
+names are decided without seeding them all: either a call-graph free-variable
+closure for the spawned block (the names its callees can reach), or cells created at
+each routine's closure creation. Also open: the hyper/race batch threads run the
+enclosing frame's bytecode range, not a closure, so they need a free-variable pass
+over the loop-body range before they can be a capture source.
+
 ## Alternatives considered
 
 - **Keep adding masks (status quo).** Rejected: the defect class is "a call path without a
