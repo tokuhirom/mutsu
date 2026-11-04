@@ -2248,6 +2248,8 @@ t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
 t/grammar/method-table-token-source.t
 t/grammar/mu-callable-grammar-6d-absent.t
 t/grammar/multi-token-protoless-dispatch.t
+t/grammar/multi-token-same-param-names-match-time.t
+t/grammar/multi-token-start-rule-arity.t
 t/grammar/multiple-proto-regex.t
 t/grammar/my-token-scope-after-match.t
 t/grammar/my-token-visible-from-methods.t

@@ -101,7 +101,16 @@ impl Interpreter {
         // covered by `dup_scoped_method`; this covers plain `sub`/`token`.)
         let dup_routine_in_body = |type_name: &str, body: &[Stmt]| -> Option<RuntimeError> {
             let mut seen_subs: HashMap<String, bool> = HashMap::new();
-            let mut seen_tokens: HashSet<String> = HashSet::new();
+            // Per regex name: `Multi` while only `multi` candidates were seen,
+            // `Proto` once a `proto` claimed it (candidates still follow), `Plain`
+            // for a plain declaration (nothing may follow).
+            #[derive(Clone, Copy, PartialEq)]
+            enum Claim {
+                Multi,
+                Proto,
+                Plain,
+            }
+            let mut seen_tokens: HashMap<String, Claim> = HashMap::new();
             for s in body {
                 match s {
                     Stmt::SubDecl { name, multi, .. } => {
@@ -146,24 +155,38 @@ impl Interpreter {
                         if n.is_empty() {
                             continue;
                         }
-                        if !seen_tokens.insert(n.clone()) {
-                            let mut attrs = ValueMap::default();
-                            attrs.insert("symbol".to_string(), Value::str(n.clone()));
-                            attrs.insert("what".to_string(), Value::str("regex".to_string()));
-                            // Rakudo phrases a token/regex redeclaration inside a
-                            // package as "Package 'X' already has a regex 'a' ...",
-                            // distinct from the plain "Redeclaration of ..." form.
-                            let msg = if type_name.is_empty() {
-                                format!("Redeclaration of regex '{}'", n)
-                            } else {
-                                format!(
-                                    "Package '{}' already has a regex '{}' (did you mean to declare a multi method?)",
-                                    type_name, n
-                                )
-                            };
-                            attrs.insert("message".to_string(), Value::str(msg));
-                            return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                        let claim = match s {
+                            Stmt::ProtoToken { .. } => Claim::Proto,
+                            Stmt::TokenDecl { multi: true, .. }
+                            | Stmt::RuleDecl { multi: true, .. } => Claim::Multi,
+                            _ => Claim::Plain,
+                        };
+                        // A `multi` candidate may follow a `proto` or other
+                        // candidates; anything else claims the name once.
+                        let dup = match seen_tokens.get(&n) {
+                            None => false,
+                            Some(prev) => !(claim == Claim::Multi && *prev != Claim::Plain),
+                        };
+                        if !dup {
+                            seen_tokens.entry(n).or_insert(claim);
+                            continue;
                         }
+                        let mut attrs = ValueMap::default();
+                        attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                        attrs.insert("what".to_string(), Value::str("regex".to_string()));
+                        // Rakudo phrases a token/regex redeclaration inside a
+                        // package as "Package 'X' already has a regex 'a' ...",
+                        // distinct from the plain "Redeclaration of ..." form.
+                        let msg = if type_name.is_empty() {
+                            format!("Redeclaration of regex '{}'", n)
+                        } else {
+                            format!(
+                                "Package '{}' already has a regex '{}' (did you mean to declare a multi method?)",
+                                type_name, n
+                            )
+                        };
+                        attrs.insert("message".to_string(), Value::str(msg));
+                        return Some(RuntimeError::typed("X::Redeclaration", attrs));
                     }
                     _ => {}
                 }
