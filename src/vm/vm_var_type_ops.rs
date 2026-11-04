@@ -189,6 +189,16 @@ impl Interpreter {
                 current.is_none()
             } else {
                 matches!(current.map(Value::view), Some(ValueView::Nil) | None)
+                    // A declaration compiled in expression position stores its
+                    // initializer first and registers the type after
+                    // (`f(my Int $u = 5)`): the variable's only home is its
+                    // slot, which already holds the value, so seeding the env
+                    // with the type object would be written back over it.
+                    && !self.find_local_slot(code, name).is_some_and(|slot| {
+                        self.locals.get(slot).is_some_and(|v| {
+                            !matches!(v.view(), ValueView::Nil | ValueView::Package(_))
+                        })
+                    })
             };
             // ... or the variable still holds a DEAD seed: a type object for a
             // name nothing has registered. `hoist_typed_var_decls` emits a
