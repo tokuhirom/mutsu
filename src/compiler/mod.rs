@@ -3917,7 +3917,6 @@ impl Compiler {
     fn is_declared_native_arg(&self, arg: &Expr) -> bool {
         if let Expr::DoStmt(stmt) = arg
             && let Stmt::VarDecl {
-                anonymous: true,
                 name,
                 type_constraint: Some(type_constraint),
                 ..

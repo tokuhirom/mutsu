@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::LITERAL_MASK_SHIFT;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -1521,7 +1522,17 @@ impl Interpreter {
         // literal is in the high half and is a boxed value (rakudo 2026.09,
         // #13065): `multi n(byte $a)` does not accept `n(1)` ("will never
         // work"), and beside a boxed candidate the boxed one wins.
-        arg_idx.is_some_and(|idx| idx < 16 && self.literal_native_args & (1 << idx) != 0)
+        // A literal beside a genuinely native argument of the same call binds a
+        // native parameter too: rakudo's native-aware bind unboxes it
+        // (`multi f(int, int)` takes `f 7, $native` and `f $native, 7`, but not
+        // `f 7, 7`, #16483).
+        let genuine_native_in_call = self.literal_native_args & ((1 << LITERAL_MASK_SHIFT) - 1) != 0;
+        arg_idx.is_some_and(|idx| {
+            idx < 16
+                && (self.literal_native_args & (1 << idx) != 0
+                    || (genuine_native_in_call
+                        && self.literal_native_args & (1 << (idx as u32 + LITERAL_MASK_SHIFT)) != 0))
+        })
     }
 
     /// [`Self::resolved_type_capture_name`] for a parameter's constraint, except
