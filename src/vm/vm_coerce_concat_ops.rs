@@ -322,7 +322,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_not_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap().hllize_operand();
         // Boolifying a Failure marks it as handled
         val.mark_failure_handled();
         let t = self.eval_truthy_result(&val)?;
@@ -395,6 +395,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // A raw BOOT scalar box is its high-level value at an operator (#12881).
+        let left = left.hllize_operand();
+        let right = right.hllize_operand();
         // Thread over junctions — concat uses left-first threading
         // (unlike arithmetic/comparison which uses right-first for tighter
         // junctions). When both operands are junctions and the right is

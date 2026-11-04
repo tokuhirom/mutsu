@@ -608,6 +608,20 @@ pub(super) fn nqp_term(names: &NameScope, name: &str) -> Option<Expr> {
     }
 }
 
+/// A core bare call word (`callsame`, `nextsame`, `lastcall`, `nextcallee`,
+/// `done`) the classifier leaves a call: converting it marks the node as a source
+/// bareword, so the lowering hands back the word itself. `None` when a
+/// declaration of the unit shadows it (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn core_bare_call(names: &NameScope, name: &str) -> Option<Expr> {
+    if !CORE_BARE_CALLS.contains(&name) {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::CallNameWithoutParentheses)
+        .then(|| Expr::BareWord(name.to_string()))
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).

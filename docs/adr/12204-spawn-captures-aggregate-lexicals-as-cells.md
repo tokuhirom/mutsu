@@ -105,6 +105,22 @@ Each slice is its own PR with the three known-red tests and the 148 thread/share
 - **S4 - retire the call-path masks** (`ThreadParamMaskGuard` re-mask, then
   `mask_thread_redeclared_params`), leaving the lane only for the opaque remainder.
 
+## S2 progress (2026-11-04)
+
+Step 1 landed: a `start`/`Promise.start`/`Promise.in` block (any spawn through
+`clone_for_thread_for_block`) captures by cell every referenced `@`/`%` lexical
+that the spawning frame already holds in a `ContainerRef` cell (the ADR-0039
+decl-site cell) and that is not opaque (registered class/role method write,
+attribute, dynamic, qualified or `__` compiler name): `Interpreter::aggregate_cell_captured`.
+Those names are excluded from lane seeding. `MUTSU_SPAWN_CAPTURE_CHECK` reports a
+`cell-captured-lane-write` for any lane write to such a name; over `t/concurrency/**`
+the only one is `@received` in `io-socket-async-idle-reader-threads.t`, written by a
+block-less spawn (step 2). Step 2 (partial): the scheduler cue,
+channel-backed `tap`, socket accept and nested `whenever <Promise>` threads use
+`clone_for_thread_for_block` with their callback as the capture source. Remaining:
+supply drivers, `Proc::Async` readers and `.then` chains (no single callback),
+then measuring thread benchmarks.
+
 ## Alternatives considered
 
 - **Keep adding masks (status quo).** Rejected: the defect class is "a call path without a

@@ -1247,6 +1247,13 @@ impl Interpreter {
             if native_types::is_native_int_type(base) {
                 return Value::int(0);
             }
+            // Likewise a native `num` / `str` binds its zero (`0e0` / `""`):
+            // `sub f(num $v?) { $v }; f()` is `0e0`, not the `num` type name.
+            match base {
+                "num" | "num32" | "num64" => return Value::num(0.0),
+                "str" => return Value::str(String::new()),
+                _ => {}
+            }
             // A parameterised constraint (`Positional[Int]`, `CArray[int32]`)
             // keeps its type arguments, as `my Positional[Int] $x` does, so
             // binding the unset parameter into a same-typed slot passes.

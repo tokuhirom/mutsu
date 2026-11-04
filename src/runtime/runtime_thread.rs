@@ -50,7 +50,15 @@ impl Interpreter {
             }
             for sym in &free {
                 let name = sym.resolve();
-                if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+                if name.starts_with('@') || name.starts_with('%') {
+                    // ADR-12204 S2: a plain `@`/`%` lexical that already lives in
+                    // a shared cell is captured by that cell: no lane entry.
+                    if self.aggregate_cell_captured(&name) {
+                        out.insert(name.to_string());
+                    }
+                    continue;
+                }
+                if name.starts_with('&') {
                     continue;
                 }
                 let bare = name.trim_start_matches('$');
@@ -186,6 +194,31 @@ impl Interpreter {
         out
     }
 
+    /// ADR-12204 S2: whether the `@`/`%` lexical `name` (with sigil) is held in
+    /// a shared `ContainerRef` cell by the spawning frame and may therefore be
+    /// captured by that cell instead of the name-keyed lane. Opaque names (a
+    /// registered class/role method writes them, attributes, dynamics,
+    /// qualified or compiler-internal names) stay on the lane.
+    // Cost: O(1) expected, two hash lookups.
+    fn aggregate_cell_captured(&self, name: &str) -> bool {
+        if !Self::transient_lane_candidate(name)
+            || name.contains("__")
+            || self
+                .lexicals
+                .type_body_written_lexicals
+                .contains(name.trim_start_matches(['@', '%']))
+            || self.lexicals.type_body_written_lexicals.contains(name)
+        {
+            return false;
+        }
+        self.env.get(name).is_some_and(|v| {
+            matches!(
+                v.view(),
+                ValueView::ContainerRef(_)
+            ) && matches!(v.deref_container().view(), ValueView::Array(..) | ValueView::Hash(..))
+        })
+    }
+
     /// The plain-lexical `@`/`%` containers a spawned block's compiled subtree
     /// actually names, or `None` when the spawn has no known block (the
     /// block-less [`clone_for_thread`](Self::clone_for_thread) entry point,
@@ -259,6 +292,9 @@ impl Interpreter {
             crate::runtime::shared_store::capture_check::record_spawn_captures(
                 containers.iter().flatten(),
             );
+        }
+        if crate::runtime::shared_store::capture_check::enabled() {
+            crate::runtime::shared_store::capture_check::record_cell_captures(&captured);
         }
         self.clone_for_thread_excluding(&captured, containers.as_ref())
     }

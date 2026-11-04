@@ -127,6 +127,19 @@ impl Value {
             || self.boot_scalar_type_object().is_some()
     }
 
+    /// This value as an operator operand: a raw BOOT scalar box is its
+    /// high-level value (rakudo hllizes it at the operator's binder, #12881),
+    /// anything else is returned unchanged.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn hllize_operand(self) -> Value {
+        if self.is_boot_scalar_box() {
+            self.hllize_for_binding()
+        } else {
+            self
+        }
+    }
+
     /// The high-level type object (`Int` / `Num` / `Str`) a `BOOTInt` /
     /// `BOOTNum` / `BOOTStr` type object hllizes to; `None` for any other value.
     // Cost: O(1).

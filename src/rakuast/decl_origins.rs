@@ -257,7 +257,7 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
 
 /// The string a leaf field of `node` holds.
 // Cost: O(f), f = fields of `node`.
-fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
+pub(super) fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
     node.fields.iter().find_map(|f| match &f.value {
         RakuAstFieldValue::Node(v) if f.name == Some(name) => match v.view() {
             ValueView::Str(s) => Some(s.to_string()),

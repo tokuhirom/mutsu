@@ -91,21 +91,46 @@ pub(crate) fn is_native_pos_ref_routine(name: &str) -> bool {
     name == FETCH || name == STORE
 }
 
+/// The symbols a native reference is made of, interned once per process: a
+/// `CArray.list` made five `Symbol::intern` calls (a thread-local string-hash
+/// round trip each) per element (#16215).
+struct RefSymbols {
+    empty: Symbol,
+    fetch: Symbol,
+    store: Symbol,
+    target: Symbol,
+    index: Symbol,
+    type_names: [Symbol; 3],
+}
+
+fn ref_symbols() -> &'static RefSymbols {
+    static SYMBOLS: std::sync::OnceLock<RefSymbols> = std::sync::OnceLock::new();
+    SYMBOLS.get_or_init(|| RefSymbols {
+        empty: Symbol::intern(""),
+        fetch: Symbol::intern(FETCH),
+        store: Symbol::intern(STORE),
+        target: Symbol::intern("target"),
+        index: Symbol::intern("index"),
+        type_names: [
+            Symbol::intern(NativeRefKind::Int.type_name()),
+            Symbol::intern(NativeRefKind::UInt.type_name()),
+            Symbol::intern(NativeRefKind::Num.type_name()),
+        ],
+    })
+}
+
 /// A reference to element `idx` of `holder`'s native storage.
 // Cost: O(1).
 pub(crate) fn native_pos_ref(holder: Value, idx: i64, kind: NativeRefKind) -> Value {
+    let syms = ref_symbols();
     let mut attrs = crate::value::AttrMap::new();
-    attrs.insert("target".to_string(), holder);
-    attrs.insert("index".to_string(), Value::int(idx));
-    let routine =
-        |name: &str| Value::routine_parts(Symbol::intern(""), Symbol::intern(name), false);
+    attrs.insert(syms.target, holder);
+    attrs.insert(syms.index, Value::int(idx));
+    let type_name = syms.type_names[kind as usize];
     Value::proxy_parts(
-        routine(FETCH),
-        routine(STORE),
-        Some((
-            Symbol::intern(kind.type_name()),
-            crate::value::proxy_subclass_attrs(Symbol::intern(kind.type_name()), attrs),
-        )),
+        Value::routine_parts(syms.empty, syms.fetch, false),
+        Value::routine_parts(syms.empty, syms.store, false),
+        Some((type_name, crate::value::proxy_subclass_attrs(type_name, attrs))),
         false,
     )
 }

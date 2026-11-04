@@ -205,8 +205,9 @@ impl Interpreter {
     /// ([`def_runtime_param_names`]). Several candidates (a proto, a multi)
     /// keep the spliced-source path: the window would have to bind each
     /// candidate's own names.
-    // TODO: bind per candidate at its entry, so proto and multi rules with
-    // parameters get a value-independent body too.
+    // TODO: bind per candidate at its entry, so candidates with differing
+    // names, or a default/`where`/coerced parameter, get a value-independent
+    // body too.
     // Cost: O(1) expected once memoized for the token generation; the first
     // call per (pkg, name) resolves the rule's definitions, O(s * m), s =
     // enclosing scopes, m = MRO length.
@@ -226,10 +227,14 @@ impl Interpreter {
             return hit;
         }
         let defs = self.resolve_token_defs_in_pkg(name, pkg);
-        let names = match &defs[..] {
-            [def] => def_runtime_param_names(def).map(Arc::from),
-            _ => None,
-        };
+        // Every candidate of a multi must declare the same names, so one
+        // window binds whichever candidate the dispatcher picks.
+        let names = defs
+            .iter()
+            .map(|def| def_runtime_param_names(def))
+            .reduce(|acc, next| if acc == next { acc } else { None })
+            .flatten()
+            .map(Arc::from);
         RUNTIME_RULE_PARAMS.with(|c| {
             c.borrow_mut().insert(key, (generation, names.clone()));
         });
