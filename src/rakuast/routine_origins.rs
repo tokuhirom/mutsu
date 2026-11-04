@@ -239,9 +239,7 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         ty.class,
         RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
     );
-    let name_end = smiled
-        .then(|| smiley_start(span))
-        .flatten();
+    let name_end = smiled.then(|| smiley_start(span)).flatten();
     if (smiled || ty.class == RakuAstClass::TypeSimple)
         && let Some(field) = ty.fields.first_mut()
     {
@@ -251,7 +249,10 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 if let Some(name) = simple.fields.first_mut() {
                     with_value(&mut name.value, |name| {
                         name.origin = Default::default();
-                        super::origin::set_span(name, crate::ast::SrcSpan::new(span.from as usize, end))
+                        super::origin::set_span(
+                            name,
+                            crate::ast::SrcSpan::new(span.from as usize, end),
+                        )
                     });
                 }
             });

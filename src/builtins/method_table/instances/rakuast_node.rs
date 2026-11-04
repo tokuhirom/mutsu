@@ -892,12 +892,12 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             // belongs to the declaration of the target too.
             let explicit_type = node_value("type").filter(|t| {
                 matches!(t.view(), ValueView::RakuAst(n)
-                    if matches!(
-                        n.class,
-                        RakuAstClass::TypeSimple
-                            | RakuAstClass::TypeDefinedness
-                            | RakuAstClass::TypeAnyDefinedness
-                    ))
+                if matches!(
+                    n.class,
+                    RakuAstClass::TypeSimple
+                        | RakuAstClass::TypeDefinedness
+                        | RakuAstClass::TypeAnyDefinedness
+                ))
             })?;
             let target = node_value("target")?;
             let ValueView::RakuAst(target_node) = target.view() else {
