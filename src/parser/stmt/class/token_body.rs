@@ -386,7 +386,14 @@ fn emit_rule_separator(
         && chars.get(j + WS.len()) != Some(&'?');
     if ws_after_separator {
         *i = j + WS.len();
-        super::rule_ws_quantified::mark_separated_quantifier_backtracking(out);
+        // Nothing follows inside the rule (`<x>+ % ',' }`): there is no later
+        // term to give an item back to, and the rule itself returns ratcheted,
+        // as `mark_backtracking_before_ws` does for a plain term. Un-ratcheting
+        // here let a caller backtrack into the separated list
+        // (CSS::Grammar's `expr` re-ran its actions for each shorter list).
+        if chars[*i..].iter().any(|c| !c.is_whitespace()) {
+            super::rule_ws_quantified::mark_separated_quantifier_backtracking(out);
+        }
     }
     let opt = if optional { "?" } else { "" };
     let sep = sep.trim();
