@@ -40,6 +40,13 @@ pub(crate) fn is_array_composer(node: &RakuAstNode) -> bool {
     node.class == C::CircumfixArrayComposer
 }
 
+/// Whether the value of `node` is a `Map` where evaluation answers a `Hash`
+/// (rakudo's `{a => 1}` literalizes to a `Map`).
+// Cost: O(1).
+pub(crate) fn is_hash_composer(node: &RakuAstNode) -> bool {
+    node.class == C::CircumfixHashComposer
+}
+
 fn constant(node: &RakuAstNode, depth: usize) -> bool {
     if depth > MAX_DEPTH {
         return false;
@@ -65,7 +72,8 @@ fn constant(node: &RakuAstNode, depth: usize) -> bool {
         | C::StatementSequence
         | C::SemiList
         | C::CircumfixParentheses
-        | C::CircumfixArrayComposer => all(children(node)),
+        | C::CircumfixArrayComposer
+        | C::CircumfixHashComposer => all(children(node)),
         C::FatArrow | C::ColonPairValue => {
             named(node, "value").is_some_and(|v| constant(v, depth + 1))
         }
