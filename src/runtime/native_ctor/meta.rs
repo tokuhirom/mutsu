@@ -16,7 +16,14 @@ impl Interpreter {
             // A Stash is essentially a Hash but with type Stash; a
             // PseudoStash is its lexical-pad sibling and constructs the
             // same way.
-            Ok(Value::make_instance(Symbol::intern(name), HashMap::new()))
+            // It holds its entries in the same backing storage as a user
+            // `is Hash` subclass, so an element store keeps the class.
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "__mutsu_hash_storage".to_string(),
+                self.associative_base_storage(name, Vec::new()),
+            );
+            Ok(Value::make_instance(Symbol::intern(name), attrs))
     }
 
     /// `Proxy`.
