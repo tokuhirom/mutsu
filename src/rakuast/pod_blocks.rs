@@ -34,6 +34,8 @@ enum Form {
     Delimited,
     For,
     Abbreviated,
+    /// `=config NAME :pairs`.
+    Directive,
 }
 
 /// A paragraph: its text, or a block nested in a delimited one.
@@ -407,6 +409,26 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 end + 1,
             ))
         }
+        // `=config head1 :numbered`: the configured block type is its only
+        // paragraph, the pairs its config.
+        "config" if rest.starts_with([' ', '\t']) => {
+            let rest = rest.trim_start();
+            let kind = rest.split_whitespace().next()?;
+            let config = config(lines, &rest[kind.len()..])?;
+            Some((
+                Block {
+                    kind: "config".to_string(),
+                    level: None,
+                    form: Form::Directive,
+                    margin: None,
+                    config,
+                    parts: vec![Part::Text(kind.to_string())],
+                    from,
+                    to: lines.end(i),
+                },
+                i + 1,
+            ))
+        }
         _ => {
             let (base, level) = split_level(name);
             // An abbreviated `=formula` keeps only its first line, without
@@ -729,6 +751,7 @@ impl Block {
         match self.form {
             Form::Abbreviated => fields.push(field("abbreviated", Value::TRUE)),
             Form::For => fields.push(field("for", Value::TRUE)),
+            Form::Directive => fields.push(field("directive", Value::TRUE)),
             Form::Delimited => {}
         }
         if !self.config.is_empty() {
