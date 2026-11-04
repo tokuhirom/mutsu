@@ -1723,9 +1723,12 @@ impl Interpreter {
                             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                         )
                     {
-                        let return_type = self
-                            .callable_return_type(value)
-                            .unwrap_or_else(|| "Mu".to_string());
+                        // Only a routine that declares a return type composes
+                        // `Callable[T]`; a plain `sub {}` is no `Callable[Mu]`
+                        // either (rakudo, #16461).
+                        let Some(return_type) = self.callable_return_type(value) else {
+                            return false;
+                        };
                         return Self::type_matches(&return_type, inner)
                             || self.type_matches_value(
                                 inner,

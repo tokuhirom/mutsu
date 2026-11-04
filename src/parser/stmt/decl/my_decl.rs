@@ -231,7 +231,6 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     if is_code
         && let Some(tc) = type_constraint.as_mut()
         && !tc.starts_with("::")
-        && !tc.starts_with("Callable")
     {
         *tc = format!("Callable[{tc}]");
     }
