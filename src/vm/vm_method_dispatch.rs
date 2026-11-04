@@ -249,17 +249,10 @@ impl Interpreter {
             // `has_invocant_constraint` or the fast path's own nominal type check
             // (which `::T` could never satisfy) bounced the call. Now that the
             // capture is a field of its own, the gate has to name it (#7984).
-            let has_type_capture =
-                method_def
-                    .param_defs
-                    .iter()
-                    .any(|pd| match pd.captured_type_name() {
-                        Some(name) if name == "?CLASS" || name.starts_with("?CLASS:") => {
-                            !(pd.is_invocant && role_blind)
-                        }
-                        Some(_) => true,
-                        None => false,
-                    });
+            let has_type_capture = method_def.param_defs.iter().any(|pd| {
+                pd.captured_type_name().is_some()
+                    && !(pd.captures_class_fixture() && pd.is_invocant && role_blind)
+            });
             let has_role_bindings = !role_blind
                 && (method_def.role_param_bindings.is_some()
                     || self.class_role_param_bindings(owner_class).is_some()
@@ -1978,9 +1971,7 @@ impl Interpreter {
             .filter(|pd| pd.is_invocant)
             .all(|pd| {
                 // A `::?CLASS` capture is harmless to a body that cannot see it.
-                if let Some(captured) = pd.type_capture.as_deref()
-                    && !(role_blind && (captured == "?CLASS" || captured.starts_with("?CLASS:")))
-                {
+                if pd.type_capture.is_some() && !(role_blind && pd.captures_class_fixture()) {
                     return false;
                 }
                 let Some(constraint) = pd.type_constraint.as_deref() else {

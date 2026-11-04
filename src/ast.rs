@@ -678,6 +678,15 @@ impl ParamDef {
         self.implicit_invocant
     }
 
+    /// Whether this parameter captures the class a method was resolved on
+    /// (`::?CLASS`, with or without a `:D` / `:U` smiley), the invocant of
+    /// every role method written `method m(::?CLASS:D: ...)`.
+    // Cost: O(1).
+    pub(crate) fn captures_class_fixture(&self) -> bool {
+        self.captured_type_name()
+            .is_some_and(|name| name == "?CLASS" || name.starts_with("?CLASS:"))
+    }
+
     /// The name a `::T` type capture on this parameter binds, if any.
     ///
     /// The single oracle for "does this parameter capture a type, and under what
