@@ -114,7 +114,11 @@ pub(crate) fn escape_for_source_indicator(s: &str) -> String {
 fn source_marker_forms() -> (&'static str, &'static str, &'static str) {
     use std::io::IsTerminal;
     if std::io::stderr().is_terminal() {
-        ("\u{1b}[32m\u{23CF}\u{1b}[31m", "\u{23CF}\u{1b}[0m", "\u{1b}[0m")
+        (
+            "\u{1b}[32m\u{23CF}\u{1b}[31m",
+            "\u{23CF}\u{1b}[0m",
+            "\u{1b}[0m",
+        )
     } else {
         ("<HERE>", "<HERE>", "")
     }
