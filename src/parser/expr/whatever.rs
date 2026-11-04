@@ -293,6 +293,14 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
+        // A hyper operator is not Whatever-aware: `(1, 2) »+» *` is a
+        // WhateverCode like any other infix with a `*` operand (#16402).
+        Expr::HyperOp { left, right, .. } => {
+            contains_whatever(left)
+                || contains_whatever(right)
+                || is_wrapped_whatevercode(left)
+                || is_wrapped_whatevercode(right)
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
             contains_whatever(expr) || is_wrapped_whatevercode(expr)
         }

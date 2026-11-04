@@ -169,6 +169,7 @@ impl VisitMut for Replacer<'_> {
             }
             // Every operand of these operators curries.
             Expr::Binary { .. }
+            | Expr::HyperOp { .. }
             | Expr::Unary { .. }
             | Expr::PostfixOp { .. }
             | Expr::ZenSlice(_)
