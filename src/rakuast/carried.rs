@@ -211,7 +211,6 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::ChainedCompare { .. }
         | Expr::Feed { .. }
         | Expr::ControlFlow { .. }
-        | Expr::HeredocInterpolation(..)
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
