@@ -94,6 +94,7 @@ impl Interpreter {
     /// code runs proves no atomic storage exists under the name, and a name
     /// registered after the compile sets the bit the emitted code tests.
     // Cost: O(m), m = name bytes, once per compiled read.
+    #[cfg(feature = "jit")]
     pub(crate) fn atomic_name_probe(name: &str) -> (usize, u64) {
         let (word, bit) = atomic_name_slot(name);
         (std::ptr::addr_of!(ATOMIC_NAMES[word]) as usize, bit)
