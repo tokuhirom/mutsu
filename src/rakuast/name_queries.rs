@@ -12,8 +12,19 @@ use crate::value::{Value, ValueView};
 /// The pseudo-package names rakudo's `Name::Part::Simple.is-pseudo-package`
 /// accepts (`GLOBAL`, `PROCESS` and `PARENT` are not among them).
 const PSEUDO_PACKAGES: &[&str] = &[
-    "MY", "OUR", "OUTER", "OUTERS", "CORE", "UNIT", "SETTING", "DYNAMIC", "CALLER", "CALLERS",
-    "COMPILING", "LEXICAL", "CLIENT",
+    "MY",
+    "OUR",
+    "OUTER",
+    "OUTERS",
+    "CORE",
+    "UNIT",
+    "SETTING",
+    "DYNAMIC",
+    "CALLER",
+    "CALLERS",
+    "COMPILING",
+    "LEXICAL",
+    "CLIENT",
 ];
 
 /// What kind of part a name part is.
@@ -55,9 +66,7 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
     let kinds: Vec<Part> = parts.iter().map(classify).collect();
     let all_empty = !kinds.is_empty() && kinds.iter().all(|k| matches!(k, Part::Empty));
     let flag = |b: bool| Some(Value::int(i64::from(b)));
-    let first_simple = |wanted: &dyn Fn(&str) -> bool| {
-        matches!(kinds.first(), Some(Part::Simple(name)) if wanted(name))
-    };
+    let first_simple = |wanted: &dyn Fn(&str) -> bool| matches!(kinds.first(), Some(Part::Simple(name)) if wanted(name));
     match method {
         "is-identifier" => flag(kinds.len() == 1 && matches!(kinds[0], Part::Simple(_))),
         "is-simple" => Some(Value::truth(
