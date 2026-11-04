@@ -1995,30 +1995,31 @@ impl Interpreter {
         // The last two fall back to the whole capture, as does a frame whose
         // env is not a scoped overlay at all (then `keys()` is the whole env,
         // so the narrowing would cost more than it saves).
-        let end_refresh_keys: Vec<Symbol> = if self.has_end_phasers() && data.env.len_upper_bound() > 0 {
-            if self.pending_runtime_name_writes.is_empty()
-                && self.inline_control_env_writes.len() == inline_control_writes_at_entry
-                && self.env().len() < data.env.len_upper_bound()
-            {
-                let captured = data.env.inner();
-                // Sized up front: the `filter` hides the exact size hint the
-                // two iterators have, so `collect` would otherwise walk
-                // hashbrown's growth ladder for a handful of names.
-                let mut keys = Vec::with_capacity(self.env().len() + cc.free_var_syms.len());
-                keys.extend(
-                    self.env()
-                        .keys()
-                        .copied()
-                        .chain(cc.free_var_syms.iter().copied())
-                        .filter(|k| captured.contains_key(k)),
-                );
-                keys
+        let end_refresh_keys: Vec<Symbol> =
+            if self.has_end_phasers() && data.env.len_upper_bound() > 0 {
+                if self.pending_runtime_name_writes.is_empty()
+                    && self.inline_control_env_writes.len() == inline_control_writes_at_entry
+                    && self.env().len() < data.env.len_upper_bound()
+                {
+                    let captured = data.env.inner();
+                    // Sized up front: the `filter` hides the exact size hint the
+                    // two iterators have, so `collect` would otherwise walk
+                    // hashbrown's growth ladder for a handful of names.
+                    let mut keys = Vec::with_capacity(self.env().len() + cc.free_var_syms.len());
+                    keys.extend(
+                        self.env()
+                            .keys()
+                            .copied()
+                            .chain(cc.free_var_syms.iter().copied())
+                            .filter(|k| captured.contains_key(k)),
+                    );
+                    keys
+                } else {
+                    data.env.written_name_candidates()
+                }
             } else {
-                data.env.written_name_candidates()
-            }
-        } else {
-            Vec::new()
-        };
+                Vec::new()
+            };
 
         *self.env_mut() = restored_env;
 
