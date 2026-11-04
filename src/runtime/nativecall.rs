@@ -833,6 +833,23 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
     }
 }
 
+/// Whether `v` is a value that can never carry a C address: a `Str`, `Num`,
+/// `Bool`, rational or a `Failure`. `nqp::unbox_i` refuses these instead of
+/// answering the address 0 (#16420).
+// Cost: O(1).
+pub(crate) fn is_non_address_value(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Str(_)
+        | ValueView::Num(_)
+        | ValueView::Bool(_)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..)
+        | ValueView::BigRat(..) => true,
+        ValueView::Instance { class_name, .. } => class_name.resolve() == "Failure",
+        _ => false,
+    }
+}
+
 /// Read the C address carried by a NativeCall argument. (An `is rw` argument
 /// arrives as a `VarRef` carrying the bound variable's current value, which
 /// [`value_c_address`] unwraps along with `Scalar` / `ContainerRef`.)

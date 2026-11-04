@@ -86,6 +86,12 @@ impl Interpreter {
                 }
                 // An object that boxes a uint in an `is box_target` attribute.
                 let v = self.unbox_native_through(&v).unwrap_or(v);
+                if crate::runtime::nativecall::is_non_address_value(&v) {
+                    return Some(Err(RuntimeError::new(format!(
+                        "This type cannot unbox to a native integer: P6opaque, {}",
+                        crate::value::type_name::value_type_name(&v)
+                    ))));
+                }
                 Ok(uint64_value(&v))
             }
             // nqp::atpos_u($list, $i): element `$i` read as a native `uint64`;
