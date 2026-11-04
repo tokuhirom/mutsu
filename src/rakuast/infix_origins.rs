@@ -257,7 +257,10 @@ fn leading_variable(node: &mut RakuAstNode) {
     if left.origin.0.is_some()
         || !matches!(
             left.class,
-            RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute
+            RakuAstClass::VarLexical
+                | RakuAstClass::VarDynamic
+                | RakuAstClass::VarAttribute
+                | RakuAstClass::VarAttributePublic
         )
     {
         return;
