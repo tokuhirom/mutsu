@@ -12,7 +12,10 @@ fn arity(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 
 // Cost: O(a), a = arguments of the list.
 fn has_args(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(with_node(target, crate::rakuast::arg_list_queries::has_args))
+    Ok(with_node(
+        target,
+        crate::rakuast::arg_list_queries::has_args,
+    ))
 }
 
 // Cost: O(a), a = arguments of the list.
