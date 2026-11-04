@@ -9,7 +9,7 @@
 
 use super::lower::rakuast_node_of;
 use super::{RakuAstClass as C, RakuAstFieldValue, RakuAstNode};
-use crate::value::{Value, ValueView};
+use crate::value::ValueView;
 
 /// The deepest nesting [`is_constant`] follows before it answers no.
 const MAX_DEPTH: usize = 512;
@@ -38,27 +38,6 @@ pub(crate) fn is_constant(node: &RakuAstNode) -> bool {
 // Cost: O(1).
 pub(crate) fn is_hash_composer(node: &RakuAstNode) -> bool {
     node.class == C::CircumfixHashComposer
-}
-
-/// The value of a constant as `literalize` answers it: a hash anywhere in it
-/// is a `Map` and an array a `List` (rakudo: `{a => {b => 1}}` is
-/// `Map.new((:a(Map.new((:b(1))))))`, `{a => [1, {b => 2}]}` holds
-/// `(1, Map.new((:b(2))))`).
-// Cost: O(n), n = size of the value.
-pub(crate) fn literal_value(value: Value) -> Value {
-    match value.view() {
-        ValueView::Hash(map) => {
-            let deep: crate::value::ValueMap = map
-                .iter()
-                .map(|(k, v)| (k.clone(), literal_value(v.clone().deitemize_element())))
-                .collect();
-            crate::builtins::map_hash_coerce::to_map(Value::hash(deep)).unwrap_or(value)
-        }
-        ValueView::Array(items, _) => {
-            Value::array(items.iter().cloned().map(literal_value).collect())
-        }
-        _ => value,
-    }
 }
 
 fn constant(node: &RakuAstNode, depth: usize) -> bool {
