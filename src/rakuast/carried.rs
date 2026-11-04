@@ -201,6 +201,18 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // (`finalization_is_the_ordinary_tree`). An interpolating quote-form
         // replacement becomes the thunk in the conversion.
         | Expr::Transliterate { .. }
+        | Expr::ZenSlice(_)
+        | Expr::CaptureVar(_)
+        | Expr::PseudoStash(_)
+        | Expr::MultiDimIndex { .. }
+        | Expr::IndexAssign { .. }
+        | Expr::AssignExpr { .. }
+        | Expr::HyperMethodCallDynamic { .. }
+        | Expr::SymbolicDeref { .. }
+        | Expr::ChainedCompare { .. }
+        | Expr::Feed { .. }
+        | Expr::ControlFlow { .. }
+        | Expr::HeredocInterpolation(..)
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
