@@ -202,6 +202,7 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::Transliterate { .. }
         | Expr::ZenSlice(_)
         | Expr::CaptureVar(_)
+        | Expr::CaptureLiteral(..)
         | Expr::PseudoStash(_)
         | Expr::MultiDimIndex { .. }
         | Expr::AssignExpr { .. }
