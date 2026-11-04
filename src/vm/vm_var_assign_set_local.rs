@@ -581,15 +581,24 @@ impl Interpreter {
         idx: usize,
         value: &Value,
     ) -> bool {
+        // The slot's own declaration already answered this, at compile time —
+        // see `DeclaredConstraint`. Only `Unrecorded`/`Conflicting` fall
+        // through to the env probe this replaces, which was 138 instructions
+        // per store and 9.2% of an `nqp::add_i` loop (#8877).
+        //
+        // `Untyped` is asked before the subset test below: a slot its own
+        // declaration proved to carry no constraint has nothing a subset could
+        // redirect, so a program that loaded any module declaring a subset
+        // (Cro's) kept every untyped `my $x = ...` in a loop off the
+        // declaration lane for no reason (#9170).
+        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
+            return true;
+        }
         // A subset anywhere in the program can redirect a constraint name, so
         // the constraint below would no longer be self-describing.
         if !self.registry().subsets.is_empty() {
             return false;
         }
-        // The slot's own declaration already answered this, at compile time —
-        // see `DeclaredConstraint`. Only `Unrecorded`/`Conflicting` fall
-        // through to the env probe this replaces, which was 138 instructions
-        // per store and 9.2% of an `nqp::add_i` loop (#8877).
         match code.declared_constraint(idx) {
             DeclaredConstraint::NativeInt => return matches!(value.view(), ValueView::Int(_)),
             DeclaredConstraint::NativeStr => return matches!(value.view(), ValueView::Str(_)),
