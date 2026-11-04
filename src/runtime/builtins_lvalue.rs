@@ -296,7 +296,23 @@ impl Interpreter {
                     .iter()
                     .map(|v| self.resolve_proxies_in_value(v))
                     .collect();
-                Ok(Value::seq(resolved?))
+                let rebuilt = Value::seq(resolved?);
+                // The rebuilt Seq keeps the handle tag of the one it replaces:
+                // a `$`-held Seq (`my $s = $c[1,3]`) still renders as
+                // `$(...)`, and a `.cache` List view as a List.
+                let view = items.view();
+                match rebuilt.view() {
+                    ValueView::Seq(body) if view == crate::value::SeqView::ItemSeq => {
+                        Ok(Value::seq_body(body.as_item_seq_view()))
+                    }
+                    ValueView::Seq(body) if view == crate::value::SeqView::ItemList => {
+                        Ok(Value::seq_body(body.as_list_view().as_item_list_view()))
+                    }
+                    ValueView::Seq(body) if view == crate::value::SeqView::List => {
+                        Ok(Value::seq_body(body.as_list_view()))
+                    }
+                    _ => Ok(rebuilt),
+                }
             }
             ValueView::Slip(items) => {
                 let resolved: Result<Vec<Value>, RuntimeError> = items
