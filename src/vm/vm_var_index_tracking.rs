@@ -52,7 +52,12 @@ impl Interpreter {
     /// This must be called after array element deletion and before
     /// `trim_trailing_array_holes` so that deleted slots are recognized
     /// as holes and can be trimmed.
-    pub(super) fn unmark_initialized_indices(&mut self, var_name: &str, idx: &Value) {
+    pub(super) fn unmark_initialized_indices(
+        &mut self,
+        place: StorePlace,
+        var_name: &str,
+        idx: &Value,
+    ) {
         // Collect the integer indices addressed by `idx` (scalar, slice, or
         // range) and drop them from the array's embedded `initialized` set so
         // the deleted slots are recognized as holes and can be trimmed.
@@ -77,7 +82,7 @@ impl Interpreter {
                 return;
             }
         }
-        if let Some(root) = self.env_root_descended_mut(var_name) {
+        if let Some(root) = self.place_root_mut(place, var_name) {
             root.with_array_mut(|items, _| {
                 // Container identity (§3): write through a shared node.
                 let data = crate::value::gc_data_mut(items);
