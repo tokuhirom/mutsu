@@ -1149,6 +1149,14 @@ impl Symbol {
     /// Computed on first ask and cached per thread. Test the result with the
     /// `flags::*` constants, e.g.
     /// `sym.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0`.
+    /// The interned id: dense and process-unique, for the lock-free bit sets
+    /// that are keyed by symbol (`raw_invocant::raw_invocant_method_possible_for`).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn raw_id(self) -> u32 {
+        self.0
+    }
+
     pub(crate) fn flags(self) -> u16 {
         let idx = self.0 as usize;
         if let Some(slot) = flag_slot(idx) {

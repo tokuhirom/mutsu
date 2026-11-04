@@ -108,7 +108,7 @@ impl Interpreter {
         // `:=` binding (e.g. binding to a readonly sub parameter
         // in a closure).  The readonly_vars set is scope-local
         // and gets restored on frame pop, but the env key persists.
-        if crate::env::sigilless_readonly_keys_possible() {
+        if crate::env::sigilless_readonly_key_possible_for(code.const_sym(name_idx)) {
             let name = Self::const_str(code, name_idx);
             let readonly_key = crate::runtime::sigilless_readonly_key(name);
             if matches!(
@@ -165,7 +165,7 @@ impl Interpreter {
             // Still ask the sigilless marker: it is a separate mechanism the
             // decision does not cover.
             Some(FreeVarBinding::Writable) => {
-                if crate::env::sigilless_readonly_keys_possible()
+                if crate::env::sigilless_readonly_key_possible_for(name_sym)
                     && matches!(
                         self.env()
                             .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
