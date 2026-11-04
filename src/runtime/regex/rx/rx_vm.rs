@@ -394,13 +394,18 @@ impl Interpreter {
                                 program.atom_ic[i as usize],
                             ),
                             atom @ (RegexAtom::VarInterp(name)
+                            | RegexAtom::VarInterpMarkless(name)
                             | RegexAtom::VarAssertion(name)) => match self.var_interp_target(
                                 name,
                                 matches!(atom, RegexAtom::VarAssertion(_)),
                                 levels.top().caps(),
                                 chars,
                                 pos,
-                                (program.atom_ic[i as usize], program.markless),
+                                (
+                                    program.atom_ic[i as usize],
+                                    program.markless
+                                        || matches!(atom, RegexAtom::VarInterpMarkless(_)),
+                                ),
                             ) {
                                 VarInterpTarget::End(end) => {
                                     pc += 1;

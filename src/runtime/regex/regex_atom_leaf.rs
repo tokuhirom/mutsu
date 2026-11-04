@@ -58,9 +58,12 @@ impl Interpreter {
             RegexAtom::NamedBackref(name) => {
                 named_backref_end(name, caps, chars, pos).map(|end| (end, RegexCaptures::default()))
             }
-            RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
+            RegexAtom::VarInterp(name)
+            | RegexAtom::VarInterpMarkless(name)
+            | RegexAtom::VarAssertion(name) => {
                 let assertion = matches!(atom, RegexAtom::VarAssertion(_));
-                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, false)) {
+                let markless = matches!(atom, RegexAtom::VarInterpMarkless(_));
+                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, markless)) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -150,6 +153,14 @@ impl Interpreter {
                 source.push_str(&Self::escape_regex_scalar_literal(&ref_text));
             }
             return match self.parse_regex(&source) {
+                // Under `:i` the subject was case-folded with its multi-char
+                // expansions (`ﬁ` -> `fi`), so the value's literals fold too.
+                Some(parsed) if markless => VarInterpTarget::Pattern(
+                    super::regex_helpers::strip_marks_pattern(&parsed),
+                ),
+                Some(parsed) if ignore_case => VarInterpTarget::Pattern(
+                    super::regex_casefold::casefold_pattern_cached(&parsed),
+                ),
                 Some(parsed) => VarInterpTarget::Pattern(parsed),
                 None => VarInterpTarget::End(None),
             };

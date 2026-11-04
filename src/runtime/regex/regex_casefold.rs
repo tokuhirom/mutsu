@@ -117,6 +117,8 @@ fn pattern_has_multichar_fold(pattern: &RegexPattern) -> bool {
 fn atom_has_multichar_fold(atom: &RegexAtom) -> bool {
     match atom {
         RegexAtom::Literal(ch) => has_multichar_fold(*ch),
+        // The value is read at match time and may hold a ligature.
+        RegexAtom::VarInterp(_) | RegexAtom::VarInterpMarkless(_) => true,
         RegexAtom::CharClass(class) => {
             !class.negated
                 && class

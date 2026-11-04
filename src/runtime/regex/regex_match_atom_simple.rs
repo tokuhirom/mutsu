@@ -313,7 +313,7 @@ impl Interpreter {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Some(pos);
             }
-            RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) | RegexAtom::VarInterp(_)
+            RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) | RegexAtom::VarInterp(_) | RegexAtom::VarInterpMarkless(_)
             | RegexAtom::VarAssertion(_) => {
                 return None;
             }
@@ -820,6 +820,7 @@ impl Interpreter {
             | RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
             | RegexAtom::VarInterp(_)
+            | RegexAtom::VarInterpMarkless(_)
             | RegexAtom::VarAssertion(_)
             | RegexAtom::QqInterp { .. }
             | RegexAtom::VarDecl { .. }

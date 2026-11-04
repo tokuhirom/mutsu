@@ -158,6 +158,7 @@ pub(super) fn chain_atom_once(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> 
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::VarInterpMarkless(_)
         | RegexAtom::VarAssertion(_)
         | RegexAtom::QqInterp { .. }
         | RegexAtom::RecurseSelf(_)

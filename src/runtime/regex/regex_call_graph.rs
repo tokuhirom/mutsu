@@ -392,6 +392,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
         | RegexAtom::NamedBackref(_)
         // Interpolates a variable's STRING value as a literal, not as a rule.
         | RegexAtom::VarInterp(_)
+        | RegexAtom::VarInterpMarkless(_)
         | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
