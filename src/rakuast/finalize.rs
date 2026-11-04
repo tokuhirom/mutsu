@@ -293,7 +293,9 @@ impl VisitMut for Finalize<'_> {
         if let Expr::BareWord(word) = &*expr
             && self.later_terms.iter().enumerate().any(|(i, later)| {
                 later.contains(word)
-                    && !self.seen_terms[i + 1..].iter().any(|seen| seen.contains(word))
+                    && !self.seen_terms[i + 1..]
+                        .iter()
+                        .any(|seen| seen.contains(word))
             })
             && !self.declared_types.contains(word)
         {
