@@ -1455,6 +1455,7 @@ impl Compiler {
                     // An inline `my $x` argument (`&f(my $x)`, `&f :k(my $x)`)
                     // takes a real lexical slot, as in a plain sub call.
                     self.with_call_arg_decl_slot(arg, |s| s.compile_expr(arg));
+                    self.tag_scalar_arg_before_closure(args, i);
                     self.maybe_promote_attr_arg_read(arg);
                     self.mark_call_on_arg(
                         crate::opcode::RwArgCallee::CodeVar {
@@ -1513,6 +1514,7 @@ impl Compiler {
                     );
                 } else {
                     self.compile_expr(arg);
+                    self.tag_scalar_arg_before_closure(args, i);
                     self.maybe_promote_attr_arg_read(arg);
                     self.mark_call_on_arg(
                         crate::opcode::RwArgCallee::Code,
@@ -1530,6 +1532,38 @@ impl Compiler {
                 arg_sources_idx,
                 bare_args,
             });
+        }
+    }
+
+    /// Tag positional argument `args[i]` of a call made through a code
+    /// variable / callable value (`&wrap($e, { ... $e ... })`) with
+    /// `WrapVarRef` when it is a plain scalar local and a closure literal
+    /// follows it in the argument list (#16179).
+    ///
+    /// A direct sub call tags every variable argument, and the tag boxes the
+    /// variable's slot into its shared cell *before* the later closure
+    /// argument is created, so the closure captures the cell: a callee that
+    /// writes the argument (`is raw` / `is rw`, directly or through a `|c`
+    /// forward) is then seen by the closure while the call runs. Without the
+    /// tag the closure took a snapshot of the old value. Only this shape is
+    /// tagged: blanket-tagging code-variable arguments changed the meaning of
+    /// `&infix:<..>(..)` and bare-block calls.
+    fn tag_scalar_arg_before_closure(&mut self, args: &[Expr], i: usize) {
+        let arg = &args[i];
+        if !matches!(arg, Expr::Var(_))
+            || !args[i + 1..].iter().any(Self::is_closure_literal_arg)
+        {
+            return;
+        }
+        let Some(name) = self.lvalue_root_key(arg, crate::ast::LvaluePeel::ASSIGN) else {
+            return;
+        };
+        if self.local_map.contains_key(name.as_str()) {
+            // The callee may write the argument (`is raw` / `is rw`, or a `|c`
+            // forward of it): count it as mutated so the closure that follows
+            // captures its shared cell, not a snapshot.
+            self.note_atomic_env_sync_target(&name, true);
+            self.emit_wrap_var_ref_arg_tag(&name);
         }
     }
 
