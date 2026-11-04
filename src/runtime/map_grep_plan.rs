@@ -341,8 +341,9 @@ impl Interpreter {
                 !(body_names_only_what_it_mentions
                     && !capture_wins_over_caller_for_plan(free_vars, k, v)
                     && !temporaries.contains(k)
-                    && is_plain_type_like_name(k)
-                    && !code.mentions_name(k))
+                    && droppable_subject(k).is_some_and(|subject| {
+                        !code.mentions_name(k) && !code.mentions_name(&subject)
+                    }))
             })
             .map(|(k, v)| CaptureKey {
                 name: *k,
@@ -483,13 +484,30 @@ impl Interpreter {
 
 use super::resolution_map_grep::capture_wins_over_caller as capture_wins_over_caller_for_plan;
 
-/// A bare identifier starting with an uppercase letter: how a type, enum or
-/// constant name is spelled in an env key. Not a sigiled variable, a `&` code
-/// variable, a dynamic, an internal `__mutsu_*` key or a `?`/`=` special.
-// Cost: O(len).
-fn is_plain_type_like_name(k: &Symbol) -> bool {
+/// The name a captured key stands for when it is one a body can only reach by
+/// naming it: a type, enum or constant name (`Pt`, `Cro::HTTP`), a sigilless
+/// term (`\size`) or the readonly marker of one
+/// (`__mutsu_sigilless_readonly::\size`). `None` for a sigiled variable, a `&`
+/// code variable, a dynamic, any other internal `__mutsu_*` key and a `?`/`=`
+/// special: those are read by machinery that does not name them.
+// Cost: O(len) once per plan.
+fn droppable_subject(k: &Symbol) -> Option<Symbol> {
     k.with_str(|s| {
-        s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
-            && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        let term = s.strip_prefix("__mutsu_sigilless_readonly::").unwrap_or(s);
+        let ident = |t: &str| {
+            !t.is_empty()
+                && t.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        };
+        if let Some(name) = term.strip_prefix('\\') {
+            return ident(name).then(|| Symbol::intern(name));
+        }
+        // Only a type-shaped name qualifies unmarked; a readonly marker is
+        // always for a sigilless term.
+        let type_like = term.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+            && term
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':');
+        (std::ptr::eq(term, s) && type_like).then(|| *k)
     })
 }
