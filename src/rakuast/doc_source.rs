@@ -59,7 +59,11 @@ fn block_source(node: &RakuAstNode) -> Option<String> {
         return None;
     }
     let kind = str_field(node, "type")?;
-    if kind.is_empty() || !kind.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_')) {
+    if kind.is_empty()
+        || !kind
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+    {
         return None;
     }
     let name = match str_field(node, "level") {
