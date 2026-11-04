@@ -167,11 +167,6 @@ impl Interpreter {
             || crate::runtime::utils::is_known_type_constraint(name)
             || self.registry().classes.contains_key(name)
             || self.registry().roles.contains_key(name)
-            // A class or role declared in a module's lexical scope is
-            // registered under a mangled key; it is a type name in its own
-            // right too, and a `CArray:D` parameter check walked the env for
-            // an alias of it on every read (#16373).
-            || self.registry().has_lexical_type_key_for(name)
         {
             return None;
         }
