@@ -126,9 +126,12 @@ fn unpack(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answe
         // the caller's lexical scope when there is one (`nqp::getlexcaller`):
         // P5pack installs it with `BEGIN OUR::<EXPERIMENTAL-PACK> := &f`, so
         // `use P5pack` is what makes `$buf.unpack($template)` legal.
-        let Some(routine) = i.env().get("EXPERIMENTAL-PACK").cloned().filter(|v| {
-            matches!(v.view(), crate::value::ValueView::Sub(_))
-        }) else {
+        let Some(routine) = i
+            .env()
+            .get("EXPERIMENTAL-PACK")
+            .cloned()
+            .filter(|v| matches!(v.view(), crate::value::ValueView::Sub(_)))
+        else {
             return Some(Err(experimental_unpack_error()));
         };
         let template = args.first().cloned().unwrap_or(Value::NIL);
