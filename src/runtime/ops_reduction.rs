@@ -751,10 +751,8 @@ impl Interpreter {
                     ));
                 }
                 let Some(n_raw) = Self::reduction_parse_repeat_count(right)? else {
-                    return Err(Self::reduction_repeat_error(
-                        "X::Numeric::CannotConvert",
-                        "Cannot convert Inf to Int",
-                    ));
+                    // `'a' x Inf` is a Failure (X::NYI), not an exception.
+                    return Ok(RuntimeError::nyi_failure("Cat object"));
                 };
                 let n = n_raw.max(0) as usize;
                 crate::builtins::str_prim::repeat(left, n)

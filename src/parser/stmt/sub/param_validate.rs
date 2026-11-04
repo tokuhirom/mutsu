@@ -497,7 +497,7 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             let is_slurpy = pd.slurpy || pd.double_slurpy || pd.onearg;
             if is_slurpy || pd.required {
                 let (how, parameter, message) = if is_slurpy {
-                    let anonymous = pd.name.contains("__ANON_");
+                    let anonymous = pd.name.contains("__ANON_") || pd.name == "_capture";
                     let param = if anonymous {
                         String::new()
                     } else {
