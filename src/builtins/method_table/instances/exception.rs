@@ -145,7 +145,11 @@ fn message(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
         // rakudo's stubbed `method message() { ... }`: it fails `X::StubCode`.
         // The built-in classes below keep answering the empty text.
         // TODO: rakudo's bare `Exception.new.message` is that Failure too.
-        None if matches!(class_of(target).as_str(), "Exception" | "X::AdHoc" | "X::OS") => {
+        None if matches!(
+            class_of(target).as_str(),
+            "Exception" | "X::AdHoc" | "X::OS"
+        ) =>
+        {
             Some(Ok(Value::str(String::new())))
         }
         None => Some(Ok(RuntimeError::stub_code_failure())),
