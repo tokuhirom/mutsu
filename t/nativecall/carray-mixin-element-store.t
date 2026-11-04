@@ -5,7 +5,7 @@ use NativeCall;
 # through a role multi method on a mixin receiver. The memoized `.WHAT` and
 # borrowed role lookups on that path (#16215) must not change the results.
 
-plan 15;
+plan 21;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^5;
@@ -44,3 +44,22 @@ my $o = Mu.new but R;
 is $o.m(1, "x"), 'int-str:1x', 'Int:D / Str:D candidate wins for (Int, Str)';
 is $o.m(1.5e0, 7), 'num-any:1.57', 'Num:D / Any:D candidate wins for (Num, Int)';
 throws-like { $o.m("s", 1) }, X::Multi::NoMatch, 'no candidate for (Str, Int)';
+
+# A mixin role method that does read the role's parameter, `::?CLASS` or a
+# static keeps seeing them; only a body that cannot is called without them.
+role P[::T] {
+    my $seen = 'static';
+    method t-name(::?CLASS:D:) { T.^name }
+    method cls-name(::?CLASS:D:) { ::?CLASS.^name }
+    method st(::?CLASS:D:) { $seen }
+    method typed(::?CLASS:D: T $x) { "typed:$x" }
+    method plain(::?CLASS:D: Int:D $x) { $x + 1 }
+}
+class K { }
+my $k = K.new but P[Int];
+is $k.t-name, 'Int', 'a body reading the role parameter sees it';
+like $k.cls-name, /K/, 'a body reading ::?CLASS sees it';
+is $k.st, 'static', 'a body reading a role static sees it';
+is $k.typed(5), 'typed:5', 'a parameter typed with the role parameter is checked against it';
+dies-ok { $k.typed("s") }, 'and rejects an argument of another type';
+is $k.plain(41), 42, 'a body that reads none of them still works';

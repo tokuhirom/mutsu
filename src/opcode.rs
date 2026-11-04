@@ -10092,6 +10092,25 @@ impl CompiledCode {
         )
     }
 
+    /// Whether this body is a straight line of local reads and `nqp::` ops
+    /// that name no lexical, and none of the locals it reads is the frame
+    /// fixture `?CLASS` / `?ROLE`: it cannot observe a role's type parameters,
+    /// the role package's statics or the class a `::?CLASS` invocant captured
+    /// (`CArray`'s `ASSIGN-POS` / `AT-POS` are `nqp::bindpos_n(self, $pos,
+    /// $value)`), so a call may skip binding them (#16215).
+    // Cost: O(n), n = ops of the chunk.
+    pub(crate) fn ignores_role_context(&self) -> bool {
+        self.closure_compiled_codes.is_empty()
+            && self.ops.iter().all(|op| match op {
+                OpCode::GetLocal(slot) => self
+                    .locals
+                    .get(*slot as usize)
+                    .is_some_and(|name| !matches!(name.as_str(), "?CLASS" | "?ROLE")),
+                OpCode::NqpOp { id, .. } => !nqp_op_names_lexical(*id, false),
+                _ => false,
+            })
+    }
+
     /// Whether the local named `name` is mirrored into `env` on store
     /// (`needs_env_sync`): some by-name reader of this frame can read it.
     // Cost: O(l), l = locals of the chunk.
