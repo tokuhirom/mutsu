@@ -456,16 +456,30 @@ impl Interpreter {
         for role_name in role_names {
             // Only what the call reads, copied out of the borrowed def: the
             // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
-            let Some((role_id, role_attrs, mut overloads)) = self
+            // The candidates themselves are cloned only when the winner memo
+            // misses; a hit is looked up by the identity of their bodies.
+            //
+            // A `method m {...}` stub only *requires* `m` (checked when the
+            // role was composed); it never supplies a body, so the mixed-in
+            // value's own method must answer (`$attr does R` where
+            // `R` stubs `method package`).
+            let Some((role_id, role_attrs, bodies, sole_non_multi)) = self
                 .with_mixin_role_def(mixins, &role_name, |role| {
                     role.methods.get(lookup_name).map(|overloads| {
+                        let live: Vec<&MethodDef> = overloads
+                            .iter()
+                            .filter(|def| !Self::is_runtime_stub_method_def(def))
+                            .collect();
                         (
                             role.role_id,
                             role.attributes
                                 .iter()
                                 .map(|attr| attr.name.clone())
                                 .collect::<Vec<String>>(),
-                            overloads.clone(),
+                            live.iter()
+                                .map(|def| std::sync::Arc::as_ptr(&def.body) as usize)
+                                .collect::<Vec<usize>>(),
+                            live.len() == 1 && !live[0].is_multi,
                         )
                     })
                 })
@@ -473,12 +487,7 @@ impl Interpreter {
             else {
                 continue;
             };
-            // A `method m {...}` stub only *requires* `m` (checked when the
-            // role was composed); it never supplies a body, so the mixed-in
-            // value's own method must answer (`$attr does R` where
-            // `R` stubs `method package`).
-            overloads.retain(|def| !Self::is_runtime_stub_method_def(def));
-            if overloads.is_empty() {
+            if bodies.is_empty() {
                 continue;
             }
             role_has_method = true;
@@ -547,15 +556,17 @@ impl Interpreter {
             // run it so a failed parameter bind raises its own
             // `X::TypeCheck::Binding::Parameter`, as rakudo does, rather than
             // a dispatch `X::Multi::NoMatch`.
-            let sole_private = is_private_call && overloads.len() == 1 && !overloads[0].is_multi;
+            let sole_private = is_private_call && sole_non_multi;
             // The winner among a role's multi candidates is a function of the
             // arguments' type keys when every candidate is key-decided: a
             // CArray element store re-resolved every candidate's parameter
             // types on each call (505k Ir, #16215).
-            let memo_key = if sole_private {
+            // A hit needs only the body identities: an entry exists only for a
+            // call whose candidates were all key-decided when it was made.
+            let fast_key = if sole_private {
                 None
             } else {
-                self.mixin_winner_key(
+                self.mixin_winner_fast_key(
                     MixinCallSite {
                         target,
                         inner,
@@ -564,20 +575,48 @@ impl Interpreter {
                         method: lookup_name,
                         private: is_private_call,
                     },
-                    &overloads,
-                    &role_param_bindings,
+                    bodies,
                     &args,
                 )
             };
-            let memoized = memo_key
+            let memoized = fast_key
                 .as_ref()
                 .and_then(|key| self.caches.mixin_method_winner.get(key).cloned());
+            let mut overloads_miss: Vec<MethodDef> = Vec::new();
+            let mut memo_key = fast_key;
+            if memoized.is_none() {
+                overloads_miss = self
+                    .with_mixin_role_def(mixins, &role_name, |role| {
+                        role.methods.get(lookup_name).cloned().unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                overloads_miss.retain(|def| !Self::is_runtime_stub_method_def(def));
+                // Re-derived from the candidates themselves: only a call whose
+                // candidates are all key-decided may be remembered.
+                memo_key = if sole_private {
+                    None
+                } else {
+                    self.mixin_winner_key(
+                        MixinCallSite {
+                            target,
+                            inner,
+                            role_name: &role_name,
+                            role_id,
+                            method: lookup_name,
+                            private: is_private_call,
+                        },
+                        &overloads_miss,
+                        &role_param_bindings,
+                        &args,
+                    )
+                };
+            }
             let picked = match memoized {
                 Some(winner) => winner,
                 None => {
                     // The visible multis that do not bind are kept as rivals: they
                     // still shape the tiers of `pick_method_winner` (#12795).
-                    let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads
+                    let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads_miss
                         .into_iter()
                         // For private calls, only match private methods; for public calls, skip private.
                         .filter(|def| is_private_call == def.is_private)
@@ -1051,6 +1090,31 @@ pub(crate) struct MixinWinnerKey {
 }
 
 impl Interpreter {
+    /// [`Self::mixin_winner_key`] without inspecting the candidates: the key a
+    /// remembered call is looked up by, built from the identity of their
+    /// bodies (`bodies`) and the arguments' type keys alone. `None` when an
+    /// argument has no type key.
+    // Cost: O(c + a), c = candidates, a = arguments.
+    fn mixin_winner_fast_key(
+        &mut self,
+        site: MixinCallSite<'_>,
+        bodies: Vec<usize>,
+        args: &[Value],
+    ) -> Option<MixinWinnerKey> {
+        let MixinCallSite { target, inner, role_name, role_id, method, private } = site;
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinWinnerKey {
+            role_id,
+            bodies,
+            role: Symbol::intern(role_name),
+            method: Symbol::intern(method),
+            private,
+            defined: !matches!(inner.view(), ValueView::Package(_))
+                && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
+    }
+
     /// The memo key for a role method call on a mixin, or `None` when the
     /// verdict of some candidate reads more than the argument type keys, the
     /// receiver's definedness and the registry: a `where`, a subset, a type
