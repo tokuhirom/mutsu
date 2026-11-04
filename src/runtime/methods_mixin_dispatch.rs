@@ -280,6 +280,24 @@ impl Interpreter {
             return Some(result);
         }
 
+        // A straight-line role method this composition already resolved for
+        // arguments of these types runs without the role walk below (#16215).
+        let front_key = if args.is_empty() || self.caches.mixin_straight_front.is_empty() {
+            None
+        } else {
+            self.mixin_front_key(target, inner, mixins, method, &args)
+        };
+        if let Some(key) = &front_key
+            && self.pending_raw_invocant.is_none()
+            && let Some(entry) = self.caches.mixin_straight_front.get(key)
+            && entry.generation == self.registry_write_generation()
+        {
+            let def = Arc::clone(&entry.def);
+            if let Some(result) = self.run_straight_line_method(&def, target, &args) {
+                return Some(result);
+            }
+        }
+
         // `.clone` on a role mixin. A punned role's `__mutsu_attr__*` entries are
         // construction seeds for the Mixin-owned role cell, not the live state.
         // The generic instance clone unwraps to the inner value and drops the
@@ -705,6 +723,22 @@ impl Interpreter {
                 && self.pending_raw_invocant.is_none()
                 && let Some(result) = self.run_straight_line_method(&def, target, &args)
             {
+                if !is_private_call
+                    && let Some(key) = front_key.or_else(|| {
+                        self.mixin_front_key(target, inner, mixins, method, &args)
+                    })
+                {
+                    let memo = &mut self.caches.mixin_straight_front;
+                    if memo.len() >= MIXIN_FRONT_CAP {
+                        memo.clear();
+                    }
+                    let entry = MixinFrontEntry {
+                        generation: self.types.registry_write_gen.load(std::sync::atomic::Ordering::Relaxed),
+                        def: Arc::new(def.clone()),
+                        _node: mixins.clone(),
+                    };
+                    self.caches.mixin_straight_front.insert(key, entry);
+                }
                 // Newest first: a name saved twice gets its oldest value back.
                 for (name, previous) in saved_role_params.iter().rev() {
                     if let Some(prev) = previous {
@@ -1115,6 +1149,28 @@ impl Interpreter {
 /// Most remembered winners before the table is dropped.
 const MIXIN_WINNER_MEMO_CAP: usize = 4096;
 
+/// Most remembered straight-line calls before the front table is dropped.
+const MIXIN_FRONT_CAP: usize = 1024;
+
+/// What a straight-line role method call on a mixin is looked up by.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MixinFrontKey {
+    /// Address of the composition node; the entry keeps the node alive.
+    node: usize,
+    method: Symbol,
+    defined: bool,
+    arg_keys: Vec<Symbol>,
+}
+
+/// The resolved straight-line method of a [`MixinFrontKey`].
+#[derive(Clone)]
+pub(crate) struct MixinFrontEntry {
+    /// The registry write generation the entry was made under.
+    generation: u64,
+    def: Arc<MethodDef>,
+    _node: crate::gc::Gc<crate::value::MixinOverrides>,
+}
+
 /// Where a role method is called: the receiver and which role method.
 struct MixinCallSite<'a> {
     target: &'a Value,
@@ -1143,6 +1199,27 @@ pub(crate) struct MixinWinnerKey {
 }
 
 impl Interpreter {
+    /// The front-table key of a call on a mixin, or `None` when an argument
+    /// has no type key.
+    // Cost: O(a), a = arguments.
+    fn mixin_front_key(
+        &mut self,
+        target: &Value,
+        inner: &Value,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<MixinFrontKey> {
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinFrontKey {
+            node: &**mixins as *const crate::value::MixinOverrides as usize,
+            method: Symbol::intern(method),
+            defined: !matches!(inner.view(), ValueView::Package(_))
+                && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
+    }
+
     /// [`Self::mixin_winner_key`] without inspecting the candidates: the key a
     /// remembered call is looked up by, built from the identity of their
     /// bodies (`bodies`) and the arguments' type keys alone. `None` when an
