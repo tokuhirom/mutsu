@@ -629,6 +629,18 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             Some(left.to_string_value() == s.as_str())
         }
 
+        // The `Systemic` objects (`$*KERNEL ~~ 'linux'`, `$*DISTRO ~~ 'ubuntu'`)
+        // stringify through their `Str` method row, which needs the
+        // interpreter: not decided here (see `Interpreter::smart_match_into`).
+        (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_))
+            if matches!(
+                cn.resolve().as_ref(),
+                "Kernel" | "Distro" | "VM" | "Raku" | "Perl" | "Compiler"
+            ) =>
+        {
+            None
+        }
+
         // Instance ~~ Instance identity check (generic, after all specific instance checks).
         // Exclude Signature (needs special ACCEPTS logic) and X::AdHoc (needs payload delegation).
         (

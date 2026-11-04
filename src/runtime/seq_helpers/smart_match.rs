@@ -2215,6 +2215,20 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
+            // The `Systemic` objects (`$*KERNEL ~~ 'linux'`, `$*DISTRO ~~
+            // 'ubuntu'`, `$*VM ~~ 'moar'`): `Str.ACCEPTS(Any:D)` compares their
+            // stringification, which is their name. The documented idiom for
+            // picking a platform.
+            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s))
+                if matches!(
+                    cn.resolve().as_ref(),
+                    "Kernel" | "Distro" | "VM" | "Raku" | "Perl" | "Compiler"
+                ) =>
+            {
+                let s = s.clone();
+                self.call_method_with_values(left.clone(), "Str", vec![])
+                    .is_ok_and(|v| *s == v.to_string_value())
+            }
             // Blob/Buf (and Array) ~~ Numeric compares the element count.
             (ValueView::Array(..) | ValueView::Instance { .. }, _)
                 if let Some(result) =
