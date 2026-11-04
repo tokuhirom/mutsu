@@ -188,7 +188,12 @@ impl DeclScan {
         if lexical || !is_export_stash_package(&self.package) {
             return;
         }
-        let tag = self.package.rsplit("::").next().unwrap_or("DEFAULT").to_string();
+        let tag = self
+            .package
+            .rsplit("::")
+            .next()
+            .unwrap_or("DEFAULT")
+            .to_string();
         self.export_type(name, &[tag]);
     }
 
