@@ -47,6 +47,11 @@ pub(crate) struct LexicalImportReplay {
     merged: Vec<Symbol>,
     /// The routine aliases it noted (`GLOBAL::name`).
     routine_aliases: Vec<Symbol>,
+    /// The registry functions the import wrote and the definitions it left
+    /// there: a multi candidate the registry keeps (an exported
+    /// `trait_mod:<is>`), which the scope's exit takes out again. The replay
+    /// puts them back and logs them for that exit.
+    function_writes: Vec<(Symbol, Arc<crate::ast::FunctionDef>)>,
     /// Those of them the scope lists as its own imports (`MY::`).
     own_routine_imports: Vec<Symbol>,
     /// The routine-alias set before and after the first run. The scope's
@@ -75,6 +80,9 @@ pub(crate) struct ImportEffectProbe {
     own_imports_before: rustc_hash::FxHashSet<Symbol>,
     merged_before: rustc_hash::FxHashSet<Symbol>,
     had_export_args: bool,
+    /// How many registry writes the open scope had logged
+    /// (`ImportScopeSnapshot::import_writes`).
+    import_writes_before: usize,
 }
 
 impl Interpreter {
@@ -118,6 +126,11 @@ impl Interpreter {
                 .map(|top| top.merged_modules.clone())
                 .unwrap_or_default(),
             had_export_args: self.module.pending_use_export_args.is_some(),
+            import_writes_before: self
+                .module
+                .import_scope_stack
+                .last()
+                .map_or(0, |top| top.import_writes.len()),
         }
     }
 
@@ -151,8 +164,33 @@ impl Interpreter {
             return None;
         }
         let reg = self.registry();
+        // The registry functions the import wrote -- a multi candidate the
+        // registry keeps -- are the whole growth of the function table; any
+        // other registry write (a proto, a `proto_subs` marker) is not replayed.
+        let mut function_writes: Vec<(Symbol, Arc<crate::ast::FunctionDef>)> = Vec::new();
+        let mut added = 0usize;
+        let mut only_function_writes = true;
+        if let Some(top) = self.module.import_scope_stack.last() {
+            for write in top.import_writes.iter().skip(probe.import_writes_before) {
+                match write {
+                    crate::runtime::ImportWrite::Function(key, prior) => {
+                        let Some(def) = reg.functions.get(key) else {
+                            only_function_writes = false;
+                            break;
+                        };
+                        added += usize::from(prior.is_none());
+                        function_writes.push((*key, Arc::clone(def)));
+                    }
+                    _ => {
+                        only_function_writes = false;
+                        break;
+                    }
+                }
+            }
+        }
         let routines_same = !probe.had_export_args
-            && reg.functions.len() == probe.functions
+            && only_function_writes
+            && reg.functions.len() == probe.functions + added
             && std::sync::Arc::as_ptr(&reg.proto_functions) as usize == probe.proto_functions
             && std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize == probe.proto_subs;
         let classes_same = probe.classes_shared.shares_with(&reg.classes);
@@ -212,6 +250,7 @@ impl Interpreter {
             env_keys,
             merged,
             routine_aliases,
+            function_writes,
             own_routine_imports,
             aliases_memo: (
                 Arc::clone(&probe.aliases_before),
@@ -242,7 +281,8 @@ impl Interpreter {
     /// Replay the recorded effects of the `use` filling set `id` instead of
     /// importing again. `false`, having done nothing, without a record or
     /// before the set was filled.
-    // Cost: O(k), k = recorded env keys, while the alias tables are the ones
+    // Cost: O(k + f), k = recorded env keys, f = registry functions the import
+    // wrote (re-inserted, then the name-keyed caches are flushed), while the alias tables are the ones
     // the first run started from (the scope's exit restores them); O(k + a)
     // otherwise, a = alias-table entries (one copy-on-write clone).
     pub(crate) fn replay_lexical_import(&mut self, id: Symbol) -> bool {
@@ -258,6 +298,18 @@ impl Interpreter {
                 return false;
             }
             self.types.package_type_aliases = Arc::clone(types_after);
+        }
+        if !replay.function_writes.is_empty() {
+            let mut keys = Vec::with_capacity(replay.function_writes.len());
+            for (key, def) in &replay.function_writes {
+                let prior = self.registry().functions.get(key).cloned();
+                self.log_import_write(crate::runtime::ImportWrite::Function(*key, prior));
+                self.registry_mut()
+                    .functions_mut()
+                    .insert(*key, Arc::clone(def));
+                keys.push(*key);
+            }
+            self.invalidate_fn_resolution_changing_keys(keys);
         }
         let layer = self.module.import_scope_stack.last().map_or(0, |top| top.import_layer);
         if let Some(top) = self.module.import_scope_stack.last_mut() {
