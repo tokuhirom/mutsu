@@ -26,6 +26,7 @@ mod where_constraint;
 // make_param is pub(crate): used from crate::parser::primary::misc::lambda
 pub(crate) use helpers::{
     fold_parenthesised_pointy_params, in_param_default, make_param, parse_literal_param_value,
+    parse_param_default_expr,
 };
 
 // These were pub(super) in the original file (visible within `stmt`).

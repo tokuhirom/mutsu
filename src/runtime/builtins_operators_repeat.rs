@@ -327,10 +327,9 @@ impl Interpreter {
                         continue;
                     }
                     let Some(n_raw) = Self::parse_repeat_count(rhs)? else {
-                        return Err(Self::repeat_error(
-                            "X::Numeric::CannotConvert",
-                            "Cannot convert Inf to Int".to_string(),
-                        ));
+                        // `'a' x Inf` is a Failure, not an exception (a lazy
+                        // `Cat` would be needed to repeat without bound).
+                        return Ok(RuntimeError::nyi_failure("Cat object"));
                     };
                     let n = n_raw.max(0) as usize;
                     // Infix `x` stringifies its LEFT operand via `.Str` (the

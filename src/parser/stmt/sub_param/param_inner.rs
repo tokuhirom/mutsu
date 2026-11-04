@@ -4,7 +4,19 @@ use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::value::ValueView;
 
 pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
-    let (rest, mut p) = parse_single_param_inner(input)?;
+    let (mut rest, mut p) = parse_single_param_inner(input)?;
+    // A capture parameter (`|`, `|c`) takes no default, but rakudo parses one
+    // and rejects it as `X::Parameter::Default` rather than as a syntax error,
+    // so read it here and leave the verdict to the signature validator.
+    if input.starts_with('|') && p.slurpy && p.default.is_none() {
+        let (after, _) = ws(rest)?;
+        if after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
+            let (after, _) = ws(&after[1..])?;
+            let (after, default) = super::helpers::parse_param_default_expr(after)?;
+            p.default = Some(default);
+            rest = after;
+        }
+    }
     // The `is required` trait is exactly the `!` required marker; normalize it
     // onto the canonical `required` flag (and drop the now-redundant trait) so
     // all binding sites enforce it identically to `:$n!` — e.g. `:$n is required`

@@ -31,8 +31,8 @@ pub(crate) use param_validate::{
 };
 pub(super) use param_validate::{
     literal_value_from_expr, validate_param_trait, validate_param_trait_pub,
-    validate_signature_params,
 };
+pub(crate) use param_validate::validate_signature_params;
 pub(crate) use routine_spans::{package_spans, routine_spans};
 
 // Sub name / operator name parsing (sub_name.rs, op_name.rs).
