@@ -304,6 +304,39 @@ fn property_of_value_name(ch: char, value: &str) -> Value {
             &super::char_props::unicode_east_asian_width(ch),
         ));
     }
+    // A Bidi_Class value (`L`, `S` and `N` read as the General_Category groups
+    // below, the ambiguous `A` and `N` quirk aside).
+    if matches!(
+        value,
+        "AL" | "AN"
+            | "B"
+            | "BN"
+            | "CS"
+            | "EN"
+            | "ES"
+            | "ET"
+            | "FSI"
+            | "LRE"
+            | "LRI"
+            | "LRO"
+            | "NSM"
+            | "ON"
+            | "PDF"
+            | "PDI"
+            | "R"
+            | "RLE"
+            | "RLI"
+            | "RLO"
+            | "WS"
+    ) {
+        return unicode_property_value(ch, "Bidi_Class");
+    }
+    // A one-letter General_Category group (`L`, `M`, `N`, `P`, `S`, `Z`, `C`)
+    // is a binary property: does the character's category belong to it.
+    if matches!(value, "L" | "M" | "N" | "P" | "S" | "Z" | "C") {
+        let gc = crate::builtins::unicode::unicode_general_category(ch);
+        return Value::int(i64::from(gc.starts_with(value)));
+    }
     Value::str_from(crate::builtins::unicode::unicode_general_category(ch))
 }
 
