@@ -167,6 +167,14 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("meta", List, Omit),
             ],
         ),
+        "RakuAST::Doc::LegacyRow" => (
+            C::DocLegacyRow,
+            &[
+                ("column-dividers", Node, Omit),
+                ("column-offsets", List, Omit),
+                ("cells", List, Omit),
+            ],
+        ),
         "RakuAST::Doc::Declarator" => (
             C::DocDeclarator,
             &[

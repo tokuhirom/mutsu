@@ -3,6 +3,14 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::Backtrack::Ratchet",
+        &[
+            "RakuAST::Regex::Backtrack::Ratchet",
+            "RakuAST::Regex::Backtrack",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::BacktrackModifiedAtom",
         &[
             "RakuAST::Regex::BacktrackModifiedAtom",
@@ -209,14 +217,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Regex::CharClassElement::Property",
         &[
             "RakuAST::Regex::CharClassElement::Property",
-            "RakuAST::Regex::CharClassElement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::CharClassElement::Rule",
-        &[
-            "RakuAST::Regex::CharClassElement::Rule",
             "RakuAST::Regex::CharClassElement",
             "RakuAST::Node",
         ],

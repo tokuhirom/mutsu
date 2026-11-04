@@ -121,6 +121,9 @@ RakuAST::Doc::Block	type	RakuAST::Doc::Block
 RakuAST::Doc::Declarator	WHEREFORE	RakuAST::Doc::Declarator
 RakuAST::Doc::Declarator	leading	RakuAST::Doc::Declarator
 RakuAST::Doc::Declarator	trailing	RakuAST::Doc::Declarator
+RakuAST::Doc::LegacyRow	cells	RakuAST::Doc::LegacyRow
+RakuAST::Doc::LegacyRow	column-dividers	RakuAST::Doc::LegacyRow
+RakuAST::Doc::LegacyRow	column-offsets	RakuAST::Doc::LegacyRow
 RakuAST::Doc::Markup	atoms	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	closer	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	letter	RakuAST::Doc::Markup

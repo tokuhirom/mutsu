@@ -54,6 +54,7 @@ mod package_trait_origins;
 mod parsed_view;
 mod pod_blocks;
 mod pod_entities;
+mod pod_table;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
 mod quote_nesting;
@@ -307,6 +308,7 @@ pub enum RakuAstClass {
     DocMarkup,
     DocDeclarator,
     DocParagraph,
+    DocLegacyRow,
     RegexAlternation,
     RegexSequentialAlternation,
     RegexQuantifiedAtom,
@@ -703,6 +705,7 @@ impl RakuAstClass {
             DocMarkup => "RakuAST::Doc::Markup",
             DocDeclarator => "RakuAST::Doc::Declarator",
             DocParagraph => "RakuAST::Doc::Paragraph",
+            DocLegacyRow => "RakuAST::Doc::LegacyRow",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -1234,6 +1237,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::DocMarkup,
     RakuAstClass::DocDeclarator,
     RakuAstClass::DocParagraph,
+    RakuAstClass::DocLegacyRow,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,
     RakuAstClass::RegexQuantifiedAtom,

@@ -3,6 +3,10 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Ternary",
+        &["RakuAST::Ternary", "RakuAST::Expression", "RakuAST::Node"],
+    ),
+    (
         "RakuAST::TokenDeclaration",
         &[
             "RakuAST::TokenDeclaration",
@@ -172,17 +176,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Type::Simple",
         &[
             "RakuAST::Type::Simple",
-            "RakuAST::Type",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Type::Subset",
-        &[
-            "RakuAST::Type::Subset",
             "RakuAST::Type",
             "RakuAST::Term",
             "RakuAST::Termish",

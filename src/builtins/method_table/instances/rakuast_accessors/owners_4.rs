@@ -3,6 +3,13 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Parameter::Slurpy::SingleArgument",
+        &[
+            "RakuAST::Parameter::Slurpy::SingleArgument",
+            "RakuAST::Parameter::Slurpy",
+        ],
+    ),
+    (
         "RakuAST::Parameter::Slurpy::Unflattened",
         &[
             "RakuAST::Parameter::Slurpy::Unflattened",
@@ -157,17 +164,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Regex::Anchor::EndOfLine",
         &[
             "RakuAST::Regex::Anchor::EndOfLine",
-            "RakuAST::Regex::Anchor",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Anchor::EndOfString",
-        &[
-            "RakuAST::Regex::Anchor::EndOfString",
             "RakuAST::Regex::Anchor",
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",

@@ -73,6 +73,9 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Doc::Declarator", "WHEREFORE"),
     row!("RakuAST::Doc::Declarator", "leading"),
     row!("RakuAST::Doc::Declarator", "trailing"),
+    row!("RakuAST::Doc::LegacyRow", "cells"),
+    row!("RakuAST::Doc::LegacyRow", "column-dividers"),
+    row!("RakuAST::Doc::LegacyRow", "column-offsets"),
     row!("RakuAST::Doc::Markup", "atoms"),
     row!("RakuAST::Doc::Markup", "closer"),
     row!("RakuAST::Doc::Markup", "letter"),
@@ -199,7 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Regex::Assertion::Callable", "callee"),
     row!("RakuAST::Regex::Assertion::CharClass", "elements"),
     row!("RakuAST::Regex::Assertion::InterpolatedBlock", "block"),
-    row!("RakuAST::Regex::Assertion::InterpolatedBlock", "sequential"),
-    row!("RakuAST::Regex::Assertion::InterpolatedVar", "sequential"),
-    row!("RakuAST::Regex::Assertion::InterpolatedVar", "var"),
 ];

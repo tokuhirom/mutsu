@@ -392,6 +392,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("meta", Absent::EmptyList),
         ],
         DocParagraph => &[("atoms", Absent::EmptyList)],
+        DocLegacyRow => &[
+            ("column-dividers", Absent::Required),
+            ("column-offsets", Absent::EmptyList),
+            ("cells", Absent::EmptyList),
+        ],
         DocDeclarator => &[
             ("WHEREFORE", Absent::Required),
             ("leading", Absent::EmptyList),
