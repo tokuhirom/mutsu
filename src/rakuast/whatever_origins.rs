@@ -9,7 +9,8 @@ use crate::ast::SrcSpan;
 /// Whether `node`'s operand `name` is a priming `*`.
 // Cost: O(f), f = fields of `node`.
 fn is_priming(node: &RakuAstNode, name: &str) -> bool {
-    super::infix_origins::child(node, name).is_some_and(|c| c.class == RakuAstClass::WhateverCodeArgument)
+    super::infix_origins::child(node, name)
+        .is_some_and(|c| c.class == RakuAstClass::WhateverCodeArgument)
 }
 
 /// The byte ranges of the left and right operands of `node`, where an
@@ -29,7 +30,11 @@ pub(super) fn operand_ranges(
         && let Some((right_start, _)) = right
     {
         left = super::unit_source::with_text(SrcSpan::new(0, right_start), |before| {
-            let head = before.trim_end().strip_suffix(op)?.trim_end().strip_suffix('*')?;
+            let head = before
+                .trim_end()
+                .strip_suffix(op)?
+                .trim_end()
+                .strip_suffix('*')?;
             Some((head.len(), head.len() + 1))
         });
     } else if right.is_none()
