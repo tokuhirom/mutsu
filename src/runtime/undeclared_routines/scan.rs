@@ -328,9 +328,11 @@ impl<'ast> Visit<'ast> for Scan {
             Stmt::SyntheticBlock(body) => walk_stmts(self, body),
             // The keys of an enum are terms from the declaration on.
             Stmt::EnumDecl { variants, .. } => {
-                for (key, _) in variants {
-                    self.declare_term(key);
-                    self.enum_keys.push(key.clone());
+                // A computed body (`(:30SLA, slip <SLB>)`) holds its keys in the
+                // `__DYNAMIC__` entry: the shared helper reads them out.
+                for key in crate::parser::enum_value_names(variants) {
+                    self.declare_term(&key);
+                    self.enum_keys.push(key);
                 }
                 walk_stmt(self, stmt);
                 self.enum_keys.clear();
