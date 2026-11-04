@@ -167,6 +167,18 @@ pub(crate) struct DispatchState {
     /// `X::TypeCheck::Binding` identity a sequence endpoint check relies on
     /// (roast S03-sequence/misc.t).
     pub(crate) suppress_binding_error_enhance: bool,
+    /// The captured-dispatcher winner (`SubData::id`) whose nominal parameter
+    /// types a keyed stage program already verified for exactly the arguments
+    /// of the call about to run it (`call_captured_multi_winner`). The first
+    /// `call_compiled_closure_in_unit` of that id takes it, so no nested call
+    /// can ever see it; it is cleared again when the winner's call returns.
+    pub(crate) nominal_verified_candidate: Option<u64>,
+    /// One-shot, armed by `call_compiled_closure_in_unit` immediately before
+    /// the winner's bind and taken at the bind's entry: this bind may skip the
+    /// nominal `type_matches_value` of each plain parameter (the verdict was
+    /// decided by the argument-type key). Never read by a nested call: it is
+    /// back to `false` before any default expression or body runs.
+    pub(crate) pending_nominal_verified: bool,
     pub(crate) method_dispatch_pure: bool,
     /// Registry function keys grouped by their BASE name — the index behind
     /// [`Interpreter::fn_keys_for_base`].

@@ -393,7 +393,7 @@ impl Interpreter {
         {
             return Ok(threaded);
         }
-        if let Some((candidate, remaining)) = self.pick_captured_multi_candidate(
+        if let Some((candidate, remaining, key_decided)) = self.pick_captured_multi_candidate(
             family_name.unwrap_or(""),
             candidates,
             &call_args,
@@ -424,6 +424,7 @@ impl Interpreter {
                 remaining,
                 call_args,
                 func.clone(),
+                key_decided,
             );
         }
         // Slurpy catch-all
@@ -478,7 +479,7 @@ impl Interpreter {
         family: &str,
         args: Vec<Value>,
     ) -> Result<Option<Value>, RuntimeError> {
-        let Some((candidate, remaining)) =
+        let Some((candidate, remaining, key_decided)) =
             self.pick_captured_multi_candidate(family, candidates, &args)?
         else {
             return Ok(None);
@@ -503,7 +504,7 @@ impl Interpreter {
             }
         }
         let candidate = Self::bind_family_dispatcher(&candidate, Some(family), func);
-        self.call_captured_multi_winner(family, candidate, remaining, args, func.clone())
+        self.call_captured_multi_winner(family, candidate, remaining, args, func.clone(), key_decided)
             .map(Some)
     }
 
