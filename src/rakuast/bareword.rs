@@ -638,7 +638,10 @@ pub(super) fn term_expr(names: &NameScope, name: &str) -> Option<Expr> {
     }
     let node = view_node(names, name)?;
     if node.class != RakuAstClass::TermName
-        || node.fields.iter().any(super::declared_routines::is_bareword_field)
+        || node
+            .fields
+            .iter()
+            .any(super::declared_routines::is_bareword_field)
     {
         return None;
     }
