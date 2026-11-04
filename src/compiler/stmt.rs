@@ -2238,7 +2238,10 @@ impl Compiler {
                                 // marks the var readonly as the bind signal; re-mark the
                                 // bind context so the global store skips the readonly
                                 // check (the mark is a bind signal, not a real RO).
-                                if is_bound_container_vardecl {
+                                // A scalar `:=` bind (`our $k := cglobal(...)`) re-marks
+                                // it as well: the global store must install the bound
+                                // `Proxy` itself, not FETCH it and STORE the value back.
+                                if is_bound_container_vardecl || scalar_bind_decont {
                                     self.code.emit(OpCode::MarkBindContext);
                                 }
                                 self.code.emit(OpCode::SetGlobal(idx));
