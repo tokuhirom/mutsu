@@ -7,7 +7,7 @@ use nqp;
 # (CArray's ASSIGN-POS / AT-POS) runs without a method frame (#16215). The
 # observable behaviour must not change.
 
-plan 31;
+plan 35;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^6;
@@ -103,3 +103,14 @@ is-deeply (which-mark($ma), which-mark($mb), which-mark($ma), which-mark($mb)),
   ('A', 'B', 'A', 'B'),
   'two role compositions of one class keep their own winners when calls interleave';
 is-deeply (which-mark($ma), which-mark($mb)), ('A', 'B'), 'and on a second round';
+
+# A cached straight-line call survives a registry write between calls (a new
+# class declared at run time) and keeps answering with its own body.
+my $w = 3 but PlusOne;
+is $w.bump(1), 2, 'before a registry write';
+EVAL 'class Late-Declared { method x { 1 } }';
+is $w.bump(1), 2, 'after a class was declared at run time';
+is $w.bump(5), 6, 'with other arguments';
+my $cw = CArray[num64].new; $cw[0] = 1.5e0;
+EVAL 'role Late-Role { method y { 2 } }';
+is $cw[0], 1.5e0, 'a CArray read after a role was declared at run time';
