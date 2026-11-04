@@ -191,3 +191,16 @@ pub(crate) fn public_attribute_expansion(var: &RakuAstNode) -> Option<Value> {
         ],
     ))
 }
+
+/// `body` converted as the body of the package `name` (`None`: a grammar,
+/// whose methods have a bare invocant parameter), so a method inside it
+/// records the package its implicit invocant is typed by.
+// Cost: O(n), n = size of the body.
+pub(super) fn package_block(
+    names: &crate::scope::NameScope,
+    name: Option<crate::symbol::Symbol>,
+    body: &[crate::ast::Stmt],
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let _package = crate::scope::PackageGuard::enter(names, name.map(|n| n.resolve().to_string()));
+    super::view::block_node(names, body)
+}
