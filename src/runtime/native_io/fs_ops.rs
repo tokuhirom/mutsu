@@ -23,6 +23,8 @@ pub(crate) fn mkdir_mode(arg: Option<&Value>) -> u32 {
 /// decimal 444 (mode `0o674`, the documented trap) and `'0o444'` is 0o444.
 /// `None` when the argument cannot be coerced (a `Failure` is the caller's).
 // Cost: O(1) for an Int, O(|s|) for a Str.
+// Permission bits are a unix concept; both callers are `#[cfg(unix)]`.
+#[cfg(unix)]
 pub(crate) fn chmod_mode(arg: &Value) -> Option<u32> {
     match arg.view() {
         ValueView::Int(i) => Some(i as u32),
