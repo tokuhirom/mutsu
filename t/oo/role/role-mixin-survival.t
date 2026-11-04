@@ -133,7 +133,7 @@ is (%(a => 1) but Shouty).^name, 'Hash+{Shouty}',  'Hash mixin name';
     1 but Sinky;
     is $sunk, 1, 'a composed .sink runs when a `but` statement is sunk';
     (2) does Sinky;
-    is $sunk, 2, 'a composed .sink runs for a `does` statement too';
+    is $sunk, 1, 'a `does` statement is not sunk (rakudo mixes into its target)';
 
     my $marked = 0;
     role Quiet { }

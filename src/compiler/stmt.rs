@@ -791,14 +791,16 @@ impl Compiler {
             // a fresh value, sunk like a method call's (Shell::DSL's pipeline
             // runs from its `sink` method).
             Expr::InfixFunc { .. } => true,
-            // `$x but R` / `$x does R` freshly composes a new mixin value, so
-            // it is an rvalue by construction — never a container return the
-            // exclusion above is guarding against. Raku sinks it, and the
-            // documented "increment on sink, copy on assignment" idiom
-            // (`($b + 1) does role { method sink { $b++ } }` as the body of a
-            // `multi`) depends on exactly this.
+            // `$x but R` freshly composes a new mixin value, so it is an
+            // rvalue by construction — never a container return the exclusion
+            // above is guarding against. Raku sinks it as a statement.
+            // `$x does R` as a statement is not sunk (measured on rakudo
+            // 2026.09: it mixes into its target); the documented "increment on
+            // sink, copy on assignment" idiom (`($b + 1) does role { method
+            // sink { $b++ } }` as the body of a routine) runs through the
+            // routine's result, which `SinkPopCall` sinks.
             Expr::Binary { op, .. } => {
-                matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
+                matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but")
             }
             Expr::Grouped(inner) => Self::stmt_value_may_user_sink(inner),
             Expr::DoStmt(inner) => match inner.as_ref() {
