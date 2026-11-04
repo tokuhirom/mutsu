@@ -698,6 +698,23 @@ impl Interpreter {
                     .compiled_code
                     .as_ref()
                     .is_some_and(|code| code.ignores_role_context());
+            // A straight-line body (local reads and `nqp::` ops) runs without
+            // a method frame: no attribute snapshot, parameter binder or
+            // scoped env (`run_straight_line_method`, #16215).
+            if light
+                && self.pending_raw_invocant.is_none()
+                && let Some(result) = self.run_straight_line_method(&def, target, &args)
+            {
+                // Newest first: a name saved twice gets its oldest value back.
+                for (name, previous) in saved_role_params.iter().rev() {
+                    if let Some(prev) = previous {
+                        self.env.insert(name.clone(), prev.clone());
+                    } else {
+                        self.env.remove(name);
+                    }
+                }
+                return Some(result);
+            }
             if !light {
                 // Match ordinary signature binding: a callable parameter is
                 // installed under `&name`, while the bare `name` entry is absent
