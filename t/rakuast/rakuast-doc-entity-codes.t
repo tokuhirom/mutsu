@@ -24,7 +24,7 @@ is entity('0x41'), 'atoms=() meta=("0x41" => "A",)', 'a hexadecimal number';
 is entity('123'), 'atoms=() meta=("123" => "\{",)', 'a decimal number';
 is entity('0b1000001'), 'atoms=() meta=("0b1000001" => "A",)', 'a binary number';
 is entity('gt;lt'), 'atoms=() meta=(:gt(">"), :lt("<"))', 'a list of entities';
-is entity('65;nbsp;nope'), 'atoms=() meta=("65" => "A", :nbsp(" "), :nope("E<nope>"))', 'numbers, names and an unknown name';
+is entity('65;nbsp;nope'), "atoms=() meta=(\"65\" => \"A\", :nbsp(\"\x[A0]\"), :nope(\"E<nope>\"))", 'numbers, names and an unknown name';
 is entity('foo|gt;lt'), 'atoms=("foo",) meta=(:gt(">"), :lt("<"))', 'text, then entities after a bar';
 is entity(''), 'atoms=() meta=()', 'an empty code';
 is entity('0xZZ'), 'atoms=() meta=("0xZZ" => "E<0xZZ>",)', 'a malformed number keeps its spelling';
