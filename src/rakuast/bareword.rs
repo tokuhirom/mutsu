@@ -622,6 +622,25 @@ pub(super) fn core_bare_call(names: &NameScope, name: &str) -> Option<Expr> {
         .then(|| Expr::BareWord(name.to_string()))
 }
 
+/// A plain-identifier word the classifier resolves to an argument-less call (a
+/// routine the unit declares, an imported function): the conversion marks the
+/// node as a source bareword and `lower_named_call` hands back the word itself,
+/// so the answer is the word, with no node tree built. `None` for any other
+/// classification or a qualified or decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn call_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::CallNameWithoutParentheses)
+        .then(|| Expr::BareWord(name.to_string()))
+}
+
 /// The expression a plain-identifier term the classifier resolves to `Term::Name`
 /// (a sigilless declaration, a `constant`, an imported value) lowers to:
 /// `term_identifier_expr`, the one function the lowering of the node uses, so no
