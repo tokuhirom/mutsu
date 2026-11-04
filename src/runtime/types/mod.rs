@@ -1363,6 +1363,19 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         let value = self.materialize_default_parametric_role(value)?;
+        // A default is coerced like a supplied argument: `Str() $b = $a` binds
+        // `$a.Str` when the caller passed nothing (IdClass's `t/06-role`).
+        let value = if pd
+            .type_constraint
+            .as_deref()
+            .is_some_and(is_coercion_constraint)
+            && !value.is_nil()
+            && !matches!(value.view(), ValueView::Package(_))
+        {
+            self.check_and_coerce_param_type(pd, value, None, None, false)?
+        } else {
+            value
+        };
         if let Some(constraint) = &pd.type_constraint
             && !crate::qualified::is_type_capture(constraint)
             && !self.param_value_matches_constraint(&pd.name, constraint, &value)
