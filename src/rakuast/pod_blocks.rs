@@ -21,8 +21,7 @@ use crate::value::Value;
 
 /// The block types whose paragraphs are not plain text.
 const SPECIAL: &[&str] = &[
-    "table", "defn", "config", "formula", "row", "column", "cell", "nested", "toc", "semantic",
-    "alias",
+    "table", "config", "row", "column", "cell", "nested", "toc", "semantic", "alias",
 ];
 
 /// The block types whose delimited content is one verbatim string (directives
@@ -275,14 +274,7 @@ fn parse_atoms(
     Some((atoms, at, meta))
 }
 
-/// The part a paragraph's `text` is: the string itself, or a
-/// `Doc::Paragraph` of its atoms when it holds a formatting code.
-// Cost: O(n), n = length of the text.
-fn part_of(text: String) -> Option<Part> {
-    part_in("", text)
-}
-
-/// [`part_of`] for a block of type `kind`: a `comment` is never read for
+/// The part a paragraph's `text` is in a block of type `kind`: a `comment` is never read for
 /// formatting codes.
 // Cost: O(n), n = length of the text.
 fn part_in(kind: &str, text: String) -> Option<Part> {
@@ -298,6 +290,25 @@ fn part_in(kind: &str, text: String) -> Option<Part> {
     } else {
         Part::Text(text)
     })
+}
+
+/// The parts of a paragraph of a block of type `kind`: [`part_in`], except
+/// that the first paragraph of a `defn` starts with its term, the first line,
+/// as a plain string.
+// Cost: O(n), n = length of the text.
+fn parts_in(kind: &str, text: String, first: bool) -> Option<Vec<Part>> {
+    if kind == "defn" && first {
+        let (term, rest) = text.split_once('\n').unwrap_or((text.as_str(), ""));
+        if term.is_empty() {
+            return None;
+        }
+        let mut parts = vec![Part::Text(term.to_string())];
+        if !rest.is_empty() {
+            parts.push(part_in(kind, rest.to_string())?);
+        }
+        return Some(parts);
+    }
+    Some(vec![part_in(kind, text)?])
 }
 
 /// A paragraph of plain lines from `i`: the text lines, then the blank ones.
@@ -355,7 +366,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
-                    vec![part_in(&base, text)?]
+                    parts_in(&base, text, true)?
                 };
                 let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
                 return Some((
@@ -372,11 +383,15 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     next,
                 ));
             }
-            let (parts, end) = if VERBATIM.contains(&kind) {
+            let (mut parts, end) = if VERBATIM.contains(&kind) {
                 verbatim(lines, i + 1, kind)?
             } else {
                 content(lines, i + 1, kind)?
             };
+            // An empty `defn` has an empty term.
+            if kind == "defn" && parts.is_empty() {
+                parts.push(Part::Text(String::new()));
+            }
             let to = lines.end(end);
             Some((
                 Block {
@@ -394,7 +409,10 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
         }
         _ => {
             let (base, level) = split_level(name);
+            // An abbreviated `=formula` keeps only its first line, without
+            // formatting codes (not read here).
             if SPECIAL.contains(&base.as_str())
+                || base == "formula"
                 || !rest.is_empty() && !rest.starts_with([' ', '\t'])
             {
                 return None;
@@ -405,7 +423,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
-                vec![part_in(&base, text)?]
+                parts_in(&base, text, true)?
             };
             let to = lines.end((i..next).rev().find(|&j| !lines.blank(j))?);
             Some((
@@ -583,7 +601,8 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
             }
             None => {
                 let (text, next) = paragraph(lines, i, None, true)?;
-                parts.push(part_of(text)?);
+                let first = parts.is_empty();
+                parts.extend(parts_in(kind, text, first)?);
                 i = next;
             }
         }
