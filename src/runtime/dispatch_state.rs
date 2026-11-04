@@ -71,6 +71,13 @@ pub(crate) struct DispatchState {
     /// the probe with `mem::take`, so it only ever masks the one immediately
     /// following dispatch, never a nested subscript evaluated underneath it.
     pub(crate) skip_postcircumfix_overload: bool,
+    /// Armed (`Some(None)`) while a subscript ASSIGNMENT or binding runs a
+    /// user `postcircumfix:<[ ]>`/`<{ }>` candidate to learn which element it
+    /// addresses; the CORE subscript routine the candidate delegates to
+    /// records the index it was handed (`Some(Some(index))`), and the store
+    /// then goes to that index (`@a[1.5] = v` through Array::Rounded's
+    /// rounding candidate, #16294).
+    pub(crate) subscript_lvalue_capture: Option<Option<Value>>,
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,

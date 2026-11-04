@@ -624,6 +624,8 @@ impl Interpreter {
         target_slot: Option<u32>,
         element_share: bool,
     ) -> Result<(), RuntimeError> {
+        // A user `postcircumfix` candidate decides which element is addressed.
+        self.remap_index_through_user_postcircumfix(code, name_idx, is_positional, target_slot)?;
         // A user object key of a `Str`-keyed hash is stored under its `.Str`
         // (#13293), the key the read side looks up.
         if !is_positional

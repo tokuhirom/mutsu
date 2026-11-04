@@ -72,7 +72,7 @@ impl Interpreter {
     /// `name` in scope for the op running in this routine frame
     /// ([`Self::exec_lex_import_builtin_op_site`]).
     // Cost: O(s), s = nested operator scopes (usually 0 or 1).
-    fn lexical_operator_dispatcher(&self, name: &str) -> Option<&Value> {
+    pub(super) fn lexical_operator_dispatcher(&self, name: &str) -> Option<&Value> {
         let scopes = &self.dispatch.lexical_operator_scopes;
         if scopes.is_empty() {
             return None;
