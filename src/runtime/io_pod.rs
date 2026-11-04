@@ -183,10 +183,6 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Pod::Config"), attrs)
     }
 
-    pub(crate) fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
-        Self::make_pod_item_with_config(level, contents, ValueMap::default())
-    }
-
     pub(crate) fn make_pod_item_with_config(
         level: i64,
         contents: Vec<Value>,
