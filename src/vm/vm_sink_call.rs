@@ -42,6 +42,13 @@ impl Interpreter {
         if !has_user_sink {
             return false;
         }
+        // An itemized aggregate came out of a `$` container (`my $r = [1, 2]
+        // but R; $r`): rakudo does not sink a `Scalar` holding an `Iterable`
+        // that a routine hands back, where a fresh one it `return`s is sunk
+        // (#16522).
+        if Self::value_is_itemized_aggregate(&value) {
+            return false;
+        }
         let name = code.constants[name_idx as usize].to_string_value();
         // A routine a block's or unit's `use` bound in its lexical import set
         // (a `sub EXPORT` hook's `'&slack' => &trampoline`) is reached through
@@ -78,6 +85,22 @@ impl Interpreter {
         }
         self.resolve_function(&name)
             .is_some_and(|def| Self::sinks_declared_result(&def))
+    }
+
+    /// Whether `value`, or the aggregate a mixin wraps, is an Array/List/Hash
+    /// carrying the item mark a `$` container gives it.
+    // Cost: O(m), m = nesting depth of mixins.
+    fn value_is_itemized_aggregate(value: &crate::value::Value) -> bool {
+        match value.view() {
+            ValueView::Mixin(inner, _) => Self::value_is_itemized_aggregate(inner),
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Hash(_) => value.hash_is_itemized(),
+            // An Array/List/Hash subclass instance records the item mark as
+            // renderer metadata (`itemize_scalar_store_value`).
+            ValueView::Instance { attributes, .. } => attributes
+                .contains_key(crate::builtins::methods_0arg::raku_repr::RAKU_SCALAR_ITEMIZED_KEY),
+            _ => false,
+        }
     }
 
     /// Whether a call of `def` hands its caller a fresh value (not a
