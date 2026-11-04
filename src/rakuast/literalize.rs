@@ -33,13 +33,6 @@ pub(crate) fn is_constant(node: &RakuAstNode) -> bool {
     constant(node, 0)
 }
 
-/// Whether the value of `node` is a `List` where evaluation answers an `Array`
-/// (rakudo's `[1, 2]` literalizes to a `List`).
-// Cost: O(1).
-pub(crate) fn is_array_composer(node: &RakuAstNode) -> bool {
-    node.class == C::CircumfixArrayComposer
-}
-
 /// Whether the value of `node` is a `Map` where evaluation answers a `Hash`
 /// (rakudo's `{a => 1}` literalizes to a `Map`).
 // Cost: O(1).
