@@ -47,9 +47,12 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
 /// Unlike the general case, closures in EVAL cannot reference locally
 /// declared subs from a parent scope (the EVAL scope is already the
 /// outermost scope), so lifting BEGIN from them is safe.
-pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
+///
+/// Returns the length of the unit's BEGIN prologue (zero when the unit has no
+/// BEGIN-time effect).
+pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) -> usize {
     crate::runtime::begin_prologue::lift_nested_exports(stmts);
-    reorder_recursive(stmts, true, true);
+    let mut prologue_len = reorder_recursive(stmts, true, true);
     // Second pass: lift BEGIN from closure bodies to the top level.
     let mut extra_begin: Vec<Stmt> = Vec::new();
     for stmt in stmts.iter_mut() {
@@ -78,8 +81,9 @@ pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
             stmts.insert(insert_pos + i, s);
         }
         // Re-run reorder to properly sort the newly inserted phasers
-        reorder_recursive(stmts, true, true);
+        prologue_len += reorder_recursive(stmts, true, true);
     }
+    prologue_len
 }
 
 /// Lift BEGIN phasers from a closure that is a top-level statement's whole

@@ -401,7 +401,20 @@ impl Interpreter {
         // CHECK runs at compile time and INIT once before the main body,
         // matching the top-level pipeline. The EVAL-specific variant also
         // lifts BEGIN from closure bodies in the EVAL'd code.
-        crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+        let prologue_len = crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+        // TODO: the capture bucket of an EVAL unit (`eval_unit_capture_key`)
+        // is only sound for a unit WITHOUT a BEGIN prologue. A prologue splits
+        // a declaration into a static half and a run-time half, and the
+        // declaring frame adopts the bucket's cells through reads that name
+        // `MAINLINE_UNIT_KEY` (`vm_env_helpers`, `vm_hoist_capture_cells`,
+        // `vm_exec_dispatch`, `vm_register_ops`), so with the eval key a sub
+        // keeps the static half's cell and misses a later `:=` binding
+        // (`t/control/begin-prologue-binding-declaration.t` under
+        // `EVAL(.AST)`). Those reads need the running unit's key; until then
+        // a unit with a prologue keeps the by-name resolution it had.
+        if prologue_len > 0 {
+            self.module.eval_unit_capture_key = None;
+        }
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
         // of the snippet too (#13137), as for the mainline (#13091).
