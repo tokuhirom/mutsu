@@ -7,7 +7,7 @@ use nqp;
 # (CArray's ASSIGN-POS / AT-POS) runs without a method frame (#16215). The
 # observable behaviour must not change.
 
-plan 35;
+plan 41;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^6;
@@ -114,3 +114,15 @@ is $w.bump(5), 6, 'with other arguments';
 my $cw = CArray[num64].new; $cw[0] = 1.5e0;
 EVAL 'role Late-Role { method y { 2 } }';
 is $cw[0], 1.5e0, 'a CArray read after a role was declared at run time';
+
+# A winner picked by the keyed stage program binds without re-checking its
+# nominal parameter types (#16373); every index shape still takes its own
+# candidate and answers as raku does.
+my $ix = CArray[num64].new; $ix[$_] = $_ * 1.5e0 for ^5;
+is $ix[2], 3e0, 'an Int index';
+is $ix["3"], 4.5e0, 'a Str index goes through the Any candidate';
+is $ix[1.0], 1.5e0, 'a Rat index';
+is-deeply $ix[1, 2].list, (1.5e0, 3e0), 'a List index';
+is-deeply $ix[1..3].list, (1.5e0, 3e0, 4.5e0), 'a Range index';
+my int $nat = 3;
+is $ix[$nat], 4.5e0, 'a native int index';
