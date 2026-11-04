@@ -72,6 +72,7 @@ pub(super) fn finalize_unit(
         line: None,
         top: true,
         later_terms: Vec::new(),
+        seen_terms: Vec::new(),
         declared_types: unit_type_names(&stmts),
     };
     crate::parser::with_rakuast_lexical_scope(|| {
@@ -109,6 +110,12 @@ struct Finalize<'s> {
     /// `X`). Rakudo hoists routines only: until the
     /// declaration, `X` is the setting's.
     later_terms: Vec<std::collections::HashSet<String>>,
+    /// Per open list, parallel to `later_terms`: the terms its statements
+    /// declared so far. Such a term shadows an outer list's later
+    /// redeclaration of the name for the statements after it (`method m {
+    /// enum Mode <Normal>; say Normal }` before a top-level `enum V
+    /// (:Normal)`).
+    seen_terms: Vec<std::collections::HashSet<String>>,
     /// The short names of the types the unit declares anywhere: a bareword of
     /// that name may be one of them, not the setting's.
     declared_types: std::collections::HashSet<String>,
@@ -256,6 +263,7 @@ impl VisitMut for Finalize<'_> {
         let top = std::mem::take(&mut self.top);
         let line = self.line.take();
         self.later_terms.push(setting_terms_declared_in(body));
+        self.seen_terms.push(std::collections::HashSet::new());
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
         let _scope = super::bareword::BlockScope::enter(self.names, body);
@@ -271,6 +279,7 @@ impl VisitMut for Finalize<'_> {
             self.visit_listed_all(body, false);
         }
         self.later_terms.pop();
+        self.seen_terms.pop();
         self.line = line;
     }
 
@@ -282,7 +291,12 @@ impl VisitMut for Finalize<'_> {
         // enclosing list redeclares is still the setting's (`say X; constant
         // X = 3`).
         if let Expr::BareWord(word) = &*expr
-            && self.later_terms.iter().any(|later| later.contains(word))
+            && self.later_terms.iter().enumerate().any(|(i, later)| {
+                later.contains(word)
+                    && !self.seen_terms[i + 1..]
+                        .iter()
+                        .any(|seen| seen.contains(word))
+            })
             && !self.declared_types.contains(word)
         {
             if !names_setting_item(word) {
@@ -499,10 +513,11 @@ impl Finalize<'_> {
         // initializer sees it (`my \S := gather { S.iterator }`). Judged
         // before the statement is lowered in place.
         if let Some(later) = self.later_terms.last_mut()
-            && !later.is_empty()
+            && let Some(seen) = self.seen_terms.last_mut()
         {
             for name in declared_terms(stmt) {
                 later.remove(&name);
+                seen.insert(name);
             }
         }
         self.visit_stmt_mut(stmt);
