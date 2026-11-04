@@ -145,6 +145,9 @@ fn literalize(
             _ => value,
         }));
     }
+    if crate::rakuast::literalize::is_hash_composer(node) {
+        return Some(crate::builtins::map_hash_coerce::to_map(value).or(Ok(cannot)));
+    }
     Some(Ok(value))
 }
 
