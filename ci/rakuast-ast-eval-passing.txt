@@ -2248,6 +2248,8 @@ t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
 t/grammar/method-table-token-source.t
 t/grammar/mu-callable-grammar-6d-absent.t
 t/grammar/multi-token-protoless-dispatch.t
+t/grammar/multi-token-same-param-names-match-time.t
+t/grammar/multi-token-start-rule-arity.t
 t/grammar/multiple-proto-regex.t
 t/grammar/my-token-scope-after-match.t
 t/grammar/my-token-visible-from-methods.t
@@ -3491,6 +3493,7 @@ t/modules/module-toplevel-qualified-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
 t/modules/module-transitive-use-does-not-leak-types.t
 t/modules/module-type-beats-importer-constant.t
+t/modules/module-type-wins-over-same-named-sub.t
 t/modules/module-use-hook-adds-family-candidates.t
 t/modules/module-warning-location-misattributed.t
 t/modules/modules-core-dist-meta-auth.t

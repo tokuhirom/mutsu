@@ -28,7 +28,10 @@ is ControlOuch.^parents.gist, '((Exception))',
     'built-in X::Control contributes its Exception parent';
 ok ControlOuch.^mro.map(*.^name).grep('Exception'),
     'built-in role parent appears in the composing class MRO';
-lives-ok { ControlOuch.new.message },
+# `Exception.message` is a stub in rakudo: a class that never implements it answers
+# a Failure wrapping X::StubCode instead of a message (the method is found, so the
+# built-in role parent's methods are callable on the composing class).
+isa-ok ControlOuch.new.message, Failure,
     'built-in role parent methods are callable on the composing class';
 
 # Multiple composed roles: still no class parents.

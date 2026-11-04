@@ -139,16 +139,33 @@ fn literalize(
         Ok(value) => value,
         Err(_) => return Some(Ok(cannot)),
     };
-    if crate::rakuast::literalize::is_array_composer(node) {
-        return Some(Ok(match value.view() {
-            ValueView::Array(items, _) => Value::array(items.to_vec()),
-            _ => value,
-        }));
+    if crate::rakuast::literalize::is_hash_composer(node)
+        && !matches!(value.view(), ValueView::Hash(_))
+    {
+        return Some(Ok(cannot));
     }
-    if crate::rakuast::literalize::is_hash_composer(node) {
-        return Some(crate::builtins::map_hash_coerce::to_map(value).or(Ok(cannot)));
+    Some(Ok(literal_value(value)))
+}
+
+/// The value of a constant as `literalize` answers it: a hash anywhere in it
+/// is a `Map` and an array a `List` (rakudo: `{a => {b => 1}}` is
+/// `Map.new((:a(Map.new((:b(1))))))`, `{a => [1, {b => 2}]}` holds
+/// `(1, Map.new((:b(2))))`).
+// Cost: O(n), n = size of the value.
+fn literal_value(value: Value) -> Value {
+    match value.view() {
+        ValueView::Hash(map) => {
+            let deep: crate::value::ValueMap = map
+                .iter()
+                .map(|(k, v)| (k.clone(), literal_value(v.clone().deitemize_element())))
+                .collect();
+            crate::builtins::map_hash_coerce::to_map(Value::hash(deep)).unwrap_or(value)
+        }
+        ValueView::Array(items, _) => {
+            Value::array(items.iter().cloned().map(literal_value).collect())
+        }
+        _ => value,
     }
-    Some(Ok(value))
 }
 
 /// `parent($generation = 0)`: the ancestor of the node a walk is visiting that

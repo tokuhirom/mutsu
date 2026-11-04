@@ -270,7 +270,12 @@ impl Interpreter {
         }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
         // on first use (runtime::repl_compiler), like `nqp::getcomp` does.
-        if matches!(name, "REPL" | "Perl6::Compiler") && !self.has_class(name) {
+        // A program's own `role REPL` (the REPL distribution declares one) is
+        // that name already: registering the core class too would redeclare it.
+        if matches!(name, "REPL" | "Perl6::Compiler")
+            && !self.has_class(name)
+            && !self.registry().roles.contains_key(name)
+        {
             self.ensure_repl_compiler_prelude()?;
         }
         // #7797: a package-qualified bareword (a constant, enum value/type,

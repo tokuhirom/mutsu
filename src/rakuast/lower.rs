@@ -5102,6 +5102,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // `Map:D` (a `Type::Definedness`) in expression position, such as a
         // role argument `does R[Map:D]`: the bareword the parser keeps for the
         // smiley spelling.
+        RakuAstClass::TypeCoercion => super::type_call::lower_coercion(names, node),
         RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness => {
             Ok(Expr::BareWord(simple_type_name(names, node, node)?))
         }

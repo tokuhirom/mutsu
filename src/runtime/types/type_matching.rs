@@ -1020,6 +1020,30 @@ impl Interpreter {
         }
     }
 
+    /// Whether the core class `class` composes no role beyond its catalog
+    /// roles and the catalog says it does not do `target`. Any composition
+    /// the catalog does not list (an `augment`, `.^add_role`) answers `false`,
+    /// so the caller runs the full checker.
+    // Cost: O(r * c), r = roles composed into the class, c = catalog roles of it.
+    fn only_core_roles_composed(&self, class: &str, target: &str) -> bool {
+        let Some(info) = crate::builtin_types::catalog::builtin_type_info(class) else {
+            return false;
+        };
+        if crate::builtin_types::catalog::builtin_type_has_role(class, target)
+            || info.mro.contains(&target)
+        {
+            return false;
+        }
+        let registry = self.registry();
+        let Some(composed) = registry.class_composed_roles.get(class) else {
+            return true;
+        };
+        composed.iter().all(|role| {
+            let base = role.split_once('[').map(|(b, _)| b).unwrap_or(role);
+            info.roles.contains(&base)
+        })
+    }
+
     /// Whether `value` is a plain `Int`, `Num`, `Str` or `Rat` and `constraint`
     /// names a different one of those four classes. They are unrelated classes
     /// in Raku, so no coercion, mixin or role can make one accept the other.
@@ -1200,6 +1224,29 @@ impl Interpreter {
         // every non-matching candidate of a multi (#12942).
         if Self::core_scalar_classes_are_disjoint(value_for_tag, constraint)
             && !self.is_subset_type_name(constraint)
+        {
+            return false;
+        }
+        // A plain `Int`/`Num`/`Str`/`Rat` value is none of the collection roles
+        // (`Int ~~ Iterable`, `Str ~~ Positional`, `Num ~~ Associative` are all
+        // False in raku), and the general checker reaches that only after its
+        // whole role-key / MRO gauntlet (~9k instructions per miss: the
+        // `nqp::istype($pos, Iterable)` a `CArray` read runs on every index).
+        // Sound unless the program gave that class a role (`augment class Int
+        // does Iterable`, `Int.^add_role`): those record the composition, and
+        // `only_core_roles_composed` refuses any composition it cannot place.
+        //
+        // Cost: O(1).
+        if matches!(constraint, "Iterable" | "Positional" | "Associative")
+            && let Some(own) = match value_for_tag.view() {
+                ValueView::Int(_) | ValueView::BigInt(_) => Some("Int"),
+                ValueView::Num(_) => Some("Num"),
+                ValueView::Str(_) => Some("Str"),
+                ValueView::Rat(..) => Some("Rat"),
+                _ => None,
+            }
+            && !self.is_subset_type_name(constraint)
+            && self.only_core_roles_composed(own, constraint)
         {
             return false;
         }
