@@ -18,6 +18,30 @@ use super::*;
 use crate::ast_visit::{NameKind, Visit, walk_stmt, walk_stmts};
 use crate::value::RuntimeErrorCode;
 
+/// Whether the unit declares a sub or class under a name only its run-time value
+/// knows (`class ::($name) { }`): any bareword may then be that name.
+#[derive(Default)]
+pub(super) struct DynamicDeclaration {
+    pub(super) found: bool,
+}
+
+impl<'ast> Visit<'ast> for DynamicDeclaration {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if self.found {
+            return;
+        }
+        match stmt {
+            Stmt::SubDecl {
+                name_expr: Some(_), ..
+            }
+            | Stmt::ClassDecl {
+                name_expr: Some(_), ..
+            } => self.found = true,
+            _ => walk_stmt(self, stmt),
+        }
+    }
+}
+
 /// Whether the unit pulls in names the walk cannot see.
 #[derive(Default)]
 struct UnseenImports {

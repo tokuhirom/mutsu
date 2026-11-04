@@ -502,6 +502,13 @@ impl Interpreter {
     // Cost: O(n * l), n = size of the unit's AST, l = cost of one
     // registry/env lookup.
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // A class or sub named by a run-time value declares a name the walk cannot
+        // see: no bareword of the unit is judged (as for the mainline check).
+        let mut dynamic = super::undeclared_names::DynamicDeclaration::default();
+        walk_stmts(&mut dynamic, stmts);
+        if dynamic.found {
+            return Ok(());
+        }
         let mut declared = scope_blind_declared_names(stmts);
         // What the snippet's `use`/`need` statements bring in: the modules
         // themselves and the types their sources declare (`use A; A.new`).

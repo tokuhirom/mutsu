@@ -8699,6 +8699,7 @@ t/vm/binding/has-decl-trailing-terms.t
 t/vm/binding/hash-element-store-early-lane.t
 t/vm/binding/indirect-code-lookup.t
 t/vm/binding/indirect-declaration.t
+t/vm/binding/indirect-declarator-names.t
 t/vm/binding/indirect-lookup-core-terms.t
 t/vm/binding/indirect-name-static-tail.t
 t/vm/binding/lvalue-sub-plan-tail.t
