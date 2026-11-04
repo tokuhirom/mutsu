@@ -433,7 +433,7 @@ fn parenthesized_expression(node: &RakuAstNode) -> Option<&RakuAstNode> {
 /// Whether `text`, read as the `qq` source of a replacement, is just itself:
 /// nothing in it starts an escape, an interpolation or a block.
 // Cost: O(n), n = length of `text`.
-fn is_plain_qq_source(text: &str) -> bool {
+pub(super) fn is_plain_qq_source(text: &str) -> bool {
     !text.chars().any(|c| {
         matches!(
             c,
