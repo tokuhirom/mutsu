@@ -473,6 +473,9 @@ impl Interpreter {
                 }
                 continue;
             }
+            let decl = decl
+                .strip_prefix(crate::runtime::methods_grammar::DEFERRED_DYNVAR_INIT)
+                .unwrap_or(decl);
             if let Some((stmts, id)) = self.parse_regex_code_cached_with_id(&format!("{decl};")) {
                 let _ = self.eval_block_value_cached(&stmts, id);
             }

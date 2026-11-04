@@ -11,6 +11,11 @@ pub(crate) struct GrammarDynvarFrame {
     scope: super::regex::regex_helpers::GrammarDynvarScopeGuard,
 }
 
+/// Prefix of a grammar rule dynamic-variable declaration that sits inside a
+/// group of the rule: the frame binds it uninitialised at entry and the
+/// declaration atom runs the initializer when the group is reached (#16307).
+pub(crate) const DEFERRED_DYNVAR_INIT: &str = "\u{1}";
+
 impl Interpreter {
     /// A rule/token body may declare a *dynamic* variable inline
     /// (`rule deal { :my %*PLAYED = (); … }`). Collect those declarations by
@@ -112,6 +117,22 @@ impl Interpreter {
         keys
     }
 
+    /// Whether some rule of the grammar being parsed declares the dynamic
+    /// variable `name` inside a group, so that its `VarDecl` atom owns the
+    /// initializer (see [`DEFERRED_DYNVAR_INIT`]).
+    // Cost: O(d), d = the dynamic declarations of the grammar; only asked when a
+    // declaration atom is reached inside a live rule frame.
+    pub(crate) fn grammar_dynvar_is_deferred(&self, name: &str) -> bool {
+        let key = Self::grammar_dynvar_env_keys(name).remove(0);
+        self.regex_state
+            .grammar_rule_dynvar_decls
+            .values()
+            .flatten()
+            .filter(|decl| decl.starts_with(DEFERRED_DYNVAR_INIT))
+            .filter_map(|decl| Self::dynamic_decl_var_key(decl))
+            .any(|declared| Self::grammar_dynvar_env_keys(&declared)[0] == key)
+    }
+
     /// Enter one grammar rule's dynamic-variable frame. Initializers are run
     /// only for a real match, never during LTM measurement or the diagnostic
     /// failure probe. The frame marker makes the corresponding `VarDecl` atom
@@ -137,6 +158,14 @@ impl Interpreter {
             let Some(raw_key) = Self::dynamic_decl_var_key(decl) else {
                 continue;
             };
+            // A declaration nested in a group is bound uninitialised here (its
+            // key is still owned by this frame, so what the group's atom
+            // installs stays until the frame ends) and initialised by its
+            // `VarDecl` atom when the group is reached.
+            let decl = decl
+                .strip_prefix(DEFERRED_DYNVAR_INIT)
+                .map_or_else(|| decl.clone(), str::to_string);
+            let decl = &decl;
             let env_keys = Self::grammar_dynvar_env_keys(&raw_key);
             for key in &env_keys {
                 if !saved.iter().any(|(saved_key, _)| saved_key == key) {
@@ -291,6 +320,50 @@ impl Interpreter {
         saved
     }
 
+    /// How many `[ … ]` / `( … )` groups of `pattern` are open at byte offset
+    /// `at`. Quoted strings, `\x` escapes, `{ … }` code blocks and `< … >`
+    /// assertions (which hold character classes of their own) are skipped whole.
+    // Cost: O(at), at = the offset.
+    fn pattern_group_depth_at(pattern: &str, at: usize) -> usize {
+        let bytes = pattern.as_bytes();
+        let mut depth = 0usize;
+        let mut i = 0usize;
+        while i < at {
+            match bytes[i] {
+                b'\\' => i += 1,
+                quote @ (b'\'' | b'"') => {
+                    i += 1;
+                    while i < at && bytes[i] != quote {
+                        if bytes[i] == b'\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                }
+                open @ (b'{' | b'<') => {
+                    let close = if open == b'{' { b'}' } else { b'>' };
+                    let mut nested = 1usize;
+                    i += 1;
+                    while i < at && nested > 0 {
+                        match bytes[i] {
+                            b'\\' => i += 1,
+                            c if c == open => nested += 1,
+                            c if c == close => nested -= 1,
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    continue;
+                }
+                b'[' | b'(' => depth += 1,
+                b']' | b')' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            i += 1;
+        }
+        depth
+    }
+
     /// Collect `:my $*/%*/@*… = …;` declaration substrings (main-slang code
     /// between `:my ` and the terminating `;`) from a rule pattern.
     ///
@@ -321,7 +394,19 @@ impl Interpreter {
                 // Collect `my … ` up to the `;`.
                 let decl = &at[1..];
                 let decl = decl.split(';').next().unwrap_or(decl);
-                out.push(decl.trim().to_string());
+                // A declaration inside a group (`[ ';' :my $*x = 1; <b> ]?`)
+                // is visible from the rule's entry (as the uninitialised `Any`,
+                // so the rules it calls and the rule's own code find it) but
+                // its initializer runs when the group is reached, not at entry:
+                // running it up front set the variable even when the group
+                // never matched (#16307). Such a declaration is recorded bare,
+                // behind `DEFERRED_DYNVAR_INIT`.
+                if Self::pattern_group_depth_at(pattern, pattern.len() - at.len()) == 0 {
+                    out.push(decl.trim().to_string());
+                } else {
+                    let bare = decl.split_once('=').map_or(decl, |(name, _)| name);
+                    out.push(format!("{DEFERRED_DYNVAR_INIT}{}", bare.trim()));
+                }
             }
         }
     }
@@ -330,6 +415,7 @@ impl Interpreter {
     /// `$*/%*/@*NAME …`
     /// declaration string, or `None` if it is not a simple dynamic declaration.
     pub(crate) fn dynamic_decl_var_key(decl: &str) -> Option<String> {
+        let decl = decl.strip_prefix(DEFERRED_DYNVAR_INIT).unwrap_or(decl);
         let rest = decl
             .strip_prefix("my ")
             .or_else(|| decl.strip_prefix("our "))
