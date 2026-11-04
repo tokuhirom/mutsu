@@ -122,7 +122,46 @@ fn unpack(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answe
     // Experimental in Rakudo: refused unless the calling file said
     // `use experimental :pack` (#13346).
     if !crate::runtime::experimental_pragma::pack_enabled(i.executing_source_file_sym()) {
-        return Some(Err(experimental_unpack_error()));
+        // Rakudo's `unpack` runs the `EXPERIMENTAL-PACK` routine visible in
+        // the caller's lexical scope when there is one (`nqp::getlexcaller`):
+        // P5pack installs it with `BEGIN OUR::<EXPERIMENTAL-PACK> := &f`, so
+        // `use P5pack` is what makes `$buf.unpack($template)` legal.
+        let Some(routine) = i
+            .env()
+            .get("EXPERIMENTAL-PACK")
+            .cloned()
+            .filter(|v| matches!(v.view(), crate::value::ValueView::Sub(_)))
+        else {
+            return Some(Err(experimental_unpack_error()));
+        };
+        let template = args.first().cloned().unwrap_or(Value::NIL);
+        let pieces = match template.view() {
+            crate::value::ValueView::Array(..) => template,
+            _ => {
+                let text = template.to_string_value();
+                let mut out = Vec::new();
+                let chars: Vec<char> = text.chars().collect();
+                let mut at = 0;
+                while at < chars.len() {
+                    if !chars[at].is_ascii_alphabetic() {
+                        at += 1;
+                        continue;
+                    }
+                    let start = at;
+                    at += 1;
+                    if at < chars.len() && chars[at] == '*' {
+                        at += 1;
+                    } else {
+                        while at < chars.len() && chars[at].is_ascii_digit() {
+                            at += 1;
+                        }
+                    }
+                    out.push(Value::str(chars[start..at].iter().collect::<String>()));
+                }
+                Value::array(out)
+            }
+        };
+        return Some(i.eval_call_on_value(routine, vec![t.clone(), pieces]));
     }
     let bytes = Interpreter::extract_buf_bytes(t);
     let template = args.first().map(Value::to_string_value).unwrap_or_default();
