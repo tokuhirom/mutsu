@@ -739,13 +739,17 @@ impl Interpreter {
             // (`register_role_body_exported_subs`), and a body statement
             // that calls one (`my constant H = det()`) finds it there. A
             // second copy of such a sub under the composer's package was
-            // what a trait applied the second time (#13645).
+            // what a trait applied the second time (#13645). An `is export`
+            // sub is no exception: composed into a class of another
+            // compunit it would otherwise be re-declared in the composer's
+            // package, where the role's private helpers (`SL::FS::ser`)
+            // are out of reach of its body (Shareable via Storable::Lite).
             let runs_in_role_package = role_lexical_package.is_none()
                 && op.kind == crate::opcode::DeferredBodyOpKind::Plain
                 && !(is_lexical_sub_decl
                     && matches!(
                         op.raw,
-                        Stmt::SubDecl { multi: true, .. } | Stmt::SubDecl { is_export: true, .. }
+                        Stmt::SubDecl { multi: true, .. }
                     ));
             let lexical_sub_name = match &op.raw {
                 Stmt::SubDecl {
