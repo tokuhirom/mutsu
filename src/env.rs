@@ -3193,6 +3193,35 @@ impl Env {
         self.iter_tier().keys()
     }
 
+    /// An upper bound on [`Self::len`] that does not fold a capture fallback
+    /// into one map first (a name hidden or shadowed in the capture is counted
+    /// once per layer holding it).
+    // Cost: O(l), l = layers of the capture fallback.
+    pub(crate) fn len_upper_bound(&self) -> usize {
+        match &self.fallback {
+            Some(fb) if self.parent.is_none() => self.inner.len() + fb.len_upper_bound(),
+            _ => self.len(),
+        }
+    }
+
+    /// The names a closure that ran in this (captured) env may have written,
+    /// as a superset of its variables: the keys of the env's own tier and of
+    /// the capture's non-shared layers, plus the dynamic variables of the
+    /// shared system-name layers. What [`Self::keys`] yields without the
+    /// types, constants and `__mutsu_*` metadata of the shared layers, which
+    /// no closure body assigns (and without folding the layers into one map).
+    // Cost: O(e + l * d), e = own entries, l = layers, d = dynamic keys per shared layer.
+    pub(crate) fn written_name_candidates(&self) -> Vec<Symbol> {
+        match &self.fallback {
+            Some(fb) if self.parent.is_none() => {
+                let mut out: Vec<Symbol> = self.inner.keys().copied().collect();
+                fb.extend_written_name_candidates(&mut out);
+                out
+            }
+            _ => self.keys().copied().collect(),
+        }
+    }
+
     /// The value [`Self::iter`] yields for `key`, if it yields one: a probe of
     /// the same tier, for a caller that visits a few known keys instead of
     /// iterating all of them.

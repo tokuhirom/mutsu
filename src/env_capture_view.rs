@@ -326,6 +326,20 @@ impl CaptureView {
         out
     }
 
+    /// Append the names a closure could have written through this capture:
+    /// every key of the own (non-shared) layers and the dynamic variables of
+    /// the shared ones. Duplicates and hidden names are left in -- a superset.
+    // Cost: O(e + l * d), e = entries of the own layers, d = dynamic keys per shared layer.
+    pub(crate) fn extend_written_name_candidates(&self, out: &mut Vec<Symbol>) {
+        for layer in self.layers.iter() {
+            if layer.shared {
+                out.extend_from_slice(layer.tier.dynamic_keys());
+            } else {
+                out.extend(layer.tier.keys().copied());
+            }
+        }
+    }
+
     pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
         self.merged().iter()
     }

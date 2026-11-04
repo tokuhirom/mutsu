@@ -1995,10 +1995,10 @@ impl Interpreter {
         // The last two fall back to the whole capture, as does a frame whose
         // env is not a scoped overlay at all (then `keys()` is the whole env,
         // so the narrowing would cost more than it saves).
-        let end_refresh_keys: Vec<Symbol> = if self.has_end_phasers() && !data.env.is_empty() {
+        let end_refresh_keys: Vec<Symbol> = if self.has_end_phasers() && data.env.len_upper_bound() > 0 {
             if self.pending_runtime_name_writes.is_empty()
                 && self.inline_control_env_writes.len() == inline_control_writes_at_entry
-                && self.env().len() < data.env.len()
+                && self.env().len() < data.env.len_upper_bound()
             {
                 let captured = data.env.inner();
                 // Sized up front: the `filter` hides the exact size hint the
@@ -2014,7 +2014,7 @@ impl Interpreter {
                 );
                 keys
             } else {
-                data.env.keys().copied().collect()
+                data.env.written_name_candidates()
             }
         } else {
             Vec::new()
