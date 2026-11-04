@@ -321,6 +321,8 @@ impl Interpreter {
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
         attrs.insert("multi".to_string(), Value::FALSE);
+        // A native method (or a grammar token) has a body, not a `...` stub.
+        attrs.insert("yada".to_string(), Value::FALSE);
         attrs.insert("rw".to_string(), Value::FALSE);
         attrs.insert("readonly".to_string(), Value::TRUE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
@@ -536,6 +538,11 @@ impl Interpreter {
         }
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
         attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
+        // `Routine.yada`: the body is a bare `...` (`method m { ... }`).
+        attrs.insert(
+            "yada".to_string(),
+            Value::truth(!is_dispatcher && Self::sub_body_is_yada_stub(&method_def.body)),
+        );
         attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));
         attrs.insert("readonly".to_string(), Value::truth(!method_def.is_rw));
         // `Code.line`/`Code.file` — the declaration site, reported for a

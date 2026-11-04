@@ -330,7 +330,10 @@ impl Interpreter {
             // has already run, so the base candidate simply returns the type
             // object under registration.
             "new_type" => Some(match self.types.pending_declare_new_type.clone() {
-                Some(type_obj) => Ok(type_obj),
+                Some(type_obj) => {
+                    self.declare_subset_refinement(&type_obj, receiver, &args);
+                    Ok(type_obj)
+                }
                 // No DECLARE in flight: this is a plain
                 // `MyHOW.new_type(:name<X>)` on a user subclass of a builtin
                 // metamodel HOW, so the base candidate is the native

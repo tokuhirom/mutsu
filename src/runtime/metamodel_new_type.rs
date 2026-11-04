@@ -22,6 +22,64 @@ pub(crate) fn is_minted_type_name(name: &str) -> bool {
 }
 
 impl Interpreter {
+    /// A `new_type` override on a user subclass of `Metamodel::SubsetHOW` for
+    /// a type a DECLARE mapping has just registered (Protocol's `protocol
+    /// Writer { ... }`): the override's `callwith :$name, :refinee, :refinement`
+    /// reaches the native base, which only returns the type object under
+    /// registration. The refinement is what makes the declared name a subset,
+    /// so register it under the DECLARE'd name, as `subset Name of Base where
+    /// ...` does.
+    // Cost: O(a + m), a = arguments, m = MRO length of the HOW class.
+    pub(crate) fn declare_subset_refinement(
+        &mut self,
+        type_obj: &Value,
+        how_class: &str,
+        args: &[Value],
+    ) {
+        let ValueView::Package(declared) = type_obj.view() else {
+            return;
+        };
+        let is_subset_how = how_class == "Metamodel::SubsetHOW"
+            || self
+                .class_mro(how_class)
+                .iter()
+                .any(|c| c.as_str() == "Metamodel::SubsetHOW");
+        if !is_subset_how {
+            return;
+        }
+        let named = |key: &str| {
+            args.iter().find_map(|a| match a.view() {
+                ValueView::Pair(k, v) if k == key => Some(v.clone()),
+                ValueView::ValuePair(k, v) if k.to_string_value() == key => Some(v.clone()),
+                _ => None,
+            })
+        };
+        let Some(refinement) = named("refinement")
+            .map(Value::into_deref)
+            .filter(|v| !v.is_nil())
+        else {
+            return;
+        };
+        let base = named("refinee")
+            .map(Value::into_deref)
+            .map(|v| match v.view() {
+                ValueView::Package(sym) => sym.resolve().to_string(),
+                _ => v.to_string_value(),
+            })
+            .unwrap_or_else(|| "Any".to_string());
+        let name = declared.resolve().to_string();
+        self.register_subset_decl(
+            &name,
+            &base,
+            None,
+            Some(refinement.clone()),
+            Some(refinement),
+            "",
+            false,
+            0,
+        );
+    }
+
     /// The native `new_type` metamethod: mint a type object named by the
     /// `:name` argument, register an empty class definition for it (so `.new`
     /// and the rest of the class protocol work on it), and record which
