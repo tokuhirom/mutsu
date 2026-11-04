@@ -365,7 +365,11 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             }
             let config = config(lines, &rest[kind.len()..])?;
             if kind == "table" {
-                let form = if name == "for" { Form::For } else { Form::Delimited };
+                let form = if name == "for" {
+                    Form::For
+                } else {
+                    Form::Delimited
+                };
                 return table_block(lines, i, form, config, from);
             }
             let (base, level) = split_level(kind);
@@ -507,7 +511,8 @@ fn table_block(
         }
         (j.checked_sub(1)?, next)
     };
-    let table = super::pod_table::read(&lines.text[i + 1..end + usize::from(form != Form::Delimited)])?;
+    let table =
+        super::pod_table::read(&lines.text[i + 1..end + usize::from(form != Form::Delimited)])?;
     if table.header_row {
         config.push(("header-row".to_string(), expression(lines, "0", None)?));
     }

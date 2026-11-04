@@ -90,7 +90,9 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
     }
     let piped = rows.iter().any(|r| r.contains('|'));
     let mut built = if piped {
-        rows.iter().map(|r| pipe_row(r)).collect::<Option<Vec<_>>>()?
+        rows.iter()
+            .map(|r| pipe_row(r))
+            .collect::<Option<Vec<_>>>()?
     } else {
         space_rows(&rows)?
     }
@@ -103,7 +105,11 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
             Line::Separator(text) => {
                 separators += 1;
                 // A pipe table's separator keeps the line break.
-                let text = if piped { format!("{text}\n") } else { text.to_string() };
+                let text = if piped {
+                    format!("{text}\n")
+                } else {
+                    text.to_string()
+                };
                 TablePart::Separator(text)
             }
         });
@@ -115,10 +121,12 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
         .filter(|&n| matches!(parts[n], TablePart::Separator(_)))
         .collect();
     // Rakudo rejects two separators in a row.
-    if parts
-        .windows(2)
-        .any(|w| matches!((&w[0], &w[1]), (TablePart::Separator(_), TablePart::Separator(_))))
-    {
+    if parts.windows(2).any(|w| {
+        matches!(
+            (&w[0], &w[1]),
+            (TablePart::Separator(_), TablePart::Separator(_))
+        )
+    }) {
         return None;
     }
     match interior[..] {
@@ -130,10 +138,19 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
                 (TablePart::Separator(a), TablePart::Separator(b)) => a == b,
                 _ => return None,
             };
-            Some(Table { parts, header_row: !same })
+            Some(Table {
+                parts,
+                header_row: !same,
+            })
         }
-        [] if separators > 0 && single_rows(&parts) => Some(Table { parts, header_row: false }),
-        [] if separators == 0 => Some(Table { parts, header_row: false }),
+        [] if separators > 0 && single_rows(&parts) => Some(Table {
+            parts,
+            header_row: false,
+        }),
+        [] if separators == 0 => Some(Table {
+            parts,
+            header_row: false,
+        }),
         _ => None,
     }
 }
@@ -154,7 +171,9 @@ fn is_rule(line: &str) -> Option<bool> {
     if line.chars().any(char::is_alphanumeric) {
         return Some(false);
     }
-    let rule = line.chars().all(|c| matches!(c, '-' | '=' | '_' | '+' | ' '))
+    let rule = line
+        .chars()
+        .all(|c| matches!(c, '-' | '=' | '_' | '+' | ' '))
         && line.contains(['-', '=', '_']);
     rule.then_some(true)
 }
@@ -169,7 +188,10 @@ fn header(parts: Vec<TablePart>, at: usize, alone: bool, piped: bool) -> Option<
         .take_while(|p| matches!(p, TablePart::Row(_)))
         .count();
     if before == 1 {
-        return Some(Table { parts, header_row: true });
+        return Some(Table {
+            parts,
+            header_row: true,
+        });
     }
     // Only whitespace tables with a lone separator were measured with a
     // multi-line header.
@@ -183,16 +205,27 @@ fn header(parts: Vec<TablePart>, at: usize, alone: bool, piped: bool) -> Option<
             head.push(row);
         }
     }
-    let Row { dividers, offsets, mut cells } = head.remove(0);
+    let Row {
+        dividers,
+        offsets,
+        mut cells,
+    } = head.remove(0);
     for row in head {
         for (cell, more) in cells.iter_mut().zip(row.cells) {
             cell.push('\n');
             cell.push_str(&more);
         }
     }
-    let mut out = vec![TablePart::Row(Row { dividers, offsets, cells })];
+    let mut out = vec![TablePart::Row(Row {
+        dividers,
+        offsets,
+        cells,
+    })];
     out.extend(parts);
-    Some(Table { parts: out, header_row: true })
+    Some(Table {
+        parts: out,
+        header_row: true,
+    })
 }
 
 /// The rows of a whitespace table: every row's cells start at the same
