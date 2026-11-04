@@ -5,9 +5,9 @@
 
 use crate::ast::scope_scan::{is_code_object, is_scope_declaration};
 use crate::ast::{Expr, ParamDef, Stmt};
-use crate::token_kind::TokenKind;
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
+use crate::token_kind::TokenKind;
 
 /// Finds an explicit `return` anywhere the routine's own return can come
 /// from: a nested block or branch returns from the routine too, a nested
