@@ -30,6 +30,17 @@ impl Interpreter {
         };
         let mut name = name.resolve();
         let mut changed = false;
+        // A nested-name type of the declaring package, spelled short in the
+        // signature (`Window::Clauses $w?` for `Pk::Window::Clauses`), was not
+        // registered yet when the routine was hoisted: resolve it now, against
+        // the package the routine runs in (#16359).
+        if crate::qualified::is_qualified_str(&name) && !self.has_type_direct(&name) {
+            let resolved = self.resolve_method_type_name(&self.current_package(), &name);
+            if resolved != name {
+                name = resolved;
+                changed = true;
+            }
+        }
         for _ in 0..MAX_SUBSET_DEPTH {
             let refinee = if name == "UInt" {
                 "Int".to_string()

@@ -1229,6 +1229,23 @@ impl Interpreter {
         }
         let name_sym = crate::symbol::Symbol::intern(&name);
         if crate::qualified::is_qualified(name_sym) {
+            // A nested-name type declared in the owner's package and spelled
+            // short (`has Window::Clauses $.w` for `Pk::Window::Clauses`) is
+            // not a registered name by itself: resolve it through the owner's
+            // enclosing packages like an unqualified name (#16359). A name
+            // that already is a registered type keeps its spelling.
+            if !self.has_type_direct(&name) {
+                let owner_sym = crate::symbol::Symbol::intern(owner);
+                for pkg in crate::qualified::package_ancestors(owner_sym) {
+                    let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                    if qualified != owner
+                        && self.has_type_direct(qualified)
+                        && !self.compound_name_segment_is_not_a_scope(qualified, pkg)
+                    {
+                        return qualified.to_string();
+                    }
+                }
+            }
             return name;
         }
         let owner_sym = crate::symbol::Symbol::intern(owner);
