@@ -549,6 +549,17 @@ impl Interpreter {
                 value
             };
             let resolved_target = self.resolve_constraint_alias(target);
+            // A target declared in the running package under a nested name
+            // (`module Pk { class Column::List {...}; sub f(Column::List(Any)
+            // $c) {...} }` registers `Pk::Column::List`) is found the way a
+            // bareword type is, or its `COERCE` is never looked up.
+            let resolved_target = if self.has_type_direct(&resolved_target) {
+                resolved_target
+            } else if let Some(found) = self.resolve_type_in_current_package(&resolved_target) {
+                std::borrow::Cow::Owned(found)
+            } else {
+                resolved_target
+            };
             // A subset target (`my subset S of N where ...; my S() $x`)
             // coerces to its refinee and then checks the refinement, as
             // Rakudo's coercion protocol does: a value already in the subset
