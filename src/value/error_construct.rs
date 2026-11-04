@@ -687,6 +687,21 @@ impl RuntimeError {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Create a Failure wrapping an `X::StubCode`: what rakudo's stubbed
+    /// `Exception.message` (`method message() { ... }`) fails with when a class
+    /// that is an `Exception` never implemented `message`.
+    pub(crate) fn stub_code_failure() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Stub code executed".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::StubCode"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// Create a Failure wrapping an `X::AdHoc` carrying `message`.
     pub(crate) fn adhoc_failure(message: &str) -> Value {
         let mut attrs = HashMap::new();

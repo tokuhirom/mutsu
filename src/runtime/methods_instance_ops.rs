@@ -1054,10 +1054,18 @@ impl Interpreter {
                     } else if method == "message" {
                         // A class that reaches Exception through a role still
                         // has Exception.message even when it has no stored
-                        // message attribute. Match the native row's empty
-                        // default instead of falling through to "No such
-                        // method" for user-named exception classes.
-                        return Ok(Value::str(String::new()));
+                        // message attribute. rakudo stubs `Exception.message`
+                        // (`method message() { ... }`), so a class that never
+                        // implemented it answers the `X::StubCode` Failure, not
+                        // the empty text and not "No such method". The built-in
+                        // `X::AdHoc` (an empty payload is the empty text) and
+                        // `X::OS` keep answering as before.
+                        // TODO: `Exception.new.message` is a Failure in rakudo too;
+                        // the built-in rows answer an empty `Str` for it.
+                        if matches!(cn.as_str(), "X::AdHoc" | "X::OS" | "Exception") {
+                            return Ok(Value::str(String::new()));
+                        }
+                        return Ok(RuntimeError::stub_code_failure());
                     } else if cn == "X::AdHoc"
                         // `X::AdHoc` (what `die "..."` builds) carries its text in
                         // `payload`, not `message`.
