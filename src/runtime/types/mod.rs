@@ -1413,7 +1413,7 @@ impl Interpreter {
             && !value.is_nil()
             && !matches!(value.view(), ValueView::Package(_))
         {
-            self.check_and_coerce_param_type(pd, value, None, None, false)?
+            self.check_and_coerce_param_type(pd, value, None, None, false, false)?
         } else {
             value
         };

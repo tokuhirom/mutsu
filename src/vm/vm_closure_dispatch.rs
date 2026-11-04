@@ -312,6 +312,15 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // Taken at entry, whichever path the call then takes (light or full),
+        // so a nested call in the body can never find it still armed. Only a
+        // bind of exactly the verified winner may use it
+        // (`DispatchState::nominal_verified_candidate`).
+        let nominal_verified = self
+            .dispatch
+            .nominal_verified_candidate
+            .is_some_and(|id| id == data.id)
+            && self.dispatch.nominal_verified_candidate.take().is_some();
         // A body that can observe nothing below runs light (#8335).
         if explicit_topic.is_none()
             && !capture_rw_topic
@@ -851,6 +860,8 @@ impl Interpreter {
             let _default_package_guard = (cc.is_routine
                 && !crate::qualified::is_global_package(data.package))
             .then(|| self.enter_package_guarded_sym(data.package));
+            // Armed right before the bind, which takes it at its entry.
+            self.dispatch.pending_nominal_verified = nominal_verified;
             match loan_env!(
                 self,
                 // `param_name_syms.params` is `data.params` interned once per

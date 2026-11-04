@@ -48,7 +48,9 @@ pub(crate) type PlanStage = Vec<PlanEntry>;
 
 /// A captured dispatcher's winner and its deferral chain
 /// ([`Interpreter::captured_multi_plan_winner`]).
-pub(crate) type CapturedWinner = (Arc<FunctionDef>, Vec<Arc<FunctionDef>>);
+/// The last field is whether a keyed stage program picked the winner, which
+/// means every nominal parameter check was answered by the argument-type key.
+pub(crate) type CapturedWinner = (Arc<FunctionDef>, Vec<Arc<FunctionDef>>, bool);
 
 /// The type-keyed half of a bare-name multi resolution. See the module docs.
 pub(crate) struct BareMultiPlan {
@@ -534,11 +536,14 @@ impl Interpreter {
         } else {
             None
         };
+        let key_decided = program.is_some();
         let winner = match program {
             Some(program) => self.run_stage_program(family, args, program),
             None => self.choose_from_plan_stage(family, args, &plan.stage),
         };
-        Some(winner.map(|winner| winner.map(|w| (w, plan.captured_remaining.clone()))))
+        Some(winner.map(|winner| {
+            winner.map(|w| (w, plan.captured_remaining.clone(), key_decided))
+        }))
     }
 
     /// The plan of a captured dispatcher's candidates against `args`' types.

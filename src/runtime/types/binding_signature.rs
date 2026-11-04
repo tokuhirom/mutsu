@@ -599,6 +599,11 @@ impl Interpreter {
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
         predicate_verified: bool,
+        // The argument-type key already decided every nominal check of this
+        // parameter (a keyed stage program picked the routine): the plain
+        // `type_matches_value` below is not repeated. The coercion, `@`/`%`,
+        // `&` and capture arms are unaffected.
+        nominal_verified: bool,
     ) -> Result<Value, RuntimeError> {
         // A non-slurpy `@`-sigil parameter binds directly to a Positional
         // argument, ignoring any `$`-itemization the caller's variable
@@ -790,6 +795,7 @@ impl Interpreter {
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
             } else if !(predicate_verified && self.constraint_is_user_subset(&resolved_constraint))
+                && !nominal_verified
                 && !self.type_matches_value(&resolved_constraint, &value)
             {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
@@ -1095,6 +1101,9 @@ impl Interpreter {
         // `false`, exactly like the other `pending_*` one-shot signals this
         // struct carries (see its doc comment on `pending_skip_constraint_recheck`).
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
+        // Same discipline: taken at entry, armed only by the winner's own call
+        // (`call_compiled_closure_in_unit`).
+        let nominal_verified = std::mem::take(&mut self.dispatch.pending_nominal_verified);
         let FunctionBindingOptions {
             reads_args_array,
             reads_args_hash,
@@ -2670,6 +2679,7 @@ impl Interpreter {
                                 None,
                                 None,
                                 skip_constraint_recheck,
+                                false,
                             )?;
                             // An untyped `:@x` is implicitly `Positional`, as its
                             // positional counterpart is: `f(:x(Mu))` and `f(:x(5))`
@@ -2901,6 +2911,7 @@ impl Interpreter {
                                         None,
                                         None,
                                         false,
+                                        false,
                                     )?;
                                 }
                                 return Err(crate::runtime::utils::parameter_rw_not_container(
@@ -2992,6 +3003,7 @@ impl Interpreter {
                                         None,
                                         None,
                                         skip_constraint_recheck,
+                                        false,
                                     )?
                                 } else {
                                     inner_val.clone()
@@ -3498,6 +3510,7 @@ impl Interpreter {
                                     None,
                                     None,
                                     false,
+                                    false,
                                 )?;
                             }
                             return Err(crate::runtime::utils::parameter_rw_not_container(
@@ -3700,6 +3713,7 @@ impl Interpreter {
                         source_name.as_deref(),
                         source_type_constraint.as_deref(),
                         skip_constraint_recheck,
+                        nominal_verified,
                     )?;
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
