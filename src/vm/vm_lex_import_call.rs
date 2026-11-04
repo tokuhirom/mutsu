@@ -48,11 +48,7 @@ impl Interpreter {
         // reaches (TimeUnit's `minutes`). Only a call with no argument list
         // is subject to this; `g(3)` has no `GetBareWord` op.
         if matches!(code.ops.get(ip + 1), Some(OpCode::GetBareWord(_)))
-            && name.with_str(|n| {
-                self.env()
-                    .get(n)
-                    .is_some_and(|v| matches!(v.view(), ValueView::Enum { .. }))
-            })
+            && name.with_str(|n| self.enum_bare_value(n).is_some())
         {
             return Ok(false);
         }
