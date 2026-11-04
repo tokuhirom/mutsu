@@ -134,7 +134,7 @@ impl Interpreter {
                 {
                     // A closure's capture of the binding may already be a
                     // shared cell; the List still holds only the value.
-                    elems.push(inner.deref_container());
+                    elems.push(inner.deref_container().hllize_operand());
                     continue;
                 }
                 let slot_hint = val.varref_slot();
@@ -183,7 +183,9 @@ impl Interpreter {
                 // stay lazy; a `lazy`-marked list stays lazy too.
                 forced
             } else {
-                val
+                // A raw BOOT scalar box is its high-level value once it is a
+                // list element (#12881).
+                val.hllize_operand()
             };
             match val.view() {
                 ValueView::Slip(items) => {
@@ -325,7 +327,7 @@ impl Interpreter {
                 // ADR-0049 slice 1: a bare `Nil` is a real element here, not a
                 // List-context no-op -- it decays to the array's own default
                 // below (`[Nil,].elems` is `1`, not a silently dropped `0`).
-                _ => elems.push(val),
+                _ => elems.push(val.hllize_operand()),
             }
         }
         // `use fatal`: see the comment in `exec_make_array_op`.
