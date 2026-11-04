@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 3;
+plan 5;
 
 # A statement call to a routine sinks what the routine hands back (#11537):
 # a routine that is not `is rw`/`is raw` decontainerizes its implicit result,
@@ -42,3 +42,20 @@ is @log.join(' '), '', 'a container or a readonly parameter is not sunk through'
 @log = ();
 sub mixed { [1] does role { method sink { @log.push: 'mixin' } } }; mixed;
 is @log.join(' '), 'mixin', 'a mixin with a composed sink is sunk';
+
+# An explicit `return` of a fresh value (a method call, a mixin, either
+# parenthesized) is sunk like an implicit last value; `return $x`, a subscript,
+# an assignment or a list hands back a container and is not (rakudo 2026.09).
+@log = ();
+sub rm { return S.new(:t<ret-method>) }; rm;
+sub rp { return (S.new(:t<ret-paren>)) }; rp;
+sub rx { return [1] does role { method sink { @log.push: 'ret-mixin' } } }; rx;
+sub ri { return S.new(:t<ret-if>) if True }; ri;
+is @log.join(' '), 'ret-method ret-paren ret-mixin ret-if', 'return of a fresh value is sunk';
+
+@log = ();
+my @arr = S.new(:t<elem>);
+sub ra { return @arr[0] }; ra;
+sub rl { return S.new(:t<l1>), S.new(:t<l2>) }; rl;
+sub rv { return $x }; rv;
+is @log.join(' '), '', 'return of a subscript, a list or a variable is not sunk';
