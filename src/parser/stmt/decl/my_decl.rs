@@ -225,6 +225,17 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     let is_hash = sigil == b'%';
     let is_code = sigil == b'&';
 
+    // A type on a `&` variable parametrizes the Callable it holds: `my Int &f`
+    // holds a `Callable[Int]`, a routine returning `Int` (`&f.of` answers
+    // `Int`), not an `Int` value (#16439).
+    if is_code
+        && let Some(tc) = type_constraint.as_mut()
+        && !tc.starts_with("::")
+        && !tc.starts_with("Callable")
+    {
+        *tc = format!("Callable[{tc}]");
+    }
+
     // Handle `our $.name` / `my $.name` — class-level (shared) attributes.
     if let Some(result) = try_dot_twigil_attr(
         rest,
