@@ -182,6 +182,11 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // The priming scope the parser planted: the conversion marks the node it
         // wraps and the lowering puts the marker back around it.
         | Expr::WhateverCurry(_)
+        // `s///`, `S///` and `tr///` read back as the parser built them
+        // (`finalization_is_the_ordinary_tree`).
+        | Expr::Subst { .. }
+        | Expr::NonDestructiveSubst { .. }
+        | Expr::Transliterate { .. }
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,

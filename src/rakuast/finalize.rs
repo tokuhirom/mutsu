@@ -637,6 +637,13 @@ mod tests {
             "say 'x' if 1;",
             "my %h = a => 1; say %h<a>;",
             "my $s = 'abc'; say \"v: $s\";",
+            "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
+            "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
+            "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",
+            "my $s = 'abc'; $s ~~ s[b] = uc $/; $s ~~ s:2nd/a/c/;",
+            "my $s = 'abc'; $s ~~ s:i:x(2)/a/{$s}/; say $s;",
+            "my $s = 'abc'; $s ~~ tr/a-c/A-C/; say $s; say $s.trans('A' => 'x');",
+            "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
         ] {
             assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }
