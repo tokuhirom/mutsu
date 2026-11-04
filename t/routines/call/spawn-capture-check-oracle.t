@@ -30,4 +30,4 @@ my %on = run-with("1");
 is %on<out>, "11", "set: the program output is unchanged";
 like %on<err>, /'uncaptured-lane-write name=@s op=set'/,
     "a lane write by a registered method's body (invisible to the capture analysis) is reported";
-unlike %on<err>, /'name=%r'/, "a name the spawned block itself captures is not reported";
+unlike %on<err>, /'uncaptured-lane-write name=%r'/, "a name the spawned block itself captures is not reported";
