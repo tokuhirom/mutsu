@@ -354,7 +354,7 @@ impl Interpreter {
                 // `CArray`) dispatches on its class and the roles composed in:
                 // one symbol per composition node names both (#16373).
                 ValueView::Mixin(inner, mixins) => {
-                    match self.mixin_composition_key_sym(&inner, &mixins) {
+                    match self.mixin_composition_key_sym(inner, mixins) {
                         Some(sym) => sym,
                         None => return false,
                     }
