@@ -155,6 +155,14 @@ fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
     code.local_read_plain(idx)
 }
 
+/// The word and bit of the atomic-name set that the emitted inline read of
+/// slot `idx` tests (see `TierB::emit_get_local`): the slot's own name, as the
+/// interpreter's `GetLocal` arm asks `atomic_name_possible`.
+// Cost: O(m), m = name bytes, once per compiled read.
+fn get_local_atomic_probe(code: &CompiledCode, idx: usize) -> (usize, u64) {
+    Interpreter::atomic_name_probe(code.locals.get(idx).map_or("", |name| name.as_str()))
+}
+
 /// Helper-call signatures used by the emitted code, imported once per
 /// function. All shims take the interpreter pointer first; fallible ones
 /// return an `i32` status (see `vm_jit::JIT_STATUS_*`).
@@ -450,6 +458,7 @@ fn build(
                         codep,
                         *idx,
                         helpers::get_local as *const () as usize,
+                        get_local_atomic_probe(code, *idx as usize),
                     );
                 } else {
                     let idxv = b.ins().iconst(types::I32, *idx as i64);
@@ -474,6 +483,7 @@ fn build(
                         codep,
                         *slot,
                         helpers::get_local as *const () as usize,
+                        get_local_atomic_probe(code, *slot as usize),
                     );
                 } else {
                     let idxv = b.ins().iconst(types::I32, *slot as i64);

@@ -87,6 +87,18 @@ impl Interpreter {
         crate::vm::vm_jit::note_atomic_local_read_spoiler();
     }
 
+    /// Where the JIT's inline local read asks [`Self::atomic_name_possible`] of
+    /// a slot whose name is known when the code is compiled: the address of the
+    /// word of [`ATOMIC_NAMES`] holding `name`, and its bit. The word is a
+    /// static, so the address is stable; a bit that is clear when the emitted
+    /// code runs proves no atomic storage exists under the name, and a name
+    /// registered after the compile sets the bit the emitted code tests.
+    // Cost: O(m), m = name bytes, once per compiled read.
+    pub(crate) fn atomic_name_probe(name: &str) -> (usize, u64) {
+        let (word, bit) = atomic_name_slot(name);
+        (std::ptr::addr_of!(ATOMIC_NAMES[word]) as usize, bit)
+    }
+
     /// Whether `name` could be an atomic variable. `false` proves no
     /// `atomicint` constraint and no legacy-lane mapping exists under it, so
     /// the read and reset paths skip the name-keyed cascade for it; `true`

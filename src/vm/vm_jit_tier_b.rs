@@ -682,9 +682,9 @@ impl TierB {
     }
 
     /// `GetLocal` of a statically-eligible plain local (ADR-0004 J4d): when
-    /// no dynamic spoiler exists (`vm_jit::LOCAL_READ_SPOILERS` is zero — no
-    /// `$CALLER::x := ...` alias, no atomic variable, no sigilless attribute
-    /// alias; a cell is ruled out per slot by the tag test below and the
+    /// no dynamic spoiler exists (`vm_jit::NAME_INDEPENDENT_LOCAL_READ_SPOILERS`
+    /// is zero — no `$CALLER::x := ...` alias, no sigilless attribute alias —
+    /// and the slot's name is not registered as an atomic variable; a cell is ruled out per slot by the tag test below and the
     /// ADR-0097 §15 env/slot invariant) and the slot
     /// word is a refcount-free scalar (small Int / Num / Bool / Package), the
     /// interpreter arm reduces to `stack.push(locals[idx].clone())`, which is
@@ -701,6 +701,7 @@ impl TierB {
         codep: CVal,
         idx: u32,
         slow_fn: usize,
+        atomic_probe: (usize, u64),
     ) {
         let slow_blk = b.create_block();
         let done = b.create_block();
@@ -710,11 +711,29 @@ impl TierB {
         // sigilless-alias lookup are all no-ops everywhere; with the slot word
         // a plain scalar, the env/slot invariant (ADR-0097 §15) makes the env
         // cell-adoption probe a no-op too, so the arm reduces to the slot read.
-        let spoil_addr = std::ptr::addr_of!(super::vm_jit::LOCAL_READ_SPOILERS) as usize;
+        //
+        // The latch read here is the one that applies to every variable
+        // (`NAME_INDEPENDENT_LOCAL_READ_SPOILERS`); an atomic variable is a
+        // per-NAME fact, asked of this slot's own name through the word and bit
+        // the compiler resolved (`atomic_probe`), as the interpreter's arm asks
+        // `atomic_name_possible`. One `atomicint` anywhere in the program
+        // (Cro's `$current-id`) used to send every inline read in the process
+        // through the shim (#7817).
+        let spoil_addr =
+            std::ptr::addr_of!(super::vm_jit::NAME_INDEPENDENT_LOCAL_READ_SPOILERS) as usize;
         let spoil_addr = b.ins().iconst(self.ptr_ty, spoil_addr as i64);
         let spoiled = b.ins().load(types::I32, Self::mf(), spoil_addr, 0);
+        let atomic_chk = b.create_block();
+        b.ins().brif(spoiled, slow_blk, &[], atomic_chk, &[]);
+
+        b.switch_to_block(atomic_chk);
+        let (name_word_addr, name_bit) = atomic_probe;
+        let name_word_addr = b.ins().iconst(self.ptr_ty, name_word_addr as i64);
+        let name_words = b.ins().load(types::I64, Self::mf(), name_word_addr, 0);
+        let name_mask = b.ins().iconst(types::I64, name_bit as i64);
+        let name_hit = b.ins().band(name_words, name_mask);
         let bounds_chk = b.create_block();
-        b.ins().brif(spoiled, slow_blk, &[], bounds_chk, &[]);
+        b.ins().brif(name_hit, slow_blk, &[], bounds_chk, &[]);
 
         // -- slot word load. Slots live in one shared stack and the executing
         // frame starts at `locals_base` (ADR-0077), so slot `idx` is the
