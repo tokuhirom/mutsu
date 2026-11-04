@@ -382,6 +382,15 @@ impl Interpreter {
                 if matches!(v.view(), ValueView::Int(_) | ValueView::BigInt(_)) {
                     return Some(Ok(Value::int(crate::runtime::to_int(&v))));
                 }
+                // Only an address-bearing object (a Pointer, a CArray, a Buf)
+                // unboxes to an int; a Str, Num, Bool or Failure is a
+                // different REPR and MoarVM refuses it (#16420).
+                if crate::runtime::nativecall::is_non_address_value(&v) {
+                    return Some(Err(RuntimeError::new(format!(
+                        "This type cannot unbox to a native integer: P6opaque, {}",
+                        crate::value::type_name::value_type_name(&v)
+                    ))));
+                }
                 Ok(Value::int(
                     crate::runtime::nativecall::value_c_address(&v) as i64
                 ))
