@@ -229,15 +229,37 @@ impl Interpreter {
             // `has_invocant_constraint` or the fast path's own nominal type check
             // (which `::T` could never satisfy) bounced the call. Now that the
             // capture is a field of its own, the gate has to name it (#7984).
-            let has_type_capture = method_def
-                .param_defs
-                .iter()
-                .any(|pd| pd.captured_type_name().is_some());
-            let has_role_bindings = method_def.role_param_bindings.is_some()
-                || self.class_role_param_bindings(owner_class).is_some()
-                || self
-                    .class_role_param_bindings(receiver_class_name)
-                    .is_some();
+            // A body that cannot see a role's parameters, its statics or the
+            // class a `::?CLASS` invocant captured (`cc.ignores_role_context`),
+            // over parameters typed with built-in types only, has nothing to
+            // bind for them: the call keeps the fast path (#16215).
+            let role_blind = cc.ignores_role_context()
+                && method_def.param_defs.iter().all(|pd| {
+                    pd.is_invocant
+                        || (pd.type_capture.is_none()
+                            && pd.type_constraint.as_deref().is_none_or(|tc| {
+                                let base = tc
+                                    .strip_suffix(":D")
+                                    .or_else(|| tc.strip_suffix(":U"))
+                                    .unwrap_or(tc);
+                                crate::runtime::utils::is_known_type_constraint(base)
+                            }))
+                });
+            let has_type_capture =
+                method_def
+                    .param_defs
+                    .iter()
+                    .any(|pd| match pd.captured_type_name() {
+                        Some("?CLASS") => !(pd.is_invocant && role_blind),
+                        Some(_) => true,
+                        None => false,
+                    });
+            let has_role_bindings = !role_blind
+                && (method_def.role_param_bindings.is_some()
+                    || self.class_role_param_bindings(owner_class).is_some()
+                    || self
+                        .class_role_param_bindings(receiver_class_name)
+                        .is_some());
             // Classify arguments the way the slow binder does
             // (`bind_function_args_values`): a string-keyed `Pair` (after VarRef
             // unwrap) is a named argument; everything else is positional. Two
@@ -1926,8 +1948,16 @@ impl Interpreter {
         base: &Value,
         owner_class: &str,
     ) -> bool {
+        // A role-mixed instance (`CArray[num64]`) is as defined as the
+        // instance it wraps, but its type is no class name: only `Mu` and
+        // `::?CLASS` accept it without the binder.
+        let is_mixin = matches!(base.view(), ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Instance { .. }));
         let class_name = match base.view() {
             ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { class_name, .. } => class_name,
+                _ => return false,
+            },
             // A `Proxy` subclass instance is as defined as any instance.
             ValueView::Proxy {
                 subclass: Some((class_name, _)),
@@ -1952,8 +1982,7 @@ impl Interpreter {
                 }
                 name == "Mu"
                     || name == "::?CLASS"
-                    || name == owner_class
-                    || name == class_name.as_str()
+                    || (!is_mixin && (name == owner_class || name == class_name.as_str()))
             })
     }
 

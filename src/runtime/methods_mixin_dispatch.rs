@@ -625,6 +625,9 @@ impl Interpreter {
                     )
                 };
             }
+            // Every candidate is decided by built-in type keys when a key
+            // exists: the winner's parameters need no role binding.
+            let key_decided = memo_key.is_some();
             let picked = match memoized {
                 Some(winner) => winner,
                 None => {
@@ -685,64 +688,75 @@ impl Interpreter {
                 }
                 continue;
             };
-            // Match ordinary signature binding: a callable parameter is
-            // installed under `&name`, while the bare `name` entry is absent
-            // so a bare read follows the compiler's implicit zero-arg call
-            // path instead of returning the callable object.
-            let mut method_role_bindings = Vec::new();
-            for (name, value) in &role_param_bindings {
-                let is_callable = callable_role_params.contains(name)
-                    && matches!(
-                        value.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    );
-                if is_callable && !name.starts_with('&') {
-                    method_role_bindings.push((format!("&{name}"), value.clone()));
-                } else {
-                    method_role_bindings.push((name.clone(), value.clone()));
-                }
-            }
-            // `::?CLASS` in a role method is the class the role is composed
-            // into, here the mixin type (`K+{R[Str]}`), not the role: upstream
-            // NativeCall's `TypedCArray!allocate` reads
-            // `::?CLASS.^array_type` (#11203).
-            let class_type = match inner.as_ref().view() {
-                ValueView::Package(_) => Some(target.clone()),
-                ValueView::Instance { class_name, .. } => Some(Value::mixin_parts(
-                    Arc::new(Value::package(class_name)),
-                    mixins.clone(),
-                )),
-                _ => None,
-            };
-            if let Some(class_type) = class_type {
-                method_role_bindings.push(("?CLASS".to_string(), class_type));
-            }
-            // Role-body lexicals are persisted with the concrete punned role
-            // class during parameterized composition, while the role method's
-            // lexical package remains the enclosing declaration package.
-            // Both stores join the bindings the method installs in its OWN
-            // frame, so bare role lexicals such as `my \\value = T` resolve to
-            // this composition's value rather than to a bareword, and a
-            // closure the method creates captures them. Staged in the caller's
-            // env instead, they sat above the method's frame root, where a
-            // closure's capture never reaches (#12882), and could clobber a
-            // caller closure's own capture (upstream NativeCall, #11203).
-            let mut static_packages = vec![def.lexical_package.resolve()];
-            if let Some(ValueView::Array(type_args, _)) = mixins
-                .get(MetaNs::RoleTypeargs.str_key_for_str(&role_name))
-                .map(Value::view)
-            {
-                let (_, punned_name) =
-                    Self::parametric_role_pun_name(&role_name, type_args.as_slice());
-                static_packages.push(punned_name);
-            }
-            for package in &static_packages {
-                if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
-                    method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
-                }
-            }
+            // A winner that is key-decided and whose body cannot observe the
+            // role's parameters, statics or `::?CLASS` (`ignores_role_context`)
+            // gets none of them bound: the call can then take the method fast
+            // path (#16215).
             let mut def = def;
-            def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
+            let light = key_decided
+                && def
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|code| code.ignores_role_context());
+            if !light {
+                // Match ordinary signature binding: a callable parameter is
+                // installed under `&name`, while the bare `name` entry is absent
+                // so a bare read follows the compiler's implicit zero-arg call
+                // path instead of returning the callable object.
+                let mut method_role_bindings = Vec::new();
+                for (name, value) in &role_param_bindings {
+                    let is_callable = callable_role_params.contains(name)
+                        && matches!(
+                            value.view(),
+                            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                        );
+                    if is_callable && !name.starts_with('&') {
+                        method_role_bindings.push((format!("&{name}"), value.clone()));
+                    } else {
+                        method_role_bindings.push((name.clone(), value.clone()));
+                    }
+                }
+                // `::?CLASS` in a role method is the class the role is composed
+                // into, here the mixin type (`K+{R[Str]}`), not the role: upstream
+                // NativeCall's `TypedCArray!allocate` reads
+                // `::?CLASS.^array_type` (#11203).
+                let class_type = match inner.as_ref().view() {
+                    ValueView::Package(_) => Some(target.clone()),
+                    ValueView::Instance { class_name, .. } => Some(Value::mixin_parts(
+                        Arc::new(Value::package(class_name)),
+                        mixins.clone(),
+                    )),
+                    _ => None,
+                };
+                if let Some(class_type) = class_type {
+                    method_role_bindings.push(("?CLASS".to_string(), class_type));
+                }
+                // Role-body lexicals are persisted with the concrete punned role
+                // class during parameterized composition, while the role method's
+                // lexical package remains the enclosing declaration package.
+                // Both stores join the bindings the method installs in its OWN
+                // frame, so bare role lexicals such as `my \\value = T` resolve to
+                // this composition's value rather than to a bareword, and a
+                // closure the method creates captures them. Staged in the caller's
+                // env instead, they sat above the method's frame root, where a
+                // closure's capture never reaches (#12882), and could clobber a
+                // caller closure's own capture (upstream NativeCall, #11203).
+                let mut static_packages = vec![def.lexical_package.resolve()];
+                if let Some(ValueView::Array(type_args, _)) = mixins
+                    .get(MetaNs::RoleTypeargs.str_key_for_str(&role_name))
+                    .map(Value::view)
+                {
+                    let (_, punned_name) =
+                        Self::parametric_role_pun_name(&role_name, type_args.as_slice());
+                    static_packages.push(punned_name);
+                }
+                for package in &static_packages {
+                    if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
+                        method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                }
+                def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
+            }
             // Build the attribute set visible to the role method body.
             // Start with the inner instance's own attributes (e.g. class
             // attributes like `@.order`) so that `$.attr` accessors inside
