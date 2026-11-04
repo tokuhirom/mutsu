@@ -620,7 +620,19 @@ impl Interpreter {
             if crate::qualified::package_ancestors(self.current_package_sym())
                 .any(|pkg| pkg == target_sym)
             {
-                return None;
+                // The class's own short name (registered in its compound
+                // name's prefix package `X`) binds nothing here, but an
+                // outer scope's import of the same name still does: `Errno`
+                // inside `class X::Errno` is the `use`d enum, found in the
+                // unit's GLOBAL aliases.
+                return self
+                    .types
+                    .package_type_aliases
+                    .get("GLOBAL")
+                    .and_then(|entries| entries.get(name))
+                    .filter(|outer| outer.as_str() != target.as_str())
+                    .filter(|outer| self.has_type_direct(outer))
+                    .cloned();
             }
         }
         (self.has_type_direct(target) || self.is_published_outer_package(name, target))

@@ -133,6 +133,7 @@ impl Interpreter {
                 }
             }
         }
+        let running = packages.clone();
         packages.into_iter().find_map(|pkg| {
             if crate::qualified::is_global_name(&pkg) {
                 return None;
@@ -147,8 +148,13 @@ impl Interpreter {
             // scope does not shadow `List` inside `Foo`, but a non-core
             // `Foo::Bar` is found through `Foo`'s stash (`unit class Foo;
             // use Foo::Bar; ... Bar.new`).
+            // A class declared with a compound name (`class X::Errno` at file
+            // scope) is no lexical binding for its own short name from inside
+            // itself, core name or not: `Errno($code)` in its methods names the
+            // imported `Errno`, not the class (#16035). The chain's `X` is only
+            // the prefix of the running package.
             if self.registry().compound_declared_types.contains_key(&key)
-                && self.unshadowed_builtin_type_name(name)
+                && (self.unshadowed_builtin_type_name(name) || running.contains(&key))
             {
                 return None;
             }

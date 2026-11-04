@@ -40,9 +40,20 @@ impl Interpreter {
         if matches!(
             type_name.as_ref(),
             "Mu" | "Int" | "Num" | "Rat" | "FatRat" | "Real" | "Bool"
-        ) || self.has_user_method(&type_name, "Numeric")
-        {
+        ) {
             return Ok(value);
+        }
+        // A class with a user `Numeric` method numifies even as a bare type
+        // object (`class C { method Numeric { 3 } }; C + 2` is 5), exactly as
+        // prefix `+` does.
+        if self.has_user_method(&type_name, "Numeric") {
+            let caller_code = self.current_code;
+            let result = self.try_compiled_method_or_interpret(value.clone(), "Numeric", vec![]);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            return match result {
+                Ok(numeric) => Ok(numeric),
+                Err(_) => Ok(value),
+            };
         }
         let var = self.numeric_operand_var_name(side);
         let msg = format!(
