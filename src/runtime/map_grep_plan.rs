@@ -26,7 +26,7 @@
 //! plan's key.
 
 use super::*;
-use crate::opcode::{CompiledCode, CompiledFns};
+use crate::opcode::{CompiledCode, CompiledFns, OpCode};
 use crate::symbol::Symbol;
 use crate::value::SubData;
 use std::sync::Arc;
@@ -310,9 +310,37 @@ impl Interpreter {
             .compiled_code
             .as_ref()
             .map(|cc| cc.capture_free_var_set());
+        let body_names_only_what_it_mentions = !code.static_name_lookup
+            && fns.is_empty()
+            && !code.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::MakeAnonSub(..)
+                        | OpCode::MakeAnonSubParams(..)
+                        | OpCode::MakeLambda(..)
+                        | OpCode::MakeBlockClosure(..)
+                        | OpCode::MakeGather(..)
+                )
+            });
         let captures = data
             .env
             .iter()
+            .filter(|(k, v)| {
+                // A captured type or enum name the body never mentions is
+                // not worth installing in the consuming frame and putting
+                // back again for every element: the program's own names
+                // (`CookieName`, `Path`, ...) are in every closure's capture
+                // once a module is loaded, and each cost a probe, an insert
+                // and a remove per call (`@a.map(* * 2).grep(* > 4)`: 4x the
+                // bare program with Cro loaded, #7817). Only a body that
+                // cannot reach a name any other way qualifies: no nested
+                // closure or routine, no by-name lookup.
+                !(body_names_only_what_it_mentions
+                    && !capture_wins_over_caller_for_plan(free_vars, k, v)
+                    && !temporaries.contains(k)
+                    && is_plain_type_like_name(k)
+                    && !code.mentions_name(k))
+            })
             .map(|(k, v)| CaptureKey {
                 name: *k,
                 overwrites: super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
@@ -382,7 +410,8 @@ impl Interpreter {
     /// map's next iteration (`sub inner(@sizes) { map -> $e { map -> $g {...},
     /// inner(@sizes[1..*]) }, ['a','b'] }` read `@sizes` as the inner call's on
     /// iteration 2).
-    // Cost: O(t + c), t = plan temporaries, c = captured names.
+    // Cost: O(t + c), t = plan temporaries, c = captured names the body can
+    // name (a type or enum name it never mentions is not in the plan).
     pub(crate) fn enter_inline_loop_env(
         &mut self,
         data: &SubData,
@@ -447,4 +476,17 @@ impl Interpreter {
             }
         }
     }
+}
+
+use super::resolution_map_grep::capture_wins_over_caller as capture_wins_over_caller_for_plan;
+
+/// A bare identifier starting with an uppercase letter: how a type, enum or
+/// constant name is spelled in an env key. Not a sigiled variable, a `&` code
+/// variable, a dynamic, an internal `__mutsu_*` key or a `?`/`=` special.
+// Cost: O(len).
+fn is_plain_type_like_name(k: &Symbol) -> bool {
+    k.with_str(|s| {
+        s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+            && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    })
 }
