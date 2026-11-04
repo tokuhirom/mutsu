@@ -2021,6 +2021,11 @@ impl Interpreter {
         // method is up the call chain), so ask `self` first.
         if let CodeVarBinding::Routine(def) = &binding {
             self.set_pending_call_arg_sources_shared(arg_sources);
+            // The caller's own `is rw` parameter lives as a shared cell in its
+            // slot only; publish it to env so the binder aliases that cell
+            // instead of boxing a fresh one the callee's write never leaves
+            // (the by-name call sites below do the same).
+            self.publish_rw_arg_cells(&def.param_defs, &args);
             let result = self.call_lexical_import_routine(def, args, compiled_fns);
             self.set_pending_call_arg_sources(None);
             // A routine that returns a container (`is rw`) hands its Proxy on
