@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use crate::env_capture_view::CaptureView;
@@ -409,6 +409,33 @@ pub(crate) fn closure_meta_keys_possible() -> bool {
     CLOSURE_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
+/// Words of [`SIGILLESS_READONLY_NAME_BITS`]: 1024 x 64 = 65536 bits.
+const SIGILLESS_READONLY_NAME_WORDS: usize = 1024;
+
+/// A bit set over the NAMES that have a `__mutsu_sigilless_readonly::<name>`
+/// marker, indexed by the low 16 bits of the name's symbol id (two names may
+/// share a bit; a collision only makes the correct probe run). Raised beside
+/// [`SIGILLESS_READONLY_KEY_SEEN`] by [`note_env_key`], so it is exactly as
+/// sound as that latch, and lock-free like it: the probe it gates runs on every
+/// whole-variable assignment.
+static SIGILLESS_READONLY_NAME_BITS: [AtomicU64; SIGILLESS_READONLY_NAME_WORDS] =
+    [const { AtomicU64::new(0) }; SIGILLESS_READONLY_NAME_WORDS];
+
+/// True if a `__mutsu_sigilless_readonly::<name>` marker may exist in some env
+/// for `name` (the variable's own name, not the marker key). `false` proves the
+/// probe for that marker would miss, so the caller skips building the key and
+/// hashing it into the env. A program that bound one sigilless name (a loaded
+/// module's `my \x`) no longer makes every other assignment pay for the probe.
+// Cost: O(1).
+#[inline]
+pub(crate) fn sigilless_readonly_key_possible_for(name: Symbol) -> bool {
+    if !SIGILLESS_READONLY_KEY_SEEN.load(Ordering::Relaxed) {
+        return false;
+    }
+    let bit = name.raw_id() as usize & (SIGILLESS_READONLY_NAME_WORDS * 64 - 1);
+    SIGILLESS_READONLY_NAME_BITS[bit >> 6].load(Ordering::Relaxed) & (1 << (bit & 63)) != 0
+}
+
 /// True if any `__mutsu_sigilless_*` key may exist in some env. Strictly
 /// narrower than [`closure_meta_keys_possible`]. See [`SIGILLESS_META_KEY_SEEN`].
 #[inline]
@@ -449,7 +476,13 @@ pub(crate) fn note_env_key(key: &str) {
         if key.starts_with("__mutsu_sigilless_") {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
             SIGILLESS_META_KEY_SEEN.store(true, Ordering::Relaxed);
-            if key.starts_with("__mutsu_sigilless_readonly::") {
+            if let Some(name) = key.strip_prefix("__mutsu_sigilless_readonly::") {
+                // The name's bit first, then the general latch: a reader that
+                // sees the latch never sees an empty name set.
+                let bit = Symbol::intern(name).raw_id() as usize
+                    & (SIGILLESS_READONLY_NAME_WORDS * 64 - 1);
+                SIGILLESS_READONLY_NAME_BITS[bit >> 6]
+                    .fetch_or(1 << (bit & 63), Ordering::Relaxed);
                 SIGILLESS_READONLY_KEY_SEEN.store(true, Ordering::Relaxed);
             }
         } else if key.starts_with("__mutsu_state_key::")
