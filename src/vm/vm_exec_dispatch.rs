@@ -4984,7 +4984,7 @@ impl Interpreter {
                         (*user_sink, *may_explode_failure)
                     }
                     OpCode::SinkPopCall(name_idx) => (
-                        self.sunk_call_result_runs_sink(code, *name_idx),
+                        self.sunk_call_result_runs_sink(code, *ip, *name_idx),
                         // A block that hands back its last statement's container
                         // sinks nothing inside it.
                         !self.sunk_call_result_is_block_container(code, *name_idx),
@@ -5054,6 +5054,21 @@ impl Interpreter {
                         // the doc idiom `($b + 1) does role { method sink { $b++
                         // } }` mutates a caller lexical from inside sink.
                         let _ = self.dispatch_mixin_method_call(&val, "sink", Vec::new());
+                        self.apply_pending_caller_var_writeback(code);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // A type whose `^find_method` answers `sink` (no declared
+                    // `sink` method): the sunk value asks the metaobject, as
+                    // any method call does (#16331).
+                    if user_sink
+                        && sink_class.is_none()
+                        && !mixin_sink
+                        && self.user_find_method_declares(&val)
+                        && let ValueView::Instance { class_name, .. } = val.view()
+                        && !self.has_user_method(class_name.as_str(), "STORE")
+                    {
+                        let _ = self.try_user_find_method_dispatch(&val, "sink", &[]);
                         self.apply_pending_caller_var_writeback(code);
                         *ip += 1;
                         return Ok(());

@@ -5487,6 +5487,7 @@ pub(crate) fn compiled_routine_metadata(
                 &effective_param_defs,
                 body,
             ),
+            result_is_fresh_call: crate::ast::result_decont::raw_result_is_fresh_call(body),
             registration_identity: crate::ast::registration_identity_fingerprint(
                 params,
                 &effective_param_defs,
