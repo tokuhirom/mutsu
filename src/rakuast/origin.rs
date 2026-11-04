@@ -254,6 +254,13 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if text.class != super::RakuAstClass::StrLiteral || text.origin.0.is_some() {
         return;
     }
+    if !words
+        && let Some(value) = super::infix_origins::leaf_text(text)
+        && let Some(split) = super::quote_nesting::segments(&value, span)
+    {
+        *items = split;
+        return;
+    }
     let inside = super::unit_source::with_text(span, |written| {
         if words {
             // A word quote keeps the raw text between its brackets.
@@ -269,8 +276,21 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         let (open, delimiter) = written
             .char_indices()
             .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, ':' | '_')))?;
-        let start = open + delimiter.len_utf8();
-        let (close, _) = written.char_indices().last()?;
+        let mut start = open + delimiter.len_utf8();
+        let (mut close, _) = written.char_indices().last()?;
+        // A doubled bracket delimiter (`Q[[a]]`) holds its text between the
+        // inner pair.
+        let doubled = written[start..]
+            .chars()
+            .take_while(|c| *c == delimiter && matches!(delimiter, '[' | '{' | '<' | '('))
+            .count();
+        if doubled > 0
+            && let Some(inner) = written.get(start + doubled..close.checked_sub(doubled)?)
+            && super::infix_origins::leaf_text(text).as_deref() == Some(inner)
+        {
+            start += doubled;
+            close -= doubled;
+        }
         (close >= start).then(|| {
             crate::ast::SrcSpan::new(span.from as usize + start, span.from as usize + close)
         })

@@ -55,6 +55,7 @@ mod parsed_view;
 mod pod_blocks;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
+mod quote_nesting;
 mod regex_call_origins;
 mod regex_origins;
 pub(crate) mod sections;
