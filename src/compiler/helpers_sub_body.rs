@@ -1143,7 +1143,7 @@ impl Compiler {
                         if Self::needs_phaser_block_scope(stmts) {
                             sub_compiler.compile_real_phaser_block_scope(stmts);
                         } else {
-                            sub_compiler.compile_block_inline(stmts);
+                            sub_compiler.compile_tail_block_inline(stmts);
                         }
                         sub_compiler.patch_nested_block_state_reset(state_reset);
                         continue;
@@ -1776,7 +1776,7 @@ impl Compiler {
                     if Self::needs_phaser_block_scope(stmts) {
                         sub_compiler.compile_real_phaser_block_scope(stmts);
                     } else {
-                        sub_compiler.compile_block_inline(stmts);
+                        sub_compiler.compile_tail_block_inline(stmts);
                     }
                     continue;
                 }
@@ -1950,7 +1950,7 @@ impl Compiler {
                                 // `compile_synthetic_block_inline`.
                                 sub_compiler.compile_synthetic_block_inline(stmts);
                             } else {
-                                sub_compiler.compile_block_inline(stmts);
+                                sub_compiler.compile_tail_block_inline(stmts);
                             }
                             continue;
                         }
