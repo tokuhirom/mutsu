@@ -59,6 +59,15 @@ impl Interpreter {
         // Tag probe first: a `view()` on a lazy Match would materialize it
         // just to see it is not a Proxy.
         if !value.is_proxy_value() {
+            // A `Proxy` returned from a `raw` routine arrives wrapped in the
+            // call's container (`+get()` over `sub get() is raw { $proxy }`):
+            // read through it and FETCH.
+            if value.is_container_ref() {
+                let inner = value.deref_container();
+                if inner.is_proxy_value() {
+                    return self.auto_fetch_proxy(&inner);
+                }
+            }
             return Ok(value.clone());
         }
         // A native positional reference (`nqp::atposref_*` on native storage,
