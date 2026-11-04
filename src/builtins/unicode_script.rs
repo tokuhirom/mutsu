@@ -54,6 +54,13 @@ impl Script {
     }
 }
 
+/// Whether `name` is a Script value (`Latin`, `Han`, ...), the spelling
+/// `uniprop` accepts in place of a property name.
+// Cost: O(s), s = the script count (162).
+pub(crate) fn is_script_name(name: &str) -> bool {
+    data::SCRIPT_NAMES.contains(&name)
+}
+
 /// The Script of `ch`.
 pub(crate) fn script(ch: char) -> Script {
     let cp = ch as u32;
