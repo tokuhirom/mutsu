@@ -65,6 +65,29 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             // the op after it when it runs the call itself, so `i + 2` is a
             // branch target. Admitted only for the four ops its sites consume
             // (not `GetExportTermOrJump`, whose term site jumps elsewhere).
+            // A built-in operator inside a unit with a `use` (ADR-8751 stage 2):
+            // the prefix either runs the operator op after it with the bound
+            // user candidates in scope (status SKIP, continue at `i + 2`) or
+            // leaves it to run as itself. Admitted for a straight-line
+            // operator op only.
+            OpCode::LexImportBuiltinOp { .. }
+                if i + 2 <= end
+                    && code.ops.get(i + 1).is_some_and(|next| {
+                        !matches!(
+                            next,
+                            OpCode::Jump(_)
+                                | OpCode::JumpIfFalse(_)
+                                | OpCode::JumpIfTrue(_)
+                                | OpCode::JumpIfNotNil(_)
+                                | OpCode::StateVarInitGuard(..)
+                                | OpCode::Return
+                                | OpCode::LexImportCall { .. }
+                                | OpCode::LexImportBuiltinOp { .. }
+                        ) && (noarg_shim(next).is_some() || step_supported(next))
+                    }) =>
+            {
+                targets.insert(i + 2);
+            }
             OpCode::LexImportCall { .. }
                 if matches!(
                     code.ops.get(i + 1),
@@ -573,6 +596,25 @@ fn build(
                     helpers::call_func as *const () as usize,
                     &[interp, codep, opidx, fnsp],
                 )?;
+                check_status(&mut b, status);
+            }
+            OpCode::LexImportBuiltinOp { .. } => {
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_call,
+                    helpers::lex_import_builtin_op as *const () as usize,
+                    &[interp, codep, opidx, fnsp],
+                )?;
+                // SKIP: the shim ran the operator op at i + 1 itself.
+                let skip = b.ins().icmp_imm_u(
+                    cranelift_codegen::ir::condcodes::IntCC::Equal,
+                    status,
+                    super::vm_jit::JIT_STATUS_SKIP as i64,
+                );
+                let next = b.create_block();
+                b.ins().brif(skip, block_at[&(i + 2)], &[], next, &[]);
+                b.switch_to_block(next);
                 check_status(&mut b, status);
             }
             OpCode::LexImportCall { .. } => {

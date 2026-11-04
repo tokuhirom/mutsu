@@ -506,6 +506,39 @@ pub(super) unsafe extern "C" fn lex_import_call(
     })
 }
 
+/// `OpCode::LexImportBuiltinOp` (`Interpreter::exec_lex_import_builtin_op_site`):
+/// [`JIT_STATUS_SKIP`] when the operator op at `op_idx + 1` was run here with
+/// the bound user candidates in scope (the generated code continues at
+/// `op_idx + 2`), [`JIT_STATUS_OK`] when no set binds the operator and the op
+/// at `op_idx + 1` runs as itself.
+// Cost: as `exec_lex_import_builtin_op_site`.
+pub(super) unsafe extern "C" fn lex_import_builtin_op(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    fns: *const CompiledFns,
+) -> u32 {
+    let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
+    panic_boundary(|| {
+        let ip = op_idx as usize;
+        let Some(OpCode::LexImportBuiltinOp {
+            chain_idx,
+            name_idx,
+        }) = code.ops.get(ip)
+        else {
+            return JIT_STATUS_ERR;
+        };
+        match interp.exec_lex_import_builtin_op_site(code, ip, *chain_idx, *name_idx, fns) {
+            Ok(next_ip) if next_ip == ip + 1 => call_site_status(interp, code, Ok(())),
+            Ok(_) => match call_site_status(interp, code, Ok(())) {
+                JIT_STATUS_OK => JIT_STATUS_SKIP,
+                other => other,
+            },
+            Err(e) => call_site_status(interp, code, Err(e)),
+        }
+    })
+}
+
 /// `OpCode::CallFunc` / `OpCode::CallFuncNamed`
 /// (`Interpreter::exec_call_func_site`).
 pub(super) unsafe extern "C" fn call_func(
