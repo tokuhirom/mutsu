@@ -587,6 +587,27 @@ pub(super) fn view_node(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     None
 }
 
+/// The expression an `nqp::` bareword lowers to, when the classifier resolves it
+/// to the `Nqp` / `Nqp::Const` node: the same result as converting the word and
+/// lowering the node back (`nqp::op` is the argument-less op call, an
+/// `nqp::const::NAME` stays the word), without building the node tree. `None`
+/// leaves the word to the conversion.
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn nqp_term(names: &NameScope, name: &str) -> Option<Expr> {
+    if !name.starts_with("nqp::") {
+        return None;
+    }
+    match view_node(names, name)?.class {
+        RakuAstClass::Nqp => Some(Expr::Call {
+            name: Symbol::intern(name),
+            args: Vec::new(),
+            listop: false,
+        }),
+        RakuAstClass::NqpConst => Some(Expr::BareWord(name.to_string())),
+        _ => None,
+    }
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).
