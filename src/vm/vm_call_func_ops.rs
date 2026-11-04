@@ -1322,6 +1322,10 @@ impl Interpreter {
                             // The named-share writeback reads the arg sources;
                             // make them available to bind_function_args_values.
                             self.set_pending_call_arg_sources(decoded_sources);
+                            // The by-name route publishes a caller's shared
+                            // `is rw` cell before binding; so does this
+                            // cached one (#16377).
+                            self.publish_rw_arg_cells(&cf.param_defs, &args);
                             let r = self.call_compiled_function_named(
                                 &cf,
                                 std::mem::take(&mut args),

@@ -743,6 +743,12 @@ impl Interpreter {
             self.call_compiled_function_positional_light(&cf, &args, fns, &name, def.name, None)
         } else {
             self.set_pending_call_arg_sources(arg_sources);
+            // A caller frame that holds its own `is rw` parameter as a shared
+            // cell in a local slot (the light path) must publish it to env
+            // first, as the by-name call does: the binder looks the caller's
+            // cell up by name, and a routine imported through `use` is called
+            // here, not through that path (#16377).
+            self.publish_rw_arg_cells(&cf.param_defs, &args);
             self.call_compiled_function_named(&cf, args, fns, def.package, def.name)
         };
 
