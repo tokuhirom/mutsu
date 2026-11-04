@@ -443,11 +443,11 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             if name == "table" && rest.trim().is_empty() {
                 return table_block(lines, i, Form::Abbreviated, Vec::new(), from);
             }
+            if name == "formula" && (rest.is_empty() || rest.starts_with([' ', '\t'])) {
+                return formula_block(lines, i, rest, from);
+            }
             let (base, level) = split_level(name);
-            // An abbreviated `=formula` keeps only its first line, without
-            // formatting codes (not read here).
             if SPECIAL.contains(&base.as_str())
-                || base == "formula"
                 || !rest.is_empty() && !rest.starts_with([' ', '\t'])
             {
                 return None;
@@ -566,6 +566,47 @@ fn row_node(row: &super::pod_table::Row) -> RakuAstNode {
         class: RakuAstClass::DocLegacyRow,
         fields,
     }
+}
+
+/// The abbreviated `=formula` block at line `i`: one line only, the rest of
+/// its own line or else the next non-blank one, with each run of blanks one
+/// space (a trailing run too); the lines after it are code.
+// Cost: O(b), b = blank lines skipped plus the length of the line.
+fn formula_block(lines: &Lines, i: usize, rest: &str, from: usize) -> Option<(Block, usize)> {
+    let mut at = i;
+    let mut text = rest;
+    if text.trim().is_empty() {
+        at = (i + 1..lines.text.len())
+            .find(|&j| !lines.blank(j))
+            .unwrap_or(i);
+        if at != i {
+            text = lines.text[at];
+        }
+    }
+    if text.trim_start().starts_with(':') || text.contains('\t') {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if !text.trim().is_empty() {
+        let mut collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.ends_with(char::is_whitespace) {
+            collapsed.push(' ');
+        }
+        parts.push(Part::Text(collapsed));
+    }
+    Some((
+        Block {
+            kind: "formula".to_string(),
+            level: None,
+            form: Form::Abbreviated,
+            margin: None,
+            config: Vec::new(),
+            parts,
+            from,
+            to: lines.end(at),
+        },
+        at + 1,
+    ))
 }
 
 /// The `:name`, `:!name`, `:name(...)` and `:name<...>` pairs written after a

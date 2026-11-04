@@ -286,6 +286,24 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
 
         Ok(("", ""))
     } else {
+        // An abbreviated `=formula` holds one line only (the rest of its own
+        // line, else the next non-blank line); what follows is code.
+        if keyword == "formula" {
+            let end = rest.find('\n').unwrap_or(rest.len());
+            let mut after = &rest[end..];
+            if rest[..end].trim().is_empty() {
+                let mut text = after;
+                while let Some(next) = text.strip_prefix('\n') {
+                    let line_end = next.find('\n').unwrap_or(next.len());
+                    after = &next[line_end..];
+                    if !next[..line_end].trim().is_empty() {
+                        break;
+                    }
+                    text = after;
+                }
+            }
+            return Ok((after, ""));
+        }
         // =for, =head1, =item, =comment, etc. — skip to end of paragraph (blank line)
         let is_table = keyword == "table";
         let end = rest.find('\n').unwrap_or(rest.len());
