@@ -15,7 +15,7 @@ $r.tap({ @got.push($_) });
 $sup.emit($_) for 1..3;
 my $deadline = now + 10;
 sleep 0.01 until @got.elems == 3 || now > $deadline;
-say @got.elems;  # not @acc/%h: concurrent pushes from the workers can lose one (#16454)
+say @got.elems;  # not @acc/%h: Supply.start emits the inner Supplies before the bodies finish
 RAKU
 
 sub run-with(Str $level) {
