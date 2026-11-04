@@ -712,19 +712,30 @@ impl TierB {
         // a plain scalar, the env/slot invariant (ADR-0097 §15) makes the env
         // cell-adoption probe a no-op too, so the arm reduces to the slot read.
         //
-        // The latch read here is the one that applies to every variable
-        // (`NAME_INDEPENDENT_LOCAL_READ_SPOILERS`); an atomic variable is a
-        // per-NAME fact, asked of this slot's own name through the word and bit
-        // the compiler resolved (`atomic_probe`), as the interpreter's arm asks
-        // `atomic_name_possible`. One `atomicint` anywhere in the program
-        // (Cro's `$current-id`) used to send every inline read in the process
-        // through the shim (#7817).
-        let spoil_addr =
-            std::ptr::addr_of!(super::vm_jit::NAME_INDEPENDENT_LOCAL_READ_SPOILERS) as usize;
+        // With no spoiler of any kind (the common case: no atomic variable in
+        // the process) that is the one load and test it always was. Only once
+        // the total is non-zero does the code ask what spoiled it: a spoiler
+        // that applies to every variable
+        // (`NAME_INDEPENDENT_LOCAL_READ_SPOILERS`) sends the read to the shim,
+        // and an atomic variable is a per-NAME fact, asked of this slot's own
+        // name through the word and bit the compiler resolved (`atomic_probe`),
+        // as the interpreter's arm asks `atomic_name_possible`. One `atomicint`
+        // anywhere in the program (Cro's `$current-id`) used to send every
+        // inline read in the process through the shim (#7817).
+        let spoil_addr = std::ptr::addr_of!(super::vm_jit::LOCAL_READ_SPOILERS) as usize;
         let spoil_addr = b.ins().iconst(self.ptr_ty, spoil_addr as i64);
         let spoiled = b.ins().load(types::I32, Self::mf(), spoil_addr, 0);
+        let bounds_chk = b.create_block();
+        let spoiler_kind = b.create_block();
+        b.ins().brif(spoiled, spoiler_kind, &[], bounds_chk, &[]);
+
+        b.switch_to_block(spoiler_kind);
+        let any_addr =
+            std::ptr::addr_of!(super::vm_jit::NAME_INDEPENDENT_LOCAL_READ_SPOILERS) as usize;
+        let any_addr = b.ins().iconst(self.ptr_ty, any_addr as i64);
+        let any_name = b.ins().load(types::I32, Self::mf(), any_addr, 0);
         let atomic_chk = b.create_block();
-        b.ins().brif(spoiled, slow_blk, &[], atomic_chk, &[]);
+        b.ins().brif(any_name, slow_blk, &[], atomic_chk, &[]);
 
         b.switch_to_block(atomic_chk);
         let (name_word_addr, name_bit) = atomic_probe;
@@ -732,7 +743,6 @@ impl TierB {
         let name_words = b.ins().load(types::I64, Self::mf(), name_word_addr, 0);
         let name_mask = b.ins().iconst(types::I64, name_bit as i64);
         let name_hit = b.ins().band(name_words, name_mask);
-        let bounds_chk = b.create_block();
         b.ins().brif(name_hit, slow_blk, &[], bounds_chk, &[]);
 
         // -- slot word load. Slots live in one shared stack and the executing
