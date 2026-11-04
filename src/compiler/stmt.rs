@@ -3869,6 +3869,7 @@ impl Compiler {
                 custom_traits,
                 is_unit,
                 is_my,
+                ..
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
                 // Detect stub body: `module Foo { ... }` — body is a stub operator

@@ -591,6 +591,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         custom_traits: traits.custom,
         is_unit: true,
         is_my: false,
+        spans: None,
     };
     // `unit module A::B::C is export;` publishes the short name `C` (the
     // package itself), as rakudo does for a qualified declarator name.

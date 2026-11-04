@@ -1089,6 +1089,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             custom_traits,
             is_unit,
             is_my,
+            ..
         } => {
             let class = match kind {
                 crate::ast::PackageKind::Module => RakuAstClass::Module,
@@ -6544,6 +6545,7 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         is_my,
         body,
         custom_traits,
+        ..
     } = declaration
     else {
         return None;
@@ -6558,6 +6560,7 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         kind: *kind,
         is_unit: true,
         is_my: *is_my,
+        spans: None,
     };
     if header.adverbs.is_empty() && header.export_tags.is_none() {
         return Some(package);

@@ -1819,6 +1819,7 @@ fn lower_package(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeE
         custom_traits: super::package_traits::lower(names, node)?,
         is_unit: scope == "unit",
         is_my: scope == "my",
+        spans: None,
     })
 }
 

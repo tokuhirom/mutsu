@@ -19,16 +19,20 @@ pub(crate) fn package_decl_my(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, Stmt> {
     let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     check_pseudo_package_in_decl(&name)?;
     let (rest, adverbs) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, traits) = super::package_traits::parse_package_is_traits(rest)?;
     super::package_syntax::require_block(rest, "package")?;
+    let block_start = rest;
     let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(rest)?
     };
+    let spans = crate::parser::stmt::sub::package_spans(name_span, block_start, rest, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source);
     let declaration = Stmt::Package {
         name: Symbol::intern(&name),
@@ -37,6 +41,7 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
         custom_traits: traits.custom,
         is_unit: false,
         is_my,
+        spans,
     };
     Ok((
         rest,

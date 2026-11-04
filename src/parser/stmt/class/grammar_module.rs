@@ -369,7 +369,9 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
 pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("module", input).ok_or_else(|| PError::expected("module declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
@@ -377,10 +379,12 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     // to the enclosing compunit's importers, like `class ... is export`.
     let (rest, package_traits) = super::package_decl::parse_package_is_traits(rest)?;
     super::package_syntax::require_block(rest, "module")?;
+    let block_start = rest;
     let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(rest)?
     };
+    let spans = crate::parser::stmt::sub::package_spans(name_span, block_start, rest, &body);
     crate::ast::routine_trait::attach(&mut body, package_traits.source);
     // Two `is export` declarations of the same symbol in one module clash.
     if let Some(clash) = find_export_name_clash(&body) {
@@ -405,6 +409,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         custom_traits: package_traits.custom,
         is_unit: false,
         is_my: false,
+        spans,
     };
     Ok((
         rest,
