@@ -183,6 +183,10 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
+        // A named `sub` in a value-position branch is visible to the whole
+        // branch too (the statement-position twin is in
+        // `compile_body_with_implicit_try_inner`).
+        self.hoist_sub_decls(stmts, true);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
@@ -1074,6 +1078,10 @@ impl Compiler {
         } else {
             self.hoist_typed_var_decls(stmts);
             self.hoist_require_stubs(stmts);
+            // A named `sub` declared in an `if`/`else` branch is visible to the
+            // whole branch (Linux::Fuser calls `do_tests(...)` above its
+            // `sub do_tests` inside `if $*KERNEL.name eq 'linux' { ... }`).
+            self.hoist_sub_decls(stmts, true);
             let last = stmts.len().wrapping_sub(1);
             for (i, s) in stmts.iter().enumerate() {
                 if tail_as_value && i == last {
