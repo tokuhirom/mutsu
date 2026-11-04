@@ -656,9 +656,18 @@ impl Interpreter {
         // A parse that answered (a Match, or a failed Match) is over: a subrule
         // argument-binding error it recorded without raising belongs to that
         // parse alone and must not surface from the next unrelated `~~` or
-        // `.parse` (YAMLish's failed `load-yaml`).
+        // `.parse` (YAMLish's failed `load-yaml`). An action's own `die` is the
+        // exception: rakudo calls the action as the rule reduces, so the error
+        // leaves `.parse` even though the match went on to succeed
+        // (Config::TOML's duplicate-key checks).
+        let action_error =
+            crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| slot.borrow_mut().take());
         if parsed.is_ok() {
-            let _ = Self::take_pending_regex_error();
+            let _ = crate::runtime::regex_parse::PENDING_REGEX_ERROR
+                .with(|slot| slot.borrow_mut().take());
+            if let Some(error) = action_error {
+                return Err(error);
+            }
         }
         parsed
     }
@@ -673,6 +682,7 @@ impl Interpreter {
         // subrule binding error from the thread-local slot. Each parse starts
         // with its own error state, so that failure cannot poison the next one.
         let _ = Self::take_pending_regex_error();
+        crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| *slot.borrow_mut() = None);
         let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
@@ -944,7 +954,7 @@ impl Interpreter {
                 Ok(Some(candidates)) => candidates,
                 Ok(None) => {
                     // Check for pending regex error (e.g., <sym> used outside proto regex)
-                    if let Some(err) = Self::take_pending_regex_error() {
+                    if let Some(err) = Self::take_pending_regex_or_action_error() {
                         return Err(err);
                     }
                     // No candidate reaches the main match below; a `~`
@@ -1013,7 +1023,7 @@ impl Interpreter {
                     self.regex_match_with_captures(&pattern, &text)
                 };
                 // Check for pending regex error (e.g., <sym> used outside proto regex)
-                if let Some(err) = Self::take_pending_regex_error() {
+                if let Some(err) = Self::take_pending_regex_or_action_error() {
                     return Err(err);
                 }
                 let had_partial = candidate_partial.is_some();
