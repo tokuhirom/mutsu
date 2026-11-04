@@ -443,6 +443,11 @@ impl Walk<'_> {
         let name_node = super::infix_origins::child(node, "name")?;
         let name = match super::name_parts::name_shape(name_node)? {
             super::name_parts::NameShape::Identifier(name) => name,
+            super::name_parts::NameShape::Indirect {
+                tail,
+                trailing: false,
+                ..
+            } if tail.is_empty() && !call => return self.symbolic_assertion(node, capturing),
             _ => return None,
         };
         self.eat(if capturing { "<" } else { "<." })?;
@@ -461,6 +466,30 @@ impl Walk<'_> {
         self.eat(">")?;
         let at = SrcSpan::new(self.base + name_at, self.base + name_at + name.len());
         super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, at));
+        Some(())
+    }
+
+    /// `<::("name")>` / `<.::('name')>`: the `Name` runs from the `::` to the
+    /// closing `)`, and the string inside has its own ranges.
+    // Cost: O(n), n = length of the assertion's text.
+    fn symbolic_assertion(&mut self, node: &mut RakuAstNode, capturing: bool) -> Option<()> {
+        self.eat(if capturing { "<" } else { "<." })?;
+        let name_at = self.at;
+        self.eat("::(")?;
+        let text: &str = self.text;
+        let len = super::regex_symbolic_origins::plain_string_len(&text[self.at..])?;
+        let string_at = self.base + self.at;
+        self.at += len;
+        self.eat(")")?;
+        let name_end = self.at;
+        self.eat(">")?;
+        super::infix_origins::with_child(node, "name", |name| {
+            super::origin::set_span(
+                name,
+                SrcSpan::new(self.base + name_at, self.base + name_end),
+            );
+            super::regex_symbolic_origins::place_string(name, string_at, len);
+        });
         Some(())
     }
 
