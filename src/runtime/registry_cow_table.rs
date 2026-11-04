@@ -14,18 +14,20 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// See the module docs.
-pub(crate) struct CowTable<T>(Arc<T>);
+/// The second field counts the writes taken through `DerefMut`, so a cache of
+/// something derived from the table can tell it was written since.
+pub(crate) struct CowTable<T>(Arc<T>, u64);
 
 impl<T: Default> Default for CowTable<T> {
     fn default() -> Self {
-        CowTable(Arc::new(T::default()))
+        CowTable(Arc::new(T::default()), 0)
     }
 }
 
 impl<T> Clone for CowTable<T> {
     // Cost: O(1).
     fn clone(&self) -> Self {
-        CowTable(Arc::clone(&self.0))
+        CowTable(Arc::clone(&self.0), self.1)
     }
 }
 
@@ -42,6 +44,7 @@ impl<T: Clone> DerefMut for CowTable<T> {
     // Cost: O(1), or O(n) once when the table is still shared (the copy).
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
+        self.1 += 1;
         Arc::make_mut(&mut self.0)
     }
 }
@@ -81,11 +84,20 @@ impl<T> CowTable<T> {
     pub(crate) fn shares_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
+
+    /// Identifies this table's contents: the address of the shared table and
+    /// the number of writes taken through `DerefMut`. Two reads that return
+    /// the same pair saw the same contents (the address cannot be reused while
+    /// the table is alive, and every write moves the count).
+    // Cost: O(1).
+    pub(crate) fn state_id(&self) -> (usize, u64) {
+        (Arc::as_ptr(&self.0) as *const () as usize, self.1)
+    }
 }
 
 impl<T> From<T> for CowTable<T> {
     fn from(table: T) -> Self {
-        CowTable(Arc::new(table))
+        CowTable(Arc::new(table), 0)
     }
 }
 
