@@ -398,11 +398,11 @@ impl Interpreter {
                     let pushed_dispatch = loan_env!(
                         self,
                         push_method_dispatch_frame_sym(
-                            cn,
+                            class_sym,
                             method_sym,
                             args,
                             invocant_for_dispatch,
-                            Some((owner_class.as_str(), &method_def))
+                            Some((owner_class, &method_def))
                         )
                     );
                     let invocant = Some(target.clone());

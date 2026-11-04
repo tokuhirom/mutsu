@@ -899,7 +899,7 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn dispatch_compiled_method(
         &mut self,
-        cn: &str,
+        class_sym: crate::symbol::Symbol,
         owner_class: crate::symbol::Symbol,
         method_sym: crate::symbol::Symbol,
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
@@ -909,6 +909,7 @@ impl Interpreter {
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        let cn: &str = class_sym.as_str();
         // A `Proxy` subclass instance (`class AP is Proxy { has $!x }`) is
         // `self` itself, while its attributes live in the cell the Proxy
         // carries: run the method against that cell (#14259).
@@ -951,11 +952,11 @@ impl Interpreter {
             let pushed_dispatch = loan_env!(
                 self,
                 push_method_dispatch_frame_sym(
-                    cn,
+                    class_sym,
                     method_sym,
                     &args,
                     invocant_for_dispatch,
-                    Some((owner_class.as_str(), method_def))
+                    Some((owner_class, method_def))
                 )
             );
             let result = self.call_compiled_method_fast(
@@ -981,11 +982,11 @@ impl Interpreter {
             let pushed_dispatch = loan_env!(
                 self,
                 push_method_dispatch_frame_sym(
-                    cn,
+                    class_sym,
                     method_sym,
                     &args,
                     invocant_for_dispatch,
-                    Some((owner_class.as_str(), method_def))
+                    Some((owner_class, method_def))
                 )
             );
             let invocant = Some(target);
@@ -1074,7 +1075,7 @@ impl Interpreter {
                 method,
                 &args,
                 target.clone(),
-                Some((owner_class, method_def))
+                Some((crate::symbol::Symbol::intern(owner_class), method_def))
             )
         );
         let invocant = Some(target);
