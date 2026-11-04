@@ -223,16 +223,4 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Node",
         ],
     ),
-    (
-        "RakuAST::VarDeclaration::Placeholder::SlurpyHash",
-        &[
-            "RakuAST::VarDeclaration::Placeholder::SlurpyHash",
-            "RakuAST::VarDeclaration::Placeholder::Slurpy",
-            "RakuAST::VarDeclaration::Placeholder",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
 ];
