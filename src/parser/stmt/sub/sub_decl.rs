@@ -290,6 +290,10 @@ pub(crate) fn sub_decl_body(
         }
         // Validate circumfix/postcircumfix operator part count
         validate_categorical_parts(&name)?;
+        // `sub meow:sym<bar> {}` (6.d+): the `:sym<>` colonpair is reserved.
+        if let Some(err) = super::sub_name::reserved_sym_colonpair_error(&name) {
+            return Err(err);
+        }
         // Register user-declared sub so it can be called without parens later
         super::super::simple::register_user_sub(&name);
         super::super::simple::register_user_callable_term_symbol(&name);
