@@ -62,6 +62,10 @@ pub(crate) struct ModuleLoadFacts {
     /// The unit's `package EXPORTHOW` entries as `(directive, declarator)`.
     #[serde(default)]
     pub(crate) exporthow_declares: Vec<(String, String)>,
+    /// `(short, registered)` names of the types a `package EXPORT::<tag>`
+    /// block declares: exported by construction (#16332).
+    #[serde(default)]
+    pub(crate) export_stash_types: Vec<(String, String)>,
 }
 
 impl ModuleLoadFacts {
@@ -71,10 +75,13 @@ impl ModuleLoadFacts {
     /// written for a unit that passed it.
     // Cost: O(n), n = size of the AST (a handful of walks).
     pub(crate) fn compute(stmts: &[Stmt], prologue_len: usize, pod_source: &str) -> Self {
+        let export_stash_types = Interpreter::collect_export_stash_types(stmts);
         let mut exported_type_names: Vec<String> = Interpreter::collect_exported_type_names(stmts)
             .into_iter()
+            .chain(export_stash_types.iter().map(|(short, _)| short.clone()))
             .collect();
         exported_type_names.sort();
+        exported_type_names.dedup();
         ModuleLoadFacts {
             prologue_len,
             is_empty: stmts.is_empty(),
@@ -107,6 +114,7 @@ impl ModuleLoadFacts {
             pod_ranges: Interpreter::pod_ranges_of(pod_source),
             routine_enums: super::routine_scoped_enums::RoutineEnumCollector::collect(stmts),
             exporthow_declares: Interpreter::collect_exporthow_declares(stmts),
+            export_stash_types,
         }
     }
 }

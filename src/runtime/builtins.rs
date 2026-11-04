@@ -671,6 +671,13 @@ impl Interpreter {
                 let name = name.to_string_value();
                 let tags: Vec<String> = args[1..].iter().map(|a| a.to_string_value()).collect();
                 let pkg = self.current_package();
+                // A type declared in the module's own `EXPORT::<tag>` stash is
+                // already imported by the stash's own export list; filing a
+                // variable export under the stash package would make the import
+                // bind its short name to nothing (#16332).
+                if Self::export_stash_tag(&pkg).is_some() {
+                    return Ok(Value::NIL);
+                }
                 self.register_exported_var(pkg, name, tags);
                 Ok(Value::NIL)
             }
