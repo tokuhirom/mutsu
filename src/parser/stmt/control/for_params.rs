@@ -379,6 +379,16 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
 }
 
 fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    let (rest, mut p) = parse_for_pointy_param_inner(input)?;
+    // Where the parameter was written (the parameter parser records it for
+    // every other pointy block): `Signature` / `Parameter` ranges in `.AST`.
+    if !p.spans.param.is_some() {
+        p.spans = crate::parser::stmt::sub_param::param_spans(input, rest, &p);
+    }
+    Ok((rest, p))
+}
+
+fn parse_for_pointy_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // A type capture (`-> ::T { ... }`, `-> ::T $x`) is the sub parameter
     // parser's; without this `::T` was read as a type constraint with nothing
     // bound after it (Deps' `for Type.^roles -> ::Type { ... }`).

@@ -200,6 +200,38 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
     }
 }
 
+/// Give the `signature` of the pointy block `block` of a `for` loop
+/// (`for @a -> $x, $y { }`) the ranges the parser recorded for its
+/// parameters, and the signature the span from the first to the last.
+// Cost: O(p + size of the body), p = parameters.
+pub(super) fn for_pointy_block(
+    names: &crate::scope::NameScope,
+    params: &[ParamDef],
+    body: &[crate::ast::Stmt],
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let mut block = super::view::pointy_block(names, params, body, None)?;
+    place_signature(&mut block, params);
+    Ok(block)
+}
+
+// Cost: O(p), p = parameters.
+fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
+    let (Some(first), Some(last)) = (params.first(), params.last()) else {
+        return;
+    };
+    if !first.spans.param.is_some() || !last.spans.param.is_some() {
+        return;
+    }
+    let whole = crate::ast::SrcSpan::new(
+        first.spans.param.from as usize,
+        last.spans.param.to as usize,
+    );
+    with_child(block, "signature", |signature| {
+        parameters(signature, params);
+        super::origin::set_span(signature, whole);
+    });
+}
+
 /// Give a `Parameter`, its target and its type the origins of the text they
 /// were written at.
 // Cost: O(d), d = nesting of the type nodes.
