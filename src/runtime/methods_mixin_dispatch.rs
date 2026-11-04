@@ -799,8 +799,15 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
-            let native_base = base_class.is_none();
-            let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
+            // A body that is a straight line of local reads and `nqp::` ops
+            // (`light`) cannot defer to the base object's method, so the
+            // ranked deferral expansion and the dispatch frame are not built
+            // for it (`matched_deferral_candidates` was ~10 interns and a
+            // candidate walk per CArray access, #16215).
+            let native_base = !light && base_class.is_none();
+            let base_remaining: Vec<super::DeferralEntry> = if light {
+                Vec::new()
+            } else if let Some(bc) = &base_class {
                 // The ranked deferral expansion every other method frame uses,
                 // not declaration order: the most specific of the class's multis
                 // is the next candidate (`callsame` out of a mixed-in role's
@@ -826,7 +833,8 @@ impl Interpreter {
             // instance with no `MethodDef`s either: the native `IO::Handle`
             // method on the wrapped handle is the one candidate behind the
             // role's method.
-            let base_remaining = if base_remaining.is_empty()
+            let base_remaining = if !light
+                && base_remaining.is_empty()
                 && base_class.as_deref() == Some("IO::Handle")
             {
                 vec![super::DeferralEntry::Native {
