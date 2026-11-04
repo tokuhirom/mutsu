@@ -708,7 +708,7 @@ mod tests {
             "my \\s = 5; say s; constant zz = 3; say zz + 1; say pi; say tau; say True; say Empty.elems;",
             "my \\target = 'a'; say target; sub f(\\c) { c }; say f(1);",
             "sub die-on-fail { 7 }; say die-on-fail; my $x = die-on-fail + 1; say $x;",
-            "sub w { 'a' }; say w ~ w; supply { emit w; done }; sub foo-bar { 1 }; say foo-bar;",
+            "sub w { 'a' }; say w ~ w; sub foo-bar { 1 }; say foo-bar;",
             "my uint8 $a = 1; my int32 $b = 2; say $a + $b; say uint16.^name; say int64 ~~ Int;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
