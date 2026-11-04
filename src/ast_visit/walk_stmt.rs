@@ -165,6 +165,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             custom_traits,
             is_unit: _,
             is_my: _,
+            spans: _,
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
             traits(v, custom_traits);

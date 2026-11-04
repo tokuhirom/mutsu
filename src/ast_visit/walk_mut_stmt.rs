@@ -145,6 +145,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             custom_traits,
             is_unit: _,
             is_my: _,
+            spans: _,
         } => {
             traits_mut(v, custom_traits);
             v.visit_stmts_mut(body);

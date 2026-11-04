@@ -88,7 +88,10 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
         }
         return;
     }
-    let (Stmt::ClassDecl { spans, .. } | Stmt::RoleDecl { spans, .. }) = stmt else {
+    let (Stmt::ClassDecl { spans, .. }
+    | Stmt::RoleDecl { spans, .. }
+    | Stmt::Package { spans, .. }) = stmt
+    else {
         return;
     };
     let Some(spans) = spans.as_deref() else {

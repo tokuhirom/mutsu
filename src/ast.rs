@@ -2541,6 +2541,10 @@ pub(crate) enum Stmt {
         is_unit: bool,
         /// True when declared with `my package` (lexically scoped).
         is_my: bool,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote or a `unit` one.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     /// The run-time part of a class or package body whose declaration the
     /// BEGIN prologue moved ahead (ADR-0134 §7, slice 1 residue). It re-enters
