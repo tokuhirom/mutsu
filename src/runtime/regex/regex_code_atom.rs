@@ -102,6 +102,10 @@ impl Interpreter {
                 break 'run if pass {
                     let mut new_caps = RegexCaptures::default();
                     new_caps.extend_regex_vars(outcome.writes);
+                    new_caps.extend_regex_vars([(
+                        super::regex_eval::CODE_RAN_VAR.to_string(),
+                        Value::TRUE,
+                    )]);
                     new_caps.ast = outcome.made;
                     Some((pos, new_caps))
                 } else {
@@ -138,6 +142,10 @@ impl Interpreter {
             }
             let mut new_caps = RegexCaptures::default();
             new_caps.extend_regex_vars(outcome.writes);
+            new_caps.extend_regex_vars([(
+                super::regex_eval::CODE_RAN_VAR.to_string(),
+                Value::TRUE,
+            )]);
             // The `make` belongs to the rule node being matched: it rides
             // the capture delta so the trail undoes it if this branch is
             // abandoned, and `build_named_candidates_from_inner` commits it

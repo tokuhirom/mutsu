@@ -14,6 +14,10 @@ pub(super) struct InlineCodeOutcome {
     pub(super) made: Option<Value>,
 }
 
+/// The in-regex variable that records a code block ran earlier in the rule's
+/// current frame (never a user-visible name).
+pub(super) const CODE_RAN_VAR: &str = "\u{0}code-ran";
+
 impl Interpreter {
     /// Parse a main-slang code string embedded in a regex (`{ … }` block,
     /// `<?{ … }>` assertion, `<{ … }>` interpolation, `** {code}` quantifier,
@@ -207,6 +211,43 @@ impl Interpreter {
     /// compiled body's `free_var_writes` instead
     /// (`writeback_assertion_free_var_writes` below), which the compiler already
     /// computed, so an assertion that assigns nothing pays nothing.
+    /// Evaluate a named atom's argument list at `pos`. When a code block ran
+    /// earlier in the rule (`CODE_RAN_VAR`), Rakudo has published the cursor as
+    /// `$/`, so the arguments see the match so far (`<.h($/.Str)>` after a `{ }`
+    /// gets the text matched up to the call); without one `$/` stays unset
+    /// (#16308).
+    // Cost: O(n) when a code block ran (the so-far text), n = chars matched so
+    // far in the rule; else as `eval_regex_arg_list`.
+    pub(in crate::runtime) fn eval_regex_call_args(
+        &mut self,
+        exprs: &[String],
+        caps: &RegexCaptures,
+        chars: &[char],
+        pos: usize,
+    ) -> Option<Vec<Value>> {
+        if !caps.regex_vars().contains_key(CODE_RAN_VAR) || !exprs.iter().any(|e| e.contains('/'))
+        {
+            return self.eval_regex_arg_list(exprs, caps);
+        }
+        let matched_so_far: String = chars[caps.inline_match_from().min(chars.len())..pos.min(chars.len())]
+            .iter()
+            .collect();
+        let visible = caps.inline_capture_view();
+        let live_target = super::regex_helpers::current_match_target()
+            .unwrap_or_else(|| MatchTarget::new(&matched_so_far));
+        let (from, to) = visible.inline_cursor_bounds(&matched_so_far);
+        let cursor = Value::make_match_object_full(
+            from,
+            to,
+            &visible.positional,
+            &visible.named,
+            live_target,
+        );
+        let mut with_cursor = caps.clone();
+        with_cursor.extend_regex_vars([("/".to_string(), cursor)]);
+        self.eval_regex_arg_list(exprs, &with_cursor)
+    }
+
     pub(super) fn eval_regex_inline_code(
         &mut self,
         code: &str,
