@@ -233,13 +233,41 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         return;
     }
     super::origin::set_span(ty, span);
-    if matches!(
+    // `Int:D`: the inner `Type::Simple` spans all of it, its `Name` only the
+    // name before the smiley.
+    let smiled = matches!(
         ty.class,
-        RakuAstClass::TypeDefinedness | RakuAstClass::TypeSimple
-    ) && let Some(field) = ty.fields.first_mut()
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
+    );
+    let name_end = smiled.then(|| smiley_start(span)).flatten();
+    if (smiled || ty.class == RakuAstClass::TypeSimple)
+        && let Some(field) = ty.fields.first_mut()
     {
         with_value(&mut field.value, |inner| type_origin(inner, span));
+        if let Some(end) = name_end {
+            with_value(&mut field.value, |simple| {
+                if let Some(name) = simple.fields.first_mut() {
+                    with_value(&mut name.value, |name| {
+                        name.origin = Default::default();
+                        super::origin::set_span(
+                            name,
+                            crate::ast::SrcSpan::new(span.from as usize, end),
+                        )
+                    });
+                }
+            });
+        }
     }
+}
+
+/// Where the smiley (`:D`, `:U`, `:_`) of the type written at `span` starts.
+// Cost: O(n), n = length of the written type.
+fn smiley_start(span: crate::ast::SrcSpan) -> Option<usize> {
+    super::unit_source::with_text(span, |written| {
+        let at = written.len().checked_sub(2)?;
+        let smiley = written.get(at..)?;
+        matches!(smiley, ":D" | ":U" | ":_").then_some(span.from as usize + at)
+    })
 }
 
 /// Apply `f` to the node held in `node`'s field `name`, if it holds one.
