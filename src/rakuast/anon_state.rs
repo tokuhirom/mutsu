@@ -81,6 +81,24 @@ pub(super) fn mint_scalar() -> String {
     })
 }
 
+/// A fresh anonymous array (`sigil` `@`) or hash (`%`) of the block being
+/// lowered: the name with its sigil, declared at the block's top like a scalar.
+// Cost: O(depth), depth = nesting of the lowered blocks.
+fn mint_container(sigil: char) -> String {
+    let name = if sigil == '@' {
+        crate::parser::fresh_anon_array_name()
+    } else {
+        crate::ast::anon_state::fresh_hash_name()
+    };
+    let declared = format!("{sigil}{name}");
+    FRAMES.with(|f| {
+        if let Some(current) = f.borrow_mut().last_mut() {
+            current.names.push(declared);
+        }
+    });
+    name
+}
+
 /// Whether `node` is the declaration of an anonymous variable.
 // Cost: O(1).
 pub(super) fn is_anonymous(node: &RakuAstNode) -> bool {
@@ -129,8 +147,8 @@ pub(super) fn lower_term(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
     }
     match sigil.as_str() {
         "$" => Ok(Expr::Var(mint_scalar())),
-        "@" => Ok(Expr::ArrayVar(crate::parser::fresh_anon_array_name())),
-        "%" => Ok(Expr::HashVar("__ANON_HASH__".to_string())),
+        "@" => Ok(Expr::ArrayVar(mint_container('@'))),
+        "%" => Ok(Expr::HashVar(mint_container('%'))),
         _ => Err(unsupported(node)),
     }
 }
@@ -157,10 +175,8 @@ pub(super) fn assign_target(node: &RakuAstNode) -> Result<String, RuntimeError> 
     // `%` terms are (`lower_term`), with the sigil kept as a `Stmt::Assign` does.
     match parts(node)? {
         (sigil, false) if sigil == "$" => Ok(mint_scalar()),
-        (sigil, false) if sigil == "@" => {
-            Ok(format!("@{}", crate::parser::fresh_anon_array_name()))
-        }
-        (sigil, false) if sigil == "%" => Ok("%__ANON_HASH__".to_string()),
+        (sigil, false) if sigil == "@" => Ok(format!("@{}", mint_container('@'))),
+        (sigil, false) if sigil == "%" => Ok(format!("%{}", mint_container('%'))),
         _ => Err(unsupported(node)),
     }
 }

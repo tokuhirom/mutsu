@@ -22,6 +22,16 @@ use crate::value::Value;
 const STATE_PREFIX: &str = "__ANON_STATE#";
 const STATE_PER_CALL_PREFIX: &str = "__ANON_STATE#PC_";
 const ARRAY_PREFIX: &str = "__ANON_ARRAY_";
+const HASH_PREFIX: &str = "__ANON_HASH_";
+
+static HASH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A fresh name for a bare `%` (each occurrence is its own anonymous hash).
+// Cost: O(1).
+pub(crate) fn fresh_hash_name() -> String {
+    let id = HASH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{HASH_PREFIX}{id}__")
+}
 
 fn is_minted(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix)
@@ -41,21 +51,30 @@ pub(crate) fn is_array(name: &str) -> bool {
     is_minted(name, ARRAY_PREFIX)
 }
 
-/// Whether `name` (without its sigil) is the anonymous hash.
-// Cost: O(1).
+/// Whether `name` (without its sigil) is an anonymous hash: the shared
+/// `__ANON_HASH__` of a bare `%` in a signature or an undeclared position, or
+/// a minted `__ANON_HASH_<id>__`.
+// Cost: O(|name|).
 pub(crate) fn is_hash(name: &str) -> bool {
-    name == "__ANON_HASH__"
+    name == "__ANON_HASH__" || is_minted(name, HASH_PREFIX)
 }
 
 /// The `state` declaration the parser puts at the top of a block for the
-/// minted anonymous scalar `name`.
+/// minted anonymous variable `name` (a scalar's bare name, or an array's /
+/// hash's with its sigil, as a `state @x` declaration spells it).
 // Cost: O(|name|).
 pub(crate) fn implicit_decl(name: String) -> Stmt {
+    // The empty container a `state @x;` / `state %h;` starts as.
+    let initial = match name.chars().next() {
+        Some('@') => Value::real_array(Vec::new()),
+        Some('%') => Value::hash(crate::value::ValueMap::default()),
+        _ => Value::NIL,
+    };
     Stmt::VarDecl {
         marks: Default::default(),
         anonymous: true,
         name,
-        expr: Expr::Literal(Value::NIL),
+        expr: Expr::Literal(initial),
         type_constraint: None,
         is_state: true,
         is_our: false,
@@ -83,6 +102,19 @@ pub(crate) fn is_implicit_decl(stmt: &Stmt) -> bool {
             custom_traits,
             marks,
             ..
-        } if custom_traits.is_empty() && marks.is_plain() && is_scalar(name)
+        } if custom_traits.is_empty() && marks.is_plain() && is_minted_declaration(name)
     )
+}
+
+/// Whether `name` is the declared name of a minted anonymous variable: a
+/// scalar's bare name, or an array's / hash's with its sigil.
+// Cost: O(|name|).
+fn is_minted_declaration(name: &str) -> bool {
+    match name.strip_prefix('@') {
+        Some(rest) => is_minted(rest, ARRAY_PREFIX),
+        None => match name.strip_prefix('%') {
+            Some(rest) => is_minted(rest, HASH_PREFIX),
+            None => is_scalar(name),
+        },
+    }
 }
