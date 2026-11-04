@@ -5,7 +5,7 @@ use MONKEY-TYPING;
 # Rakudo builds a subclass's multi dispatcher from its parent's when the
 # subclass is composed, so a candidate an `augment` adds to the parent
 # afterwards does not join it (#16049).
-plan 8;
+plan 10;
 
 class A {
     multi method m(Int $x) { "A-Int" }
@@ -30,3 +30,9 @@ is B.new.plain, "plain", "an augmented single method is found by lookup";
 
 augment class A { multi method m(Rat $x) { "A-Rat" } }
 is D.new.m(1.5), "A-Rat", "a later augment reaches the subclass without its own dispatcher";
+
+# A subclass declared AFTER the augment composes after it, so it sees the
+# candidate (#16314): declaration order, not run-time registration order.
+class E is A { multi method m(Rat $x) { "E-Rat" } }
+is E.new.m("s"), "A-Str", "a subclass declared after the augment sees the augmented candidate";
+is E.new.m(1.5), "E-Rat", "and keeps its own candidate";
