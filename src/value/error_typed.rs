@@ -603,6 +603,17 @@ impl RuntimeError {
         Self::typed("X::Bind", attrs)
     }
 
+    /// The error rakudo raises when an `Int` too wide for 64 bits is unboxed
+    /// into a native integer (`my int $x = 2**100`, an `int` parameter, a
+    /// native array element, a NativeCall argument). One message for every
+    /// site that unboxes: a per-site copy had already dropped the hint.
+    // Cost: O(1).
+    pub(crate) fn cannot_unbox_bigint(bits: u64) -> Self {
+        Self::new(format!(
+            "Cannot unbox {bits} bit wide bigint into native integer. Did you mix int and Int or literals?"
+        ))
+    }
+
     /// X::IllegalDimensionInShape - Illegal dimension in shaped array declaration
     pub(crate) fn illegal_dimension_in_shape(dim: i64) -> Self {
         let msg = format!(
