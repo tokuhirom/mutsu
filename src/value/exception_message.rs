@@ -10,19 +10,11 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
             let reason = attr_str(attrs, "reason");
             let source = attr_str(attrs, "source");
             let pos = attrs.get("pos").map(|v| v.to_f64() as usize).unwrap_or(0);
-            // Insert the ⏏ marker at position `pos` inside the source string.
-            let marked = if pos <= source.len() {
-                let mut s = String::with_capacity(source.len() + 3);
-                s.push_str(&source[..pos]);
-                s.push('\u{23CF}'); // ⏏
-                s.push_str(&source[pos..]);
-                s
-            } else {
-                format!("{}\u{23CF}", source)
-            };
+            // Same indicator the coercions build (`pos` counts characters).
+            let indicator = crate::value::str_numeric::build_source_indicator(&source, pos);
             Some(format!(
-                "Cannot convert string to number: {} in '{}' (indicated by \u{23CF})",
-                reason, marked
+                "Cannot convert string to number: {} {}",
+                reason, indicator
             ))
         }
         // The `Promise` resolution-protocol errors. Their text lives here

@@ -103,17 +103,43 @@ pub(crate) fn escape_for_source_indicator(s: &str) -> String {
     out
 }
 
+/// The position marker of a source indicator, and the text around it.
+///
+/// Rakudo picks the marker by whether the error stream is a terminal: a
+/// terminal gets the coloured `U+23CF` form, anything else (a pipe, a file,
+/// a test harness) the plain `<HERE>`. Returns `(marker, indicated, tail)`: the
+/// marker spelled in the quoted source, the marker spelled in the
+/// `(indicated by ...)` clause, and the text that closes the quoted source.
+// Cost: O(1).
+fn source_marker_forms() -> (&'static str, &'static str, &'static str) {
+    use std::io::IsTerminal;
+    if std::io::stderr().is_terminal() {
+        (
+            "\u{1b}[32m\u{23CF}\u{1b}[31m",
+            "\u{23CF}\u{1b}[0m",
+            "\u{1b}[0m",
+        )
+    } else {
+        ("<HERE>", "<HERE>", "")
+    }
+}
+
 /// Build the `source-indicator` string Raku attaches to an `X::Str::Numeric`:
-/// the source split at character position `pos` with a `U+23CF` marker showing
-/// where numification stopped, control characters escaped. For example
-/// `("5 foo", 1)` yields `in '5<EJECT> foo' (indicated by <EJECT>)`.
+/// the source split at character position `pos` with a marker showing where
+/// numification stopped, control characters escaped. For example, with stderr
+/// not a terminal, `("5 foo", 1)` yields `in '5<HERE> foo' (indicated by <HERE>)`;
+/// on a terminal the marker is the coloured `U+23CF` (see `source_marker_forms`).
 pub(crate) fn build_source_indicator(source: &str, pos: usize) -> String {
     let good: String = source.chars().take(pos).collect();
     let bad: String = source.chars().skip(pos).collect();
+    let (marker, indicated, tail) = source_marker_forms();
     format!(
-        "in '{}\u{23CF}{}' (indicated by \u{23CF})",
+        "in '{}{}{}{}' (indicated by {})",
         escape_for_source_indicator(&good),
-        escape_for_source_indicator(&bad)
+        marker,
+        escape_for_source_indicator(&bad),
+        tail,
+        indicated
     )
 }
 
