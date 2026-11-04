@@ -189,15 +189,20 @@ impl Registry {
     #[cfg(not(debug_assertions))]
     pub(super) fn debug_verify_owner_method_names_index(&self) {}
 
-    /// Raise [`Registry::any_raw_invocant_method`] if any of `defs` declares a
+    /// Raise [`Registry::any_raw_invocant_method`] (and the per-name bit of
+    /// `name`, the name `defs` are registered under) if any of `defs` declares a
     /// raw invocant (ADR-0067 slice 3a). Set-only: see that field's doc for why
     /// the flag is never lowered.
-    pub(crate) fn note_raw_invocant_methods(&mut self, defs: &[MethodDef]) {
-        if !self.any_raw_invocant_method
-            && defs
-                .iter()
-                .any(crate::runtime::raw_invocant::method_def_has_raw_invocant)
-        {
+    pub(crate) fn note_raw_invocant_methods(&mut self, name: Symbol, defs: &[MethodDef]) {
+        let declares_raw = defs
+            .iter()
+            .any(crate::runtime::raw_invocant::method_def_has_raw_invocant);
+        if declares_raw {
+            // The per-name gate is raised before the general flag, so a reader
+            // that sees the flag never sees an empty name set.
+            crate::runtime::raw_invocant::note_raw_invocant_method_name(name);
+        }
+        if !self.any_raw_invocant_method && declares_raw {
             self.any_raw_invocant_method = true;
             // Slice 3b's gate runs on every method call and cannot take the
             // registry read lock, so it reads a lock-free mirror raised here —
@@ -292,7 +297,7 @@ impl Registry {
             if def.is_multi { def.routine_cell.note_method_family(owner, name); }
         }
         for def in &defs { self.note_method_value_prototype(owner, def); }
-        self.note_raw_invocant_methods(&defs);
+        self.note_raw_invocant_methods(name, &defs);
         if !defs.is_empty() {
             note_user_find_method_row(name);
         }
@@ -314,7 +319,7 @@ impl Registry {
     pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) -> usize {
         if def.is_multi { def.routine_cell.note_method_family(owner, name); }
         self.note_method_value_prototype(owner, &def);
-        self.note_raw_invocant_methods(std::slice::from_ref(&def));
+        self.note_raw_invocant_methods(name, std::slice::from_ref(&def));
         note_user_find_method_row(name);
         let key = MethodEntryKey { owner, name };
         let candidates = self.method_entries

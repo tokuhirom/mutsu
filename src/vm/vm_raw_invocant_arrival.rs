@@ -46,8 +46,12 @@ impl Interpreter {
     /// *borrowed* method name and before any allocation: this runs on every
     /// `$var.method(...)` in the program, and slice 3a measured that the
     /// argument marshalling a full oracle call needs — not the MRO walk — is
-    /// where such a gate's cost actually lives. A program that declares no
-    /// raw-invocant method anywhere pays one bool load.
+    /// where such a gate's cost actually lives. A call whose method name no
+    /// registered method declares a raw invocant under pays one bool load and
+    /// one bit test.
+    // Cost: O(1) for a name that declares no raw invocant (the bit set answers);
+    // otherwise the oracle resolve of `method_binds_raw_invocant` plus the cell
+    // capture.
     #[inline]
     pub(super) fn arm_raw_invocant_arrival(
         &mut self,
@@ -55,13 +59,19 @@ impl Interpreter {
         target_name: &str,
         target: &Value,
         method: &str,
+        method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> bool {
         if target_name.is_empty() {
             return false;
         }
         let aggregate_self = is_aggregate_target_name(target_name) && is_role_mixed_array(target);
-        if !crate::runtime::raw_invocant::any_raw_invocant_method_possible() && !aggregate_self {
+        // Per method name, not per program: one module with a raw-invocant
+        // method (Cro's) must not make every other method call resolve its
+        // target here.
+        if !crate::runtime::raw_invocant::raw_invocant_method_possible_for(method_sym)
+            && !aggregate_self
+        {
             return false;
         }
         self.arm_raw_invocant_arrival_slow(code, target_name, target, method, args)
@@ -131,7 +141,9 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let armed = self.arm_raw_invocant_arrival(code, target_name, &target, method, &args);
+        let armed = self.arm_raw_invocant_arrival(
+            code, target_name, &target, method, method_sym, &args,
+        );
         let result =
             self.try_compiled_method_mut_or_interpret_sym(target_name, target, method_sym, args);
         self.disarm_raw_invocant_arrival(armed);

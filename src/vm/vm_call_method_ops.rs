@@ -688,7 +688,14 @@ impl Interpreter {
         // The pre-gate is spelled out here rather than left to the callee so a
         // program that declares no raw-invocant method never even resolves the
         // method name: this runs on every `CallMethod` in the program.
-        let armed_raw_invocant = if crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+        // A modified call (`.?m`, `.+m`, ...) keeps the program-wide gate, since
+        // the name it dispatches is the modifier's rewrite of this one.
+        let raw_possible = if modifier_idx.is_some() {
+            crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+        } else {
+            crate::runtime::raw_invocant::raw_invocant_method_possible_for(name.sym)
+        };
+        let armed_raw_invocant = if raw_possible
             && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
         {
             self.arm_raw_invocant_arrival_from_receiver(

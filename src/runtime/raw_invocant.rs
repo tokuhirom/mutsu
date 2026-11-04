@@ -53,6 +53,42 @@ pub(crate) fn any_raw_invocant_method_possible() -> bool {
     ANY_RAW_INVOCANT_METHOD.load(Ordering::Relaxed)
 }
 
+/// Words of [`RAW_INVOCANT_NAME_BITS`]: 1024 x 64 = 65536 bits.
+const RAW_NAME_WORDS: usize = 1024;
+
+/// A bit set over the method names that declare a raw invocant, indexed by the
+/// low 16 bits of the name's symbol id. Two names may share a bit (a
+/// collision answers `true` for a name that declares none), never the other
+/// way round, so the gate it feeds only ever errs towards running the correct
+/// resolve. Lock-free for the same reason [`ANY_RAW_INVOCANT_METHOD`] is: the
+/// gate runs on every `$var.method(...)`.
+static RAW_INVOCANT_NAME_BITS: [std::sync::atomic::AtomicU64; RAW_NAME_WORDS] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; RAW_NAME_WORDS];
+
+/// Record that a method named `name` declares a raw invocant. Called only from
+/// `Registry::note_raw_invocant_methods`, beside [`note_any_raw_invocant_method`].
+// Cost: O(1).
+pub(crate) fn note_raw_invocant_method_name(name: Symbol) {
+    let bit = name.raw_id() as usize & (RAW_NAME_WORDS * 64 - 1);
+    RAW_INVOCANT_NAME_BITS[bit >> 6].fetch_or(1 << (bit & 63), Ordering::Relaxed);
+}
+
+/// Whether a method called `name` may declare a raw invocant: `false` proves
+/// that no registered method of that name does, so a call of it never binds
+/// its invocant raw. The per-call pre-gate of the slice 3b arrival path --
+/// [`any_raw_invocant_method_possible`] says "somewhere", this says "under this
+/// name", so a program that loads one module with a raw-invocant method does
+/// not slow every other method call down.
+// Cost: O(1).
+#[inline]
+pub(crate) fn raw_invocant_method_possible_for(name: Symbol) -> bool {
+    if !any_raw_invocant_method_possible() {
+        return false;
+    }
+    let bit = name.raw_id() as usize & (RAW_NAME_WORDS * 64 - 1);
+    RAW_INVOCANT_NAME_BITS[bit >> 6].load(Ordering::Relaxed) & (1 << (bit & 63)) != 0
+}
+
 /// Native methods that Rakudo declares `is raw` on their invocant *and* which
 /// hand that invocant straight back, so `$a.NAME = v` writes through `$a`.
 ///
