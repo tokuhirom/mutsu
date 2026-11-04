@@ -3505,7 +3505,9 @@ impl Interpreter {
                     &def.param_defs,
                     &def.body,
                 ),
-                result_is_fresh_call: crate::ast::result_decont::raw_result_is_fresh_call(&def.body),
+                result_is_fresh_call: crate::ast::result_decont::raw_result_is_fresh_call(
+                    &def.body,
+                ),
                 registration_identity: crate::ast::registration_identity_fingerprint(
                     &def.params,
                     &def.param_defs,

@@ -47,9 +47,8 @@ impl Interpreter {
         // (a `sub EXPORT` hook's `'&slack' => &trampoline`) is reached through
         // the `LexImportCall` that precedes the call, not the registry: its
         // declaration travels with the binding (#16331).
-        if let Some(crate::opcode::OpCode::LexImportCall { chain_idx }) = ip
-            .checked_sub(2)
-            .and_then(|at| code.ops.get(at))
+        if let Some(crate::opcode::OpCode::LexImportCall { chain_idx }) =
+            ip.checked_sub(2).and_then(|at| code.ops.get(at))
             && let Some(chain) = code.lexical_import_chains.get(*chain_idx as usize)
             && let Some(binding) =
                 self.lexical_import_binding(chain, crate::symbol::Symbol::intern(&name))
@@ -61,9 +60,7 @@ impl Interpreter {
                             !data.is_rw
                                 && !crate::opcode::body_uses_return_rw(&data.body)
                                 && if data.is_raw {
-                                    crate::ast::result_decont::raw_result_is_fresh_call(
-                                        &data.body,
-                                    )
+                                    crate::ast::result_decont::raw_result_is_fresh_call(&data.body)
                                 } else {
                                     crate::ast::result_decont::result_is_decontainerized(
                                         &data.param_defs,
