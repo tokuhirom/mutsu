@@ -394,6 +394,17 @@ impl Interpreter {
     /// [`Self::set_local_scalar_fast_metadata_clear`] above is.
     #[inline]
     pub(super) fn slot_type_constraint_possible(code: &CompiledCode, idx: usize) -> bool {
+        // This chunk's own declaration of the slot proved it carries no
+        // constraint (`my $s`): a same-named TYPED variable some loaded module
+        // declared is another variable, and the per-name latch below cannot
+        // tell them apart. Without this, one `my Str $s` in a module took
+        // every untyped `$s ~= ...`, `$s++` and `my $s = ...` of the program
+        // off its fast path (`use Cro::HTTP2::RequestParser`: `$s ~= 'a'` in a
+        // loop cost 7x the bare program, #9170). The same fact
+        // `native_typed_store_is_identity` already acts on for a plain store.
+        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
+            return false;
+        }
         match code.locals_sym.get(idx).copied() {
             Some(sym) => Self::env_type_constraint_seen_for(sym),
             None => Self::env_type_constraint_seen(),
