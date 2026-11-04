@@ -275,15 +275,18 @@ fn assignment_node(
     // (`$n = $n.abs`) would otherwise take the range of the source's `$n`,
     // the one unclaimed term of its shape in the statement.
     let right = view_expr(names, &a.source)?;
-    let mut left = target_node(names, &a.target)?;
-    // A variable target is not a term the parser placed: a range it found
-    // is the source's (`leading_variable` places the target afterwards).
-    if matches!(
-        a.target,
-        crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_)
-    ) {
-        left.origin = Default::default();
-    }
+    // A plain variable target is not a term the parser placed, so it is built
+    // without looking for a range: the lookup would take the range of an equal
+    // term elsewhere in the statement (a modifier's condition). `leading_variable`
+    // places it afterwards.
+    let plain =
+        |name: &str| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+    let left = match &a.target {
+        crate::ast::Expr::Var(name) if plain(name) => super::view::var_lexical("$", name),
+        crate::ast::Expr::ArrayVar(name) if plain(name) => super::view::var_lexical("@", name),
+        crate::ast::Expr::HashVar(name) if plain(name) => super::view::var_lexical("%", name),
+        target => target_node(names, target)?,
+    };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
