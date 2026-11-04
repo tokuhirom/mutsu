@@ -178,6 +178,7 @@ fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::VarInterpMarkless(_)
         | RegexAtom::VarAssertion(_)
         | RegexAtom::QqInterp { .. }
         | RegexAtom::RecurseSelf(_)

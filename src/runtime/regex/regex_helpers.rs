@@ -494,6 +494,8 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
                 _ => RegexAtom::LiteralGrapheme(g.clone()),
             }
         }
+        // The value is read at match time: its literal compares bases too.
+        RegexAtom::VarInterp(name) => RegexAtom::VarInterpMarkless(name.clone()),
         RegexAtom::Named(name) => {
             // Named subrule / literal string match — strip marks from the name
             let stripped: String = name.nfd().filter(|c| !is_combining_mark(*c)).collect();

@@ -271,6 +271,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::VarInterpMarkless(_)
         // `$( … )` / `@( … )` yield a pattern the same way `$x` does, and are
         // treated as `$x` is: a value that names a rule which re-enters this
         // one at the same position is not modelled (#13461).

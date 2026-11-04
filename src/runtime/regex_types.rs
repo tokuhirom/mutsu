@@ -435,6 +435,10 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// [`Self::VarInterp`] inside a `:m` pattern whose marks were stripped
+    /// (`strip_marks_pattern`): the value's literal compares base characters
+    /// against the mark-stripped subject.
+    VarInterpMarkless(String),
     /// `<$name>` on a name the pattern declared (an in-regex `:my $name`, a
     /// hoisted leading `:my`, or a rule's runtime parameter): the assertion
     /// form of [`RegexAtom::VarInterp`]. The value is read when the atom is

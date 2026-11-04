@@ -360,8 +360,18 @@ impl Interpreter {
         // A `$var` of a pattern with a code block is read where the cursor
         // reaches it, since the block can assign it, and a loop can re-enter
         // an atom written before the block (ADR-12917, direction 2).
-        for name in super::regex_late_scalars::scalars_in_block_pattern(&remaining_pattern) {
-            if self.late_scalar_reads_at_match_time(&name) && !hoisted_scalars.contains(&name) {
+        // Without a block nothing can write a variable during the match, so a
+        // plain value is read there too only to keep one body per pattern; a
+        // `Regex` value keeps the splice, which isolates its captures.
+        let (pattern_scalars, has_block) =
+            super::regex_late_scalars::scalars_in_pattern(&remaining_pattern);
+        for name in pattern_scalars {
+            // A `constant` is inlined at compile time (its value is part of
+            // the declarative prefix), so it stays spliced.
+            if self.late_scalar_reads_at_match_time(&name, has_block)
+                && !self.is_compile_time_constant_scalar(&name)
+                && !hoisted_scalars.contains(&name)
+            {
                 hoisted_scalars.push(name);
             }
         }

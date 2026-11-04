@@ -1,4 +1,4 @@
-//! `$var` atoms written after a code block (ADR-12917, direction 2).
+//! Plain `$var` atoms read at match time (ADR-12917, direction 2).
 //!
 //! ```raku
 //! my $x = "a"; say ~("xb" ~~ / x { $x = "b" } $x /);   # xb
@@ -7,31 +7,27 @@
 //! Rakudo reads an interpolated scalar when the cursor reaches it, so a code
 //! block earlier in the pattern can change what the atom matches. Splicing the
 //! value into the pattern text before the match starts cannot see that write.
-//! A pattern with a code block reads every scalar it names at match time: the
-//! block can assign it, and a loop re-enters atoms written before the block.
+//! A pattern reads every plain scalar it names at match time: a code block can
+//! assign it, a loop re-enters atoms written before the block, and without a
+//! block one body per pattern replaces a pattern text per value.
 //! Those scalars are declared as match-time lexicals (the same declaration block a
 //! rule's parameters use, see `regex_rule_params`), which the interpolation
 //! pre-pass leaves in the text and the structural parser lowers to a
 //! `RegexAtom::VarInterp`.
 
-/// The plain scalar names the pattern `text` writes anywhere at its top level
-/// when it contains a code block. A scalar before the block can still be read
-/// after the block ran, when a loop (`[ $x { $x = "b" } ]+`) re-enters it, so
-/// every scalar of a pattern with a block is a match-time read. Empty when the
-/// text has no code block.
+/// The plain scalar names the pattern `text` writes, in order of first use, and
+/// whether it contains a code block. A name a `=` follows is an alias
+/// (`$x=ATOM`, dropped by the interpolation pre-pass) and is left out.
 // Cost: O(n), n = the text's length.
-pub(crate) fn scalars_in_block_pattern(text: &str) -> Vec<String> {
+pub(crate) fn scalars_in_pattern(text: &str) -> (Vec<String>, bool) {
     let (names, saw_block) = scan_scalars(text);
-    if !saw_block {
-        return Vec::new();
-    }
-    names.into_iter().map(|(name, _)| name).collect()
+    (names.into_iter().map(|(name, _)| name).collect(), saw_block)
 }
 
 /// Every plain scalar name in order of first use, flagged by whether it was
 /// written after a code block, and whether the text had a code block at all.
 fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
-    if !text.contains('{') {
+    if !text.contains('$') {
         return (Vec::new(), false);
     }
     let chars: Vec<char> = text.chars().collect();
@@ -100,6 +96,14 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                     }
                 }
                 let name: String = chars[start..j].iter().collect();
+                let mut k = j;
+                while chars.get(k).is_some_and(|c| c.is_whitespace()) {
+                    k += 1;
+                }
+                if chars.get(k) == Some(&'=') && !matches!(chars.get(k + 1), Some('=' | '>')) {
+                    i = j;
+                    continue;
+                }
                 match names.iter_mut().find(|(n, _)| *n == name) {
                     // Written after a block anywhere: late.
                     Some(entry) => entry.1 |= seen_block,
@@ -119,7 +123,7 @@ impl super::super::Interpreter {
     /// `VarInterp` matches exactly as the splice did. Anything else (a list, a
     /// callable, a junction, an unbound name) keeps the splice path.
     // Cost: O(1).
-    pub(crate) fn late_scalar_reads_at_match_time(&self, name: &str) -> bool {
+    pub(crate) fn late_scalar_reads_at_match_time(&self, name: &str, allow_regex: bool) -> bool {
         use crate::value::ValueView;
         let value = self
             .env
@@ -134,22 +138,22 @@ impl super::super::Interpreter {
                     | ValueView::Int(_)
                     | ValueView::Num(_)
                     | ValueView::Nil
-                    | ValueView::Regex(_)
-                    | ValueView::RegexWithAdverbs(_)
-            )
+            ) || (allow_regex
+                && matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)))
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::scalars_in_block_pattern;
+    use super::scalars_in_pattern;
 
     #[test]
-    fn every_scalar_of_a_block_pattern_is_late() {
-        assert_eq!(scalars_in_block_pattern("$a { 1 } $b"), ["a", "b"]);
-        assert!(scalars_in_block_pattern("$a $b").is_empty());
-        assert!(scalars_in_block_pattern("{ $b } '$q' \\$e <[$f]>").is_empty());
-        assert_eq!(scalars_in_block_pattern("$a { 1 } $a $c"), ["a", "c"]);
+    fn every_scalar_of_a_pattern_is_read_at_match_time() {
+        assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
+        assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
+        assert_eq!(scalars_in_pattern("$a=$b").0, ["b"]);
+        assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
+        assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }
 }

@@ -254,6 +254,7 @@ pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
                 | RegexAtom::ClosureInterpolation { .. }
                 | RegexAtom::CodeInterp { .. }
                 | RegexAtom::VarInterp(_)
+                | RegexAtom::VarInterpMarkless(_)
                 | RegexAtom::VarAssertion(_) => true,
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => {
                     pattern_reads_enclosing_state(p)
@@ -615,7 +616,9 @@ impl Compiler {
                 self.has_code = true;
             }
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
-            RegexAtom::VarInterp(_) | RegexAtom::VarAssertion(_) => {
+            RegexAtom::VarInterp(_)
+            | RegexAtom::VarInterpMarkless(_)
+            | RegexAtom::VarAssertion(_) => {
                 // `$x` of an in-regex `:my` lexical, a rule's runtime parameter
                 // or an outer variable: the value is read when the atom is
                 // matched, and matched as a literal — or, for a `Regex` value,
