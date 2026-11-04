@@ -587,6 +587,21 @@ impl Interpreter {
         self.pseudo_stash_hash(entries)
     }
 
+    /// The value of the term `name` the current scope holds: a sigilless
+    /// binding, an enum key read by its bare spelling, or a constant in the
+    /// environment.
+    // Cost: O(1) expected, two lookups.
+    pub(super) fn imported_term(&self, name: &str) -> Option<Value> {
+        self.term_binding(name)
+            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| {
+                self.env()
+                    .get(name)
+                    .cloned()
+                    .filter(|v| !matches!(v.view(), ValueView::Package(_) | ValueView::Sub(..)))
+            })
+    }
+
     /// The value a bare-word read of the imported name `key` (an import
     /// alias key: a type name, or a sigilless term's `\name` key) sees.
     // Cost: O(1) expected, plus the module-scope probe of `term_binding`.
