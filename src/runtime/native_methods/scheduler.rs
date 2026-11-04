@@ -382,7 +382,7 @@ impl Interpreter {
                     // path, which preserves their historical run-once handling.
                     self.cue_every_timer(params, cancellation_id)?;
                 } else {
-                    let mut thread_interp = self.clone_for_thread();
+                    let mut thread_interp = self.clone_for_thread_for_block(&params.callback);
                     // Track the spawned task so `$*SCHEDULER.loads` reflects it
                     // until the callback finishes (mark started before spawn so a
                     // racing `.loads` never undercounts).

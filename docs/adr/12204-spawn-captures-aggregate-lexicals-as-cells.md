@@ -115,8 +115,11 @@ attribute, dynamic, qualified or `__` compiler name): `Interpreter::aggregate_ce
 Those names are excluded from lane seeding. `MUTSU_SPAWN_CAPTURE_CHECK` reports a
 `cell-captured-lane-write` for any lane write to such a name; over `t/concurrency/**`
 the only one is `@received` in `io-socket-async-idle-reader-threads.t`, written by a
-block-less spawn (step 2). Remaining: block-less spawns, then measuring thread
-benchmarks.
+block-less spawn (step 2). Step 2 (partial): the scheduler cue,
+channel-backed `tap`, socket accept and nested `whenever <Promise>` threads use
+`clone_for_thread_for_block` with their callback as the capture source. Remaining:
+supply drivers, `Proc::Async` readers and `.then` chains (no single callback),
+then measuring thread benchmarks.
 
 ## Alternatives considered
 
