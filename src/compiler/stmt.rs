@@ -1830,7 +1830,21 @@ impl Compiler {
                             .and_then(|tc| self.native_default_expr_for_constraint(tc))
                     })
                     .flatten();
-                    let rhs_expr = if has_default_trait
+                    // `my Int &f;` / `my Callable[Int] $x;` hold the `Callable[Int]` type
+                    // object, which keeps its parameter for `.of` (#16449).
+                    let parametric_callable_default = (!name.starts_with(['@', '%'])
+                        && !has_explicit_initializer
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil()))
+                    .then(|| {
+                        type_constraint
+                            .as_deref()
+                            .filter(|tc| tc.starts_with("Callable[") && !tc.ends_with(":D"))
+                    })
+                    .flatten()
+                    .map(|tc| Expr::Literal(Value::package(crate::symbol::Symbol::intern(tc))));
+                    let rhs_expr = if let Some(default) = parametric_callable_default.as_ref() {
+                        default
+                    } else if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && matches!(expr, Expr::Literal(lit) if lit.is_nil())
