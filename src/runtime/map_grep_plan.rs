@@ -328,7 +328,7 @@ impl Interpreter {
         let captures = data
             .env
             .iter()
-            .filter(|(k, v)| {
+            .filter(|(k, _)| {
                 // A captured type or enum name the body never mentions is
                 // not worth installing in the consuming frame and putting
                 // back again for every element: the program's own names
@@ -338,8 +338,11 @@ impl Interpreter {
                 // bare program with Cro loaded, #7817). Only a body that
                 // cannot reach a name any other way qualifies: no nested
                 // closure or routine, no by-name lookup.
+                // A shared cell or a captured free variable wins over the
+                // consuming frame's binding, but a name the body does not
+                // mention (`mentions_name` covers its free variables) cannot be
+                // read there, so that rule has nothing to decide for it.
                 !(body_names_only_what_it_mentions
-                    && !capture_wins_over_caller_for_plan(free_vars, k, v)
                     && !temporaries.contains(k)
                     && droppable_subject(k).is_some_and(|subject| {
                         !code.mentions_name(k) && !code.mentions_name(&subject)
@@ -482,8 +485,6 @@ impl Interpreter {
     }
 }
 
-use super::resolution_map_grep::capture_wins_over_caller as capture_wins_over_caller_for_plan;
-
 /// The name a captured key stands for when it is one a body can only reach by
 /// naming it: a type, enum or constant name (`Pt`, `Cro::HTTP`), a sigilless
 /// term (`\size`) or the readonly marker of one
@@ -494,13 +495,20 @@ use super::resolution_map_grep::capture_wins_over_caller as capture_wins_over_ca
 fn droppable_subject(k: &Symbol) -> Option<Symbol> {
     k.with_str(|s| {
         let term = s.strip_prefix("__mutsu_sigilless_readonly::").unwrap_or(s);
-        let ident = |t: &str| {
-            !t.is_empty()
-                && t.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        };
+        let ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+        let ident = |t: &str| !t.is_empty() && t.bytes().all(ident_byte);
         if let Some(name) = term.strip_prefix('\\') {
             return ident(name).then(|| Symbol::intern(name));
+        }
+        // A package-qualified routine binding (`&Cro::Uri::encode-percents`) is
+        // reached by its own name or, from inside its package, by the bare
+        // tail; the tail stands for it.
+        if let Some(qualified) = term.strip_prefix('&') {
+            if !qualified.bytes().all(|b| ident_byte(b) || b == b':') {
+                return None;
+            }
+            let (_, tail) = crate::qualified::split_qualified(Symbol::intern(qualified))?;
+            return tail.with_str(ident).then_some(tail);
         }
         // Only a type-shaped name qualifies unmarked; a readonly marker is
         // always for a sigilless term.

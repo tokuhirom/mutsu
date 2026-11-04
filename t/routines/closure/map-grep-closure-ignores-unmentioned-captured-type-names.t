@@ -6,7 +6,7 @@ use Test;
 # that DOES name one (directly, in a nested closure, in a smartmatch or by
 # name through EVAL) still finds it even when the consuming frame is another
 # routine that does not see the name.
-plan 13;
+plan 17;
 
 my class Pt { has $.x; method gist { "Pt($!x)" } }
 enum Colour <Red Green Blue>;
@@ -49,3 +49,15 @@ my &mg = { MAGIC + $_ };
 is apply(&mg, (1, 2)).join(','), '101,102', 'a body naming an uppercase sigilless term';
 my &no-sz = { $_ * 3 };
 is apply(&no-sz, (1, 2)).join(','), '3,6', 'a body naming neither';
+
+# A qualified routine, a constant held in a cell and a state variable.
+module Pk { our sub enc($x) { "e$x" } }
+my constant K = 5;
+my &q = { Pk::enc($_) };
+is apply(&q, (1, 2)).join(','), 'e1,e2', 'a body calling a qualified routine';
+my &kk = { K + $_ };
+is apply(&kk, (1, 2)).join(','), '6,7', 'a body naming a constant';
+my &st = { state $n = 0; $n += $_; $n.Int };
+is apply(&st, (1, 2, 3)).join(','), '1,3,6', 'a body with a state variable';
+my &none = { $_ + 1 };
+is apply(&none, (1, 2)).join(','), '2,3', 'a body naming none of them';
