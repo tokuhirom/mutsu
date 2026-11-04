@@ -882,7 +882,7 @@ impl Interpreter {
                                     1 => done_chain.pop(),
                                     _ => Some(Self::make_supply_done_chain(done_chain)),
                                 };
-                                let driver = self.clone_for_thread();
+                                let driver = self.clone_for_thread_for_block(&body_cb);
                                 let body_cb = body_cb.clone();
                                 let close_flag = rx.close_flag();
                                 let close_id = register_act_loop_close(close_flag.clone());

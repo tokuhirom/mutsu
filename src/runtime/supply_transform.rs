@@ -74,7 +74,7 @@ impl Interpreter {
                 let status_sid = status_supplier_id;
                 let vals = source_values;
                 let blk = block;
-                let mut thread_interp = self.clone_for_thread();
+                let mut thread_interp = self.clone_for_thread_for_block(&blk);
                 // Runs a full interpreter (VM safepoints park it during
                 // execution): registered GC mutator; the control wait and the
                 // worker joins are quiescent safe regions. Pooled (ADR-0020
@@ -421,7 +421,7 @@ impl Interpreter {
 
         // Run the block asynchronously. Pooled (ADR-0020 slice 3): fires per
         // emitted value — the hottest supply spawner, warm reuse pays here.
-        let mut thread_interp = self.clone_for_thread();
+        let mut thread_interp = self.clone_for_thread_for_block(&callable);
         crate::runtime::worker_pool::submit(move || {
             let result_val = thread_interp
                 .call_supply_callback(callable, vec![value])
