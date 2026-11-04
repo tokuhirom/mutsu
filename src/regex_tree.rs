@@ -2655,7 +2655,16 @@ impl Parser {
                     .chars
                     .get(self.pos + 1)
                     .is_some_and(|next| next.is_alphabetic() || *next == '_');
-            if ch.is_alphanumeric() || ch == '_' || hyphen {
+            // `$Pkg::var`: a package-qualified name continues past `::`.
+            let qualified = ch == ':'
+                && self.chars.get(self.pos + 1) == Some(&':')
+                && self
+                    .chars
+                    .get(self.pos + 2)
+                    .is_some_and(|next| next.is_alphabetic() || *next == '_');
+            if qualified {
+                self.pos += 2;
+            } else if ch.is_alphanumeric() || ch == '_' || hyphen {
                 self.pos += 1;
             } else {
                 break;

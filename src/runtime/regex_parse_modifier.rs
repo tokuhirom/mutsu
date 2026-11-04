@@ -508,10 +508,18 @@ impl Interpreter {
                     if matches!(chars[j], '*' | '?' | '^' | '.') {
                         j += 1;
                     }
-                    while j < chars.len()
-                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
-                    {
-                        j += 1;
+                    while j < chars.len() {
+                        if chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-' {
+                            j += 1;
+                        } else if chars[j] == ':'
+                            && chars.get(j + 1) == Some(&':')
+                            && chars.get(j + 2).is_some_and(|c| c.is_alphabetic() || *c == '_')
+                        {
+                            // `$Pkg::var`: a package-qualified scalar.
+                            j += 2;
+                        } else {
+                            break;
+                        }
                     }
                     // Inside single-quoted regex literals, $ is not interpolated
                     if inside_sq {
