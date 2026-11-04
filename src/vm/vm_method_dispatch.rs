@@ -219,16 +219,6 @@ impl Interpreter {
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
-            let has_invocant_constraint =
-                method_def.param_defs.iter().any(|pd| {
-                    pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
-                }) && !Self::fast_invocant_constraints_trivial(method_def, &base, owner_class);
-            // A `::T` type capture has to be BOUND before the body runs, and the
-            // fast path has no binder step that does it. It used to be kept out
-            // by accident: the capture lived in `type_constraint`, so either
-            // `has_invocant_constraint` or the fast path's own nominal type check
-            // (which `::T` could never satisfy) bounced the call. Now that the
-            // capture is a field of its own, the gate has to name it (#7984).
             // A body that cannot see a role's parameters, its statics or the
             // class a `::?CLASS` invocant captured (`cc.ignores_role_context`),
             // over parameters typed with built-in types only, has nothing to
@@ -245,12 +235,28 @@ impl Interpreter {
                                 crate::runtime::utils::is_known_type_constraint(base)
                             }))
                 });
+            let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
+                pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
+            }) && !Self::fast_invocant_constraints_trivial(
+                method_def,
+                &base,
+                owner_class,
+                role_blind,
+            );
+            // A `::T` type capture has to be BOUND before the body runs, and the
+            // fast path has no binder step that does it. It used to be kept out
+            // by accident: the capture lived in `type_constraint`, so either
+            // `has_invocant_constraint` or the fast path's own nominal type check
+            // (which `::T` could never satisfy) bounced the call. Now that the
+            // capture is a field of its own, the gate has to name it (#7984).
             let has_type_capture =
                 method_def
                     .param_defs
                     .iter()
                     .any(|pd| match pd.captured_type_name() {
-                        Some("?CLASS") => !(pd.is_invocant && role_blind),
+                        Some(name) if name == "?CLASS" || name.starts_with("?CLASS:") => {
+                            !(pd.is_invocant && role_blind)
+                        }
                         Some(_) => true,
                         None => false,
                     });
@@ -1947,6 +1953,7 @@ impl Interpreter {
         method_def: &crate::runtime::MethodDef,
         base: &Value,
         owner_class: &str,
+        role_blind: bool,
     ) -> bool {
         // A role-mixed instance (`CArray[num64]`) is as defined as the
         // instance it wraps, but its type is no class name: only `Mu` and
@@ -1970,7 +1977,10 @@ impl Interpreter {
             .iter()
             .filter(|pd| pd.is_invocant)
             .all(|pd| {
-                if pd.type_capture.is_some() {
+                // A `::?CLASS` capture is harmless to a body that cannot see it.
+                if let Some(captured) = pd.type_capture.as_deref()
+                    && !(role_blind && (captured == "?CLASS" || captured.starts_with("?CLASS:")))
+                {
                     return false;
                 }
                 let Some(constraint) = pd.type_constraint.as_deref() else {
