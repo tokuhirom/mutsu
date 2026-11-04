@@ -984,6 +984,18 @@ impl Interpreter {
                 && let Some(our_val) = self.get_our_var(name).cloned()
             {
                 our_val
+            // `Pkg::zape` naming a package's `our &zape` code variable: a bare
+            // qualified name is a call of the routine it holds (#16482).
+            } else if !self.has_type(name)
+                && let Some(code) = self
+                    .get_our_var(&["&", name].concat())
+                    .map(|v| v.deref_container())
+                && matches!(
+                    code.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                )
+            {
+                self.vm_call_on_value(code, Vec::new(), Some(compiled_fns))?
             // `Fac::make` where `Fac` is the short name a `use` of
             // `unit module A::B::Fac is export` installed: the sub lives under
             // the full package name.
