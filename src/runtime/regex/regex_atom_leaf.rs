@@ -135,8 +135,18 @@ impl Interpreter {
         let is_regex = val.as_ref().is_some_and(|v| {
             matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
         });
+        // A junction interpolates as the alternation of its eigenstates, each
+        // a literal or, for a `Regex` member, its pattern.
+        let is_junction = val
+            .as_ref()
+            .is_some_and(|v| matches!(v.view(), ValueView::Junction { .. }));
         let ref_text = match &val {
             Some(v) if is_regex => Self::regex_alternation_sources(v, false).swap_remove(0),
+            Some(v) if is_junction => {
+                let mut text = String::new();
+                Self::push_value_as_regex_pattern(v, &mut text);
+                text
+            }
             Some(v) => match v.view() {
                 ValueView::Nil | ValueView::Package(_) => String::new(),
                 _ => v.to_string_value(),
@@ -145,7 +155,7 @@ impl Interpreter {
         };
         // A markless run compares bases, so a plain value becomes a pattern
         // too: its markless program does the comparison.
-        if is_regex || ((ignore_case || markless) && !ref_text.is_empty()) {
+        if is_regex || is_junction || ((ignore_case || markless) && !ref_text.is_empty()) {
             // A `Regex` value is entered as a call frame of its own: its
             // captures stay its own (`$re`'s groups do not number into the
             // caller's) and it runs in its defining scope when it closed over
@@ -155,7 +165,7 @@ impl Interpreter {
                 .clone()
                 .map(super::regex_helpers::RegexInterpClosureScopeGuard::activate);
             let mut source = String::from(if ignore_case { ":i " } else { "" });
-            if is_regex {
+            if is_regex || is_junction {
                 source.push_str(&ref_text);
             } else {
                 source.push_str(&Self::escape_regex_scalar_literal(&ref_text));
