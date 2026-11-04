@@ -56,6 +56,20 @@ impl<'a> CodeText<'a> {
         #[derive(Default)]
         struct Names(String);
         impl<'ast> Visit<'ast> for Names {
+            // A class's composed roles are spelled the way the source writes
+            // them (`does Iterator`), which is what the gates that key on
+            // composition ask for (`inject_iterator_role_prelude`): the tree
+            // only reports the role as a type name otherwise (#16387).
+            fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
+                if let crate::ast::Stmt::ClassDecl { does_parents, .. } = stmt {
+                    use std::fmt::Write;
+                    for role in does_parents {
+                        let _ = write!(self.0, "does {role} ");
+                    }
+                }
+                walk_stmt(self, stmt);
+            }
+
             fn visit_name(&mut self, name: &str, kind: NameKind) {
                 use std::fmt::Write;
                 let _ = match kind {
@@ -72,7 +86,7 @@ impl<'a> CodeText<'a> {
         }
         let mut names = Names::default();
         for stmt in stmts {
-            walk_stmt(&mut names, stmt);
+            names.visit_stmt(stmt);
         }
         CodeText(Cow::Owned(names.0))
     }
