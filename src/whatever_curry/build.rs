@@ -187,7 +187,7 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
         Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_hyperwhatever),
-        Expr::Binary { left, right, .. } => {
+        Expr::Binary { left, right, .. } | Expr::HyperOp { left, right, .. } => {
             contains_hyperwhatever(left) || contains_hyperwhatever(right)
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_hyperwhatever(expr),
@@ -318,7 +318,9 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
             right,
             ..
         } => count_whatever(left) + usize::from(is_whatever(right)),
-        Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
+        Expr::Binary { left, right, .. } | Expr::HyperOp { left, right, .. } => {
+            count_whatever(left) + count_whatever(right)
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. }
         | Expr::DynamicMethodCall { target, .. }

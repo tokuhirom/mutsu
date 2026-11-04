@@ -152,6 +152,28 @@ impl Expr {
     }
 }
 
+/// Take every spelling off `expr` and everything inside it (ADR-12199).
+///
+/// A tree the compiler builds from source text at compile time (the thunk of
+/// a regex literal's `"..."` atom) comes straight from a parser entry point
+/// that has not been through the lowering's own stripping pass.
+// Cost: O(n), n = size of the tree.
+pub(crate) fn strip_spelling(expr: &mut Expr) {
+    use crate::ast_visit::{VisitMut, walk_expr_mut};
+    struct Strip;
+    impl VisitMut for Strip {
+        fn visit_expr_mut(&mut self, expr: &mut Expr) {
+            while matches!(expr, Expr::Spelled(_)) {
+                if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
+                    *expr = spelled.expr;
+                }
+            }
+            walk_expr_mut(self, expr);
+        }
+    }
+    Strip.visit_expr_mut(expr);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

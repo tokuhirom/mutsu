@@ -55,8 +55,12 @@ impl Interpreter {
         let outcome = self.run_reduction_action(match_obj, &mut actions, rule_name);
         self.regex_state.current_grammar_actions = Some(actions);
         cap.reduced.set();
+        // A `return` out of the action itself is the action's own result. One
+        // that targets an enclosing routine (a `CATCH { default { return … } }`
+        // of the caller handling this action's `die`) leaves `.parse` like the
+        // exception does, so it is kept too.
         if let Err(error) = outcome
-            && error.return_value.is_none()
+            && (error.return_value.is_none() || error.is_targeted_return())
         {
             crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| {
                 let mut slot = slot.borrow_mut();

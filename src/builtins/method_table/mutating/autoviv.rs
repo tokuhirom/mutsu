@@ -123,6 +123,14 @@ fn grow(
     array_row: Grow,
 ) -> Answer {
     let value = place.value().descalarize();
+    // A type object of a class that defines the method itself (`Cls.ASSIGN-POS(0,
+    // 1)` with a user `multi method ASSIGN-POS`) is not an undefined invocant to
+    // vivify: the class's method runs.
+    if let ValueView::Package(name) = value.view()
+        && interp.has_user_method(&name.resolve(), method)
+    {
+        return None;
+    }
     // An `Array` type object in a named binding (`my Array $a; $a.push(1)`)
     // vivifies as an undefined `Any` does.
     let array_type = matches!(value.view(), ValueView::Package(name) if name == "Array");

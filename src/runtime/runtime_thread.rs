@@ -254,6 +254,12 @@ impl Interpreter {
         // ADR-0039 §8.6: which containers this block names decides whether its
         // lane entry is durable or transient. See `block_referenced_containers`.
         let containers = Self::block_referenced_containers(block);
+        if crate::runtime::shared_store::capture_check::enabled() {
+            // ADR-12204 S1: the aggregates this spawn's block names.
+            crate::runtime::shared_store::capture_check::record_spawn_captures(
+                containers.iter().flatten(),
+            );
+        }
         self.clone_for_thread_excluding(&captured, containers.as_ref())
     }
 
@@ -280,6 +286,9 @@ impl Interpreter {
         captured_scalars: &std::collections::HashSet<String>,
         referenced_containers: Option<&std::collections::HashSet<String>>,
     ) -> Self {
+        // ADR-12204 S1 oracle: the lane writes below seed the spawner's
+        // lexicals; they are not uses of the names.
+        let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
         // A worker has no mainline callframe of its own. Preserve the spawning
         // source location separately so an anonymous callback can still expose
         // a useful bottom backtrace frame without duplicating a located entry

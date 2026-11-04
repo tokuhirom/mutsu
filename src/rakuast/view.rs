@@ -1310,9 +1310,7 @@ pub(super) fn nqp_op(name: &str) -> Option<&str> {
     (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
 
-/// A hyper infix `LEFT >>OP<< RIGHT` -> `ApplyInfix(left, MetaInfix::Hyper(
-/// [dwim-left,] infix, [dwim-right]), right)`; raku omits a dwim field whose
-/// value is False, and the hyper assignment's infix is the `Assignment` node.
+/// A hyper infix `LEFT >>OP<< RIGHT` (see [`super::hyper_assign::hyper_infix`]).
 // Cost: O(n), n = nodes of the operands.
 pub(super) fn hyper_infix(
     names: &NameScope,
@@ -1322,54 +1320,7 @@ pub(super) fn hyper_infix(
     dwim_left: bool,
     dwim_right: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut hyper_fields = Vec::with_capacity(3);
-    if dwim_left {
-        hyper_fields.push(RakuAstField {
-            name: Some("dwim-left"),
-            value: RakuAstFieldValue::Node(Value::truth(true)),
-        });
-    }
-    hyper_fields.push(node_field(
-        Some("infix"),
-        if op == "=" {
-            RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::Assignment,
-                fields: vec![RakuAstField {
-                    name: None,
-                    value: RakuAstFieldValue::Adverb("item"),
-                }],
-            }
-        } else {
-            RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::Infix,
-                fields: vec![leaf_field(None, Value::str(op.to_string()))],
-            }
-        },
-    ));
-    if dwim_right {
-        hyper_fields.push(RakuAstField {
-            name: Some("dwim-right"),
-            value: RakuAstFieldValue::Node(Value::truth(true)),
-        });
-    }
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::ApplyInfix,
-        fields: vec![
-            node_field(Some("left"), view_expr(names, left)?),
-            node_field(
-                Some("infix"),
-                RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::MetaInfixHyper,
-                    fields: hyper_fields,
-                },
-            ),
-            node_field(Some("right"), view_expr(names, right)?),
-        ],
-    })
+    super::hyper_assign::hyper_infix(names, left, op, right, dwim_left, dwim_right)
 }
 
 /// `LEFT = EXPR` over an already converted left side; `is_item` marks the

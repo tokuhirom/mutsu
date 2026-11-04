@@ -2463,6 +2463,9 @@ impl Interpreter {
     /// an rw-arg-sink target such as `cas` — `needs_env_sync` covers all
     /// three) keeps publishing exactly as before.
     pub(super) fn sync_env_from_locals_needed(&mut self, code: &CompiledCode) {
+        // ADR-12204 S1 oracle: this publishes the spawner's locals just before a
+        // `start`; it is part of the spawn, not a use of the names.
+        let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
         for (i, name) in code.locals.iter().enumerate() {
             if code.dup_named_locals.get(i).copied().unwrap_or(false) {
                 continue;

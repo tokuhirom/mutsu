@@ -103,6 +103,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if let Some((operand_from, _)) = operand.as_ref().and_then(super::infix_origins::byte_range) {
         operand_end = past_parens(span, operand_from, operand_end);
     }
+    super::call_term_origins::place(node, operand_end as usize, span);
     place_call(node, Some("postfix"), operand_end as usize, span, false);
 }
 

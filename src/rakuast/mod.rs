@@ -104,6 +104,7 @@ mod immediate_call;
 mod infix_func;
 pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
+mod call_term_origins;
 mod carried;
 mod finalize;
 mod infix_origins;
@@ -190,6 +191,7 @@ mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
+mod whatever_origins;
 mod word_list;
 mod word_quote;
 

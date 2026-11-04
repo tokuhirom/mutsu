@@ -183,6 +183,7 @@ fn apply_infix(node: &mut RakuAstNode) {
     let Some((text, inner)) = child(node, "infix").and_then(written) else {
         return;
     };
+    let (left, right) = super::whatever_origins::operand_ranges(node, &text, left, right);
     let own = byte_range(node);
     // The operator follows the left operand after whitespace, or ends where
     // whitespace before the right operand begins.
