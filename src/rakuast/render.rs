@@ -97,6 +97,7 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
             | RakuAstClass::VarDynamic
+            | RakuAstClass::VarDoc
             | RakuAstClass::VarCompilerLookup
             | RakuAstClass::VarCompilerFile
             | RakuAstClass::VarCompilerLine

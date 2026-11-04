@@ -71,6 +71,17 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
             fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
         };
     }
+    // `$=pod` / `$=finish`: a Pod variable, whose `name` is what follows `$=`.
+    if sigil == "$"
+        && let Some(pod) = name.strip_prefix('=')
+        && matches!(pod, "pod" | "finish")
+    {
+        return RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::VarDoc,
+            fields: vec![leaf_field(None, Value::str(pod.to_string()))],
+        };
+    }
     if name_parts::is_qualified_identifier(name) {
         return RakuAstNode {
             origin: Default::default(),

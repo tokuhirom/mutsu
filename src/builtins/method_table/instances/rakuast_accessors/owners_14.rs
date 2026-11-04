@@ -103,6 +103,17 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Var::Doc",
+        &[
+            "RakuAST::Var::Doc",
+            "RakuAST::Var",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Var::Dynamic",
         &[
             "RakuAST::Var::Dynamic",
@@ -204,18 +215,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::VarDeclaration::Placeholder::SlurpyArray",
         &[
             "RakuAST::VarDeclaration::Placeholder::SlurpyArray",
-            "RakuAST::VarDeclaration::Placeholder::Slurpy",
-            "RakuAST::VarDeclaration::Placeholder",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Placeholder::SlurpyHash",
-        &[
-            "RakuAST::VarDeclaration::Placeholder::SlurpyHash",
             "RakuAST::VarDeclaration::Placeholder::Slurpy",
             "RakuAST::VarDeclaration::Placeholder",
             "RakuAST::Term",
