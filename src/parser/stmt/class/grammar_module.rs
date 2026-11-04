@@ -395,6 +395,9 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         .into_iter()
         .filter(|(trait_name, _)| matches!(trait_name.as_str(), "ver" | "auth" | "api"))
         .collect();
+    // A module is a type name: a same-named `sub` declared later does not
+    // turn a bare `name` term into a call (`module foo {}; sub foo {}; foo.HOW`).
+    super::super::simple::register_user_type(&name);
     let package_stmt = Stmt::Package {
         name: Symbol::intern(&name),
         body,
