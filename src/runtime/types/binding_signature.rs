@@ -3684,12 +3684,13 @@ impl Interpreter {
                     // binds to an `@` parameter as the Array, so `for @p` and
                     // `@p.elems` iterate its elements (plain itemized Arrays
                     // are decontainerized on read; the mixin wrapper hides
-                    // the itemization from that read).
-                    if pd.name.starts_with('@')
-                        && !pd.slurpy
-                        && !pd.double_slurpy
-                        && matches!(value.view(), ValueView::Mixin(..))
-                    {
+                    // the itemization from that read). The same holds for an
+                    // itemized Array handed over without a variable holder (a
+                    // method result such as `%h.AT-KEY('a')`, or an element of
+                    // a Map subclass built over shared storage): its elements
+                    // become the parameter's elements, not one element holding
+                    // the Array (#16357).
+                    if pd.name.starts_with('@') && !pd.slurpy && !pd.double_slurpy {
                         value = value.deitemize_for_sigil_bind();
                     }
                     // Check the argument before `is copy` removes its container type.
