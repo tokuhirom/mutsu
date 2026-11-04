@@ -122,7 +122,11 @@ impl Interpreter {
             return true;
         }
         let version = self.registry().functions.version();
-        let (known_bit, answer_bit) = if is_positional { (1u8, 2u8) } else { (4u8, 8u8) };
+        let (known_bit, answer_bit) = if is_positional {
+            (1u8, 2u8)
+        } else {
+            (4u8, 8u8)
+        };
         let (cached_version, bits) = self.caches.user_subscript_routine_gate.get();
         if cached_version == version && bits & known_bit != 0 {
             return bits & answer_bit != 0;
