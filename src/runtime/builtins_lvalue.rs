@@ -61,6 +61,13 @@ impl Interpreter {
         if !value.is_proxy_value() {
             return Ok(value.clone());
         }
+        // A native positional reference (`nqp::atposref_*` on native storage,
+        // what a typed `CArray`'s `AT-POS` answers) reads its element
+        // directly: its FETCH is a built-in routine, and the closure-call
+        // machinery below cost ~7.7k Ir per element of `CArray.list` (#16215).
+        if let Some(element) = crate::runtime::native_pos_ref::fetch_native_pos_ref(value) {
+            return Ok(element);
+        }
         // A FETCH may itself answer a container: the documented `AT-KEY`
         // override idiom is a `Proxy` whose FETCH defers to the next candidate,
         // which is another `Proxy` over the same element. Reading such an

@@ -78,6 +78,27 @@ fn captured() -> &'static Mutex<HashSet<String>> {
     SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+/// The aggregate names some spawn captured by a shared cell (S2): they must
+/// have no lane entry, so a later lane write to one is a bug.
+fn cell_captured() -> &'static Mutex<HashSet<String>> {
+    static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Record the `@`/`%` names a spawn captured by cell instead of the lane.
+// Cost: O(n), n = names.
+pub(crate) fn record_cell_captures<'a>(names: impl IntoIterator<Item = &'a String>) {
+    let mut set = cell_captured().lock().unwrap_or_else(|e| e.into_inner());
+    for name in names {
+        if name.starts_with(['@', '%']) {
+            set.insert(name.clone());
+            if level() == 2 {
+                eprintln!("spawn-capture-check: cell-captured {name}");
+            }
+        }
+    }
+}
+
 /// What has been reported already (`op:name`), so each shape prints once.
 fn reported() -> &'static Mutex<HashSet<String>> {
     static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -120,6 +141,17 @@ pub(crate) fn note_lane_access(key: &str, op: &'static str) {
     };
     if SEEDING.with(|d| d.get()) > 0 {
         return;
+    }
+    if cell_captured()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(name)
+        && reported()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(format!("cell:{op}:{name}"))
+    {
+        eprintln!("spawn-capture-check: cell-captured-lane-write name={name} op={op}");
     }
     if captured()
         .lock()

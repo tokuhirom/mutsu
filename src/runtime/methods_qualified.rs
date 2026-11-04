@@ -191,8 +191,9 @@ impl Interpreter {
                 caller_class.as_deref().unwrap_or("GLOBAL"),
             )));
         }
-        Some(
-            self.run_resolved_method_compiled_or_treewalk(
+        let on_var_object = target.is_proxy_var_object();
+        let result = self
+            .run_resolved_method_compiled_or_treewalk(
                 &class_name,
                 &owner,
                 pm_name,
@@ -201,8 +202,30 @@ impl Interpreter {
                 args.to_vec(),
                 Some(target.clone()),
             )
-            .map(|(result, _)| result),
-        )
+            .map(|(result, _)| result);
+        // `$proxy.VAR!meth` runs with the Proxy container itself as `self`, and
+        // a method that hands `self` back hands back that container, which a
+        // later `my $x = ...` FETCHes (AttrX::Mooish's `AttrProxy.new`).
+        // Only the `.VAR` call site itself yields the unfetched object.
+        Some(match result {
+            Ok(value) if on_var_object && value.is_proxy_var_object() => {
+                Ok(Self::proxy_container_of(value))
+            }
+            other => other,
+        })
+    }
+
+    /// The Proxy `value` (a `.VAR` object) as the container it stands for: a
+    /// store into the variable it lands in FETCHes, and it is no longer the
+    /// read-only `.VAR` object.
+    // Cost: O(1).
+    fn proxy_container_of(value: Value) -> Value {
+        match value.into_proxy_parts() {
+            Some((fetcher, storer, subclass, _)) => {
+                Value::proxy_parts(fetcher, storer, subclass, false)
+            }
+            None => Value::NIL,
+        }
     }
 
     pub(super) fn dispatch_private_method_on_non_instance(
