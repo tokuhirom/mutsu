@@ -23,8 +23,13 @@ struct ReturnScan {
 /// `return $v`, a subscript, an assignment or a list stays a container or a
 /// list and is not sunk.
 fn return_value_is_fresh(expr: &Expr) -> bool {
+    // Parentheses are peeled off in a loop: this is a one-node question, not a
+    // walk over the subtree.
+    let mut expr = expr;
+    while let Expr::Grouped(inner) = expr {
+        expr = inner;
+    }
     match expr {
-        Expr::Grouped(inner) => return_value_is_fresh(inner),
         Expr::MethodCall { .. } => true,
         Expr::Binary { op, .. } => {
             matches!(op, TokenKind::Ident(name) if name == "does" || name == "but")
