@@ -6,7 +6,7 @@ use nqp;
 # Miscellaneous ops `getcodename`, `setdebugtypename` and `takeclosure`. Expected
 # answers are Rakudo 2026.09's.
 
-plan 27;
+plan 31;
 
 is nqp::how(1).name(1), 'Int', 'how';
 ok nqp::how(1) =:= Int.HOW, 'how is the same meta-object .HOW answers';
@@ -60,4 +60,15 @@ is nqp::call(sub () { 'none' }), 'none', 'call without arguments';
     $x = 2;
     is $c(), 2, 'a takeclosure closure sees its outer lexical';
     ok nqp::eqaddr($b, $c), 'takeclosure of a block value is the block';
+}
+
+# nqp::setwho replaces a type's stash: `.WHO` answers the very object given.
+{
+    class WhoBar { our $y = 7 }
+    my $stash = Stash.new;
+    $stash<z> = 1;
+    ok nqp::setwho(WhoBar, $stash) =:= WhoBar, 'setwho answers the type';
+    ok WhoBar.WHO === $stash, '.WHO is the stash setwho gave';
+    is WhoBar.WHO<z>, 1, 'its entries are the new stash\'s';
+    ok nqp::who(WhoBar) === $stash, 'nqp::who agrees with .WHO';
 }

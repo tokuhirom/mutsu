@@ -207,6 +207,9 @@ impl AugmentCutoff {
 
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
+    /// its `.WHO` answers that very object.
+    pub(crate) who_overrides: std::collections::HashMap<String, crate::value::Value>,
     /// `(class, method)` -> the stamp of the first `augment` that added a
     /// `multi` candidate of `method` to an ancestor after `class` had composed
     /// its own multi dispatcher for it. Rakudo derives a subclass's dispatcher
