@@ -199,3 +199,35 @@ impl Interpreter {
         Ok(Value::mixin_parts(Arc::new(base_what), overrides))
     }
 }
+
+impl Interpreter {
+    /// The symbol a role mixin over a class instance or type object keys as
+    /// in a multi-dispatch key: its base class and composition, memoized per
+    /// composition node. `None` for any other inner value (an allomorph, a
+    /// native value), whose dispatch reads more than the class and the roles.
+    // Cost: O(1) on a node seen before; O(r log r) to build the key once,
+    // r = composed roles.
+    pub(crate) fn mixin_composition_key_sym(
+        &mut self,
+        inner: &Value,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
+    ) -> Option<Symbol> {
+        let node = &**mixins as *const crate::value::MixinOverrides as usize;
+        if let Some((_, sym)) = self.caches.mixin_key_sym_by_node.get(&node) {
+            return Some(*sym);
+        }
+        let base = match inner.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return None,
+        };
+        let key = crate::value::types::mixin_composition_key(base.as_str(), mixins);
+        let sym = Symbol::intern(&format!("Mixin\u{0}{}\u{0}{}", base.as_str(), key));
+        let memo = &mut self.caches.mixin_key_sym_by_node;
+        if memo.len() >= 4096 {
+            memo.clear();
+        }
+        memo.insert(node, (mixins.clone(), sym));
+        Some(sym)
+    }
+}

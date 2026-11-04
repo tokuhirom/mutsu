@@ -523,6 +523,14 @@ pub(crate) struct ResolutionCaches {
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,
     >,
+    /// The dispatch-key symbol of a role mixin over a class instance or type
+    /// object, by the identity of its shared `Gc<MixinOverrides>` node; the
+    /// entry keeps the node alive so the address cannot be reused
+    /// (`Interpreter::mixin_composition_key_sym`).
+    pub(crate) mixin_key_sym_by_node: rustc_hash::FxHashMap<
+        usize,
+        (crate::gc::Gc<crate::value::MixinOverrides>, crate::symbol::Symbol),
+    >,
     /// The `.WHAT` of a role-mixed class instance, by the identity of its
     /// shared `Gc<MixinOverrides>` node and the instance's class. The entry
     /// keeps the node alive so the address cannot be reused by another
