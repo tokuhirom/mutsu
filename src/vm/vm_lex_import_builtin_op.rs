@@ -24,8 +24,9 @@ impl Interpreter {
     /// Run the op at `ip + 1` with the user candidates of the built-in
     /// operator `name_idx` that one of the import sets of chain `chain_idx`
     /// binds, or as it is when none binds them. Returns the ip after that op.
-    // Cost: O(1) when no import set binds an operator; else an O(c) probe,
-    // c = enclosing `use`-blocks; plus the op at ip + 1.
+    // Cost: O(1) when no import set binds an operator or this site already
+    // found the operator unbound (this import-set generation); else an O(c)
+    // probe, c = enclosing `use`-blocks; plus the op at ip + 1.
     pub(super) fn exec_lex_import_builtin_op_site(
         &mut self,
         code: &CompiledCode,
@@ -37,6 +38,22 @@ impl Interpreter {
         // No import set in the process binds an operator's candidates: the op
         // runs as built in, without asking the chain (#13906).
         if self.module.lexical_operator_import_sets.is_empty() {
+            return Ok(ip + 1);
+        }
+        // #7817: an operator no import set of this chain binds stays unbound
+        // until a set is rewritten, so the site remembers the miss for one
+        // import-set generation instead of asking the chain on every
+        // execution. A lookup under a built-in operator fallback answers
+        // differently (`lexical_import_binding`), so it is neither read nor
+        // recorded.
+        let sites = code.constants.len();
+        let generation = self.module.lexical_import_gen;
+        let memoizable = self.module.builtin_op_fallback_depth == 0;
+        if memoizable
+            && code
+                .lex_import_sites
+                .operator_absent(sites, name_idx as usize, generation, chain_idx)
+        {
             return Ok(ip + 1);
         }
         let name = code.const_sym(name_idx);
@@ -54,6 +71,14 @@ impl Interpreter {
             });
         let mut next_ip = ip + 1;
         let Some(dispatcher) = dispatcher else {
+            if memoizable {
+                code.lex_import_sites.remember_operator_absent(
+                    sites,
+                    name_idx as usize,
+                    generation,
+                    chain_idx,
+                );
+            }
             return Ok(next_ip);
         };
         self.dispatch

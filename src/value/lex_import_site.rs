@@ -32,9 +32,16 @@ struct Entry {
 
 type Word = Mutex<Option<Entry>>;
 
+/// What an operator site remembered: no import set of the chain bound a
+/// dispatcher for the operator under this generation.
+type AbsentWord = Mutex<Option<(u64, u32)>>;
+
 /// One memo per string constant of a chunk.
 #[derive(Debug, Default)]
-pub(crate) struct LexImportSiteCaches(OnceLock<Box<[Word]>>);
+pub(crate) struct LexImportSiteCaches {
+    words: OnceLock<Box<[Word]>>,
+    absent: OnceLock<Box<[AbsentWord]>>,
+}
 
 impl Clone for LexImportSiteCaches {
     /// A cloned chunk starts cold: the memo is an optimization, not state.
@@ -48,8 +55,47 @@ impl LexImportSiteCaches {
     /// first built. A constant appended later has no word and never hits.
     // Cost: O(1) once built; the first call allocates O(sites).
     fn words(&self, sites: usize) -> &[Word] {
-        self.0
+        self.words
             .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
+    }
+
+    fn absent_words(&self, sites: usize) -> &[AbsentWord] {
+        self.absent
+            .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
+    }
+
+    /// Whether operator constant `idx` was found bound by no import set of
+    /// `chain_idx` under `generation` (`OpCode::LexImportBuiltinOp`, #7817).
+    // Cost: O(1), one uncontended lock.
+    #[inline]
+    pub(crate) fn operator_absent(
+        &self,
+        sites: usize,
+        idx: usize,
+        generation: u64,
+        chain_idx: u32,
+    ) -> bool {
+        self.absent_words(sites)
+            .get(idx)
+            .and_then(|word| word.lock().ok().map(|w| *w))
+            .is_some_and(|w| w == Some((generation, chain_idx)))
+    }
+
+    /// Remember that no import set of `chain_idx` binds operator constant
+    /// `idx` under `generation` (read before the lookup it records was made).
+    // Cost: O(1), one uncontended lock.
+    pub(crate) fn remember_operator_absent(
+        &self,
+        sites: usize,
+        idx: usize,
+        generation: u64,
+        chain_idx: u32,
+    ) {
+        if let Some(word) = self.absent_words(sites).get(idx)
+            && let Ok(mut w) = word.lock()
+        {
+            *w = Some((generation, chain_idx));
+        }
     }
 
     /// The definition constant `idx` was filled with for `chain_idx` under
