@@ -246,10 +246,13 @@ impl Interpreter {
             }
             let scope = self.attribute_decl_scope(attr, class_name);
             if !self.check_attribute_where_constraint(pred, value, scope) {
-                return Err(RuntimeError::new(format!(
-                    "Type check failed in assignment to $!{}; where constraint failed",
-                    attr_name
-                )));
+                // Rakudo throws a typed X::TypeCheck::Assignment, naming the
+                // anonymous `where` refinement as the expected type.
+                return Err(self.type_check_assignment_failure(
+                    &format!("$!{}", attr_name),
+                    "<anon>",
+                    value,
+                ));
             }
         }
         Ok(())
