@@ -93,10 +93,8 @@ impl Interpreter {
         chosen: Option<(Symbol, &MethodDef)>,
     ) -> bool {
         self.push_method_dispatch_frame_named(
-            receiver_class,
-            None,
-            method_name,
-            None,
+            Symbol::intern(receiver_class),
+            Symbol::intern(method_name),
             std::borrow::Cow::Owned(method_name.to_string()),
             args,
             invocant,
@@ -122,10 +120,8 @@ impl Interpreter {
     ) -> bool {
         let method_name = method_sym.as_str();
         self.push_method_dispatch_frame_named(
-            receiver_sym.as_str(),
-            Some(receiver_sym),
-            method_name,
-            Some(method_sym),
+            receiver_sym,
+            method_sym,
             std::borrow::Cow::Borrowed(method_name),
             args,
             invocant,
@@ -135,15 +131,15 @@ impl Interpreter {
 
     fn push_method_dispatch_frame_named(
         &mut self,
-        receiver_class: &str,
-        receiver_sym: Option<Symbol>,
-        method_name: &str,
-        method_sym: Option<Symbol>,
+        receiver_sym: Symbol,
+        method_sym: Symbol,
         name: std::borrow::Cow<'static, str>,
         args: &[Value],
         invocant: Value,
         chosen: Option<(Symbol, &MethodDef)>,
     ) -> bool {
+        let receiver_class = receiver_sym.as_str();
+        let method_name = method_sym.as_str();
         // Always push samewith context so samewith() can find the method name/invocant
         self.push_method_samewith_context_named(
             receiver_class,
@@ -165,8 +161,6 @@ impl Interpreter {
             fingerprint: self.method_def_fingerprint(def),
             rw_params: super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs),
         });
-        let receiver_sym = receiver_sym.unwrap_or_else(|| Symbol::intern(receiver_class));
-        let method_sym = method_sym.unwrap_or_else(|| Symbol::intern(method_name));
         if !self.deferral_build_is_context_free_sym(
             receiver_sym,
             method_sym,
