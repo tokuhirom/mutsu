@@ -341,6 +341,14 @@ impl VisitMut for Finalize<'_> {
                 *expr = term;
                 return;
             }
+            // A type word the classifier resolves to `Type::Simple` (`uint8`):
+            // see `bareword::type_word_expr`.
+            if let Expr::BareWord(word) = &*expr
+                && let Some(ty) = super::bareword::type_word_expr(names, word)
+            {
+                *expr = ty;
+                return;
+            }
             match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
             {
@@ -691,6 +699,7 @@ mod tests {
             "sub e { callsame }; sub f { nextsame }; sub g { lastcall }; sub h { nextcallee }; say 1;",
             "my \\s = 5; say s; constant zz = 3; say zz + 1; say pi; say tau; say True; say Empty.elems;",
             "my \\target = 'a'; say target; sub f(\\c) { c }; say f(1);",
+            "my uint8 $a = 1; my int32 $b = 2; say $a + $b; say uint16.^name; say int64 ~~ Int;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
             "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",

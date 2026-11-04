@@ -651,6 +651,32 @@ pub(super) fn term_expr(names: &NameScope, name: &str) -> Option<Expr> {
     Some(super::lower::term_identifier_expr(name))
 }
 
+/// A plain-identifier type word (a native type such as `uint8`, a setting or
+/// unit type) the classifier resolves to `Type::Simple`: the word itself, as the
+/// lowering of the node hands it back (`Nil` is its own literal unless the unit
+/// declares a package of that name). `None` for any other classification or a
+/// qualified or decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain || name == "Nil" {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    if node.class != RakuAstClass::TypeSimple
+        || node
+            .fields
+            .iter()
+            .any(super::declared_routines::is_bareword_field)
+    {
+        return None;
+    }
+    Some(Expr::BareWord(name.to_string()))
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).
