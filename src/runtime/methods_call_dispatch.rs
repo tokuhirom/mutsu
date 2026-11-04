@@ -163,6 +163,16 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
+        // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
+        // methods beyond the meta-object ones every object answers.
+        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+            && !matches!(method, "WHAT" | "HOW" | "WHO" | "VAR" | "defined")
+            && !method.starts_with('^')
+        {
+            return Err(super::methods_signature_errors::make_method_not_found_error(
+                method, "NQPMu", false,
+            ));
+        }
         if super::any_cool_method_gate::fmt_has_no_candidate(&target, method) {
             return Err(make_multi_no_match_error(method));
         }
