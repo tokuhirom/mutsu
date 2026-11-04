@@ -323,6 +323,13 @@ impl VisitMut for Finalize<'_> {
             *expr = term;
             return;
         }
+        // A core bare call (`callsame`, `done`, ...): see `bareword::core_bare_call`.
+        if let Expr::BareWord(word) = inner
+            && let Some(call) = super::bareword::core_bare_call(names, word)
+        {
+            *expr = call;
+            return;
+        }
         if !carried::expr_carried(inner) {
             match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
@@ -671,6 +678,7 @@ mod tests {
             "(1, 2, 3) ==> map({ $_ * 2 }) ==> my @out; say @out; for 1..3 { next if $_ == 2; last if $_ == 3; say $_ }",
             "my $t = q:to/E/;\n  hi $*PID\n  E\nsay $t.chars > 0;",
             "use nqp; my $t = nqp::time; say $t > 0; say nqp::const::CCLASS_WHITESPACE > 0;",
+            "sub e { callsame }; sub f { nextsame }; sub g { lastcall }; sub h { nextcallee }; say 1;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
             "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",
