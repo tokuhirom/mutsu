@@ -31,7 +31,7 @@ impl Interpreter {
     pub(super) fn collect_export_stash_types(stmts: &[crate::ast::Stmt]) -> Vec<(String, String)> {
         let mut scan = ExportStashTypes::default();
         crate::ast_visit::walk_stmts(&mut scan, stmts);
-        scan.0
+        scan.out
     }
 
     /// True if `stmts` declares, anywhere, a `sub`/`proto`/`multi` whose body
@@ -108,59 +108,73 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
 }
 
 /// The walk of `Interpreter::collect_export_stash_types` (ADR-0137 visitor).
+/// `stash` is the `EXPORT::<tag>` package being walked; `nested` counts the
+/// scopes (packages, classes, roles, routines) opened inside it, so only a type
+/// declared directly in the stash counts.
 #[derive(Default)]
-struct ExportStashTypes(Vec<(String, String)>);
-
-impl ExportStashTypes {
-    /// The types `stmts` declares directly in `package`; an `is export` type and
-    /// its export marker travel in a synthetic block.
-    // Cost: O(n), n = statements of the package body.
-    fn declared_in(&mut self, stmts: &[crate::ast::Stmt], package: &str) {
-        use crate::ast::Stmt;
-        for inner in stmts {
-            let declared = match inner {
-                Stmt::SyntheticBlock(nested) => {
-                    self.declared_in(nested, package);
-                    continue;
-                }
-                Stmt::ClassDecl {
-                    name,
-                    is_lexical: false,
-                    ..
-                }
-                | Stmt::RoleDecl {
-                    name,
-                    is_lexical: false,
-                    ..
-                }
-                | Stmt::SubsetDecl {
-                    name, is_my: false, ..
-                }
-                | Stmt::EnumDecl {
-                    name, is_my: false, ..
-                } => Some(name.resolve()),
-                _ => None,
-            };
-            if let Some(declared) = declared
-                && !declared.starts_with("__ANON_")
-                && !crate::qualified::is_qualified_str(&declared)
-            {
-                self.0.push((declared.clone(), format!("{package}::{declared}")));
-            }
-        }
-    }
+struct ExportStashTypes {
+    out: Vec<(String, String)>,
+    stash: Option<String>,
+    nested: usize,
 }
 
 impl<'ast> crate::ast_visit::Visit<'ast> for ExportStashTypes {
     fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
         use crate::ast::Stmt;
-        if let Stmt::Package { name, body, .. } = stmt {
+        if let Stmt::Package { name, .. } = stmt {
             let package = name.resolve();
             if Interpreter::export_stash_tag(&package).is_some() {
-                self.declared_in(body, &package);
+                let saved = (self.stash.replace(package), self.nested);
+                self.nested = 0;
+                crate::ast_visit::walk_stmt(self, stmt);
+                (self.stash, self.nested) = saved;
+                return;
             }
         }
+        let declared = match stmt {
+            Stmt::ClassDecl {
+                name,
+                is_lexical: false,
+                ..
+            }
+            | Stmt::RoleDecl {
+                name,
+                is_lexical: false,
+                ..
+            }
+            | Stmt::SubsetDecl {
+                name, is_my: false, ..
+            }
+            | Stmt::EnumDecl {
+                name, is_my: false, ..
+            } => Some(name.resolve()),
+            _ => None,
+        };
+        if let (Some(declared), Some(stash)) = (declared, self.stash.as_deref())
+            && self.nested == 0
+            && !declared.starts_with("__ANON_")
+            && !crate::qualified::is_qualified_str(&declared)
+        {
+            let registered = crate::qualified::qualified_text(stash, &declared)
+                .as_str()
+                .to_string();
+            self.out.push((declared, registered));
+        }
+        let opens_scope = matches!(
+            stmt,
+            Stmt::Package { .. }
+                | Stmt::ClassDecl { .. }
+                | Stmt::RoleDecl { .. }
+                | Stmt::SubDecl { .. }
+                | Stmt::ProtoDecl { .. }
+        );
+        if opens_scope {
+            self.nested += 1;
+        }
         crate::ast_visit::walk_stmt(self, stmt);
+        if opens_scope {
+            self.nested -= 1;
+        }
     }
 }
 

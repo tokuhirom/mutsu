@@ -1539,7 +1539,11 @@ impl Interpreter {
                 // Nested in a `unit module M;` the stash is `M::EXPORT::<tag>`.
                 let registered = unit_name
                     .as_deref()
-                    .map(|unit| format!("{unit}::{stash_name}"))
+                    .map(|unit| {
+                        crate::qualified::qualified_text(unit, stash_name)
+                            .as_str()
+                            .to_string()
+                    })
                     .into_iter()
                     .chain(std::iter::once(stash_name.clone()))
                     .find(|candidate| {
