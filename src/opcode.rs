@@ -8857,6 +8857,18 @@ impl CompiledCode {
             .get_or_init(|| self.free_var_syms.iter().copied().collect())
     }
 
+    /// Whether `name` is mentioned by this chunk: one of its free variables, or
+    /// a string constant (a type, bareword or routine name an op carries).
+    // Cost: O(c), c = constants of the chunk.
+    pub(crate) fn mentions_name(&self, name: &Symbol) -> bool {
+        self.capture_free_var_set().contains(name)
+            || name.with_str(|n| {
+                self.constants
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Str(s) if s.as_str() == n))
+            })
+    }
+
     /// The enum-bare env keys (`enum_bare_key`) of this chunk's free variables.
     // Cost: O(f) once per chunk (f = free variables), O(1) afterwards.
     pub(crate) fn free_enum_bare_keys(&self) -> &[Symbol] {
