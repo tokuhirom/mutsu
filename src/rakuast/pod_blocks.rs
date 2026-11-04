@@ -178,7 +178,9 @@ fn parse_atoms(
         }
         if ch.is_ascii_uppercase() {
             let after = &rest[1..];
-            let opener = ["<<", "<", "«"].into_iter().find(|o| after.starts_with(o));
+            let opener = ["<<<", "<<", "<", "«"]
+                .into_iter()
+                .find(|o| after.starts_with(o));
             if let Some(opener) = opener {
                 // `E<...>` is an entity, and a letter after a word character
                 // is not told apart from its text here.
@@ -186,12 +188,38 @@ fn parse_atoms(
                     return None;
                 }
                 let closer = match opener {
+                    "<<<" => ">>>",
                     "<<" => ">>",
                     "<" => ">",
                     _ => "»",
                 };
                 if !buf.is_empty() {
                     atoms.push(Atom::Text(std::mem::take(&mut buf)));
+                }
+                if opener == "<<<" {
+                    // A triple-delimited code holds its content as one raw
+                    // string: no nested codes and no metadata are read in it.
+                    let body = &after[3..];
+                    let end = body.find(">>>")?;
+                    let content = &body[..end];
+                    if body.starts_with('<')
+                        || content.is_empty()
+                        || ch == 'E'
+                        || content.contains(['|', '«', '»'])
+                    {
+                        return None;
+                    }
+                    atoms.push(Atom::Markup(Markup {
+                        letter: ch,
+                        opener: "<<<",
+                        closer: ">>>",
+                        atoms: vec![Atom::Text(content.to_string())],
+                        meta: None,
+                        entities: None,
+                    }));
+                    at += 1 + 3 + end + 3;
+                    previous = Some('>');
+                    continue;
                 }
                 if ch == 'E' {
                     let body = &after[opener.len()..];
