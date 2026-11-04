@@ -106,6 +106,13 @@ impl Interpreter {
         // `Scalar` container, so a `Proxy` is FETCHed on the way in exactly as
         // `@a[0] = $p` is. Done before the branches below, each of which pops
         // the value for its own store path.
+        // A raw BOOT scalar box pushed as an element is its high-level value
+        // (#12881).
+        if let Some(top) = self.stack.last_mut()
+            && top.is_boot_scalar_box()
+        {
+            *top = top.clone().hllize_for_binding();
+        }
         if self.stack.last().is_some_and(Value::is_proxy_value) {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let val = self.fetch_proxy_for_store(val)?;

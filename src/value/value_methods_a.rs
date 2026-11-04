@@ -950,6 +950,9 @@ impl Value {
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
             | ValueView::GenericRange { .. } => self.item(),
+            // A raw BOOT scalar box is its high-level value once it is an
+            // element (#12881).
+            ValueView::Instance { .. } if self.is_boot_scalar_box() => self.hllize_for_binding(),
             _ => self,
         }
     }
