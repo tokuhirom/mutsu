@@ -271,11 +271,24 @@ fn assignment_node(
     names: &NameScope,
     a: &crate::ast::parsed::Assign,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // The source is converted first: a target that is a copy of a term
+    // (`$n = $n.abs`) would otherwise take the range of the source's `$n`,
+    // the one unclaimed term of its shape in the statement.
+    let right = view_expr(names, &a.source)?;
+    let mut left = target_node(names, &a.target)?;
+    // A variable target is not a term the parser placed: a range it found
+    // is the source's (`leading_variable` places the target afterwards).
+    if matches!(
+        a.target,
+        crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_)
+    ) {
+        left.origin = Default::default();
+    }
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), target_node(names, &a.target)?),
+            node_field(Some("left"), left),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -291,7 +304,7 @@ fn assignment_node(
                     },
                 },
             ),
-            node_field(Some("right"), view_expr(names, &a.source)?),
+            node_field(Some("right"), right),
         ],
     })
 }
