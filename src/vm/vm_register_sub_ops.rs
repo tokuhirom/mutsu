@@ -619,7 +619,16 @@ impl Interpreter {
             // subs share `MAINLINE_UNIT_KEY`, while sibling blocks are distinct
             // scopes that may each declare the same name — so a block-declared
             // sub gets its own `UNIT<block ...>` bucket.
-            let capture_bucket: Option<String> = if self
+            let capture_bucket: Option<String> = if self.at_eval_unit_top_level()
+                && !self.is_thread_clone()
+                && self.current_package_sym() == crate::symbol::wk::global_package()
+                && let Some(key) = self.module.eval_unit_capture_key.clone()
+            {
+                // An EVAL unit's own top level is a scope of its own: its
+                // named subs capture the unit's variables in a bucket per run,
+                // not through whichever caller chain they are called from.
+                Some(key.to_string())
+            } else if self
                 .env()
                 .get("__mutsu_in_eval")
                 .is_none_or(|v| !v.truthy())

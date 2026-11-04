@@ -2976,6 +2976,12 @@ pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
 /// them. Contains `<`/`>` for the same reason [`MAINLINE_UNIT_KEY`] does.
 pub(crate) const BLOCK_LEXICAL_UNIT_PREFIX: &str = "UNIT<block ";
 
+/// Prefix of the capture bucket key of one `EVAL` run: the named subs at the
+/// unit's top level capture the unit's variables there, one bucket per run
+/// (the `EVAL` unit is not the program's mainline, which owns
+/// [`MAINLINE_UNIT_KEY`]).
+pub(crate) const EVAL_UNIT_CAPTURE_PREFIX: &str = "UNIT<eval ";
+
 /// Immutable process-constant magic/dynamic variables hoisted into the shared
 /// env base tier (see `Interpreter::new`). These hold the same value for the
 /// whole process and are never reassigned/removed by normal programs, so they

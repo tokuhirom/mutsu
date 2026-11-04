@@ -71,6 +71,16 @@ impl Interpreter {
             std::mem::replace(&mut self.module.eval_unit_block_depth, self.block_scope_depth + 1);
         let saved_unit_routine_depth =
             std::mem::replace(&mut self.module.eval_unit_routine_depth, self.routine_stack.len());
+        self.module.eval_unit_counter += 1;
+        let unit_capture_key: std::sync::Arc<str> = std::sync::Arc::from(format!(
+            "{}{}>",
+            crate::runtime::EVAL_UNIT_CAPTURE_PREFIX,
+            self.module.eval_unit_counter
+        ));
+        let saved_unit_capture_key = self
+            .module
+            .eval_unit_capture_key
+            .replace(unit_capture_key.clone());
         let routine_snapshot = self.snapshot_routine_registry();
         let hidden_local_subsets = self.hide_dynamic_callers_local_subs();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
@@ -221,6 +231,7 @@ impl Interpreter {
         self.module.eval_import_unit = saved_eval_unit;
         self.module.eval_unit_block_depth = saved_unit_depth;
         self.module.eval_unit_routine_depth = saved_unit_routine_depth;
+        self.module.eval_unit_capture_key = saved_unit_capture_key;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;
