@@ -28,7 +28,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         if is_win32 {
-            let (volume, after_vol) = Self::split_win32_volume_normalized(&path);
+            let (volume, after_vol) = Self::split_win32_volume(&path);
             let (dir, file) = if nofile
                 || after_vol.ends_with('/')
                 || after_vol.ends_with('\\')
