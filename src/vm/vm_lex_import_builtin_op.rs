@@ -50,9 +50,12 @@ impl Interpreter {
         let generation = self.module.lexical_import_gen;
         let memoizable = self.module.builtin_op_fallback_depth == 0;
         if memoizable
-            && code
-                .lex_import_sites
-                .operator_absent(sites, name_idx as usize, generation, chain_idx)
+            && code.lex_import_sites.operator_absent(
+                sites,
+                name_idx as usize,
+                generation,
+                chain_idx,
+            )
         {
             return Ok(ip + 1);
         }
