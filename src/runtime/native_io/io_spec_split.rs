@@ -105,38 +105,40 @@ impl Interpreter {
             let rest = after_vol;
             let is_sep = |c: char| c == '/' || c == '\\';
             let only_seps = !rest.is_empty() && rest.chars().all(is_sep);
+            let unc_volume = volume.starts_with("//") || volume.starts_with("\\\\");
             let (dirname, basename) = if only_seps {
-                let sep = rest.chars().next().unwrap().to_string();
-                (sep.clone(), sep)
-            } else if rest.ends_with('/') || rest.ends_with('\\') {
-                let trimmed = rest.trim_end_matches(['/', '\\']);
-                if let Some(pos) = trimmed.rfind(['/', '\\']) {
-                    let dir = if pos == 0 {
-                        trimmed[..=pos].to_string()
+                // A root only: the dirname is the separator as written (a UNC
+                // volume's root is always `\`), the basename is `\`.
+                let root = if unc_volume {
+                    "\\".to_string()
+                } else {
+                    rest.chars().next().unwrap().to_string()
+                };
+                (root, "\\".to_string())
+            } else if rest.is_empty() {
+                if unc_volume {
+                    ("\\".to_string(), "\\".to_string())
+                } else if !volume.is_empty() {
+                    // A bare drive (`C:`): the current directory on it.
+                    (".".to_string(), String::new())
+                } else {
+                    (String::new(), String::new())
+                }
+            } else {
+                let trimmed = rest.trim_end_matches(is_sep);
+                if let Some(pos) = trimmed.rfind(is_sep) {
+                    // The dirname loses its trailing separators, but a root
+                    // keeps one, as written.
+                    let dir = trimmed[..pos].trim_end_matches(is_sep);
+                    let dir = if dir.is_empty() {
+                        trimmed.chars().next().unwrap().to_string()
                     } else {
-                        trimmed[..pos].to_string()
+                        dir.to_string()
                     };
                     (dir, trimmed[pos + 1..].to_string())
                 } else {
                     (".".to_string(), trimmed.to_string())
                 }
-            } else if let Some(pos) = rest.rfind(['/', '\\']) {
-                let dir = if pos == 0 {
-                    "\\".to_string()
-                } else {
-                    rest[..pos].to_string()
-                };
-                (dir, rest[pos + 1..].to_string())
-            } else if rest == "." {
-                (".".to_string(), ".".to_string())
-            } else if rest.is_empty() {
-                if volume.starts_with("//") || volume.starts_with("\\\\") {
-                    ("\\".to_string(), "\\".to_string())
-                } else {
-                    (String::new(), String::new())
-                }
-            } else {
-                (".".to_string(), rest)
             };
             let mut hash = std::collections::HashMap::new();
             hash.insert("volume".to_string(), Value::str(volume));
