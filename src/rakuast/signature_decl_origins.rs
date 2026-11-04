@@ -18,6 +18,9 @@ use crate::value::{Value, ValueView};
 pub(super) struct Written {
     ty: Option<String>,
     var: String,
+    /// A sigilless `\x` parameter: written with the backslash, its target is
+    /// the name alone.
+    term: bool,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -113,22 +116,37 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 return None;
             }
             let target = child(param, "target")?;
+            if target.class == RakuAstClass::ParameterTargetTerm {
+                let name = leaf_text(child_at(target, 0)?)?;
+                return Some(Written {
+                    ty: parameter_type(param)?,
+                    var: name,
+                    term: true,
+                });
+            }
             if target.class != RakuAstClass::ParameterTargetVar {
                 return None;
             }
-            let ty = match child(param, "type") {
-                None => None,
-                Some(ty) if ty.class == RakuAstClass::TypeSimple => {
-                    Some(leaf_text(child_at(ty, 0)?)?)
-                }
-                Some(_) => return None,
-            };
             Some(Written {
-                ty,
+                ty: parameter_type(param)?,
                 var: leaf_text(target)?,
+                term: false,
             })
         })
         .collect()
+}
+
+/// The simple type name of `param` (`Some(None)` when it has none), or `None`
+/// for a type this does not read.
+// Cost: O(1).
+fn parameter_type(param: &RakuAstNode) -> Option<Option<String>> {
+    match child(param, "type") {
+        None => Some(None),
+        Some(ty) if ty.class == RakuAstClass::TypeSimple => {
+            Some(Some(leaf_text(child_at(ty, 0)?)?))
+        }
+        Some(_) => None,
+    }
 }
 
 /// Read `parameters` back, in order, from `inner`, which starts at byte
@@ -154,6 +172,10 @@ pub(super) fn scan(
                 return None;
             }
             at += gap;
+        }
+        if written.term {
+            inner[at..].strip_prefix('\\')?;
+            at += 1;
         }
         inner[at..].strip_prefix(written.var.as_str())?;
         let var = SrcSpan::new(base + at, base + at + written.var.len());

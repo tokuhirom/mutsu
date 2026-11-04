@@ -512,7 +512,9 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 topic_block_node(names, body)?
             } else {
                 // `for @a -> { }`: a pointy block with no signature at all.
-                pointy_block(names, explicit_defs, body, None)?
+                let mut block = pointy_block(names, explicit_defs, body, None)?;
+                super::routine_origins::place_signature(&mut block, explicit_defs);
+                block
             };
             // `for @a <-> $x { }`: each parameter is a writable container
             // (`default-rw => True`, before its target).

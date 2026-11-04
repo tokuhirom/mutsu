@@ -21,7 +21,7 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 /// Where the parameter `p`, read from `input` up to `rest`, was written: all
 /// of it, and its target variable (ADR-10723 Stage 2).
 // Cost: O(n), n = length of the parameter's source.
-fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
+pub(crate) fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
     let text = input[..input.len() - rest.len()].trim_end();
     let param = crate::parser::primary::source_span(input, &input[text.len()..]);
     let target = target_offset(text, p).map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
