@@ -76,7 +76,10 @@ fn tag_argument(statement: &mut RakuAstNode, span: SrcSpan) {
             return;
         };
         let at = super::unit_source::with_text(span, |text| {
-            let head = text.trim_end().strip_suffix(tag.as_str())?.strip_suffix(':')?;
+            let head = text
+                .trim_end()
+                .strip_suffix(tag.as_str())?
+                .strip_suffix(':')?;
             // A blank must separate it from the module name before it.
             head.ends_with(char::is_whitespace)
                 .then(|| span.from as usize + head.len())
