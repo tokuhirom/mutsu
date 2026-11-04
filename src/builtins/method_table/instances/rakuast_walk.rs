@@ -139,7 +139,8 @@ fn literalize(
         Ok(value) => value,
         Err(_) => return Some(Ok(cannot)),
     };
-    if crate::rakuast::literalize::is_hash_composer(node) && !matches!(value.view(), ValueView::Hash(_))
+    if crate::rakuast::literalize::is_hash_composer(node)
+        && !matches!(value.view(), ValueView::Hash(_))
     {
         return Some(Ok(cannot));
     }
