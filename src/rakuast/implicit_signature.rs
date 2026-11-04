@@ -196,7 +196,7 @@ pub(crate) fn public_attribute_expansion(var: &RakuAstNode) -> Option<Value> {
 /// whose methods have a bare invocant parameter), so a method inside it
 /// records the package its implicit invocant is typed by.
 // Cost: O(n), n = size of the body.
-pub(super) fn package_block(
+pub(super) fn pkg(
     names: &crate::scope::NameScope,
     name: Option<crate::symbol::Symbol>,
     body: &[crate::ast::Stmt],
