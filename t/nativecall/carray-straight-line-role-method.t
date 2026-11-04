@@ -7,7 +7,7 @@ use nqp;
 # (CArray's ASSIGN-POS / AT-POS) runs without a method frame (#16215). The
 # observable behaviour must not change.
 
-plan 18;
+plan 23;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^6;
@@ -65,3 +65,17 @@ is $one.bump(5), 6, 'first composition';
 is $two.bump(5), 7, 'second composition';
 is $one.bump(5), 6, 'first composition again';
 is $two.bump(5), 7, 'second composition again';
+
+# `.Array` / `.list` read every element through a native reference; the
+# reference answers the live element, also after the array was written.
+my $live = CArray[int32].new;
+$live[$_] = $_ * 10 for ^4;
+is-deeply $live.list.Array, [0, 10, 20, 30], 'list answers the stored elements';
+$live[2] = 99;
+is-deeply $live.Array, [0, 10, 99, 30], 'a later store shows in the next .Array';
+my $ref := $live[1];
+$live[1] = 7;
+is $ref, 7, 'a bound element reference reads the live element';
+$ref = 8;
+is $live[1], 8, 'and writes through to the array';
+is-deeply CArray[num64].new.Array, [], 'an empty array lists as empty';

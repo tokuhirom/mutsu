@@ -20,8 +20,9 @@ impl Interpreter {
     /// The lane handles a method whose compiled body only reads locals that
     /// are `self` or a plain positional parameter, over positional arguments
     /// that are neither pairs nor `Proxy`s, with no return type, no `is rw`,
-    /// no defaults and no native-integer or `Positional` parameter (those
-    /// bind through a coercion the lane does not repeat).
+    /// no defaults and no `Positional` or narrow native-integer parameter (those
+    /// bind through a coercion the lane does not repeat; `int` / `int64` bind
+    /// an `Int` argument as it is).
     // Cost: O(n + p), n = ops of the body, p = parameters; the body's ops dominate.
     pub(crate) fn run_straight_line_method(
         &mut self,
@@ -64,10 +65,22 @@ impl Interpreter {
             {
                 return None;
             }
-            if let Some(tc) = pd.type_constraint.as_deref()
-                && (tc.starts_with("Positional") || self.native_int_binding_type(tc).is_some())
-            {
-                return None;
+            if let Some(tc) = pd.type_constraint.as_deref() {
+                if tc.starts_with("Positional") {
+                    return None;
+                }
+                if let Some(native) = self.native_int_binding_type(tc) {
+                    // A 64-bit signed native binds an `Int` argument as it is;
+                    // every other width wraps or range-checks it, which the
+                    // lane does not repeat.
+                    let plain = matches!(native, "int" | "int64")
+                        && args
+                            .get(positional)
+                            .is_some_and(|a| matches!(a.unwrap_varref().view(), ValueView::Int(_)));
+                    if !plain {
+                        return None;
+                    }
+                }
             }
             positional += 1;
         }
