@@ -186,8 +186,35 @@ impl LexicalKeyScans {
     }
 }
 
+/// The `augment`ed candidates a class's own multi dispatcher does not see
+/// (#16049): the MRO level of the nearest class declaring `multi` candidates
+/// of the method, and the stamp from which `augment`ed candidates of the
+/// levels beyond it are hidden.
+#[derive(Clone, Copy)]
+pub(crate) struct AugmentCutoff {
+    level: usize,
+    epoch: u64,
+}
+
+impl AugmentCutoff {
+    /// Whether `def`, found at MRO level `level`, is hidden from the class.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn hides(&self, level: usize, def: &MethodDef) -> bool {
+        def.augment_epoch != 0 && level > self.level && def.augment_epoch >= self.epoch
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// `(class, method)` -> the stamp of the first `augment` that added a
+    /// `multi` candidate of `method` to an ancestor after `class` had composed
+    /// its own multi dispatcher for it. Rakudo derives a subclass's dispatcher
+    /// from its parent's when the subclass is composed, so candidates stamped
+    /// at or after that point (`MethodDef::augment_epoch`) do not join it
+    /// (#16049).
+    pub(crate) frozen_dispatchers:
+        std::collections::HashMap<(crate::symbol::Symbol, crate::symbol::Symbol), u64>,
     /// Registry keys of `my sub`s declared inside a routine body that stayed
     /// registry-resolved (not frame lexicals), each with the definition's
     /// `decl_order` and the routine-stack depth it was registered at. An
@@ -830,6 +857,32 @@ pub(crate) struct Registry {
 }
 
 impl Registry {
+    /// [`AugmentCutoff`] for `method` on a class whose MRO is `mro`; `None`
+    /// (the overwhelmingly common answer) when no `augment` froze a dispatcher.
+    // Cost: O(1) when nothing is frozen; else O(l), l = MRO levels up to the dispatcher level.
+    pub(crate) fn augment_cutoff(
+        &self,
+        mro: &[crate::symbol::Symbol],
+        method: &str,
+    ) -> Option<AugmentCutoff> {
+        if self.frozen_dispatchers.is_empty() {
+            return None;
+        }
+        let method = crate::symbol::Symbol::intern(method);
+        for (level, cn) in mro.iter().enumerate() {
+            let declares_multi = self
+                .get_method_overloads_with_role_fallback(cn.as_str(), method.as_str())
+                .is_some_and(|defs| defs.iter().any(|d| d.is_multi && !d.is_private));
+            if declares_multi {
+                return self
+                    .frozen_dispatchers
+                    .get(&(*cn, method))
+                    .map(|&epoch| AugmentCutoff { level, epoch });
+            }
+        }
+        None
+    }
+
     /// The stamp of this registry's content. Two reads that return the same
     /// value saw the same classes, roles, enums and subsets, whichever thread
     /// or copy-on-write clone they went through.
@@ -2658,6 +2711,7 @@ mod tests {
             nested_capture_index: None,
             captured_readonly: None,
             routine_cell: Default::default(),
+            augment_epoch: 0,
         };
         registry
             .classes

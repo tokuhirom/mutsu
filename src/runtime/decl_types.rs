@@ -282,6 +282,11 @@ pub(crate) struct MethodDef {
     /// builds for this def, and every clone of the def a role composition
     /// copies, shares it.
     pub(crate) routine_cell: crate::value::RoutineCell,
+    /// The declaration-order stamp of the `augment` that added this candidate
+    /// to its class; 0 for a candidate declared with the class. A subclass
+    /// whose own multi dispatcher was composed before the `augment` does not
+    /// see it (`Registry::frozen_dispatchers`, #16049).
+    pub(crate) augment_epoch: u64,
 }
 
 /// Invocant context for an active `proto method` `{*}` dispatch.

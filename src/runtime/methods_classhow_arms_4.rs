@@ -468,6 +468,7 @@ impl Interpreter {
                 nested_capture_index: None,
                 captured_readonly: None,
                 routine_cell: Default::default(),
+                augment_epoch: 0,
             };
             // A role's methods live in its `RoleDef`, which is what
             // composition (`does`, `but`, `.^mixin`) copies into the

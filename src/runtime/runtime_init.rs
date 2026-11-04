@@ -2863,6 +2863,7 @@ impl Interpreter {
                     nested_capture_index: None,
                     captured_readonly: None,
                     routine_cell: Default::default(),
+                    augment_epoch: 0,
                 };
                 let mut methods = HashMap::new();
                 // Rakudo's CompUnit::Repository role requires exactly
@@ -2931,6 +2932,7 @@ impl Interpreter {
                     nested_capture_index: None,
                     captured_readonly: None,
                     routine_cell: Default::default(),
+                    augment_epoch: 0,
                 };
                 let mut methods = HashMap::new();
                 for name in ["meta", "content"] {

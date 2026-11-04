@@ -234,6 +234,7 @@ impl Interpreter {
                         nested_capture_index: None,
                         captured_readonly: None,
                         routine_cell: Default::default(),
+                        augment_epoch: 0,
                     }]
                 } else {
                     continue;
