@@ -7,7 +7,7 @@ use nqp;
 # (CArray's ASSIGN-POS / AT-POS) runs without a method frame (#16215). The
 # observable behaviour must not change.
 
-plan 14;
+plan 18;
 
 my $n = CArray[num64].new;
 $n[$_] = $_ * 1.5e0 for ^6;
@@ -53,3 +53,15 @@ is $f.elems, 10, 'the stores landed';
 my $x = CArray[num64].new;
 $x[2] = 2e0;
 is-deeply $x.Array[0..2].list, (0e0, 0e0, 2e0), 'a gap is zero-filled';
+
+# Two compositions with a same-named straight-line method keep their own
+# bodies when the calls interleave (the resolved-call table is keyed by the
+# composition, not by the method name).
+role PlusOne { method bump($a) { nqp::add_i($a, 1) } }
+role PlusTwo { method bump($a) { nqp::add_i($a, 2) } }
+my $one = 10 but PlusOne;
+my $two = 10 but PlusTwo;
+is $one.bump(5), 6, 'first composition';
+is $two.bump(5), 7, 'second composition';
+is $one.bump(5), 6, 'first composition again';
+is $two.bump(5), 7, 'second composition again';

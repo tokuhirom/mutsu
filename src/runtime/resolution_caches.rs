@@ -514,6 +514,15 @@ pub(crate) struct ResolutionCaches {
         crate::runtime::MixinWinnerKey,
         Option<(Symbol, crate::runtime::MethodDef)>,
     >,
+    /// The straight-line role method a call on a mixin resolved to, by the
+    /// composition node's identity, the method, the receiver's definedness
+    /// and the arguments' type keys, valid while the registry has not been
+    /// written (`Interpreter::mixin_straight_front_hit`). A hit skips the whole
+    /// role walk of `dispatch_mixin_method_call`.
+    pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
+        crate::runtime::MixinFrontKey,
+        crate::runtime::MixinFrontEntry,
+    >,
     /// The `.WHAT` of a role-mixed class instance, by the identity of its
     /// shared `Gc<MixinOverrides>` node and the instance's class. The entry
     /// keeps the node alive so the address cannot be reused by another
