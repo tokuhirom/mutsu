@@ -108,6 +108,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // `*` alone: the priming scope that curries it is planted by the
         // enclosing `WhateverCurry`, so the term itself lowers to itself.
         Expr::Whatever => true,
+        // The `*` of a priming scope (`* + 1`): `WhateverCode::Argument` reads back as it.
+        Expr::WhateverArg => true,
         // A type name: the spelled parse leaves a lowercase bareword to
         // the lowering, which resolves it against what the unit imported.
         Expr::BareWord(word) => {
