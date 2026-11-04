@@ -3259,6 +3259,31 @@ impl Interpreter {
                 self.locals[idx].view(),
                 ValueView::ContainerRef(ref arc) if arc.is_readonly()
             );
+        // A variable bound to another variable that holds a Proxy
+        // (`my $p := $q`) shares `$q`'s cell, which holds the Proxy: the
+        // assignment reaches the same STORE (#16306).
+        let cell_held_proxy = match self.locals[idx].view() {
+            ValueView::ContainerRef(_) => {
+                let inner = self.locals[idx].deref_container();
+                (inner.is_proxy_value()
+                    && matches!(inner.view(), ValueView::Proxy { storer, .. } if !storer.is_nil()))
+                .then_some(inner)
+            }
+            _ => None,
+        };
+        if !is_bind
+            && !is_rebind
+            && !scalar_bind
+            && !is_vardecl
+            && let Some(inner) = cell_held_proxy
+        {
+            if inner.is_proxy_var_object() {
+                return Err(RuntimeError::readonly_variable());
+            }
+            loan_env!(self, assign_proxy_lvalue(inner, val))?;
+            self.apply_pending_rw_writeback(code);
+            return Ok(());
+        }
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
             && !is_rebind
