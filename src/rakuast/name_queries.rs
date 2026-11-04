@@ -73,7 +73,7 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             kinds.iter().all(|k| matches!(k, Part::Simple(_))),
         )),
         "is-multi-part" => flag(kinds.len() > 1 && !all_empty),
-        "is-global-lookup" => flag(first_simple(&|n| n == "GLOBAL")),
+        "is-global-lookup" => flag(first_simple(&|n| matches!(n, "GLOBAL"))),
         "is-package-lookup" => flag(matches!(kinds.last(), Some(Part::Empty))),
         "is-pseudo-package" => flag(all_empty || first_simple(&|n| PSEUDO_PACKAGES.contains(&n))),
         "is-installable" => flag(!all_empty),
