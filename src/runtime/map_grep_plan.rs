@@ -311,11 +311,14 @@ impl Interpreter {
             .as_ref()
             .map(|cc| cc.capture_free_var_set());
         let body_names_only_what_it_mentions = !code.static_name_lookup
-            && fns.is_empty()
             && !code.ops.iter().any(|op| {
                 matches!(
                     op,
-                    OpCode::MakeAnonSub(..)
+                    OpCode::RegisterDecl(..)
+                        | OpCode::RoutineScope { .. }
+                        | OpCode::PackageScope { .. }
+                        | OpCode::RegisterSubset { .. }
+                        | OpCode::MakeAnonSub(..)
                         | OpCode::MakeAnonSubParams(..)
                         | OpCode::MakeLambda(..)
                         | OpCode::MakeBlockClosure(..)
