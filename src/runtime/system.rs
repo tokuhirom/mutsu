@@ -401,6 +401,9 @@ impl Interpreter {
         // CHECK runs at compile time and INIT once before the main body,
         // matching the top-level pipeline. The EVAL-specific variant also
         // lifts BEGIN from closure bodies in the EVAL'd code.
+        // A unit with a BEGIN prologue keeps its per-run capture bucket
+        // (`eval_unit_capture_key`): the declaring frame's reads of the bucket
+        // name the running unit's key (`eval_unit_declaring_key`, #16476).
         crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
