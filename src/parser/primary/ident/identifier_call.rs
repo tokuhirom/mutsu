@@ -1973,6 +1973,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = crate::parser::primary::parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        // `name()` with a declared type of that name is the type's coercion
+        // type literal even when a same-named `sub` is declared too: the
+        // type wins the bare/parenthesised term, and the sub stays
+        // reachable as `&name()` (a `CallOn` of `CodeVar`).
+        if args.is_empty()
+            && crate::parser::stmt::simple::is_user_declared_type(&name)
+            && crate::parser::stmt::simple::is_user_declared_sub(&name)
+        {
+            return Ok((
+                rest,
+                Expr::Literal(Value::package(Symbol::intern(&format!("{name}(Any)")))),
+            ));
+        }
         if let Some((package, member)) = name.rsplit_once("::")
             && matches!(package, "MY" | "OUTER")
             && !member.is_empty()
