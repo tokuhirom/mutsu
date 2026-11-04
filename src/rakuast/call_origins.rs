@@ -105,6 +105,31 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         operand_end = past_parens(span, operand_from, operand_end);
     }
     super::call_term_origins::place(node, operand_end as usize, span);
+    // `@a>>.name`: the `MetaPostfix::Hyper` runs from the `>>` to the end and
+    // holds the call, which starts at its name.
+    if super::infix_origins::child(node, "postfix")
+        .is_some_and(|p| p.class == RakuAstClass::MetaPostfixHyper)
+    {
+        let operand_end = operand_end as usize;
+        let skip = super::unit_source::with_text(
+            crate::ast::SrcSpan::new(operand_end, span.to as usize),
+            |t| {
+                t.strip_prefix(">>")
+                    .map(|_| 2)
+                    .or_else(|| t.strip_prefix('\u{bb}').map(|_| '\u{bb}'.len_utf8()))
+            },
+        );
+        if let Some(skip) = skip {
+            super::infix_origins::with_child(node, "postfix", |hyper| {
+                set_span(
+                    hyper,
+                    crate::ast::SrcSpan::new(operand_end, span.to as usize),
+                );
+                place_call(hyper, None, operand_end + skip, span, false);
+            });
+        }
+        return;
+    }
     place_call(node, Some("postfix"), operand_end as usize, span, false);
 }
 
