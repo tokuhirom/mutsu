@@ -121,7 +121,10 @@ fn row_text(node: &RakuAstNode) -> String {
     let height = lines.iter().map(Vec::len).max().unwrap_or(0);
     let mut out = String::new();
     for k in 0..height {
-        let row: Vec<&str> = lines.iter().map(|l| l.get(k).copied().unwrap_or("")).collect();
+        let row: Vec<&str> = lines
+            .iter()
+            .map(|l| l.get(k).copied().unwrap_or(""))
+            .collect();
         out.push_str(&row.join("  "));
         out.push('\n');
     }
