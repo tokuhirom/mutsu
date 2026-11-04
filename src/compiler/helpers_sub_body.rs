@@ -218,6 +218,9 @@ impl Compiler {
             .iter()
             .flat_map(|frame| frame.keys())
             .filter(|k| k.starts_with('&'))
+            // A binding the BEGIN prologue declared but whose run-time half has
+            // not compiled yet is a forward reference for this closure (#16351).
+            .filter(|k| !(self.prologue_ended && self.static_half_amp.contains(*k)))
             .cloned()
             // A role method's closure outlives the frame that bound the role's
             // `&` parameters, so it has to capture them like any outer `&name`.

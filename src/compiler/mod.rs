@@ -1307,6 +1307,15 @@ pub(crate) struct Compiler {
     /// the name resolves by name again after the loop. Reused by
     /// [`Self::alloc_local`] for the next binding of the same name.
     retired_loop_param_slots: HashMap<String, u32>,
+    /// The `&`-names whose declaration-only half the BEGIN prologue split off
+    /// (`VarMarks::static_bind_half`) and whose binding declaration has not
+    /// compiled yet. Once the prologue has ended (`prologue_ended`), a closure
+    /// compiled before that binding sees them as forward references, not as
+    /// outer code variables to capture (#16351).
+    static_half_amp: std::collections::HashSet<String>,
+    /// The compile has passed `Stmt::BeginPrologueEnd`: what follows is the
+    /// unit's run-time remainder.
+    prologue_ended: bool,
     /// The ENCLOSING compilation's scope chain (outermost first), for compilers
     /// that are compiling a nested body. `local_scopes` stops at the routine /
     /// closure boundary because slot allocation does, but the *lexical* chain does
@@ -2130,6 +2139,8 @@ impl Compiler {
             top_level_is_block_body: false,
             pending_scope_frame: None,
             retired_loop_param_slots: HashMap::new(),
+            static_half_amp: std::collections::HashSet::new(),
+            prologue_ended: false,
             enclosing_scopes: Vec::new(),
             outer_write_names: Default::default(),
             role_param_scope: None,
