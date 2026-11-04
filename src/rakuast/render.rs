@@ -454,6 +454,19 @@ fn render_leaf(v: &Value) -> String {
         // A complex leaf renders as the angle-bracket literal that is its
         // `.raku` (`ComplexLiteral.new(<1+2i>)`).
         ValueView::Complex(..) => format!("<{}>", v.to_string_value()),
+        // A pair leaf (the `meta` of a `Doc::Markup` entity code) renders as its
+        // `.raku`: `:gt(">")` for an identifier key, `"0x41" => "A"` otherwise.
+        ValueView::Pair(key, value) => {
+            let key = key.to_string();
+            let mut chars = key.chars();
+            let identifier = chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+                && chars.all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+            if identifier {
+                format!(":{key}({})", render_leaf(value))
+            } else {
+                format!("{} => {}", render_str_literal(&key), render_leaf(value))
+            }
+        }
         // A rational leaf renders as its `.raku`, exactly (`RatLiteral.new(1.0)`,
         // every decimal digit), not as its `.Str` (`1`, rounded).
         ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
