@@ -3131,10 +3131,13 @@ impl Compiler {
                     // Sink context: a bare call statement sinks its value, so a
                     // returned unhandled Failure throws (e.g. `pop @a;` /
                     // `shift @a;` on an empty array — Raku's X::Cannot::Empty).
-                    // `false` = a function-call return is not auto-`sink`ed
-                    // (Raku keeps it container-wrapped); only Failure/lazy
-                    // handling applies. Matches the method form `@a.pop;`.
-                    self.code.emit(OpCode::SinkPop(false, true));
+                    // A function-call return is not auto-`sink`ed unless the
+                    // callee hands back a decontainerized value (Raku keeps
+                    // `pop @a` container-wrapped): `SinkPopCall` asks the
+                    // callee, an imported routine included (`slack { Foo.new }`
+                    // from Object::Delayed, #16331); only Failure/lazy handling
+                    // applies to a builtin. Matches the method form `@a.pop;`.
+                    self.emit_sink_pop_call(*name);
                     return;
                 }
 

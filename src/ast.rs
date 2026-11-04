@@ -998,6 +998,10 @@ pub(crate) struct RoutineBodyFacts {
     /// sinks (#11537; `routine_scans::result_is_decontainerized`). Says
     /// nothing about the `is rw`/`is raw` traits, which the caller checks.
     pub(crate) result_is_decontainerized: bool,
+    /// The body's result is the value of a plain call, so an `is raw` routine
+    /// hands back a fresh object rather than a container (#16331;
+    /// `result_decont::raw_result_is_fresh_call`).
+    pub(crate) result_is_fresh_call: bool,
     /// Line-insensitive identity of the declaration (params, param_defs, body
     /// with top-level `SetLine` markers stripped) — the redeclaration
     /// comparison keys on it. Carried here so a plan-derived def keeps its

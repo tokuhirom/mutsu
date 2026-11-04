@@ -62,6 +62,23 @@ pub(crate) fn result_is_decontainerized(param_defs: &[ParamDef], stmts: &[Stmt])
     !scan.found && !tail_is_readonly_param(param_defs, stmts)
 }
 
+/// Whether an `is raw` routine's result is a fresh value rather than a
+/// container: its last statement is a call (`nqp::create(T)`,
+/// `nqp::p6bindattrinvres(...)`) and no explicit `return` is involved. A raw
+/// routine hands its result back undecontainerized, so a variable, a subscript
+/// or a method call may yield a container; the value of a plain call is the
+/// object itself, which its caller sinks (#16331).
+// Cost: O(n), n = size of the body outside nested code objects.
+pub(crate) fn raw_result_is_fresh_call(stmts: &[Stmt]) -> bool {
+    let mut scan = ReturnScan::default();
+    walk_stmts(&mut scan, stmts);
+    !scan.found
+        && matches!(
+            super::last_value_stmt(stmts, super::TailSkip::Markers),
+            Some(Stmt::Expr(Expr::Call { .. }))
+        )
+}
+
 /// Whether the value of `stmts` can be a readonly `$` parameter of the
 /// routine: its last value statement, an `if` branch's or a ternary arm's.
 /// Follows only the tail, with a worklist.

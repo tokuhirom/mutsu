@@ -112,6 +112,20 @@ impl Interpreter {
         Some(found)
     }
 
+    /// Whether `value`'s type declares a user `^find_method`, which answers
+    /// every method name, `sink` included.
+    // Cost: O(1) when no type declares `^find_method` (one atomic load);
+    // otherwise the memoized `(class, ^find_method)` probe.
+    pub(crate) fn user_find_method_declares(&mut self, value: &Value) -> bool {
+        if !any_user_find_method() {
+            return false;
+        }
+        let ValueView::Instance { class_name, .. } = value.descalarize().view() else {
+            return false;
+        };
+        self.has_user_method_sym(class_name.as_str(), Symbol::intern(USER_FIND_METHOD))
+    }
+
     /// The string a user `^find_method` answers for the stringifier `method`
     /// (`Str`, `Stringy`, `gist`) on `value`, for the string contexts that
     /// coerce without a method-call opcode (`~`, interpolation, `join`, a
