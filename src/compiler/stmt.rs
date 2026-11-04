@@ -1025,6 +1025,7 @@ impl Compiler {
                 self.code.emit(OpCode::ThrowUndeclaredRoutine(call.clone()));
             }
             Stmt::BeginPrologueEnd => {
+                self.prologue_ended = true;
                 self.code.emit(OpCode::EndBeginPrologue);
             }
             Stmt::RunCheckCode => {
@@ -1468,6 +1469,16 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
+                // The BEGIN prologue's declaration-only half of `my &f := ...`
+                // declares the name early; the whole binding declaration later
+                // in the remainder is what binds it (#16351).
+                if name.starts_with('&') {
+                    if marks.static_bind_half {
+                        self.static_half_amp.insert(name.clone());
+                    } else {
+                        self.static_half_amp.remove(name.as_str());
+                    }
+                }
                 // The parser marks a declaration whose initializer reads the
                 // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
                 let init_sees_self =
