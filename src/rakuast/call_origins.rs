@@ -126,6 +126,11 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.class != RakuAstClass::ApplyDottyInfix || !span.is_some() {
         return;
     }
+    if super::infix_origins::child(node, "infix")
+        .is_some_and(|i| i.class == RakuAstClass::DottyInfixCall)
+    {
+        return dotty_call(node, span);
+    }
     let is_call_assign = super::infix_origins::child(node, "infix")
         .is_some_and(|i| i.class == RakuAstClass::DottyInfixCallAssign);
     if !is_call_assign {
@@ -164,6 +169,37 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         }
     }
     place_call(node, Some("right"), from + op_at + 2, span, true);
+}
+
+/// A method call written at the start of a continuation line
+/// (`ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`): the `.` is the
+/// operator, the method call starts at its name. The left operand keeps the
+/// range it already has; the dot is the first non-blank after it.
+// Cost: O(n), n = length of the application's source.
+fn dotty_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    let Some((_, left_end)) = super::infix_origins::child(node, "left")
+        .and_then(super::infix_origins::byte_range)
+    else {
+        return;
+    };
+    let to = span.to as usize;
+    let Some(dot) = super::unit_source::with_text(crate::ast::SrcSpan::new(left_end, to), |text| {
+        // Blanks, newlines and comments may separate the lines.
+        let gap = crate::source_comments::trivia_len(text)?;
+        // Only a plain `.name`: `.?name` and the other forms are left alone.
+        text[gap..]
+            .strip_prefix('.')
+            .filter(|rest| rest.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+            .map(|_| left_end + gap)
+    }) else {
+        return;
+    };
+    super::infix_origins::with_child(node, "infix", |infix| {
+        if infix.origin.0.is_none() {
+            set_span(infix, crate::ast::SrcSpan::new(dot, dot + 1));
+        }
+    });
+    place_call(node, Some("right"), dot + 1, span, true);
 }
 
 /// Place the method call held in field `field` of `node`, which starts after
