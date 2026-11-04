@@ -1304,6 +1304,11 @@ impl Interpreter {
                     s,
                     "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
                 ) || method_def.params.iter().any(|p| p == s)
+                    // An enum the method declares binds its keys in the method's
+                    // scope; rakudo installs them in the method's package, which
+                    // `record_package_enum_key` mirrors. Merged back they would
+                    // shadow a same-named key of the caller's own enum (#16361).
+                    || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                     || bound_by_sub_signature(&method_def.param_defs, s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
@@ -3149,6 +3154,8 @@ impl Interpreter {
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
+                        // As in the primary merge path above (#16361).
+                        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                         || bound_by_sub_signature(&method_def.param_defs, s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.
