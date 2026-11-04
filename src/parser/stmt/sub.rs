@@ -26,13 +26,13 @@ mod traits;
 
 // Signature/parameter validation (param_validate.rs).
 pub(crate) use outer_slurpy::enter_routine_body;
+pub(crate) use param_validate::validate_signature_params;
 pub(crate) use param_validate::{
     is_builtin_param_trait, placeholder_overrides_signature_error, placeholder_signature_exception,
 };
 pub(super) use param_validate::{
     literal_value_from_expr, validate_param_trait, validate_param_trait_pub,
 };
-pub(crate) use param_validate::validate_signature_params;
 pub(crate) use routine_spans::{package_spans, routine_spans};
 
 // Sub name / operator name parsing (sub_name.rs, op_name.rs).
