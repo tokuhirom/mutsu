@@ -733,7 +733,6 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 ));
             }
             routine_traits::add_flags(&mut node, *multi, *is_private);
-            node.origin.3 = names.enclosing_package().map(String::into_boxed_str);
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             // Submethod's constructor rendering omits even a written scope,
             // but its accessor still distinguishes `my` and `our`. Keep the
@@ -842,10 +841,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
-                let grammar_body = {
-                    let _package = crate::scope::PackageGuard::enter(names, None);
-                    block_node(names, &unhoist(body))?
-                };
+                let grammar_body = block_node(names, &unhoist(body))?;
                 fields.push(node_field(
                     Some("body"),
                     super::role::with_leading_statements(grammar_body, also_statements),
@@ -943,11 +939,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 });
             }
             let unhoisted = unhoist(without_composed_header(body, does_parents));
-            let class_body = {
-                let _package =
-                    crate::scope::PackageGuard::enter(names, Some(name.resolve().to_string()));
-                block_node(names, &unhoisted)?
-            };
+            let class_body = block_node(names, &unhoisted)?;
             fields.push(node_field(
                 Some("body"),
                 super::role::with_leading_statements(class_body, also_statements),

@@ -138,17 +138,12 @@ pub(super) fn view_node(
         });
     }
     let body = super::nested_methods::unhoist(&role.body[header_len..]);
-    let role_block = {
-        let _package =
-            crate::scope::PackageGuard::enter(names, Some(role.name.resolve().to_string()));
-        blockoid(names, &body)?
-    };
     fields.push(node_field(
         Some("body"),
         super::role_implicit::add(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RoleBody,
-            fields: vec![node_field(Some("body"), role_block)],
+            fields: vec![node_field(Some("body"), blockoid(names, &body)?)],
         }),
     ));
     if !role.type_param_defs.is_empty() {

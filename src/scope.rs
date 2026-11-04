@@ -38,9 +38,6 @@ pub(crate) struct NameScope {
     /// variable shadows a class of the same name declared further out, which the
     /// unit-wide names (one entry per name) cannot express.
     blocks: RefCell<Vec<HashMap<String, DeclaredKind>>>,
-    /// The package declarations being converted, innermost last: the package
-    /// a method's implicit invocant parameter is typed by.
-    packages: RefCell<Vec<Option<String>>>,
     /// The names the calling scope of an `EVAL` string or a `Str.AST` declares:
     /// the unit being converted is only the string, so its own declarations
     /// cannot say what `aa` of `enum E <aa bb>; EVAL "aa"` is.
@@ -113,25 +110,6 @@ impl NameScope {
         self.blocks.borrow_mut().pop();
     }
 
-    /// Enter the body of the package `name`; [`Self::pop_package`] leaves it.
-    // Cost: O(1).
-    pub(crate) fn push_package(&self, name: Option<String>) {
-        self.packages.borrow_mut().push(name);
-    }
-
-    /// Leave the package opened by [`Self::push_package`].
-    // Cost: O(1).
-    pub(crate) fn pop_package(&self) {
-        self.packages.borrow_mut().pop();
-    }
-
-    /// The package whose body is being converted, if any and if it types its
-    /// methods' invocants (a grammar does not).
-    // Cost: O(k), k = length of the name.
-    pub(crate) fn enclosing_package(&self) -> Option<String> {
-        self.packages.borrow().last().cloned().flatten()
-    }
-
     /// What the innermost block that declares `name` says it is.
     // Cost: O(k + d), k = length of `name`, d = block depth.
     pub(crate) fn block_kind(&self, name: &str) -> Option<DeclaredKind> {
@@ -197,22 +175,5 @@ mod tests {
             .with_caller_operators(&["infix:<foo>".to_string(), "prefix:<bar>".to_string()]);
         assert!(scope.caller_declares_operator("infix:<foo>"));
         assert!(!scope.caller_declares_operator("prefix:<bar>"));
-    }
-}
-
-/// Keeps `name` as the enclosing package of [`NameScope`] while it lives.
-pub(crate) struct PackageGuard<'a>(&'a NameScope);
-
-impl<'a> PackageGuard<'a> {
-    // Cost: O(1).
-    pub(crate) fn enter(names: &'a NameScope, name: Option<String>) -> Self {
-        names.push_package(name);
-        PackageGuard(names)
-    }
-}
-
-impl Drop for PackageGuard<'_> {
-    fn drop(&mut self) {
-        self.0.pop_package();
     }
 }
