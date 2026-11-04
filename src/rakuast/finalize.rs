@@ -330,6 +330,14 @@ impl VisitMut for Finalize<'_> {
             *expr = call;
             return;
         }
+        // A plain term the classifier resolves (`my \x`, a constant): see
+        // `bareword::term_expr`.
+        if let Expr::BareWord(word) = inner
+            && let Some(term) = super::bareword::term_expr(names, word)
+        {
+            *expr = term;
+            return;
+        }
         if !carried::expr_carried(inner) {
             match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
@@ -679,6 +687,8 @@ mod tests {
             "my $t = q:to/E/;\n  hi $*PID\n  E\nsay $t.chars > 0;",
             "use nqp; my $t = nqp::time; say $t > 0; say nqp::const::CCLASS_WHITESPACE > 0;",
             "sub e { callsame }; sub f { nextsame }; sub g { lastcall }; sub h { nextcallee }; say 1;",
+            "my \\s = 5; say s; constant zz = 3; say zz + 1; say pi; say tau; say True; say Empty.elems;",
+            "my \\target = 'a'; say target; sub f(\\c) { c }; say f(1);",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
             "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",

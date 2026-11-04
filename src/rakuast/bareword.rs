@@ -622,6 +622,32 @@ pub(super) fn core_bare_call(names: &NameScope, name: &str) -> Option<Expr> {
         .then(|| Expr::BareWord(name.to_string()))
 }
 
+/// The expression a plain-identifier term the classifier resolves to `Term::Name`
+/// (a sigilless declaration, a `constant`, an imported value) lowers to:
+/// `term_identifier_expr`, the one function the lowering of the node uses, so no
+/// node tree is built. `None` for any other classification or a qualified or
+/// otherwise decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn term_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    if node.class != RakuAstClass::TermName
+        || node.fields.iter().any(super::declared_routines::is_bareword_field)
+    {
+        return None;
+    }
+    if super::label_context::lookup(name).is_some() {
+        return None;
+    }
+    Some(super::lower::term_identifier_expr(name))
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).
