@@ -115,4 +115,20 @@ impl Compiler {
         self.code.emit(OpCode::Die { user_throw: false });
         true
     }
+
+    /// A placeholder directly inside a signature-less `do`/`try`/`once`/
+    /// `gather`/`start`/`supply` body anywhere in the unit, a routine body
+    /// included: emit the `X::Placeholder::Block` die rakudo raises at compile
+    /// time, ahead of every statement, and return true (#16303).
+    // Cost: O(n), n = size of `stmts`' subtree.
+    pub(super) fn emit_stray_block_placeholder_die(&mut self, stmts: &[Stmt]) -> bool {
+        let Some(ph) = crate::ast::regex_placeholders::find_stray_block_placeholder(stmts) else {
+            return false;
+        };
+        let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
+        let idx = self.code.add_constant(err);
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.emit(OpCode::Die { user_throw: false });
+        true
+    }
 }

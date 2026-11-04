@@ -272,11 +272,6 @@ pub(crate) enum ParsedExpr {
     /// (`StatementPrefix::Supply`). It lowers to that expansion
     /// (`rakuast::supply_lower::supply_method_call`).
     Supply(Vec<Stmt>),
-    /// The body of a `start { BODY }` whose placeholder Raku rejects, as
-    /// written. It lowers to a do-block, so the compiler reports the
-    /// diagnostic instead of `make_anon_sub` consuming the placeholder as a
-    /// parameter.
-    StartBody(Vec<Stmt>),
     /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
     /// over `Assignment` under a hyper meta-infix). It lowers to the
     /// element-wise expansion (`rakuast::hyper_assign::lower_hyper_assignment`).
@@ -897,14 +892,5 @@ impl ParsedStmt {
             },
             other => vec![other],
         }
-    }
-}
-
-impl ParsedExpr {
-    /// The body of a `start { BODY }` the compiler must reject for its
-    /// placeholder: kept as written, for the conversion.
-    // Cost: O(1).
-    pub(crate) fn start_body(body: Vec<Stmt>) -> Expr {
-        Expr::Ast(Box::new(ParsedExpr::StartBody(body)))
     }
 }

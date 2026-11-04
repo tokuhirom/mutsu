@@ -1583,11 +1583,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
-                let arg = if crate::ast::collect_unattached_placeholders(&body)
-                    .into_iter()
-                    .any(|placeholder| placeholder != "%_")
+                // A `start` block takes no signature, so a placeholder used
+                // directly in it can never be captured: rakudo rejects the
+                // program at compile time, in a routine body as much as in
+                // the mainline (#16303). `%_` is legal in a method.
+                let arg = if let Some(placeholder) =
+                    crate::ast::collect_unattached_placeholders(&body)
+                        .into_iter()
+                        .find(|placeholder| placeholder != "%_")
                 {
-                    crate::ast::parsed::ParsedExpr::start_body(body)
+                    return Err(start_block_placeholder_error(&placeholder));
                 } else {
                     make_anon_sub(body)
                 };
@@ -2876,4 +2881,19 @@ fn mark_bare_term(stmt: &mut crate::ast::Stmt) {
         crate::ast::Stmt::Ast(node) => node.mark_bare_loop_term(),
         _ => {}
     }
+}
+
+/// The fatal compile error for a placeholder variable used directly inside a
+/// `start { ... }` block, which takes no signature.
+// Cost: O(1).
+fn start_block_placeholder_error(placeholder: &str) -> PError {
+    let exception = crate::method_signature_shared::placeholder_scope_error("block", placeholder);
+    // Spell the message in the `"X::Type: text"` convention as well as
+    // attaching the structured exception, so an expression-level caller that
+    // rebuilds the error keeps the class (see
+    // `placeholder_overrides_signature_error`).
+    let message = format!(
+        "X::Placeholder::Block: Placeholder variable '{placeholder}' may not be used here because the surrounding block does not take a signature."
+    );
+    PError::fatal_with_exception(message, Box::new(exception))
 }
