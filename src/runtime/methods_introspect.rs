@@ -695,6 +695,13 @@ impl Interpreter {
 
     /// Dispatch .WHO method
     pub(super) fn dispatch_who(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        // A stash `nqp::setwho` put on the type replaces the package's own.
+        if !self.registry().who_overrides.is_empty()
+            && let Some(key) = Self::who_override_key(target)
+            && let Some(stash) = self.registry().who_overrides.get(&key).cloned()
+        {
+            return Ok(stash);
+        }
         if let ValueView::Package(name) = target.view() {
             return Ok(self.package_stash_value(&name.resolve()));
         }
