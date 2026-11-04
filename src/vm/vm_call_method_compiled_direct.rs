@@ -92,7 +92,7 @@ impl Interpreter {
             .clone()
             .expect("compiled_code set above");
         Some(self.dispatch_compiled_method(
-            cn,
+            class_sym,
             owner_class,
             method_sym,
             &method_def,
