@@ -481,8 +481,7 @@ pub(crate) fn note_env_key(key: &str) {
                 // sees the latch never sees an empty name set.
                 let bit = Symbol::intern(name).raw_id() as usize
                     & (SIGILLESS_READONLY_NAME_WORDS * 64 - 1);
-                SIGILLESS_READONLY_NAME_BITS[bit >> 6]
-                    .fetch_or(1 << (bit & 63), Ordering::Relaxed);
+                SIGILLESS_READONLY_NAME_BITS[bit >> 6].fetch_or(1 << (bit & 63), Ordering::Relaxed);
                 SIGILLESS_READONLY_KEY_SEEN.store(true, Ordering::Relaxed);
             }
         } else if key.starts_with("__mutsu_state_key::")

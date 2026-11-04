@@ -141,9 +141,8 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let armed = self.arm_raw_invocant_arrival(
-            code, target_name, &target, method, method_sym, &args,
-        );
+        let armed =
+            self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
         let result =
             self.try_compiled_method_mut_or_interpret_sym(target_name, target, method_sym, args);
         self.disarm_raw_invocant_arrival(armed);
