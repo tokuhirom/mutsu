@@ -28,6 +28,9 @@ fn documentable(class: C) -> bool {
             | C::Module
             | C::Package
             | C::VarDeclarationSimple
+            | C::TypeEnum
+            | C::TypeSubset
+            | C::Parameter
     )
 }
 
