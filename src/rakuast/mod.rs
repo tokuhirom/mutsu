@@ -10,6 +10,7 @@ mod adverb_origins;
 mod model_methods;
 mod positional_fields;
 pub use accessors::node_accessor;
+pub(crate) use doc_source::pod_source;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
@@ -93,6 +94,7 @@ mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 mod doc_phaser;
+mod doc_source;
 mod doc_str;
 mod dynamic_method;
 mod enum_term;
