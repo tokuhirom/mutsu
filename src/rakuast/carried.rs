@@ -205,7 +205,6 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::CaptureVar(_)
         | Expr::PseudoStash(_)
         | Expr::MultiDimIndex { .. }
-        | Expr::IndexAssign { .. }
         | Expr::AssignExpr { .. }
         | Expr::HyperMethodCallDynamic { .. }
         | Expr::SymbolicDeref { .. }
