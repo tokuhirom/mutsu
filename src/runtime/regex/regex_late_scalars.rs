@@ -104,6 +104,16 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                     i = j;
                     continue;
                 }
+                // The atom of an alias (`$<a>=$re`) files a capture of its own,
+                // which the interpolation atom does not.
+                let mut b = i;
+                while b > 0 && chars[b - 1].is_whitespace() {
+                    b -= 1;
+                }
+                if b > 0 && chars[b - 1] == '=' && !matches!(chars.get(b.wrapping_sub(2)), Some('=' | '!' | '<')) {
+                    i = j;
+                    continue;
+                }
                 match names.iter_mut().find(|(n, _)| *n == name) {
                     // Written after a block anywhere: late.
                     Some(entry) => entry.1 |= seen_block,
@@ -152,7 +162,7 @@ mod tests {
     fn every_scalar_of_a_pattern_is_read_at_match_time() {
         assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
         assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
-        assert_eq!(scalars_in_pattern("$a=$b").0, ["b"]);
+        assert!(scalars_in_pattern("$a=$b").0.is_empty());
         assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
         assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }

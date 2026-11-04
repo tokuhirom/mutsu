@@ -146,6 +146,14 @@ impl Interpreter {
         // A markless run compares bases, so a plain value becomes a pattern
         // too: its markless program does the comparison.
         if is_regex || ((ignore_case || markless) && !ref_text.is_empty()) {
+            // A `Regex` value is entered as a call frame of its own: its
+            // captures stay its own (`$re`'s groups do not number into the
+            // caller's) and it runs in its defining scope when it closed over
+            // one, as the `<$re>` form does.
+            let closure_scope = val.as_ref().and_then(Value::regex_closure_scope);
+            let _scope_guard = closure_scope
+                .clone()
+                .map(super::regex_helpers::RegexInterpClosureScopeGuard::activate);
             let mut source = String::from(if ignore_case { ":i " } else { "" });
             if is_regex {
                 source.push_str(&ref_text);
@@ -153,6 +161,12 @@ impl Interpreter {
                 source.push_str(&Self::escape_regex_scalar_literal(&ref_text));
             }
             return match self.parse_regex(&source) {
+                Some(parsed) if is_regex => VarInterpTarget::Pattern(match closure_scope {
+                    Some(scope) => std::sync::Arc::new(RegexPattern::single_token(
+                        RegexAtom::CaptureIsolatedGroupScoped((*parsed).clone(), scope),
+                    )),
+                    None => RegexPattern::capture_isolated(&parsed),
+                }),
                 // Under `:i` the subject was case-folded with its multi-char
                 // expansions (`ﬁ` -> `fi`), so the value's literals fold too.
                 Some(parsed) if markless => VarInterpTarget::Pattern(
