@@ -172,9 +172,16 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some((_, to)) = byte_range(node) else {
         return;
     };
-    let Some((_, from)) = child(node, "operand").and_then(byte_range) else {
+    let Some((_, operand_end)) = child(node, "operand").and_then(byte_range) else {
         return;
     };
+    // Parentheses around the operand (`(@a)[0]`) are not a node of their
+    // own, so the subscript starts after their `)`.
+    let from = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
+        let rest = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
+        Some(operand_end + (text.len() - rest.len()))
+    })
+    .unwrap_or(operand_end);
     let Some(subscript) = child(node, "postfix") else {
         return;
     };

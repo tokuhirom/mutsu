@@ -69,7 +69,9 @@ fn postfix(node: &mut RakuAstNode) {
         return;
     }
     let at = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
-        let after = text.trim_start();
+        // Parentheses around the operand (`($i)++`) are not a node of
+        // their own, so the operand ends before their `)`.
+        let after = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
         (after == op).then_some(operand_end + (text.len() - after.len()))
     });
     if let Some(at) = at {
