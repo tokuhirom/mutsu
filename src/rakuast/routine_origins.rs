@@ -211,7 +211,10 @@ pub(super) fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
     if !first.spans.param.is_some() || !last.spans.param.is_some() {
         return;
     }
-    let whole = crate::ast::SrcSpan::new(first.spans.param.from as usize, last.spans.param.to as usize);
+    let whole = crate::ast::SrcSpan::new(
+        first.spans.param.from as usize,
+        last.spans.param.to as usize,
+    );
     with_child(block, "signature", |signature| {
         parameters(signature, params);
         super::origin::set_span(signature, whole);

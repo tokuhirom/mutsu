@@ -34,8 +34,8 @@ pub(super) use method_decl::{
     expr_position_method_decl, mark_params_as_invocant, method_decl, method_decl_body,
     method_decl_body_my, submethod_decl,
 };
-pub(super) use param_inner::parse_single_param;
 pub(crate) use param_inner::param_spans;
+pub(super) use param_inner::parse_single_param;
 pub(super) use type_constraint::{
     check_invalid_type_smiley, parse_implicit_invocant_marker, parse_of_type_constraint_chain,
     parse_type_constraint_expr, strip_type_capture,
