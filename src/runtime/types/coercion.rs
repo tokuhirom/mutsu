@@ -553,7 +553,13 @@ impl Interpreter {
             // (`module Pk { class Column::List {...}; sub f(Column::List(Any)
             // $c) {...} }` registers `Pk::Column::List`) is found the way a
             // bareword type is, or its `COERCE` is never looked up.
-            let resolved_target = if self.has_type_direct(&resolved_target) {
+            //
+            // Only a nested name needs this: a plain `Bool`/`Str`/`Int` target
+            // (every `Test` assertion coerces `Bool(Mu)`) is not package-relative,
+            // and the lookup interns its name (`named_call_intern_budget`).
+            let resolved_target = if !crate::qualified::is_qualified_str(&resolved_target)
+                || self.has_type_direct(&resolved_target)
+            {
                 resolved_target
             } else if let Some(found) = self.resolve_type_in_current_package(&resolved_target) {
                 std::borrow::Cow::Owned(found)
