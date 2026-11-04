@@ -179,6 +179,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::MetaOp { .. }
         | Expr::HyperOp { .. }
         | Expr::InfixFunc { .. }
+        // The priming scope the parser planted: the conversion marks the node it
+        // wraps and the lowering puts the marker back around it.
+        | Expr::WhateverCurry(_)
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
