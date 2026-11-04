@@ -17,7 +17,7 @@ is %apply-methods.keys.sort.join(','), 'add-colonpair,colonpairs,infix,left,new,
     'multi-field node exposes constructor, mutator and accessors';
 
 is RakuAST::Name.^method_table.keys.sort.join(','),
-    'canonicalize,colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
+    'canonicalize,colonpairs,first-part,from-identifier,from-identifier-parts,has-colonpairs,is-anonymous,is-empty,is-global-lookup,is-identifier,is-indirect-lookup,is-installable,is-multi-part,is-package-lookup,is-pseudo-package,is-simple,last-part,new,parts,root-part',
     'named constructor appears in the method table';
 is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
