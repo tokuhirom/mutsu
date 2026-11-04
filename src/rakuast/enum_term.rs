@@ -102,10 +102,7 @@ pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
             }
             RakuAstClass::QuotedString if term_text.starts_with('<') => {
                 let inner = &term_text[1..term_text.len() - 1];
-                super::origin::set_span(
-                    term,
-                    crate::ast::SrcSpan::new(at, at + term_text.len()),
-                );
+                super::origin::set_span(term, crate::ast::SrcSpan::new(at, at + term_text.len()));
                 let literal_at = crate::ast::SrcSpan::new(at + 1, at + term_text.len() - 1);
                 if let Some(RakuAstFieldValue::List(segments)) = term
                     .fields
