@@ -107,8 +107,18 @@ impl Interpreter {
         if self.lexical_operator_in_scope(op_name) {
             return true;
         }
-        if Symbol::lookup(op_name).is_some_and(|sym| self.unit_visible_captured_family(sym).is_some())
-        {
+        // The two operator symbols are interned once: a store pays no string
+        // hash for the family probe.
+        static OP_SYMS: std::sync::OnceLock<[Symbol; 2]> = std::sync::OnceLock::new();
+        let syms = OP_SYMS.get_or_init(|| {
+            [
+                Symbol::intern(crate::lexical_builtin_op::postcircumfix_of_subscript(false)),
+                Symbol::intern(crate::lexical_builtin_op::postcircumfix_of_subscript(true)),
+            ]
+        });
+        let op_sym = syms[usize::from(is_positional)];
+        debug_assert_eq!(op_sym.as_str(), op_name);
+        if self.unit_visible_captured_family(op_sym).is_some() {
             return true;
         }
         let version = self.registry().functions.version();
