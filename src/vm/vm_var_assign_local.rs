@@ -770,10 +770,7 @@ impl Interpreter {
         if matches!(base, "int" | "int64") {
             if let ValueView::BigInt(n) = val.view() {
                 let bits = n.bits();
-                return Err(RuntimeError::new(format!(
-                    "Cannot unbox {} bit wide bigint into native integer",
-                    bits
-                )));
+                return Err(crate::value::RuntimeError::cannot_unbox_bigint(bits as u64));
             }
             return Ok(val);
         }
@@ -785,10 +782,7 @@ impl Interpreter {
                     return Ok(val);
                 }
                 let bits = n.bits();
-                return Err(RuntimeError::new(format!(
-                    "Cannot unbox {} bit wide bigint into native integer",
-                    bits
-                )));
+                return Err(crate::value::RuntimeError::cannot_unbox_bigint(bits as u64));
             }
             // An Int with negative value needs wrapping to unsigned range
             if let ValueView::Int(n) = val.view()
