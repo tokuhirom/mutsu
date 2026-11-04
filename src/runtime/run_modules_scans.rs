@@ -22,6 +22,18 @@ impl Interpreter {
         scan.0
     }
 
+    /// The `(short name, registered name)` of every type a `my package
+    /// EXPORT::<tag> { ... }` block declares directly (`class IP`, `role`,
+    /// `subset`, `enum`): rakudo makes the stash's contents the tag's export
+    /// list, so the importer sees them under their short names although the
+    /// runtime filed them as `EXPORT::<tag>::Name` (#16332).
+    // Cost: O(n), n = size of the compunit's AST.
+    pub(super) fn collect_export_stash_types(stmts: &[crate::ast::Stmt]) -> Vec<(String, String)> {
+        let mut scan = ExportStashTypes::default();
+        crate::ast_visit::walk_stmts(&mut scan, stmts);
+        scan.0
+    }
+
     /// True if `stmts` declares, anywhere, a `sub`/`proto`/`multi` whose body
     /// declares a `state` variable. Used to skip the shared-body capture
     /// compile for modules that cannot benefit.
@@ -92,6 +104,63 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
             }
         }
         crate::ast_visit::walk_expr(self, expr);
+    }
+}
+
+/// The walk of `Interpreter::collect_export_stash_types` (ADR-0137 visitor).
+#[derive(Default)]
+struct ExportStashTypes(Vec<(String, String)>);
+
+impl ExportStashTypes {
+    /// The types `stmts` declares directly in `package`; an `is export` type and
+    /// its export marker travel in a synthetic block.
+    // Cost: O(n), n = statements of the package body.
+    fn declared_in(&mut self, stmts: &[crate::ast::Stmt], package: &str) {
+        use crate::ast::Stmt;
+        for inner in stmts {
+            let declared = match inner {
+                Stmt::SyntheticBlock(nested) => {
+                    self.declared_in(nested, package);
+                    continue;
+                }
+                Stmt::ClassDecl {
+                    name,
+                    is_lexical: false,
+                    ..
+                }
+                | Stmt::RoleDecl {
+                    name,
+                    is_lexical: false,
+                    ..
+                }
+                | Stmt::SubsetDecl {
+                    name, is_my: false, ..
+                }
+                | Stmt::EnumDecl {
+                    name, is_my: false, ..
+                } => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(declared) = declared
+                && !declared.starts_with("__ANON_")
+                && !crate::qualified::is_qualified_str(&declared)
+            {
+                self.0.push((declared.clone(), format!("{package}::{declared}")));
+            }
+        }
+    }
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for ExportStashTypes {
+    fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
+        use crate::ast::Stmt;
+        if let Stmt::Package { name, body, .. } = stmt {
+            let package = name.resolve();
+            if Interpreter::export_stash_tag(&package).is_some() {
+                self.declared_in(body, &package);
+            }
+        }
+        crate::ast_visit::walk_stmt(self, stmt);
     }
 }
 

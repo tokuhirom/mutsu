@@ -180,6 +180,18 @@ impl DeclScan {
         self.push_type(export.clone(), export, false);
     }
 
+    /// A type declared directly in this module's own `EXPORT::<tag>` stash is
+    /// part of that tag's export list by construction, as an `our sub` there is
+    /// (Net::IP::Parse's `my package EXPORT::DEFAULT { class IP { ... } }`).
+    // Cost: O(n), n = package name length.
+    fn export_stash_type(&mut self, name: &str, lexical: bool) {
+        if lexical || !is_export_stash_package(&self.package) {
+            return;
+        }
+        let tag = self.package.rsplit("::").next().unwrap_or("DEFAULT").to_string();
+        self.export_type(name, &[tag]);
+    }
+
     fn export(&mut self, name: String) {
         self.out
             .exports
@@ -246,6 +258,9 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
+                if export_tags.is_none() {
+                    self.export_stash_type(&name, *is_lexical);
+                }
                 let composed = package_type_name(&self.prefix, &name);
                 // `is export` reaches the importer from any depth, a lexical
                 // `my class` in a routine or block included, and under the
@@ -272,6 +287,8 @@ impl<'ast> Visit<'ast> for DeclScan {
                 }
                 if *is_export && !*is_lexical {
                     self.export_type(&name, export_tags);
+                } else {
+                    self.export_stash_type(&name, *is_lexical);
                 }
                 let composed = package_type_name(&self.prefix, &name);
                 // `role A::B is export` imports `B`, as a class does.
@@ -324,6 +341,8 @@ impl<'ast> Visit<'ast> for DeclScan {
                 }
                 if *is_export && !*is_my {
                     self.export_type(&name.resolve(), export_tags);
+                } else {
+                    self.export_stash_type(&name.resolve(), *is_my);
                 }
             }
             Stmt::EnumDecl {
@@ -340,6 +359,8 @@ impl<'ast> Visit<'ast> for DeclScan {
                 }
                 if *is_export && !*is_my {
                     self.export_type(&name.resolve(), export_tags);
+                } else {
+                    self.export_stash_type(&name.resolve(), *is_my);
                 }
                 // `is export` imports a qualified enum under its short name, as
                 // it does a class (`my enum M::Endian is export` makes

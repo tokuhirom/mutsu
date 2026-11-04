@@ -1533,6 +1533,32 @@ impl Interpreter {
                 .cloned()
                 .collect();
             let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
+            // A type a `package EXPORT::<tag>` block declared is imported under
+            // its short name: bind it where the importer reads it (#16332).
+            for (short, stash_name) in &facts.export_stash_types {
+                // Nested in a `unit module M;` the stash is `M::EXPORT::<tag>`.
+                let registered = unit_name
+                    .as_deref()
+                    .map(|unit| format!("{unit}::{stash_name}"))
+                    .into_iter()
+                    .chain(std::iter::once(stash_name.clone()))
+                    .find(|candidate| {
+                        let reg = self.registry();
+                        reg.classes.contains_key(candidate)
+                            || reg.roles.contains_key(candidate)
+                            || reg.enum_types.contains_key(candidate)
+                    });
+                let Some(registered) = registered else {
+                    continue;
+                };
+                let bound_to_type = self.env.get(short).is_some_and(
+                    |v| matches!(v.view(), ValueView::Package(p) if p.resolve() == registered),
+                );
+                if !bound_to_type {
+                    self.env
+                        .insert(short.clone(), Value::package(Symbol::intern(&registered)));
+                }
+            }
             let leaked_packages: Vec<String> = module_scope_names
                 .iter()
                 .filter(|(name, value)| {
