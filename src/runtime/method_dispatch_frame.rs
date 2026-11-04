@@ -41,8 +41,8 @@ impl Interpreter {
         // "Cannot resolve caller". (Raku lets a plain SUB see an enclosing
         // dispatcher, but a method call always establishes its own, so the leak
         // is only ever wrong.)
-        let new_base_override =
-            method_name == "new" && self.has_user_method_including_role(receiver_class, method_name);
+        let new_base_override = matches!(method_name, "new" | "bless")
+            && self.has_user_method_including_role(receiver_class, method_name);
         // `Mu`'s own answers (`defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, and `gist`
         // and `perl` everywhere, `Str`/`raku` of a type object) are the base candidate too.
         let mu_base_override = (matches!(method_name, "BUILDALL" | "POPULATE" | "clone")

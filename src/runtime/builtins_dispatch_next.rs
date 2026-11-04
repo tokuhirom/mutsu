@@ -540,6 +540,9 @@ impl Interpreter {
             "new" if self.package_has_native_ctor_base(&invocant) => {
                 Some(self.dispatch_native_new(invocant, args.to_vec()))
             }
+            // `Mu.bless` is the base candidate of a user `method bless`
+            // (`callsame` / `nextsame` / `callwith` inside it).
+            "bless" => Some(self.dispatch_bless(&invocant, args.to_vec())),
             "clone" | "new" => {
                 let mut full = vec![invocant];
                 full.extend_from_slice(args);
