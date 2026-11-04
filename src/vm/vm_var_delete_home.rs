@@ -5,8 +5,8 @@
 //! whose container does not live there as a plain Hash/Array (a scalar-held
 //! one in a local slot, a compunit's file-scope `@`/`%`, an `our` variable, a
 //! `:=`-bound cell, a for-bound Scalar wrapper, a `Mixin`, a lazy array) is
-//! therefore exposed in env for the duration of the op ([`DeleteHome::enter`])
-//! and handed back to its real home afterwards ([`DeleteHome::exit`]).
+//! therefore exposed in env for the duration of the op ([`Interpreter::enter_delete_home`])
+//! and handed back to its real home afterwards ([`Interpreter::exit_delete_home`]).
 //!
 //! One type owns that dance so the handler is "enter, delete, exit"; replacing
 //! the by-name reads of the inner handler with a resolved container (ADR-14632
@@ -15,7 +15,8 @@
 use super::*;
 use crate::value::ContainerCell;
 
-/// What [`DeleteHome::enter`] changed in env, to be undone by [`DeleteHome::exit`].
+/// What [`Interpreter::enter_delete_home`] changed in env, to be undone by
+/// [`Interpreter::exit_delete_home`].
 pub(super) struct DeleteHome {
     lazy_source: Option<crate::gc::Gc<LazyList>>,
     pre_delete_len: Option<usize>,
