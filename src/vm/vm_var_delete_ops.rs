@@ -143,7 +143,10 @@ impl Interpreter {
         // the identical bug fixed in `try_fast_hash_element_assign`,
         // `vm_var_assign_element.rs`).
         {
-            let current = self.place_env_get(place, var_name).cloned().unwrap_or(Value::NIL);
+            let current = self
+                .place_env_get(place, var_name)
+                .cloned()
+                .unwrap_or(Value::NIL);
             if self.has_container_type_metadata(&current) || self.is_readonly(var_name) {
                 return None;
             }
@@ -172,7 +175,8 @@ impl Interpreter {
                 if let Some(slot) = local_slot {
                     self.locals[slot] = Value::NIL;
                 }
-                let removed = self.place_env_get_mut(place, var_name)
+                let removed = self
+                    .place_env_get_mut(place, var_name)
                     .and_then(|v| {
                         // Container identity (§3): remove through the shared
                         // backing node.
@@ -298,7 +302,8 @@ impl Interpreter {
         // read and `:exists` paths (which carry `is_positional` / `kind`), this
         // one only has the variable name. A `%h`-shaped target is exactly the
         // case that must not numify.
-        let target_is_hash = self.place_env_get(place, &var_name)
+        let target_is_hash = self
+            .place_env_get(place, &var_name)
             .map(|v| matches!(v.deref_container().view(), ValueView::Hash(_)))
             .unwrap_or(false);
         let idx = match idx.view() {
@@ -325,7 +330,8 @@ impl Interpreter {
         // undefined) is not a hash lookup, and — unlike an `Instance`/`Mixin`
         // target — has no DELETE-POS to dispatch to either: raku's
         // `postcircumfix:<[ ]>` refuses to index with a type object at all.
-        let target_is_array = self.place_env_get(place, &var_name)
+        let target_is_array = self
+            .place_env_get(place, &var_name)
             .map(|v| matches!(v.deref_container().view(), ValueView::Array(..)))
             .unwrap_or(false);
         if target_is_array && Self::is_type_object_index(&idx) {
@@ -378,7 +384,8 @@ impl Interpreter {
         // The variable may hold the object through a `:=`-bound cell, or as the
         // `Proxy` an rw accessor / subscript handed back (`my $t := $d<a><b>`,
         // Red's JSON items): the delete addresses what that FETCHes to.
-        let held = self.place_env_get(place, &var_name)
+        let held = self
+            .place_env_get(place, &var_name)
             .cloned()
             .map(|value| value.deref_container());
         let object_target = match held {
@@ -494,7 +501,8 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        let declared_type_del = self.place_env_get(place, &var_name)
+        let declared_type_del = self
+            .place_env_get(place, &var_name)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
@@ -539,7 +547,8 @@ impl Interpreter {
             }
         }
         // Save type metadata before delete (Arc::make_mut may change pointer)
-        let saved_meta = self.place_env_get(place, &var_name)
+        let saved_meta = self
+            .place_env_get(place, &var_name)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v));
         // Save container default (pointer-keyed) before delete so we can
@@ -551,7 +560,8 @@ impl Interpreter {
         // Prefer the value-carried default (HashData/ArrayData) so `:delete` of
         // an absent key yields the default even when the container arrived via a
         // parameter (whose name does not resolve through the by-name `var_default`).
-        let saved_default = self.place_env_get(place, &var_name)
+        let saved_default = self
+            .place_env_get(place, &var_name)
             .and_then(|v| self.container_default(v))
             .or_else(|| self.var_default(&var_name).cloned());
         // Resolve WhateverCode indices (e.g. *-1) for array targets
@@ -595,7 +605,9 @@ impl Interpreter {
             // Convert index value to a Str containing the WHICH key
             let which = self.which_key(&idx);
             // Check if the hash uses WHICH keys or encoded keys
-            if let Some(ValueView::Hash(map)) = self.place_env_get(place, &var_name).map(Value::view) {
+            if let Some(ValueView::Hash(map)) =
+                self.place_env_get(place, &var_name).map(Value::view)
+            {
                 if map.contains_key(&which) {
                     Value::str(which)
                 } else {
@@ -616,7 +628,8 @@ impl Interpreter {
                 .iter()
                 .map(|k| {
                     let which = crate::runtime::utils::value_which_key(k);
-                    if let Some(ValueView::Hash(map)) = self.place_env_get(place, &var_name).map(Value::view)
+                    if let Some(ValueView::Hash(map)) =
+                        self.place_env_get(place, &var_name).map(Value::view)
                         && map.contains_key(&which)
                     {
                         Value::str(which)
@@ -631,7 +644,10 @@ impl Interpreter {
             // A bare type object key coerces to "" (warning / user .Str) before
             // the delete, matching the store/read/exists paths.
             Value::str(self.coerce_type_object_hash_key(&idx)?)
-        } else if let Some(held) = self.place_env_get(place, &var_name).map(|v| v.descalarize().clone()) {
+        } else if let Some(held) = self
+            .place_env_get(place, &var_name)
+            .map(|v| v.descalarize().clone())
+        {
             // A `$` holding an object hash has no key constraint of its own
             // (the constraint belongs to the hash it holds).
             self.object_hash_delete_key(&held, idx)
@@ -751,10 +767,11 @@ impl Interpreter {
         // `initialized` set and element type the live array has. `keep_missing`
         // is true here, so no slot is dropped either way -- but the snapshot
         // must not look like a differently-typed array.
-        let data_snap: crate::value::ArrayData = match self.place_env_get(place, var_name).map(Value::view) {
-            Some(ValueView::Array(items, ..)) => crate::value::ArrayData::clone(&**items),
-            _ => crate::value::ArrayData::new(Vec::new()),
-        };
+        let data_snap: crate::value::ArrayData =
+            match self.place_env_get(place, var_name).map(Value::view) {
+                Some(ValueView::Array(items, ..)) => crate::value::ArrayData::clone(&**items),
+                _ => crate::value::ArrayData::new(Vec::new()),
+            };
         let missing = Value::package(crate::symbol::Symbol::intern(&hole_type));
         // Plain `:delete` returns the values, keeping missing slots (as the hole).
         let result = Value::array(Self::format_positional_slice_level(

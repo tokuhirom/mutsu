@@ -121,10 +121,11 @@ impl Interpreter {
         // runs and (for a plain Array) may trim a trailing hole off; restored
         // below if trimming shortened it.
         let pre_delete_len = lazy_source.as_ref().and_then(|_| {
-            self.place_env_get(place, &var_name).and_then(|v| match v.view() {
-                ValueView::Array(items, _) => Some(items.len()),
-                _ => None,
-            })
+            self.place_env_get(place, &var_name)
+                .and_then(|v| match v.view() {
+                    ValueView::Array(items, _) => Some(items.len()),
+                    _ => None,
+                })
         });
         let saved_env_entry = unit_cell.as_ref().map(|cell| {
             let saved = self.env().get(&var_name).cloned();
