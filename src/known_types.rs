@@ -120,6 +120,8 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Perl"
             | "VM"
             | "Variable"
+            // The bootstrap type of an unbound `my ::T $x` capture variable.
+            | "NQPMu"
             // Array-like
             | "array"
             | "Hashray"

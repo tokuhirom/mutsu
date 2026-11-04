@@ -72,7 +72,7 @@ pub(super) fn method_not_found_for_value(method: &str, target: &Value) -> Runtim
 }
 
 /// Create a structured X::Method::NotFound error.
-pub(super) fn make_method_not_found_error(
+pub(crate) fn make_method_not_found_error(
     method_name: &str,
     type_name: &str,
     private: bool,

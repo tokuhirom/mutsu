@@ -1331,15 +1331,16 @@ impl Compiler {
                     _ => type_constraint.clone(),
                 };
                 // A `::T` type-capture constraint (`my ::a $a`) introduces a
-                // fresh type variable rather than naming an existing type. With
-                // no value to capture from, the captured type is unconstrained
-                // (Mu), so we drop the constraint instead of trying to resolve
-                // `::a` as a real type (which would die "Type '::a' is not
-                // declared").
+                // fresh type variable rather than naming an existing type. Outside
+                // a signature nothing binds the capture, and rakudo types the
+                // variable `NQPMu` (no Mu methods, so `say $x` dies with
+                // X::Method::NotFound, and any assignment fails the type check).
+                // The variable keeps the constraint, not a resolution of `::a` as
+                // a real type (which would die "Type '::a' is not declared").
                 // TODO: bind the capture name (`a`) as a type alias for the
                 // declared/inferred type so `::a` is usable as a type later.
                 let owned_type_constraint = match owned_type_constraint {
-                    Some(tc) if tc.starts_with("::") => None,
+                    Some(tc) if tc.starts_with("::") => Some("NQPMu".to_string()),
                     // A constraint naming a `constant` type alias is its
                     // target, settled here as rakudo settles it at compile
                     // time (#13728).

@@ -377,6 +377,16 @@ impl Interpreter {
             let v = self.resolve_proxies_in_value(&v)?;
             check_rat_divide_by_zero(&v)?;
             check_unhandled_failure(&v)?;
+            // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) carries no
+            // `Mu` methods: rendering it asks for a `.gist`/`.Str` it lacks.
+            if matches!(v.view(), ValueView::Package(name) if name == "NQPMu") {
+                let method = if kind.renders_gist() { "gist" } else { "Str" };
+                return Err(
+                    crate::runtime::methods_signature_errors::make_method_not_found_error(
+                        method, "NQPMu", false,
+                    ),
+                );
+            }
             if kind.renders_gist() {
                 // Resolve bound-element sentinels inside arrays before gist.
                 let v = self.resolve_bound_array_elements(v);
