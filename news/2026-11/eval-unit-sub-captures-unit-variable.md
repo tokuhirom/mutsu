@@ -14,3 +14,10 @@ and the named subs at the unit's top level capture the unit's variables in it, a
 subs do in the program's bucket.
 
 Test: `t/routines/call/eval-unit-sub-captures-unit-variable.t`.
+
+Not covered yet: a unit with a BEGIN prologue (a `BEGIN`, a `constant`, a `use`) keeps the
+by-name resolution. The prologue splits a declaration into a static and a run-time half, and
+the declaring frame adopts the bucket's cells through reads that name `MAINLINE_UNIT_KEY`, so
+with the per-run key a sub would keep the static half's cell and miss a later `:=` binding
+(`t/control/begin-prologue-binding-declaration.t` under `EVAL(.AST)` caught it). Those reads
+need the running unit's key first (TODO in `run_eval_unit_stmts_body`).
