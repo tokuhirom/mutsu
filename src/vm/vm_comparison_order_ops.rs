@@ -592,8 +592,8 @@ impl Interpreter {
     }
 
     pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let right = self.stack.pop().unwrap().hllize_operand();
+        let left = self.stack.pop().unwrap().hllize_operand();
         // `cmp` also has user multi candidates. An exported first-class
         // operator value (for example Version::Semverish's custom family)
         // must take precedence over the structural/numeric fallback below.

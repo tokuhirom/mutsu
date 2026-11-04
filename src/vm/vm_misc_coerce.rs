@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap().hllize_operand();
         // ADR-0058: numifying a Seq counts its elements, so a still-deferred
         // `.map` has to run its callback first.
         self.reify_map_grep_seq(&val)?;
@@ -171,7 +171,7 @@ impl Interpreter {
         &mut self,
         operand_name: Option<crate::symbol::Symbol>,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap().hllize_operand();
         // ADR-0058: stringifying a Seq renders its elements, so a
         // still-deferred `.map` has to run its callback first.
         self.reify_map_grep_seq(&val)?;
@@ -462,7 +462,7 @@ impl Interpreter {
         if value.is_proxy_value() {
             loan_env!(self, auto_fetch_proxy(&value))
         } else {
-            Ok(value)
+            Ok(value.hllize_operand())
         }
     }
 
