@@ -231,10 +231,11 @@ impl Interpreter {
     // when the slot holds the captured cell, p = sub plans of `code`, v =
     // their free variables.
     pub(super) fn mainline_capture_at(&self, code: &CompiledCode, slot: usize) -> Option<Value> {
-        if self.lexicals.unit_lexicals.is_empty()
-            || !self.vardecl_context().get()
-            || !self.routine_stack().is_empty()
-            || self.block_scope_depth() != 0
+        if self.lexicals.unit_lexicals.is_empty() || !self.vardecl_context().get() {
+            return None;
+        }
+        let eval_key = self.eval_unit_declaring_key();
+        if eval_key.is_none() && (!self.routine_stack().is_empty() || self.block_scope_depth() != 0)
         {
             return None;
         }
@@ -246,7 +247,7 @@ impl Interpreter {
         let captured = self
             .lexicals
             .unit_lexicals
-            .get(crate::runtime::MAINLINE_UNIT_KEY)?
+            .get(eval_key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))?
             .get(name)?;
         let ValueView::ContainerRef(captured_cell) = captured.view() else {
             return None;
@@ -293,9 +294,10 @@ impl Interpreter {
         // running STORE). The capture is dropped instead, and the subs resolve
         // the name the way they did before they captured it.
         let entry = new.is_container_ref().then_some(new);
+        let key = self.eval_unit_declaring_key();
         if let Some(bucket) = self
             .unit_lexicals_cow_mut()
-            .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
+            .get_mut(key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))
         {
             match entry {
                 Some(v) => {
