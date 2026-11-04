@@ -737,7 +737,7 @@ impl Interpreter {
                         mark_supply_live_tapped(sid);
                         let quit_cb = quit_cbs.next();
                         let done_cb = done_cbs.next().filter(|d| !d.is_nil());
-                        let thread_interp = self.clone_for_thread();
+                        let thread_interp = self.clone_for_thread_for_block(&cb);
                         let close_flag = rx.close_flag();
                         let close_id = register_act_loop_close(close_flag.clone());
                         // Consumer-side tap callback: raku does not route its
