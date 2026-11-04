@@ -363,7 +363,7 @@ impl Interpreter {
         // What the binders consume on every call, so a later writeback in the
         // caller's frame cannot pick this call's sources up.
         self.pending_rw_writeback_sources.clear();
-        self.take_pending_call_arg_sources();
+        self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
         self.static_call_args = false;
 
