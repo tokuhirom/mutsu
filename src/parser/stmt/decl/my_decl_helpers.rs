@@ -95,7 +95,13 @@ pub(super) fn parse_sigilless_decl(
             (r, Vec::new())
         };
         // Build: Type.method(args) where Type comes from type_constraint or defaults to "Mu"
-        let target_name = type_constraint.as_deref().unwrap_or("Mu").to_string();
+        // A definiteness smiley qualifies the variable's constraint, not the
+        // type that is constructed.
+        let target_name = type_constraint
+            .as_deref()
+            .map(constructed_type_name)
+            .unwrap_or("Mu")
+            .to_string();
         let expr = Expr::MethodCall {
             target: Box::new(Expr::BareWord(target_name)),
             name: Symbol::intern(&method_name),
@@ -230,6 +236,17 @@ pub(super) fn check_invalid_type_smiley(type_constraint: &Option<String>) -> Res
 }
 
 /// Parse `my <Type> constant <name> = <expr>`.
+/// The type a `.= new` initializer constructs: the declared constraint without
+/// its definiteness smiley (`my Int:D \b .= new: 42` calls `Int.new`).
+// Cost: O(|type|).
+fn constructed_type_name(type_constraint: &str) -> &str {
+    type_constraint
+        .strip_suffix(":D")
+        .or_else(|| type_constraint.strip_suffix(":U"))
+        .or_else(|| type_constraint.strip_suffix(":_"))
+        .unwrap_or(type_constraint)
+}
+
 pub(super) fn parse_typed_constant(
     rest: &str,
     type_constraint: Option<String>,
@@ -248,7 +265,7 @@ pub(super) fn parse_typed_constant(
             && let Expr::MethodCall { target, .. } = expr
             && matches!(target.as_ref(), Expr::BareWord(w) if w == "Mu")
         {
-            **target = Expr::BareWord(type_name.clone());
+            **target = Expr::BareWord(constructed_type_name(type_name).to_string());
         }
         *tc = type_constraint;
         *our_flag = is_our;
