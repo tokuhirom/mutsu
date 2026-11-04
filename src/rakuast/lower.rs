@@ -3158,24 +3158,6 @@ fn lower_named_call(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
             word: false,
         });
     }
-    Ok(call_expr(
-        name,
-        args,
-        super::declared_routines::is_user_call(node),
-        node.class == RakuAstClass::CallNameWithoutParentheses,
-    ))
-}
-
-/// The call a named call node lowers to once its arguments are lowered: the
-/// call-site markers stamped, then a user routine call or a core call. Shared
-/// with the finalization of a bareword the classifier resolves to a call.
-// Cost: O(a), a = arguments.
-pub(super) fn call_expr(
-    name: String,
-    mut args: Vec<Expr>,
-    user_call: bool,
-    without_parentheses: bool,
-) -> Expr {
     if let Some(line) = super::origin::current_line() {
         if args.is_empty() && super::declared_routines::is_declared(&name) {
             args.push(crate::parser::callsite_line_arg(line));
@@ -3183,18 +3165,18 @@ pub(super) fn call_expr(
         crate::parser::stamp_call_site_markers(&name, line, &mut args);
     }
     let name = crate::symbol::Symbol::intern(&name);
-    if user_call {
-        Expr::UserRoutineCall {
+    if super::declared_routines::is_user_call(node) {
+        Ok(Expr::UserRoutineCall {
             name,
             args,
-            listop: without_parentheses,
-        }
+            listop: node.class == RakuAstClass::CallNameWithoutParentheses,
+        })
     } else {
-        Expr::Call {
+        Ok(Expr::Call {
             name,
             args,
             listop: false,
-        }
+        })
     }
 }
 
