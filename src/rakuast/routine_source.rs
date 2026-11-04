@@ -201,6 +201,8 @@ pub(super) fn apply(
     node: &mut RakuAstNode,
     body: &[Stmt],
 ) -> Result<bool, RuntimeError> {
+    // A method's implicit invocant parameter is typed by the enclosing package.
+    node.origin.3 = names.enclosing_package().map(String::into_boxed_str);
     let Some(traits) = crate::ast::routine_trait::get(body) else {
         return Ok(false);
     };

@@ -111,6 +111,7 @@ mod call_term_origins;
 mod carried;
 mod decl_postfix_origins;
 mod finalize;
+pub(crate) mod implicit_signature;
 mod infix_origins;
 mod infix_spelling;
 mod inherited_fields;
@@ -229,6 +230,9 @@ pub struct NodeOrigin(
     pub empty_fields::EmptyOrigins,
     /// What `RakuAST::Lookup.resolution` answers (see [`resolve`]).
     pub Option<Value>,
+    /// The package a `Method`'s implicit invocant parameter is typed by
+    /// (`implicit_signature`); `None` outside a package.
+    pub Option<Box<str>>,
 );
 
 impl PartialEq for NodeOrigin {

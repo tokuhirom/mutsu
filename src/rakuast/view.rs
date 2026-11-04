@@ -841,7 +841,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
-                let grammar_body = block_node(names, &unhoist(body))?;
+                let grammar_body = super::implicit_signature::pkg(names, None, &unhoist(body))?;
                 fields.push(node_field(
                     Some("body"),
                     super::role::with_leading_statements(grammar_body, also_statements),
@@ -939,7 +939,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 });
             }
             let unhoisted = unhoist(without_composed_header(body, does_parents));
-            let class_body = block_node(names, &unhoisted)?;
+            let class_body = super::implicit_signature::pkg(names, Some(*name), &unhoisted)?;
             fields.push(node_field(
                 Some("body"),
                 super::role::with_leading_statements(class_body, also_statements),
