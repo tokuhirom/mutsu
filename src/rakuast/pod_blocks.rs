@@ -118,6 +118,8 @@ struct Markup {
     atoms: Vec<Atom>,
     /// The text after the first `|` of a code that takes metadata (`L`, `X`, ...).
     meta: Option<String>,
+    /// The pairs of an entity code (`E<gt>`), which has no atoms of its own.
+    entities: Option<Vec<(String, String)>>,
 }
 
 /// The formatting codes that take metadata after a `|`.
@@ -177,7 +179,7 @@ fn parse_atoms(
             if let Some(opener) = opener {
                 // `E<...>` is an entity, and a letter after a word character
                 // is not told apart from its text here.
-                if ch == 'E' || previous.is_some_and(char::is_alphanumeric) {
+                if previous.is_some_and(char::is_alphanumeric) {
                     return None;
                 }
                 let closer = match opener {
@@ -187,6 +189,45 @@ fn parse_atoms(
                 };
                 if !buf.is_empty() {
                     atoms.push(Atom::Text(std::mem::take(&mut buf)));
+                }
+                if ch == 'E' {
+                    let body = &after[opener.len()..];
+                    let end = body.find(closer)?;
+                    let content = &body[..end];
+                    if content.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
+                        return None;
+                    }
+                    let (shown, list) = match content.split_once('|') {
+                        Some((shown, list)) => (shown, super::pod_entities::pairs_after_bar(list)),
+                        None => ("", super::pod_entities::pairs(content)),
+                    };
+                    atoms.push(Atom::Markup(Markup {
+                        letter: 'E',
+                        opener: if opener == "<<" {
+                            "<<"
+                        } else if opener == "<" {
+                            "<"
+                        } else {
+                            "«"
+                        },
+                        closer: if closer == ">>" {
+                            ">>"
+                        } else if closer == ">" {
+                            ">"
+                        } else {
+                            "»"
+                        },
+                        atoms: if shown.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![Atom::Text(shown.to_string())]
+                        },
+                        meta: None,
+                        entities: Some(list),
+                    }));
+                    at += 1 + opener.len() + end + closer.len();
+                    previous = closer.chars().last();
+                    continue;
                 }
                 let (inner, used, inner_meta) = parse_atoms(
                     &after[opener.len()..],
@@ -214,6 +255,7 @@ fn parse_atoms(
                     },
                     atoms: inner,
                     meta: inner_meta,
+                    entities: None,
                 }));
                 at += 1 + opener.len() + used;
                 previous = Some(closer.chars().last()?);
@@ -629,6 +671,17 @@ fn markup_node(markup: &Markup) -> RakuAstNode {
         fields.push(RakuAstField {
             name: Some("meta"),
             value: RakuAstFieldValue::List(vec![Value::str(meta.clone())]),
+        });
+    }
+    if let Some(entities) = markup.entities.as_ref().filter(|e| !e.is_empty()) {
+        fields.push(RakuAstField {
+            name: Some("meta"),
+            value: RakuAstFieldValue::List(
+                entities
+                    .iter()
+                    .map(|(key, value)| Value::pair(key.clone(), Value::str(value.clone())))
+                    .collect(),
+            ),
         });
     }
     RakuAstNode {

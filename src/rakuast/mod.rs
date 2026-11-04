@@ -53,6 +53,7 @@ pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
 mod pod_blocks;
+mod pod_entities;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
 mod quote_nesting;
