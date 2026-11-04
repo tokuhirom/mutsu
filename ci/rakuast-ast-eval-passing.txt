@@ -2770,6 +2770,7 @@ t/lang/ordered-alternation-loser-code-block.t
 t/lang/overloaded-core-infix-word-keeps-precedence.t
 t/lang/parsing/bare-adverb-declaration-name.t
 t/lang/parsing/bare-adverb-listop-arg.t
+t/lang/parsing/bare-array-hash-anon-state.t
 t/lang/parsing/bare-constant-statement-modifier.t
 t/lang/parsing/bare-decl-andthen.t
 t/lang/parsing/bare-perl5-unary-obsolete.t
