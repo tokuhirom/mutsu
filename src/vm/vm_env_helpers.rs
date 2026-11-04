@@ -694,7 +694,11 @@ impl Interpreter {
             && let Some(ValueView::ContainerRef(arc)) = self
                 .lexicals
                 .unit_lexicals
-                .get(eval_key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))
+                .get(
+                    eval_key
+                        .as_deref()
+                        .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+                )
                 .and_then(|m| m.get(name))
                 .map(Value::view)
         {
@@ -1243,7 +1247,11 @@ impl Interpreter {
         match self
             .lexicals
             .unit_lexicals
-            .get(eval_key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))?
+            .get(
+                eval_key
+                    .as_deref()
+                    .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+            )?
             .get(name)?
             .view()
         {

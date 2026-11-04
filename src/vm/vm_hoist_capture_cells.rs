@@ -247,7 +247,11 @@ impl Interpreter {
         let captured = self
             .lexicals
             .unit_lexicals
-            .get(eval_key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))?
+            .get(
+                eval_key
+                    .as_deref()
+                    .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+            )?
             .get(name)?;
         let ValueView::ContainerRef(captured_cell) = captured.view() else {
             return None;
