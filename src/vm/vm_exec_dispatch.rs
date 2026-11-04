@@ -2722,6 +2722,11 @@ impl Interpreter {
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
                     {
+                        // The Proxy object `.VAR` hands back has no container to
+                        // assign into (#16299).
+                        if proxy_val.is_proxy_var_object() {
+                            return Err(RuntimeError::readonly_variable());
+                        }
                         let val = if assigned_nil { Value::NIL } else { val };
                         loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
                         *ip += 1;
