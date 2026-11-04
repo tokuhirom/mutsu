@@ -74,6 +74,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.class != RakuAstClass::ApplyPostfix || !span.is_some() {
         return;
     }
+    super::decl_postfix_origins::operand(node, span);
     let operand = node
         .fields
         .iter()

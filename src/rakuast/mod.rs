@@ -106,6 +106,7 @@ pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
 mod call_term_origins;
 mod carried;
+mod decl_postfix_origins;
 mod finalize;
 mod infix_origins;
 mod infix_spelling;
