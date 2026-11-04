@@ -500,6 +500,22 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("elsifs", Absent::EmptyList),
             ("else", BLOCK),
         ],
+        // A loop's `setup`, `condition` and `increment` are optional
+        // `RakuAST::Expression` attributes (measured on 2026.09); the
+        // `while` / `until` / `repeat` forms always carry a `condition`.
+        StatementLoop => &[
+            ("setup", EXPRESSION),
+            ("condition", EXPRESSION),
+            ("increment", EXPRESSION),
+        ],
+        StatementLoopWhile
+        | StatementLoopUntil
+        | StatementLoopRepeatWhile
+        | StatementLoopRepeatUntil => &[
+            ("setup", EXPRESSION),
+            ("condition", Absent::Required),
+            ("increment", EXPRESSION),
+        ],
         StatementUnless | StatementWithout => {
             &[("condition", Absent::Required), ("body", Absent::Required)]
         }
