@@ -697,6 +697,7 @@ RakuAST::Var::Attribute::Public	name	RakuAST::Var::Attribute::Public
 RakuAST::Var::Compiler::File	file	RakuAST::Var::Compiler::File
 RakuAST::Var::Compiler::Line	line	RakuAST::Var::Compiler::Line
 RakuAST::Var::Compiler::Lookup	name	RakuAST::Var::Compiler::Lookup
+RakuAST::Var::Doc	name	RakuAST::Var::Doc
 RakuAST::Var::Dynamic	is-resolved	RakuAST::Var::Dynamic
 RakuAST::Var::Dynamic	name	RakuAST::Var::Dynamic
 RakuAST::Var::Dynamic	resolution	RakuAST::Var::Dynamic

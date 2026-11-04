@@ -34,6 +34,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Var::Compiler::File", "file"),
     row!("RakuAST::Var::Compiler::Line", "line"),
     row!("RakuAST::Var::Compiler::Lookup", "name"),
+    row!("RakuAST::Var::Doc", "name"),
     row!("RakuAST::Var::Dynamic", "is-resolved"),
     row!("RakuAST::Var::Dynamic", "name"),
     row!("RakuAST::Var::Dynamic", "resolution"),
