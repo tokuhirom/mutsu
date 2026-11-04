@@ -42,6 +42,19 @@ pub(super) fn view_node(
     if base.class != RakuAstClass::TypeSimple {
         return Ok(None);
     }
+    // `Int()` / `Int(Str)`: a call whose only argument is a type name is the
+    // coercion type (measured on 2026.09), not a call of the type term. A sub
+    // of the same name does not change the tree (the type wins `Type()`).
+    let written: Vec<&Expr> = args
+        .iter()
+        .filter(|a| !super::view::is_injected_named_arg(a))
+        .collect();
+    if written.is_empty() {
+        return coercion_node(names, name, None).map(Some);
+    }
+    if let Some(constraint) = single_type_word(names, &written) {
+        return coercion_node(names, name, Some(constraint)).map(Some);
+    }
     let mut call_term = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CallTerm,
@@ -85,4 +98,87 @@ pub(super) fn lower(
         args: arg_exprs(names, postfix)?,
         listop: false,
     }))
+}
+
+/// `Type::Coercion(base-type, constraint?)` over the type `base` and its
+/// optional constraint type.
+// Cost: O(k), k = length of the names.
+pub(super) fn coercion_node(
+    names: &NameScope,
+    base: &str,
+    constraint: Option<&str>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![node_field(
+        Some("base-type"),
+        bareword::view_node(names, base).unwrap_or_else(|| bareword::simple_type_node(base)),
+    )];
+    if let Some(constraint) = constraint {
+        fields.push(node_field(
+            Some("constraint"),
+            bareword::view_node(names, constraint)
+                .unwrap_or_else(|| bareword::simple_type_node(constraint)),
+        ));
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TypeCoercion,
+        fields,
+    })
+}
+
+/// The expression a `Type::Coercion` in term position lowers to: the coercion
+/// call `Type(CONSTRAINT)` the parser builds, or the package `Type(Any)` when
+/// a same-named sub is declared too (the type wins `Type()` there).
+// Cost: O(n), n = size of the spelling.
+pub(super) fn lower_coercion(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let spelling = super::lower::simple_type_name(names, node, node)?;
+    let Some(open) = spelling.find('(') else {
+        return Err(super::lower::unsupported(node));
+    };
+    let base = &spelling[..open];
+    let inner = &spelling[open + 1..spelling.len() - 1];
+    if inner.is_empty() && super::declared_routines::is_declared(base) {
+        return Ok(Expr::Literal(Value::package(
+            crate::symbol::Symbol::intern(&format!("{base}(Any)")),
+        )));
+    }
+    Ok(Expr::Call {
+        name: crate::symbol::Symbol::intern(base),
+        args: if inner.is_empty() {
+            Vec::new()
+        } else {
+            vec![Expr::BareWord(inner.to_string())]
+        },
+        listop: false,
+    })
+}
+
+/// A package literal as the parser spells a type shadowed by a same-named sub:
+/// `foo(Any)` is the coercion type `foo()`; any other package is a simple type.
+// Cost: O(k), k = length of the name.
+pub(super) fn package_literal(names: &NameScope, name: &str) -> Result<RakuAstNode, RuntimeError> {
+    let base = name.strip_suffix("(Any)").filter(|base| {
+        !base.is_empty()
+            && base
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':'))
+    });
+    match base {
+        Some(base) => coercion_node(names, base, None),
+        None => Ok(bareword::simple_type_node(name)),
+    }
+}
+
+/// The one written argument when it is a type name (`Str` of `Int(Str)`).
+// Cost: O(k + d), k = length of the name, d = parser scope depth.
+fn single_type_word<'a>(names: &NameScope, written: &[&'a Expr]) -> Option<&'a str> {
+    match written {
+        [Expr::BareWord(word)]
+            if bareword::view_node(names, word)
+                .is_some_and(|node| node.class == RakuAstClass::TypeSimple) =>
+        {
+            Some(word)
+        }
+        _ => None,
+    }
 }

@@ -5726,7 +5726,7 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
         ValueView::Str(_) => Ok(quoted_string(v.clone())),
         // A type the parser resolved to its type object (`Any`) is the same
         // `Type::Simple` an unresolved bareword type (`Int`) renders as.
-        ValueView::Package(name) => Ok(simple_type_node(&name.resolve())),
+        ValueView::Package(name) => super::type_call::package_literal(names, &name.resolve()),
         // The parser folds the term `Empty` to the empty Slip it denotes;
         // raku keeps the name.
         ValueView::Slip(items) if items.is_empty() => Ok(RakuAstNode {
