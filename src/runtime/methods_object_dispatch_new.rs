@@ -1466,6 +1466,35 @@ impl Interpreter {
                         }
                     }
                 }
+                // `Mu.new` is `self.bless(|%attrinit)`: a class (or composed
+                // role) that declares its own `bless` has it run for `.new`
+                // (ValueTypeCache's cache keyed on the `new` arguments). Its
+                // `self.Mu::bless(|%_)` reaches `dispatch_bless` directly, so
+                // this cannot recurse. Positional arguments keep the
+                // `Mu.new` rejection below.
+                if self.native_ctor_plan(Symbol::intern(class_key)).has_custom_bless
+                    && args
+                        .iter()
+                        .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                {
+                    // The user method itself: `call_method_with_values` finds
+                    // `Mu.bless`'s late table row first and would skip it.
+                    let dispatched = if let Some(result) =
+                        self.try_dispatch_compiled_method_direct(&target, "bless", &args)
+                    {
+                        result.map(|v| (v, AttrMap::new()))
+                    } else {
+                        self.run_instance_method_at(
+                            "newdispatch",
+                            class_key,
+                            AttrMap::new(),
+                            "bless",
+                            args.clone(),
+                            None,
+                        )
+                    };
+                    return dispatched.map(|(result, _updated)| result);
+                }
                 // Laid out like every other construction path (ADR-0121 D2):
                 // the slots also record which attributes hold only their seed
                 // (`nqp::attrinited`, D4).
