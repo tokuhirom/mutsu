@@ -547,12 +547,39 @@ impl Interpreter {
             .contains(class_name)
     }
 
-    // Cost: O(1) expected for a class that declares subs; otherwise O(k) over the
-    // k classes that do, with no allocation.
+    // Cost: O(1) once a class name was asked since the last `class_subs` write; the
+    // first ask is O(k) over the k classes that declare subs.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         // Single guard for both reads (no user-code re-entry here, so let-binding
         // is safe and avoids a same-thread recursive read lock).
         let registry = self.registry();
+        let state = registry.class_subs.state_id();
+        {
+            let memo = self.caches.class_scoped_subs.borrow();
+            if memo.0 == state
+                && let Some(answer) = memo.1.get(class_name)
+            {
+                return *answer;
+            }
+        }
+        let answer = Self::scan_class_scoped_subs(&registry, class_name);
+        let mut memo = self.caches.class_scoped_subs.borrow_mut();
+        if memo.0 != state {
+            *memo = (state, Default::default());
+        }
+        if memo.1.len() >= 4096 {
+            memo.1.clear();
+        }
+        memo.1.insert(class_name.to_string(), answer);
+        answer
+    }
+
+    // Cost: O(1) expected for a class that declares subs; otherwise O(k) over the
+    // k classes that do, with no allocation.
+    fn scan_class_scoped_subs(
+        registry: &crate::runtime::registry::RegistryReadGuard<'_>,
+        class_name: &str,
+    ) -> bool {
         // A package-qualified spelling of either side (`Outer::Inner` against
         // `Inner`), tested without building the `::name` strings: this runs on
         // every method call, over every class that declares a sub.
