@@ -239,10 +239,21 @@ fn plain_name(name: &str) -> bool {
     }
 }
 
+/// A routine name the conversion reads as a lexical `&name`: an identifier
+/// (`&f`, `&foo-bar`), not a package-qualified or operator name.
+// Cost: O(k), k = length of the name.
+fn plain_code_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+}
+
 /// A variable the lowering hands back unchanged whatever the unit declares:
 /// the match and error variables (`$/`, `$!`), an attribute (`$!x`), a
-/// placeholder (`$^a`) and a positional capture (`$0`). A code variable (`&f`,
-/// which the unit's routines classify) is still read by the conversion.
+/// placeholder (`$^a`) and a positional capture (`$0`). A code variable is carried when
+/// it is a plain identifier (`&f`); a qualified or operator name is still read
+/// by the conversion.
 // Cost: O(1).
 fn context_free_name(expr: &Expr, name: &str) -> bool {
     // A placeholder (`$^a`, `@:n`, `&^cb`) lowers back to the same caret- or
@@ -253,7 +264,7 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
         return true;
     }
     if matches!(expr, Expr::CodeVar(_)) {
-        return false;
+        return plain_code_name(name);
     }
     // A positional capture (`$0`) reads back as `Var::PositionalCapture`, whose
     // index is the canonical integer.

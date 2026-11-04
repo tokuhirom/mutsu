@@ -637,6 +637,8 @@ mod tests {
             "say 'x' if 1;",
             "my %h = a => 1; say %h<a>;",
             "my $s = 'abc'; say \"v: $s\";",
+            "sub f($x) { $x + 1 }; my &g = &f; say g(1); say &f.name; say &g.(2);",
+            "my @l = (1, 2).map(&f); say &say.name; say &infix:<+>(1, 2);",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
             "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",
