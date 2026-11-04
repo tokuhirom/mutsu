@@ -3,7 +3,7 @@ use Test;
 # From the ValueTypeCache distribution: `Mu.new` is `self.bless(|%attrinit)`, so
 # a `bless` declared in the class or in a composed role runs for `.new`, and
 # `self.Mu::bless(|%_)` on an existing instance builds the receiver's class.
-plan 8;
+plan 10;
 
 my @seen;
 class Own {
@@ -33,3 +33,12 @@ is Point.new(x => 5).^name, 'Point', 'and not a bare Mu';
 class Plain { has $.y; method mk(*%_) { self.Mu::bless(|%_) } }
 isa-ok Plain.new.mk(y => 1), Plain, 'Mu::bless on an instance builds its class';
 is Plain.new.mk(y => 2).y, 2, 'and keeps the named arguments';
+
+# A hand-written bless: CREATE plus BUILDALL initialises the attributes in place.
+class Hand {
+    has $.x = 5;
+    has $.y;
+    method bless(*%attrinit) { self.CREATE.BUILDALL(Empty, %attrinit) }
+}
+is Hand.new(y => 7).y, 7, 'CREATE.BUILDALL takes the named arguments';
+is Hand.new(y => 7).x, 5, 'and still runs the attribute defaults';

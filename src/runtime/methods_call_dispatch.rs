@@ -1567,6 +1567,33 @@ impl Interpreter {
             return result;
         }
 
+        // `$obj.BUILDALL(@autovivs, %attrinit)` on a `.CREATE`d instance
+        // (a hand-written `bless`): initialise the attributes as `bless` does,
+        // in place, and answer the instance.
+        if method == "BUILDALL"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && let Some(init) = args.get(1)
+            && let ValueView::Hash(init) = init.view()
+        {
+            let named: Vec<Value> = init
+                .iter()
+                .map(|(k, v)| Value::pair(k.to_string(), v.clone()))
+                .collect();
+            let built = self.dispatch_bless(&Value::package(class_name), named)?;
+            if let ValueView::Instance {
+                attributes: built_attrs,
+                ..
+            } = built.view()
+            {
+                attributes.commit_attrs(built_attrs.to_map());
+            }
+            return Ok(target.clone());
+        }
+
         // Custom type method dispatch
         if !matches!(
             method,
