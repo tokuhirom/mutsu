@@ -147,6 +147,18 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         }
         Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
         Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
+        Expr::Subst {
+            replacement,
+            replacement_thunk,
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            replacement,
+            replacement_thunk,
+            ..
+        } => {
+            replacement_thunk.is_some() || super::substitution::is_plain_qq_source(replacement)
+        }
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
         Expr::StringInterpolation(_)
         | Expr::Call { .. }
@@ -182,6 +194,11 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // The priming scope the parser planted: the conversion marks the node it
         // wraps and the lowering puts the marker back around it.
         | Expr::WhateverCurry(_)
+        // `tr///`, and `s///` / `S///` whose replacement is a constant or already
+        // a per-match thunk, read back as the parser built them
+        // (`finalization_is_the_ordinary_tree`). An interpolating quote-form
+        // replacement becomes the thunk in the conversion.
+        | Expr::Transliterate { .. }
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
