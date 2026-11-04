@@ -144,9 +144,11 @@ impl Interpreter {
         {
             return true;
         }
-        self.registry()
-            .class_mro_readonly(class_name)
-            .is_some_and(|mro| mro.iter().any(|n| Self::is_associative_base(&n.resolve())))
+        // A parameterized name (`TypedHash[Int]`) keeps its own handling.
+        !class_name.contains('[')
+            && !self.registry().classes.contains_key(class_name)
+            && crate::builtin_types::catalog::builtin_type_mro_syms(class_name)
+                .is_some_and(|mro| mro.iter().any(|n| Self::is_associative_base(&n.resolve())))
     }
 
     fn hash_storage_delegate_mut_inner(
