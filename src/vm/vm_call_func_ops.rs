@@ -1322,6 +1322,7 @@ impl Interpreter {
                             // The named-share writeback reads the arg sources;
                             // make them available to bind_function_args_values.
                             self.set_pending_call_arg_sources(decoded_sources);
+                            self.publish_rw_arg_cells(&cf.param_defs, &args);
                             let r = self.call_compiled_function_named(
                                 &cf,
                                 std::mem::take(&mut args),
@@ -2652,6 +2653,7 @@ impl Interpreter {
                     // The binder names a raw / `is rw` parameter's caller
                     // variable from these, as on the single-sub arm below.
                     self.set_pending_call_arg_sources(arg_sources.clone());
+                    self.publish_rw_arg_cells(&def.param_defs, &args);
                     let result = self.compile_and_call_function_def_named(
                         &def,
                         args,
@@ -2718,6 +2720,7 @@ impl Interpreter {
                     {
                         let returns_container = Self::routine_is_rw_capable(&def);
                         self.set_pending_call_arg_sources(arg_sources.clone());
+                        self.publish_rw_arg_cells(&def.param_defs, &args);
                         let result = self.compile_and_call_function_def_named(
                             &def,
                             args,
@@ -2795,6 +2798,7 @@ impl Interpreter {
                             // The binder names an `is rw` parameter's caller
                             // variable from these (mutsu#10520).
                             self.set_pending_call_arg_sources(arg_sources.clone());
+                            self.publish_rw_arg_cells(&def.param_defs, &args);
                             let result = self.compile_and_call_function_def_named(
                                 &def,
                                 args,
@@ -2865,6 +2869,7 @@ impl Interpreter {
                     // parameter still needs the caller variable's name
                     // (mutsu#10520).
                     self.set_pending_call_arg_sources(arg_sources);
+                    self.publish_rw_arg_cells(&def.param_defs, &args);
                     let result = self.compile_and_call_function_def_named(
                         &def,
                         args,
