@@ -15,8 +15,16 @@ use crate::value::Value;
 
 /// The piece of a split quote: text, or the quote an inner bracket pair holds.
 enum Piece {
-    Text { text: String, from: usize, to: usize },
-    Quote { pieces: Vec<Piece>, from: usize, to: usize },
+    Text {
+        text: String,
+        from: usize,
+        to: usize,
+    },
+    Quote {
+        pieces: Vec<Piece>,
+        from: usize,
+        to: usize,
+    },
 }
 
 /// The segments for a quote written at `span` whose single literal reads
