@@ -49,6 +49,7 @@ pub(crate) mod iterator;
 pub(crate) mod label;
 pub(crate) mod parameter;
 pub(crate) mod rakuast_accessors;
+mod rakuast_arg_list_queries;
 mod rakuast_locate;
 mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
@@ -114,6 +115,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_rakudoc::ROWS,
     rakuast_walk::ROWS,
     rakuast_name_queries::ROWS,
+    rakuast_arg_list_queries::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
