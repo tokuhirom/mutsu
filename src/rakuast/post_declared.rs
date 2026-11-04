@@ -21,8 +21,8 @@
 //! - a name that is core, or that the calling scope of an `EVAL` declares, is
 //!   never post-declared.
 
-use crate::ast::{Expr, Stmt};
-use crate::ast_visit::{Visit, walk_expr, walk_stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt};
 use crate::scope::NameScope;
 use crate::value::RuntimeError;
 use std::collections::HashMap;
@@ -34,6 +34,7 @@ pub(crate) fn check(stmts: &[Stmt], names: &NameScope) -> Result<(), RuntimeErro
         names,
         frames: Vec::new(),
         next_list_is_type_body: false,
+        terms: std::collections::HashSet::new(),
         found: None,
     };
     walk.visit_stmts(stmts);
@@ -62,6 +63,11 @@ struct PostDeclared<'n> {
     /// Set while entering a class, role, grammar or package: the next list is
     /// its body.
     next_list_is_type_body: bool,
+    /// The names a sigilless parameter (`-> \Bla { Bla.new }`) binds as a term.
+    /// Such a name in its body is that term, not the type a later statement of
+    /// the unit declares; a name once bound this way is never judged (the
+    /// scope is not tracked, so this errs towards accepting).
+    terms: std::collections::HashSet<String>,
     found: Option<String>,
 }
 
@@ -103,17 +109,30 @@ impl PostDeclared<'_> {
         // the symbol is still missing when the code executes), and a module
         // like Directory refers to an exception class it declares further
         // down the file. Only a single-segment name is a lexical type name.
-        if self.found.is_some() || crate::qualified::is_qualified_str(name) || self.is_core(name) {
+        if self.found.is_some()
+            || crate::qualified::is_qualified_str(name)
+            || self.is_core(name)
+            || self.terms.contains(name)
+        {
             return;
         }
+        // A declaration that comes later in a nearer list does not make the
+        // use illegal while an outer list already declares the name: the use
+        // binds to that visible declaration (rak's `our class Rak { ... }`
+        // stub at file level, completed by a `class Rak` declared further
+        // down inside the routine that uses it).
+        let mut late = false;
         for frame in self.frames.iter().rev() {
             let Some(&declared) = frame.declared_at.get(name) else {
                 continue;
             };
-            if declared > frame.current && frame.judged {
-                self.found = Some(name.to_string());
+            if declared <= frame.current || !frame.judged {
+                return;
             }
-            return;
+            late = true;
+        }
+        if late {
+            self.found = Some(name.to_string());
         }
     }
 }
@@ -157,6 +176,13 @@ impl<'ast> Visit<'ast> for PostDeclared<'_> {
         }
     }
 
+    fn visit_param(&mut self, param: &'ast ParamDef) {
+        if param.sigilless && !param.name.is_empty() {
+            self.terms.insert(param.name.to_string());
+        }
+        walk_param(self, param);
+    }
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::BareWord(name) = expr
             && name.starts_with(|c: char| c.is_ascii_uppercase())
@@ -190,6 +216,11 @@ mod tests {
         assert!(!verdict("class A {}; say A"));
         assert!(!verdict("role R {...}; say R; role R { }"));
         assert!(!verdict("class A { method m { A.new } }"));
+        // an outer declaration already visible at the use wins over a later
+        // declaration of the same name in a nearer list
+        assert!(!verdict("for 1, 2 -> \\A { say A }; class A { }"));
+        assert!(!verdict("class A {...}; sub f { A.new; class A { } }"));
+        assert!(!verdict("class A {...}; sub f { A.new; { class A { } } }"));
         assert!(!verdict("say Set; class Set {}"));
         assert!(!verdict("sub f { B.new }; sub g { }"));
         assert!(!verdict("class X::Y::Z { }; my \\x = X::Y; class X::Y { }"));
