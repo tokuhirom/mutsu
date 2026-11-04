@@ -586,6 +586,23 @@ impl Interpreter {
             "__mutsu_quotewords_atom" => self.builtin_quotewords_atom(&args),
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
             "undefine" => Ok(Value::package(crate::symbol::wk::any())),
+            // Compiled in front of every `undefine`: the use is a deprecation.
+            "__mutsu_deprecated_undefine" => {
+                let file = self
+                    .env
+                    .get("*PROGRAM-NAME")
+                    .map(|v| v.deref_container().to_string_value())
+                    .unwrap_or_default();
+                super::deprecation::record_deprecation(
+                    "Core",
+                    "undefine",
+                    "6.e",
+                    "another way: assign a Nil; for Arrays/Hashes, assign Empty or () instead.",
+                    &file,
+                    self.cur_source_line,
+                );
+                Ok(Value::NIL)
+            }
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.

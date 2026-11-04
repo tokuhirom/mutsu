@@ -316,6 +316,13 @@ impl VisitMut for Finalize<'_> {
         while let Expr::Spelled(spelled) = inner {
             inner = &spelled.expr;
         }
+        // An `nqp::` bareword: the classifier's answer is the lowering's own.
+        if let Expr::BareWord(word) = inner
+            && let Some(term) = super::bareword::nqp_term(names, word)
+        {
+            *expr = term;
+            return;
+        }
         if !carried::expr_carried(inner) {
             match super::view::view_expr(names, expr)
                 .and_then(|node| super::lower::lower_expr(names, &node))
@@ -663,6 +670,7 @@ mod tests {
             "my @l = (1, 2, 3); say @l>>.\"abs\"(); say CORE::<&say>.name;",
             "(1, 2, 3) ==> map({ $_ * 2 }) ==> my @out; say @out; for 1..3 { next if $_ == 2; last if $_ == 3; say $_ }",
             "my $t = q:to/E/;\n  hi $*PID\n  E\nsay $t.chars > 0;",
+            "use nqp; my $t = nqp::time; say $t > 0; say nqp::const::CCLASS_WHITESPACE > 0;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",
             "my $s = 'abc'; say $s.subst(/b/, 'X'); say S/b/Y/ given $s;",

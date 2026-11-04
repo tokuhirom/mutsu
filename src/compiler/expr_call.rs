@@ -1388,6 +1388,14 @@ impl Compiler {
         }
         // Rewrite undefine($var) -> $var = Any (assign type object to the variable)
         if name == "undefine" && args.len() == 1 {
+            // `undefine` is deprecated from 6.d on: record the use (rakudo
+            // reports it at exit, "Saw 1 occurrence of deprecated code").
+            self.compile_expr(&Expr::Call {
+                name: Symbol::intern("__mutsu_deprecated_undefine"),
+                args: Vec::new(),
+                listop: false,
+            });
+            self.code.emit(OpCode::Pop);
             // Handle `undefine temp $var`. `temp`/`let` is a statement prefix, so
             // the argument is a `DoStmt(Stmt::Let { .. })`; it used to reach here
             // as `Call("temp", [$var])` only because `temp` was not a term and

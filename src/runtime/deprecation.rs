@@ -7,7 +7,7 @@ use std::cell::RefCell;
 /// A single deprecation entry, identified by (kind, name, package, message).
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct DeprecationKey {
-    kind: String, // "Sub" or "Method"
+    kind: String, // "Sub", "Method", or "Core" (a core routine; `package` is the removal release)
     name: String,
     package: String,
     message: String, // empty means "something else"
@@ -87,10 +87,18 @@ pub(crate) fn take_report() -> Option<String> {
         );
 
         for (key, sites) in &grouped {
-            report.push_str(&format!(
-                "\n{} {} (from {}) seen at:",
-                key.kind, key.name, key.package
-            ));
+            // A deprecation of a core routine (kind "Core", the removal
+            // release in `package`) is named by itself, like rakudo's
+            // `DEPRECATED('another way: ...', '6.d', '6.e')`.
+            let core = key.kind == "Core";
+            if core {
+                report.push_str(&format!("\n{} seen at:", key.name));
+            } else {
+                report.push_str(&format!(
+                    "\n{} {} (from {}) seen at:",
+                    key.kind, key.name, key.package
+                ));
+            }
             for (file, lines) in sites {
                 if lines.len() == 1 {
                     report.push_str(&format!("\n  {}, line {}", file, lines[0]));
@@ -99,7 +107,12 @@ pub(crate) fn take_report() -> Option<String> {
                     report.push_str(&format!("\n  {}, lines {}", file, line_strs.join(",")));
                 }
             }
-            if key.message.is_empty() {
+            if core {
+                report.push_str(&format!(
+                    "\nWill be removed with release v{}!\nPlease use {}",
+                    key.package, key.message
+                ));
+            } else if key.message.is_empty() {
                 report.push_str("\nPlease use something else instead.");
             } else {
                 report.push_str(&format!("\nPlease use {} instead.", key.message));
