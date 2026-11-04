@@ -1377,6 +1377,11 @@ impl Interpreter {
                 // subclasses need the metamodel dispatch frame too or
                 // `callsame` cannot reach the native metamethod.
                 | "Metamodel::ParametricRoleHOW"
+                // A subset metaclass too: `callwith`/`nextwith` from a
+                // `new_type` override reaches the native subset-minting
+                // `new_type` (#16347).
+                | "Metamodel::SubsetHOW"
+                | "Perl6::Metamodel::SubsetHOW"
                 | "Perl6::Metamodel::ClassHOW"
                 | "Perl6::Metamodel::GrammarHOW"
                 | "Perl6::Metamodel::ParametricRoleHOW"
