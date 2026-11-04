@@ -269,7 +269,7 @@ impl Interpreter {
                     // loop as any channel-backed tap (#12892), so an idle
                     // listener holds no worker.
                     if let Some(rx) = take_supply_channel(supply_id) {
-                        super::ActLoop::new(self.clone_for_thread(), callback).start(rx, None);
+                        super::ActLoop::new(self.clone_for_thread_for_block(&callback), callback).start(rx, None);
                     }
                 }
 

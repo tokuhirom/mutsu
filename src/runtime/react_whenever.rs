@@ -534,7 +534,7 @@ impl Interpreter {
             // for `.then`. Its `emit` reaches the enclosing supply block through
             // the emitter it closed over, exactly as it does when called as a
             // supplier tap.
-            let mut thread_interp = self.clone_for_thread();
+            let mut thread_interp = self.clone_for_thread_for_block(&callback);
             let last_cb = last_callbacks.first().cloned();
             let quit_cb = quit_callbacks.first().cloned();
             let marker = group_marker;
