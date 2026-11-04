@@ -268,7 +268,7 @@ pub fn format_num(f: f64) -> String {
         "-0".to_string()
     } else if f.fract() == 0.0 {
         let abs = f.abs();
-        if abs >= 1e15 || (abs != 0.0 && abs < 1e-4) {
+        if abs >= 1e16 || (abs != 0.0 && abs < 1e-4) {
             // Scientific notation for very large/small integer-valued Nums
             format_num_scientific(f)
         } else {
@@ -276,11 +276,11 @@ pub fn format_num(f: f64) -> String {
         }
     } else {
         // Fractional Num: Raku renders in scientific notation once the
-        // magnitude leaves [1e-4, 1e15) -- e.g. `1e-5` prints `1e-05`,
+        // magnitude leaves [1e-4, 1e16) -- e.g. `1e-5` prints `1e-05`,
         // not `0.00001`. Rust's `{}` never switches to scientific, so
         // apply the same threshold as the integer-valued branch.
         let abs = f.abs();
-        if !(1e-4..1e15).contains(&abs) {
+        if !(1e-4..1e16).contains(&abs) {
             format_num_scientific(f)
         } else {
             format!("{}", f)

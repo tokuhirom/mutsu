@@ -168,14 +168,6 @@ impl Finalize<'_> {
         super::supply_lower::supply_method_call(body)
     }
 
-    /// The body of a `start { ... }` whose placeholder Raku rejects: lowered
-    /// where it stands, in a lexical scope of its own, then wrapped in the
-    /// do-block that reports the placeholder.
-    fn start_body(&mut self, mut body: Vec<Stmt>) -> Expr {
-        crate::parser::with_rakuast_lexical_scope(|| self.visit_stmts_mut(&mut body));
-        Expr::desugar_block(body)
-    }
-
     /// A typed term whose lowering is one function over its operands: the
     /// operands are lowered where they stand, then the function runs.
     fn parsed_term(&mut self, node: ParsedExpr) -> Expr {
@@ -419,16 +411,6 @@ impl VisitMut for Finalize<'_> {
                 unreachable!("checked above");
             };
             *expr = self.supply(body);
-            return;
-        }
-        // `start { ... }` over a rejected placeholder: see `Finalize::start_body`.
-        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::StartBody(_)))
-            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
-        {
-            let ParsedExpr::StartBody(body) = *node else {
-                unreachable!("checked above");
-            };
-            *expr = self.start_body(body);
             return;
         }
         // A word quote is the runtime's word list; its words are lowered

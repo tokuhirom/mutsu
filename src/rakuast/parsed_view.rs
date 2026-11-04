@@ -229,7 +229,6 @@ pub(super) fn parsed_expr_node(
         },
         ParsedExpr::CompoundAssign(a) => compound_assignment_node(names, a),
         ParsedExpr::Supply(body) => super::react::view_supply(names, body),
-        ParsedExpr::StartBody(body) => block_node(names, body),
         ParsedExpr::HyperAssign(a) => {
             super::view::hyper_infix(names, &a.target, "=", &a.value, a.dwim_left, a.dwim_right)
         }

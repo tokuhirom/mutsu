@@ -243,9 +243,25 @@ impl Compiler {
         // says `0` on every call).
         let state_reset = self.emit_nested_block_state_reset(stmts);
         self.code.emit(OpCode::PushBlockFrame);
-        self.compile_block_inline(stmts);
+        self.compile_tail_block_inline(stmts);
         self.code.emit(OpCode::PopBlockFrame);
         self.patch_nested_block_state_reset(state_reset);
+    }
+
+    /// Compile the body of a tail-position bare block inline, leaving its value
+    /// on the stack. A body that reaches a `when`/`default` goes through
+    /// `DoBlockExpr` instead: the plain inlined form has no `SucceedBarrier`, so
+    /// the matched clause's succeed would unwind out of the enclosing routine (or
+    /// the mainline, as "succeed without when clause") rather than end this block
+    /// with the clause's value -- `{ when True { say 1 }; say 2 }` as the last
+    /// statement.
+    // Cost: O(n), n = size of the block body.
+    pub(super) fn compile_tail_block_inline(&mut self, stmts: &[Stmt]) {
+        if Self::body_has_toplevel_when(stmts) && !Self::has_catch_or_control(stmts) {
+            self.compile_do_block_expr(stmts, &None, crate::ast::DoBlockOrigin::Desugar);
+        } else {
+            self.compile_block_inline(stmts);
+        }
     }
 
     /// [`Compiler::compile_bare_block_inline`]'s twin for a tail block that

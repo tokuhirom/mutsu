@@ -129,10 +129,10 @@ pub(crate) fn format_num_str(f: f64) -> String {
     let sign = if f < 0.0 { "-" } else { "" };
 
     // For numbers that are naturally expressible without scientific notation
-    // (the half-open magnitude window [1e-4, 1e15)), use fixed-point
+    // (the half-open magnitude window [1e-4, 1e16)), use fixed-point
     // representation. For others, use scientific notation — matching `Num.Str`,
-    // so `1e15` prints `1e+15` while `9e14` stays `900000000000000`.
-    if (1e-4..1e15).contains(&abs_f) {
+    // so `1e16` prints `1e+16` while `1e15` stays `1000000000000000`.
+    if (1e-4..1e16).contains(&abs_f) {
         // Find shortest fixed-point round-trip representation
         for prec in 0..=20 {
             let candidate = format!("{sign}{abs_f:.prec$}");

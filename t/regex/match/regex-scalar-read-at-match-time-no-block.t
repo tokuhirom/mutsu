@@ -5,7 +5,7 @@ use Test;
 # well (ADR-12917): the same body serves every value, and `:i`/`:m`, a
 # ligature value, a `constant` and an alias behave as the spliced text did.
 
-plan 10;
+plan 12;
 
 my $s = "abc";
 ok "xabcx" ~~ / $s /, 'plain string';
@@ -26,3 +26,11 @@ my $q = "o+";
 ok "fo+" ~~ / f $q /, 'metacharacters in the value are literal';
 my $re = /b+/;
 is ~("abbbc" ~~ / a $re c /), "abbbc", 'a Regex value';
+
+# A Regex value is entered as a frame of its own: its captures stay its own.
+{
+    my $digits = /$<digit>=(\d)+/;
+    my $m = "12" ~~ / x? $digits /;
+    ok $m.defined, 'a Regex value matches';
+    ok !$m<digit>.defined, "its captures do not leak into the caller's";
+}

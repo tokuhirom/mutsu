@@ -1,13 +1,14 @@
 use Test;
 
-plan 16;
+plan 17;
 
 # --- Num.gist renders Inf/-Inf/NaN and large/small magnitudes like .Str ---
 is Inf.gist,   'Inf',   'Inf.gist';
 is (-Inf).gist, '-Inf', '-Inf.gist';
 is NaN.gist,   'NaN',   'NaN.gist';
 is (1e20).gist, '1e+20', 'large magnitude gist uses scientific notation';
-is (1e15).gist, '1e+15', '1e15 gist uses scientific notation';
+is (1e16).gist, '1e+16', '1e16 gist uses scientific notation';
+is (1e15).gist, '1000000000000000', '1e15 gist stays decimal';
 is (0.1).gist, '0.1',   'ordinary Num gist';
 is (100e0).gist, '100', 'integer-valued Num gist';
 # gist and Str agree for a Num (Raku semantics)
