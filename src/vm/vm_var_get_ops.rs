@@ -984,6 +984,14 @@ impl Interpreter {
                 && let Some(our_val) = self.get_our_var(name).cloned()
             {
                 our_val
+            // `Foo::Bar::zape` naming a package's `our &zape` code variable: the
+            // bare qualified name is a call of the stored Callable, as it is
+            // for an `our sub` (#16482). The stash keys it `&Foo::Bar::zape`.
+            } else if !self.has_type(name)
+                && let Some(code) = self.get_our_var(&format!("&{name}")).cloned()
+                && matches!(code.deref_container().view(), ValueView::Sub(..))
+            {
+                self.vm_call_on_value(code.deref_container(), Vec::new(), Some(compiled_fns))?
             // `Fac::make` where `Fac` is the short name a `use` of
             // `unit module A::B::Fac is export` installed: the sub lives under
             // the full package name.
