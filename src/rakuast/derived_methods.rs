@@ -67,7 +67,8 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         | ColonPairNumber => &["named-arg-name", "named-arg-value"],
         QuotedString => &["has-variables"],
         TypeSubset => &["of"],
-        DocBlock => &["delimited"],
+        DocBlock => &["delimited", "Str"],
+        DocParagraph | DocMarkup | DocLegacyRow => &["Str"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
         StatementPrefixPhaserFirst | StatementPrefixPhaserPost => &["type", "original-blorst"],
@@ -102,6 +103,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
     match (node.class, method) {
         // rakudo answers these through nqp integer comparisons: `0`/`1`, and
         // `True` for an anonymous name (the last part's `is-empty`).
+        (DocBlock | DocParagraph | DocMarkup | DocLegacyRow, "Str") => {
+            Some(Value::str(super::doc_str::text(node)))
+        }
         (Name, "is-empty") => {
             let parts = name_parts(node);
             let empty = parts.is_empty() || (parts.len() == 1 && is_empty_part(&parts[0]));

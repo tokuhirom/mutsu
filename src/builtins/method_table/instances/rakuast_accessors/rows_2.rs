@@ -2,6 +2,10 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Type::Capture", "default-scope"),
+    row!("RakuAST::Type::Capture", "name"),
+    row!("RakuAST::Type::Capture", "scope"),
+    row!("RakuAST::Type::Capture", "smiley"),
     row!("RakuAST::Type::Coercion", "constraint"),
     row!("RakuAST::Type::Definedness", "definite"),
     row!("RakuAST::Type::Derived", "base-type"),

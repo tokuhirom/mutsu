@@ -93,6 +93,7 @@ mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 mod doc_phaser;
+mod doc_str;
 mod dynamic_method;
 mod enum_term;
 mod expr_block_origins;

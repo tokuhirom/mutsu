@@ -2,6 +2,10 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Regex::Assertion::Callable", "args"),
+    row!("RakuAST::Regex::Assertion::Callable", "callee"),
+    row!("RakuAST::Regex::Assertion::CharClass", "elements"),
+    row!("RakuAST::Regex::Assertion::InterpolatedBlock", "block"),
     row!("RakuAST::Regex::Assertion::InterpolatedBlock", "sequential"),
     row!("RakuAST::Regex::Assertion::InterpolatedVar", "sequential"),
     row!("RakuAST::Regex::Assertion::InterpolatedVar", "var"),
@@ -205,8 +209,4 @@ pub(super) const ROWS: &[MethodRow] = &[
         "compile-time-value",
         compiled_value
     ),
-    row!("RakuAST::Type::Capture", "default-scope"),
-    row!("RakuAST::Type::Capture", "name"),
-    row!("RakuAST::Type::Capture", "scope"),
-    row!("RakuAST::Type::Capture", "smiley"),
 ];
