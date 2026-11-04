@@ -7,6 +7,8 @@ finalization (the second largest class of bareword conversions in the census of
 identifier to `Term::Name`, the lowering is `term_identifier_expr` over the
 word (`True`, `Empty`, `pi`, `tau`, `e` unless shadowed, otherwise the word), so
 `bareword::term_expr` returns that without building the node tree (ADR-15760
-slice 2). A name the unit imported as a source bareword, a qualified name and a
-label in scope are still resolved by the conversion. `.AST` and `EVAL($ast)` are
+slice 2). Only an unspelled word qualifies: a spelling (an imported value, a label term)
+tells the conversion how the parse resolved the word, which the classifier alone
+does not know, so those, a qualified name and a label in scope are still resolved
+by the conversion. `.AST` and `EVAL($ast)` are
 unchanged.

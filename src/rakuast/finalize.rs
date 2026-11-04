@@ -332,7 +332,10 @@ impl VisitMut for Finalize<'_> {
         }
         // A plain term the classifier resolves (`my \x`, a constant): see
         // `bareword::term_expr`.
-        if let Expr::BareWord(word) = inner
+        // Only an unspelled word: a spelling (`ImportedTerm`, `LabelTerm`) tells
+        // the conversion how the parse resolved it, which the classifier alone
+        // does not know.
+        if let Expr::BareWord(word) = &*expr
             && let Some(term) = super::bareword::term_expr(names, word)
         {
             *expr = term;
