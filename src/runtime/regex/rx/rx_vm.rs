@@ -622,6 +622,9 @@ impl Interpreter {
                                             false
                                         } else {
                                             let stack_base = stack.len();
+                                            // A `rule`/`token` callee returns one
+                                            // match, whatever this site's ratchet.
+                                            let commit = commit || callee.declared_ratchet();
                                             enter_frame!(
                                                 callee,
                                                 callee_pkg,

@@ -395,6 +395,22 @@ pub(crate) struct RxProgram {
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
     pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+    /// The pattern's derived slots, read for [`Self::declared_ratchet`] when a
+    /// call enters this program as a frame. Shared, not copied: the flag is set
+    /// when the body is parsed for a subrule call, which can come after the
+    /// program was first compiled from the same pattern.
+    pub(super) derived: std::sync::Arc<crate::runtime::regex_types::PatternDerived>,
+}
+
+impl RxProgram {
+    /// Whether the program is the body of a `rule` or `token`, whose result a
+    /// call commits to whatever the call site's own ratchet.
+    // Cost: O(1).
+    pub(super) fn declared_ratchet(&self) -> bool {
+        self.derived
+            .declared_ratchet
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// What the empty arm of a `?` writes, computed when the pattern compiles.
