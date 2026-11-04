@@ -869,6 +869,13 @@ impl Interpreter {
                 self.reify_or_consume_eqv_operand(right)?,
             )
         };
+        // A deferred Seq (`.map` over `CArray` element references) has no
+        // elements to scan until it is reified just above, so its Proxy
+        // elements are resolved now (#16535).
+        let (left, right) = (
+            self.resolve_proxies_in_value(&left)?,
+            self.resolve_proxies_in_value(&right)?,
+        );
         self.eval_binary_with_junctions(left, right, |interp, l, r| {
             interp.eqv_rakudo(&l, &r).map(Value::truth)
         })
