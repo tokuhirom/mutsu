@@ -133,6 +133,22 @@ impl Interpreter {
         )
     }
 
+    /// Whether `class_name`'s MRO reaches `Hash`/`Map`: a registered class's own
+    /// MRO, else the builtin catalog's (`Stash`, which Rakudo declares `is Hash`).
+    // Cost: O(d), d = ancestors.
+    fn instance_mro_has_associative_base(&self, class_name: &str) -> bool {
+        if self
+            .mro_readonly(class_name)
+            .iter()
+            .any(|n| Self::is_associative_base(n))
+        {
+            return true;
+        }
+        self.registry()
+            .class_mro_readonly(class_name)
+            .is_some_and(|mro| mro.iter().any(|n| Self::is_associative_base(&n.resolve())))
+    }
+
     fn hash_storage_delegate_mut_inner(
         &mut self,
         target_name: &str,
@@ -166,10 +182,7 @@ impl Interpreter {
         if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
-        if !self
-            .mro_readonly(&cn)
-            .iter()
-            .any(|n| Self::is_associative_base(n))
+        if !self.instance_mro_has_associative_base(&cn)
             && !self.registry().role_associative_base(&cn).is_some()
         {
             return None;
@@ -378,10 +391,7 @@ impl Interpreter {
         if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
-        if !self
-            .mro_readonly(&cn)
-            .iter()
-            .any(|n| Self::is_associative_base(n))
+        if !self.instance_mro_has_associative_base(&cn)
             && !self.registry().role_associative_base(&cn).is_some()
         {
             return None;
