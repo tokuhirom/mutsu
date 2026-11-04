@@ -31,6 +31,30 @@ pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, 
     copy_fields(list, &source);
 }
 
+/// Give `target`, the expression node converted from `text` (the single
+/// expression statement of a fragment starting at byte `at` of the unit),
+/// its ranges.
+// Cost: O(n), n = length of `text`, plus the parse of it.
+pub(super) fn expression(names: &NameScope, target: &mut RakuAstNode, text: &str, at: usize) {
+    let Ok((mut stmts, _)) = crate::parser::parse_fragment_spelled(text) else {
+        return;
+    };
+    crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);
+    let _origins = super::expr_origins::strip(&mut stmts);
+    let _statement =
+        super::expr_origins::InStatement::enter(Some(SrcSpan::new(at, at + text.len())));
+    let Ok(source) = super::view::statement_list(names, &stmts) else {
+        return;
+    };
+    let Some(statement) = super::infix_origins::child_at(&source, 0) else {
+        return;
+    };
+    let Some(expression) = super::infix_origins::child_at(statement, 0) else {
+        return;
+    };
+    copy(target, expression);
+}
+
 /// Copy the origins of `source` onto `target`, a node of the same shape.
 // Cost: O(n), n = nodes of the smaller tree.
 fn copy(target: &mut RakuAstNode, source: &RakuAstNode) {
