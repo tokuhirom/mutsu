@@ -107,6 +107,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         }
         // `*` alone: the priming scope that curries it is planted by the
         // enclosing `WhateverCurry`, so the term itself lowers to itself.
+        // `x[i] = v`: read back as the parser built it. An indexed bind (`x[i] := v`)
+        // has an `IndexBindValue` child that only the conversion understands.
+        Expr::IndexAssign { value, .. } => !matches!(value.as_ref(), Expr::IndexBindValue(_)),
         Expr::Whatever => true,
         // The `*` of a priming scope (`* + 1`): `WhateverCode::Argument` reads back as it.
         Expr::WhateverArg => true,
