@@ -6,6 +6,9 @@
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::SrcSpan;
 
+/// A byte range of the source, when known.
+type Range = Option<(usize, usize)>;
+
 /// Whether `node`'s operand `name` is a priming `*`.
 // Cost: O(f), f = fields of `node`.
 fn is_priming(node: &RakuAstNode, name: &str) -> bool {
@@ -20,9 +23,9 @@ fn is_priming(node: &RakuAstNode, name: &str) -> bool {
 pub(super) fn operand_ranges(
     node: &RakuAstNode,
     op: &str,
-    left: Option<(usize, usize)>,
-    right: Option<(usize, usize)>,
-) -> (Option<(usize, usize)>, Option<(usize, usize)>) {
+    left: Range,
+    right: Range,
+) -> (Range, Range) {
     let mut left = left;
     let mut right = right;
     if left.is_none()
