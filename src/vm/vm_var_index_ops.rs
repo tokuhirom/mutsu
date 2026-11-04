@@ -408,7 +408,17 @@ impl Interpreter {
         // container mode (#10044): only the run-time value can tell.
         if Self::lazy_index_selects_many(&index) {
             let resolved = target.deref_container().descalarize().clone();
-            if !matches!(resolved.view(), ValueView::Array(..)) {
+            // An Array carrying a `postcircumfix:<[ ]>` candidate that accepts
+            // this slice (an imported `CArray` one) is subscripted by that
+            // routine, as the plain read does, not bound cell by cell (#16546).
+            if !matches!(resolved.view(), ValueView::Array(..))
+                || (is_positional
+                    && self.lexical_postcircumfix_in_scope()
+                    && !matches!(
+                        crate::runtime::utils::value_type_name(&resolved),
+                        "Array" | "List"
+                    ))
+            {
                 self.stack.push(resolved);
                 self.stack.push(index);
                 return self.exec_index_op_with_positional(is_positional);
@@ -632,6 +642,20 @@ impl Interpreter {
             }
             _ => false,
         }
+    }
+
+    /// Whether a `postcircumfix:<[ ]>` family is lexically imported here (a
+    /// `LexImportBuiltinOp` scope is active), so an Array receiver may be
+    /// subscripted by one of its candidates rather than natively.
+    // Cost: O(s), s = active lexical operator scopes.
+    fn lexical_postcircumfix_in_scope(&self) -> bool {
+        let op_name = crate::symbol::Symbol::intern(
+            crate::lexical_builtin_op::postcircumfix_of_subscript(true),
+        );
+        self.dispatch
+            .lexical_operator_scopes
+            .iter()
+            .any(|scope| scope.name == op_name)
     }
 
     /// Whether `target` is an instance whose class declares its own `AT-POS`.
