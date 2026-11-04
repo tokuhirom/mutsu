@@ -343,11 +343,15 @@ impl Interpreter {
             return None;
         }
         let method_sym = Symbol::intern(method_name);
-        let registry = self.registry();
-        if !registry.has_proto_method_named(method_sym) {
+        if !self.registry().has_proto_method_named(method_sym) {
             return None;
         }
+        // Resolve the MRO before taking the read guard the lookup below holds:
+        // `class_mro` writes the registry to cache an uncached MRO, and a write
+        // acquired under a held read guard is a read -> write upgrade (a
+        // deadlock; Log::Dispatch hung on its first `$logger.add: ...`).
         let mro = self.class_mro(class_name);
+        let registry = self.registry();
         mro.iter().find_map(|owner| {
             registry
                 .method_entry_proto_sym(*owner, method_sym)
