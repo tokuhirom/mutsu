@@ -1,6 +1,100 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// The `Distro` fields rakudo derives before building the object.
+struct DistroFields {
+    name: String,
+    auth: String,
+    version: String,
+    desc: String,
+    release: String,
+}
+
+/// Rakudo's `kv2Map` over `/etc/os-release`: every `"` is dropped, a line is
+/// split at `=` (the value keeps any further `=`), both sides are trimmed, and
+/// a line without `=` is skipped.
+// Cost: O(n), n = bytes of the file.
+fn os_release_map(content: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in content.replace('"', "").lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            map.insert(key.to_string(), value.trim().to_string());
+        }
+    }
+    map
+}
+
+/// Overlay the `/etc/os-release` identity onto `fields`, as rakudo's
+/// `$*DISTRO` does on Linux: `ID` is the name, `HOME_URL` the auth,
+/// `VERSION` the version, `VERSION_ID` the release and `PRETTY_NAME` the
+/// description. A key the file lacks leaves the field as it was.
+// Cost: O(n), n = bytes of the file.
+fn distro_from_os_release(content: &str, fields: &mut DistroFields) {
+    let map = os_release_map(content);
+    if let Some(v) = map.get("ID") {
+        fields.name = v.clone();
+    }
+    if let Some(v) = map.get("HOME_URL") {
+        fields.auth = v.clone();
+    }
+    if let Some(v) = map.get("VERSION") {
+        fields.version = v.clone();
+    }
+    if let Some(v) = map.get("VERSION_ID") {
+        fields.release = v.clone();
+    }
+    if let Some(v) = map.get("PRETTY_NAME") {
+        fields.desc = v.clone();
+    }
+}
+
+#[cfg(test)]
+mod distro_os_release_tests {
+    use super::*;
+
+    fn fields() -> DistroFields {
+        DistroFields {
+            name: "linux".into(),
+            auth: "unknown".into(),
+            version: "6.1".into(),
+            desc: "unknown".into(),
+            release: "unknown".into(),
+        }
+    }
+
+    #[test]
+    fn ubuntu_style_file_sets_every_field() {
+        let mut f = fields();
+        distro_from_os_release(
+            "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n\
+             VERSION=\"24.04.5 LTS (Noble Numbat)\"\nID=ubuntu\nHOME_URL=\"https://www.ubuntu.com/\"\n",
+            &mut f,
+        );
+        assert_eq!(f.name, "ubuntu");
+        assert_eq!(f.auth, "https://www.ubuntu.com/");
+        assert_eq!(f.version, "24.04.5 LTS (Noble Numbat)");
+        assert_eq!(f.release, "24.04");
+        assert_eq!(f.desc, "Ubuntu 24.04.5 LTS");
+    }
+
+    #[test]
+    fn missing_keys_keep_the_kernel_defaults() {
+        let mut f = fields();
+        distro_from_os_release("ID=arch\n# comment\nBUILD_ID=rolling\n", &mut f);
+        assert_eq!(f.name, "arch");
+        assert_eq!(f.version, "6.1");
+        assert_eq!(f.release, "unknown");
+        assert_eq!(f.auth, "unknown");
+    }
+
+    #[test]
+    fn a_value_keeps_further_equals_signs() {
+        let mut f = fields();
+        distro_from_os_release("HOME_URL=https://x.org/?a=b\n", &mut f);
+        assert_eq!(f.auth, "https://x.org/?a=b");
+    }
+}
+
 impl Interpreter {
     pub(super) fn create_handle(
         &mut self,
@@ -170,25 +264,31 @@ impl Interpreter {
                 )
             }
             "linux" => {
+                // Rakudo's `$*DISTRO` starts from the kernel (`name` "linux",
+                // `version` = the kernel release, the rest "unknown") and, when
+                // `/etc/os-release` exists, takes the distribution's identity
+                // from it (see `distro_from_os_release`).
                 let kernel_release = super::io_sysinfo_host::host_info().release.clone();
-                let mut distro_desc = String::new();
+                let mut fields = DistroFields {
+                    name: "linux".to_string(),
+                    auth: "unknown".to_string(),
+                    version: kernel_release.clone(),
+                    desc: "unknown".to_string(),
+                    release: "unknown".to_string(),
+                };
                 if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
-                    for line in content.lines() {
-                        if let Some(val) = line.strip_prefix("PRETTY_NAME=") {
-                            distro_desc = val.trim_matches('"').to_string();
-                            break;
-                        }
-                    }
-                }
-                if distro_desc.is_empty() {
-                    distro_desc = "Linux".to_string();
+                    distro_from_os_release(&content, &mut fields);
+                } else {
+                    // Without os-release the old reading of the release stays
+                    // the best available description.
+                    fields.release = kernel_release;
                 }
                 (
-                    "linux".to_string(),
-                    "unknown".to_string(),
-                    kernel_release.clone(),
-                    distro_desc,
-                    kernel_release,
+                    fields.name,
+                    fields.auth,
+                    fields.version,
+                    fields.desc,
+                    fields.release,
                 )
             }
             "windows" => {
@@ -218,8 +318,9 @@ impl Interpreter {
             }
         };
 
-        // Parse version string into a Version value
-        let version = Self::parse_version_string(&version_str);
+        // `$version.Version`: rakudo converts the string with `Str.Version`, so
+        // `24.04.5 LTS (Noble Numbat)` keeps its words as parts.
+        let version = Value::version_from_str(&version_str);
 
         let path_sep = if cfg!(windows) {
             ";".to_string()
