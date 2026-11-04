@@ -689,11 +689,16 @@ impl Interpreter {
         if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
+        let eval_key = self.eval_unit_declaring_key();
         if !crate::qualified::is_qualified(Symbol::intern(name))
             && let Some(ValueView::ContainerRef(arc)) = self
                 .lexicals
                 .unit_lexicals
-                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .get(
+                    eval_key
+                        .as_deref()
+                        .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+                )
                 .and_then(|m| m.get(name))
                 .map(Value::view)
         {
@@ -725,6 +730,21 @@ impl Interpreter {
     /// (ADR-0024 row "adv" — raku-verified `inner`, not the mainline `outer`).
     pub(super) fn mainline_lexical_frame_active(&self) -> bool {
         self.active_unit_lexical_bucket().is_some()
+    }
+
+    /// The capture bucket of the EVAL unit whose own top level is running, or
+    /// `None` for the program's mainline (and for any frame below a unit's top
+    /// level). The declaring side of [`Self::active_unit_lexical_bucket`]: the
+    /// statements of a unit adopt the cells its subs captured under this key,
+    /// as the mainline's do under `MAINLINE_UNIT_KEY` (#16476).
+    // Cost: O(1); the common case (no EVAL unit running) is one field test.
+    pub(super) fn eval_unit_declaring_key(&self) -> Option<std::sync::Arc<str>> {
+        let key = self.module.eval_unit_capture_key.as_ref()?;
+        (self.at_eval_unit_top_level()
+            && !self.module_load_active()
+            && !self.is_thread_clone()
+            && self.current_package_sym() == crate::symbol::wk::global_package())
+        .then(|| key.clone())
     }
 
     /// The `unit_lexicals` bucket the running routine's own captured free
@@ -1223,10 +1243,15 @@ impl Interpreter {
         {
             return Some(arc.clone());
         }
+        let eval_key = self.eval_unit_declaring_key();
         match self
             .lexicals
             .unit_lexicals
-            .get(crate::runtime::MAINLINE_UNIT_KEY)?
+            .get(
+                eval_key
+                    .as_deref()
+                    .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+            )?
             .get(name)?
             .view()
         {
