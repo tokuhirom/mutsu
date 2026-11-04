@@ -284,7 +284,7 @@ impl Interpreter {
         if let Some(rest) = term.strip_prefix('#') {
             let rest = rest.trim_start();
             term = rest.to_string();
-            config.entry("numbered".to_string()).or_insert(Value::TRUE);
+            config.entry("numbered".to_string()).or_insert(Value::int(1));
         }
         let body_lines: Vec<String> = match term_idx {
             Some(i) => all_lines[i + 1..].to_vec(),
