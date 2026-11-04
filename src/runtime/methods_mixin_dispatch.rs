@@ -1199,6 +1199,37 @@ pub(crate) struct MixinWinnerKey {
 }
 
 impl Interpreter {
+    /// The straight-line role method a call on a mixin already resolved to
+    /// (`caches.mixin_straight_front`), run; `None` when the call was not seen
+    /// before, the registry was written since, or the lane declines its
+    /// arguments. Asked at the top of the method-call funnel, ahead of the
+    /// prefix probes that decided nothing for these keys the first time
+    /// (#16215).
+    // Cost: O(a) for the key, plus the lane's call.
+    pub(crate) fn mixin_front_hit(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if args.is_empty()
+            || self.caches.mixin_straight_front.is_empty()
+            || self.pending_raw_invocant.is_some()
+        {
+            return None;
+        }
+        let ValueView::Mixin(inner, mixins) = target.view() else {
+            return None;
+        };
+        let key = self.mixin_front_key(target, inner, mixins, method, args)?;
+        let entry = self.caches.mixin_straight_front.get(&key)?;
+        if entry.generation != self.registry_write_generation() {
+            return None;
+        }
+        let def = Arc::clone(&entry.def);
+        self.run_straight_line_method(&def, target, args)
+    }
+
     /// The front-table key of a call on a mixin, or `None` when an argument
     /// has no type key.
     // Cost: O(a), a = arguments.

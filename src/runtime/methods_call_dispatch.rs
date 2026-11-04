@@ -376,6 +376,14 @@ impl Interpreter {
         mut args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
+        // A role method on a mixin this funnel already ran as a straight-line
+        // lane call for arguments of these types goes straight back to it,
+        // ahead of the probes below (#16215).
+        if !args.is_empty()
+            && let Some(result) = self.mixin_front_hit(&target, method, &args)
+        {
+            return result;
+        }
         let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything
