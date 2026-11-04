@@ -560,7 +560,7 @@ impl Interpreter {
                         let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
-                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars) {
+                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars, pos) {
                             None => false,
                             Some(ResolvedCall {
                                 verdict,
