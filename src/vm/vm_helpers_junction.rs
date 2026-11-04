@@ -18,6 +18,10 @@ impl Interpreter {
         // Decontainerize Scalar wrappers
         let left = left.descalarize().clone();
         let right = right.descalarize().clone();
+        // A raw BOOT scalar box is its high-level value at an operator
+        // (#12881).
+        let left = left.hllize_operand();
+        let right = right.hllize_operand();
         if let (
             ValueView::Junction {
                 kind: left_kind,
