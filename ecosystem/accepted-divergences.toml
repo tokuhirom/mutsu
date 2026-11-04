@@ -60,6 +60,17 @@ seen at compile time (33, a not-taken else branch) for the mainline's implicit r
 will not emulate them (maintainer decision 2026-10-29, #15323)."""
 
 [[divergence]]
+dist = "Datastar::SDK"
+file = "t/02-signals.rakutest"
+shape = { verdict = "fail", ok = 18, nok = 1, plan = 19, first_failure = "rejects an invalid Unicode scalar during serialization" }
+issue = 14416
+reason = """the test expects `to-json(chr(0xD800))` to die `X::AdHoc`: rakudo keeps the surrogate in a \
+`Str` (`chr(0xD800).ord` is 55296) and fails only when JSON::Fast encodes it. mutsu does not keep a \
+surrogate in a `Str`; `chr(0xD800)` raises `X::InvalidCodepoint` at construction, as roast's \
+`ord_and_chr.t` (`dies-ok {chr(0xD800)}`) and S15 specify (ADR-12640 rejected, maintainer decision \
+2026-10-21, #14416)."""
+
+[[divergence]]
 dist = "Dev::ContainerizedService"
 file = "t/clickhouse.t"
 shape = { verdict = "fail", ok = 0, nok = 7, plan = 7, first_failure = "Successfully ran development script" }
