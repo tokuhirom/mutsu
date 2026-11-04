@@ -691,6 +691,8 @@ mod tests {
             "my \\target = 'a'; say target; sub f(\\c) { c }; say f(1);",
             "sub die-on-fail { 7 }; say die-on-fail; my $x = die-on-fail + 1; say $x;",
             "sub w { 'a' }; say w ~ w; sub foo-bar { 1 }; say foo-bar;",
+            "my $self = 3; say $self; sub g($self, $y) { \"$self-$y\" }; say g(1, 2); my $f = sub ($self) { $self }; say $f(4);",
+            "=begin pod\nhi\n=end pod\nsay $=pod.elems; say $=pod[0].contents.elems;",
             "my uint8 $a = 1; my int32 $b = 2; say $a + $b; say uint16.^name; say int64 ~~ Int;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",

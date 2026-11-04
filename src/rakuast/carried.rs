@@ -286,6 +286,16 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
     {
         return true;
     }
+    // The user lexical `$self` (its env key carries the sigil, ADR-0061) and a
+    // Pod variable (`$=pod`, `$=finish`) read back as the same name.
+    if matches!(expr, Expr::Var(_))
+        && (name == crate::env::LEX_SELF
+            || name.strip_prefix('=').is_some_and(|rest| {
+                !rest.is_empty() && rest.chars().all(|c| c.is_alphanumeric() || c == '_')
+            }))
+    {
+        return true;
+    }
     match name {
         "/" | "!" => true,
         _ => name.strip_prefix('!').is_some_and(|rest| {
