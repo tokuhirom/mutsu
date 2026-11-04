@@ -5726,7 +5726,23 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
         ValueView::Str(_) => Ok(quoted_string(v.clone())),
         // A type the parser resolved to its type object (`Any`) is the same
         // `Type::Simple` an unresolved bareword type (`Int`) renders as.
-        ValueView::Package(name) => Ok(simple_type_node(&name.resolve())),
+        // `foo()` of a type that a same-named sub shadows: the parser keeps the
+        // coercion type as the package `foo(Any)`; rakudo's tree is the same
+        // `Type::Coercion` an `Int()` is.
+        ValueView::Package(name) => {
+            let name = name.resolve();
+            match name.strip_suffix("(Any)") {
+                Some(base)
+                    if !base.is_empty()
+                        && base.chars().all(|c| {
+                            c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')
+                        }) =>
+                {
+                    super::type_call::coercion_node(names, base, None)
+                }
+                _ => Ok(simple_type_node(&name)),
+            }
+        }
         // The parser folds the term `Empty` to the empty Slip it denotes;
         // raku keeps the name.
         ValueView::Slip(items) if items.is_empty() => Ok(RakuAstNode {
