@@ -99,7 +99,7 @@ impl Interpreter {
     /// Resolve a bare-name multi call through its (cached) dispatch plan.
     /// Behaviorally identical to the gather-rank-bind walk it replaced in
     /// `resolve_function_with_types`.
-    // Cost: O(c log c) plus the bind attempts on a plan hit, c = candidates;
+    // Cost: O(c * p + c log c) plus the bind attempts on a plan hit, c = candidates, p = parameters;
     // O(r) on a miss, r = registry keys sharing the base name.
     pub(crate) fn run_bare_multi_plan(
         &mut self,
@@ -473,6 +473,21 @@ impl Interpreter {
         candidates: &[Value],
         args: &[Value],
     ) -> Option<Result<Option<CapturedWinner>, RuntimeError>> {
+        // A candidate with an `is rw` parameter matches only an argument that
+        // has a container behind it, which the argument type keys do not
+        // record (a variable and a literal of the same type share a key).
+        // The by-name caches refuse such a family wholesale
+        // (`def_has_value_dependent_param`); a captured dispatcher must too,
+        // and take the unkeyed walk, or the first call's winner is reused for
+        // a literal argument (`multi f(Str:D $s is rw)` + `multi f(Str:D $s)`
+        // imported through a proto, String::Fields).
+        let has_rw_candidate = candidates.iter().any(|code| {
+            matches!(code.view(), ValueView::Sub(data)
+                if data.param_defs.iter().any(|pd| pd.traits.iter().any(|t| t == "rw")))
+        });
+        if has_rw_candidate {
+            return None;
+        }
         let arg_keys = self.multi_arg_type_keys_with_named(args)?;
         // `visibility` (an imported name) stays in the key; the captured
         // candidates need no visibility filter, they are the dispatcher's own.
