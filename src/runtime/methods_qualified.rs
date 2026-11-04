@@ -1305,6 +1305,12 @@ impl Interpreter {
                 );
                 return Some(res.map(|(result, _updated)| result));
             }
+            // `self.Metamodel::SubsetHOW::new_type(...)` in a user HOW's own
+            // `new_type`: the native metamethod that mints the type. Falling
+            // through re-entered the overriding method forever (#16347).
+            if actual_method == "new_type" && Self::is_metamodel_class_name(qualifier) {
+                return Some(self.metamodel_new_type(&pkg_name, &args));
+            }
             // A qualified constructor call to a builtin ancestor with no user
             // `new` of its own (e.g. `self.Date::new(...)` from inside a
             // `class Foo is Date { multi method new(...) {...} }`): build the
