@@ -82,6 +82,19 @@ impl Interpreter {
         if self.class_does_baggy_or_setty(cn_resolved) {
             return false;
         }
+        // `Mu.new` is `self.bless(|%attrinit)`: a class declaring (or
+        // composing) its own `bless` must run it for `.new`, which only the
+        // full constructor does (`dispatch_new_unallocated`).
+        {
+            let registry = self.registry();
+            if self
+                .mro_readonly(cn_resolved)
+                .iter()
+                .any(|cls| registry.user_method_overloads(cls, "bless").is_some())
+            {
+                return false;
+            }
+        }
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Exception" {
                 is_exception = true;

@@ -848,6 +848,16 @@ impl Interpreter {
             return Some(res);
         }
 
+        // `self.Mu::bless(|%_)` from a class's own `bless` override, made on
+        // an EXISTING instance (`Point.new.bless-via-new`): Mu's `bless`
+        // creates an instance of the RECEIVER's class, bypassing the
+        // override. Viewing the receiver as a plain `Mu` (the fallback below)
+        // would build a `Mu` instead. The type-object form takes the native
+        // constructor path in `dispatch_qualified_non_instance_method`.
+        if qualifier == "Mu" && actual_method == "bless" {
+            return Some(self.dispatch_bless(&Value::package(inst_class), args));
+        }
+
         // A qualified call naming a builtin ancestor whose method is not a
         // user method (`$date.Date::succ` from a `class Workdate is Date`
         // whose own `succ` must not be re-entered): view the receiver as a
