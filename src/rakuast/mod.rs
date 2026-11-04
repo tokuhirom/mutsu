@@ -380,6 +380,7 @@ pub enum RakuAstClass {
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
     VarDynamic,
+    VarDoc,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -770,6 +771,7 @@ impl RakuAstClass {
             VarCompilerDistribution => "RakuAST::Var::Compiler::Distribution",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
+            VarDoc => "RakuAST::Var::Doc",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -1311,6 +1313,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarCompilerDistribution,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
+    RakuAstClass::VarDoc,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,
