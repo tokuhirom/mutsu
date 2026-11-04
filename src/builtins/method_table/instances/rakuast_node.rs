@@ -841,6 +841,33 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
+        // Rakudo's `Name` visits the expression of each `::(EXPR)` part
+        // (`<::("w")>`, `::("w")`) and nothing else of its parts.
+        RakuAstClass::Name => {
+            let exprs: Vec<Value> = node
+                .fields
+                .iter()
+                .filter_map(|f| match &f.value {
+                    RakuAstFieldValue::List(items) => Some(items),
+                    _ => None,
+                })
+                .flatten()
+                .filter_map(|part| match part.view() {
+                    ValueView::RakuAst(part)
+                        if part.class == crate::rakuast::RakuAstClass::NamePartExpression =>
+                    {
+                        part.fields.iter().find_map(|f| match &f.value {
+                            RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
+                                Some(v.clone())
+                            }
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                })
+                .collect();
+            (!exprs.is_empty()).then_some(exprs)
+        }
         // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
         RakuAstClass::TermEnum => {
             let identifier = node.fields.iter().find_map(|f| match &f.value {

@@ -58,6 +58,7 @@ pub(crate) mod post_declared;
 mod quote_nesting;
 mod regex_call_origins;
 mod regex_origins;
+mod regex_symbolic_origins;
 pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod stmt_call;
