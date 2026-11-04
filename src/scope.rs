@@ -165,6 +165,23 @@ impl NameScope {
     }
 }
 
+/// Keeps `name` as the enclosing package of [`NameScope`] while it lives.
+pub(crate) struct PackageGuard<'a>(&'a NameScope);
+
+impl<'a> PackageGuard<'a> {
+    // Cost: O(1).
+    pub(crate) fn enter(names: &'a NameScope, name: Option<String>) -> Self {
+        names.push_package(name);
+        PackageGuard(names)
+    }
+}
+
+impl Drop for PackageGuard<'_> {
+    fn drop(&mut self) {
+        self.0.pop_package();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,22 +214,5 @@ mod tests {
             .with_caller_operators(&["infix:<foo>".to_string(), "prefix:<bar>".to_string()]);
         assert!(scope.caller_declares_operator("infix:<foo>"));
         assert!(!scope.caller_declares_operator("prefix:<bar>"));
-    }
-}
-
-/// Keeps `name` as the enclosing package of [`NameScope`] while it lives.
-pub(crate) struct PackageGuard<'a>(&'a NameScope);
-
-impl<'a> PackageGuard<'a> {
-    // Cost: O(1).
-    pub(crate) fn enter(names: &'a NameScope, name: Option<String>) -> Self {
-        names.push_package(name);
-        PackageGuard(names)
-    }
-}
-
-impl Drop for PackageGuard<'_> {
-    fn drop(&mut self) {
-        self.0.pop_package();
     }
 }
