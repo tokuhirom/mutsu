@@ -504,9 +504,11 @@ fn droppable_subject(k: &Symbol) -> Option<Symbol> {
         // reached by its own name or, from inside its package, by the bare
         // tail; the tail stands for it.
         if let Some(qualified) = term.strip_prefix('&') {
-            let (_, tail) = qualified.rsplit_once("::")?;
-            return (qualified.bytes().all(|b| ident_byte(b) || b == b':') && ident(tail))
-                .then(|| Symbol::intern(tail));
+            if !qualified.bytes().all(|b| ident_byte(b) || b == b':') {
+                return None;
+            }
+            let (_, tail) = crate::qualified::split_qualified(Symbol::intern(qualified))?;
+            return tail.with_str(ident).then_some(tail);
         }
         // Only a type-shaped name qualifies unmarked; a readonly marker is
         // always for a sigilless term.
