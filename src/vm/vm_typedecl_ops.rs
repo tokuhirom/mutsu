@@ -650,6 +650,17 @@ impl Interpreter {
                 }
                 err
             })?;
+            // The real declaration composes the class here, in source order. An
+            // `augment` that ran earlier only saw its hoisted shell and froze the
+            // shell's dispatchers, but a class declared AFTER the augment sees the
+            // augmented candidates (#16314).
+            if !is_hoisted_shell {
+                let class_sym = crate::symbol::Symbol::intern(&storage_name);
+                let mut reg = self.registry_mut();
+                if !reg.frozen_dispatchers.is_empty() {
+                    reg.frozen_dispatchers.retain(|(class, _), _| *class != class_sym);
+                }
+            }
             // Take the rollback snapshot `register_class_decl` leaves behind
             // for a deferred `is` trait IMMEDIATELY, into a local: a nested
             // declaration in this class's own body runs its own
