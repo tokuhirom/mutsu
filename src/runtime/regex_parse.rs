@@ -11,6 +11,12 @@ thread_local! {
     /// Thread-local storage for regex security errors that need to propagate
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
     pub(crate) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
+    /// The first error a grammar action raised at its subrule's reduction
+    /// (`dispatch_reduced_subrule`). Unlike a recorded subrule argument-binding
+    /// error in [`PENDING_REGEX_ERROR`] it is the program's own `die`, so a
+    /// later regex parse does not clear it and a parse that still matched
+    /// raises it, as rakudo's action call does.
+    pub(crate) static PENDING_ACTION_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
 
     /// Compile-sorrow accumulator for regex parsing. Some malformed patterns
     /// produce several diagnostics before the parser gives up — e.g.

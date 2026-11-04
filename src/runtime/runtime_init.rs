@@ -24,6 +24,15 @@ impl Interpreter {
         regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take())
     }
 
+    /// [`Self::take_pending_regex_error`], or else the error a grammar action
+    /// raised at its subrule's reduction. Only the grammar-parse entry points
+    /// read the latter: a match that went on afterwards runs more code (later
+    /// actions, `~~`) whose own cleanup must not discard it.
+    pub(crate) fn take_pending_regex_or_action_error() -> Option<RuntimeError> {
+        Self::take_pending_regex_error()
+            .or_else(|| regex_parse::PENDING_ACTION_ERROR.with(|e| e.borrow_mut().take()))
+    }
+
     /// Build the built-in declaration registry: every built-in `ClassDef`,
     /// the exception-class hierarchy, the composed-role seeds and the seeded
     /// method table.

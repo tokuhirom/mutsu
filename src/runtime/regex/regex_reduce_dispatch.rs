@@ -19,9 +19,10 @@ impl Interpreter {
     /// Run the action of the subrule `cap` that just reduced, when an
     /// action-driven parse is live and the matcher is in its real pass.
     ///
-    /// A failure is parked in the pending-regex-error slot, the way an
-    /// embedded `{ ... }` block's `die` is: the match-entry points re-raise it
-    /// after the engine unwinds.
+    /// A failure is parked in the pending-action-error slot (read by
+    /// `take_pending_regex_error` too), the way an embedded `{ ... }` block's
+    /// `die` is parked: the match-entry points re-raise it after the engine
+    /// unwinds, and a parse that still matched raises it as well.
     // Cost: O(1) when no action-driven parse is live; otherwise one action
     // call plus an O(e) env snapshot, e = the names in scope, only when the
     // rule has an action method.
@@ -31,6 +32,12 @@ impl Interpreter {
         rule_name: &str,
     ) {
         if !super::regex_helpers::reduce_dispatch_armed() || cap.reduced.get() {
+            return;
+        }
+        // An earlier action died: the parse is over as far as the program can
+        // tell (rakudo unwinds out of `.parse` at the `die`), so no later
+        // action runs for the rest of the match.
+        if crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| slot.borrow().is_some()) {
             return;
         }
         let Some(mut actions) = self.regex_state.current_grammar_actions.take() else {
@@ -51,7 +58,7 @@ impl Interpreter {
         if let Err(error) = outcome
             && error.return_value.is_none()
         {
-            crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+            crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| {
                 let mut slot = slot.borrow_mut();
                 if slot.is_none() {
                     *slot = Some(error);
