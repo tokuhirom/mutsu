@@ -135,9 +135,7 @@ fn literalize(
     if !crate::rakuast::literalize::is_constant(node) {
         return Some(Ok(cannot));
     }
-    Some(Ok(
-        literal_of(interp, &base).unwrap_or(cannot),
-    ))
+    Some(Ok(literal_of(interp, &base).unwrap_or(cannot)))
 }
 
 /// The literal value of the constant node `base`. Rakudo literalizes a
