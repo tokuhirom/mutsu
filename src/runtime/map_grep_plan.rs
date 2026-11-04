@@ -508,6 +508,6 @@ fn droppable_subject(k: &Symbol) -> Option<Symbol> {
             && term
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':');
-        (std::ptr::eq(term, s) && type_like).then(|| *k)
+        (std::ptr::eq(term, s) && type_like).then_some(*k)
     })
 }
