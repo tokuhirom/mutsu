@@ -445,6 +445,18 @@ impl Interpreter {
         {
             return result;
         }
+        // A role-mixed container that owns its subscript: the increment is
+        // `ASSIGN-KEY(k, AT-KEY(k) + 1)`, not a write into the backing storage.
+        if self.try_incdec_through_mixin_subscript(
+            code,
+            name_idx,
+            slot,
+            increment,
+            return_new,
+            is_positional,
+        )? {
+            return Ok(());
+        }
         let pre = self.attr_elem_env_snapshot(code, name_idx);
         self.exec_inc_dec_index_op(code, name_idx, slot, increment, return_new, is_positional)?;
         self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
