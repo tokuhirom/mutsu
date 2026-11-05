@@ -629,10 +629,14 @@ impl Interpreter {
                 // named subs capture the unit's variables in a bucket per run,
                 // not through whichever caller chain they are called from.
                 Some(key.to_string())
-            } else if self
+            } else if (self
                 .env()
                 .get("__mutsu_in_eval")
                 .is_none_or(|v| !v.truthy())
+                // A bare block of an `EVAL` unit run from the program's own
+                // top level declares its subs like a block of the program:
+                // the unit's top level has its bucket (above), the block its own.
+                || self.in_block_of_eval_unit())
                 && self.current_package_sym() == crate::symbol::wk::global_package()
                 && !self.module_load_active()
                 && !self.is_thread_clone()

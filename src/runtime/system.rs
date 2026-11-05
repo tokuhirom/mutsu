@@ -71,6 +71,15 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
     "Scalar",
 ];
 
+/// A top-level `use lib` whose argument is a literal (or a flat list of
+/// literals): evaluating it ahead of the unit has no effect but the search
+/// path, which the unit's own run then leaves unchanged.
+// Cost: O(a), a = size of the argument list.
+fn is_literal_use_lib(stmt: &Stmt) -> bool {
+    matches!(stmt, Stmt::Use { module, arg: Some(arg), .. }
+        if module == "lib" && super::eval_nested_hook_uses::is_literal_arg(arg))
+}
+
 impl Interpreter {
     pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         self.validate_eval_source_with(stmts, false)
@@ -126,6 +135,14 @@ impl Interpreter {
         // import is then not confined to the block).
         let mut lifted = 0;
         let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
+        // TODO: a unit that `use`s Test loses the candidates of a hook module's
+        // exported `&trait_mod:<is>` dispatcher when the hook is pre-run
+        // (`EVAL 'use Test; use ExportSubTraitDispatcher; ...'` finds none,
+        // with or without a `use lib`): until that is fixed such a unit keeps
+        // stopping the pre-run at its `use lib`.
+        let uses_test = stmts
+            .iter()
+            .any(|stmt| matches!(stmt, Stmt::Use { module, .. } if module == "Test"));
         let positional = super::undeclared_routines::contains_use_lib(&stmts)
             || stmts.iter().any(|stmt| {
                 matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
@@ -142,8 +159,9 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
-                    || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+                !(is_literal_use_lib(stmt) && !uses_test)
+                    && (super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
+                        || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. }))
             })
             .unwrap_or(stmts.len());
         #[derive(Clone, Copy, PartialEq)]
@@ -162,6 +180,7 @@ impl Interpreter {
         // An `import` is pre-run only for a module an earlier pre-run `use`
         // loaded: one the unit declares itself does not exist yet.
         let mut loaded: HashSet<&str> = HashSet::new();
+        let mut after_use_lib = false;
         let mut plan: Vec<Prerun> = Vec::with_capacity(stmts.len());
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
@@ -174,6 +193,17 @@ impl Interpreter {
                     Prerun::Drop
                 }
                 Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
+                // Adds its path now so the loads after it resolve; the unit's
+                // own run finds the path at the front and adds nothing.
+                // The search path is in place before the `use` statements after
+                // it are probed for a `sub EXPORT` hook; the unit's own run then
+                // finds the path already at the front.
+                Stmt::Use { arg: Some(arg), .. } if is_literal_use_lib(stmt) && !uses_test => {
+                    let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
+                    self.add_lib_paths(&value)?;
+                    after_use_lib = true;
+                    Prerun::Keep
+                }
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
@@ -183,8 +213,12 @@ impl Interpreter {
                             Prerun::Drop
                         }
                     }
-                    // Its arguments would be evaluated twice.
-                    Some(module) if arg.is_none() => {
+                    // Its arguments would be evaluated twice. After a `use lib`
+                    // only a hook module runs ahead (above): a plain module's
+                    // names are known without running it, and loading it
+                    // before the unit registers its own declarations lets the
+                    // module's `trait_mod` candidates outrank the unit's.
+                    Some(module) if arg.is_none() && !after_use_lib => {
                         loaded.insert(module);
                         Prerun::Keep
                     }
@@ -214,6 +248,8 @@ impl Interpreter {
                     self.import_module(module, tags)
                         .map_err(|err| self.in_place_use_error(module, err))?;
                 }
+                // A literal `use lib` was applied while planning.
+                (Stmt::Use { module, .. }, _) if module == "lib" => {}
                 (Stmt::Use { module, arg, tags, .. }, _) => {
                     preran.insert(module.clone());
                     // The `use` arguments are what the module's `sub EXPORT`

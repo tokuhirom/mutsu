@@ -209,6 +209,23 @@ impl Interpreter {
         slot: Option<u32>,
         kind: SubscriptKind,
     ) -> Result<(), RuntimeError> {
+        // `%*ENV<K>:delete` in a sub edits the frame overlay's copy of the
+        // base-tier hash; publish it like an element store (#16559).
+        let process_env = self.process_hash_store_begin(Self::const_str(code, name_idx));
+        let result = self.exec_delete_index_named_op_unpublished(code, name_idx, slot, kind);
+        if process_env && result.is_ok() {
+            self.publish_process_hash_store();
+        }
+        result
+    }
+
+    fn exec_delete_index_named_op_unpublished(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        slot: Option<u32>,
+        kind: SubscriptKind,
+    ) -> Result<(), RuntimeError> {
         // A user `postcircumfix` candidate takes `:delete` itself (#14538).
         if kind != SubscriptKind::Unknown
             && let Some(index) = self.stack.last().cloned()

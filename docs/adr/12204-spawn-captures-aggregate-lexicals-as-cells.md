@@ -138,6 +138,39 @@ each routine's closure creation. Also open: the hyper/race batch threads run the
 enclosing frame's bytecode range, not a closure, so they need a free-variable pass
 over the loop-body range before they can be a capture source.
 
+## Amendment 2026-11-05: a reachability filter alone is unsound (measured)
+
+Tried: a spawn-time pass over the block's bytecode (and nested closures) that
+proves the block runs no code it cannot see (no user-routine call, no call
+through a value or dynamic name, only core container methods, no declaration, no
+`EVAL`), and for such a block skips seeding every plain `@`/`%` lexical the block
+does not name. The three known-red files go green with
+`container_name_is_redeclared` hard-wired to `false` under it, and the rest of
+`t/concurrency/**` stays green except
+`t/concurrency/supply/supply-block-nested-whenever-serialize.t` (tests 3-4: the
+tap callback's `@log` is lost).
+
+Why it fails: the lane has a second, implicit contract besides "the block that
+names it" -- *any* spawn publishes *every* live aggregate, and a callback that
+runs later on an already-existing thread (a supply tap, a `whenever` body, a
+reader) finds its not-yet-celled aggregate there. Skipping the publish at one
+unrelated spawn breaks a consumer whose own capture source is not wired yet.
+So reachability is not just "which names can a callee reach"; it is "which
+names can ANY live callback reach", and that set is only knowable once every
+consumer is a capture source. The filter is therefore the LAST step of S3,
+after:
+
+1. every block-less spawn / callback has a capture source (`stable`/`delay`
+   windows, the second `throttle` window, hyper/race batch threads,
+   `supply_promise.rs:425`, `builtins_system.rs:474`);
+2. every aggregate a callback names is celled at declaration (S2 remainder b),
+   so a later publish is never what a callback depends on.
+
+The prototype (an op walk over `CompiledCode::ops` and `closure_compiled_codes`,
+a fixed core-method list, and a `continue` in the seeding loop of
+`clone_for_thread_excluding`) is about 90 lines and is not kept in the tree
+because it is red alone.
+
 ## Alternatives considered
 
 - **Keep adding masks (status quo).** Rejected: the defect class is "a call path without a

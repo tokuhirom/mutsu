@@ -327,6 +327,48 @@ impl Interpreter {
         mirror
     }
 
+    /// Whether an element store into the hash `var_name` is about to update
+    /// the process-level `%*ENV` binding (rather than a `my %*ENV` in scope).
+    /// Ask BEFORE the store: the store replaces the env's copy of the hash, and
+    /// the stash recognises a binding by the object it held. Pair with
+    /// [`Self::publish_process_hash_store`] afterwards.
+    // Cost: O(1) for any other name; for `%*ENV` O(1) stash probes and one env
+    // probe.
+    #[inline]
+    pub(crate) fn process_hash_store_begin(&mut self, var_name: &str) -> bool {
+        if var_name != "%*ENV" || !self.binding_is_process_level(var_name, var_name) {
+            return false;
+        }
+        // The store mutates the env's copy of the hash: start it from the
+        // CURRENT process hash, which another frame may have published since
+        // this env's copy was taken.
+        if let Some(current) = self.lexicals.process_dynamics.get(var_name) {
+            self.env_mut().insert(var_name.to_string(), current);
+        }
+        true
+    }
+
+    /// The process-level `%*ENV` as this frame sees it: the published hash
+    /// when the env's binding is the process one, else the env's own (a
+    /// `my %*ENV`, or the base-tier seed before any element store).
+    // Cost: O(1) when nothing was ever published; else see
+    // [`Self::resolve_process_dynamic`].
+    pub(crate) fn process_env_hash(&self) -> Option<Value> {
+        self.resolve_process_dynamic("%*ENV", self.env().get("%*ENV").cloned())
+    }
+
+    /// Publish the `%*ENV` the env now holds, after an element store/delete
+    /// that [`Self::process_hash_store_begin`] approved. `%*ENV` lives in the
+    /// per-interpreter base tier, so the store lands in the writer's frame
+    /// overlay and is dropped with the frame; rakudo has one process-wide hash
+    /// every frame and thread sees (#16559).
+    // Cost: O(1), one env probe and one stash write.
+    pub(crate) fn publish_process_hash_store(&mut self) {
+        if let Some(v) = self.env().get("%*ENV").cloned().map(Value::into_deref) {
+            self.publish_process_dynamic("%*ENV", v);
+        }
+    }
+
     /// A by-name write to the dynamic `name` (`$*X = ...`, a `temp` save or
     /// restore): when the binding it updates is the process binding, publish
     /// the value to the stash as well. The caller still performs its env write.

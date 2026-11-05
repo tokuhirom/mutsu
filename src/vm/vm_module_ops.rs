@@ -298,6 +298,12 @@ impl Interpreter {
         _code: &CompiledCode,
     ) -> Result<(), RuntimeError> {
         let value = self.stack.pop().unwrap_or(Value::NIL);
+        self.add_lib_paths(&value)
+    }
+
+    /// Register the repository specs `value` names, as `use lib VALUE` does.
+    // Cost: O(p), p = repository specs added to the search path.
+    pub(crate) fn add_lib_paths(&mut self, value: &Value) -> Result<(), RuntimeError> {
         // `use lib` takes a *list* of repository specs (`use lib <a b>`,
         // `use lib "a", "b"`, `use lib @paths`); each element is its own spec,
         // so never stringify the list as a whole.

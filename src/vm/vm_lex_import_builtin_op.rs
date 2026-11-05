@@ -187,6 +187,17 @@ impl Interpreter {
             .env
             .get_sym(crate::symbol::wk::multi_dispatch_candidates())
             .and_then(|value| value.as_list_items().map(ToOwned::to_owned))?;
-        Some(self.try_captured_candidates(&dispatcher, &candidates, name, args))
+        let shadowed_by_proto = data
+            .env
+            .contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core());
+        let declined_args = shadowed_by_proto.then(|| args.clone());
+        let result = self.try_captured_candidates(&dispatcher, &candidates, name, args);
+        // The family carries a user `proto sub infix:<op>`, which shadows the
+        // core routine (rakudo: only the proto's own candidates exist), so a
+        // call none of them takes is `X::Multi::NoMatch`, never the core answer.
+        if let (Ok(None), Some(args)) = (&result, declined_args) {
+            return Some(Err(self.multi_no_match_error(name, &args)));
+        }
+        Some(result)
     }
 }
