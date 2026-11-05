@@ -587,7 +587,11 @@ impl Interpreter {
         // reached from here can run user code under the guard.
         let _struct_guard =
             self.named_root_struct_guard(code, target_slot, Self::const_str(code, name_idx));
-        self.with_package_lexical_seeded(code, name_idx, |vm| {
+        // `%*ENV<K> = v` in a sub lands in the frame overlay's copy of the
+        // base-tier hash and would die with the frame; publish it to the
+        // process stash, as a whole `%*ENV = ...` is (#16559).
+        let process_env = self.process_hash_store_begin(Self::const_str(code, name_idx));
+        let result = self.with_package_lexical_seeded(code, name_idx, |vm| {
             vm.with_own_container_seeded(code, name_idx, target_slot, |vm| {
                 vm.exec_index_assign_expr_named_op_unseeded(
                     code,
@@ -597,7 +601,11 @@ impl Interpreter {
                     element_share,
                 )
             })
-        })
+        });
+        if process_env && result.is_ok() {
+            self.publish_process_hash_store();
+        }
+        result
     }
 
     /// Whether `value` is an instance of a user class inheriting `Map` (its
