@@ -584,7 +584,7 @@ mod dispatch_shape;
 pub(crate) mod render_guard;
 mod varref_declared;
 pub(crate) use dispatch_shape::iterator_kind::{
-    MAP_GREP_STREAM_ATTR, shape_of as iterator_shape_of,
+    MAP_GREP_STREAM_ATTR, NOT_PREDICTIVE_ITERATOR_ATTR, shape_of as iterator_shape_of,
 };
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
