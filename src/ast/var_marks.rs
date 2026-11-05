@@ -33,6 +33,10 @@ pub(crate) struct VarMarks {
     /// The same declaration for a native-typed parameter, which cannot use `:=`; the
     /// compiler recognizes it as the pointy parameter so `is rw` writes back.
     pub(crate) pointy_native_param: bool,
+    /// One element of a destructured declaration (`my int ($p, $q) = ...`). Rakudo reads
+    /// such a native element as the native type, unlike a single `my int $x`. Not part of
+    /// [`VarMarks::is_plain`].
+    pub(crate) signature_element: bool,
     /// The declaration reads the new topic exactly once; after it the block's `$_` is the
     /// enclosing topic again, so the compiler emits the matching `ExitPointyTopic`.
     pub(crate) restore_pointy_given_topic: bool,

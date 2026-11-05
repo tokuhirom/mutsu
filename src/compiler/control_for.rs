@@ -355,6 +355,7 @@ impl Compiler {
             .filter(|def| def.type_constraint.is_some())
         {
             let name = param.clone().unwrap_or_else(|| def.name.clone());
+            self.boxed_native_scalars.remove(&name);
             let old = self.local_types.insert(
                 name.clone(),
                 def.type_constraint.clone().unwrap_or_default(),
@@ -367,6 +368,7 @@ impl Compiler {
                 .filter_map(|(name, def)| {
                     let type_constraint = def.type_constraint.as_ref()?;
                     let name = name.clone();
+                    self.boxed_native_scalars.remove(&name);
                     let old = self
                         .local_types
                         .insert(name.clone(), type_constraint.clone());

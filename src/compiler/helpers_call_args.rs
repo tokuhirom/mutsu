@@ -1604,6 +1604,7 @@ impl Compiler {
             if pd.name.is_empty() || pd.slurpy || pd.double_slurpy {
                 continue;
             }
+            self.boxed_native_scalars.remove(&pd.name);
             if let Some(tc) = pd.type_constraint.as_deref()
                 && self.is_native_type_constraint(tc)
             {
