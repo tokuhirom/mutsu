@@ -50,7 +50,6 @@ mod runtime_module_import_owner_family;
 mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
-mod runtime_thread_decl_mask;
 mod runtime_var_bind_meta;
 pub(crate) mod runtime_var_default;
 pub(crate) mod runtime_var_meta;

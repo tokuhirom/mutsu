@@ -140,7 +140,11 @@ impl Interpreter {
             .or_else(|| caps.regex_vars().get(&*sigiled))
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .or_else(|| self.env.get(&sigiled).cloned());
+            .or_else(|| self.env.get(&sigiled).cloned())
+            // A `constant` the running module imported lives only in the
+            // module-scope table, never in this frame's env (the parse-time
+            // interpolation falls back to it the same way).
+            .or_else(|| self.regex_package_chain_var_fallback(&sigiled));
         let val = val.map(Value::into_deref);
         if assertion {
             return self.var_assertion_target(val, ignore_case);

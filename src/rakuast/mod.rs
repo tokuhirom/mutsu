@@ -136,7 +136,7 @@ mod method_assign_decl;
 mod modifier_lower;
 mod multidim_splat;
 mod name_colonpairs;
-mod name_parts;
+pub(crate) mod name_parts;
 mod named_ctor;
 mod named_param;
 mod negated_set;
@@ -2297,6 +2297,9 @@ fn construct_values(
                 })
                 .collect(),
         }))));
+    }
+    if class_name == "RakuAST::ArgList" && method == "from-comma-list" {
+        return arg_list_queries::from_comma_list(args).map(Some);
     }
     if class_name == "RakuAST::SemiList" && method == "new" {
         for arg in args {

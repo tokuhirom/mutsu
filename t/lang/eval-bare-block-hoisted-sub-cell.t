@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 5;
+plan 6;
 
 # A named sub declared in a bare block of an `EVAL` unit that runs at the
 # program's top level closes over the block's later `my` like a block of the
@@ -10,6 +10,10 @@ plan 5;
 my @r;
 EVAL '{ @r.push(foo()); @r.push(foo()); my $a; sub foo { $a++ } }';
 is @r.join(','), '0,1', 'a bare block of an EVAL unit';
+
+@r = ();
+EVAL 'do { @r.push(foo()); @r.push(foo()); my $a; sub foo { $a++ } }';
+is @r.join(','), '0,1', 'a do block of an EVAL unit (#16694)';
 
 @r = ();
 EVAL '{ @r.push(bar()); @r.push(bar()); my $c = 5; sub bar { $c++ } }';

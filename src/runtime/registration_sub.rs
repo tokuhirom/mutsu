@@ -303,15 +303,18 @@ impl Interpreter {
         }
     }
 
-    /// Whether the running code is inside bare blocks only (no routine) of an
-    /// `EVAL` unit: a `sub` declared there closes over its block like one in a
-    /// block of the program itself (#16686).
+    /// Whether the running code is inside blocks only (no routine) of an `EVAL`
+    /// unit that is nested below the unit's own top level -- a bare block (a block
+    /// routine frame) or a `do` block (block depth only): a `sub` declared there
+    /// closes over its block like one in a block of the program itself
+    /// (#16686, #16694).
     // Cost: O(d), d = routine-stack depth.
     pub(crate) fn in_block_of_eval_unit(&self) -> bool {
         self.env
             .get("__mutsu_in_eval")
             .is_some_and(|v| v.truthy())
-            && !self.routine_stack.is_empty()
+            && (!self.routine_stack.is_empty()
+                || self.block_scope_depth > self.module.eval_unit_block_depth)
             && self.routine_stack.iter().all(|f| f.is_block)
     }
 

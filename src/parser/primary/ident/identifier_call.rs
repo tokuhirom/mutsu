@@ -569,11 +569,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             let r2 = &r[2..];
             let (r2, _) = ws(r2)?;
+            let value_start = r2;
             let (r2, mut value) = parse_fat_arrow_value(r2)?;
             // Wrap WhateverCode in the pair value (e.g. `foo => |*` should have
             // a WhateverCode as the value, not slip(Whatever)).
             if should_wrap_whatevercode(&value) {
-                value = Expr::WhateverCurry(Box::new(value));
+                let source = crate::parser::expr::consumed_span(value_start, r2)
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty())
+                    .map(str::to_string);
+                value = Expr::WhateverCurry(Box::new(value), source);
             }
             // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it
             // is evaluated to its value, so `Bool::True => "a"` has the Bool

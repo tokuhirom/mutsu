@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn visit_roots_finds_env_and_shared_vars() {
         let interp = Interpreter::new();
-        interp.threads.shared_vars.declare("x", Value::int(42));
+        interp.threads.shared_vars.set("x", Value::int(42));
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);

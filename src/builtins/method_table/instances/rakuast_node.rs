@@ -79,6 +79,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("unshift-statement", a[0].clone())),
     node_row!("RakuAST::ArgList", "push", |t, a| t
         .rakuast_add_child("push", a[0].clone())),
+    node_row!("RakuAST::ArgList", "unshift", |t, a| t
+        .rakuast_add_child("unshift", a[0].clone())),
     node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t
         .rakuast_set_field("replace-statement-list", a[0].clone())),
     // `$*CU.add-check-code({ ... })`: an undocumented rakudo method that

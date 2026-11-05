@@ -102,7 +102,7 @@ pub(crate) fn is_thunk_barrier(expr: &Expr) -> bool {
 fn materialise_scope(slot: &mut Expr) {
     if should_wrap_whatevercode(slot) {
         let body = std::mem::replace(slot, Expr::Whatever);
-        *slot = Expr::WhateverCurry(Box::new(body));
+        *slot = Expr::curry(body);
     }
 }
 

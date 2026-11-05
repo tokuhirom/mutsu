@@ -2,6 +2,69 @@ use super::*;
 use crate::builtins::string_pos::grapheme_len;
 use crate::symbol::Symbol;
 
+/// The candidate signatures rakudo lists when `index` finds none that binds.
+const INDEX_CANDIDATES: &[&str] = &[
+    "(List:D $:: Cool:D $needle, *%_)",
+    "(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, Cool:D $pos, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, Cool:D $pos, :m(:$ignoremark)!, *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, Int:D $pos, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)",
+    "(Str:D $:: @needles, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, :m(:$ignoremark)!, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, Int:D $pos, :m(:$ignoremark)!, *%_ --> Int:D)",
+    "(Str:D $:: @needles, :m(:$ignoremark)!, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, Int:D $pos, *%_ --> Int:D)",
+    "(Str:D $:: @needles, *%_ --> Int:D)",
+];
+
+/// The candidate signatures rakudo lists when `rindex` finds none that binds.
+const RINDEX_CANDIDATES: &[&str] = &[
+    "(List:D $:: Cool:D $needle, *%_)",
+    "(Cool:D $:: Cool:D $needle, *%_ --> Int:D)",
+    "(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, *%_ --> Int:D)",
+    "(Str:D $:: Str:D $needle, Int:D $pos, *%_ --> Int:D)",
+    "(Str:D $:: @needles, *%_ --> Int:D)",
+];
+
+/// `index`/`rindex` take a `Cool` needle (or a list of them); a `Regex` is not
+/// one, so rakudo's multi dispatch finds no candidate and dies.
+// Cost: O(1) for a non-pattern needle; O(p) to describe the call otherwise,
+// p = positional arguments.
+fn regex_needle_error(
+    method: &str,
+    target: &Value,
+    positional: &[Value],
+    candidates: &[&str],
+) -> Option<RuntimeError> {
+    if !matches!(
+        positional.first().map(Value::view),
+        Some(ValueView::Regex(..) | ValueView::RegexWithAdverbs(..))
+    ) {
+        return None;
+    }
+    let profile = positional
+        .iter()
+        .map(|v| format!("{}:D", crate::value::type_name::value_type_name(v)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sigs: Vec<String> = candidates.iter().map(|s| (*s).to_string()).collect();
+    Some(
+        super::methods_signature_errors::make_multi_no_match_error_detailed(
+            method,
+            crate::value::type_name::value_type_name(target),
+            true,
+            &profile,
+            &sigs,
+        ),
+    )
+}
+
 impl Interpreter {
     // Cost: O(c * (d + m)) amortized, d = chars from `$pos` to the match,
     // m = chars of a needle, c = needles, once the invocant's grapheme index is
@@ -31,6 +94,9 @@ impl Interpreter {
             } else {
                 positional.push(arg.clone());
             }
+        }
+        if let Some(err) = regex_needle_error("index", &target, &positional, INDEX_CANDIDATES) {
+            return Err(err);
         }
         // Handle list of needles: \(<a o>) passes an Array as first arg
         let needles: Vec<String> =
@@ -190,6 +256,9 @@ impl Interpreter {
             if !arg.is_string_pair_value() {
                 positional.push(arg.clone());
             }
+        }
+        if let Some(err) = regex_needle_error("rindex", &target, &positional, RINDEX_CANDIDATES) {
+            return Err(err);
         }
         // Handle list of needles
         let needles: Vec<String> =

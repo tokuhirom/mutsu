@@ -1551,6 +1551,24 @@ impl Interpreter {
         self.resolved_type_capture_name(constraint)
     }
 
+    /// [`Self::resolved_param_constraint`] that borrows `constraint` when
+    /// nothing resolves it (the common `Point $other` / `Int $n` case), so a
+    /// typed parameter's bind does not allocate a `String` per call.
+    // Cost: O(1) lookups.
+    pub(crate) fn resolved_param_constraint_cow<'a>(
+        &self,
+        pd: &ParamDef,
+        constraint: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        if self.type_only_enum_value_shadows_alias(pd, constraint) {
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        match self.try_resolved_type_capture_name(constraint) {
+            Some(resolved) => std::borrow::Cow::Owned(resolved),
+            None => std::borrow::Cow::Borrowed(constraint),
+        }
+    }
+
     /// Whether `pd` is a type-only parameter whose bare name is an enum value
     /// and not a directly registered type.
     // Cost: O(1) lookups.

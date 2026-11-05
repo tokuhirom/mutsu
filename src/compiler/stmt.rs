@@ -542,7 +542,7 @@ impl Compiler {
         // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into a
         // WhateverCode that yields the range.
         let index = match index {
-            Expr::WhateverCurry(inner) => inner.as_ref(),
+            Expr::WhateverCurry(inner, ..) => inner.as_ref(),
             other => other,
         };
         match index {

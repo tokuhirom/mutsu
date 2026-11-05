@@ -80,7 +80,7 @@ impl VisitMut for Replacer<'_> {
         match e {
             // The grouping and an inner priming marker dissolve into this
             // closure's body: replace the node by its operand, rewritten.
-            Expr::Grouped(inner) | Expr::WhateverCurry(inner) => {
+            Expr::Grouped(inner) | Expr::WhateverCurry(inner, ..) => {
                 let operand = std::mem::replace(inner.as_mut(), Expr::Whatever);
                 *e = operand;
                 self.visit_expr_mut(e);
@@ -102,7 +102,7 @@ impl VisitMut for Replacer<'_> {
                 // (`*.name`) in its own marker, which dissolves into this
                 // closure; look through it.
                 let core = match target.as_ref() {
-                    Expr::WhateverCurry(inner) => inner.as_ref(),
+                    Expr::WhateverCurry(inner, ..) => inner.as_ref(),
                     other => other,
                 };
                 let target_primes = if is_whatever(core) {

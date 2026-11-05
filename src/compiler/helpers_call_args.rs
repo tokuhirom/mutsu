@@ -392,7 +392,7 @@ impl Compiler {
                 // hand-written one — it just hasn't been expanded into its
                 // `Lambda`/`AnonSubParams` form yet (that happens when this
                 // argument itself gets compiled).
-                | Expr::WhateverCurry(_)
+                | Expr::WhateverCurry(..)
         )
     }
 

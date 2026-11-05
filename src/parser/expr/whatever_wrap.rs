@@ -41,7 +41,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         param_defs.push(make_wc_param(name.clone()));
                         Expr::Var(name)
                     } else if should_wrap_whatevercode(&left) {
-                        Expr::WhateverCurry(Box::new(left))
+                        Expr::curry(left)
                     } else {
                         left
                     };
@@ -51,7 +51,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         param_defs.push(make_wc_param(name.clone()));
                         Expr::Var(name)
                     } else if should_wrap_whatevercode(&right) {
-                        Expr::WhateverCurry(Box::new(right))
+                        Expr::curry(right)
                     } else {
                         right
                     };
@@ -88,12 +88,12 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     );
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {
-                    Expr::WhateverCurry(Box::new(left))
+                    Expr::curry(left)
                 } else {
                     left
                 };
                 let right_wrapped = if should_wrap_whatevercode(&right) {
-                    Expr::WhateverCurry(Box::new(right))
+                    Expr::curry(right)
                 } else {
                     right
                 };
@@ -178,9 +178,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                 {
                     Some(Expr::MethodCall {
                         target: Box::new(Expr::CallOn {
-                            target: Box::new(Expr::WhateverCurry(Box::new(
-                                (**inner_target).clone(),
-                            ))),
+                            target: Box::new(Expr::curry((**inner_target).clone())),
                             args: call_args.clone(),
                         }),
                         name: *name,

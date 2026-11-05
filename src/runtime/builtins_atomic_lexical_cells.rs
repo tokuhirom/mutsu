@@ -204,14 +204,7 @@ impl Interpreter {
         // be written back over the cell at the next sync,
         // disconnecting this binding from every alias — replace it
         // (no-op when the name was never snapshotted).
-        // A shadowing `my` owns this fresh cell. Publishing it under
-        // the bare name would discard the redeclaration mask and let
-        // await reconcile the worker value into an unrelated outer
-        // lexical with the same spelling.
-        if self.threads.shared_vars_active
-            && !self.threads.thread_redeclared_vars.borrow().contains(name)
-            && !self.threads.thread_redeclared_vars.borrow().contains(bare)
-        {
+        if self.threads.shared_vars_active {
             self.set_shared_var(bare, container.clone());
         }
         match container.view() {

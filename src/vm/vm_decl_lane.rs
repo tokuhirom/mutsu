@@ -49,7 +49,6 @@ impl Interpreter {
         }
         if code.mirrors_all_params()
             || self.threads.shared_vars_active
-            || !self.threads.thread_decl_in_flight.is_empty()
             || !self.lexicals.hoist_pending_cells.is_empty()
             || !code.our_locals.is_empty()
             || !code.state_locals.is_empty()

@@ -69,7 +69,7 @@ pub(super) fn restore(
     } else if operand_node.class == RakuAstClass::CircumfixParentheses
         && matches!(
             operand,
-            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever | Expr::WhateverCurry(_)
+            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever | Expr::WhateverCurry(..)
         )
     {
         operand = Expr::Grouped(Box::new(Expr::Grouped(Box::new(operand))));
