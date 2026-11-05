@@ -808,7 +808,9 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
     }
     Ok((
         rest,
-        CallArg::Positional(crate::parser::expr::wrap_finished_expr_at(expr, input, rest)),
+        CallArg::Positional(crate::parser::expr::wrap_finished_expr_at(
+            expr, input, rest,
+        )),
     ))
 }
 
