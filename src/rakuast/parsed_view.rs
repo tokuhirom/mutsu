@@ -533,10 +533,17 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(expression)));
     }
     for modifier in m.modifiers() {
-        let operand = {
+        let mut operand = {
             let _modifier = super::expr_origins::InStatement::enter(Some(modifier.span));
             view_expr(names, &modifier.expr)?
         };
+        // The operand runs from after the keyword to the end of the modifier;
+        // a term the parser did not place gets that range.
+        if operand.origin.0.is_none()
+            && let Some(span) = operand_span(modifier.span)
+        {
+            super::origin::set_span(&mut operand, span);
+        }
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
@@ -553,6 +560,19 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         node.fields.push(node_field(Some(name), modifier_node));
     }
     Ok(node)
+}
+
+/// The range of a modifier's operand: `span` (keyword to the end of the
+/// operand) without the keyword and the whitespace after it.
+// Cost: O(n), n = length of the modifier's source.
+fn operand_span(span: crate::ast::SrcSpan) -> Option<crate::ast::SrcSpan> {
+    let skipped = super::unit_source::with_text(span, |text| {
+        let keyword = text.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')?;
+        let rest = &text[keyword..];
+        Some(keyword + rest.len() - rest.trim_start().len())
+    })?;
+    let from = span.from as usize + skipped;
+    (from < span.to as usize).then(|| crate::ast::SrcSpan::new(from, span.to as usize))
 }
 
 /// The `StatementModifier::*` class of a modifier.

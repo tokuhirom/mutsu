@@ -248,7 +248,14 @@ fn matched_ranges(
         .filter_map(|(k, mut spans)| {
             spans.sort_by_key(|s| (s.from, s.to));
             spans.dedup();
-            (spans.len() <= wanted.get(&k).copied().unwrap_or(0)).then(|| (k, spans.into()))
+            let terms = wanted.get(&k).copied().unwrap_or(0);
+            // The variable an assignment starts with (`$n = $n.abs if $n`) is
+            // held by name, not as a term: the one note more than there are
+            // terms that sits at the statement's start is its.
+            if spans.len() == terms + 1 && spans.first().is_some_and(|s| s.from == k.0) {
+                spans.remove(0);
+            }
+            (spans.len() <= terms).then(|| (k, spans.into()))
         })
         .collect()
 }
