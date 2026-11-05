@@ -679,6 +679,34 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        if self.type_matches_value_why_core(constraint, value, why) {
+            return true;
+        }
+        // A user type imported under a core type's short name (`role Variable`
+        // exported by a module) is that name lexically, so a value that is not
+        // the core type may still satisfy it through the import alias (#16497,
+        // #16579). Tried only after the core meaning failed, so `42 ~~ Any`
+        // and friends never reach the alias.
+        if crate::runtime::utils::is_known_type_constraint(constraint)
+            && !constraint.contains(['[', ':'])
+            && let Some(bound_val) = self.type_name_binding(constraint)
+            && let ValueView::Package(bound) = bound_val.view()
+            && bound != *constraint
+            && crate::qualified::unqualified_part(bound).as_str() == constraint
+            && self.has_type(&bound.resolve())
+        {
+            return self.type_matches_value_why_core(&bound.resolve(), value, why);
+        }
+        false
+    }
+
+    // Cost: as `type_matches_value`.
+    fn type_matches_value_why_core(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
         if core_scalar_satisfies(constraint, value) {
             return true;
         }
