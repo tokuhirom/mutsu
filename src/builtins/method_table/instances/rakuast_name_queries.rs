@@ -60,3 +60,21 @@ fn qualified_with(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
         )),
     })
 }
+
+name_queries! {
+    "is-identifier" => is_identifier,
+    "is-simple" => is_simple,
+    "is-multi-part" => is_multi_part,
+    "is-global-lookup" => is_global_lookup,
+    "is-package-lookup" => is_package_lookup,
+    "is-pseudo-package" => is_pseudo_package,
+    "is-installable" => is_installable,
+    "has-colonpairs" => has_colonpairs,
+    "first-part" => first_part,
+    "last-part" => last_part,
+    "root-part" => root_part,
+    "simple-identifier" => simple_identifier,
+    "base-name" => base_name,
+    "without-colonpairs" => without_colonpairs,
+    "without-first-part" => without_first_part,
+}
