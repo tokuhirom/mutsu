@@ -696,6 +696,27 @@ pub(super) fn type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
     Some(Expr::BareWord(name.to_string()))
 }
 
+/// A plain-identifier word the parser spelled as an imported term
+/// (`Spelling::ImportedTerm`): the conversion keeps the parse's decision as a
+/// source bareword (`term_name::imported`), which lowers to the word itself, and
+/// a type the classifier resolves (`uint16`) lowers to the word as well. `None`
+/// for any other classification or a decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn imported_term_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    if let Some(ty) = type_word_expr(names, name) {
+        return Some(ty);
+    }
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::TermName).then(|| Expr::BareWord(name.to_string()))
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).
