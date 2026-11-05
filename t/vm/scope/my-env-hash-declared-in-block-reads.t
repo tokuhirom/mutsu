@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 7;
 
 # `my %*ENV` declared in a block is the hash the element readers see (#16681).
 {
@@ -20,5 +20,4 @@ plan 8;
     is %*FOO<B>, 's', 'a store from a sub into a user dynamic hash';
 }
 
-ok %*ENV<PATH>:exists || %*ENV<HOME>:exists || True, 'the process %*ENV is back after the block';
-is (%*ENV<A>:exists), False, 'and does not hold the block\'s key';
+is (%*ENV<A>:exists), False, 'the process %*ENV is back after the block, without its key';
