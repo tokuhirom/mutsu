@@ -15,6 +15,18 @@ impl Interpreter {
         let Some(module) = self.module.module_load_stack.last().cloned() else {
             return;
         };
+        // A type nested under the loading module's own name is that module's
+        // package from its declaration on, not only once the load finishes: the
+        // module's own top-level code (a `constant` initialised from it) can
+        // run before then, and a sibling `unit module` sharing the first
+        // `::`-segment must not make it look foreign (#16506). Later
+        // registration after the load uses the same `or_insert`.
+        if name.starts_with(&format!("{module}::")) {
+            let unit = self.executing_unit_sym_for_module_load();
+            crate::runtime::cow_table_mut(&mut self.module.package_declaring_units)
+                .entry(name.to_string())
+                .or_insert(unit);
+        }
         crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_declared_types)
             .insert(name.to_string());
         crate::runtime::cow_table_mut(&mut self.module.module_owned_types)
