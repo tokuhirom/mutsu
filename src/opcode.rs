@@ -11046,6 +11046,21 @@ impl CompiledCode {
         declared
     }
 
+    /// Whether a closure nested anywhere below this code, reached only through
+    /// closures that do not themselves escape, escapes and captures `sym`.
+    // Cost: O(c * f), c = closures in this subtree, f = their free variables;
+    // compile time only.
+    pub(crate) fn captured_by_escaping_descendant(&self, sym: Symbol) -> bool {
+        self.closure_compiled_codes
+            .iter()
+            .enumerate()
+            .any(|(i, child)| {
+                child.free_var_syms.contains(&sym)
+                    && (self.closure_escapes.get(i).copied().unwrap_or(false)
+                        || child.captured_by_escaping_descendant(sym))
+            })
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
@@ -11678,7 +11693,14 @@ impl CompiledCode {
                         .free_var_parent_slots
                         .get(fv_i)
                         .is_none_or(Option::is_some);
-                if is_own && escapes && declared_at_emit {
+                // A non-escaping closure (a `xx` thunk, a call-argument block)
+                // that holds an escaping closure capturing the name hands the
+                // capture on: the escape happens one level down, but the owner
+                // is still this frame (ADR-16595 rule 1).
+                if is_own
+                    && declared_at_emit
+                    && (escapes || nested.captured_by_escaping_descendant(*sym))
+                {
                     escaping_captured_own.insert(*sym);
                 }
                 if is_own && self_mutated.contains(sym) {

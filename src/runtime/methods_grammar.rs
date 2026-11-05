@@ -563,7 +563,8 @@ impl Interpreter {
             let atom_end = i;
             let (next, had_ws_rule) = Self::skip_regex_separators(&chars, i);
             i = next;
-            let mut goal: String = chars[start..atom_end].iter().collect();
+            let atom: String = chars[start..atom_end].iter().collect();
+            let mut goal = Self::deparse_goal_atom(&atom);
             if had_ws_rule {
                 // The separator was compiled away into `<.ws>`; the source it
                 // stands for was a single run of whitespace.
@@ -581,13 +582,71 @@ impl Interpreter {
     /// text — a goal that failed inside some *other* rule's pattern is not
     /// findable in the start rule's source.
     fn refine_goal_text_from_source(pattern: Option<&str>, recorded: String) -> String {
+        let recorded = Self::deparse_goal_atom(&recorded);
         let Some(pattern) = pattern else {
             return recorded;
         };
-        Self::tilde_goal_texts_from_source(pattern)
-            .into_iter()
+        let candidates = Self::tilde_goal_texts_from_source(pattern);
+        if let Some(found) = candidates
+            .iter()
             .find(|candidate| candidate.trim_end() == recorded)
-            .unwrap_or(recorded)
+        {
+            return found.clone();
+        }
+        // The matcher only records a single-character or `<name>` goal as text;
+        // a longer literal (`'ab'`) arrives as the placeholder `goal`. With one
+        // `~` in the pattern the source names it unambiguously.
+        if recorded == "goal"
+            && let [only] = candidates.as_slice()
+            && !only.starts_with(['[', '<', '\\'])
+        {
+            return only.clone();
+        }
+        recorded
+    }
+
+    /// A quoted literal goal as rakudo's RakuAST deparse spells it: bare when
+    /// it is all word characters (`'ab'` is `ab`), otherwise double-quoted with
+    /// `\` and `"` escaped (`']'` is `"]"`). Anything that is not a quoted
+    /// literal (`<b>`, `[ ... ]`, `\)`) is kept as written.
+    // Cost: O(n), n = the atom's length.
+    fn deparse_goal_atom(atom: &str) -> String {
+        let mut chars = atom.chars();
+        let (Some(open), Some(close)) = (chars.next(), atom.chars().next_back()) else {
+            return atom.to_string();
+        };
+        if atom.chars().count() < 2 || open != close || !matches!(open, '\'' | '"') {
+            return atom.to_string();
+        }
+        let inner: Vec<char> = atom.chars().skip(1).take(atom.chars().count() - 2).collect();
+        let mut content = String::new();
+        let mut it = inner.iter().copied();
+        while let Some(c) = it.next() {
+            if c == '\\'
+                && let Some(next) = it.next()
+            {
+                if next == open || next == '\\' {
+                    content.push(next);
+                } else {
+                    content.push(c);
+                    content.push(next);
+                }
+            } else {
+                content.push(c);
+            }
+        }
+        if !content.is_empty() && content.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return content;
+        }
+        let mut out = String::from("\"");
+        for c in content.chars() {
+            if c == '\\' || c == '"' {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out.push('"');
+        out
     }
 
     /// A `~` goal-matching conjunction whose opener matched but whose closer was

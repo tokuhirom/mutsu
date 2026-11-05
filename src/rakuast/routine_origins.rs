@@ -32,6 +32,20 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
     });
 }
 
+/// The `Signature` of an anonymous `sub` / `method` built from `params`
+/// (which has no [`RoutineSpans`]), each `Parameter` given the origin the
+/// parser recorded for it.
+// Cost: O(p), p = parameters.
+pub(super) fn anon_signature(
+    names: &crate::scope::NameScope,
+    params: &[ParamDef],
+    returns: Option<&str>,
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let mut signature = super::view::signature(names, params, true, returns)?;
+    parameters(&mut signature, params);
+    Ok(signature)
+}
+
 /// Give the traits of `node` (a routine whose `traits` list was rebuilt from
 /// the `.AST` parse's trait records, one per record) the origins in `spans`:
 /// the trait, and the name or type it names.
@@ -219,26 +233,6 @@ pub(super) fn for_pointy_block(
     let mut block = super::view::pointy_block(names, params, body, None)?;
     place_signature(&mut block, params);
     Ok(block)
-}
-
-/// The ranges the parser recorded for the parameters of an anonymous routine
-/// (`sub (...) { }`, `method (...) { }`, #16643). A method literal's first
-/// definition is its receiver, which is not written.
-// Cost: O(p), p = parameters.
-pub(super) fn place_anon_signature(
-    node: &mut RakuAstNode,
-    declarator: crate::ast::RoutineDeclarator,
-    params: &[ParamDef],
-) {
-    let written = if matches!(
-        declarator,
-        crate::ast::RoutineDeclarator::Method | crate::ast::RoutineDeclarator::Submethod
-    ) {
-        params.get(1..).unwrap_or_default()
-    } else {
-        params
-    };
-    place_signature(node, written);
 }
 
 // Cost: O(p), p = parameters.

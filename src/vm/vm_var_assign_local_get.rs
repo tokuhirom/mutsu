@@ -84,6 +84,17 @@ impl Interpreter {
         // through its persisted shared cell FIRST (see `escaping_our_read`), ignoring
         // the upvalue slot entirely. Gated on a non-empty name set so ordinary
         // closures pay only an `is_empty` check on this hot path.
+        // A captured container's cell is read through (one `deref_clone`),
+        // not cloned and then consumed.
+        if self.lexicals.escaping_our_lexical_names.is_empty()
+            && let Some(Some(v)) = self.upvalues.get(index as usize)
+            && v.is_container_ref()
+        {
+            let val = v.deref_clone();
+            self.stack.push(val);
+            *ip += 1;
+            return Ok(());
+        }
         let val = if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(v) = self.escaping_our_read(Self::const_str(code, name_idx))
         {
@@ -363,7 +374,7 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-            slot_cell_is_env_binding || self.container_name_is_redeclared(name)
+            slot_cell_is_env_binding || !self.container_lane_applies(name)
         };
         if skip_name_keyed_store || !lane_probe {
             // fall through to the local/env read

@@ -1231,11 +1231,42 @@ impl Value {
     /// collapsed to the value at its end, for the reason [`Value::with_deref`]
     /// gives.
     pub fn into_deref(self) -> Value {
+        if self.is_container_ref() {
+            self.deref_clone()
+        } else {
+            self
+        }
+    }
+
+    /// [`Value::into_deref`] of a clone of `self`, without cloning a cell
+    /// handle that is only read through: the owned read of a closure's
+    /// captured container.
+    // Cost: O(c), c = the cells in the chain; O(1) for a plain value or one cell.
+    pub fn deref_clone(&self) -> Value {
         if let ValueView::ContainerRef(arc) = self.view() {
             // The flavour that counts is the LAST holder's: an attribute's own
             // Scalar cell around an itemized value-share cell (Slice 2e) reads
             // as that itemized share, exactly as `with_deref` recurses into it.
             let mut itemized = self.container_ref_is_itemized();
+            // The common read: the cell holds a value, not another cell. It is
+            // read through the borrowed `arc`, without the `Gc` clone (and its
+            // drop) the walk below needs only to follow a chain.
+            let first = {
+                let _cross_thread =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
+                // A poisoned cell still holds its value: read it, as the
+                // stripe lock does after a panic elsewhere.
+                let guard = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                guard.clone()
+            };
+            if !matches!(first.view(), ValueView::ContainerRef(_)) {
+                return if itemized {
+                    first.itemize_for_element_store()
+                } else {
+                    first
+                };
+            }
+            drop(first);
             let mut cell = arc.clone();
             let inner = loop {
                 // See `with_deref`: the cell lock alone does not exclude the store.
@@ -1263,7 +1294,7 @@ impl Value {
                 inner
             };
         }
-        self
+        self.clone()
     }
 
     /// Store `val` through a `ContainerRef` cell. If the cell currently holds a

@@ -26,7 +26,7 @@ impl Interpreter {
         if celled {
             return Self::is_plain_lexical_array_name(name);
         }
-        matches!(target.view(), ValueView::Array(..)) && !self.container_name_is_redeclared(name)
+        matches!(target.view(), ValueView::Array(..)) && self.container_lane_applies(name)
     }
 
     /// `method` (`push`, `unshift`, `append`, `prepend`, `pop`, `shift`,
