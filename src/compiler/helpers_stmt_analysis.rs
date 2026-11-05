@@ -318,10 +318,7 @@ impl Compiler {
     // Cost: O(n), n = size of the `use`'s argument expression.
     fn use_set_id(stmt: &Stmt, in_block: bool) -> Option<Symbol> {
         let Stmt::Use {
-            module,
-            tags,
-            arg,
-            ..
+            module, tags, arg, ..
         } = stmt
         else {
             return None;
