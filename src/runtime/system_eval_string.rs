@@ -37,6 +37,17 @@ impl Interpreter {
     /// and the same CHECK-time validation (undeclared names, redeclarations,
     /// ...) before it runs (#13295).
     pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
+        self.eval_lowered_unit_with_docs(stmts, Vec::new())
+    }
+
+    /// [`Self::eval_lowered_unit`] for a tree whose declarations carry docs:
+    /// `docs` is the unit's table of documented declarations, which a parsed
+    /// unit gets from the parser.
+    pub(crate) fn eval_lowered_unit_with_docs(
+        &mut self,
+        stmts: Vec<Stmt>,
+        docs: Vec<crate::decl_doc::DocComment>,
+    ) -> Result<Value, RuntimeError> {
         // The tree was parsed elsewhere, so the parser's import table holds
         // none of what its `use` statements import; the CHECK-time routine
         // scan reads it (#15868).
@@ -46,7 +57,12 @@ impl Interpreter {
             Self::register_lowered_unit_imports(&stmts);
             self.with_eval_import_scope(|interp| {
                 interp.run_compunit(|interp| {
-                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts, true))
+                    interp.isolated_eval_unit(|interp| {
+                        if !docs.is_empty() {
+                            interp.add_pod_declarator_entries_from_stmts(&stmts, docs);
+                        }
+                        interp.validate_and_run_eval_unit(stmts, true)
+                    })
                 })
             })
         });

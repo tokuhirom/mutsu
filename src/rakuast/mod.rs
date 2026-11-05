@@ -38,6 +38,7 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod ctor_names;
+pub(crate) mod eval_docs;
 mod decl_origins;
 mod doc_block;
 pub(crate) mod dotty_assign;
