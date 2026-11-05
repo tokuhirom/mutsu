@@ -250,8 +250,9 @@ impl Interpreter {
                 // than throwing) handles that Failure: its value is now "caught",
                 // so subsequent uses must not re-throw the stored exception. Per
                 // Raku semantics `$!` is then set to that Failure's exception.
-                // A successful try with a non-Failure result resets `$!` to the
-                // `Any` type object (`Nil` is only the initial value of `$!`).
+                // A successful try with a non-Failure result resets `$!` to `Nil`
+                // (rakudo's RakuAST frontend, the oracle; the legacy frontend
+                // left the `Any` type object, which is what mutsu used to do).
                 // Only a *live* Failure is caught here. One that something
                 // already handled (`$f.defined`, `$f.Bool`, ...) is an ordinary
                 // value by then, so `try` has nothing to catch and `$!` must
@@ -270,10 +271,8 @@ impl Interpreter {
                         failure_exception = Some(exc.clone());
                     }
                 }
-                self.env_mut().insert(
-                    "!".to_string(),
-                    failure_exception.unwrap_or_else(|| Value::package(crate::symbol::wk::any())),
-                );
+                self.env_mut()
+                    .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));
                 *ip = end;
                 Ok(())
             }
@@ -652,13 +651,12 @@ impl Interpreter {
                 self.stack.push(Value::NIL);
                 // A control signal a `when`/`default` in CONTROL matched is
                 // HANDLED, so the region completed normally -- exactly like the
-                // `Ok(())` arm above, which resets `$!` to the `Any` type object.
+                // `Ok(())` arm above, which resets `$!` to `Nil`.
                 // Leaving `$!` at its pre-region value made
                 // `try { CONTROL { default { } }; next }` report whatever error
-                // the *previous* statement had left there; raku says `Any`
+                // the *previous* statement had left there; raku says `Nil`
                 // (pin: t/implicit-catch-wrapper-does-not-trap.t).
-                self.env_mut()
-                    .assign_error_var(Value::package(crate::symbol::wk::any()));
+                self.env_mut().assign_error_var(Value::NIL);
                 *ip = end;
                 Ok(())
             }

@@ -384,6 +384,13 @@ impl Interpreter {
             // candidate matches, and that is `call_infix_fallback`'s question.
             return CoreInfixVerdict::User;
         };
+        // A `proto sub infix:<op>` of the user's own declares a new lexical
+        // routine that SHADOWS the core one (rakudo: its candidates are the
+        // only ones), so there is no core candidate to tie with. Only a bare
+        // `multi infix:<op>` joins the core set.
+        if self.registry().has_proto(def.package.resolve().as_str(), name) || self.has_proto(name) {
+            return CoreInfixVerdict::User;
+        }
         let Some(core) = self.narrowest_core_infix_candidate(&shape, left, right) else {
             return CoreInfixVerdict::User;
         };

@@ -176,12 +176,14 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     result
 }
 
-/// A colonpair term followed by more colonpairs (`:a:!b:42c`, `:a :b`) takes
-/// the later ones as adverbs, which rakudo evaluates and then ignores:
-/// `my @a = :a:!b:42c` is `[:a]`. Lowered to `(:a, :!b, :42c)[0]` so every
-/// value still runs, in order. Stopping after the first pair left the rest as
-/// statements of their own (#10257). A parenthesized run (`(:a :b)`) and an
-/// argument list (`f :a :b`) have their own parsers and stay lists.
+/// A colonpair term followed by more colonpairs (`:a:!b:42c`, `:a :b`) is a
+/// list of all of them, as under rakudo's RakuAST frontend (the oracle):
+/// `my @a = :a:!b:42c` is `[:a, :!b, :c(42)]` and `my $c = :a:b` holds
+/// `$(:a, :b)`. (The legacy frontend took the later pairs as adverbs and kept
+/// only the first, `[:a]`; that was mutsu's reading until #10257's follow-up.)
+/// Stopping after the first pair left the rest as statements of their own
+/// (#10257). A parenthesized run (`(:a :b)`) and an argument list (`f :a :b`)
+/// have their own parsers and are lists too.
 // Cost: O(n), n = length of the colonpair run.
 fn absorb_colonpair_adverbs<'a>(input: &str, rest: &'a str, first: Expr) -> PResult<'a, Expr> {
     use crate::parser::primary::container::looks_like_colonpair_start;
@@ -212,15 +214,7 @@ fn absorb_colonpair_adverbs<'a>(input: &str, rest: &'a str, first: Expr) -> PRes
     if pairs.len() == 1 {
         return Ok((rest, pairs.pop().expect("one pair")));
     }
-    Ok((
-        r,
-        Expr::Index {
-            target: Box::new(Expr::ArrayLiteral(pairs)),
-            index: Box::new(Expr::Literal(Value::int(0))),
-            is_positional: true,
-            spelling: Default::default(),
-        },
-    ))
+    Ok((r, Expr::ArrayLiteral(pairs)))
 }
 
 /// Like [`expression`] but does NOT consume a trailing simple/compound

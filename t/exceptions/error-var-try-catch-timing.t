@@ -13,10 +13,10 @@ is fresh(), 'Nil', 'a routine starts with a fresh Nil $!';
 # --- what a completed try leaves behind ---------------------------------
 
 sub ok-try() { try { 1 }; $!.^name }
-is ok-try(), 'Any', 'a try that completes without an error leaves Any';
+is ok-try(), 'Nil', 'a try that completes without an error leaves Nil (RakuAST)';
 
 sub ok-after-failing() { try { die "boom" }; try { 1 }; $!.^name }
-is ok-after-failing(), 'Any', 'a successful try clears an earlier exception to Any';
+is ok-after-failing(), 'Nil', 'a successful try clears an earlier exception to Nil';
 
 sub failing-try() { try { die "boom" }; $!.^name }
 is failing-try(), 'X::AdHoc', 'an untrapped die in a try leaves the exception';

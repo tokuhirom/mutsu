@@ -10,9 +10,10 @@ use Test;
 # `$!` reset (visible through the parent chain) instead of its own captured
 # value — losing the block's real `$!` entirely. Concretely, this made
 # `dies-ok { $!.message }` (exactly `Test.rakumod`'s own `dies-ok` shape)
-# silently succeed instead of dying, since `Nil.message` does not raise the
-# way `Any.message` does. Found investigating `t/exception-methods.t`'s
-# regression under `MUTSU_REAL_TEST=1`.
+# silently succeed instead of dying. (A successful `try` leaves `$!` as Nil
+# under RakuAST, and `Nil.message` is Nil, so the check below uses a `try`
+# that *did* die and asserts on the captured exception instead.) Found
+# investigating `t/exception-methods.t`'s regression under `MUTSU_REAL_TEST=1`.
 
 plan 3;
 
@@ -25,8 +26,10 @@ sub calls-code(&code) {
     $died;
 }
 
-try { 1 + 1 };
-ok calls-code({ $!.message }),
+try { die "captured" };
+my $seen = '';
+calls-code({ $seen = $!.message });
+is $seen, 'captured',
     'a block bound to a &-sigiled param sees its own captured $! (not the caller sub\'s fresh reset)';
 
 my $topic-seen;

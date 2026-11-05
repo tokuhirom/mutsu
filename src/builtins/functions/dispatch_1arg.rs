@@ -468,9 +468,10 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
                 ValueView::Num(f) => raku_round_to_value(f),
                 ValueView::Int(i) => Value::int(i),
-                ValueView::Rat(n, d) if d != 0 => {
-                    let f = crate::value::rat_to_f64(n, d);
-                    raku_round_to_value(f)
+                // A Rat rounds exactly, through the one implementation `.round`
+                // uses: an f64 detour loses the low digits past 2**53.
+                ValueView::Rat(_, d) if d != 0 => {
+                    return crate::builtins::method_table::scalars::real::round_of(arg);
                 }
                 ValueView::BigInt(_) | ValueView::BigRat(..) | ValueView::FatRat(..) => {
                     return crate::builtins::method_table::scalars::real::round_of(arg);

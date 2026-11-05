@@ -13,7 +13,7 @@ is %int-methods.values.map(*.^name).unique.join(','), 'Method',
     'method table values use ordinary Method introspection objects';
 
 my %apply-methods = RakuAST::ApplyInfix.^method_table;
-is %apply-methods.keys.sort.join(','), 'add-colonpair,colonpairs,infix,left,new,right',
+is %apply-methods.keys.sort.join(','), 'add-colonpair,colonpairs,infix,left,new,operands,operator,return-type,right',
     'multi-field node exposes constructor, mutator and accessors';
 
 is RakuAST::Name.^method_table.keys.sort.join(','),

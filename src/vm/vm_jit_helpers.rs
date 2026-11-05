@@ -519,15 +519,19 @@ pub(super) unsafe extern "C" fn lex_import_builtin_op(
     fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
+    let ip = op_idx as usize;
+    let Some(OpCode::LexImportBuiltinOp {
+        chain_idx,
+        name_idx,
+    }) = code.ops.get(ip)
+    else {
+        return JIT_STATUS_ERR;
+    };
+    // Known unbound here: the op at `ip + 1` runs as itself, nothing to unwind.
+    if interp.lex_import_site_known_absent(code, *chain_idx, *name_idx) {
+        return call_site_status(interp, code, Ok(()));
+    }
     panic_boundary(|| {
-        let ip = op_idx as usize;
-        let Some(OpCode::LexImportBuiltinOp {
-            chain_idx,
-            name_idx,
-        }) = code.ops.get(ip)
-        else {
-            return JIT_STATUS_ERR;
-        };
         match interp.exec_lex_import_builtin_op_site(code, ip, *chain_idx, *name_idx, fns) {
             Ok(next_ip) if next_ip == ip + 1 => call_site_status(interp, code, Ok(())),
             Ok(_) => match call_site_status(interp, code, Ok(())) {
