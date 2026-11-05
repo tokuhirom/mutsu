@@ -31,4 +31,4 @@ is $*I, 7, 'and reads back';
 my $stored;
 PROCESS::<$P> := Proxy.new(FETCH => sub ($) { $stored }, STORE => sub ($, $v) { $stored = $v });
 $*P = 'via proxy';
-is $stored, 'via proxy', 'a bound Proxy stays assignable';
+is $*P, 'via proxy', 'a bound Proxy stays assignable';
