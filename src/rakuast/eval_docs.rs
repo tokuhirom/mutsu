@@ -44,7 +44,7 @@ fn is_package(class: C) -> bool {
 impl Collector {
     fn member_key(&self, name: &str) -> String {
         match self.packages.last() {
-            Some(pkg) => format!("{pkg}::{name}"),
+            Some(pkg) => crate::qualified::qualified_text(pkg.as_str(), name).to_string(),
             None => name.to_string(),
         }
     }
@@ -57,7 +57,10 @@ impl Collector {
             c if is_package(c) => {
                 if let Some(name) = resolve::package_name(node) {
                     let full = match self.packages.last() {
-                        Some(parent) if !name.contains("::") => format!("{parent}::{name}"),
+                        Some(parent) if !crate::qualified::is_qualified_str(&name) => {
+                            crate::qualified::qualified_text(parent.as_str(), name.as_str())
+                                .to_string()
+                        }
                         _ => name,
                     };
                     let mut key = full.clone();
