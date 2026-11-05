@@ -1648,6 +1648,26 @@ impl Interpreter {
             {
                 continue;
             }
+            // A composed role's `proto method` dispatches the composing
+            // class's candidates, whether the role is composed directly or
+            // through another role (`role S does R`): install it on the class
+            // unless the class declared its own proto for the name (the twin of
+            // `run_composed_role_deferred_body_inner`, #16751).
+            if let Stmt::ProtoDecl {
+                name: proto_name,
+                is_method: true,
+                ..
+            } = &op.raw
+            {
+                if self
+                    .registry()
+                    .method_entry_proto(regex_owner, &proto_name.resolve())
+                    .is_none()
+                {
+                    self.register_proto_method_decl(regex_owner, type_owner, &op.raw, None)?;
+                }
+                continue;
+            }
             let body_pkg = match op.kind {
                 crate::opcode::DeferredBodyOpKind::TypeDecl => Some(type_owner),
                 crate::opcode::DeferredBodyOpKind::TokenRule => Some(regex_owner),

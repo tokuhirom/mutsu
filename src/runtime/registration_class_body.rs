@@ -595,7 +595,7 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        self.register_proto_method_decl(cx.name, stmt, Some(cx.compiled_fns))
+        self.register_proto_method_decl(cx.name, cx.name, stmt, Some(cx.compiled_fns))
     }
 
     /// Install a `proto method` as the dispatcher of `owner`'s `NAME`
@@ -604,6 +604,10 @@ impl Interpreter {
     pub(super) fn register_proto_method_decl(
         &mut self,
         owner: &str,
+        // The package whose lexicals the proto body sees: the class itself for
+        // its own proto, the declaring ROLE for a proto composed from one (its
+        // `sub helper`s live there).
+        lexical_package: &str,
         stmt: &Stmt,
         compiled_fns: Option<&crate::opcode::CompiledFns>,
     ) -> Result<(), RuntimeError> {
@@ -631,7 +635,7 @@ impl Interpreter {
             .collect();
         let fdef = FunctionDef {
             is_cached: false,
-            package: Symbol::intern(owner),
+            package: Symbol::intern(lexical_package),
             name: *proto_name,
             params: effective_params,
             param_defs: effective_param_defs,
