@@ -296,29 +296,7 @@ impl Interpreter {
             && let Some(constraint) = ta.first()
             && constraint.starts_with(char::is_uppercase)
         {
-            for item in &items {
-                if !self.type_matches_value(constraint, item) {
-                    let got_type = crate::value::what_type_name(item);
-                    let got_repr = item.to_string_value();
-                    let msg = format!(
-                        "Type check failed in assignment to ; expected {} but got {} ({})",
-                        constraint, got_type, got_repr,
-                    );
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    attrs.insert("operation".to_string(), Value::str_from("assignment"));
-                    attrs.insert("got".to_string(), item.clone());
-                    attrs.insert(
-                        "expected".to_string(),
-                        Value::package(Symbol::intern(constraint)),
-                    );
-                    let ex =
-                        Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
-                }
-            }
+            self.check_typed_array_items(constraint, &items)?;
         }
         let mut result = if matches!(base_class_name, "Array" | "array") {
             // Build a real (mutable) Array, not an immutable List.
@@ -524,6 +502,120 @@ impl Interpreter {
         Ok(self.decay_nil_container_elements(result))
     }
 
+    /// The element type check of a typed array's constructor: every item must
+    /// match `constraint`, else `X::TypeCheck::Assignment`.
+    // Cost: O(k * t), k = items, t = one type match.
+    pub(crate) fn check_typed_array_items(
+        &mut self,
+        constraint: &str,
+        items: &[Value],
+    ) -> Result<(), RuntimeError> {
+        for item in items {
+            if !self.type_matches_value(constraint, item) {
+                let got_type = crate::value::what_type_name(item);
+                let got_repr = item.to_string_value();
+                let msg = format!(
+                    "Type check failed in assignment to ; expected {} but got {} ({})",
+                    constraint, got_type, got_repr,
+                );
+                let mut attrs = HashMap::new();
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                attrs.insert("operation".to_string(), Value::str_from("assignment"));
+                attrs.insert("got".to_string(), item.clone());
+                attrs.insert(
+                    "expected".to_string(),
+                    Value::package(Symbol::intern(constraint)),
+                );
+                let ex =
+                    Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+
+    /// Register `Foo[T]` as a class whose only parent is `Foo`, so an instance
+    /// named `Foo[T]` dispatches like a `Foo` (the MRO is `Foo[T]`, then `Foo`'s).
+    // Cost: O(m), m = length of `Foo`'s MRO (once per distinct `Foo[T]`).
+    fn register_parameterized_subclass(&mut self, base: &str, name: &str) {
+        if self.registry().classes.contains_key(name) {
+            return;
+        }
+        let mut mro = vec![Symbol::intern(name)];
+        mro.extend(self.class_mro(base).iter().copied());
+        self.registry_mut().classes.insert(
+            name.to_string(),
+            super::ClassDef {
+                parents: vec![base.to_string()],
+                attributes: vec![],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: super::HashSet::new(),
+                alias_attributes: super::HashSet::new(),
+                native_methods: super::HashSet::new(),
+                mro: mro.into(),
+                wildcard_handles: vec![],
+                class_level_attrs: ValueMap::default(),
+            }
+            .into(),
+        );
+    }
+
+    /// `Foo[T].new(...)` on a user class that inherits `Array`: construct the
+    /// class's own instance, check the elements against `T`, tag its backing
+    /// array with the element type (so `.of` and later stores see it) and
+    /// rename the instance to `Foo[T]`. `None` when `name` is not such a type.
+    // Cost: O(k), k = elements supplied, plus the class's own `new`.
+    pub(crate) fn construct_parameterized_array_subclass(
+        &mut self,
+        name: Symbol,
+        args: &[Value],
+        skip_user_new: bool,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let resolved = name.resolve();
+        let (base, type_args) = Self::parse_parametric_type_name(&resolved)?;
+        if !self.registry().classes.contains_key(&base)
+            || !self.class_mro(&base).iter().any(|n| *n == "Array")
+        {
+            return None;
+        }
+        let constraint = type_args.first()?.clone();
+        Some((|| {
+            let inst = self.dispatch_new_ex(
+                Value::package(Symbol::intern(&base)),
+                args.to_vec(),
+                skip_user_new,
+            )?;
+            let ValueView::Instance {
+                attributes, id, ..
+            } = inst.view()
+            else {
+                return Ok(inst);
+            };
+            let storage_key = crate::symbol::wk::array_storage();
+            let Some(storage) = attributes.as_map().get(storage_key).cloned() else {
+                return Ok(inst);
+            };
+            if constraint.starts_with(char::is_uppercase) {
+                self.check_typed_array_items(&constraint, &crate::runtime::utils::value_to_list(&storage))?;
+            }
+            self.register_parameterized_subclass(&base, &resolved);
+            let tagged = self.tag_container_metadata(
+                storage,
+                crate::runtime::ContainerTypeInfo {
+                    value_type: constraint,
+                    key_type: None,
+                    declared_type: Some(resolved.clone()),
+                },
+            );
+            attributes.insert(storage_key, tagged);
+            Ok(Value::instance_sharing_cell(&attributes, name, id))
+        })())
+    }
+
     /// VM fast-path wrapper: build an aggregate (`Array`/`List`/`Positional`/
     /// `array`/`Hash`/`Map`) from a `Package` receiver and `.new` args, resolving
     /// any parametric type name into base + type arguments. Returns `Some` when the
@@ -537,6 +629,11 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let cn_resolved = class_name.resolve();
         let parametric = Self::parse_parametric_type_name(&cn_resolved);
+        if parametric.is_some()
+            && let Some(result) = self.construct_parameterized_array_subclass(class_name, args, false)
+        {
+            return Some(result);
+        }
         let (base, type_args) = if let Some((base, ta)) = &parametric {
             (base.as_str(), Some(ta.clone()))
         } else {
