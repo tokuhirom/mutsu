@@ -891,11 +891,9 @@ impl Interpreter {
                 // `my Str @a is Foo`: the container is `Foo[Str]`, as rakudo's
                 // `is` trait on a typed array parameterizes the class.
                 let type_obj = match self.var_type_constraint(&name_str) {
-                    Some(of) if of != "Mu" && of != "Any" && !of.contains('[') => {
-                        Value::package(crate::symbol::Symbol::intern(&format!(
-                            "{trait_name}[{of}]"
-                        )))
-                    }
+                    Some(of) if of != "Mu" && of != "Any" && !of.contains('[') => Value::package(
+                        crate::symbol::Symbol::intern(&format!("{trait_name}[{of}]")),
+                    ),
                     _ => type_obj,
                 };
                 let instance =
