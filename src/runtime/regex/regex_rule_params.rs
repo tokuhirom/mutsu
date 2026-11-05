@@ -310,7 +310,7 @@ impl Interpreter {
             // An `is rw` parameter aliases the caller's variable: the rule's
             // code blocks write the parameter, and the window's end hands the
             // final value back (`restore_subrule_dynamic_params`).
-            if let Some((caller, _)) = value.as_varref() {
+            if let Some((caller, _, _)) = value.as_varref() {
                 saved.push((rw_alias_key(param, &caller.resolve()), None));
             }
         }
