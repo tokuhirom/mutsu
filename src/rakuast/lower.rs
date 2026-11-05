@@ -4394,7 +4394,10 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
     // The priming scope the parser planted here (see `thunk`).
     if super::thunk::is_thunk(node) {
         let body = lower_expr(names, &super::thunk::unmark(node))?;
-        return Ok(Expr::curry(body));
+        return Ok(Expr::WhateverCurry(
+            Box::new(body),
+            super::thunk::source(node),
+        ));
     }
     if let Some(expr) = super::deferred_name::lower(names, node) {
         return expr;

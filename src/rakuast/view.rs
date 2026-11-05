@@ -2946,7 +2946,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // A `WhateverCurry` marker carries no RakuAST node of its own — Rakudo's
         // tree has no priming-scope wrapper (ADR-0033 §5); the scope is derived
         // structurally at lowering. Convert straight through to the body.
-        Expr::WhateverCurry(body, ..) => Ok(super::thunk::mark(view_expr(names, body)?)),
+        Expr::WhateverCurry(body, source) => Ok(super::thunk::mark(
+            view_expr(names, body)?,
+            source.as_deref(),
+        )),
         // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
         Expr::DoBlock {
             body,

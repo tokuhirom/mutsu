@@ -24,16 +24,33 @@ pub(super) fn is_marker(field: &RakuAstField) -> bool {
     field.name == Some(FIELD)
 }
 
-/// `node` marked as the scope of a priming.
+/// `node` marked as the scope of a priming. `source` is the text the scope
+/// was written as (`*.not`), which a WhateverCode's `.raku` prints; the mark
+/// carries it as its value, so it survives `EVAL($ast)`.
 // Cost: O(f), f = fields of `node`.
-pub(super) fn mark(mut node: RakuAstNode) -> RakuAstNode {
+pub(super) fn mark(mut node: RakuAstNode, source: Option<&str>) -> RakuAstNode {
     if !is_thunk(&node) {
         node.fields.push(RakuAstField {
             name: Some(FIELD),
-            value: RakuAstFieldValue::Node(Value::truth(true)),
+            value: RakuAstFieldValue::Node(match source {
+                Some(text) => Value::str(text.to_string()),
+                None => Value::truth(true),
+            }),
         });
     }
     node
+}
+
+/// The source text the mark carries, when it has one.
+// Cost: O(f), f = fields of `node`.
+pub(super) fn source(node: &RakuAstNode) -> Option<String> {
+    node.fields.iter().find(|f| is_marker(f)).and_then(|f| match &f.value {
+        RakuAstFieldValue::Node(value) => match value.view() {
+            crate::value::ValueView::Str(text) => Some(text.to_string()),
+            _ => None,
+        },
+        _ => None,
+    })
 }
 
 /// Whether `node` is marked as the scope of a priming.
