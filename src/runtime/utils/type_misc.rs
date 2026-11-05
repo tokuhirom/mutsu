@@ -18,7 +18,7 @@ pub(crate) fn mu_coercion_no_match_error(method: &str, type_name: &str) -> Runti
     RuntimeError::typed_msg(
         "X::Multi::NoMatch",
         format!(
-            "Cannot resolve caller {method}({type_name}:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)"
+            "Cannot resolve caller {method}({type_name}:D: ); none of these signatures matches:\n    (Mu:U \\v:: *%_)"
         ),
     )
 }

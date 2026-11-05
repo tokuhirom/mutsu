@@ -55,7 +55,7 @@ plan 10;
     my $msg;
     { ($b + 1).sink; CATCH { default { $msg = .message } } }
     is $msg,
-        "Cannot resolve caller Numeric(Block:D: ); none of these signatures matches:\n    (Mu:U \\v: *\%_)",
+        "Cannot resolve caller Numeric(Block:D: ); none of these signatures matches:\n    (Mu:U \\v:: *\%_)",
         'the message names Block, matching Rakudo';
 }
 

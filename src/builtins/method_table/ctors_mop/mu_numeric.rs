@@ -114,6 +114,18 @@ fn int(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
                 &class_name.resolve(),
             )));
         }
+        // A Sub/Block/Method and a Whatever declare no `Int`: `Mu` has only the
+        // `:U` candidate, so the defined invocant matches nothing.
+        ValueView::Sub(_)
+        | ValueView::WeakSub(_)
+        | ValueView::Routine { .. }
+        | ValueView::Whatever
+        | ValueView::HyperWhatever => {
+            return Some(Err(crate::runtime::mu_coercion_no_match_error(
+                "Int",
+                crate::runtime::utils::value_type_name(target),
+            )));
+        }
         _ => return None,
     }))
 }
@@ -173,6 +185,18 @@ fn numeric(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
             return Some(Err(crate::runtime::mu_coercion_no_match_error(
                 "Numeric",
                 &class_name.resolve(),
+            )));
+        }
+        // A Sub/Block/Method and a Whatever declare no `Numeric`: `Mu` has only the
+        // `:U` candidate, so the defined invocant matches nothing.
+        ValueView::Sub(_)
+        | ValueView::WeakSub(_)
+        | ValueView::Routine { .. }
+        | ValueView::Whatever
+        | ValueView::HyperWhatever => {
+            return Some(Err(crate::runtime::mu_coercion_no_match_error(
+                "Numeric",
+                crate::runtime::utils::value_type_name(target),
             )));
         }
         _ => return None,
