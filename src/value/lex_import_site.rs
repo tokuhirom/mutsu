@@ -20,6 +20,7 @@
 //! memoized is decided by the reader (`exec_lex_import_call_site`).
 
 use crate::ast::FunctionDef;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// What one site remembered.
@@ -34,7 +35,56 @@ type Word = Mutex<Option<Entry>>;
 
 /// What an operator site remembered: no import set of the chain bound a
 /// dispatcher for the operator under this generation.
-type AbsentWord = Mutex<Option<(u64, u32)>>;
+///
+/// A sequence-locked pair `(generation, chain)` so the per-execution read is
+/// lock-free (#7817). `seq` is 0 while empty, odd while a writer is storing
+/// and even otherwise; a reader accepts the pair only if `seq` is the same
+/// non-zero even value before and after reading it. A writer that finds
+/// another writer active drops its update: the word is a memo, not state.
+#[derive(Debug, Default)]
+struct AbsentWord {
+    seq: AtomicU32,
+    generation: AtomicU64,
+    chain_idx: AtomicU32,
+}
+
+impl AbsentWord {
+    #[inline]
+    fn matches(&self, generation: u64, chain_idx: u32) -> bool {
+        let before = self.seq.load(Ordering::Acquire);
+        if before == 0 || before & 1 == 1 {
+            return false;
+        }
+        let g = self.generation.load(Ordering::Relaxed);
+        let c = self.chain_idx.load(Ordering::Relaxed);
+        fence(Ordering::Acquire);
+        self.seq.load(Ordering::Relaxed) == before && g == generation && c == chain_idx
+    }
+
+    fn store(&self, generation: u64, chain_idx: u32) {
+        let seq = self.seq.load(Ordering::Relaxed);
+        if seq & 1 == 1
+            || self
+                .seq
+                .compare_exchange(
+                    seq,
+                    seq.wrapping_add(1),
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+        {
+            return;
+        }
+        fence(Ordering::Release);
+        self.generation.store(generation, Ordering::Relaxed);
+        self.chain_idx.store(chain_idx, Ordering::Relaxed);
+        // Skip 0 on wrap-around: 0 means "empty".
+        let next = seq.wrapping_add(2);
+        self.seq
+            .store(if next == 0 { 2 } else { next }, Ordering::Release);
+    }
+}
 
 /// One memo per string constant of a chunk.
 #[derive(Debug, Default)]
@@ -61,12 +111,12 @@ impl LexImportSiteCaches {
 
     fn absent_words(&self, sites: usize) -> &[AbsentWord] {
         self.absent
-            .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
+            .get_or_init(|| (0..sites).map(|_| AbsentWord::default()).collect())
     }
 
     /// Whether operator constant `idx` was found bound by no import set of
     /// `chain_idx` under `generation` (`OpCode::LexImportBuiltinOp`, #7817).
-    // Cost: O(1), one uncontended lock.
+    // Cost: O(1), three atomic loads.
     #[inline]
     pub(crate) fn operator_absent(
         &self,
@@ -77,13 +127,12 @@ impl LexImportSiteCaches {
     ) -> bool {
         self.absent_words(sites)
             .get(idx)
-            .and_then(|word| word.lock().ok().map(|w| *w))
-            .is_some_and(|w| w == Some((generation, chain_idx)))
+            .is_some_and(|word| word.matches(generation, chain_idx))
     }
 
     /// Remember that no import set of `chain_idx` binds operator constant
     /// `idx` under `generation` (read before the lookup it records was made).
-    // Cost: O(1), one uncontended lock.
+    // Cost: O(1), a few atomic stores.
     pub(crate) fn remember_operator_absent(
         &self,
         sites: usize,
@@ -91,10 +140,8 @@ impl LexImportSiteCaches {
         generation: u64,
         chain_idx: u32,
     ) {
-        if let Some(word) = self.absent_words(sites).get(idx)
-            && let Ok(mut w) = word.lock()
-        {
-            *w = Some((generation, chain_idx));
+        if let Some(word) = self.absent_words(sites).get(idx) {
+            word.store(generation, chain_idx);
         }
     }
 
@@ -137,5 +184,27 @@ impl LexImportSiteCaches {
                 def,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LexImportSiteCaches;
+
+    #[test]
+    fn operator_absent_memo_is_keyed_by_generation_and_chain() {
+        let caches = LexImportSiteCaches::default();
+        assert!(!caches.operator_absent(3, 1, 7, 0));
+        caches.remember_operator_absent(3, 1, 7, 0);
+        assert!(caches.operator_absent(3, 1, 7, 0));
+        assert!(!caches.operator_absent(3, 1, 8, 0), "other generation");
+        assert!(!caches.operator_absent(3, 1, 7, 1), "other chain");
+        assert!(!caches.operator_absent(3, 0, 7, 0), "other site");
+        caches.remember_operator_absent(3, 1, 8, 1);
+        assert!(caches.operator_absent(3, 1, 8, 1));
+        assert!(!caches.operator_absent(3, 1, 7, 0), "overwritten");
+        // A constant appended after the table was built has no word.
+        caches.remember_operator_absent(3, 9, 7, 0);
+        assert!(!caches.operator_absent(3, 9, 7, 0));
     }
 }
