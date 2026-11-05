@@ -268,6 +268,29 @@ fn declared_class_name(name: &str) -> &str {
     name.split('\u{0}').next().unwrap_or(name)
 }
 
+/// The `X::Multi::NoMatch` a built-in multi method raises for a call with
+/// `args` on `target`, listing rakudo's candidates from the generated table
+/// (`builtin_method_sigs.tsv`). `profile` is the argument types as the message
+/// spells them (`Int:D, Int:D`).
+// Cost: O(c), c = candidate signatures of the method.
+pub(crate) fn make_builtin_method_no_match_error(
+    target: &Value,
+    method_name: &str,
+    profile: &str,
+) -> RuntimeError {
+    let concrete = !matches!(
+        target.view(),
+        crate::value::ValueView::Package(_) | crate::value::ValueView::ParametricRole { .. }
+    );
+    make_multi_no_match_error_detailed(
+        method_name,
+        &crate::value::what_type_name(target),
+        concrete,
+        profile,
+        &[],
+    )
+}
+
 pub(crate) fn make_multi_no_match_error_detailed(
     method_name: &str,
     invocant_type: &str,
@@ -275,6 +298,19 @@ pub(crate) fn make_multi_no_match_error_detailed(
     arg_profile: &str,
     candidate_sigs: &[String],
 ) -> RuntimeError {
+    // A built-in method has no user-visible candidates to list: rakudo's own
+    // come from the generated table.
+    let from_table: Vec<String>;
+    let candidate_sigs = if candidate_sigs.is_empty()
+        && let Some(sigs) = super::builtin_method_sigs::candidate_signatures(
+            declared_class_name(invocant_type),
+            method_name,
+        ) {
+        from_table = sigs.iter().map(|s| (*s).to_string()).collect();
+        &from_table[..]
+    } else {
+        candidate_sigs
+    };
     let sig_lines = if candidate_sigs.is_empty() {
         String::new()
     } else {
