@@ -85,6 +85,7 @@ pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
     }
     if class == RakuAstClass::Name {
         names.push("canonicalize");
+        names.push("qualified-with");
     }
     if class == RakuAstClass::VarAttribute {
         names.push("return-type");
