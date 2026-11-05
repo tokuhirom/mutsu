@@ -510,7 +510,7 @@ impl RuntimeError {
         } else {
             format!("{} {}", got_type, repr)
         };
-        let msg = if let Some(sym) = symbol {
+        let mut msg = if let Some(sym) = symbol {
             format!(
                 "Type check failed in assignment to {}; expected {} but got {}",
                 sym, shown_expected, got
@@ -521,6 +521,9 @@ impl RuntimeError {
                 shown_expected, got
             )
         };
+        if is_nominal_type_object_of(expected, got_value) {
+            msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
+        }
         let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got_value.clone());
@@ -910,4 +913,21 @@ fn json_value(v: &Value) -> String {
         }
         _ => json_string(&v.to_string_value()),
     }
+}
+
+/// True when `val` is the type object of the constraint's own nominal type --
+/// the shape rakudo appends its "perhaps Nil" hint to. `my Str:D $x = Nil`
+/// resets the container to `Str`, so the reported `got` is `Str` and the hint
+/// applies; `my Str:D $x = Int` reports `Int` and gets no hint. Only a
+/// `:D`-constrained slot can hold such a value, so a constraint without the
+/// smiley never matches.
+// Cost: O(1).
+pub(crate) fn is_nominal_type_object_of(constraint: &str, val: &Value) -> bool {
+    let ValueView::Package(sym) = val.view() else {
+        return false;
+    };
+    let Some((nominal, smiley)) = constraint.split_once(':') else {
+        return false;
+    };
+    smiley == "D" && sym.resolve() == nominal
 }
