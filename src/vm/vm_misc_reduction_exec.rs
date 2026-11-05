@@ -422,7 +422,10 @@ impl Interpreter {
                             out.push(acc.clone());
                             let mut idx = 1usize;
                             while idx + step <= list.len() {
-                                let mut call_args = vec![acc];
+                                // Sized for the accumulator plus the step: `vec![acc]` has
+                                // capacity 1, so the extend reallocated once per fold step.
+                                let mut call_args = Vec::with_capacity(1 + step);
+                                call_args.push(acc);
                                 call_args.extend(list[idx..idx + step].iter().cloned());
                                 let v = self.reduction_step_with_args(
                                     op_shape.as_ref(),
@@ -664,7 +667,8 @@ impl Interpreter {
                         let mut right_edge = list.len().saturating_sub(1);
                         while right_edge >= step {
                             let start = right_edge - step;
-                            let mut call_args = list[start..right_edge].to_vec();
+                            let mut call_args = Vec::with_capacity(step + 1);
+                            call_args.extend(list[start..right_edge].iter().cloned());
                             call_args.push(acc);
                             let v = self.reduction_step_with_args(
                                 op_shape.as_ref(),
@@ -680,7 +684,8 @@ impl Interpreter {
                         let mut acc = list[0].clone();
                         let mut idx = 1usize;
                         while idx + step <= list.len() {
-                            let mut call_args = vec![acc];
+                            let mut call_args = Vec::with_capacity(1 + step);
+                            call_args.push(acc);
                             call_args.extend(list[idx..idx + step].iter().cloned());
                             let v = self.reduction_step_with_args(
                                 op_shape.as_ref(),

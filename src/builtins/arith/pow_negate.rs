@@ -1,6 +1,6 @@
 //! Power (exponentiation) and unary negation operators.
 
-use super::rat::{bigint_ratio_to_f64, make_fat_rat};
+use super::rat::make_fat_rat;
 use crate::value::{
     RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat, make_big_rat_arith, make_rat,
 };
@@ -144,15 +144,10 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     // If make_big_rat reduced it to fit in i64, keep as Rat
                     if let ValueView::Rat(rn, rd) = tmp.view() {
                         Value::rat_raw(rn, rd)
-                    } else if let ValueView::BigRat(bn, bd) = tmp.view() {
-                        // BigRat means denom exceeds i64: degrade to Num
-                        // Check if denom fits in i64 (numerator can be big)
-                        if let Some(d64) = bd.to_i64() {
-                            Value::bigrat(bn.clone(), NumBigInt::from(d64))
-                        } else {
-                            Value::num(bigint_ratio_to_f64(bn, bd))
-                        }
                     } else {
+                        // `make_big_rat_arith` already keeps a denominator up
+                        // to uint64 as a Rat and degrades a larger one to Num,
+                        // as rakudo does.
                         tmp
                     }
                 }
@@ -170,12 +165,6 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     let tmp = make_big_rat_arith(nn, dd);
                     if let ValueView::Rat(rn, rd) = tmp.view() {
                         Value::rat_raw(rn, rd)
-                    } else if let ValueView::BigRat(bn, bd) = tmp.view() {
-                        if let Some(d64) = bd.to_i64() {
-                            Value::bigrat(bn.clone(), NumBigInt::from(d64))
-                        } else {
-                            Value::num(bigint_ratio_to_f64(bn, bd))
-                        }
                     } else {
                         tmp
                     }
