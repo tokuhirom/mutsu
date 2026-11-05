@@ -347,10 +347,38 @@ impl Interpreter {
                 // not the Scalar-wrapped copies the Array assignment in
                 // `SetLocal` made of them. Build from the raw RHS that
                 // `StashVarDeclInit` captured when it is a list.
-                let raw_list = stashed_init.as_ref().and_then(|raw| match raw.view() {
+                let mut raw_list = stashed_init.as_ref().and_then(|raw| match raw.view() {
                     ValueView::Array(items, _) => Some(Value::array(items.to_vec())),
                     _ => None,
                 });
+                // A lone `Iterable` initializer (`my @l is List = $range`, an
+                // instance of a class that does `Iterable`) is iterated by
+                // `List.STORE`, not kept as a single element.
+                if raw_list.is_none()
+                    && let Some(raw) = stashed_init.as_ref()
+                {
+                    let raw = crate::runtime::types::unwrap_varref_value(raw.clone())
+                        .deref_container()
+                        .into_descalarized();
+                    match raw.view() {
+                        ValueView::Instance { .. } | ValueView::Mixin(..) => {
+                            if let Some(items) = self.try_iterable_instance_items(&raw)? {
+                                raw_list = Some(Value::array(items));
+                            }
+                        }
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => {
+                            let listed = self.call_method_with_values(raw, "list", Vec::new())?;
+                            if let ValueView::Array(items, _) = listed.view() {
+                                raw_list = Some(Value::array(items.to_vec()));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 if let Some(current) = self.read_var_trait_target(code, eff_slot, &name_str)
                     && let ValueView::Array(items, _) = current.view()
                 {

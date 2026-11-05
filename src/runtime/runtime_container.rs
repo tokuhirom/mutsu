@@ -518,6 +518,10 @@ impl Interpreter {
         elem_type: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // The attribute's elements are containers: a `Proxy` among them (a
+        // `do while` over a NativeCall `CArray` yields them) is FETCHed on the
+        // way in, so the element type check sees what it yields.
+        let value = self.fetch_proxy_container_elements(value)?;
         // An object-hash attribute (`%.a{Str:D}`) carries its declared type as
         // `ValueType{KeyType}`; the element type is the value part, and the key
         // part is tagged onto the container as the key constraint.

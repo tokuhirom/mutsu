@@ -555,6 +555,17 @@ impl Compiler {
                     if decl_slot.is_some() && marks.shaped {
                         self.code.emit(OpCode::MarkShapedDeclContext);
                     }
+                    // As the statement-position decl does: a custom container
+                    // trait (`is List`, a class with its own `STORE`) is fed the
+                    // initializer as written, so keep the raw value for
+                    // `ApplyVarTrait` before `SetLocal` coerces it.
+                    if (name.starts_with('@') || name.starts_with('%'))
+                        && custom_traits.iter().any(|(t, _)| {
+                            t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        })
+                    {
+                        self.code.emit(OpCode::StashVarDeclInit);
+                    }
                     if let Some(slot) = decl_slot {
                         self.code.emit(OpCode::SetLocal(slot));
                     } else {

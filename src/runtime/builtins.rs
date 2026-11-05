@@ -575,6 +575,11 @@ impl Interpreter {
             "Int" | "Num" | "Str" | "Bool" | "Uni" | "Rat" | "FatRat" | "Complex" | "Real"
             | "Numeric" | "Buf" | "Blob" | "buf8" | "buf16" | "buf32" | "buf64" | "blob8"
             | "blob16" | "blob32" | "blob64" => self.builtin_coerce(name, &args),
+            // `IO($x)` is the coercer form of `$x.IO`.
+            "IO" if args.len() == 1 => {
+                let target = args[0].clone();
+                self.call_method_with_values(target, "IO", Vec::new())
+            }
             "Array" | "List" | "Hash" | "Seq" => self.builtin_container_coerce(name, &args),
             "Map" => self.builtin_map_coerce(&args),
             "UNBASE" => self.builtin_unbase(&args),
