@@ -26,3 +26,25 @@ pub(super) fn with_header(adverbs: Vec<(String, Expr)>, name: &str, decl: Stmt) 
         },
     )
 }
+
+/// The positions of a `unit` declaration the parser knows: its name
+/// (`name_start` is the input at the name, `after_name` the input after it).
+/// The body is the rest of the unit, whose range the RakuAST conversion fills
+/// in (#15780).
+// Cost: O(1).
+pub(super) fn name_only_spans(
+    name_start: &str,
+    after_name: &str,
+) -> Option<Box<crate::ast::parsed::PackageSpans>> {
+    let name = crate::parser::primary::source_span(name_start, after_name);
+    name.is_some().then(|| {
+        Box::new(crate::ast::parsed::PackageSpans {
+            name,
+            block: crate::ast::parsed::BlockSpans {
+                span: crate::ast::SrcSpan::NONE,
+                blockoid: crate::ast::SrcSpan::NONE,
+                list: crate::ast::SrcSpan::NONE,
+            },
+        })
+    })
+}

@@ -4,7 +4,7 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-use super::package_unit_meta::{header_adverbs, with_header};
+use super::package_unit_meta::{header_adverbs, name_only_spans, with_header};
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char};
 use crate::parser::stmt::{keyword, qualified_ident};
@@ -46,7 +46,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     if let Some((r, declare_how)) = class_kw.or_else(declare_kw) {
         let (r, _) = ws1(r)?;
+        let name_start = r;
         let (r, name) = qualified_ident(r)?;
+        let name_spans = name_only_spans(name_start, r);
         check_pseudo_package_in_decl(&name)?;
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>)
         let (r, traits) = parse_declarator_traits(r)?;
@@ -231,7 +233,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 header,
                 &name,
                 Stmt::ClassDecl {
-                    spans: Default::default(),
+                    spans: name_spans,
                     name: Symbol::intern(&name),
                     name_expr: None,
                     parents,
@@ -278,7 +280,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         });
     if let Some((r, role_kw)) = role_kw {
         let (r, _) = ws1(r)?;
+        let name_start = r;
         let (r, name) = qualified_ident(r)?;
+        let name_spans = name_only_spans(name_start, r);
         check_pseudo_package_in_decl(&name)?;
         let (mut r, (mut type_params, mut type_param_defs)) =
             super::role_decl::parse_optional_role_type_params(r)?;
@@ -436,7 +440,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 header,
                 &name,
                 Stmt::RoleDecl {
-                    spans: Default::default(),
+                    spans: name_spans,
                     name: Symbol::intern(&name),
                     type_params,
                     type_param_defs,
@@ -460,7 +464,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // unit grammar Name is Parent;
     if let Some(r) = keyword("grammar", rest) {
         let (r, _) = ws1(r)?;
+        let name_start = r;
         let (r, name) = qualified_ident(r)?;
+        let name_spans = name_only_spans(name_start, r);
         check_pseudo_package_in_decl(&name)?;
         // Consume optional type adverbs (`:ver<...>`, `:auth<...>`, `:api<...>`)
         // on the grammar name before the `is`/`does` parent clauses, e.g.
@@ -536,7 +542,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 header,
                 &name,
                 Stmt::ClassDecl {
-                    spans: Default::default(),
+                    spans: name_spans,
                     name: Symbol::intern(&name),
                     name_expr: None,
                     parents,
@@ -573,7 +579,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
-    let name_span = crate::parser::primary::source_span(name_start, rest);
+    let name_end = rest;
     check_pseudo_package_in_decl(&name)?;
     // Consume optional type adverbs (:ver<...>, :auth<...>, :api<...>) on the
     // unit package name, e.g. `unit module Foo:ver<0.0.12>:auth<zef:bar>;`.
@@ -595,16 +601,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         is_my: false,
         // Only the name is known here; the body is the rest of the unit,
         // whose range the RakuAST conversion fills in.
-        spans: name_span.is_some().then(|| {
-            Box::new(crate::ast::parsed::PackageSpans {
-                name: name_span,
-                block: crate::ast::parsed::BlockSpans {
-                    span: crate::ast::SrcSpan::NONE,
-                    blockoid: crate::ast::SrcSpan::NONE,
-                    list: crate::ast::SrcSpan::NONE,
-                },
-            })
-        }),
+        spans: name_only_spans(name_start, name_end),
     };
     // `unit module A::B::C is export;` publishes the short name `C` (the
     // package itself), as rakudo does for a qualified declarator name.
