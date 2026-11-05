@@ -89,6 +89,7 @@ pub(super) fn statement_list_inner(
                 node.fields.push(field);
             }
             if let Some((n, span)) = line.take() {
+                let span = super::unit_span::widen_statement(span, stmt);
                 origin::set(names, &mut node, n, span);
             }
             fields.push(node_field(None, node));
