@@ -155,12 +155,11 @@ impl Interpreter {
         // The walk below reads the registry only, so its answer holds until the
         // registry is next written; this sits on the method-call path (the
         // `Sequence` delegate asks it three times per call). Names are looked
-        // up, never interned: a class or role no symbol exists for is not
-        // registered, so the question is a rare one and goes uncached.
-        let (Some(class_sym), Some(role_sym)) = (Symbol::lookup(class_name), Symbol::lookup(role))
-        else {
-            return self.class_does_role_uncached(class_name, role);
-        };
+        // up first (a name seen before costs no intern call, which the
+        // `named_call_intern_budget` test counts per Test assertion); a name no
+        // symbol exists for yet is interned once, so its later asks are hits.
+        let class_sym = Symbol::lookup(class_name).unwrap_or_else(|| Symbol::intern(class_name));
+        let role_sym = Symbol::lookup(role).unwrap_or_else(|| Symbol::intern(role));
         let generation = self.registry_write_generation();
         let key = (class_sym, role_sym);
         {
