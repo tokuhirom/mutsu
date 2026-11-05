@@ -229,7 +229,7 @@ impl Interpreter {
             );
             let mut err = RuntimeError::new(format!(
                 "Type check failed in binding; expected Positional but got {}",
-                got_type.to_string()
+                got_type
             ));
             err.exception = Some(Box::new(ex));
             return Err(err);
