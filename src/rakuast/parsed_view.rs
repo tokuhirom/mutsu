@@ -502,7 +502,16 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
     // Terms of the modified statement and of each modifier that look alike
     // (`$n = $n.abs if $n.WHAT`) are told apart by the part they sit in.
     let mut node = {
-        let _body = super::expr_origins::InStatement::enter(Some(m.body));
+        // `body` runs to the end of the last modifier: the statement itself
+        // ends where the first modifier starts.
+        let first = m.modifiers().map(|modifier| modifier.span.from).min();
+        let held = match first {
+            Some(end) if m.body.is_some() && (end as usize) > m.body.from as usize => {
+                crate::ast::SrcSpan::new(m.body.from as usize, end as usize)
+            }
+            _ => m.body,
+        };
+        let _body = super::expr_origins::InStatement::enter(Some(held));
         super::view::view_stmt(names, &m.stmt)?
             .ok_or_else(|| super::view::unsupported("empty modified statement"))?
     };
