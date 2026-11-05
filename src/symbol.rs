@@ -797,6 +797,15 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The BOOT scalar type objects, asked of every type object a binder
+        /// sees (`Value::boot_scalar_type_object`): a symbol compare, not an
+        /// `as_str` plus three string compares per bind.
+        boot_int => "BOOTInt";
+        /// The `Failure` class, asked by every definedness test on an instance
+        /// (`value_is_defined`, `value_is_concrete`).
+        failure_class => "Failure";
+        boot_num => "BOOTNum";
+        boot_str => "BOOTStr";
         /// The backing attributes of an Array-, Hash- or Baggy-subclass
         /// instance. Asked of every `Instance` that is itemized, passed or
         /// stored, so the probe must not hash the literal each time

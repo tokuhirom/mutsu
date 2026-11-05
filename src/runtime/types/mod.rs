@@ -158,7 +158,7 @@ pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&s
 pub(crate) fn value_is_concrete(value: &Value) -> bool {
     match value.view() {
         ValueView::Slip(items) if items.is_empty() => true,
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => true,
+        ValueView::Instance { class_name, .. } if class_name == crate::symbol::wk::failure_class() => true,
         ValueView::Mixin(inner, _) => value_is_concrete(inner),
         _ => value_is_defined(value),
     }
@@ -168,7 +168,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
     match value.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => false,
         ValueView::Slip(items) if items.is_empty() => false,
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+        ValueView::Instance { class_name, .. } if class_name == crate::symbol::wk::failure_class() => false,
         // An unmaterialized deferred bind token reads as undefined until it is
         // written THROUGH (a later external write to the path does not retro-bind
         // it — see `t/phantom-entry-bind.t`), so do not read through here.
