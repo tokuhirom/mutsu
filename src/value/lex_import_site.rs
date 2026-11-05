@@ -186,3 +186,25 @@ impl LexImportSiteCaches {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::LexImportSiteCaches;
+
+    #[test]
+    fn operator_absent_memo_is_keyed_by_generation_and_chain() {
+        let caches = LexImportSiteCaches::default();
+        assert!(!caches.operator_absent(3, 1, 7, 0));
+        caches.remember_operator_absent(3, 1, 7, 0);
+        assert!(caches.operator_absent(3, 1, 7, 0));
+        assert!(!caches.operator_absent(3, 1, 8, 0), "other generation");
+        assert!(!caches.operator_absent(3, 1, 7, 1), "other chain");
+        assert!(!caches.operator_absent(3, 0, 7, 0), "other site");
+        caches.remember_operator_absent(3, 1, 8, 1);
+        assert!(caches.operator_absent(3, 1, 8, 1));
+        assert!(!caches.operator_absent(3, 1, 7, 0), "overwritten");
+        // A constant appended after the table was built has no word.
+        caches.remember_operator_absent(3, 9, 7, 0);
+        assert!(!caches.operator_absent(3, 9, 7, 0));
+    }
+}
