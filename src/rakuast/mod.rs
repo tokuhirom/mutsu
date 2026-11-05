@@ -92,6 +92,7 @@ pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, 
 mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_list_queries;
+pub(crate) mod doc_edit;
 pub(crate) mod block_queries;
 mod declare_how;
 mod declared_routines;
@@ -2298,6 +2299,9 @@ fn construct_values(
                 })
                 .collect(),
         }))));
+    }
+    if class_name == "RakuAST::Doc::Paragraph" && method == "from-string" {
+        return doc_edit::from_string(args).map(Some);
     }
     if class_name == "RakuAST::ArgList" && method == "from-comma-list" {
         return arg_list_queries::from_comma_list(args).map(Some);
