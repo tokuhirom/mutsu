@@ -38,10 +38,10 @@ is t2(), 3, 'temp my $x = ... works';
 
 {
     my @a = :a:!b:42c;
-    is-deeply @a, [:a], 'later colonpairs on a colonpair term are adverbs (rakudo drops them)';
+    is-deeply @a, [:a, :!b, :c(42)], 'adjacent colonpairs are a list of all of them (RakuAST)';
     my $ran = False;
     my $x = :a :b($ran = True);
-    ok $ran, 'the dropped adverb values are still evaluated';
+    ok $ran, 'every pair value is evaluated';
     is (:a:!b:42c).elems, 3, 'a parenthesized run is a list';
     is [:a :b].elems, 2, 'an array composer run is a list';
     sub named(*%h) { %h.elems }
