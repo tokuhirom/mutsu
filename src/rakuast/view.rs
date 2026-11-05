@@ -4029,7 +4029,12 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 };
                 super::declarator_docs::attach(&mut node, custom_traits.doc());
                 // The ranges the parser recorded for the parameters (#16643).
-                super::routine_origins::place_signature(&mut node, param_defs);
+                // (a method literal's first definition is its receiver)
+                let written = match method_literal_class(*declarator) {
+                    Some(_) => param_defs.get(1..).unwrap_or_default(),
+                    None => param_defs,
+                };
+                super::routine_origins::place_signature(&mut node, written);
                 if super::routine_source::apply(names, &mut node, body)? {
                     return Ok(node);
                 }
