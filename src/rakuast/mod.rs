@@ -111,6 +111,7 @@ mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
 pub(crate) mod name_queries;
+pub(crate) mod parameter_queries;
 pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
 mod call_term_origins;
