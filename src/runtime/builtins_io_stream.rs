@@ -67,14 +67,16 @@ impl Interpreter {
             .get_dynamic_handle("$*IN")
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            // At end of input `prompt` returns the `Any` type object (like
-            // `get`), not an empty string: `prompt(...).defined` is False.
+            // At end of input `prompt` returns `Nil` (like `get`), not an empty
+            // string: `prompt(...).defined` is False.
             return Ok(match self.read_line_from_handle_value(&handle)? {
-                Some(line) => Value::str(line),
-                None => Value::package(crate::symbol::wk::any()),
+                // `prompt` answers `val($line)`: a numeric-looking line is an
+                // allomorph (`IntStr`, `RatStr`, ...), anything else a plain Str.
+                Some(line) => super::builtins_collection::builtin_val(&[Value::str(line)]),
+                None => Value::NIL,
             });
         }
-        Ok(Value::package(crate::symbol::wk::any()))
+        Ok(Value::NIL)
     }
 
     /// `lines()` / `get()` are `$*ARGFILES.lines` / `$*ARGFILES.get`: when

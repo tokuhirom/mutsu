@@ -181,10 +181,20 @@ impl Interpreter {
                 if let Ok(fmap) = super::builtins_system::finalized_proc_map().lock()
                     && let Some(finalized) = fmap.get(&pid)
                 {
-                    match pipe_type.as_str() {
+                    let text = match pipe_type.as_str() {
                         "out" => finalized.captured_out.clone().unwrap_or_default(),
                         "err" => finalized.captured_err.clone().unwrap_or_default(),
                         _ => String::new(),
+                    };
+                    // A text-mode pipe reads the CR-LF grapheme as "\n".
+                    let pipe_is_bin = matches!(
+                        attributes.get("bin").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    if !pipe_is_bin && text.contains("\r\n") {
+                        text.replace("\r\n", "\n")
+                    } else {
+                        text
                     }
                 } else {
                     String::new()

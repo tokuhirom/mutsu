@@ -472,6 +472,7 @@ pub(crate) fn parse_nested_block_fragment(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     if let Some(offset) = unit_offset {
         primary::fragment_attempts::lend_attempts(offset);
+        primary::lend_line_base(offset);
     }
     // The body is a copy of the unit's text: its positions are the unit's,
     // or, where the copy's place is not known, not recorded.
@@ -491,6 +492,7 @@ pub(crate) fn parse_nested_block_fragment(
     if unit_offset.is_some() {
         primary::fragment_attempts::clear_lent_attempts();
     }
+    primary::clear_line_base();
     primary::clear_span_base();
     result
 }

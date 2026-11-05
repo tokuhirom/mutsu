@@ -227,7 +227,9 @@ pub(crate) fn make_multi_ambiguous_error(
     };
     let msg = format!(
         "Ambiguous call to '{}({}: )'; these signatures all match:{}",
-        method_name, invocant_type, sig_lines
+        method_name,
+        declared_class_name(invocant_type),
+        sig_lines
     );
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -245,6 +247,13 @@ pub(crate) fn make_multi_ambiguous_error(
 /// Cannot resolve caller has_tie(WorkingTie:D: Array:D); none of these
 /// signatures matches: ...
 /// ```
+/// A type minted under a name another type already held is registered as
+/// `Name\0<id>` (ADR-0047); a message names the declared one.
+// Cost: O(n), n = chars of the name.
+fn declared_class_name(name: &str) -> &str {
+    name.split('\u{0}').next().unwrap_or(name)
+}
+
 pub(crate) fn make_multi_no_match_error_detailed(
     method_name: &str,
     invocant_type: &str,
@@ -265,7 +274,11 @@ pub(crate) fn make_multi_no_match_error_detailed(
     let smiley = if invocant_concrete { ":D" } else { ":U" };
     let msg = format!(
         "Cannot resolve caller {}({}{}: {}); none of these signatures matches:{}",
-        method_name, invocant_type, smiley, arg_profile, sig_lines
+        method_name,
+        declared_class_name(invocant_type),
+        smiley,
+        arg_profile,
+        sig_lines
     );
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));

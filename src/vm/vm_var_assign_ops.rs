@@ -94,6 +94,64 @@ impl Interpreter {
         Ok(items)
     }
 
+    /// A whole-array assignment to a fixed-dimension array that
+    /// `current` holds, from a place with no local slot (a store from a nested
+    /// routine or closure reaches the variable by name): the list refills the
+    /// shape (padding with the element default, dying on overflow) instead of
+    /// replacing the array by a plain one (a multi-dimensional one takes the
+    /// rows as its declaration does). `None` when `current` is not such an
+    /// array, or the assigned value carries a shape of its own.
+    // Cost: O(n), n = elements of the shape.
+    pub(crate) fn refill_shaped_array(
+        &mut self,
+        current: &Value,
+        assigned: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(shape) = current.with_deref(crate::runtime::utils::shaped_array_shape) else {
+            return Ok(None);
+        };
+        let has_own_shape = crate::runtime::utils::shaped_array_shape(assigned).is_some()
+            || matches!(
+                assigned.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Shaped)
+            );
+        if has_own_shape {
+            return Ok(None);
+        }
+        if shape.len() > 1 {
+            // The rows are taken elementwise, with the declaration's own checks.
+            let dims = Value::array(shape.iter().map(|&d| Value::int(d as i64)).collect());
+            return self
+                .try_native_array_construct(
+                    crate::symbol::Symbol::intern("Array"),
+                    "Array",
+                    &None,
+                    &[
+                        Value::pair("shape".to_string(), dims),
+                        Value::pair("data".to_string(), assigned.clone()),
+                    ],
+                )
+                .map(Some);
+        }
+        let current = current.deref_container();
+        let items = crate::runtime::value_to_list(assigned);
+        let item_count = items.len();
+        let mut shaped_items = Self::shaped_assign_items(items, shape[0])?;
+        if item_count < shape[0] {
+            let default = self.typed_container_default(&current);
+            Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
+        }
+        let mut out = Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
+            crate::value::ArrayKind::Shaped,
+        );
+        crate::runtime::utils::mark_shaped_array(&out, Some(&shape));
+        if let Some(info) = self.container_type_metadata(&current) {
+            out = self.tag_container_metadata(out, info);
+        }
+        Ok(Some(out))
+    }
+
     pub(super) fn delegated_mixin_attr_key(
         &self,
         mixins: &crate::value::MixinOverrides,

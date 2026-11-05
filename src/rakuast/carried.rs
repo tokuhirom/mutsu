@@ -211,6 +211,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::Transliterate { .. }
         | Expr::ZenSlice(_)
         | Expr::CaptureVar(_)
+        // `True`/`False`/`Empty` in a unit that imported through an `EXPORT` hook: the parser's
+        // shadowable keyword, which the lowering gives back unchanged.
+        | Expr::ShadowableTermKeyword { .. }
         | Expr::CaptureLiteral(..)
         | Expr::PseudoStash(_)
         | Expr::MultiDimIndex { .. }

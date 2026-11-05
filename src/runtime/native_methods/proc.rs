@@ -198,6 +198,17 @@ impl Interpreter {
         } else {
             None
         };
+        // A text-mode pipe reads the CR-LF grapheme as "\n" (as `make_io_pipe_bin`
+        // does for a pipe of a finished child).
+        let text_lf = |text: String| {
+            if !state.bin && text.contains("\r\n") {
+                text.replace("\r\n", "\n")
+            } else {
+                text
+            }
+        };
+        let captured_out = captured_out.map(text_lf);
+        let captured_err = captured_err.map(text_lf);
         let (exitcode, signal): (i64, i64) = match crate::runtime::builtins_system_proc_wait::wait_child(&mut state.child)
             // A pending worker `exit` (#13092): the interpreter is
             // halted and unwinds; the status read here is discarded.

@@ -109,6 +109,13 @@ impl Interpreter {
     /// Create an IO::Pipe instance wrapping captured content.
     pub(super) fn make_io_pipe_bin(content: String, bin: bool) -> Value {
         use std::sync::atomic::{AtomicI64, Ordering};
+        // A text-mode handle reads the CR-LF grapheme as "\n" (universal
+        // newline), a pipe included: `run(...).out.slurp` of "x\r\ny" is "x\ny".
+        let content = if !bin && content.contains("\r\n") {
+            content.replace("\r\n", "\n")
+        } else {
+            content
+        };
         static NEXT_PIPE_ID: AtomicI64 = AtomicI64::new(1);
         let id = NEXT_PIPE_ID.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut map) = io_pipe_state_map().lock() {
