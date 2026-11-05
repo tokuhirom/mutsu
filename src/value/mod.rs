@@ -642,6 +642,7 @@ mod quanthash_store;
 pub(crate) mod raku_repr;
 mod rakuast_arg_list;
 mod rakuast_colonpair;
+mod rakuast_edit;
 mod rakuast_replace_body;
 pub(crate) mod shaped_array;
 pub(crate) use nanbox::CONTAINER_CELLS;

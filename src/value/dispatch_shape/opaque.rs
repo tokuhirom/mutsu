@@ -110,6 +110,8 @@ pub(super) const fn opaque(
                 "RakuAST::ApplyInfix",
                 "RakuAST::Routine",
                 "RakuAST::Parameter",
+                "RakuAST::Doc::Paragraph",
+                "RakuAST::Doc::Markup",
                 "RakuAST::Name",
                 "RakuAST::Block",
             ],

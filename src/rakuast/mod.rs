@@ -98,6 +98,7 @@ mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
+pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
 mod doc_str;
@@ -2299,6 +2300,9 @@ fn construct_values(
                 })
                 .collect(),
         }))));
+    }
+    if class_name == "RakuAST::Doc::Paragraph" && method == "from-string" {
+        return doc_edit::from_string(args).map(Some);
     }
     if class_name == "RakuAST::ArgList" && method == "from-invocant-list" {
         return arg_invocant::from_invocant_list(args).map(Some);

@@ -74,7 +74,16 @@ fn positional_text(node: &RakuAstNode) -> String {
 fn markup_text(node: &RakuAstNode) -> String {
     let mut out = field_str(node, "letter").unwrap_or_default();
     out.push_str(&field_str(node, "opener").unwrap_or_else(|| "<".to_string()));
-    out.push_str(&list_text(node, "atoms"));
+    out.push_str(&markup_inner(node));
+    out.push_str(&field_str(node, "closer").unwrap_or_else(|| ">".to_string()));
+    out
+}
+
+/// What sits between a formatting code's delimiters: its atoms and, after
+/// them, the entity names or the `|` meta text. Also `Markup.flatten`.
+// Cost: O(n).
+pub(super) fn markup_inner(node: &RakuAstNode) -> String {
+    let mut out = list_text(node, "atoms");
     let meta = field_items(node, "meta");
     let pairs: Vec<String> = meta
         .iter()
@@ -91,7 +100,6 @@ fn markup_text(node: &RakuAstNode) -> String {
         out.push('|');
         out.push_str(&meta.iter().map(item_text).collect::<Vec<_>>().join(" "));
     }
-    out.push_str(&field_str(node, "closer").unwrap_or_else(|| ">".to_string()));
     out
 }
 
