@@ -66,7 +66,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         }
         // A marker's un-curried body is exactly the "argument" role: recurse
         // straight through, no wrapper of its own.
-        Expr::WhateverCurry(inner) => mark_curry_body(inner),
+        Expr::WhateverCurry(inner, ..) => mark_curry_body(inner),
         Expr::Grouped(inner) => mark_expr(inner),
         // A spelled term (ADR-12199) holds a word list, which has no `*`:
         // classify what it wraps as if the wrapper were not there.

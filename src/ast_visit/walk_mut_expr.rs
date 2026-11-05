@@ -23,7 +23,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         }
         Expr::Grouped(inner)
         | Expr::ZenSlice(inner)
-        | Expr::WhateverCurry(inner)
+        | Expr::WhateverCurry(inner, ..)
         | Expr::PositionalPair(inner)
         | Expr::Eager(inner)
         | Expr::Itemize(inner)

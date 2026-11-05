@@ -46,7 +46,7 @@ impl Interpreter {
             // bound — instead of being built and called on every check
             // (#10107). The `Lambda` compiles to the same closure wherever the
             // predicate is used as a value.
-            if let Expr::WhateverCurry(curried) = pred
+            if let Expr::WhateverCurry(curried, ..) = pred
                 && let lambda @ Expr::Lambda {
                     is_whatever_code: true,
                     ..

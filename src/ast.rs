@@ -1385,6 +1385,11 @@ pub(crate) enum ContextKind {
 }
 
 impl Expr {
+    /// A priming-scope marker with no recorded source.
+    pub(crate) fn curry(body: Expr) -> Expr {
+        Expr::WhateverCurry(Box::new(body), None)
+    }
+
     /// A [`Expr::Contextualizer`] as the `.item` / `.list` / `.hash` call it
     /// compiles to, for the assignment paths that decide on the call's shape.
     pub(crate) fn contextualizer_call(self) -> Expr {
@@ -1759,7 +1764,9 @@ pub(crate) enum Expr {
     /// these markers get inserted; in ADR-0033 Phase 1 that authority is still
     /// distributed across the parser's existing `wrap_whatevercode` call sites
     /// (now constructing this marker instead of the closure directly).
-    WhateverCurry(Box<Expr>),
+    /// The second field is the verbatim source the priming scope was written as, when
+    /// the parser knew it: rakudo's `.raku`/`.gist` of a WhateverCode print it (`*.not`).
+    WhateverCurry(Box<Expr>, #[serde(default)] Option<String>),
     ArrayLiteral(Vec<Expr>),
     /// A pair expression that was parenthesized, e.g. `(:a(3))`.
     /// At runtime this becomes a ValuePair so it is treated as a positional argument.

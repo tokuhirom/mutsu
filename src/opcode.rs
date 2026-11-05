@@ -7047,6 +7047,9 @@ pub(crate) struct CompiledCode {
     /// boundary, but its call frame is named after the code object rather than
     /// the pointy-block marker. Read by the light closure call (#13286).
     pub(crate) is_whatever_code: bool,
+    /// The source a WhateverCode was written as (`*.not`), when the parser
+    /// recorded it; rakudo's `.raku` / `.gist` of the closure print it.
+    pub(crate) whatever_source: Option<std::sync::Arc<str>>,
     /// `sub (...) is hidden-from-backtrace { }`: the closure's call frame is
     /// no line of a backtrace.
     pub(crate) is_hidden_from_backtrace: bool,
@@ -8500,6 +8503,7 @@ impl CompiledCode {
             source_line: None,
             is_pointy_block: false,
             is_whatever_code: false,
+            whatever_source: None,
             is_hidden_from_backtrace: false,
             pointy_alias_param: false,
             immutable_topic: false,

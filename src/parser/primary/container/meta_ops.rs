@@ -121,7 +121,7 @@ fn sequence_prefix(input: &str) -> Option<(bool, bool, &str)> {
 
 fn maybe_wrap_whatever(expr: Expr) -> Expr {
     if contains_whatever(&expr) && !matches!(expr, Expr::Whatever) {
-        Expr::WhateverCurry(Box::new(expr))
+        Expr::curry(expr)
     } else {
         expr
     }

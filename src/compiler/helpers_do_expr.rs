@@ -391,7 +391,7 @@ impl crate::ast_visit::VisitMut for TakeLoopControlValues {
             Expr::AnonSub { .. }
                 | Expr::AnonSubParams { .. }
                 | Expr::Lambda { .. }
-                | Expr::WhateverCurry(_)
+                | Expr::WhateverCurry(..)
                 | Expr::Gather(_)
         ) {
             return;

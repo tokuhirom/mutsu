@@ -1974,6 +1974,30 @@ fn collect_sub_signature_syms(
 }
 
 impl SubData {
+    /// How a WhateverCode renders in `.raku` / `.gist`: the source it was
+    /// written as (`*.not`, `* + 1`), or `WhateverCode.new` when the parser
+    /// did not record it. `None` when this is not a WhateverCode.
+    // Cost: O(1) (two env probes) plus the length of the text.
+    pub(crate) fn whatever_code_repr(&self) -> Option<String> {
+        let is_wc = matches!(
+            self.env.get_sym(crate::symbol::well_known::callable_type()).map(Value::view),
+            Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
+        );
+        if !is_wc {
+            return None;
+        }
+        Some(
+            match self
+                .env
+                .get_sym(crate::symbol::wk::whatever_source())
+                .map(Value::view)
+            {
+                Some(ValueView::Str(text)) => text.to_string(),
+                _ => "WhateverCode.new".to_string(),
+            },
+        )
+    }
+
     /// The storage key of the entry `p` of [`Self::params`]: a sigilless
     /// parameter is spelled bare there but binds its term key (ADR-12441).
     // Cost: O(d), d = param_defs.

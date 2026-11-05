@@ -30,7 +30,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         }
         Expr::Grouped(inner)
         | Expr::ZenSlice(inner)
-        | Expr::WhateverCurry(inner)
+        | Expr::WhateverCurry(inner, ..)
         | Expr::PositionalPair(inner)
         | Expr::Eager(inner)
         | Expr::Itemize(inner)

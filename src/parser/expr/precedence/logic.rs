@@ -429,7 +429,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         // (pre-compile) parse-time point, not yet the built
                         // `Lambda`/`AnonSubParams` closure below (kept as a
                         // belt-and-suspenders match; only reachable pre-ADR-0033).
-                        | Expr::WhateverCurry(_)
+                        | Expr::WhateverCurry(..)
                         | Expr::Lambda {
                             is_whatever_code: true,
                             ..

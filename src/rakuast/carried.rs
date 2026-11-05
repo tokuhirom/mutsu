@@ -205,7 +205,7 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::InfixFunc { .. }
         // The priming scope the parser planted: the conversion marks the node it
         // wraps and the lowering puts the marker back around it.
-        | Expr::WhateverCurry(_)
+        | Expr::WhateverCurry(..)
         // `tr///`, and `s///` / `S///` whose replacement is a constant or already
         // a per-match thunk, read back as the parser built them
         // (`finalization_is_the_ordinary_tree`). An interpolating quote-form

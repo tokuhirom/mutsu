@@ -146,7 +146,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             closure_body_source(body)
         }
         // A WhateverCode (`* + 1`) is spelled as the expression over its `*`s.
-        crate::ast::Expr::WhateverCurry(inner) => expression_source(inner),
+        crate::ast::Expr::WhateverCurry(inner, ..) => expression_source(inner),
         crate::ast::Expr::Whatever | crate::ast::Expr::WhateverArg => Some("*".to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("$<{name}>")),

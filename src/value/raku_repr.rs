@@ -1355,13 +1355,8 @@ fn raku_value_node(v: &Value) -> String {
         }
         // A WhateverCode (`*+1`) renders as `WhateverCode.new`, including when it
         // appears as an element of an array/list being `.raku`-rendered.
-        ValueView::Sub(data)
-            if matches!(
-                data.env.get("__mutsu_callable_type").map(Value::view),
-                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-            ) =>
-        {
-            "WhateverCode.new".to_string()
+        ValueView::Sub(data) if data.whatever_code_repr().is_some() => {
+            data.whatever_code_repr().unwrap_or_default()
         }
         _ => v.to_string_value(),
     }

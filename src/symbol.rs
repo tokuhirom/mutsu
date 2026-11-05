@@ -949,6 +949,8 @@ pub(crate) mod wk {
         /// A callable's kind tag (`"WhateverCode"`, ...), probed by the map
         /// loops' routine-callback gate.
         callable_type => "__mutsu_callable_type";
+        /// A WhateverCode's source text (`*.not`), read by its `.raku` / `.gist`.
+        whatever_source => "__mutsu_whatever_source";
         /// Set on a captured `multi` candidate declared `is default`, so the
         /// dispatchee row built from the code object keeps the tie-break.
         multi_is_default => "__mutsu_multi_is_default";

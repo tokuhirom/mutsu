@@ -184,7 +184,7 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         Expr::AssignExpr { expr, .. } => contains_hyperwhatever(expr),
         Expr::CompoundAssign { rhs, .. } => contains_hyperwhatever(rhs),
         Expr::HyperWhatever => true,
-        Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
+        Expr::WhateverCurry(inner, ..) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
         Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_hyperwhatever),
         Expr::Binary { left, right, .. } | Expr::HyperOp { left, right, .. } => {
@@ -250,7 +250,7 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // count. `count_whatever` already handles the chained-comparison
         // dedup below, so recursing here yields exactly the arity
         // `build_closure` would give it if built standalone.
-        Expr::WhateverCurry(inner) => count_whatever(inner),
+        Expr::WhateverCurry(inner, ..) => count_whatever(inner),
         // A thunk barrier is opaque to the enclosing priming scope: its operands
         // are scopes of their own (already materialised as `WhateverCurry`
         // markers by `super::plant`), so they contribute no placeholder to the

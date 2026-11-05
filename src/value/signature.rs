@@ -1781,7 +1781,7 @@ fn where_expr_to_value(expr: &Expr) -> Value {
             // Fallback: wrap in a thunk. A `where * > 43` constraint is a
             // WhateverCode, which the thunk must APPLY to the topic rather than
             // return as a value (a returned code object is always truthy).
-            let body = if matches!(expr, Expr::WhateverCurry(_)) {
+            let body = if matches!(expr, Expr::WhateverCurry(..)) {
                 Expr::CallOn {
                     target: Box::new(expr.clone()),
                     args: vec![Expr::Var("_".to_string())],

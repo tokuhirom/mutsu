@@ -197,7 +197,7 @@ fn expr_leads_with_whatever(expr: &Expr) -> bool {
         // Recursing into the body walks the same left spine `build_closure`
         // would have produced a `__wc_N`/`Whatever` leaf from, so this gives
         // the identical answer without needing the closure to be built.
-        Expr::WhateverCurry(inner) => expr_leads_with_whatever(inner),
+        Expr::WhateverCurry(inner, ..) => expr_leads_with_whatever(inner),
         // Topic-param WhateverCode: only produced by a standalone leading `*`.
         // Only reachable pre-ADR-0033; see the `WhateverCurry` arm above.
         Expr::Lambda {

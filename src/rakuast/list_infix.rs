@@ -75,7 +75,7 @@ pub(crate) fn maybe_curry_xz_metaop(expr: Expr) -> Expr {
     if matches!(&expr, Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z")
         && xz_metaop_curries(&expr)
     {
-        Expr::WhateverCurry(Box::new(expr))
+        Expr::curry(expr)
     } else {
         expr
     }
@@ -106,7 +106,7 @@ fn operand_curries(e: &Expr) -> bool {
         // `(1 xx *) Z ...`: a bare `*` under `xx` is the infinite repeat, not a
         // curry point.
         _ if contains_xx_with_bare_whatever(e) => false,
-        _ => contains_whatever(e) || matches!(e, Expr::WhateverCurry(_)),
+        _ => contains_whatever(e) || matches!(e, Expr::WhateverCurry(..)),
     }
 }
 
@@ -132,7 +132,7 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
     // when its element was parsed) takes the rest of the list into its right
     // operand too, and stays curried: `@x.map: * op a, b` is
     // `@x.map: { $_ op (a, b) }`, as `(1,2).map(* Z 7, 8)` is in rakudo.
-    if let Expr::WhateverCurry(inner) = &items[0]
+    if let Expr::WhateverCurry(inner, ..) = &items[0]
         && let Expr::InfixFunc {
             name,
             left,
@@ -144,12 +144,12 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
     {
         let mut rhs_items: Vec<Expr> = vec![right[0].clone()];
         rhs_items.extend_from_slice(&items[1..]);
-        return Some(Expr::WhateverCurry(Box::new(Expr::InfixFunc {
+        return Some(Expr::curry(Expr::InfixFunc {
             name: name.clone(),
             left: left.clone(),
             right: vec![Expr::ArrayLiteral(rhs_items)],
             modifier: None,
-        })));
+        }));
     }
     let idx = items.iter().position(|expr| {
         matches!(

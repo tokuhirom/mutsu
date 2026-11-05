@@ -154,6 +154,15 @@ impl Interpreter {
                 Value::str_from(callable_type),
             );
         }
+        if let Some(source) = compiled_code
+            .as_ref()
+            .and_then(|cc| cc.whatever_source.as_deref())
+        {
+            env.insert_sym(
+                crate::symbol::wk::whatever_source(),
+                Value::str_from(source),
+            );
+        }
         let source_line = compiled_code
             .as_ref()
             .and_then(|cc| cc.source_line)
