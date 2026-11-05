@@ -24,17 +24,44 @@ fn doc_type() -> Value {
     Value::package(crate::symbol::Symbol::intern("RakuAST::Doc::Declarator"))
 }
 
-/// `WHY`: the stored documentation, else the `Doc::Declarator` type object.
-// Cost: O(f), f = fields of the node.
+/// `WHY`: the stored documentation; else, for a parsed declaration, the
+/// `Doc::Declarator` built from its `#|` / `#=` comments; else the
+/// `Doc::Declarator` type object.
+// Cost: O(f + l), f = fields of the node, l = lines of its comments.
 pub(crate) fn why(node: &RakuAstNode) -> Value {
-    node.fields
-        .iter()
-        .find(|f| f.name == Some(FIELD))
-        .and_then(|f| match &f.value {
-            RakuAstFieldValue::Node(value) => Some(value.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(doc_type)
+    if let Some(value) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+        (Some(FIELD), RakuAstFieldValue::Node(value)) => Some(value.clone()),
+        _ => None,
+    }) {
+        return value;
+    }
+    let leading = super::declarator_docs::lines(node, "declarator-docs-leading");
+    let trailing = super::declarator_docs::lines(node, "declarator-docs-trailing");
+    if leading.is_empty() && trailing.is_empty() {
+        return doc_type();
+    }
+    let list =
+        |lines: Vec<String>| RakuAstFieldValue::List(lines.into_iter().map(Value::str).collect());
+    // rakudo's `WHEREFORE` is the declaration itself; a node is a value here,
+    // so the doc holds a copy of it (#16783).
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::DocDeclarator,
+        fields: vec![
+            RakuAstField {
+                name: Some("WHEREFORE"),
+                value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
+            },
+            RakuAstField {
+                name: Some("leading"),
+                value: list(leading),
+            },
+            RakuAstField {
+                name: Some("trailing"),
+                value: list(trailing),
+            },
+        ],
+    }))
 }
 
 /// Check that `value` is a `Doc::Declarator` (a node or its type object), as

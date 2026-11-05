@@ -45,10 +45,14 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     }
     let mut docs: HashMap<usize, DeclDoc> = HashMap::new();
     for (owner, texts) in leading {
-        docs.entry(owner).or_default().leading = Some(texts.join(" "));
+        let doc = docs.entry(owner).or_default();
+        doc.leading = Some(texts.join(" "));
+        doc.leading_lines = texts.iter().map(|t| t.to_string()).collect();
     }
     for (owner, texts) in trailing {
-        docs.entry(owner).or_default().trailing = Some(texts.join(" "));
+        let doc = docs.entry(owner).or_default();
+        doc.trailing = Some(texts.join(" "));
+        doc.trailing_lines = texts.iter().map(|t| t.to_string()).collect();
     }
     docs
 }
