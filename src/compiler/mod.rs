@@ -5395,7 +5395,15 @@ impl Compiler {
     /// apart from the blocks).
     // Cost: O(n), n = statements in the scope.
     pub(crate) fn exit_phaser_order(stmts: &[Stmt]) -> impl Iterator<Item = &Stmt> {
-        let is_trait = |s: &&Stmt| matches!(s, Stmt::Phaser { from_trait: true, .. });
+        let is_trait = |s: &&Stmt| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    from_trait: true,
+                    ..
+                }
+            )
+        };
         stmts
             .iter()
             .rev()
