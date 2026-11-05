@@ -235,7 +235,8 @@ pub(crate) fn kxxv(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         }
         _ => return None,
     }
-    Some(Ok(Value::array(result)))
+    // A `Seq`, as the other `Baggy` listings (`kv`, `pairs`, `keys`) are.
+    Some(Ok(Value::seq(result)))
 }
 
 /// `Baggy.invert`: the one `invert` every `Map`-like shares.

@@ -22,5 +22,6 @@ pub(crate) use buf::{
 pub(crate) use dispatch_1arg::{native_method_1arg, native_method_1arg_without_table};
 pub(crate) use fmt_contains::{
     fmt_joinable_target, fmt_native, list_item_pair_split, pair_key_value,
+    validate_one_fmt_argument,
 };
 pub(crate) use numeric::compute_roots;

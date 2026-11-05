@@ -294,7 +294,7 @@ impl Interpreter {
                     }
                     return Ok(Value::str(parts.join(" ")));
                 }
-                super::sprintf::validate_sprintf_directives(&fmt, 1)?;
+                crate::builtins::validate_one_fmt_argument(&fmt)?;
                 Ok(Value::str(format_one(self, target.clone())?))
             }
         })())

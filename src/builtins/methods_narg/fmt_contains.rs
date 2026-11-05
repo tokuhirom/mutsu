@@ -54,20 +54,28 @@ pub(crate) fn list_item_pair_split(
         runtime::sprintf::validate_sprintf_directives(fmt, 2)?;
         return Ok(Some(kv));
     }
+    validate_one_fmt_argument(fmt)?;
+    Ok(None)
+}
+
+/// The one-argument arity check of `fmt` on a single value (a `List` item or a
+/// scalar): Rakudo's `.fmt` dies with a plain `X::AdHoc` and this short,
+/// unwrapped message where `sprintf` raises the typed
+/// `X::Str::Sprintf::Directives::Count`.
+// Cost: O(f), f = chars of the format.
+pub(crate) fn validate_one_fmt_argument(fmt: &str) -> Result<(), RuntimeError> {
     runtime::sprintf::validate_sprintf_directives(fmt, 1).map_err(|e| {
         let is_count = e.exception.as_ref().is_some_and(|x| {
             matches!(x.view(), ValueView::Instance { class_name, .. }
                 if class_name.resolve() == "X::Str::Sprintf::Directives::Count")
         });
         if is_count {
-            // Rakudo's `List.fmt` dies with this short, unwrapped message.
             let first = e.message.lines().next().unwrap_or_default();
             RuntimeError::new(format!("{first} supplied"))
         } else {
             e
         }
-    })?;
-    Ok(None)
+    })
 }
 
 /// Format one item of a `List.fmt` (see [`list_item_pair_split`]).
@@ -239,7 +247,7 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
             if has_directives && fmt_value_needs_coercion(target) {
                 return None;
             }
-            if let Err(e) = runtime::sprintf::validate_sprintf_directives(&fmt, 1) {
+            if let Err(e) = validate_one_fmt_argument(&fmt) {
                 return Some(Err(e));
             }
             Some(Ok(Value::str(runtime::format_sprintf(&fmt, Some(target)))))
