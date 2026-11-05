@@ -135,6 +135,14 @@ impl Compiler {
         if matches!(s, "e" | "tau") {
             return Some(true);
         }
+        // `--> Enum::Value`: a qualified spelling of a declared enum value is a
+        // definite return of that value; the enum's own name is a declared type.
+        if let Some((enum_name, value)) = s.rsplit_once("::")
+            && super::compile_inputs::is_user_declared_enum_value(value)
+            && super::compile_inputs::is_user_declared_type(enum_name)
+        {
+            return Some(true);
+        }
         // A package-qualified name (`static::Types::Fact`, a type imported from
         // a lower-case-named module) is a type, never a value term.
         if s.contains("::")

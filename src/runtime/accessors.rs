@@ -85,6 +85,26 @@ impl Interpreter {
         {
             return false;
         }
+        // A qualified enum value (`--> Precedence::Termlike`) is a definite
+        // return of that value, like its bare spelling below.
+        if crate::qualified::is_qualified_str(s)
+            && (self
+                .env
+                .get(s)
+                .is_some_and(|v| matches!(v.view(), ValueView::Enum { .. }))
+                || s.rsplit_once("::").is_some_and(|(enum_name, value)| {
+                    // The enum may be registered under its package-qualified
+                    // name (declared inside `unit module M`).
+                    self.enum_registry_name(enum_name).is_some_and(|resolved| {
+                        self.registry()
+                            .enum_types
+                            .get(&resolved)
+                            .is_some_and(|variants| variants.iter().any(|(k, _)| k == value))
+                    })
+                }))
+        {
+            return true;
+        }
         if let Some(base) = s.strip_suffix(":D").or_else(|| s.strip_suffix(":U"))
             && (crate::runtime::utils::is_known_type_constraint(base) || self.has_type(base))
         {
@@ -97,6 +117,16 @@ impl Interpreter {
         // the parser's enum-value registry instead (no interpreter access
         // there); this checks the actual runtime enum-key namespace.
         if crate::runtime::utils::is_builtin_enum_value(s) || self.enum_bare_value(s).is_some() {
+            return true;
+        }
+        // The bare spelling of a value of an enum declared in a module the
+        // caller did not import it from (`--> Comma` in `Precedence`'s own
+        // module): the caller's bare-name namespace does not hold it, the
+        // registry does.
+        if s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && !crate::qualified::is_qualified_str(s)
+            && self.sole_enum_with_variant(s).is_some()
+        {
             return true;
         }
         // A declared `constant` named by an uppercase identifier (`constant K
@@ -475,6 +505,37 @@ impl Interpreter {
         err
     }
 
+    /// The one declared enum that has a variant named `key`, as `(enum name,
+    /// index)`. `None` when no enum or more than one has it: the bare spelling
+    /// of a module's enum value (`--> Comma`) is only unambiguous then.
+    // Cost: O(e * v), e = declared enums, v = variants per enum.
+    fn sole_enum_with_variant(&self, key: &str) -> Option<(String, usize)> {
+        let mut found: Option<(String, usize)> = None;
+        for (name, variants) in &self.registry().enum_types {
+            if let Some(index) = variants.iter().position(|(k, _)| k == key) {
+                if found.is_some() {
+                    return None;
+                }
+                found = Some((name.clone(), index));
+            }
+        }
+        found
+    }
+
+    /// The registered name of the enum written `name`: that exact key, else the
+    /// one declared enum whose package-qualified name ends in `::name`.
+    // Cost: O(e), e = declared enums.
+    fn enum_registry_name(&self, name: &str) -> Option<String> {
+        let enums = &self.registry().enum_types;
+        if enums.contains_key(name) {
+            return Some(name.to_string());
+        }
+        let suffix = format!("::{name}");
+        let mut hits = enums.keys().filter(|k| k.ends_with(&suffix));
+        let first = hits.next()?;
+        hits.next().is_none().then(|| first.clone())
+    }
+
     fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
         if let Some(name) = Self::return_spec_scalar_name(spec) {
             return Ok(self.env.get(&name).cloned().unwrap_or(Value::NIL));
@@ -518,6 +579,43 @@ impl Interpreter {
         // exists to serve.
         if let Some(v) = self.enum_bare_value(s) {
             return Ok(v.clone());
+        }
+        // A qualified spelling (`--> Precedence::Termlike`) of a value of an enum
+        // declared in a module: EVAL does not see the module's scope either, so
+        // build the value from the registry's variant list.
+        if !crate::qualified::is_qualified_str(s)
+            && s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && let Some((resolved, index)) = self.sole_enum_with_variant(s)
+            && let Some((_, val)) = self
+                .registry()
+                .enum_types
+                .get(&resolved)
+                .and_then(|variants| variants.get(index))
+        {
+            return Ok(Value::enum_parts(
+                Symbol::intern(&resolved),
+                Symbol::intern(s),
+                val.clone(),
+                index,
+            ));
+        }
+        if let Some((enum_name, key)) = s.rsplit_once("::")
+            && let Some(resolved) = self
+                .resolve_bareword_type_name(enum_name)
+                .filter(|r| self.registry().enum_types.contains_key(r))
+                .or_else(|| self.enum_registry_name(enum_name))
+            && let Some((index, (_, val))) = self
+                .registry()
+                .enum_types
+                .get(&resolved)
+                .and_then(|variants| variants.iter().enumerate().find(|(_, (k, _))| k == key))
+        {
+            return Ok(Value::enum_parts(
+                Symbol::intern(&resolved),
+                Symbol::intern(key),
+                val.clone(),
+                index,
+            ));
         }
         self.eval_eval_string(s)
     }

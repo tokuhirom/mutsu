@@ -563,9 +563,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
 
             // Stop at semicolon, closing brace, or end of input.
-            // A trailing comma before `}` creates a list (e.g. `42,`).
+            // A trailing comma before `}` or `;` creates a list (e.g. `42,`).
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
-                trailing_comma = r2.starts_with('}');
+                trailing_comma = r2.starts_with('}') || r2.starts_with(';');
                 r = r2;
                 break;
             }
