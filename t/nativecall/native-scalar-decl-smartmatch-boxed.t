@@ -4,7 +4,7 @@ use Test;
 # False; a native parameter and an element of a destructured declaration keep
 # the native type. The table is the one measured on rakudo 2026.09.
 
-plan 12;
+plan 18;
 
 my int $x = 5;
 nok $x ~~ int, 'my int $x = 5';
@@ -35,3 +35,26 @@ my int ($p, $q) = 1, 2;
 ok $p ~~ int, 'an element of my int ($p, $q) = ...';
 my int ($r, $t);
 ok $r ~~ int, 'an element of my int ($r, $t)';
+
+for 1, 2 -> int $v {
+    ok $v ~~ int, 'a for-loop parameter';
+    last;
+}
+for 1, 2 -> int $v, int $w {
+    ok $v ~~ int && $w ~~ int, 'both parameters of a two-parameter for loop';
+    last;
+}
+for 1, 2 -> int $v is copy {
+    ok $v ~~ int, 'an is copy for-loop parameter';
+    last;
+}
+for 1, 2 -> Int $v {
+    nok $v ~~ int, 'a boxed Int for-loop parameter is not native';
+    last;
+}
+for 1, 2 -> int $v {
+    my int $inner = 5;
+    nok $inner ~~ int, 'a my int declared inside a loop body is read boxed';
+    ok $v ~~ int, 'while the parameter next to it is native';
+    last;
+}

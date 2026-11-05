@@ -332,6 +332,10 @@ pub(crate) enum SmartMatchLhs {
         /// is `False`; a native parameter, a loop parameter and a
         /// destructured `my int ($p, $q)` keep matching the native type.
         boxed_native: bool,
+        /// The native type (`int`, `num64`, ...) the compiler knows the variable
+        /// was declared with by a parameter or a destructured declaration, whose
+        /// value is read as that native type. `None` for everything else.
+        native_declared: Option<String>,
     },
     /// `$obj.meth ~~ s///` — the LHS is a zero-arg method call on a variable
     /// (an `is rw` accessor in Raku, whose returned container the substitution
