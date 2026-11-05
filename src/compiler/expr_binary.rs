@@ -652,6 +652,7 @@ impl Compiler {
                         slot: self.local_map.get(name.as_str()).copied(),
                         implicit_topic: false,
                         boxed_native: self.boxed_native_scalars.contains(name.as_str()),
+                        native_declared: self.native_declared_type(name),
                     })),
                     // `$obj.meth ~~ s///`: an rw-accessor LHS whose returned
                     // container Raku's substitution writes through. Only a
@@ -1147,6 +1148,7 @@ impl Compiler {
                 slot: Some(val_slot),
                 implicit_topic: false,
                 boxed_native: false,
+                native_declared: None,
             })),
             rhs_is_match_regex: false,
             lhs_is_literal: false,
@@ -1175,6 +1177,23 @@ impl Compiler {
         self.code.patch_jump(jump_skip);
         self.code.emit(OpCode::Pop);
         self.code.patch_jump(jump_end);
+    }
+
+    /// The native type a parameter or a destructured declaration gave `name`
+    /// (`for 1, 2 -> int $v`), which `$v ~~ int` reads as native. A plain
+    /// `my int $x` is read boxed and has none.
+    // Cost: O(1).
+    pub(super) fn native_declared_type(&self, name: &str) -> Option<String> {
+        if self.boxed_native_scalars.contains(name) {
+            return None;
+        }
+        let constraint = self.local_types.get(name)?;
+        let base = constraint
+            .strip_suffix(":D")
+            .or_else(|| constraint.strip_suffix(":U"))
+            .unwrap_or(constraint);
+        self.is_native_type_constraint(base)
+            .then(|| base.to_string())
     }
 
     /// If `expr` is a variable reference with a native integer type
