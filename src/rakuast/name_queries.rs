@@ -7,7 +7,7 @@
 //! `0` / `1`, `is-simple` and `has-colonpairs` give a Bool).
 
 use super::{RakuAstClass, RakuAstNode, node_accessor};
-use crate::value::{Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// The pseudo-package names rakudo's `Name::Part::Simple.is-pseudo-package`
 /// accepts (`GLOBAL`, `PROCESS` and `PARENT` are not among them).
@@ -99,4 +99,32 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
 // Cost: O(p), p = parts.
 fn name_value(parts: Vec<Value>) -> Value {
     Value::rakuast(Box::new(super::name_parts::name_from_parts(parts)))
+}
+
+/// `qualified-with($target)`: a name over the parts of `$target` followed by
+/// this name's own, except that a name that starts with `GLOBAL` is already
+/// absolute and answers its parts without that first one.
+// Cost: O(p + q), p, q = parts of this name and of the target.
+pub(crate) fn qualified_with(node: &RakuAstNode, target: &Value) -> Result<Value, RuntimeError> {
+    let ValueView::RakuAst(target_node) = target.view() else {
+        return Err(not_a_name(target));
+    };
+    if target_node.class != RakuAstClass::Name {
+        return Err(not_a_name(target));
+    }
+    let own = parts(node);
+    if matches!(own.first().map(classify), Some(Part::Simple(n)) if n == "GLOBAL") {
+        return Ok(name_value(own[1..].to_vec()));
+    }
+    let mut all = parts(target_node);
+    all.extend(own);
+    Ok(name_value(all))
+}
+
+fn not_a_name(target: &Value) -> RuntimeError {
+    RuntimeError::new(format!(
+        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
+         '$target'; expected RakuAST::Name but got {}",
+        crate::value::type_name::value_type_name(target)
+    ))
 }

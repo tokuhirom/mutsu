@@ -118,6 +118,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_rakudoc::ROWS,
     rakuast_walk::ROWS,
     rakuast_name_queries::ROWS,
+    rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_apply_queries::ROWS,
     rakuast_arg_list_queries::ROWS,
     rakuast_block_queries::ROWS,
