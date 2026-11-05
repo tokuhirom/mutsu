@@ -21,6 +21,29 @@ use super::*;
 use crate::runtime::dispatch_state::LexicalOperatorScope;
 
 impl Interpreter {
+    /// Whether the operator site is known to run as built in: no import set
+    /// in the process binds an operator's candidates (#13906), or this site
+    /// already found the operator unbound under the current import-set
+    /// generation (#7817). A lookup under a built-in operator fallback answers
+    /// differently (`lexical_import_binding`), so it is never memoized.
+    // Cost: O(1), three atomic loads.
+    #[inline]
+    pub(super) fn lex_import_site_known_absent(
+        &self,
+        code: &CompiledCode,
+        chain_idx: u32,
+        name_idx: u32,
+    ) -> bool {
+        self.module.lexical_operator_import_sets.is_empty()
+            || (self.module.builtin_op_fallback_depth == 0
+                && code.lex_import_sites.operator_absent(
+                    code.constants.len(),
+                    name_idx as usize,
+                    self.module.lexical_import_gen,
+                    chain_idx,
+                ))
+    }
+
     /// Run the op at `ip + 1` with the user candidates of the built-in
     /// operator `name_idx` that one of the import sets of chain `chain_idx`
     /// binds, or as it is when none binds them. Returns the ip after that op.
@@ -35,30 +58,12 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<usize, RuntimeError> {
-        // No import set in the process binds an operator's candidates: the op
-        // runs as built in, without asking the chain (#13906).
-        if self.module.lexical_operator_import_sets.is_empty() {
+        if self.lex_import_site_known_absent(code, chain_idx, name_idx) {
             return Ok(ip + 1);
         }
-        // #7817: an operator no import set of this chain binds stays unbound
-        // until a set is rewritten, so the site remembers the miss for one
-        // import-set generation instead of asking the chain on every
-        // execution. A lookup under a built-in operator fallback answers
-        // differently (`lexical_import_binding`), so it is neither read nor
-        // recorded.
         let sites = code.constants.len();
         let generation = self.module.lexical_import_gen;
         let memoizable = self.module.builtin_op_fallback_depth == 0;
-        if memoizable
-            && code.lex_import_sites.operator_absent(
-                sites,
-                name_idx as usize,
-                generation,
-                chain_idx,
-            )
-        {
-            return Ok(ip + 1);
-        }
         let name = code.const_sym(name_idx);
         let dispatcher = code
             .lexical_import_chains
