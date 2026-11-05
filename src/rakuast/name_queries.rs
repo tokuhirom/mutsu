@@ -100,21 +100,3 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
 fn name_value(parts: Vec<Value>) -> Value {
     Value::rakuast(Box::new(super::name_parts::name_from_parts(parts)))
 }
-
-/// `qualified-with(qualifier)`: the name with the parts of `qualifier` in
-/// front of its own; a name that starts with `GLOBAL` is already absolute and
-/// loses that part instead.
-// Cost: O(p + q), p = parts of the name, q = parts of the qualifier.
-pub(crate) fn qualified_with(node: &RakuAstNode, qualifier: &RakuAstNode) -> Value {
-    let own = parts(node);
-    let global = matches!(
-        own.first().map(classify),
-        Some(Part::Simple(name)) if name == "GLOBAL"
-    );
-    if global {
-        return name_value(own[1..].to_vec());
-    }
-    let mut all = parts(qualifier);
-    all.extend(own);
-    name_value(all)
-}
