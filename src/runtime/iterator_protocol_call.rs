@@ -98,7 +98,8 @@ impl crate::Interpreter {
 
     /// A protocol call on an array-backed iterator.
     // Cost: O(1), plus O(k) for an appended range of k elements and O(n) to
-    // copy the prefix when a lazy source is topped up.
+    // copy the prefix when a lazy source is topped up (#16475: the items are
+    // no longer copied on the ordinary call).
     fn array_iterator_call(
         &mut self,
         attributes: &InstanceAttrs,
@@ -114,34 +115,36 @@ impl crate::Interpreter {
                 _ => Value::truth(count.to_f64() > 0.0),
             });
         }
-        let (mut items, index, lazy_source) = {
+        // The items array is read in place through a handle clone: copying it
+        // per call made a `pull-one` loop over n elements O(n^2) (#16475).
+        let (shared, index, lazy_source) = {
             let map = attributes.as_map();
-            let items = match map.get("items").map(Value::view) {
-                Some(ValueView::Array(values, ..)) => values.to_vec(),
-                _ => Vec::new(),
+            let shared = match map.get("items").map(Value::view) {
+                Some(ValueView::Array(values, ..)) => Some(crate::gc::Gc::clone(&values)),
+                _ => None,
             };
             let index = match map.get("index").map(Value::view) {
                 Some(ValueView::Int(i)) if i >= 0 => i as usize,
                 _ => 0,
             };
-            (items, index, map.get("lazy_source").cloned())
+            (shared, index, map.get("lazy_source").cloned())
         };
+        let shared_len = shared.as_ref().map_or(0, |a| a.as_slice().len());
         // A lazy source may not have produced the elements this call needs yet;
         // the grown prefix is committed along with the cursor.
-        let topped_up = match self.iterator_topup_from_lazy_source(
+        let topped_up = self.iterator_topup_from_lazy_source(
             lazy_source.as_ref(),
             op,
             index,
             args,
-            items.len(),
-        )? {
-            Some(more) => {
-                items = more;
-                true
-            }
-            None => false,
+            shared_len,
+        )?;
+        let items: &[Value] = match (&topped_up, &shared) {
+            (Some(more), _) => more.as_slice(),
+            (None, Some(a)) => a.as_slice(),
+            (None, None) => &[],
         };
-        let Some(step) = step(op, &items, index, args) else {
+        let Some(step) = step(op, items, index, args) else {
             return Ok(Value::iteration_end());
         };
         if let Some(range) = step.append.clone() {
@@ -152,8 +155,8 @@ impl crate::Interpreter {
             Symbol::intern("index"),
             Some(Value::int(step.new_index as i64)),
         )];
-        if topped_up {
-            ops.push((Symbol::intern("items"), Some(Value::array(items))));
+        if let Some(more) = topped_up {
+            ops.push((Symbol::intern("items"), Some(Value::array(more))));
         }
         attributes.write_keys(ops);
         Ok(step.ret)
