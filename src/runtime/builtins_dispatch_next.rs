@@ -1261,7 +1261,17 @@ impl Interpreter {
                     let result = match container {
                         Some(cell) => cell,
                         None => self
-                            .read_public_attribute_accessor(&invocant, &name, &args)
+                            .read_public_attribute_accessor(
+                                // A role mixed into an instance (`$obj but role {
+                                // method m { callsame } }`) defers to the instance's own
+                                // accessor, read from the instance under the mixin.
+                                &match invocant.view() {
+                                    ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                                    _ => invocant.clone(),
+                                },
+                                &name,
+                                &args,
+                            )
                             .unwrap_or_else(|| {
                                 let owner_name = owner.resolve();
                                 Err(

@@ -895,6 +895,24 @@ impl Interpreter {
             } else {
                 base_remaining
             };
+            // The mixed-in class's own attribute accessor has no `MethodDef`, but
+            // it is the next candidate behind the role's method of the same name
+            // (`$obj but role { method output { callsame } }` over `has $.output`).
+            let base_remaining = if !light
+                && base_remaining.is_empty()
+                && !is_private_call
+                && let Some(bc) = &base_class
+                && let Some(owner) = super::user_method_probe_memo::probe_key(lookup_name)
+                    .and_then(|key| self.first_public_accessor_owner(bc, key))
+            {
+                vec![super::DeferralEntry::Accessor {
+                    owner,
+                    name: lookup_name.to_string(),
+                    want_container: false,
+                }]
+            } else {
+                base_remaining
+            };
             let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
             if pushed_base_dispatch {
                 let rw_params =
