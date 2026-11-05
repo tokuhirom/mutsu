@@ -1930,10 +1930,6 @@ impl Interpreter {
                     || matches!(
                         cur.view(),
                         ValueView::Proxy { .. }
-                            | ValueView::Seq(..)
-                            | ValueView::HyperSeq(..)
-                            | ValueView::RaceSeq(..)
-                            | ValueView::Slip(..)
                     ))
             {
                 continue;

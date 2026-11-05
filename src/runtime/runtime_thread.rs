@@ -472,91 +472,27 @@ impl Interpreter {
                     continue;
                 }
                 let key = key.resolve();
-                // A scalar the spawned block captures itself is NOT shared by
-                // name. `start` compiles its block as escaping
-                // (`compiler/expr_call.rs`), so the closure machinery already
-                // gives such a scalar a per-binding home: a shared
-                // `ContainerRef` cell from `box_captured_lexicals` when it is
-                // mutated, a frozen value when it is read-only. The store is
-                // keyed by the BARE NAME, so it cannot represent two
-                // concurrently-live bindings of the same name — exactly what a
-                // recursive frame chain is (`sub f($n) { start { ... f($n-1)
-                // ... } }`). Seeding those names here ran a second, lossy
-                // mechanism in parallel with the working one and silently
-                // overwrote its correct answer (PLAN.md §6).
-                // `@`/`%` aggregates keep this lane by default: their
-                // `__mutsu_atomic_*` CAS copies are keyed off these entries. The
-                // one exception is an aggregate bound by the env-level parameter
-                // binding path (a destructuring sub-signature, or a
-                // runtime-invoked callback's plain parameter), which
-                // `block_captured_scalars` puts in this set *with* its sigil — a
-                // fresh per-invocation binding the lane cannot represent (it
-                // would freeze at the first spawn's value).
-                if !captured_scalars.is_empty()
-                    && (!key.starts_with('@') && !key.starts_with('%')
-                        || captured_scalars.contains(key.as_str()))
-                    && captured_scalars.contains(key.trim_start_matches('$'))
+                // ADR-16595 slice 4: the spawn publishes no plain user lexical.
+                // A scalar or `@`/`%` the spawned code reaches lives in its
+                // frame's slot or in the declaration-site `ContainerRef` cell
+                // every escaping capture holds, and the child's env clone below
+                // carries that cell (or the shared object itself). What still
+                // rides the name lane is a name code on another thread reaches
+                // WITHOUT a capture ([`Self::lexical_name_is_opaque`]: a name a
+                // registered class/role method writes) and the aggregate
+                // dynamics `@*x` / `%*x`, whose live `.then`-chain propagation
+                // depends on it (the exclusion list above keeps their scalar
+                // siblings off).
+                if !self.lexical_name_is_opaque(&key)
+                    && !(key.starts_with(['@', '%'])
+                        && crate::env::is_dynamic_var_name(&key))
                 {
                     continue;
                 }
                 // Only seed if not already visible — an entry an earlier thread
                 // already updated must not be reset to this env's copy.
-                // EXCEPT names this thread re-declared: their entry (if any)
-                // belongs to the shadowed outer binding, so bind the current one
-                // into this lineage, shadowing the ancestor's.
-                // A declaration still in flight has no "current" value to bind:
-                // `val` is the binding this `my` is about to shadow, so publishing
-                // it would overwrite the lane with a value that is about to be
-                // stale. Seed it only to give the child *something* under the name
-                // (it captured the outer binding), and keep the mask below.
-                //
-                // A name masked because of a *parameter* binding
-                // (`thread_param_shadow_vars`, see `mask_thread_redeclared_params`)
-                // never takes the force-`declare` branch, even outside any
-                // in-flight window: the parameter's shadow is scoped to exactly
-                // the call that bound it, not "the rest of this block", so a
-                // nested spawn inside that call must not overwrite an unrelated
-                // caller's live entry for the same bare name.
-                let published = if self.threads.thread_redeclared_vars.borrow().contains(&key)
-                    && !self.threads.thread_decl_in_flight.contains(&key)
-                    && !self
-                        .threads
-                        .thread_param_shadow_vars
-                        .borrow()
-                        .contains(&key)
-                {
-                    shared.declare(&key, val.clone());
+                if shared.seed_if_absent(&key, || val.clone()) {
                     seed_inserts += 1;
-                    true
-                } else if shared.seed_if_absent(&key, || val.clone()) {
-                    seed_inserts += 1;
-                    true
-                } else {
-                    false
-                };
-                // ADR-0039 §8.6: classify the lane entry. A container this
-                // block NAMES is genuinely shared and keeps its entry for good
-                // — including promoting one an earlier spawn had marked
-                // transient. A container it never names, whose entry THIS spawn
-                // created, was published only because this loop publishes
-                // everything, so mark it for withdrawal at the next cross-thread
-                // drain.
-                //
-                // Marking, rather than declining to seed, is deliberate and
-                // measured: a routine the block CALLS can still reach the
-                // container, which no analysis over the block's own free
-                // variables can see (see §8.6). Only marking entries this spawn
-                // created matters just as much — an entry an earlier, naming
-                // spawn established stays durable no matter how many unrelated
-                // spawns walk past it afterwards.
-                if let Some(refs) = referenced_containers
-                    && Self::transient_lane_candidate(&key)
-                {
-                    if refs.contains(&key) {
-                        transient_unmarks.push(key);
-                    } else if published {
-                        transient_marks.push(key);
-                    }
                 }
             }
             crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
