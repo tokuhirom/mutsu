@@ -1281,21 +1281,34 @@ impl Interpreter {
                 // A named parameter's sub-signature (`:$x! (Str $a, $b?)`)
                 // unpacks the supplied value, so a value that does not unpack
                 // to it makes the candidate inapplicable (a bare Str does not).
-                if let Some(sub_params) = &pd.sub_signature
-                    && let Some(ref val) = arg_val
-                    && !super::signature::named_param_parens_accept(self, pd, sub_params, val)
-                {
-                    return false;
+                //
+                // An absent named parameter unpacks the value it would bind to
+                // (its type object, when it has no default), so a sub-signature
+                // that needs a positional makes a call without that name
+                // inapplicable: `multi f(:literal($) ($payload, *@rest)) {...}`
+                // does not match `f(:op(1))`, and so cannot out-rank a sibling
+                // `:op(@) (...)` candidate (SQL::Abstract, #16612).
+                if let Some(sub_params) = &pd.sub_signature {
+                    if let Some(ref val) = arg_val {
+                        if !super::signature::named_param_parens_accept(self, pd, sub_params, val) {
+                            return false;
+                        }
+                    } else if pd.default.is_none() && !sub_signature_binds_nothing(sub_params) {
+                        return false;
+                    }
                 }
 
                 // The trailing sub-signature (`:q(@)! (% (:keyw!), $m)`) unpacks
                 // the same value; one that does not fit makes the candidate
                 // inapplicable instead of failing its bind later.
-                if let Some(outer) = &pd.outer_sub_signature
-                    && let Some(ref val) = arg_val
-                    && !sub_signature_matches_value(self, outer, val)
-                {
-                    return false;
+                if let Some(outer) = &pd.outer_sub_signature {
+                    if let Some(ref val) = arg_val {
+                        if !sub_signature_matches_value(self, outer, val) {
+                            return false;
+                        }
+                    } else if pd.default.is_none() && !sub_signature_binds_nothing(outer) {
+                        return false;
+                    }
                 }
 
                 // Check where constraint on named param. When the named arg is
@@ -1800,4 +1813,16 @@ impl Interpreter {
         }
         Some(crate::rakuast::type_object_does(node.class.printed_name(), base))
     }
+}
+
+/// Whether a sub-signature can unpack "nothing": every parameter is optional,
+/// defaulted or slurpy. A named parameter that is absent from a call unpacks
+/// no value, so one whose sub-signature needs an element
+/// (`:literal($) ($payload, *@rest)`) makes the candidate inapplicable, as in
+/// rakudo.
+// Cost: O(p), p = the sub-signature's parameters.
+fn sub_signature_binds_nothing(sub_params: &[ParamDef]) -> bool {
+    sub_params
+        .iter()
+        .all(|p| p.slurpy || p.default.is_some() || p.optional_marker || (p.named && !p.required))
 }
