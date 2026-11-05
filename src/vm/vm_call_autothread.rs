@@ -826,6 +826,29 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Vec<crate::ast::ParamDef>> {
+        // A candidate that takes the Junction whole (`Junction $j`, `Mu $x`) wins
+        // over threading, whatever the other candidates declare: rakudo tries the
+        // Junction as it is first and threads only when nothing accepts it.
+        // Resolve with the real arguments first so that candidate is the one whose
+        // parameters decide.
+        if let Some(def) = loan_env!(self, resolve_function_with_types(name, args))
+            .ok()
+            .flatten()
+        {
+            let junction_indices: Vec<usize> = args
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| Self::unwrap_junction_value(v).is_some())
+                .map(|(i, _)| i)
+                .collect();
+            if self
+                .autothread_indices_for_params(args, &junction_indices, &def.param_defs)
+                .len()
+                < junction_indices.len()
+            {
+                return Some(def.param_defs.clone());
+            }
+        }
         // Replace junction args with non-junction placeholder values for type resolution
         let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
         if let Some(def) = loan_env!(self, resolve_function_with_types(name, &resolved_args))
