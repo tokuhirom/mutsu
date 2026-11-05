@@ -62,6 +62,10 @@ pub(crate) struct PatternDerived {
     /// decides between the two memos above and below. Derived once because it
     /// is asked on every scan.
     pub(crate) mentions_subrule: std::sync::OnceLock<bool>,
+    /// The name of the plain `$var` a code-free pattern begins with, whose
+    /// value (a literal) every match must start with. Derived once; see
+    /// `regex_prefilter::leading_var_name`.
+    pub(crate) leading_var: std::sync::OnceLock<Option<Box<str>>>,
     /// The same prefilter for a pattern that DOES mention a rule name, where
     /// the derivation is not a pure function of the pattern: the same name
     /// resolves to different bodies in different packages (`grammar H is G`

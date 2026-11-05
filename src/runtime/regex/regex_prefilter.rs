@@ -283,6 +283,22 @@ pub(crate) fn regex_scan_positions<'c>(
         };
     }
 
+    if let Some(needle) = leading_var_needle(interp, pattern) {
+        let Some(last) = chars.len().checked_sub(needle.len().max(prefilter.min_len)) else {
+            return ScanPositions::empty();
+        };
+        crate::vm::vm_stats::record_regex_prefilter_applied(
+            RegexPrefilterKind::LiteralPrefix,
+            offered,
+        );
+        return ScanPositions::Needle {
+            chars,
+            needle,
+            pos: from,
+            last,
+        };
+    }
+
     if let Some(inner) = prefilter.inner.as_ref() {
         // A match holds `min_before` characters plus the literal itself, which
         // is a tighter bound than the derived minimum whenever the walk that
@@ -343,6 +359,56 @@ pub(crate) fn regex_scan_positions<'c>(
         None => return ScanPositions::empty(),
     };
     with_chain(range, chars, prefilter)
+}
+
+/// The name of the plain `$var` a pattern begins with, when that read can be
+/// hoisted out of the scan: the atom is a bare single `VarInterp` at the
+/// pattern's start and no atom of the pattern runs code or declares a
+/// variable, so nothing can write the variable between the scan's start and
+/// the cursor reaching the atom. `:i`/`:ignoremark` patterns decline, since
+/// their comparison is not a plain character match.
+// Cost: O(t) once per pattern (memoized), t = the pattern's size.
+fn leading_var_name(pattern: &RegexPattern) -> Option<&str> {
+    pattern
+        .derived
+        .leading_var
+        .get_or_init(|| {
+            if pattern.ignore_case || pattern.ignore_mark {
+                return None;
+            }
+            let first = pattern.tokens.first()?;
+            let RegexAtom::VarInterp(name) = &first.atom else {
+                return None;
+            };
+            if !matches!(first.quant, RegexQuant::One)
+                || first.separator.is_some()
+                || super::regex_prefilter_analysis::pattern_runs_code(pattern, 0)
+            {
+                return None;
+            }
+            Some(name.as_str().into())
+        })
+        .as_deref()
+}
+
+/// The text a scan of `pattern` must find at every match start: the value of
+/// its leading `$var` (see [`leading_var_name`]) when that is a non-empty
+/// `Str`, read once here instead of once per start position. Any other value
+/// (a `Regex`, a junction, an undefined one) declines.
+// Cost: O(v), v = the value's length.
+fn leading_var_needle(interp: &Interpreter, pattern: &RegexPattern) -> Option<Box<[char]>> {
+    let name = leading_var_name(pattern)?;
+    let val = interp
+        .env
+        .get(name)
+        .or_else(|| interp.env.get(&format!("${name}")))?
+        .clone()
+        .into_deref();
+    if !matches!(val.view(), ValueView::Str(_)) {
+        return None;
+    }
+    let text = val.as_str()?;
+    (!text.is_empty()).then(|| text.chars().collect())
 }
 
 /// Wrap `positions` with the ADR-0099 §5 NFA chain when the pattern has one —
