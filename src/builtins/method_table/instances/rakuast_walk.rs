@@ -204,6 +204,15 @@ fn literal_of(interp: &mut Interpreter, base: &Value) -> Option<Value> {
             ListShape::Single(inner) => return literal_of(interp, &inner),
             ListShape::Other => {}
         }
+        // A hash composer of fat arrows literalizes entry by entry, so a value
+        // keeps its own literal rule (`{a => [1]}` holds `1`).
+        if let Some(entries) = lit::hash_composer_entries(node) {
+            let mut map = crate::value::ValueMap::default();
+            for (key, value_node) in entries {
+                map.insert(key, literal_of(interp, &value_node)?);
+            }
+            return crate::builtins::map_hash_coerce::to_map(Value::hash(map)).ok();
+        }
         let value = interp.eval_rakuast_node(base).ok()?;
         if lit::is_hash_composer(node) && !matches!(value.view(), ValueView::Hash(_)) {
             return None;
