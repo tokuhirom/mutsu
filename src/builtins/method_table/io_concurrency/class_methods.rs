@@ -367,7 +367,7 @@ fn register_dynamic(
 }
 
 /// `Rakudo::Internals.FILETEST-<name>($path)`: one handler per test, all
-/// answered by [`crate::runtime::native_io::rakudo_filetest::rakudo_filetest`].
+/// answered by `native_io::rakudo_filetest::rakudo_filetest`.
 macro_rules! filetest_handlers {
     ($($handler:ident => $name:literal),* $(,)?) => {$(
         // Cost: O(p) plus at most three filesystem queries, p = path length.

@@ -2,7 +2,7 @@
 //! `IO::Path` methods are built on (`FILETEST-E($abspath)` is what `.e` calls).
 //!
 //! They share their filesystem queries with the `IO::Path` readers
-//! ([`io_file_test`](super::helpers::io_file_test), `nqp_stat::stat_time`), so
+//! ([`io_file_test`], `nqp_stat::stat_time`), so
 //! the method and the internal helper cannot disagree. They differ from the
 //! methods in their answers: an `Int` 1/0 for a test, and a thrown error, not a
 //! `Failure`, when a test that needs a `stat` meets a missing path.
