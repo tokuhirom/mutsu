@@ -3610,6 +3610,12 @@ impl Interpreter {
                     )
                 } else {
                     false
+                } || {
+                    // A process-level dynamic bound with `PROCESS::<$X> := v`
+                    // has no container, from whichever frame it is read.
+                    let var_name = code.constants[*name_idx as usize].as_str().unwrap_or("");
+                    var_name.trim_start_matches('$').starts_with('*')
+                        && self.scalar_name_has_no_container(var_name)
                 };
                 let result = if is_bound_decont {
                     val
