@@ -56,7 +56,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
     },
-    // rakudo declares `replace-body` on each routine class too; the `Block`
+    // rakudo declares `replace-body` on `Sub` and `Method` too (`Submethod` inherits `Method`'s); the `Block`
     // row above answers them all (its handler takes every class with a body),
     // these rows only let `.^can` / `.^methods` report the method.
     MethodRow {
@@ -69,14 +69,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "RakuAST::Method",
-        name: "replace-body",
-        arity: 1,
-        handler: Handler::Narrow(replace_body),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
-        named: &[],
-    },
-    MethodRow {
-        owner: "RakuAST::Submethod",
         name: "replace-body",
         arity: 1,
         handler: Handler::Narrow(replace_body),
