@@ -456,6 +456,17 @@ impl Interpreter {
         self.lexicals
             .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));
+        // A package variable of a lexical class (`my class X { our $v }`) is
+        // keyed by the class's mangled storage name; `$X::v` spells the
+        // user-facing one, so the same container is stored there too (#16620).
+        if key.contains('\u{0}') {
+            let facing = crate::value::user_facing_type_name(&key);
+            if facing.as_ref() != key.as_str() {
+                self.lexicals
+                    .our_vars
+                    .insert(facing.into_owned(), value.clone());
+            }
+        }
         self.lexicals.our_vars.insert(key, value);
     }
 
