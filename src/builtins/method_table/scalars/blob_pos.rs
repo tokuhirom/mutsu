@@ -39,10 +39,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 // Cost: O(1).
 fn position(arg: &Value) -> Result<i64, RuntimeError> {
     match arg.view() {
-        ValueView::BigInt(n) => Err(RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer. Did you mix int and Int or literals?",
-            n.bits()
-        ))),
+        ValueView::BigInt(n) => Err(RuntimeError::cannot_unbox_bigint(n.bits())),
         _ => Ok(arg.as_int().unwrap_or(0)),
     }
 }

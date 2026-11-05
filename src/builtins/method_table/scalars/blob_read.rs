@@ -34,10 +34,7 @@ fn native_int(arg: &Value) -> Result<i64, RuntimeError> {
             value: crate::value::EnumValue::Int(i),
             ..
         } => Ok(*i),
-        ValueView::BigInt(n) => Err(RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer. Did you mix int and Int or literals?",
-            n.bits()
-        ))),
+        ValueView::BigInt(n) => Err(RuntimeError::cannot_unbox_bigint(n.bits())),
         ValueView::Package(name) => Err(RuntimeError::new(format!(
             "Cannot unbox a type object ({}) to int.",
             crate::value::user_facing_type_name(name.as_str())

@@ -204,17 +204,15 @@ pub(crate) fn wrap_native_int_for_binding(
     }
     // Full-width signed native types don't wrap — they should throw on overflow.
     if matches!(native_type, "int" | "int64") {
-        return Err(crate::value::RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer",
-            big_val.bits()
-        )));
+        return Err(crate::value::RuntimeError::cannot_unbox_bigint(
+            big_val.bits(),
+        ));
     }
     // Full-width unsigned types: positive overflow throws, negative values wrap.
     if matches!(native_type, "uint" | "uint64") && big_val > NumBigInt::from(0u64) {
-        return Err(crate::value::RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer",
-            big_val.bits()
-        )));
+        return Err(crate::value::RuntimeError::cannot_unbox_bigint(
+            big_val.bits(),
+        ));
     }
     let wrapped = native_types::wrap_native_int(native_type, &big_val);
     Ok(wrapped

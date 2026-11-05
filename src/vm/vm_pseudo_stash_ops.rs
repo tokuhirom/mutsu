@@ -101,6 +101,9 @@ impl Interpreter {
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
+        if name == "::" {
+            self.add_all_imports_to_pseudo_stash(&mut entries);
+        }
         if name == "UNIT::" {
             for (display, value) in self.unit_lexical_types() {
                 entries.entry(display).or_insert(value);
@@ -600,6 +603,29 @@ impl Interpreter {
                     .cloned()
                     .filter(|v| !matches!(v.view(), ValueView::Package(_) | ValueView::Sub(..)))
             })
+    }
+
+    /// Add every import alias the current view holds (`env_imports_here`) to
+    /// `entries`: an imported term or type need not sit in env under its
+    /// import key (a sigilless constant lives under its term key, an exported
+    /// type resolves through the type registry, a `sub EXPORT` hash installs
+    /// a qualified key), so each is read the way a bare-word read of the name
+    /// does. The bare `::` stash lists these like `MY::` does (#16555).
+    // Cost: O(i), i = import aliases of the view.
+    fn add_all_imports_to_pseudo_stash(&mut self, entries: &mut ValueMap) {
+        for (key, display) in self.env_imports_here() {
+            let key = key.resolve();
+            let value = self.env().get(&key).cloned().or_else(|| {
+                (!key.starts_with(['$', '@', '%', '&']))
+                    .then(|| self.imported_term_or_type(&key))
+                    .flatten()
+            });
+            if let Some(value) = value {
+                entries
+                    .entry(display.resolve().to_string())
+                    .or_insert(value);
+            }
+        }
     }
 
     /// The value a bare-word read of the imported name `key` (an import
