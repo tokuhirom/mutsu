@@ -210,7 +210,11 @@ fn config_source(node: &RakuAstNode) -> Option<String> {
             RakuAstFieldValue::Node(v) if !super::origin::is_origin(f) => Some(v),
             _ => None,
         })?;
-        if key.is_empty() || !key.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_')) {
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+        {
             return None;
         }
         match (value.class, leaf.view()) {
@@ -224,7 +228,7 @@ fn config_source(node: &RakuAstNode) -> Option<String> {
             (RakuAstClass::StrLiteral, ValueView::Str(text))
                 if !text.contains(['\'', '\\', '\n']) =>
             {
-                out.push_str(&format!(" :{key}('{}')", &**text));
+                out.push_str(&format!(" :{key}('{}')", **text));
             }
             _ => return None,
         }
