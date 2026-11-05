@@ -743,6 +743,17 @@ impl Interpreter {
             return Vec::new();
         }
         let mut names: Vec<String> = Vec::new();
+        // A user grammar is a `Grammar`, hence a `Match` and a `Capture`: the
+        // methods Rakudo declares on those (`TOP` suggests `to`) are offered too.
+        if self.class_is_grammar(type_name) {
+            for builtin in ["Grammar", "Match", "Capture"] {
+                for name in super::did_you_mean::candidate_names(builtin) {
+                    if !names.iter().any(|n| n == name) {
+                        names.push(name.to_string());
+                    }
+                }
+            }
+        }
         let mro = self.class_mro(type_name);
         for class in mro.iter() {
             let class = class.resolve();

@@ -1,5 +1,5 @@
 use Test;
-plan 12;
+plan 15;
 
 # `X::Method::NotFound`'s "Did you mean" tip offers a user class's own methods
 # (its parents', its roles' and its public attribute accessors) beside the
@@ -48,3 +48,15 @@ is msg({ Any.say2 }),
 is msg({ Mu.say2 }),
     "No such method 'say2' for invocant of type 'Mu'. Did you mean 'say'?",
     'a Mu method on Mu';
+
+# A user grammar is a Grammar, a Match and a Capture: their names are offered.
+grammar G {}
+is msg({ G.TOP }),
+    "No such method 'TOP' for invocant of type 'G'. Did you mean 'to'?",
+    'a grammar offers the Match names';
+is msg({ G.parse("x") }),
+    "No such method 'TOP' for invocant of type 'G'. Did you mean 'to'?",
+    'a missing start rule offers them too';
+is msg({ G.foo }),
+    "No such method 'foo' for invocant of type 'G'",
+    'nothing close on a grammar';
