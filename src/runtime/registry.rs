@@ -2298,6 +2298,8 @@ impl Registry {
             "Setty" | "Baggy" => &["QuantHash", "Associative"],
             "Mixy" => &["Baggy"],
             "Sequence" => &["PositionalBindFailover"],
+            // `PredictiveIterator` is declared `role PredictiveIterator does Iterator`.
+            "PredictiveIterator" => &["Iterator"],
             "Blob" => &["Positional[T]", "Stringy"],
             "Buf" => &["Blob[T]", "Positional[T]", "Stringy"],
             _ => &[],
