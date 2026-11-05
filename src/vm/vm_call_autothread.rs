@@ -430,6 +430,15 @@ impl Interpreter {
                             &junction_indices,
                             &def.param_defs,
                         ),
+                        // No user `new`: the native constructor. A class whose
+                        // `new` declares typed positional parameters threads
+                        // like any such method; the default constructor does
+                        // not (the junction is a stored value).
+                        std::option::Option::None
+                            if method == "new" && native_new_threads_junctions(&name.resolve()) =>
+                        {
+                            junction_indices
+                        }
                         std::option::Option::None => Vec::new(),
                     }
                 }
@@ -874,4 +883,17 @@ impl Interpreter {
         }
         None
     }
+}
+
+/// Core classes whose `new` is a method with typed (not `Mu` / slurpy)
+/// parameters, so a Junction argument autothreads it: `Date.new(2022, 1|2, 5)`
+/// is `any(Date.new(2022,1,5), Date.new(2022,2,5))`, as on rakudo. The
+/// collection and default constructors (`Set.new(1|2)`, `Array.new`, ...)
+/// are not listed: they store the Junction.
+// Cost: O(1).
+fn native_new_threads_junctions(class: &str) -> bool {
+    matches!(
+        class,
+        "Date" | "DateTime" | "Rat" | "FatRat" | "Complex" | "Version" | "Duration" | "Num" | "Int"
+    )
 }
