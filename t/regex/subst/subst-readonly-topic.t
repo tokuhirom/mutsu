@@ -2,10 +2,10 @@ use Test;
 
 # A destructive `s///` mutates its topic in place. When the topic is bound
 # read-only (a scalar `$_` / named parameter without `is rw`/`is copy`), an
-# actual substitution must throw X::Assignment::RO. A non-matching `s///`
+# actual substitution must throw (rakudo: an X::AdHoc). A non-matching `s///`
 # writes nothing and stays a no-op.
 
-plan 5;
+plan 6;
 
 # matching s/// on a read-only $_ parameter dies
 {
@@ -20,11 +20,12 @@ plan 5;
         'non-matching s/// on a read-only topic is a no-op';
 }
 
-# the thrown exception is X::Assignment::RO
+# the thrown exception is rakudo's X::AdHoc, not X::Assignment::RO
 {
     sub ro-topic2($_) { s/c/X/ }
     my $ex = (try { ro-topic2('ccc') }) // $!;
-    isa-ok $ex, X::Assignment::RO, 's/// RO violation is X::Assignment::RO';
+    isa-ok $ex, X::AdHoc, 's/// RO violation is X::AdHoc';
+    like $ex.message, /'readonly variable or a value'/, 'worded as a readonly variable';
 }
 
 # a mutable topic still substitutes normally

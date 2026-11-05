@@ -419,13 +419,13 @@ impl Interpreter {
         result: Value,
     ) -> Result<(), RuntimeError> {
         if self.is_readonly("_") {
-            let mut attrs = ValueMap::default();
-            attrs.insert(
-                "message".to_string(),
-                Value::str("Cannot modify an immutable Str".to_string()),
-            );
-            attrs.insert("value".to_string(), result);
-            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+            // rakudo raises an `X::AdHoc`: "readonly variable or a value" for a
+            // bound parameter (it still has a container), "immutable value"
+            // for a literal topic.
+            return Err(match self.readonly_kind("_") {
+                Some(crate::ast::ReadonlyKind::Alias) => RuntimeError::readonly_variable(),
+                _ => RuntimeError::immutable_value(),
+            });
         }
         // ADR-0045: when the topic is an aliasing binding — a `for` loop
         // parameter bound to its source's element container — `s///` assigns
