@@ -41,16 +41,28 @@ pub(super) fn mark(mut node: RakuAstNode, source: Option<&str>) -> RakuAstNode {
     node
 }
 
+/// [`mark`] applied to a viewed scope body, with the scope's recorded source.
+// Cost: O(f), f = fields of the node.
+pub(super) fn mark_of(
+    node: Result<RakuAstNode, crate::value::RuntimeError>,
+    source: &Option<String>,
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    node.map(|node| mark(node, source.as_deref()))
+}
+
 /// The source text the mark carries, when it has one.
 // Cost: O(f), f = fields of `node`.
 pub(super) fn source(node: &RakuAstNode) -> Option<String> {
-    node.fields.iter().find(|f| is_marker(f)).and_then(|f| match &f.value {
-        RakuAstFieldValue::Node(value) => match value.view() {
-            crate::value::ValueView::Str(text) => Some(text.to_string()),
+    node.fields
+        .iter()
+        .find(|f| is_marker(f))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                crate::value::ValueView::Str(text) => Some(text.to_string()),
+                _ => None,
+            },
             _ => None,
-        },
-        _ => None,
-    })
+        })
 }
 
 /// Whether `node` is marked as the scope of a priming.
