@@ -76,7 +76,6 @@ impl Interpreter {
             return Ok(());
         }
         if let Some(target) = self.named_pseudo_stash_target(name) {
-            self.check_named_stash_package(&target)?;
             let stash = loan_env!(self, package_stash_value(&target));
             self.stack.push(stash);
             return Ok(());
@@ -136,17 +135,6 @@ impl Interpreter {
         let stash = self.pseudo_stash_hash(entries);
         self.stack.push(stash);
         Ok(())
-    }
-
-    /// Die as rakudo does when the literally spelled package of a `Foo::Bar::`
-    /// stash read does not exist (#9845).
-    // Cost: as `missing_stash_package_error`.
-    fn check_named_stash_package(&self, target: &str) -> Result<(), RuntimeError> {
-        let package = Self::normalize_stash_package(target);
-        match self.missing_stash_package_error(&package) {
-            Some(err) => Err(err),
-            None => Ok(()),
-        }
     }
 
     /// The package a `Name::` pseudo-stash read names, when it is an ordinary
@@ -268,16 +256,12 @@ impl Interpreter {
         let keyed = match key.deref_container().view() {
             ValueView::Str(key_str) => self.named_pseudo_stash_target(name).and_then(|target| {
                 loan_env!(self, package_stash_keyed_value(&target, &key_str))
-                    .map(|(stash, found)| (target, stash, found))
+                    .map(|(stash, _found)| stash)
             }),
             _ => None,
         };
         match keyed {
-            Some((target, stash, found)) => {
-                // A hit proves the package exists; only a miss pays the check.
-                if !found {
-                    self.check_named_stash_package(&target)?;
-                }
+            Some(stash) => {
                 self.stack.push(stash);
                 Ok(())
             }
