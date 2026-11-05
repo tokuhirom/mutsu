@@ -79,6 +79,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("unshift-statement", a[0].clone())),
     node_row!("RakuAST::ArgList", "push", |t, a| t
         .rakuast_add_child("push", a[0].clone())),
+    node_row!("RakuAST::ArgList", "replace-args", |t, a| t
+        .rakuast_replace_args(&a[0])),
+    MethodRow {
+        owner: "RakuAST::ArgList",
+        name: "set-arg-at-pos",
+        arity: 2,
+        handler: Handler::Narrow(|t, a| t.rakuast_set_arg_at_pos(&a[0], &a[1])),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
     node_row!("RakuAST::ArgList", "unshift", |t, a| t
         .rakuast_add_child("unshift", a[0].clone())),
     node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t

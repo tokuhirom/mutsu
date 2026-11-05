@@ -157,6 +157,42 @@ impl Interpreter {
         }
     }
 
+    /// Remove the escaping-our names (and env-param names) that are in the current sets but
+    /// not in `before_names` / `before_params`: the ones an `EVAL` unit's code added.
+    // Cost: O(n), n = names in the current sets.
+    pub(crate) fn drop_escaping_names_added_since(
+        &mut self,
+        before_names: &std::collections::HashSet<String>,
+        before_params: &std::collections::HashSet<String>,
+    ) {
+        let added: Vec<String> = self
+            .lexicals
+            .escaping_our_lexical_names
+            .iter()
+            .filter(|n| !before_names.contains(*n))
+            .cloned()
+            .collect();
+        if !added.is_empty() {
+            let table = crate::runtime::cow_table_mut(&mut self.lexicals.escaping_our_lexical_names);
+            for name in &added {
+                table.remove(name);
+            }
+        }
+        let added: Vec<String> = self
+            .lexicals
+            .escaping_our_env_param_names
+            .iter()
+            .filter(|n| !before_params.contains(*n))
+            .cloned()
+            .collect();
+        if !added.is_empty() {
+            let table = crate::runtime::cow_table_mut(&mut self.lexicals.escaping_our_env_param_names);
+            for name in &added {
+                table.remove(name);
+            }
+        }
+    }
+
     /// Resolve a free-variable read of a block lexical captured by an `our`-scoped
     /// named sub (`escaping_our_lexical_names`). Returns:
     ///   * `Some(cell)` — the persisted shared cell, once the declaring block has

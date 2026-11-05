@@ -2863,6 +2863,7 @@ t/lang/quoting/corner-quote-backslash.t
 t/lang/quoting/double-angle-quote-word-list.t
 t/lang/quoting/double-angle-quote-word-lt.t
 t/lang/quoting/embedded-qqw-qw-escape.t
+t/lang/quoting/escaped-our-sub-incdec.t
 t/lang/quoting/format-quote-adverb.t
 t/lang/quoting/forward-sub-quotewords.t
 t/lang/quoting/heredoc-imported-call-value.t
@@ -3571,7 +3572,9 @@ t/modules/our-pseudo-package-constant.t
 t/modules/our-scalar-bare-name-resolution.t
 t/modules/our-scalar-bind-keeps-proxy.t
 t/modules/our-scalar-nil-initializer-resets-container.t
+t/modules/our-sub-block-lexical-capture.t
 t/modules/our-sub-closes-over-for-param.t
+t/modules/our-sub-in-for-closes-over-loop-param.t
 t/modules/our-sub-in-lexical-class-qualified-call.t
 t/modules/our-sub-in-routine-installed-at-compile-time.t
 t/modules/our-sub-rebinds-file-scope-lexical.t
@@ -5852,6 +5855,7 @@ t/rakuast/rakuast-eval-cstyle-loop.t
 t/rakuast/rakuast-eval-default-param.t
 t/rakuast/rakuast-eval-die.t
 t/rakuast/rakuast-eval-do.t
+t/rakuast/rakuast-eval-dynamic-class-name.t
 t/rakuast/rakuast-eval-for-elsif.t
 t/rakuast/rakuast-eval-gather.t
 t/rakuast/rakuast-eval-given.t
@@ -6947,6 +6951,7 @@ t/routines/call/cross-metaop-thunk-captured-writeback-coherence.t
 t/routines/call/ctor-allomorph-objat-capture.t
 t/routines/call/eager-map-grep-captured-writeback-coherence.t
 t/routines/call/end-phaser-wide-capture-refresh.t
+t/routines/call/eval-our-sub-block-lexical-capture.t
 t/routines/call/eval-unit-prologue-sub-captures-unit-variable.t
 t/routines/call/eval-unit-sub-captures-unit-variable.t
 t/routines/call/fast-call-captured-write-coherence.t
@@ -9122,6 +9127,7 @@ t/vm/scope/dynamic-var-write-through-block-persists.t
 t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
+t/vm/scope/escaped-our-sub-lexical-write.t
 t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t

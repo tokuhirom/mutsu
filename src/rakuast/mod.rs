@@ -91,6 +91,7 @@ pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, 
 }
 mod anon_body_origins;
 pub(crate) mod apply_queries;
+pub(crate) mod arg_invocant;
 pub(crate) mod arg_list_queries;
 pub(crate) mod block_queries;
 mod declare_how;
@@ -2299,6 +2300,9 @@ fn construct_values(
                 .collect(),
         }))));
     }
+    if class_name == "RakuAST::ArgList" && method == "from-invocant-list" {
+        return arg_invocant::from_invocant_list(args).map(Some);
+    }
     if class_name == "RakuAST::ArgList" && method == "from-comma-list" {
         return arg_list_queries::from_comma_list(args).map(Some);
     }
@@ -3791,6 +3795,7 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
     infix_func::is_hidden_adverbs(node, field)
         || block_queries::is_bare_marker(node, field)
+        || arg_invocant::is_hidden_invocant(node, field)
         || regex_variable_alias::is_source_field(node, field)
 }
 
