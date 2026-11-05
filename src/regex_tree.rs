@@ -360,6 +360,8 @@ impl RegexTree {
             unit_base,
             in_unit_parse,
             atom_depth: 0,
+            bracketed_comment_end: None,
+            after_branch_opener: false,
         };
         let body = parser.parse_alternation(&[])?;
         parser.skip_whitespace();
@@ -1566,6 +1568,14 @@ struct Parser {
     /// enclosing lexical scope's declarations (`sub dec($x)` called as the
     /// listop `dec ~$/`). A run-time parse has no enclosing unit scope.
     in_unit_parse: bool,
+    /// Where the most recent embedded or declarator comment (`#`{..}`,
+    /// `#|{..}`) ended, if `skip_whitespace` swallowed one. A quantifier right
+    /// after a branch opener and such a comment (`|| #|{x}? 'b'`) is dropped
+    /// by rakudo rather than refused; see `parse_sequence`.
+    bracketed_comment_end: Option<usize>,
+    /// Set by `parse_alternation` for the branch that follows an opener (`|`,
+    /// `||`, or a group's `[` / `(`) and consumed by `parse_sequence`.
+    after_branch_opener: bool,
 }
 
 impl Parser {
@@ -1587,6 +1597,9 @@ impl Parser {
             self.pos = before_leading;
             None
         };
+        // The first branch follows an opener when it is a group's (`stops` is
+        // empty only at the top of a regex) or when a `|` / `||` was written.
+        self.after_branch_opener = !stops.is_empty() || leading_sequential.is_some();
         let mut branches = vec![self.parse_conjunction(stops, leading_sequential == Some(true))?];
         let mut sequential_operators = Vec::new();
         while self.chars.get(self.pos) == Some(&'|') {
@@ -1599,6 +1612,7 @@ impl Parser {
             }
             let sequential = count > 1;
             sequential_operators.push(sequential);
+            self.after_branch_opener = true;
             branches.push(self.parse_conjunction(stops, sequential)?);
         }
         // RakuAST represents a multi-character literal branch as a
@@ -1686,10 +1700,28 @@ impl Parser {
     ) -> Option<RegexNode> {
         let mut nodes = Vec::new();
         let mut sequential_interpolation = sequential_interpolation;
+        let mut at_branch_opener = std::mem::take(&mut self.after_branch_opener);
         loop {
             let before = self.pos;
             self.skip_whitespace();
             let saw_whitespace = self.pos != before;
+            // `|| #|{x}? 'b'`: right after a branch opener, a quantifier that
+            // follows a bracketed comment quantifies nothing, and rakudo drops
+            // it (measured: `?`, `*`, `+`, `??` alike; with no comment, after
+            // a line comment, or outside a branch it is `Quantifier quantifies
+            // nothing`). ANTLR4::Grammar emits `#|{action}?` for a semantic
+            // predicate at the start of a branch.
+            if at_branch_opener
+                && nodes.is_empty()
+                && self.bracketed_comment_end.is_some_and(|end| {
+                    end <= self.pos && self.chars[end..self.pos].iter().all(|c| c.is_whitespace())
+                })
+                && matches!(self.chars.get(self.pos), Some('*' | '+' | '?'))
+                && self.parse_quantifier().is_some()
+            {
+                continue;
+            }
+            at_branch_opener = at_branch_opener && nodes.is_empty();
             let Some(&ch) = self.chars.get(self.pos) else {
                 if saw_whitespace {
                     wrap_last_with_whitespace(&mut nodes);
@@ -2712,6 +2744,7 @@ impl Parser {
         let rest: String = self.chars[self.pos..].iter().collect();
         if let Some(after) = crate::parser::helpers::skip_bracketed_comment(&rest) {
             self.pos += rest.chars().count() - after.chars().count();
+            self.bracketed_comment_end = Some(self.pos);
         } else {
             while self.chars.get(self.pos).is_some_and(|&ch| ch != '\n') {
                 self.pos += 1;
