@@ -577,6 +577,7 @@ t/collections/nth-whatevercode.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
 t/collections/positional-read-of-a-non-positional.t
+t/collections/process-env-element-store-in-sub.t
 t/collections/proxy-bound-element-expr-assign.t
 t/collections/proxy-element-assign-autovivifies.t
 t/collections/proxy-fetch-result-holds-bound-proxy-elements.t
@@ -887,6 +888,7 @@ t/collections/subscript/shaped-typed-array-list.t
 t/collections/subscript/shaped-typed-array-row-hole-tracking.t
 t/collections/subscript/shapeless-subscript-rows.t
 t/collections/subscript/single-store-slice-a.t
+t/collections/subscript/single-store-slice-c-prime.t
 t/collections/subscript/single-store-slice-e.t
 t/collections/subscript/slice-assign-calls-assign-pos-per-index.t
 t/collections/subscript/slice-assign-generic-range.t
@@ -2160,6 +2162,7 @@ t/grammar/grammar-dynvar-rule-scope.t
 t/grammar/grammar-dynvar-scope-leak.t
 t/grammar/grammar-failed-parse-my-var-subrule-arg.t
 t/grammar/grammar-failed-parse-no-rerun.t
+t/grammar/grammar-failgoal-goal-deparse.t
 t/grammar/grammar-frugal-ratchet-sigspace.t
 t/grammar/grammar-in-method-reads-positional-param.t
 t/grammar/grammar-in-module.t
@@ -2464,6 +2467,7 @@ t/io/mkdir-sub-returns-io-path.t
 t/io/multi-named-slurpy-ranking.t
 t/io/multi-optional-count-ignores-slurpy.t
 t/io/multi-optional-over-slurpy-zero-arg.t
+t/io/multi-plus-slurpy-ranking.t
 t/io/named-slurpy-not-positional.t
 t/io/nil-and-type-object-io.t
 t/io/nil-io-method-not-absorbed.t
@@ -3567,6 +3571,7 @@ t/modules/our-scalar-bare-name-resolution.t
 t/modules/our-scalar-bind-keeps-proxy.t
 t/modules/our-scalar-nil-initializer-resets-container.t
 t/modules/our-sub-closes-over-for-param.t
+t/modules/our-sub-in-lexical-class-qualified-call.t
 t/modules/our-sub-in-routine-installed-at-compile-time.t
 t/modules/our-sub-rebinds-file-scope-lexical.t
 t/modules/our-sub-sibling-block-redeclaration.t
@@ -5696,6 +5701,7 @@ t/rakuast/rakuast-also-is-roundtrip.t
 t/rakuast/rakuast-anon-and-typed-term-declarations.t
 t/rakuast/rakuast-anon-declarator-docs.t
 t/rakuast/rakuast-anon-regex-declarator.t
+t/rakuast/rakuast-anon-sub-parameter-origins.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
 t/rakuast/rakuast-anonymous-array-hash-assignment-lowering.t
@@ -5707,6 +5713,7 @@ t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
 t/rakuast/rakuast-any-definedness.t
 t/rakuast/rakuast-array-context-seq-reread.t
+t/rakuast/rakuast-assign-target-origin-equal-terms.t
 t/rakuast/rakuast-assignment-item.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
@@ -5974,6 +5981,7 @@ t/rakuast/rakuast-method-literal.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
+t/rakuast/rakuast-modifier-equal-terms-origins.t
 t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-multidim-dynamic-adverbs.t
@@ -6066,6 +6074,7 @@ t/rakuast/rakuast-package-namespaces-traits.t
 t/rakuast/rakuast-package-our-bindings.t
 t/rakuast/rakuast-param-type-dispatch.t
 t/rakuast/rakuast-parameter-optional-traits.t
+t/rakuast/rakuast-parameter-queries.t
 t/rakuast/rakuast-paren-assign-arg.t
 t/rakuast/rakuast-paren-list-assign.t
 t/rakuast/rakuast-paren-pair-postfix.t
@@ -6319,6 +6328,7 @@ t/rakuast/rakuast-zip-metaassignment.t
 t/rakuast/when-rakuast-core-type-name.t
 t/regex/anon-regex-declarator-signature.t
 t/regex/associative-at-key-regex-subscript.t
+t/regex/bare-regex-undefined-topic.t
 t/regex/contains-regex.t
 t/regex/cool-instance-chars-comb.t
 t/regex/dir-test-bare-regex-predicate.t
@@ -6796,6 +6806,7 @@ t/regex/subst/subst-string-replacement-capture-spans.t
 t/regex/subst/subst-x-adverb.t
 t/regex/subst/subst-x-range.t
 t/regex/subst/substr-rw-assignment-value.t
+t/regex/subst/substr-rw-bound-proxy.t
 t/regex/subst/substr-rw-chained-subscript-target.t
 t/regex/subst/substr-rw-computed-args.t
 t/regex/subst/substr-rw-immutable-target.t
@@ -6944,6 +6955,7 @@ t/routines/call/forward-captured-code-var.t
 t/routines/call/gate-b-callee-name-collision-and-deref-capture.t
 t/routines/call/gather-lazy-captured-lexical.t
 t/routines/call/grep-capture-merge-keeps-caller-lexicals.t
+t/routines/call/hoisted-sub-captures-later-my.t
 t/routines/call/hyper-map-fresh-captured-lexical.t
 t/routines/call/interp-numbered-capture-subscript.t
 t/routines/call/is-copy-sigilless-capture-chain.t
@@ -6998,6 +7010,7 @@ t/routines/call/run-capture.t
 t/routines/call/run-main-default-args-to-capture.t
 t/routines/call/sequence-self-reference-under-reflective-capture.t
 t/routines/call/set-capture-coercion.t
+t/routines/call/sibling-block-subs-capture-own-cell.t
 t/routines/call/sigilless-capture-shadowed-by-scalar.t
 t/routines/call/sleep-listop-expression.t
 t/routines/call/slip-array-element-capture.t
@@ -7548,6 +7561,7 @@ t/routines/placeholder.t
 t/routines/process-stash-routine-symbols.t
 t/routines/proxy-rw-routine-return-bind.t
 t/routines/raw-routine-tail-reference-value.t
+t/routines/rebind-in-routine-decides-writability.t
 t/routines/reduce-bracketed-callable-op.t
 t/routines/routine-arity-count-rows.t
 t/routines/routine-body-let-resolution.t
@@ -7903,6 +7917,7 @@ t/routines/signature/rw-param-in-sigilless-block.t
 t/routines/signature/rw-param-incdec-arg-container.t
 t/routines/signature/rw-param-rebind-detaches-from-caller.t
 t/routines/signature/rw-param-scalar-holding-aggregate.t
+t/routines/signature/rw-param-shared-cell.t
 t/routines/signature/rw-param-source-named-like-other-param.t
 t/routines/signature/rw-param-type-check-before-container.t
 t/routines/signature/rw-param-type-follows-caller-container.t
@@ -8020,6 +8035,7 @@ t/routines/sub-call-binding-failure-classes.t
 t/routines/sub-call-supertype-arg-runtime.t
 t/routines/sub-decl-rejects-bodiless-and-compact-sigil-forms.t
 t/routines/sub-expression-name.t
+t/routines/sub-hoisted-free-var-before-declaration.t
 t/routines/sub-immediate-call.t
 t/routines/sub-named-like-builtin-is-rw-assign.t
 t/routines/sub-named-like-statement-prefix-is-called.t
@@ -8272,6 +8288,7 @@ t/types/coercion/typed-constraint-scope-matrix.t
 t/types/coercion/typed-constraint-shadow-scope.t
 t/types/coercion/typed-constraint-store-matrix.t
 t/types/coercion/typed-container-decl-in-expr.t
+t/types/coercion/typed-container-rebind-and-eqv.t
 t/types/coercion/typed-container-what.t
 t/types/coercion/typed-decl-hoist-block-forms.t
 t/types/coercion/typed-decl-init-proxy-fetch.t
@@ -8748,6 +8765,7 @@ t/vm/binding/bind-alias-block-exit-sync.t
 t/vm/binding/bind-alias-chain.t
 t/vm/binding/bind-alias-is-a-container.t
 t/vm/binding/bind-alias-recursive-frame-index.t
+t/vm/binding/bind-alias-reverse-write.t
 t/vm/binding/bind-array-elem-in-loop.t
 t/vm/binding/bind-autoviv-hole-fill.t
 t/vm/binding/bind-chained-proxy-store.t
@@ -8775,6 +8793,7 @@ t/vm/binding/bind-rebind-to-immutable-value-same-frame.t
 t/vm/binding/bind-saved-locals-slot-leak.t
 t/vm/binding/bind-scalar-to-type-object-stays-readonly.t
 t/vm/binding/bind-self-attr-write.t
+t/vm/binding/bind-source-tracks-through-call-chain.t
 t/vm/binding/bind-through-call-boundary-vardecl-leak.t
 t/vm/binding/bind-through-do-block-keeps-container.t
 t/vm/binding/bind-to-declaration-shares-container.t
@@ -8908,6 +8927,7 @@ t/vm/destroy-latch-late-registration.t
 t/vm/destroy-snapshot-gc-counts.t
 t/vm/destroy.t
 t/vm/env-free-decl-lane.t
+t/vm/env-slot-invariant-producers.t
 t/vm/eval-env-dirty.t
 t/vm/expr-position-constant-no-itemize.t
 t/vm/expr-vardecl-container-reassign.t
@@ -9101,6 +9121,7 @@ t/vm/scope/dynamic-var-write-through-block-persists.t
 t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
+t/vm/scope/eval-bare-block-hoisted-sub-cell.t
 t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t
@@ -9117,6 +9138,7 @@ t/vm/scope/expression-position-my-scope.t
 t/vm/scope/frame-lexical-inner-sub-code-object.t
 t/vm/scope/frame-lexical-inner-sub.t
 t/vm/scope/frame-lexical-rw-index-arg.t
+t/vm/scope/free-var-in-bare-block-lexical-scope.t
 t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t
 t/vm/scope/global-stash-keyed-read-matches-whole-stash.t
 t/vm/scope/heredoc-scope-in-sub-body.t
@@ -9252,6 +9274,7 @@ t/vm/scope/temp-scope-restore.t
 t/vm/scope/temp-snapshot-depth.t
 t/vm/scope/undeclared-variable-sibling-scope.t
 t/vm/scope/undefine-shadow-slot.t
+t/vm/scope/uppercase-mainline-lexical-named-sub.t
 t/vm/scope/variables-pragma-lexical-scope.t
 t/vm/scope/where-constraint-caller-lexicals.t
 t/vm/scope/where-constraint-lexical-scope.t
@@ -9399,6 +9422,7 @@ t/vm/writeback/scalar-incdec-slot-fast-path.t
 t/vm/writeback/scalar-itemize-raku.t
 t/vm/writeback/scalar-positional-exists.t
 t/vm/writeback/scalar-share-holder-cell.t
+t/vm/writeback/scalar-store-alias-key-filter.t
 t/vm/writeback/scalar-store-array-share-mark.t
 t/vm/writeback/scalar-who-index-assign.t
 t/vm/writeback/shared-array-mutate-keeps-container-cell.t
