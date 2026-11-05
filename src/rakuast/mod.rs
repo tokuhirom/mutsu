@@ -15,6 +15,7 @@ pub(crate) use doc_source::pod_source;
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
 mod anon_state;
+mod ctor_names;
 mod assign_lower;
 mod assign_target;
 mod assign_writeback;
@@ -2019,6 +2020,9 @@ fn construct_values(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if method == "new" {
+        ctor_names::check_new(class_name, args)?;
+    }
     if method == "new"
         && let Some(result) = routine_ctor::construct(class_name, args)
     {
