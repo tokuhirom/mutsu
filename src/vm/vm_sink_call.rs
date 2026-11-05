@@ -90,7 +90,10 @@ impl Interpreter {
         // sunk when every candidate hands back a fresh value. A mixed set (one
         // `is rw` candidate) stays unsunk, the conservative answer.
         let candidates = self.resolve_all_multi_candidates(&name);
-        !candidates.is_empty() && candidates.iter().all(|def| Self::sinks_declared_result(def))
+        !candidates.is_empty()
+            && candidates
+                .iter()
+                .all(|def| Self::sinks_declared_result(def))
     }
 
     /// Whether `value`, or the aggregate a mixin wraps, is an Array/List/Hash
