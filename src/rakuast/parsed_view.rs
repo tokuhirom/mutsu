@@ -499,8 +499,13 @@ fn target_node(names: &NameScope, target: &crate::ast::Expr) -> Result<RakuAstNo
 /// modified expression and each modifier.
 // Cost: O(n), n = size of the statement and its modifiers' operands.
 fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = super::view::view_stmt(names, &m.stmt)?
-        .ok_or_else(|| super::view::unsupported("empty modified statement"))?;
+    // Terms of the modified statement and of each modifier that look alike
+    // (`$n = $n.abs if $n.WHAT`) are told apart by the part they sit in.
+    let mut node = {
+        let _body = super::expr_origins::InStatement::enter(Some(m.body));
+        super::view::view_stmt(names, &m.stmt)?
+            .ok_or_else(|| super::view::unsupported("empty modified statement"))?
+    };
     if m.body.is_some()
         && m.body.from < m.body.to
         && let Some(field) = node
@@ -516,10 +521,14 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(expression)));
     }
     for modifier in m.modifiers() {
+        let operand = {
+            let _modifier = super::expr_origins::InStatement::enter(Some(modifier.span));
+            view_expr(names, &modifier.expr)?
+        };
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
-            fields: vec![node_field(None, view_expr(names, &modifier.expr)?)],
+            fields: vec![node_field(None, operand)],
         };
         if modifier.span.is_some() {
             super::origin::set_span(&mut modifier_node, modifier.span);
