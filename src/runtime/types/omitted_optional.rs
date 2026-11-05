@@ -57,6 +57,15 @@ impl Interpreter {
             name = Self::optional_type_object_name(&refinee);
             changed = true;
         }
+        // A package-relative type (`Column::List` written inside `unit class
+        // SQ`, declared as `SQ::Column::List`) binds the declared type's
+        // object, so the omitted value passes a typed attribute's check.
+        if crate::qualified::is_qualified_str(&name)
+            && !self.has_type_direct(&name)
+            && let Some(qualified) = self.resolve_relative_compound_type(&name)
+        {
+            return Value::package(Symbol::intern(qualified));
+        }
         if changed {
             Value::package(Symbol::intern(&name))
         } else {
