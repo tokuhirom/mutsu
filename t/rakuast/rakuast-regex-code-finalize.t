@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 7;
+plan 9;
 
 # A regex with code blocks is carried through finalization: the code inside it is
 # finalized where it stands (#8033, ADR-15760 slice 2).
@@ -25,3 +25,8 @@ my $n = 0;
 is $n, 3, 'a block in a quantified group runs per iteration';
 ok 'ab' ~~ /a <?{ $n > 1 }> b/, 'a code assertion sees the lexical';
 is ('ab' ~~ / $<x>=[a] { make ~$<x> } b /).made, 'a', 'make inside a block';
+
+# A smart match against m/.../ runs the value's own copy of the code.
+my $caught = "oops!";
+ok("abc" ~~ m/a(bc){$caught = $0}/, 'a block assigning a capture to an outer lexical');
+is $caught, "bc", 'the outer lexical was assigned';

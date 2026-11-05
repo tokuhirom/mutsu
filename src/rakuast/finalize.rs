@@ -436,15 +436,27 @@ impl VisitMut for Finalize<'_> {
                 _ => unreachable!("checked above"),
             };
         }
-        // The regex of a `token`/`rule`/`regex` term keeps its own copy of the code inside it;
-        // that copy is finalized like the code of a regex literal.
-        if let Expr::Literal(value) = expr
-            && let Some(tree) = value.regex_source_tree()
-            && carried::has_code(tree)
-        {
-            let mut tree = tree.clone();
-            crate::ast_visit::walk_regex_tree_mut(self, &mut tree);
-            *value = value.with_regex_source_tree(tree);
+        // A regex keeps two copies of the code inside it: the `tree` the walk reaches and the
+        // `value` some paths execute directly (a smart match against `m/.../`). Both are
+        // finalized, so the value carries the finalized tree.
+        match expr {
+            Expr::Literal(value) => {
+                if let Some(tree) = value.regex_source_tree()
+                    && carried::has_code(tree)
+                {
+                    let mut tree = tree.clone();
+                    crate::ast_visit::walk_regex_tree_mut(self, &mut tree);
+                    *value = value.with_regex_source_tree(tree);
+                }
+            }
+            Expr::RegexLiteral { value, tree } | Expr::MatchRegexTree { value, tree }
+                if carried::has_code(tree) =>
+            {
+                crate::ast_visit::walk_regex_tree_mut(self, tree);
+                *value = value.with_regex_source_tree(tree.clone());
+                return;
+            }
+            _ => {}
         }
         crate::ast_visit::walk_expr_mut(self, expr);
     }
