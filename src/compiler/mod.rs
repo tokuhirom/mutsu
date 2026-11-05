@@ -5201,8 +5201,11 @@ impl Compiler {
                 let is_last = Some(i) == tail_index;
                 // A sunk tail expression or call compiles exactly as any other
                 // statement, `SinkPop` included (`unit_tail_sinks`).
-                let sunk_tail =
-                    self.unit_tail_sinks && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. });
+                // A tail bare `{ ... }` is sunk the same way: compiled as a
+                // value, its own tail statement would be (`{ $_ = 'x'; /x/ }`
+                // as the program's last statement left its regex unmatched).
+                let sunk_tail = self.unit_tail_sinks
+                    && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. } | Stmt::Block(_));
                 if is_last && !sunk_tail {
                     match stmt {
                         Stmt::Expr(expr) => {
