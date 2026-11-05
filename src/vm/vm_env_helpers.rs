@@ -894,7 +894,7 @@ impl Interpreter {
             return None;
         }
         // mutsu#9111: a routine-nested sub's own binding of its free variable.
-        if let Some(found) = self.lexsub_alias_slot(name) {
+        if let Some(found) = self.lexsub_alias_slot_sym(name, name_sym) {
             return Some(found);
         }
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
