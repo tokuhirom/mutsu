@@ -259,7 +259,7 @@ impl Interpreter {
         {
             let attrs = attributes.as_map();
             if !attrs.contains_key(crate::value::match_view::cursor_match_marker()) {
-                return attrs
+                let found = attrs
                     .get_vivify(name.read_key)
                     .or_else(|| {
                         if name.read_key == name.name {
@@ -269,6 +269,11 @@ impl Interpreter {
                         }
                     })
                     .cloned();
+                // An attribute the instance does not store may still be a
+                // view the generic body computes (`IO::Path`'s `$!os-path`).
+                if found.is_some() || class_name != "IO::Path" {
+                    return found;
+                }
             }
         }
         Self::nqp_attr_value(obj, name.name.as_str())

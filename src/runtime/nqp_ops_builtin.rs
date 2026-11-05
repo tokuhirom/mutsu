@@ -750,6 +750,15 @@ impl Interpreter {
         // A Proxy subclass instance keeps its attributes in its own cell
         // (AttrX::Mooish's `nqp::getattr($proxy, AttrProxy, '$!is-set')`).
         match obj.view() {
+            // `IO::Path`'s `$!os-path` is the absolute path rakudo caches for
+            // its stat-based methods; mutsu stores the path and cwd instead.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if bare == "os-path" && class_name.resolve() == "IO::Path" => {
+                Self::io_path_os_path(&attributes)
+            }
             ValueView::Instance { attributes, .. } => {
                 Self::nqp_attr_in_cell(&attributes, bare, name)
             }
@@ -759,6 +768,22 @@ impl Interpreter {
             } => Self::nqp_attr_in_cell(attributes, bare, name),
             _ => None,
         }
+    }
+
+    /// `IO::Path`'s `$!os-path`: its `path` made absolute against its `cwd`
+    /// (the process cwd when it has none), lexically.
+    // Cost: O(p), p = path length.
+    fn io_path_os_path(attributes: &crate::value::InstanceAttrs) -> Option<Value> {
+        let attrs = attributes.as_map();
+        let path = attrs.get("path")?.to_string_value();
+        if path.starts_with('/') {
+            return Some(Value::str(path));
+        }
+        let cwd = match attrs.get("cwd") {
+            Some(c) => std::path::PathBuf::from(c.to_string_value()),
+            None => std::env::current_dir().ok()?,
+        };
+        Some(Value::str(cwd.join(path).to_string_lossy().into_owned()))
     }
 
     /// The attribute `bare`/`name` of an instance's attribute cell.

@@ -97,6 +97,28 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Thread", "start", 1, thread_start, RowFlags::ANY_NAMED, &[]),
     row!("Thread", "yield", 0, thread_yield),
     row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic, named: &["override"]),
+    row!("Rakudo::Internals", "FILETEST-E", 1, filetest_e),
+    row!("Rakudo::Internals", "FILETEST-D", 1, filetest_d),
+    row!("Rakudo::Internals", "FILETEST-F", 1, filetest_f),
+    row!("Rakudo::Internals", "FILETEST-L", 1, filetest_l),
+    row!("Rakudo::Internals", "FILETEST-R", 1, filetest_r),
+    row!("Rakudo::Internals", "FILETEST-W", 1, filetest_w),
+    row!("Rakudo::Internals", "FILETEST-X", 1, filetest_x),
+    row!("Rakudo::Internals", "FILETEST-Z", 1, filetest_z),
+    row!("Rakudo::Internals", "FILETEST-S", 1, filetest_s),
+    row!("Rakudo::Internals", "FILETEST-ES", 1, filetest_es),
+    row!("Rakudo::Internals", "FILETEST-LE", 1, filetest_le),
+    row!("Rakudo::Internals", "FILETEST-RW", 1, filetest_rw),
+    row!("Rakudo::Internals", "FILETEST-RWX", 1, filetest_rwx),
+    row!("Rakudo::Internals", "FILETEST-MODE", 1, filetest_mode),
+    row!("Rakudo::Internals", "FILETEST-MODIFIED", 1, filetest_modified),
+    row!("Rakudo::Internals", "FILETEST-ACCESSED", 1, filetest_accessed),
+    row!("Rakudo::Internals", "FILETEST-CHANGED", 1, filetest_changed),
+    row!("Rakudo::Internals", "FILETEST-CREATED", 1, filetest_created),
+    // `Rakudo::Iterator.Empty` / `.OneValue($v)`: the iterators of no value and
+    // of one value, the list iterators of `()` and `($v,)`.
+    row!("Rakudo::Iterator", "Empty", 0, rakudo_iterator_empty),
+    row!("Rakudo::Iterator", "OneValue", 1, rakudo_iterator_one_value),
     row!("Deprecation", "report", 0, deprecation_report),
     row!("CompUnit::Loader", "load-source", 0, load_source),
     row!("CompUnit::Loader", "load-source-file", 0, load_source_file),
@@ -332,6 +354,57 @@ fn register_dynamic(
     named: Named<'_>,
 ) -> Answer {
     Some(interp.register_dynamic(&all_args(args, named)))
+}
+
+
+/// `Rakudo::Internals.FILETEST-<name>($path)`: one handler per test, all
+/// answered by [`crate::runtime::native_io::rakudo_filetest::rakudo_filetest`].
+macro_rules! filetest_handlers {
+    ($($handler:ident => $name:literal),* $(,)?) => {$(
+        // Cost: O(p) plus at most three filesystem queries, p = path length.
+        fn $handler(i: &mut Interpreter, _: &Value, args: &[Value], _: Named<'_>) -> Answer {
+            Some(i.rakudo_filetest(&args, $name))
+        }
+    )*};
+}
+
+filetest_handlers! {
+    filetest_e => "E",
+    filetest_d => "D",
+    filetest_f => "F",
+    filetest_l => "L",
+    filetest_r => "R",
+    filetest_w => "W",
+    filetest_x => "X",
+    filetest_z => "Z",
+    filetest_s => "S",
+    filetest_es => "ES",
+    filetest_le => "LE",
+    filetest_rw => "RW",
+    filetest_rwx => "RWX",
+    filetest_mode => "MODE",
+    filetest_modified => "MODIFIED",
+    filetest_accessed => "ACCESSED",
+    filetest_changed => "CHANGED",
+    filetest_created => "CREATED",
+}
+
+/// `Rakudo::Iterator.Empty`: an iterator that is exhausted at once.
+// Cost: O(1).
+fn rakudo_iterator_empty(i: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(i.call_method_with_values(Value::array(Vec::new()), "iterator", Vec::new()))
+}
+
+/// `Rakudo::Iterator.OneValue($v)`: an iterator that yields `$v` once.
+// Cost: O(1).
+fn rakudo_iterator_one_value(
+    i: &mut Interpreter,
+    _: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Answer {
+    let value = args.first().cloned().unwrap_or(Value::NIL);
+    Some(i.call_method_with_values(Value::array(vec![value]), "iterator", Vec::new()))
 }
 
 /// `Deprecation.report`.

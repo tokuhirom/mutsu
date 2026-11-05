@@ -49,6 +49,14 @@ impl Interpreter {
     
     }
 
+    /// `Rakudo::Internals.FILETEST-<name>($path)`, the path resolved against
+    /// the cwd like any other relative path.
+    // Cost: O(p) plus at most three filesystem queries, p = path length.
+    pub(crate) fn rakudo_filetest(&self, args: &[Value], name: &str) -> Result<Value, RuntimeError> {
+        let path = args.first().map(Value::to_string_value).unwrap_or_default();
+        super::native_io::rakudo_filetest::rakudo_filetest(name, &self.resolve_path(&path))
+    }
+
     /// `Deprecation.report`: the deprecations seen so far, `Nil` when none.
     // Cost: O(r), r = chars of the report.
     pub(crate) fn deprecation_report() -> Value {
