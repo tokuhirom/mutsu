@@ -77,7 +77,10 @@ pub(crate) fn set_why(node: &mut RakuAstNode, doc: &Value) -> Result<Value, Runt
 /// Split the `WHY` argument off a `new` call of a class that declares it, so
 /// the class's own constructor never sees it.
 // Cost: O(a), a = arguments.
-pub(super) fn split_arg(class_name: &str, args: &[Value]) -> Result<(Vec<Value>, Option<Value>), RuntimeError> {
+pub(super) fn split_arg(
+    class_name: &str,
+    args: &[Value],
+) -> Result<(Vec<Value>, Option<Value>), RuntimeError> {
     if !super::ctor_names::declares(class_name, FIELD) {
         return Ok((args.to_vec(), None));
     }
@@ -86,7 +89,9 @@ pub(super) fn split_arg(class_name: &str, args: &[Value]) -> Result<(Vec<Value>,
     for arg in args {
         let named_why = match arg.view() {
             ValueView::Pair(key, value) if &*key == FIELD => Some(value.clone()),
-            ValueView::ValuePair(key, value) if key.to_string_value() == FIELD => Some(value.clone()),
+            ValueView::ValuePair(key, value) if key.to_string_value() == FIELD => {
+                Some(value.clone())
+            }
             _ => None,
         };
         match named_why {

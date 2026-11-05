@@ -114,7 +114,11 @@ fn lines_of(node: &RakuAstNode, label: &str, key: &str) -> Vec<String> {
 }
 
 fn label_name(label: &str) -> &'static str {
-    if label == "leading" { "leading" } else { "trailing" }
+    if label == "leading" {
+        "leading"
+    } else {
+        "trailing"
+    }
 }
 
 /// The `.declarator-docs(...)` call printed after a node rendered at `indent`.
