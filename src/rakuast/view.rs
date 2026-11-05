@@ -429,6 +429,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             condition,
             end_index,
             bare,
+            from_trait: _,
         } => {
             if let Some(condition) = condition {
                 let mut statement =

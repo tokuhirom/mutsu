@@ -1372,6 +1372,7 @@ fn lower_phaser(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeEr
         // parser's tree keeps its number (see `origin`).
         end_index: super::origin::end_index_of(node),
         bare,
+        from_trait: false,
     })
 }
 

@@ -502,6 +502,7 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         condition,
         end_index,
         bare,
+        from_trait: false,
     };
     Ok((rest, phaser))
 }
