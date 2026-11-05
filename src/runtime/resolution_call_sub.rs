@@ -34,6 +34,51 @@ impl Interpreter {
         )
     }
 
+    /// Lift the exit phasers (`LEAVE`/`KEEP`/`UNDO`) of a variable's `will`
+    /// traits out of their scopeless `SyntheticBlock` so
+    /// [`Self::split_block_phasers`] runs them with the unit's other exit
+    /// phasers. They go to the FRONT of the list, in source order: the split
+    /// queues phasers from the back, so the front ones run last and the
+    /// traits run after every `LEAVE { }` block, each group last declared
+    /// first (measured against rakudo 2026.09, which runs all the blocks
+    /// first, then the variables' traits). The declaration itself stays where
+    /// it was. A list with no such block comes back unchanged.
+    // Cost: O(n), n = top-level statements plus those of each such block.
+    pub(super) fn lift_will_exit_phasers(stmts: Vec<Stmt>) -> Vec<Stmt> {
+        let is_exit = |stmt: &Stmt| {
+            matches!(
+                stmt,
+                Stmt::Phaser {
+                    kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                    ..
+                }
+            )
+        };
+        let holds_exit = |stmt: &Stmt| {
+            matches!(stmt, Stmt::SyntheticBlock(inner)
+                if inner.iter().any(|s| matches!(s, Stmt::VarDecl { .. })) && inner.iter().any(is_exit))
+        };
+        if !stmts.iter().any(holds_exit) {
+            return stmts;
+        }
+        let mut lifted = Vec::new();
+        let mut out = Vec::with_capacity(stmts.len());
+        for stmt in stmts {
+            if holds_exit(&stmt) {
+                let Stmt::SyntheticBlock(inner) = stmt else {
+                    unreachable!("holds_exit matched a SyntheticBlock");
+                };
+                let (exits, rest): (Vec<Stmt>, Vec<Stmt>) = inner.into_iter().partition(is_exit);
+                lifted.extend(exits);
+                out.push(Stmt::SyntheticBlock(rest));
+            } else {
+                out.push(stmt);
+            }
+        }
+        lifted.extend(out);
+        lifted
+    }
+
     /// Whether [`Self::split_block_phasers`] would split anything off `stmts`.
     // Cost: O(n), n = top-level statements.
     pub(super) fn block_has_split_phasers(stmts: &[Stmt]) -> bool {
