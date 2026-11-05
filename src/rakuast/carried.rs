@@ -114,6 +114,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // `x[i] = v` and `x[i] := v`: read back as the parser built them; the bound
         // value's marker (`IndexBindValue`) is the compiler's own.
         Expr::IndexAssign { .. } | Expr::IndexBindValue(_) => true,
+        // `@a >>[&f]<< @b`: the function is the lexical `&f` the conversion names.
+        Expr::HyperFuncOp { func_name, .. } => plain_code_name(func_name),
         Expr::Whatever => true,
         // The `*` of a priming scope (`* + 1`): `WhateverCode::Argument` reads back as it.
         Expr::WhateverArg => true,
