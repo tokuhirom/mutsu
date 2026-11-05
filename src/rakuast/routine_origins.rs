@@ -221,8 +221,28 @@ pub(super) fn for_pointy_block(
     Ok(block)
 }
 
+/// The ranges the parser recorded for the parameters of an anonymous routine
+/// (`sub (...) { }`, `method (...) { }`, #16643). A method literal's first
+/// definition is its receiver, which is not written.
 // Cost: O(p), p = parameters.
-pub(super) fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
+pub(super) fn place_anon_signature(
+    node: &mut RakuAstNode,
+    declarator: crate::ast::RoutineDeclarator,
+    params: &[ParamDef],
+) {
+    let written = if matches!(
+        declarator,
+        crate::ast::RoutineDeclarator::Method | crate::ast::RoutineDeclarator::Submethod
+    ) {
+        params.get(1..).unwrap_or_default()
+    } else {
+        params
+    };
+    place_signature(node, written);
+}
+
+// Cost: O(p), p = parameters.
+fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
     let (Some(first), Some(last)) = (params.first(), params.last()) else {
         return;
     };

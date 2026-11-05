@@ -4018,9 +4018,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 }
                 // `sub ($x) { }` / `method ($x) { }` — an anonymous *routine*,
                 // not a block. raku renders it as a nameless `RakuAST::Sub`
-                // whose parameters carry the implicit
-                // `type => Type::Setting(Any)` that every sub/method signature
-                // has, where a pointy block's do not.
+                // whose parameters carry the implicit `type => Type::Setting(Any)`
+                // that every sub/method signature has, where a pointy block's do not.
                 let mut node = match method_literal_class(*declarator) {
                     Some(class) => {
                         method_literal_node(names, class, param_defs, body, return_type.as_deref())?
@@ -4028,13 +4027,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     None => anon_routine_node(names, param_defs, body, return_type.as_deref())?,
                 };
                 super::declarator_docs::attach(&mut node, custom_traits.doc());
-                // The ranges the parser recorded for the parameters (#16643).
-                // (a method literal's first definition is its receiver)
-                let written = match method_literal_class(*declarator) {
-                    Some(_) => param_defs.get(1..).unwrap_or_default(),
-                    None => param_defs,
-                };
-                super::routine_origins::place_signature(&mut node, written);
+                super::routine_origins::place_anon_signature(&mut node, *declarator, param_defs);
                 if super::routine_source::apply(names, &mut node, body)? {
                     return Ok(node);
                 }
