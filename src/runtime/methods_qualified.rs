@@ -1177,6 +1177,26 @@ impl Interpreter {
                     &inst_cn_str,
                 )));
             }
+            // `self.R::output` where `output` is the public attribute accessor
+            // of the qualifier class `R` (`has $.output`): the mixin's
+            // overriding method is the one being asked to step aside, so the
+            // read goes to the inner instance's attribute -- falling through
+            // re-entered the mixin's own `output` (the same read the plain
+            // instance path does).
+            if args.is_empty()
+                && in_mro
+                && let ValueView::Instance { attributes, .. } = inner.as_ref().view()
+                && self
+                    .collect_class_attributes(qualifier)
+                    .iter()
+                    .any(|attr| attr.is_public && attr.name == actual_method)
+            {
+                return Some(Ok(attributes
+                    .as_map()
+                    .get(actual_method)
+                    .cloned()
+                    .unwrap_or(Value::NIL)));
+            }
             let qualifier_has_user_new = {
                 let registry = self.registry();
                 registry.declares_user_new(qualifier)
