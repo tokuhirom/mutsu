@@ -32,9 +32,9 @@ mod walk_stmt;
 pub(crate) use walk_source::{walk_routine_traits, walk_signature_decl, walk_signature_var};
 
 pub(crate) use legacy_args::{legacy_arg_reads, legacy_arg_uses, legacy_arg_writes};
-pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
+pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut, walk_regex_tree_mut};
 use visit_mut::{exprs_mut, params_mut, traits_mut};
-use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};
+use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut};
 pub(crate) use walk_expr::walk_expr;
 pub(crate) use walk_mut_expr::walk_expr_mut;
 pub(crate) use walk_mut_stmt::{walk_stmt_mut, walk_stmts_mut};

@@ -436,6 +436,16 @@ impl VisitMut for Finalize<'_> {
                 _ => unreachable!("checked above"),
             };
         }
+        // The regex of a `token`/`rule`/`regex` term keeps its own copy of the code inside it;
+        // that copy is finalized like the code of a regex literal.
+        if let Expr::Literal(value) = expr
+            && let Some(tree) = value.regex_source_tree()
+            && carried::has_code(tree)
+        {
+            let mut tree = tree.clone();
+            crate::ast_visit::walk_regex_tree_mut(self, &mut tree);
+            *value = value.with_regex_source_tree(tree);
+        }
         crate::ast_visit::walk_expr_mut(self, expr);
     }
 
@@ -698,6 +708,7 @@ mod tests {
             "my @a = 1, 2; @a[0] = 5; my %h; %h<a> = 1; %h{'b'} = 2; @a[1] += 3; say @a.raku; say %h.sort.raku; my @m; @m[0][1] = 7; say @m.raku; %h<x><y> = 4; say %h<x>.raku;",
             "my @a = 1, 2; @a[1] = @a[0] = 8; say @a.raku; my %h; %h<k>{'z'} = 1; say %h.raku; @a[2, 3] = 5, 6; say @a.raku;",
             "my $t = token { <[+-]> \\d+ }; say 'x-5' ~~ /x <$t>/; my $r = rule { a b }; say 'a b' ~~ $r; my $q = regex { x+ }; say so 'xx' ~~ $q;",
+            "my @s; 'ab' ~~ / a { @s.push(1) } b /; say @s.raku; my $t = token { \\d+ { @s.push(2) } }; say so '12' ~~ /<$t>/; say @s.raku; my $n = 0; 'aaa' ~~ / [a { $n++ }]+ /; say $n; say so 'ab' ~~ /a <?{ $n > 1 }> b/;",
             "my uint8 $a = 1; my int32 $b = 2; say $a + $b; say uint16.^name; say int64 ~~ Int;",
             "my $s = 'abc'; $s ~~ s/b/X/; say $s;",
             "my $s = 'aaa'; $s ~~ s:g/a/b$s/; say $s;",

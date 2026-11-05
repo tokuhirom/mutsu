@@ -97,7 +97,7 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             // no code, whose copy would keep the spelled parse's annotations.
             ValueView::Regex(_) => v
                 .regex_source_tree()
-                .is_some_and(|tree| tree.declaration_kind.is_some() && !has_code(tree)),
+                .is_some_and(|tree| tree.declaration_kind.is_some()),
             ValueView::RegexWithAdverbs(_)
             | ValueView::Sub(_)
             | ValueView::WeakSub(_)
@@ -167,7 +167,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         } => {
             replacement_thunk.is_some() || super::substitution::is_plain_qq_source(replacement)
         }
-        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
+        // The code of a regex is finalized where it stands: the walk reaches `tree`, and the
+        // compiler puts it on the value.
+        Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => true,
         Expr::StringInterpolation(_)
         | Expr::Call { .. }
         | Expr::UserRoutineCall { .. }
@@ -318,7 +320,7 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
 /// regex `Value` keeps its own copy of that code, which still carries the
 /// spelled parse's annotations.
 // Cost: O(n), n = nodes of the regex.
-fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
+pub(super) fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     struct Code(bool);
     impl<'ast> Visit<'ast> for Code {
         fn visit_stmt(&mut self, _stmt: &'ast Stmt) {
