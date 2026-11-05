@@ -25,43 +25,31 @@ apply_query!(operator, operator);
 apply_query!(operands, operands);
 apply_query!(return_type, return_type);
 
-/// The three rows of one owner.
-macro_rules! rows_of {
-    ($($owner:literal),* $(,)?) => {
-        pub(super) static ROWS: &[MethodRow] = &[
-            $(
-                MethodRow {
-                    owner: $owner,
-                    name: "operator",
-                    arity: 0,
-                    handler: Handler::Pure(operator),
-                    flags: RowFlags::OWNER_ONLY,
-                    named: &[],
-                },
-                MethodRow {
-                    owner: $owner,
-                    name: "operands",
-                    arity: 0,
-                    handler: Handler::Pure(operands),
-                    flags: RowFlags::OWNER_ONLY,
-                    named: &[],
-                },
-                MethodRow {
-                    owner: $owner,
-                    name: "return-type",
-                    arity: 0,
-                    handler: Handler::Pure(return_type),
-                    flags: RowFlags::OWNER_ONLY,
-                    named: &[],
-                },
-            )*
-        ];
+/// One row.
+macro_rules! row {
+    ($owner:literal, $name:literal, $handler:ident) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 0,
+            handler: Handler::Pure($handler),
+            flags: RowFlags::OWNER_ONLY,
+            named: &[],
+        }
     };
 }
 
-rows_of!(
-    "RakuAST::ApplyInfix",
-    "RakuAST::ApplyPrefix",
-    "RakuAST::ApplyPostfix",
-    "RakuAST::ApplyListInfix",
-);
+// Only what rakudo declares on each owner: `return-type` on the infix and
+// prefix applications (the postfix and list ones inherit it), and `operands`
+// on a list infix is the accessor its `operands` field already has.
+pub(super) static ROWS: &[MethodRow] = &[
+    row!("RakuAST::ApplyInfix", "operator", operator),
+    row!("RakuAST::ApplyInfix", "operands", operands),
+    row!("RakuAST::ApplyInfix", "return-type", return_type),
+    row!("RakuAST::ApplyPrefix", "operator", operator),
+    row!("RakuAST::ApplyPrefix", "operands", operands),
+    row!("RakuAST::ApplyPrefix", "return-type", return_type),
+    row!("RakuAST::ApplyPostfix", "operator", operator),
+    row!("RakuAST::ApplyPostfix", "operands", operands),
+    row!("RakuAST::ApplyListInfix", "operator", operator),
+];

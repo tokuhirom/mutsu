@@ -26,7 +26,7 @@ is names(@e[4].operands), 'Var::Lexical', 'its operand is the invocant';
 is names(@e[5].operands), 'Var::Lexical', 'a negation operand';
 is @e[6].^name, 'RakuAST::ApplyListInfix', 'a list infix';
 is names(@e[6].operands), 'Circumfix::Parentheses/Circumfix::Parentheses', 'list infix operands';
-is @e[6].return-type.^name, 'Mu', 'list infix return-type';
+is @e[6].return-type.^name, 'Mu', 'list infix return-type (inherited)';
 
 # Hand-built.
 my $n = RakuAST::ApplyInfix.new(
