@@ -172,6 +172,7 @@ impl Interpreter {
         // An `import` is pre-run only for a module an earlier pre-run `use`
         // loaded: one the unit declares itself does not exist yet.
         let mut loaded: HashSet<&str> = HashSet::new();
+        let mut after_use_lib = false;
         let mut plan: Vec<Prerun> = Vec::with_capacity(stmts.len());
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
@@ -186,7 +187,15 @@ impl Interpreter {
                 Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
                 // Adds its path now so the loads after it resolve; the unit's
                 // own run finds the path at the front and adds nothing.
-                _ if is_literal_use_lib(stmt) => Prerun::Keep,
+                // The search path is in place before the `use` statements after
+                // it are probed for a `sub EXPORT` hook; the unit's own run then
+                // finds the path already at the front.
+                Stmt::Use { arg: Some(arg), .. } if is_literal_use_lib(stmt) => {
+                    let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
+                    self.add_lib_paths(&value)?;
+                    after_use_lib = true;
+                    Prerun::Keep
+                }
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
@@ -196,8 +205,12 @@ impl Interpreter {
                             Prerun::Drop
                         }
                     }
-                    // Its arguments would be evaluated twice.
-                    Some(module) if arg.is_none() => {
+                    // Its arguments would be evaluated twice. After a `use lib`
+                    // only a hook module runs ahead (above): a plain module's
+                    // names are known without running it, and loading it
+                    // before the unit registers its own declarations lets the
+                    // module's `trait_mod` candidates outrank the unit's.
+                    Some(module) if arg.is_none() && !after_use_lib => {
                         loaded.insert(module);
                         Prerun::Keep
                     }
@@ -227,10 +240,8 @@ impl Interpreter {
                     self.import_module(module, tags)
                         .map_err(|err| self.in_place_use_error(module, err))?;
                 }
-                (Stmt::Use { module, arg: Some(arg), .. }, _) if module == "lib" => {
-                    let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
-                    self.add_lib_paths(&value)?;
-                }
+                // A literal `use lib` was applied while planning.
+                (Stmt::Use { module, .. }, _) if module == "lib" => {}
                 (Stmt::Use { module, arg, tags, .. }, _) => {
                     preran.insert(module.clone());
                     // The `use` arguments are what the module's `sub EXPORT`
