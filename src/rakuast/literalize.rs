@@ -9,6 +9,7 @@
 
 use super::lower::rakuast_node_of;
 use super::{RakuAstClass as C, RakuAstFieldValue, RakuAstNode};
+use crate::value::Value;
 use crate::value::ValueView;
 
 /// The deepest nesting [`is_constant`] follows before it answers no.
@@ -38,6 +39,104 @@ pub(crate) fn is_constant(node: &RakuAstNode) -> bool {
 // Cost: O(1).
 pub(crate) fn is_hash_composer(node: &RakuAstNode) -> bool {
     node.class == C::CircumfixHashComposer
+}
+
+/// How a constant node is a list of values to literalize one by one.
+pub(crate) enum ListShape {
+    /// A comma list, or an empty `[]`: the operands (none for `[]`).
+    Items(Vec<Value>),
+    /// `[ EXPR ]`: the literal of the one expression inside.
+    Single(Value),
+    /// Anything else.
+    Other,
+}
+
+// Cost: O(f), f = fields of the node.
+fn node_children(node: &RakuAstNode) -> Vec<Value> {
+    node.fields
+        .iter()
+        .flat_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v) if matches!(v.view(), ValueView::RakuAst(_)) => {
+                vec![v.clone()]
+            }
+            RakuAstFieldValue::List(items) => items.clone(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+fn class_of(value: &Value) -> Option<C> {
+    match value.view() {
+        ValueView::RakuAst(n) => Some(n.class),
+        _ => None,
+    }
+}
+
+/// The list shape of `node`: an `ArrayComposer` over one statement is that
+/// statement's expression, over none an empty list; an `ApplyListInfix` of
+/// `,` and a `Parentheses` around one are their operands.
+// Cost: O(f), f = fields on the way down to the expression.
+pub(crate) fn list_shape(node: &RakuAstNode) -> ListShape {
+    let statements_of = |value: &Value| -> Vec<Value> {
+        match value.view() {
+            ValueView::RakuAst(semi) if semi.class == C::SemiList => node_children(semi),
+            _ => Vec::new(),
+        }
+    };
+    let expression_of = |statement: &Value| -> Option<Value> {
+        let ValueView::RakuAst(st) = statement.view() else {
+            return None;
+        };
+        (st.class == C::StatementExpression)
+            .then(|| node_children(st).into_iter().next())
+            .flatten()
+    };
+    match node.class {
+        C::CircumfixArrayComposer | C::CircumfixParentheses => {
+            let Some(semi) = node_children(node).into_iter().next() else {
+                return ListShape::Other;
+            };
+            let statements = statements_of(&semi);
+            match statements.as_slice() {
+                [] if node.class == C::CircumfixArrayComposer => ListShape::Items(Vec::new()),
+                [one] => match expression_of(one) {
+                    Some(expr) if node.class == C::CircumfixArrayComposer => {
+                        ListShape::Single(expr)
+                    }
+                    // `(a, b)` is its comma list; `(a)` is just `a`.
+                    Some(expr) if class_of(&expr) == Some(C::ApplyListInfix) => {
+                        ListShape::Single(expr)
+                    }
+                    _ => ListShape::Other,
+                },
+                _ => ListShape::Other,
+            }
+        }
+        C::ApplyListInfix => {
+            let is_comma = node.fields.iter().any(|f| {
+                f.name == Some("infix")
+                    && matches!(&f.value, RakuAstFieldValue::Node(v)
+                        if matches!(v.view(), ValueView::RakuAst(i)
+                            if i.fields.iter().any(|g| matches!(&g.value,
+                                RakuAstFieldValue::Node(s) if s.as_str() == Some(",")))))
+            });
+            if !is_comma {
+                return ListShape::Other;
+            }
+            let operands = node
+                .fields
+                .iter()
+                .find_map(|f| match &f.value {
+                    RakuAstFieldValue::List(items) if f.name == Some("operands") => {
+                        Some(items.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
+            ListShape::Items(operands)
+        }
+        _ => ListShape::Other,
+    }
 }
 
 fn constant(node: &RakuAstNode, depth: usize) -> bool {

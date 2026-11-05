@@ -38,6 +38,14 @@ impl Interpreter {
         if self.stack.len() < 2 {
             return Ok(());
         }
+        // No candidate can apply without a routine of that name in scope:
+        // skip the probing (and its argument clones) for every plain store.
+        if !self.user_subscript_candidate_possible(
+            crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional),
+            is_positional,
+        ) {
+            return Ok(());
+        }
         let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
@@ -86,6 +94,52 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Whether any user `postcircumfix` routine named `op_name` could answer a
+    /// subscript store: a candidate set a block's `use` imported, a family a
+    /// `sub EXPORT` hook handed the unit, or a routine of that name in the
+    /// function table (the three places [`Self::call_user_postcircumfix`]
+    /// looks). `false` proves that call would find nothing.
+    // Cost: O(1) with no operator scope open and an unchanged function table;
+    // O(f) once per function-table version, f = registered routines.
+    fn user_subscript_candidate_possible(&self, op_name: &str, is_positional: bool) -> bool {
+        if self.lexical_operator_in_scope(op_name) {
+            return true;
+        }
+        // The two operator symbols are interned once: a store pays no string
+        // hash for the family probe.
+        static OP_SYMS: std::sync::OnceLock<[Symbol; 2]> = std::sync::OnceLock::new();
+        let syms = OP_SYMS.get_or_init(|| {
+            [
+                Symbol::intern(crate::lexical_builtin_op::postcircumfix_of_subscript(false)),
+                Symbol::intern(crate::lexical_builtin_op::postcircumfix_of_subscript(true)),
+            ]
+        });
+        let op_sym = syms[usize::from(is_positional)];
+        debug_assert_eq!(op_sym.as_str(), op_name);
+        if self.unit_visible_captured_family(op_sym).is_some() {
+            return true;
+        }
+        let version = self.registry().functions.version();
+        let (known_bit, answer_bit) = if is_positional {
+            (1u8, 2u8)
+        } else {
+            (4u8, 8u8)
+        };
+        let (cached_version, bits) = self.caches.user_subscript_routine_gate.get();
+        if cached_version == version && bits & known_bit != 0 {
+            return bits & answer_bit != 0;
+        }
+        let present = self
+            .registry()
+            .functions
+            .keys()
+            .any(|key| key.as_str().contains(op_name));
+        let mut bits = if cached_version == version { bits } else { 0 };
+        bits |= known_bit | if present { answer_bit } else { 0 };
+        self.caches.user_subscript_routine_gate.set((version, bits));
+        present
     }
 
     /// The key a "no candidate delegated" answer is remembered under, with the

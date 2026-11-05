@@ -109,6 +109,7 @@ RakuAST::Contextualizer::Item	sigil	RakuAST::Contextualizer::Item
 RakuAST::Contextualizer::Item	target	RakuAST::Contextualizer
 RakuAST::Contextualizer::List	sigil	RakuAST::Contextualizer::List
 RakuAST::Contextualizer::List	target	RakuAST::Contextualizer
+RakuAST::Doc::Block	Str	RakuAST::Doc::Block
 RakuAST::Doc::Block	abbreviated	RakuAST::Doc::Block
 RakuAST::Doc::Block	config	RakuAST::Doc::Block
 RakuAST::Doc::Block	delimited	RakuAST::Doc::Block
@@ -121,14 +122,17 @@ RakuAST::Doc::Block	type	RakuAST::Doc::Block
 RakuAST::Doc::Declarator	WHEREFORE	RakuAST::Doc::Declarator
 RakuAST::Doc::Declarator	leading	RakuAST::Doc::Declarator
 RakuAST::Doc::Declarator	trailing	RakuAST::Doc::Declarator
+RakuAST::Doc::LegacyRow	Str	RakuAST::Doc::LegacyRow
 RakuAST::Doc::LegacyRow	cells	RakuAST::Doc::LegacyRow
 RakuAST::Doc::LegacyRow	column-dividers	RakuAST::Doc::LegacyRow
 RakuAST::Doc::LegacyRow	column-offsets	RakuAST::Doc::LegacyRow
+RakuAST::Doc::Markup	Str	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	atoms	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	closer	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	letter	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	meta	RakuAST::Doc::Markup
 RakuAST::Doc::Markup	opener	RakuAST::Doc::Markup
+RakuAST::Doc::Paragraph	Str	RakuAST::Doc::Paragraph
 RakuAST::Doc::Paragraph	atoms	RakuAST::Doc::Paragraph
 RakuAST::FakeSignature	signature	RakuAST::FakeSignature
 RakuAST::FatArrow	key	RakuAST::FatArrow
@@ -697,6 +701,7 @@ RakuAST::Var::Attribute::Public	name	RakuAST::Var::Attribute::Public
 RakuAST::Var::Compiler::File	file	RakuAST::Var::Compiler::File
 RakuAST::Var::Compiler::Line	line	RakuAST::Var::Compiler::Line
 RakuAST::Var::Compiler::Lookup	name	RakuAST::Var::Compiler::Lookup
+RakuAST::Var::Doc	name	RakuAST::Var::Doc
 RakuAST::Var::Dynamic	is-resolved	RakuAST::Var::Dynamic
 RakuAST::Var::Dynamic	name	RakuAST::Var::Dynamic
 RakuAST::Var::Dynamic	resolution	RakuAST::Var::Dynamic

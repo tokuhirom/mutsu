@@ -185,10 +185,28 @@ impl Interpreter {
             // (the block-exit restore only puts the metadata back). Seed only a
             // name nothing has bound — the shape the hoist exists for.
             let current = self.env().get_sym(name_sym);
+            // A declaration with an `is default` trait deferred this op past its
+            // initializer and the trait: the variable's value then lives in the
+            // slot the trait op names (an env-free slot has no env entry), and
+            // a non-Nil value there is the initializer or the default -- not a
+            // variable still waiting for its type-object seed.
+            let trait_slot_holds_value = !hoisted
+                && (*ip)
+                    .checked_sub(1)
+                    .and_then(|previous| match code.ops.get(previous) {
+                        Some(OpCode::ApplyVarTrait {
+                            name_idx: preceding_name,
+                            slot: Some(slot),
+                            ..
+                        }) if *preceding_name == name_idx => self.locals.get(*slot as usize),
+                        _ => None,
+                    })
+                    .is_some_and(|v| !matches!(v.deref_container().view(), ValueView::Nil));
             let is_nil = if hoisted {
                 current.is_none()
             } else {
-                matches!(current.map(Value::view), Some(ValueView::Nil) | None)
+                !trait_slot_holds_value
+                    && matches!(current.map(Value::view), Some(ValueView::Nil) | None)
                     // A declaration compiled in expression position stores its
                     // initializer first and registers the type after
                     // (`f(my Int $u = 5)`, bytecode `SetLocalDecl; GetLocal;

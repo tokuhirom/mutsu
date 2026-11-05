@@ -551,6 +551,12 @@ pub(crate) struct ResolutionCaches {
     /// addresses in the key alive.
     pub(crate) subscript_no_delegation:
         rustc_hash::FxHashMap<crate::vm::SubscriptCaptureKey, Vec<crate::value::Value>>,
+    /// Whether the function table holds a user `postcircumfix:<[ ]>` /
+    /// `<{ }>` routine, valid for the table version it was computed from:
+    /// `(version, bit0 positional known, bit1 positional answer, bit2
+    /// associative known, bit3 associative answer)`. Version 0 is "never
+    /// computed" (table versions start at 1).
+    pub(crate) user_subscript_routine_gate: std::cell::Cell<(u64, u8)>,
     /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
     /// probe every typed store makes (`var_type_constraint_value_sym`). The
     /// mapping is a pure function of the name, so caching it is sound

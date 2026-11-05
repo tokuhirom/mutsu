@@ -67,6 +67,7 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::Var::Compiler::File", "new") => RakuAstClass::VarCompilerFile,
         ("RakuAST::Var::Compiler::Line", "new") => RakuAstClass::VarCompilerLine,
         ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
+        ("RakuAST::Var::Doc", "new") => RakuAstClass::VarDoc,
         ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
         ("RakuAST::Circumfix::ArrayComposer", "new") => RakuAstClass::CircumfixArrayComposer,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {

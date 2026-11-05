@@ -10,6 +10,7 @@ mod adverb_origins;
 mod model_methods;
 mod positional_fields;
 pub use accessors::node_accessor;
+pub(crate) use doc_source::pod_source;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
@@ -54,6 +55,7 @@ mod package_trait_origins;
 mod parsed_view;
 mod pod_blocks;
 mod pod_entities;
+mod pod_nested;
 mod pod_table;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
@@ -87,11 +89,14 @@ mod declarator_docs;
 pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
     declarator_docs::docs_of(node)
 }
+pub(crate) mod arg_list_queries;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 mod doc_phaser;
+mod doc_source;
+mod doc_str;
 mod dynamic_method;
 mod enum_term;
 mod expr_block_origins;
@@ -105,6 +110,7 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
+pub(crate) mod name_queries;
 pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
 mod call_term_origins;
@@ -380,6 +386,7 @@ pub enum RakuAstClass {
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
     VarDynamic,
+    VarDoc,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -770,6 +777,7 @@ impl RakuAstClass {
             VarCompilerDistribution => "RakuAST::Var::Compiler::Distribution",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
+            VarDoc => "RakuAST::Var::Doc",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -1311,6 +1319,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarCompilerDistribution,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
+    RakuAstClass::VarDoc,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,

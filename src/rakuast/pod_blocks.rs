@@ -178,7 +178,9 @@ fn parse_atoms(
         }
         if ch.is_ascii_uppercase() {
             let after = &rest[1..];
-            let opener = ["<<", "<", "«"].into_iter().find(|o| after.starts_with(o));
+            let opener = ["<<<", "<<", "<", "«"]
+                .into_iter()
+                .find(|o| after.starts_with(o));
             if let Some(opener) = opener {
                 // `E<...>` is an entity, and a letter after a word character
                 // is not told apart from its text here.
@@ -186,12 +188,38 @@ fn parse_atoms(
                     return None;
                 }
                 let closer = match opener {
+                    "<<<" => ">>>",
                     "<<" => ">>",
                     "<" => ">",
                     _ => "»",
                 };
                 if !buf.is_empty() {
                     atoms.push(Atom::Text(std::mem::take(&mut buf)));
+                }
+                if opener == "<<<" {
+                    // A triple-delimited code holds its content as one raw
+                    // string: no nested codes and no metadata are read in it.
+                    let body = &after[3..];
+                    let end = body.find(">>>")?;
+                    let content = &body[..end];
+                    if body.starts_with('<')
+                        || content.is_empty()
+                        || ch == 'E'
+                        || content.contains(['|', '«', '»'])
+                    {
+                        return None;
+                    }
+                    atoms.push(Atom::Markup(Markup {
+                        letter: ch,
+                        opener: "<<<",
+                        closer: ">>>",
+                        atoms: vec![Atom::Text(content.to_string())],
+                        meta: None,
+                        entities: None,
+                    }));
+                    at += 1 + 3 + end + 3;
+                    previous = Some('>');
+                    continue;
                 }
                 if ch == 'E' {
                     let body = &after[opener.len()..];
@@ -443,11 +471,11 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             if name == "table" && rest.trim().is_empty() {
                 return table_block(lines, i, Form::Abbreviated, Vec::new(), from);
             }
+            if name == "formula" && (rest.is_empty() || rest.starts_with([' ', '\t'])) {
+                return formula_block(lines, i, rest, from);
+            }
             let (base, level) = split_level(name);
-            // An abbreviated `=formula` keeps only its first line, without
-            // formatting codes (not read here).
             if SPECIAL.contains(&base.as_str())
-                || base == "formula"
                 || !rest.is_empty() && !rest.starts_with([' ', '\t'])
             {
                 return None;
@@ -566,6 +594,47 @@ fn row_node(row: &super::pod_table::Row) -> RakuAstNode {
         class: RakuAstClass::DocLegacyRow,
         fields,
     }
+}
+
+/// The abbreviated `=formula` block at line `i`: one line only, the rest of
+/// its own line or else the next non-blank one, with each run of blanks one
+/// space (a trailing run too); the lines after it are code.
+// Cost: O(b), b = blank lines skipped plus the length of the line.
+fn formula_block(lines: &Lines, i: usize, rest: &str, from: usize) -> Option<(Block, usize)> {
+    let mut at = i;
+    let mut text = rest;
+    if text.trim().is_empty() {
+        at = (i + 1..lines.text.len())
+            .find(|&j| !lines.blank(j))
+            .unwrap_or(i);
+        if at != i {
+            text = lines.text[at];
+        }
+    }
+    if text.trim_start().starts_with(':') || text.contains('\t') {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if !text.trim().is_empty() {
+        let mut collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.ends_with(char::is_whitespace) {
+            collapsed.push(' ');
+        }
+        parts.push(Part::Text(collapsed));
+    }
+    Some((
+        Block {
+            kind: "formula".to_string(),
+            level: None,
+            form: Form::Abbreviated,
+            margin: None,
+            config: Vec::new(),
+            parts,
+            from,
+            to: lines.end(at),
+        },
+        at + 1,
+    ))
 }
 
 /// The `:name`, `:!name`, `:name(...)` and `:name<...>` pairs written after a
@@ -929,12 +998,28 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
             .any(|s| (s.from as usize) <= at && at < s.to as usize)
     };
     let mut found: Vec<(usize, RakuAstNode)> = Vec::new();
+    let mut nested: Vec<(usize, usize, RakuAstNode)> = Vec::new();
     let mut last_to = 0usize;
     let mut i = 0;
     while i < lines.text.len() {
         let at = lines.start[i] + lines.indent(i);
-        if lines.directive(i).is_none() || inside(at) {
+        if lines.directive(i).is_none() {
             i += 1;
+            continue;
+        }
+        if inside(at) {
+            // Pod at column 0 inside a block of a statement belongs to that
+            // block's statement list; an indented one has a margin rakudo
+            // computes by a rule not read here.
+            if lines.indent(i) == 0
+                && let Some((block, next)) = block(&lines, i)
+            {
+                let end = lines.start.get(next).copied().unwrap_or(source.len());
+                nested.push((at, end, block.node()));
+                i = next.max(i + 1);
+            } else {
+                i += 1;
+            }
             continue;
         }
         match block(&lines, i) {
@@ -955,6 +1040,7 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
         }
     }
     if found.is_empty() {
+        super::pod_nested::place_nested(list, nested, source);
         return;
     }
     // Each statement's offset; a statement without one leaves the list alone.
@@ -1005,4 +1091,5 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
         });
     }
     list.fields = fields;
+    super::pod_nested::place_nested(list, nested, source);
 }

@@ -30,6 +30,30 @@ pub(crate) fn directives_count_message(fmt: &str, args_used: usize, args_have: u
     )
 }
 
+/// Greedy word wrap at `width` columns, breaking only at single spaces, the
+/// way rakudo wraps the `X::Str::Sprintf::Directives::Unsupported` message.
+/// A word longer than `width` stays whole on its own line.
+// Cost: O(n), n = chars of `text`.
+fn wrap_words(text: &str, width: usize) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    let mut line_len = 0usize;
+    for (i, word) in text.split(' ').enumerate() {
+        let w = word.chars().count();
+        if i > 0 {
+            if line_len + 1 + w > width {
+                out.push('\n');
+                line_len = 0;
+            } else {
+                out.push(' ');
+                line_len += 1;
+            }
+        }
+        out.push_str(word);
+        line_len += w;
+    }
+    out
+}
+
 /// Count the number of arguments a sprintf-style format string consumes.
 /// This is the number of directives (excluding `%%`), counting `*` width/precision
 /// as additional sequential args, and using the highest positional index when
@@ -176,8 +200,7 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
         // reported in X::Str::Sprintf::Directives::Unsupported (Raku includes
         // flags / width / the vector flag in `.directive`, e.g. `%5vd` reports
         // directive `5vd`).
-        let directive_start = pos;
-        // Skip flags
+                // Skip flags
         while pos < len {
             let b = bytes[pos];
             if b == b'-' || b == b'+' || b == b' ' || b == b'#' || b == b'0' {
@@ -249,16 +272,19 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
                     | 'c'
             )
         {
-            // Raku reports `.directive` as everything after the `%` (flags,
-            // width, vector flag, conversion char) and `.sequence` as the FULL
-            // original format string (not just the offending `%directive`), so
-            // an embedded bad directive such as `a%vdb` reports the whole
-            // `a%vdb`, matching the `... in sprintf format '<fmt>'` message.
-            let directive = &fmt[directive_start..pos];
+            // Measured against rakudo 2026.09: `.directive` is the format
+            // string without its FIRST character -- `%5vd` gives `5vd`, but
+            // `a%qb` gives `%qb` and `%ld a big number` gives `ld a big
+            // number`, whatever the offending directive is -- and `.sequence`
+            // is the full format. The message wraps at 71 columns.
+            let directive = fmt.chars().next().map_or("", |c| &fmt[c.len_utf8()..]);
             let sequence = fmt.to_string();
-            let message = format!(
-                "Directive {} is not valid in sprintf format '{}'",
-                directive, sequence
+            let message = wrap_words(
+                &format!(
+                    "Directive {} is not valid in sprintf format '{}'",
+                    directive, sequence
+                ),
+                71,
             );
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("directive".to_string(), Value::str(directive.to_string()));

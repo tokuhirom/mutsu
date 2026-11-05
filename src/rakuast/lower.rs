@@ -3066,6 +3066,11 @@ fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
                 _ => Err(unsupported(node)),
             }
         }
+        // `Var::Doc.new("pod")` is `$=pod`, which the parser names `=pod`.
+        RakuAstClass::VarDoc => match positional_leaf(node)?.view() {
+            ValueView::Str(s) => Ok(format!("$={}", s.as_str())),
+            _ => Err(unsupported(node)),
+        },
         // `$.x` -> the whole spelling is the `name`; the `$.x(1)` form (an
         // `args` field) is a method call, which the parser keeps elsewhere.
         RakuAstClass::VarAttributePublic if !node.fields.iter().any(|f| f.name == Some("args")) => {
@@ -5150,6 +5155,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::VarLexical
         | RakuAstClass::VarPackage
         | RakuAstClass::VarDynamic
+        | RakuAstClass::VarDoc
         | RakuAstClass::VarAttribute
         | RakuAstClass::VarAttributePublic => {
             let name = variable_spelling(node)?;

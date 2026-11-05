@@ -1082,6 +1082,13 @@ impl Interpreter {
                     )
                 {
                     Value::package(Symbol::intern(name))
+                // `MY::ENOENT`: the pseudo-package selects the scope, the bare
+                // name is a term the scope holds (an enum value or constant a
+                // `use` imported), read as the bare word is (#16562).
+                } else if bare != name
+                    && let Some(term) = self.imported_term(bare)
+                {
+                    term
                 } else {
                     return Err(self.no_such_qualified_symbol(pkg, sym));
                 }

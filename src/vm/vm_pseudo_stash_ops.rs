@@ -101,6 +101,9 @@ impl Interpreter {
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
+        if name == "::" {
+            self.add_all_imports_to_pseudo_stash(&mut entries);
+        }
         if name == "UNIT::" {
             for (display, value) in self.unit_lexical_types() {
                 entries.entry(display).or_insert(value);
@@ -585,6 +588,44 @@ impl Interpreter {
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
         self.pseudo_stash_hash(entries)
+    }
+
+    /// The value of the term `name` the current scope holds: a sigilless
+    /// binding, an enum key read by its bare spelling, or a constant in the
+    /// environment.
+    // Cost: O(1) expected, two lookups.
+    pub(super) fn imported_term(&self, name: &str) -> Option<Value> {
+        self.term_binding(name)
+            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| {
+                self.env()
+                    .get(name)
+                    .cloned()
+                    .filter(|v| !matches!(v.view(), ValueView::Package(_) | ValueView::Sub(..)))
+            })
+    }
+
+    /// Add every import alias the current view holds (`env_imports_here`) to
+    /// `entries`: an imported term or type need not sit in env under its
+    /// import key (a sigilless constant lives under its term key, an exported
+    /// type resolves through the type registry, a `sub EXPORT` hash installs
+    /// a qualified key), so each is read the way a bare-word read of the name
+    /// does. The bare `::` stash lists these like `MY::` does (#16555).
+    // Cost: O(i), i = import aliases of the view.
+    fn add_all_imports_to_pseudo_stash(&mut self, entries: &mut ValueMap) {
+        for (key, display) in self.env_imports_here() {
+            let key = key.resolve();
+            let value = self.env().get(&key).cloned().or_else(|| {
+                (!key.starts_with(['$', '@', '%', '&']))
+                    .then(|| self.imported_term_or_type(&key))
+                    .flatten()
+            });
+            if let Some(value) = value {
+                entries
+                    .entry(display.resolve().to_string())
+                    .or_insert(value);
+            }
+        }
     }
 
     /// The value a bare-word read of the imported name `key` (an import

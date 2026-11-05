@@ -420,7 +420,7 @@ impl Interpreter {
     /// family gets that one.
     // Cost: O(1) hash probes, plus O(e) over the recorded EXPORT imports when
     // the executing unit imported none of the name, e = their count.
-    fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
+    pub(super) fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
         let env_value = self
             .env()
             .get_sym(crate::runtime::dispatch_key::amp_sym(op_sym))

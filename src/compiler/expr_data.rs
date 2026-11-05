@@ -766,6 +766,7 @@ impl Compiler {
                     self.compile_expr(target);
                     self.compile_subscript_index(index);
                     if use_autovivify {
+                        self.emit_lex_import_subscript(is_positional);
                         self.code.emit(lazy_op);
                     } else {
                         self.emit_lex_import_subscript(is_positional);
@@ -776,6 +777,7 @@ impl Compiler {
                 self.compile_expr(target);
                 self.compile_subscript_index(index);
                 if use_autovivify {
+                    self.emit_lex_import_subscript(is_positional);
                     self.code.emit(lazy_op);
                 } else {
                     self.emit_lex_import_subscript(is_positional);
@@ -799,6 +801,7 @@ impl Compiler {
             }
             self.compile_subscript_index(index);
             if use_autovivify {
+                self.emit_lex_import_subscript(is_positional);
                 self.code.emit(lazy_op);
             } else {
                 self.emit_lex_import_subscript(is_positional);

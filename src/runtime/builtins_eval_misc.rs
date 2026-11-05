@@ -371,6 +371,10 @@ impl Interpreter {
             let operators = self.collect_operator_sub_names();
             let names = crate::rakuast::frontend::lower_scope(&operators);
             let stmts = crate::rakuast::lower(&names, node)?;
+            // Pod blocks written into the tree are the unit's `$=pod`.
+            if let Some(pod) = crate::rakuast::pod_source(node) {
+                self.collect_pod_sources(&pod)?;
+            }
             return self.eval_lowered_unit(stmts);
         }
         if let Some(first_arg) = Self::positional_value(args, 0)

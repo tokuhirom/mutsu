@@ -135,16 +135,35 @@ fn literalize(
     if !crate::rakuast::literalize::is_constant(node) {
         return Some(Ok(cannot));
     }
-    let value = match interp.eval_rakuast_node(&base) {
-        Ok(value) => value,
-        Err(_) => return Some(Ok(cannot)),
-    };
-    if crate::rakuast::literalize::is_hash_composer(node)
-        && !matches!(value.view(), ValueView::Hash(_))
-    {
-        return Some(Ok(cannot));
+    Some(Ok(literal_of(interp, &base).unwrap_or(cannot)))
+}
+
+/// The literal value of the constant node `base`. Rakudo literalizes a
+/// `[ EXPR ]` as the literal of `EXPR` (so `[1]` is `1`, `[[1], 2]` is
+/// `(1, 2)` and `[]` an empty `List`) and a comma list as the `List` of its
+/// literalized operands; any other constant is evaluated, a hash becoming a
+/// `Map` and an array a `List` ([`literal_value`]). `None` when the constant
+/// cannot be evaluated.
+// Cost: O(n) in the size of the node plus the evaluation of its leaves.
+fn literal_of(interp: &mut Interpreter, base: &Value) -> Option<Value> {
+    use crate::rakuast::literalize::{self as lit, ListShape};
+    if let ValueView::RakuAst(node) = base.view() {
+        match lit::list_shape(node) {
+            ListShape::Items(items) => {
+                let values: Option<Vec<Value>> =
+                    items.iter().map(|item| literal_of(interp, item)).collect();
+                return Some(Value::array(values?));
+            }
+            ListShape::Single(inner) => return literal_of(interp, &inner),
+            ListShape::Other => {}
+        }
+        let value = interp.eval_rakuast_node(base).ok()?;
+        if lit::is_hash_composer(node) && !matches!(value.view(), ValueView::Hash(_)) {
+            return None;
+        }
+        return Some(literal_value(value));
     }
-    Some(Ok(literal_value(value)))
+    None
 }
 
 /// The value of a constant as `literalize` answers it: a hash anywhere in it

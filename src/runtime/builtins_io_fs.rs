@@ -212,20 +212,11 @@ impl Interpreter {
                 .first()
                 .cloned()
                 .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
-            let mode_int = match mode_value.view() {
-                ValueView::Int(i) => i as u32,
-                // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
-                // already-evaluated integer in the inner value; coerce through it.
-                ValueView::Mixin(..) | ValueView::BigInt(_) => {
-                    crate::runtime::to_int(&mode_value) as u32
-                }
-                ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Invalid mode: {}",
-                        mode_value.to_string_value()
-                    )));
-                }
+            let Some(mode_int) = crate::runtime::native_io::fs_ops::chmod_mode(&mode_value) else {
+                return Err(RuntimeError::new(format!(
+                    "Invalid mode: {}",
+                    mode_value.to_string_value()
+                )));
             };
             // `chmod 0o755, <a b>` passes a single list argument; flatten so
             // each path is chmod'd individually rather than stringifying the

@@ -381,6 +381,25 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // A bare-word call of a routine imported at run time (`errno.symbol`
+        // for an `is raw` sub returning a `Proxy`): the receiver is the
+        // routine's result, not a variable, so a read of it FETCHes exactly as
+        // `CallMethod` does for a `CallFunc` receiver (#16556).
+        if target_slot.is_none()
+            && let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
+            && let ValueView::Proxy {
+                subclass: None,
+                decontainerized: false,
+                ..
+            } = self.stack[target_idx].deref_container().view()
+            && !matches!(
+                name.raw,
+                "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            )
+        {
+            let proxy = self.stack[target_idx].deref_container();
+            self.stack[target_idx] = self.auto_fetch_proxy(&proxy)?;
+        }
         // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
         // object is answered without the probe chain below.
         if let Some(result) =

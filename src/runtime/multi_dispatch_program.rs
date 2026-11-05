@@ -56,6 +56,12 @@ pub(crate) struct StageProgram {
     /// path only; the multi light call, which binds plain positionals, never
     /// takes it.
     has_general_steps: bool,
+    /// The winner of a program with no value check at all: every verdict
+    /// came from the argument-type key, so the tie analysis (`prune` /
+    /// `settle_ranked_matches`: dispatch shapes, `is default`, ambiguity)
+    /// gives the same answer on every call of this key. Set once, by the
+    /// first call whose settle produced a winner without any exception.
+    settled: std::sync::OnceLock<Arc<FunctionDef>>,
 }
 
 impl StageProgram {
@@ -150,6 +156,7 @@ impl Interpreter {
         }
         steps.sort_by(|a, b| a.key.total_cmp(&b.key));
         Some(StageProgram {
+            settled: std::sync::OnceLock::new(),
             steps,
             has_general_steps,
         })
@@ -253,6 +260,9 @@ impl Interpreter {
         args: &[Value],
         program: &StageProgram,
     ) -> Resolved {
+        if let Some(winner) = program.settled.get() {
+            return Ok(Some(winner.clone()));
+        }
         let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
         let mut best_key: Option<MultiRank> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
@@ -295,14 +305,21 @@ impl Interpreter {
                 return Err(err);
             }
         };
-        self.settle_ranked_matches(
+        let key_decided = threw.is_none() && program.steps.iter().all(|s| s.checks.is_empty());
+        let settled = self.settle_ranked_matches(
             name,
             args,
             matches,
             threw,
             outer_where_exception,
             tier_bind_check,
-        )
+        );
+        if key_decided
+            && let Ok(Some(winner)) = &settled
+        {
+            let _ = program.settled.set(winner.clone());
+        }
+        settled
     }
 
     fn run_value_checks(
