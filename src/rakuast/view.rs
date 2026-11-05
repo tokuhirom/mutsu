@@ -4028,6 +4028,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     None => anon_routine_node(names, param_defs, body, return_type.as_deref())?,
                 };
                 super::declarator_docs::attach(&mut node, custom_traits.doc());
+                super::routine_origins::anon_parameters(&mut node, param_defs);
                 if super::routine_source::apply(names, &mut node, body)? {
                     return Ok(node);
                 }
@@ -4406,6 +4407,8 @@ fn method_literal_node(
         return Err(unsupported("method literal with an unrecognized receiver"));
     };
     let mut node = anon_routine_node(names, rest, folded.body, returns)?;
+    // Before the invocant joins the list: one node per written parameter.
+    super::routine_origins::anon_parameters(&mut node, rest);
     node.class = class;
     if folded.type_constraint.is_some() || folded.alias.is_some() || folded.default.is_some() {
         let invocant = declared_invocant_parameter(
