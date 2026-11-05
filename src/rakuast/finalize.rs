@@ -335,7 +335,10 @@ impl VisitMut for Finalize<'_> {
             }
             // An imported term (`Spelling::ImportedTerm`): see `bareword::imported_term_expr`.
             if let Expr::Spelled(spelled) = &*expr
-                && matches!(spelled.spelling, crate::ast::spelled::Spelling::ImportedTerm)
+                && matches!(
+                    spelled.spelling,
+                    crate::ast::spelled::Spelling::ImportedTerm
+                )
                 && let Expr::BareWord(word) = &spelled.expr
                 && let Some(term) = super::bareword::imported_term_expr(names, word)
             {
