@@ -555,22 +555,20 @@ impl RuntimeError {
         } else {
             format!("${}", param)
         };
-        // Rakudo renders the invocant form through `naive-word-wrapper`
-        // (72 columns), so where the line breaks depends on the names.
-        let msg = if param_is_invocant {
-            crate::word_wrap::naive_word_wrap(
-                &format!(
-                    "Invocant of method '{routine}' must be {kind} of type '{expected}', not \
-                     {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
-                ),
-                72,
+        // Rakudo renders both forms through `naive-word-wrapper` (72 columns),
+        // so where the line breaks depends on the names.
+        let text = if param_is_invocant {
+            format!(
+                "Invocant of method '{routine}' must be {kind} of type '{expected}', not \
+                 {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
             )
         } else {
             format!(
-                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a\n'{}'?",
-                display_param, routine, kind, expected, actual_kind, got, hint
+                "Parameter '{display_param}' of routine '{routine}' must be {kind} of type \
+                 '{expected}', not {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
             )
         };
+        let msg = crate::word_wrap::naive_word_wrap(&text, 72);
         let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));

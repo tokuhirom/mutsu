@@ -32,10 +32,10 @@ use super::*;
 const VALUE_SYNC_TRACK_DEPTH: usize = 64;
 
 /// Add `more` to `have`, skipping duplicates.
-fn merge_names(have: &mut Vec<String>, more: Vec<String>) {
+fn merge_names(have: &mut Vec<String>, more: &[String]) {
     for n in more {
-        if !have.contains(&n) {
-            have.push(n);
+        if !have.contains(n) {
+            have.push(n.clone());
         }
     }
 }
@@ -77,11 +77,11 @@ impl Interpreter {
                 } => {
                     merge_names(
                         &mut names,
-                        regex_pattern_var_names(&const_str(*pattern_idx)),
+                        &regex_pattern_var_names(&const_str(*pattern_idx)),
                     );
                     merge_names(
                         &mut names,
-                        subst_replacement_var_names(&const_str(*replacement_idx)),
+                        &subst_replacement_var_names(&const_str(*replacement_idx)),
                     );
                     continue;
                 }
@@ -89,11 +89,11 @@ impl Interpreter {
             };
             match code.constants.get(const_idx as usize).map(Value::view) {
                 Some(ValueView::Regex(pattern)) => {
-                    merge_names(&mut names, regex_pattern_var_names(pattern.as_str()))
+                    merge_names(&mut names, &regex_pattern_var_names(pattern.as_str()))
                 }
                 Some(ValueView::RegexWithAdverbs(adverbs)) => merge_names(
                     &mut names,
-                    regex_pattern_var_names(adverbs.pattern.as_str()),
+                    &regex_pattern_var_names(adverbs.pattern.as_str()),
                 ),
                 _ => {}
             }
@@ -149,10 +149,10 @@ impl Interpreter {
         };
         match value.view() {
             ValueView::Regex(pattern) => {
-                merge_names(names, regex_pattern_var_names(pattern.as_str()))
+                merge_names(names, &regex_pattern_var_names(pattern.as_str()))
             }
             ValueView::RegexWithAdverbs(adverbs) => {
-                merge_names(names, regex_pattern_var_names(adverbs.pattern.as_str()))
+                merge_names(names, &regex_pattern_var_names(adverbs.pattern.as_str()))
             }
             ValueView::Routine {
                 captured_regex: Some(inner),
@@ -232,7 +232,7 @@ impl Interpreter {
             {
                 merge_names(
                     &mut names,
-                    regex_pattern_var_names(adverbs.pattern.as_str()),
+                    &regex_pattern_var_names(adverbs.pattern.as_str()),
                 );
             }
         }
@@ -261,9 +261,31 @@ fn pattern_has_code(pattern: &str) -> bool {
 /// Every local a regex pattern can name, as env keys (see
 /// [`scan_source_names`]). A pattern embedding code is scanned as code: every
 /// bare identifier in it is a candidate too.
-// Cost: O(p), p = pattern length.
-pub(super) fn regex_pattern_var_names(pattern: &str) -> Vec<String> {
-    scan_source_names(pattern, pattern_has_code(pattern)).0
+// Cost: O(p) per distinct pattern text, p = pattern length; a repeat is one
+// hash of the text. The names are a pure function of the text, and a `~~`
+// asks for them on every execution (twice: the literal, then the value).
+pub(super) fn regex_pattern_var_names(pattern: &str) -> std::rc::Rc<[String]> {
+    /// Distinct patterns remembered; a program that builds patterns at run
+    /// time starts over rather than growing the table without bound.
+    const MAX_CACHED: usize = 1024;
+    thread_local! {
+        static NAMES: std::cell::RefCell<rustc_hash::FxHashMap<Box<str>, std::rc::Rc<[String]>>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if let Some(hit) = NAMES.with(|m| m.borrow().get(pattern).cloned()) {
+        return hit;
+    }
+    let names: std::rc::Rc<[String]> = scan_source_names(pattern, pattern_has_code(pattern))
+        .0
+        .into();
+    NAMES.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= MAX_CACHED {
+            m.clear();
+        }
+        m.insert(pattern.into(), names.clone());
+    });
+    names
 }
 
 /// Every local a substitution's replacement can name. The replacement is a
@@ -421,7 +443,7 @@ mod tests {
     };
 
     fn names(p: &str) -> Vec<String> {
-        regex_pattern_var_names(p)
+        regex_pattern_var_names(p).to_vec()
     }
 
     #[test]

@@ -441,6 +441,19 @@ impl Interpreter {
     /// name, most often).
     pub(crate) fn restore_subrule_dynamic_params(&mut self, saved: SavedDynParams) {
         for (key, prior) in saved.into_iter().rev() {
+            // An `is rw` runtime parameter's alias entry sits after the
+            // parameter's own, so it is seen first: the final value goes back
+            // to the caller's variable before the parameter is un-shadowed.
+            if let Some((param, caller)) = super::regex_rule_params::split_rw_alias_key(&key) {
+                if let Some(value) = self.env.get(param).cloned() {
+                    if let Some(set) = self.carrier_writes.as_mut() {
+                        set.insert(caller.to_string());
+                    }
+                    self.env.insert(caller.to_string(), value.clone());
+                    self.pending_local_updates.push((caller.to_string(), value));
+                }
+                continue;
+            }
             match prior {
                 Some(value) => {
                     self.env.insert(key, value);

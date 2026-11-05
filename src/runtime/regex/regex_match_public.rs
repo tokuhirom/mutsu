@@ -277,7 +277,8 @@ impl Interpreter {
                 Vec::new()
             } else {
                 let default_caps = RegexCaptures::default();
-                self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?
+                let values = self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?;
+                self.mark_rw_regex_args(&spec, self.current_package_sym(), values)
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(
                 &spec,

@@ -144,7 +144,8 @@ impl Interpreter {
         let args = if spec.arg_exprs.is_empty() {
             None
         } else {
-            Some(self.eval_regex_call_args(&spec.arg_exprs, caps, chars, pos)?)
+            let values = self.eval_regex_call_args(&spec.arg_exprs, caps, chars, pos)?;
+            Some(self.mark_rw_regex_args(spec, pkg, values))
         };
         let window = self.rx_call_window(name, pkg, args.as_deref().unwrap_or(&[]));
         let verdict = match &args {

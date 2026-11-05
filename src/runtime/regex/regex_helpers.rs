@@ -321,6 +321,27 @@ impl Drop for ReduceDispatchGuard {
     }
 }
 
+thread_local! {
+    /// The compunit whose regex literal's code is running (#16512): the code
+    /// names routines of the unit it was written in, not of the routine that
+    /// happens to do the match. Set while a regex closure's scope is installed
+    /// for a match; read by `Interpreter::executing_unit_sym`.
+    static REGEX_DEFINING_UNIT: std::cell::Cell<Option<Symbol>> = const { std::cell::Cell::new(None) };
+}
+
+/// Make `unit` the defining unit of the running regex code, returning the
+/// previous one (to hand back to this function on exit).
+// Cost: O(1).
+pub(crate) fn replace_defining_unit(unit: Option<Symbol>) -> Option<Symbol> {
+    REGEX_DEFINING_UNIT.with(|u| u.replace(unit))
+}
+
+/// The defining unit of the regex code running now, if any.
+// Cost: O(1).
+pub(crate) fn defining_unit() -> Option<Symbol> {
+    REGEX_DEFINING_UNIT.with(|u| u.get())
+}
+
 /// Consult [`REGEX_INTERP_CLOSURE_SCOPE`] for a name, or `None` when it is
 /// inactive or has no entry for the name. `key` is the env form (`$x` ->
 /// `"x"`, `@x`/`%x`/`&x` keep their sigil).

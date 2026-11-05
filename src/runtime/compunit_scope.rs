@@ -32,6 +32,10 @@ impl Interpreter {
     /// matters because the prelude-visibility gate that reads it sits on the
     /// routine-resolution path.
     pub(crate) fn executing_unit_sym(&self) -> Symbol {
+        // Regex code runs as the compunit its literal was written in.
+        if let Some(unit) = crate::runtime::regex::regex_helpers::defining_unit() {
+            return unit;
+        }
         for frame in self.routine_stack.iter().rev() {
             match frame.def_file {
                 Some(file) => return self.unit_of_source_sym(Some(file)),

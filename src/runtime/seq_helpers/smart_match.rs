@@ -20,6 +20,10 @@ pub(crate) struct RegexClosureBinding {
     /// This binding is a `"..."` qq thunk's result, active (see
     /// [`Interpreter::eval_regex_qq_thunk`]) while it is installed.
     qq_result: bool,
+    /// This binding is the regex's defining compunit (#16512): the unit that
+    /// was current before the install, restored on uninstall. It is no env
+    /// entry.
+    restores_unit: Option<Option<Symbol>>,
 }
 
 impl Interpreter {
@@ -165,6 +169,7 @@ impl Interpreter {
                 installed: topic.clone(),
                 pins_topic: true,
                 qq_result: false,
+                restores_unit: None,
             });
             self.env.insert("_".to_string(), topic);
             self.topic_state.regex_topic_pinned += 1;
@@ -182,9 +187,22 @@ impl Interpreter {
         let qq_prefix = MetaNs::RegexQq.prefix();
         let mut saved: Vec<RegexClosureBinding> = Vec::with_capacity(scope.len());
         let mut qq_thunks: Vec<(&String, &Value)> = Vec::new();
+        let unit_key = MetaNs::Pragma.key_for_str(Self::REGEX_UNIT_KEY);
         for (k, v) in scope.iter() {
             if k.starts_with(qq_prefix) {
                 qq_thunks.push((k, v));
+                continue;
+            }
+            if k.as_str() == unit_key.as_str() {
+                let unit = Symbol::intern(&v.to_string_value());
+                saved.push(RegexClosureBinding {
+                    name: k.clone(),
+                    shadowed: None,
+                    installed: v.clone(),
+                    pins_topic: false,
+                    qq_result: false,
+                    restores_unit: Some(crate::runtime::regex::regex_helpers::replace_defining_unit(Some(unit))),
+                });
                 continue;
             }
             saved.push(RegexClosureBinding {
@@ -193,6 +211,7 @@ impl Interpreter {
                 installed: v.clone(),
                 pins_topic: false,
                 qq_result: false,
+                restores_unit: None,
             });
             self.env.insert(k.clone(), v.clone());
         }
@@ -210,6 +229,7 @@ impl Interpreter {
                 installed: result.clone(),
                 pins_topic: false,
                 qq_result: true,
+                restores_unit: None,
             });
             self.env.insert(k.clone(), result);
         }
@@ -227,6 +247,10 @@ impl Interpreter {
     ) {
         let Some(saved) = saved else { return };
         for b in saved {
+            if let Some(previous) = b.restores_unit {
+                crate::runtime::regex::regex_helpers::replace_defining_unit(previous);
+                continue;
+            }
             if b.pins_topic {
                 self.topic_state.regex_topic_pinned =
                     self.topic_state.regex_topic_pinned.saturating_sub(1);

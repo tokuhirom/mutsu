@@ -322,6 +322,16 @@ impl VisitMut for Finalize<'_> {
             *expr = call;
             return;
         }
+        // An interpolating heredoc: its body is read as a `qq` string here, in the
+        // finalization, where a parse that keeps spellings has none left to read. A
+        // heredoc that closes an enclosing block on its marker line stays converted.
+        if let Expr::HeredocInterpolation(content, false) = inner
+            && let Ok(body) = crate::parser::interpolate_heredoc_content(content)
+        {
+            *expr = body;
+            crate::ast_visit::walk_expr_mut(self, expr);
+            return;
+        }
         if !carried::expr_carried(inner) {
             // A plain term the classifier resolves (`my \x`, a constant): see
             // `bareword::term_expr`. Only a word that is not carried as a type
@@ -329,6 +339,18 @@ impl VisitMut for Finalize<'_> {
             // tells the conversion how the parse resolved the word.
             if let Expr::BareWord(word) = &*expr
                 && let Some(term) = super::bareword::term_expr(names, word)
+            {
+                *expr = term;
+                return;
+            }
+            // An imported term (`Spelling::ImportedTerm`): see `bareword::imported_term_expr`.
+            if let Expr::Spelled(spelled) = &*expr
+                && matches!(
+                    spelled.spelling,
+                    crate::ast::spelled::Spelling::ImportedTerm
+                )
+                && let Expr::BareWord(word) = &spelled.expr
+                && let Some(term) = super::bareword::imported_term_expr(names, word)
             {
                 *expr = term;
                 return;
@@ -729,6 +751,9 @@ mod tests {
             "my $s = 'abc'; $s ~~ s:i:x(2)/a/{$s}/; say $s;",
             "my $s = 'abc'; $s ~~ tr/a-c/A-C/; say $s; say $s.trans('A' => 'x');",
             "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
+            "my @a = 1, 2; my $v = 9; @a[0] := $v; my %h; %h<k> := $v; %h{'j'} := 1 => 2; say @a.raku;",
+            "use NativeCall; my uint16 $n = 3; sub f(int64 $x) { $x }; say f(2); say int32.^name; say num64 ~~ Num;",
+            "my $w = 'x'; my $t = qq:to/E/;\n  hi $w {1 + 1}\n  E\nsay $t; say \"a\" ~ q:to/F/;\n  b\n  F\n",
         ] {
             assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }

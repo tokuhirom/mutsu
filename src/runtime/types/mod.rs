@@ -2,6 +2,7 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
+mod arity_message;
 mod args_matching;
 mod readonly_reflection;
 mod args_matching_simple;

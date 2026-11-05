@@ -4298,11 +4298,27 @@ impl Interpreter {
                         .count();
                     // A method's count includes its invocant (#14565).
                     let invocant = usize::from(bind_self_lexical);
-                    return Err(RuntimeError::new(format!(
-                        "Too few positionals passed; expected {} argument{} but got {}",
-                        total_positional + invocant,
-                        if total_positional + invocant == 1 { "" } else { "s" },
-                        positional_arg_count + invocant
+                    let required = param_defs
+                        .iter()
+                        .filter(|p| {
+                            !p.named
+                                && !p.slurpy
+                                && !p.double_slurpy
+                                && !p.onearg
+                                && !p.name.starts_with(':')
+                                && p.default.is_none()
+                                && !p.optional_marker
+                        })
+                        .count();
+                    // A positional slurpy lifts the upper bound.
+                    let max = (!param_defs.iter().any(|p| {
+                        p.onearg || (p.slurpy && (!p.name.starts_with('%') || p.sigilless))
+                    }))
+                    .then_some(total_positional + invocant);
+                    return Err(RuntimeError::new(super::arity_message::too_few_positionals(
+                        required + invocant,
+                        max,
+                        positional_arg_count + invocant,
                     )));
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
@@ -4524,10 +4540,19 @@ fn surplus_positional_error(
         // A method's count includes its invocant (#14565).
         let invocant = usize::from(is_method);
         let expected = positional_param_count + invocant;
-        RuntimeError::new(format!(
-            // Rakudo says "1 argument", not "1 arguments".
-            "Too many positionals passed; expected {expected} argument{} but got {}",
-            if expected == 1 { "" } else { "s" },
+        let required = param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.named
+                    && !pd.slurpy
+                    && !pd.onearg
+                    && pd.default.is_none()
+                    && !pd.optional_marker
+            })
+            .count();
+        RuntimeError::new(super::arity_message::too_many_positionals(
+            required + invocant,
+            expected,
             positional_arg_count + invocant,
         ))
     })
