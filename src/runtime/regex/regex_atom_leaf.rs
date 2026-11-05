@@ -121,13 +121,26 @@ impl Interpreter {
         pos: usize,
         (ignore_case, markless): (bool, bool),
     ) -> VarInterpTarget {
+        // `$name` is the key a scalar is filed under in the env and in a
+        // rule's window; it is built on the stack (a name is a few bytes), not
+        // formatted into a `String` once or twice per atom evaluation.
+        let mut sigiled_buf = [0u8; 64];
+        let sigiled: std::borrow::Cow<'_, str> = if name.len() < sigiled_buf.len() {
+            sigiled_buf[0] = b'$';
+            sigiled_buf[1..=name.len()].copy_from_slice(name.as_bytes());
+            std::borrow::Cow::Borrowed(
+                std::str::from_utf8(&sigiled_buf[..=name.len()]).unwrap_or_default(),
+            )
+        } else {
+            std::borrow::Cow::Owned(format!("${name}"))
+        };
         let val = caps
             .regex_vars()
             .get(name)
-            .or_else(|| caps.regex_vars().get(&format!("${name}")))
+            .or_else(|| caps.regex_vars().get(&*sigiled))
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .or_else(|| self.env.get(&format!("${name}")).cloned());
+            .or_else(|| self.env.get(&sigiled).cloned());
         let val = val.map(Value::into_deref);
         if assertion {
             return self.var_assertion_target(val, ignore_case);
@@ -141,17 +154,25 @@ impl Interpreter {
             .as_ref()
             .is_some_and(|v| matches!(v.view(), ValueView::Junction { .. }));
         let ref_text = match &val {
-            Some(v) if is_regex => Self::regex_alternation_sources(v, false).swap_remove(0),
+            Some(v) if is_regex => std::borrow::Cow::Owned(
+                Self::regex_alternation_sources(v, false).swap_remove(0),
+            ),
             Some(v) if is_junction => {
                 let mut text = String::new();
                 Self::push_value_as_regex_pattern(v, &mut text);
-                text
+                std::borrow::Cow::Owned(text)
             }
             Some(v) => match v.view() {
-                ValueView::Nil | ValueView::Package(_) => String::new(),
-                _ => v.to_string_value(),
+                ValueView::Nil | ValueView::Package(_) => std::borrow::Cow::Borrowed(""),
+                // A string value is compared in place, not copied per atom
+                // evaluation (one per start position of the find loop).
+                ValueView::Str(_) => match v.as_str() {
+                    Some(text) => std::borrow::Cow::Borrowed(text),
+                    None => std::borrow::Cow::Owned(v.to_string_value()),
+                },
+                _ => std::borrow::Cow::Owned(v.to_string_value()),
             },
-            None => String::new(),
+            None => std::borrow::Cow::Borrowed(""),
         };
         // A markless run compares bases, so a plain value becomes a pattern
         // too: its markless program does the comparison.
