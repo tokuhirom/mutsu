@@ -537,3 +537,31 @@ fn droppable_subject_uncached(k: &Symbol) -> Option<Symbol> {
         (std::ptr::eq(term, s) && type_like).then_some(*k)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn droppable_subject_memo_agrees_with_the_classification() {
+        for name in [
+            "CookieName",
+            "Cro::HTTP::Header",
+            "\\size",
+            "__mutsu_sigilless_readonly::\\size",
+            "&Cro::Uri::encode-percents",
+            "$x",
+            "@a",
+            "?FILE",
+            "__mutsu_state_key::__ANON_STATE#1__",
+        ] {
+            let k = Symbol::intern(name);
+            let expected = droppable_subject_uncached(&k);
+            // Twice: the first call fills the memo, the second reads it.
+            assert_eq!(droppable_subject(&k), expected, "{name}");
+            assert_eq!(droppable_subject(&k), expected, "{name} (memoized)");
+        }
+        assert!(droppable_subject(&Symbol::intern("CookieName")).is_some());
+        assert!(droppable_subject(&Symbol::intern("$x")).is_none());
+    }
+}
