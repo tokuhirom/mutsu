@@ -1228,6 +1228,13 @@ impl Interpreter {
                 // A punned role instance is a mixin over an `Instance`.
                 || matches!(target.view(), ValueView::Mixin(inner, _)
                     if matches!(inner.view(), ValueView::Instance { .. })))
+            // No user routine named so in scope (the three places below look):
+            // skip the argument vectors and the resolution of every plain
+            // `@a[$i]` read (#15394).
+            && self.user_subscript_candidate_possible(
+                crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional),
+                is_positional,
+            )
         {
             let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
             let args = vec![target.clone(), index.clone()];
