@@ -251,3 +251,80 @@ pub(crate) fn leading_whitespace(node: &RakuAstNode) -> Value {
         None => Value::package(crate::symbol::Symbol::intern("Any")),
     }
 }
+
+/// The named arguments of `args` as `(name, value)`, the last of a repeated
+/// name winning (as `named_arg` does).
+// Cost: O(a), a = arguments.
+fn named_pairs(args: &[Value]) -> Vec<(String, Value)> {
+    args.iter()
+        .filter_map(|arg| match arg.view() {
+            ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
+            ValueView::ValuePair(key, value) => Some((key.to_string_value(), value.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `Doc::Block.from-alias(:type, :$lemma, :@paragraphs, ...)`: a `Doc::Block`
+/// whose paragraphs are the lemma and then the text of `@paragraphs`, each
+/// element ending in a newline (`""` when there are none). A missing lemma is
+/// the `Any` type object. The rest goes to `new` as it is.
+// Cost: O(a + n), a = arguments, n = size of the paragraphs.
+pub(crate) fn from_alias(args: &[Value]) -> Result<Value, RuntimeError> {
+    let mut pairs = named_pairs(args);
+    let take = |pairs: &mut Vec<(String, Value)>, name: &str| {
+        let at = pairs.iter().rposition(|(key, _)| key == name)?;
+        Some(pairs.remove(at).1)
+    };
+    let lemma = take(&mut pairs, "lemma")
+        .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+    let given = take(&mut pairs, "paragraphs")
+        .and_then(|list| list.as_list_items().map(<[Value]>::to_vec))
+        .unwrap_or_default();
+    let text: String = given
+        .iter()
+        .map(|item| {
+            let mut text = match item.view() {
+                ValueView::RakuAst(node) => super::doc_str::text(node),
+                _ => item.to_string_value(),
+            };
+            text.push('\n');
+            text
+        })
+        .collect();
+    pairs.retain(|(key, _)| key != "paragraphs" && key != "lemma");
+    let mut rest = pairs;
+    rest.push((
+        "paragraphs".to_string(),
+        Value::array(vec![lemma, Value::str(text)]),
+    ));
+    construct_block(rest)
+}
+
+/// `Doc::Block.from-config(:type, :$key, ...)`: a `Doc::Block` whose only
+/// paragraph is the key.
+// Cost: O(a), a = arguments.
+pub(crate) fn from_config(args: &[Value]) -> Result<Value, RuntimeError> {
+    let mut pairs = named_pairs(args);
+    let key = pairs
+        .iter()
+        .rposition(|(name, _)| name == "key")
+        .map(|at| pairs.remove(at).1)
+        .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+    pairs.retain(|(name, _)| name != "key" && name != "paragraphs");
+    pairs.push(("paragraphs".to_string(), Value::array(vec![key])));
+    construct_block(pairs)
+}
+
+// Cost: O(a), a = arguments.
+fn construct_block(pairs: Vec<(String, Value)>) -> Result<Value, RuntimeError> {
+    let args: Vec<Value> = pairs
+        .into_iter()
+        .map(|(name, value)| Value::pair(name, value))
+        .collect();
+    super::named_ctor::construct("RakuAST::Doc::Block", &args).unwrap_or_else(|| {
+        Err(RuntimeError::new(
+            "RakuAST::Doc::Block.new is not available",
+        ))
+    })
+}

@@ -2302,6 +2302,12 @@ fn construct_values(
                 .collect(),
         }))));
     }
+    if class_name == "RakuAST::Doc::Block" && method == "from-alias" {
+        return doc_block_edit::from_alias(args).map(Some);
+    }
+    if class_name == "RakuAST::Doc::Block" && method == "from-config" {
+        return doc_block_edit::from_config(args).map(Some);
+    }
     if class_name == "RakuAST::Doc::Paragraph" && method == "from-string" {
         return doc_edit::from_string(args).map(Some);
     }
