@@ -908,10 +908,7 @@ impl Interpreter {
                 self.set_env_with_main_alias(&name_str, instance.clone());
             }
             if store_arg.is_some() {
-                return Err(RuntimeError::assignment_ro_typename(
-                    &trait_name,
-                    &crate::runtime::utils::gist_value(&instance),
-                ));
+                return Err(self.assignment_ro_error_for(instance));
             }
             return Ok(());
         }
@@ -998,10 +995,7 @@ impl Interpreter {
                     }
                 }
             } else if store_arg.is_some() {
-                return Err(RuntimeError::assignment_ro_typename(
-                    &trait_name,
-                    &crate::runtime::utils::gist_value(&instance),
-                ));
+                return Err(self.assignment_ro_error_for(instance));
             }
             return Ok(());
         }

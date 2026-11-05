@@ -522,6 +522,18 @@ impl Interpreter {
         }
     }
 
+    /// `X::Assignment::RO` naming the immutable `value`, worded with its `.gist`
+    /// (`Cannot modify an immutable Bar (Bar.new)`).
+    // Cost: the value's `.gist`.
+    pub(crate) fn assignment_ro_error_for(&mut self, value: Value) -> RuntimeError {
+        match self.call_method_with_values(value.clone(), "gist", Vec::new()) {
+            Ok(gist) => {
+                RuntimeError::assignment_ro_value_with_gist(value, &gist.to_string_value())
+            }
+            Err(_) => RuntimeError::assignment_ro_value(value),
+        }
+    }
+
     /// `X::Assignment::RO` naming the immutable value `name` currently holds,
     /// as Rakudo's `infix:<=>` reports it ("Cannot modify an immutable Rat
     /// (3.14)"). Falls back to the value-less wording when the name cannot be
