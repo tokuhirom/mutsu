@@ -430,8 +430,9 @@ impl Interpreter {
             && let Some(storage) = self.resolve_lexical_type_key(pkg.as_str())
             && storage != pkg.as_str()
         {
-            let mangled = format!("{storage}::{}", short.as_str());
-            let found = self.resolve_function_with_types_keyed(&mangled, arg_values, arg_keys);
+            let mangled = crate::qualified::qualified_text(&storage, short.as_str());
+            let found =
+                self.resolve_function_with_types_keyed(mangled.as_str(), arg_values, arg_keys);
             if matches!(found, Ok(Some(_))) {
                 return found;
             }
