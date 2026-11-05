@@ -342,6 +342,16 @@ impl Interpreter {
                     Some(distance) => distance,
                     None => self.arg_type_distance(implicit, &arg, var_type.as_deref()),
                 };
+                if distance >= UNRELATED_DISTANCE && pd.onearg {
+                    // The single-argument rule wraps a non-Positional argument
+                    // (`f("x")` for `+@w`) into a one-element list, so the
+                    // candidate binds it and is no unrelated candidate: it
+                    // ranks like any positional slurpy that swallows an
+                    // argument (the flat 1000 above), and stays in rakudo's
+                    // narrowness relation.
+                    total += 1000;
+                    continue;
+                }
                 if distance >= UNRELATED_DISTANCE {
                     profile.mark_unrelated();
                 }
