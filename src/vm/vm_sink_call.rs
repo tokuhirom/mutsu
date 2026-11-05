@@ -16,12 +16,12 @@ use crate::value::ValueView;
 impl Interpreter {
     /// Whether the value on the stack top, the result of a statement call to
     /// the routine named by constant `name_idx`, runs its user `sink` method.
-    /// `false` for a value without one, for a name that resolves to no single
-    /// routine (a multi, a code variable) and for a routine that hands back a
-    /// container.
+    /// `false` for a value without one, for a code variable, for a multi with a
+    /// candidate that hands back a container and for a routine that does.
     // Cost: O(1) when the value has no user `sink` (a tag probe, then one
     // method-table lookup for an instance); otherwise O(d) for the method
-    // lookup, d = MRO depth, plus one routine lookup by name.
+    // lookup, d = MRO depth, plus one routine lookup by name; a multi adds
+    // O(c) for its c candidates.
     pub(crate) fn sunk_call_result_runs_sink(
         &mut self,
         code: &CompiledCode,
@@ -83,8 +83,17 @@ impl Interpreter {
                 }
             };
         }
-        self.resolve_function(&name)
-            .is_some_and(|def| Self::sinks_declared_result(&def))
+        if let Some(def) = self.resolve_function(&name) {
+            return Self::sinks_declared_result(&def);
+        }
+        // A multi: the candidate that ran is not known here, so the result is
+        // sunk when every candidate hands back a fresh value. A mixed set (one
+        // `is rw` candidate) stays unsunk, the conservative answer.
+        let candidates = self.resolve_all_multi_candidates(&name);
+        !candidates.is_empty()
+            && candidates
+                .iter()
+                .all(|def| Self::sinks_declared_result(def))
     }
 
     /// Whether `value`, or the aggregate a mixin wraps, is an Array/List/Hash
