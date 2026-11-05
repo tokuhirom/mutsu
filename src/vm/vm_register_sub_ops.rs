@@ -656,7 +656,7 @@ impl Interpreter {
                     // (`roast/S02-names-vars/variables-and-packages.t`,
                     // "initilization from BEGIN block").
                     None
-                } else if !self.routine_stack().is_empty()
+                } else if (!self.routine_stack().is_empty() || self.in_block_of_eval_unit())
                     // A sub registered while another ROUTINE is running is not
                     // lexical to a block of the compunit body — same exclusion
                     // the mainline arm makes with `routine_stack().is_empty()`.
