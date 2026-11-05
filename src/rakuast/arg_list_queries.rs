@@ -3,8 +3,8 @@
 //! Bool) and `arg-at-pos`, whose index counts from the end when negative and
 //! which answers the `Mu` type object past either end.
 
-use super::{RakuAstNode, node_accessor};
-use crate::value::Value;
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, node_accessor};
+use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(a), a = arguments of the list.
 fn args(node: &RakuAstNode) -> Vec<Value> {
@@ -37,4 +37,49 @@ pub(crate) fn arg_at_pos(node: &RakuAstNode, index: i64) -> Value {
     at.and_then(|i| usize::try_from(i).ok())
         .and_then(|i| args.get(i).cloned())
         .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu")))
+}
+
+/// `ArgList.from-comma-list($comma-apply)`: an `ArgList` over the operands of
+/// an `ApplyListInfix`, whatever its infix is (rakudo only type-checks the
+/// parameter). The class method of `src/Raku/ast/call.rakumod`.
+// Cost: O(o), o = operands of the list infix.
+pub(crate) fn from_comma_list(args: &[Value]) -> Result<Value, RuntimeError> {
+    let [apply] = args else {
+        return Err(RuntimeError::new(format!(
+            "Too few positionals passed; expected 2 arguments but got {}",
+            args.len() + 1
+        )));
+    };
+    let operands = match apply.view() {
+        ValueView::RakuAst(node) if node.class == RakuAstClass::ApplyListInfix => {
+            node_accessor(node, "operands")
+                .and_then(|v| v.as_list_items().map(<[Value]>::to_vec))
+                .unwrap_or_default()
+        }
+        _ => {
+            return Err(RuntimeError::new(format!(
+                "Type check failed in binding to parameter '$comma-apply'; expected \
+                 RakuAST::ApplyListInfix but got {}",
+                crate::value::type_name::value_type_name(apply)
+            )));
+        }
+    };
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ArgList,
+        fields: operands
+            .into_iter()
+            .map(|value| RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(value),
+            })
+            .collect(),
+    })))
+}
+
+/// `invocant`: an `ArgList` has none, so rakudo answers the `Expression` role
+/// type object.
+// Cost: O(1).
+pub(crate) fn invocant() -> Value {
+    Value::package(crate::symbol::Symbol::intern("RakuAST::Expression"))
 }

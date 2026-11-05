@@ -2297,6 +2297,9 @@ fn construct_values(
                 .collect(),
         }))));
     }
+    if class_name == "RakuAST::ArgList" && method == "from-comma-list" {
+        return arg_list_queries::from_comma_list(args).map(Some);
+    }
     if class_name == "RakuAST::SemiList" && method == "new" {
         for arg in args {
             require_any_rakuast(arg, "RakuAST::SemiList.new", "arguments")?;
