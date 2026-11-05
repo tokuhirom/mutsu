@@ -98,6 +98,7 @@ mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
+pub(crate) mod doc_block_edit;
 pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
