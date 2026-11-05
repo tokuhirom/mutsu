@@ -34,6 +34,15 @@ pub(crate) enum BaseDigits {
 
 /// Convert a rational number n/d to a string in the given base.
 pub(crate) fn rat_to_base(n: i64, d: i64, radix: u32, digits_mode: BaseDigits) -> String {
+    rat_to_base_wide(i128::from(n), i128::from(d), radix, digits_mode)
+}
+
+/// [`rat_to_base`] over 128-bit components, for a `Rat`/`FatRat` whose
+/// numerator or denominator no longer fits a machine word (`"0.3333...".FatRat`
+/// with twenty digits). Callers keep both below 2**100 so that scaling the
+/// remainder by the radix cannot overflow.
+// Cost: as `rat_to_base`.
+pub(crate) fn rat_to_base_wide(n: i128, d: i128, radix: u32, digits_mode: BaseDigits) -> String {
     if d == 0 {
         return if n > 0 {
             "Inf".to_string()
@@ -44,8 +53,8 @@ pub(crate) fn rat_to_base(n: i64, d: i64, radix: u32, digits_mode: BaseDigits) -
         };
     }
     let negative = (n < 0) != (d < 0);
-    let mut num = (n as i128).unsigned_abs();
-    let den = (d as i128).unsigned_abs();
+    let mut num = n.unsigned_abs();
+    let den = d.unsigned_abs();
     let radix = radix as u128;
 
     let int_part = num / den;

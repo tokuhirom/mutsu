@@ -15,7 +15,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::methods_narg::allomorph::out_of_range_failure;
 use crate::builtins::methods_narg::base::{
-    BaseDigits, f64_to_rat, rat_base_repeating, rat_to_base,
+    BaseDigits, f64_to_rat, rat_base_repeating, rat_to_base, rat_to_base_wide,
 };
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
@@ -349,6 +349,22 @@ pub(crate) fn base_of(
             return Some(Ok(Value::str(text)));
         }
         ValueView::Rat(n, d) | ValueView::FatRat(n, d) => (n, d),
+        // Components past a machine word: exact digits through 128-bit
+        // arithmetic while both stay below 2**100 (past that, no answer here).
+        ValueView::BigRat(n, d) => {
+            use num_traits::ToPrimitive;
+            let limit = num_bigint::BigInt::from(1u8) << 100usize;
+            if n.magnitude() >= limit.magnitude() || d.magnitude() >= limit.magnitude() {
+                return None;
+            }
+            let (n, d) = (n.to_i128()?, d.to_i128()?);
+            let radix = match radix_arg(radix) {
+                Ok(radix) => radix,
+                Err(failure) => return Some(Ok(failure)),
+            };
+            let text = rat_to_base_wide(n, d, radix, mode.unwrap_or(BaseDigits::Auto));
+            return Some(Ok(Value::str(text)));
+        }
         ValueView::Num(f) if !f.is_finite() => {
             return Some(Err(RuntimeError::new(format!(
                 "X::Numeric::CannotConvert: Cannot convert {} to Int",

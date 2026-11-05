@@ -167,12 +167,31 @@ pub(crate) fn listify(target: &Value, want_array: bool) -> Option<Result<Value, 
     cached_items(target).map(|items| {
         items.map(|items| {
             if want_array {
-                crate::runtime::utils::itemize_real_array_elements(Value::real_array(items))
+                crate::runtime::utils::itemize_real_array_elements(Value::real_array(
+                    nil_to_any_items(items),
+                ))
             } else {
                 Value::array(items)
             }
         })
     })
+}
+
+/// The elements of a fresh `Array` from a `List`/`Seq`: an `Array` slot holds a
+/// container whose default is `Any`, so `Nil` decays to it
+/// (`(Nil, 3).Array` is `[Any, 3]`).
+// Cost: O(e), e = elements.
+pub(crate) fn nil_to_any_items(items: impl IntoIterator<Item = Value>) -> Vec<Value> {
+    items
+        .into_iter()
+        .map(|v| {
+            if v.is_nil() {
+                Value::package(crate::symbol::wk::any())
+            } else {
+                v
+            }
+        })
+        .collect()
 }
 
 fn list_value(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
