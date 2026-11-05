@@ -43,6 +43,54 @@ impl<'a> CodeText<'a> {
         CodeText(Cow::Owned(strip_prose(source)))
     }
 
+    /// The text view of a unit that has no source text (`EVAL($ast)`): the
+    /// names its tree uses, spelled the way the prelude gates look for them.
+    /// A call or type is its bare name, a `sub` declaration is `sub NAME`, and
+    /// any other declaration is `role NAME class NAME` (the tree does not tell
+    /// the two apart here, and a gate only asks whether the unit declares the
+    /// name itself). A gate that needs a spelling this view cannot give
+    /// (`:default(` at a call site) stays closed for such a unit.
+    // Cost: O(n), n = size of the unit's AST.
+    pub(crate) fn from_unit(stmts: &[crate::ast::Stmt]) -> CodeText<'static> {
+        use crate::ast_visit::{NameKind, Visit, walk_stmt};
+        #[derive(Default)]
+        struct Names(String);
+        impl<'ast> Visit<'ast> for Names {
+            // A class's composed roles are spelled the way the source writes
+            // them (`does Iterator`), which is what the gates that key on
+            // composition ask for (`inject_iterator_role_prelude`): the tree
+            // only reports the role as a type name otherwise (#16387).
+            fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
+                if let crate::ast::Stmt::ClassDecl { does_parents, .. } = stmt {
+                    use std::fmt::Write;
+                    for role in does_parents {
+                        let _ = write!(self.0, "does {role} ");
+                    }
+                }
+                walk_stmt(self, stmt);
+            }
+
+            fn visit_name(&mut self, name: &str, kind: NameKind) {
+                use std::fmt::Write;
+                let _ = match kind {
+                    NameKind::SubDecl => write!(self.0, "sub {name} "),
+                    NameKind::Decl => write!(self.0, "role {name} class {name} "),
+                    NameKind::Call
+                    | NameKind::UserRoutineCall
+                    | NameKind::CodeVar
+                    | NameKind::Type
+                    | NameKind::Trait => write!(self.0, "{name} "),
+                    _ => Ok(()),
+                };
+            }
+        }
+        let mut names = Names::default();
+        for stmt in stmts {
+            names.visit_stmt(stmt);
+        }
+        CodeText(Cow::Owned(names.0))
+    }
+
     /// Whether the code -- as opposed to the prose around it -- contains
     /// `needle`.
     pub(crate) fn contains(&self, needle: &str) -> bool {

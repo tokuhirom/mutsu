@@ -187,7 +187,7 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
         Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_hyperwhatever),
-        Expr::Binary { left, right, .. } => {
+        Expr::Binary { left, right, .. } | Expr::HyperOp { left, right, .. } => {
             contains_hyperwhatever(left) || contains_hyperwhatever(right)
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_hyperwhatever(expr),
@@ -198,6 +198,9 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         | Expr::CallOn { target, .. }
         | Expr::Exists { target, .. }
         | Expr::Index { target, .. } => contains_hyperwhatever(target),
+        Expr::Call { name, args, .. } if is_subscript_adverb_call(*name) && !args.is_empty() => {
+            contains_hyperwhatever(&args[0])
+        }
         Expr::InfixFunc { left, right, .. } => {
             contains_hyperwhatever(left) || right.iter().any(contains_hyperwhatever)
         }
@@ -315,7 +318,9 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
             right,
             ..
         } => count_whatever(left) + usize::from(is_whatever(right)),
-        Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
+        Expr::Binary { left, right, .. } | Expr::HyperOp { left, right, .. } => {
+            count_whatever(left) + count_whatever(right)
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. }
         | Expr::DynamicMethodCall { target, .. }
@@ -333,6 +338,11 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         Expr::Index { target, .. } => count_whatever(target),
         // `*<a>:exists`: the adverb applies to the subscript, which primes.
         Expr::Exists { target, .. } => count_whatever(target),
+        // `*<a>:k` and kin: the same, spelled as a builtin call whose first
+        // argument is the subscripted target (#15446).
+        Expr::Call { name, args, .. } if is_subscript_adverb_call(*name) && !args.is_empty() => {
+            count_whatever(&args[0])
+        }
         // A zen slice is the empty-subscript postcircumfix; like `Index`, only
         // its target can hold the `*` that decides the arity.
         Expr::ZenSlice(target) => count_whatever(target),
@@ -401,4 +411,11 @@ impl<'ast> Visit<'ast> for MentionsTopic {
             self.found = true;
         }
     }
+}
+
+/// Whether `name` is the builtin a subscript adverb (`:k`, `:v`, `:p`, ...)
+/// lowers to; its first argument is the subscripted target.
+// Cost: O(1).
+pub(crate) fn is_subscript_adverb_call(name: crate::symbol::Symbol) -> bool {
+    name.with_str(|n| n == crate::ast::subscript_adverb::SUBSCRIPT_ADVERB_FN)
 }

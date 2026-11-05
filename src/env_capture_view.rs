@@ -285,6 +285,61 @@ impl CaptureView {
         })
     }
 
+    /// The entries `keep` accepts, with the value the highest layer answering
+    /// for each name holds -- what filtering [`Self::iter`] gives, without
+    /// folding the layers into one map first.
+    ///
+    /// A shared layer ([`Layer::shared`]) holds nothing but system names, so a
+    /// caller that keeps only user lexicals never needs to look at one: a
+    /// closure call that installs its capture's plain lexicals no longer pays
+    /// for the system names in scope (the fold copied every one of them for
+    /// each closure created, #7817).
+    // Cost: O(e), e = entries of the capture's own (non-shared) layers.
+    pub(crate) fn collect_unshared(&self, keep: impl Fn(&Symbol) -> bool) -> Vec<(Symbol, Value)> {
+        let mut out: Vec<(Symbol, Value)> = Vec::new();
+        let mut open = self.layers.iter().filter(|l| !l.shared);
+        let Some(first) = open.next() else {
+            return out;
+        };
+        let second = open.next();
+        for (k, v) in first.tier.iter() {
+            if keep(k) && !first.hidden.as_ref().is_some_and(|h| h.contains(k)) {
+                out.push((*k, v.clone()));
+            }
+        }
+        let Some(second) = second else {
+            return out;
+        };
+        // More than one own layer: a name already taken from a higher layer
+        // wins, and a hidden one is left to the layers below.
+        let mut seen: FxHashSet<Symbol> = out.iter().map(|(k, _)| *k).collect();
+        for layer in std::iter::once(second).chain(open) {
+            for (k, v) in layer.tier.iter() {
+                if keep(k)
+                    && !layer.hidden.as_ref().is_some_and(|h| h.contains(k))
+                    && seen.insert(*k)
+                {
+                    out.push((*k, v.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Append the names a closure could have written through this capture:
+    /// every key of the own (non-shared) layers and the dynamic variables of
+    /// the shared ones. Duplicates and hidden names are left in -- a superset.
+    // Cost: O(e + l * d), e = entries of the own layers, d = dynamic keys per shared layer.
+    pub(crate) fn extend_written_name_candidates(&self, out: &mut Vec<Symbol>) {
+        for layer in self.layers.iter() {
+            if layer.shared {
+                out.extend_from_slice(layer.tier.dynamic_keys());
+            } else {
+                out.extend(layer.tier.keys().copied());
+            }
+        }
+    }
+
     pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
         self.merged().iter()
     }
@@ -367,6 +422,38 @@ mod tests {
         assert_eq!(merged.get(&s("own")), Some(&Value::int(1)));
         assert_eq!(merged.get(&s("_")), Some(&Value::int(5)));
         assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn collect_unshared_matches_filtering_the_fold_without_the_shared_layers() {
+        let hidden: FxHashSet<Symbol> = [s("b")].into_iter().collect();
+        let view = CaptureView::new(vec![
+            Layer::open(tier(&[("a", 1), ("b", 2), ("Sys", 3)])),
+            Layer::shared(tier(&[("a", 8), ("Shared", 4)]), None, false),
+            Layer {
+                tier: tier(&[("a", 5), ("b", 6), ("c", 7)]),
+                hidden: Some(Arc::new(hidden)),
+                shared: false,
+                above_base: false,
+            },
+        ]);
+        let keep = |k: &Symbol| k.with_str(|n| n.starts_with(char::is_lowercase));
+        let mut got = view.collect_unshared(keep);
+        got.sort_by_key(|(k, _)| k.as_str().to_string());
+        // `a` and `b` come from the highest layer; `b` is hidden in the lowest.
+        let want: Vec<_> = vec![
+            (s("a"), Value::int(1)),
+            (s("b"), Value::int(2)),
+            (s("c"), Value::int(7)),
+        ];
+        assert_eq!(got, want);
+        let mut folded: Vec<_> = view
+            .iter()
+            .filter(|(k, _)| keep(k))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        folded.sort_by_key(|(k, _)| k.as_str().to_string());
+        assert_eq!(got, folded);
     }
 
     #[test]

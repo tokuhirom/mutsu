@@ -44,6 +44,15 @@ pub(crate) struct DispatchState {
     /// imported, in scope for the op `OpCode::LexImportBuiltinOp` is running
     /// (ADR-8751 stage 2): `try_user_infix` answers from them first.
     pub(crate) lexical_operator_scopes: Vec<LexicalOperatorScope>,
+    /// Set while a string interpolation folds its pieces through a user
+    /// `infix:<~>` (`exec_string_concat_op`, #15932): an interpolation inside
+    /// that candidate's own body stringifies plainly instead of re-entering it.
+    pub(crate) string_concat_user_fold: bool,
+    /// Ids of the captured multi dispatchers currently being dispatched by
+    /// name because their family only grew since the capture (#15925): a
+    /// second entry for the same dispatcher (its by-name call resolving back
+    /// to it) walks the captured candidates instead of recursing.
+    pub(crate) grown_family_dispatch: Vec<u64>,
     /// Active proto bodies a `{*}` may dispatch from (#10746).
     pub(crate) proto_dispatch_stack: Vec<ProtoDispatchFrame>,
     /// How many method calls are in progress (the VM's method-call opcodes,
@@ -62,6 +71,13 @@ pub(crate) struct DispatchState {
     /// the probe with `mem::take`, so it only ever masks the one immediately
     /// following dispatch, never a nested subscript evaluated underneath it.
     pub(crate) skip_postcircumfix_overload: bool,
+    /// Armed (`Some(None)`) while a subscript ASSIGNMENT or binding runs a
+    /// user `postcircumfix:<[ ]>`/`<{ }>` candidate to learn which element it
+    /// addresses; the CORE subscript routine the candidate delegates to
+    /// records the index it was handed (`Some(Some(index))`), and the store
+    /// then goes to that index (`@a[1.5] = v` through Array::Rounded's
+    /// rounding candidate, #16294).
+    pub(crate) subscript_lvalue_capture: Option<Option<Value>>,
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
@@ -112,6 +128,12 @@ pub(crate) struct DispatchState {
     pub(crate) wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,
     /// Maps sub_id to function name for named call wrap chain lookup.
     pub(crate) wrap_sub_names: HashMap<u64, String>,
+    /// Maps sub_id to the package the wrapped routine is declared in. Wrap
+    /// state is recorded under the routine's bare name, so two routines of
+    /// different packages sharing it (`class A { sub nc ... }` and
+    /// `class B { sub nc ... }`, each with a bound `$!do`) are told apart by
+    /// this table, not merged into one chain.
+    pub(crate) wrap_sub_packages: HashMap<u64, Symbol>,
     /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
     /// when dispatching named function calls through the wrap chain.
     pub(crate) wrap_name_to_sub: ValueMap,
@@ -145,6 +167,18 @@ pub(crate) struct DispatchState {
     /// `X::TypeCheck::Binding` identity a sequence endpoint check relies on
     /// (roast S03-sequence/misc.t).
     pub(crate) suppress_binding_error_enhance: bool,
+    /// The captured-dispatcher winner (`SubData::id`) whose nominal parameter
+    /// types a keyed stage program already verified for exactly the arguments
+    /// of the call about to run it (`call_captured_multi_winner`). The first
+    /// `call_compiled_closure_in_unit` of that id takes it, so no nested call
+    /// can ever see it; it is cleared again when the winner's call returns.
+    pub(crate) nominal_verified_candidate: Option<u64>,
+    /// One-shot, armed by `call_compiled_closure_in_unit` immediately before
+    /// the winner's bind and taken at the bind's entry: this bind may skip the
+    /// nominal `type_matches_value` of each plain parameter (the verdict was
+    /// decided by the argument-type key). Never read by a nested call: it is
+    /// back to `false` before any default expression or body runs.
+    pub(crate) pending_nominal_verified: bool,
     pub(crate) method_dispatch_pure: bool,
     /// Registry function keys grouped by their BASE name — the index behind
     /// [`Interpreter::fn_keys_for_base`].
@@ -244,6 +278,7 @@ impl DispatchState {
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             wrap_chains: self.wrap_chains.clone(),
             wrap_sub_names: self.wrap_sub_names.clone(),
+            wrap_sub_packages: self.wrap_sub_packages.clone(),
             wrap_name_to_sub: self.wrap_name_to_sub.clone(),
             wrap_callable_ids: self.wrap_callable_ids.clone(),
             wrap_handle_counter: self.wrap_handle_counter,

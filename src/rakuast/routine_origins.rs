@@ -32,6 +32,33 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
     });
 }
 
+/// The `Signature` of an anonymous `sub` / `method` built from `params`
+/// (which has no [`RoutineSpans`]), each `Parameter` given the origin the
+/// parser recorded for it.
+// Cost: O(p), p = parameters.
+pub(super) fn anon_signature(
+    names: &crate::scope::NameScope,
+    params: &[ParamDef],
+    returns: Option<&str>,
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let mut signature = super::view::signature(names, params, true, returns)?;
+    parameters(&mut signature, params);
+    // The signature runs from the first parameter to the end of the last.
+    if let (Some(first), Some(last)) = (params.first(), params.last())
+        && first.spans.param.is_some()
+        && last.spans.param.is_some()
+    {
+        super::origin::set_span(
+            &mut signature,
+            crate::ast::SrcSpan::new(
+                first.spans.param.from as usize,
+                last.spans.param.to as usize,
+            ),
+        );
+    }
+    Ok(signature)
+}
+
 /// Give the traits of `node` (a routine whose `traits` list was rebuilt from
 /// the `.AST` parse's trait records, one per record) the origins in `spans`:
 /// the trait, and the name or type it names.
@@ -88,12 +115,19 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
         }
         return;
     }
-    let (Stmt::ClassDecl { spans, .. } | Stmt::RoleDecl { spans, .. }) = stmt else {
+    let (Stmt::ClassDecl { spans, .. }
+    | Stmt::RoleDecl { spans, .. }
+    | Stmt::Package { spans, .. }) = stmt
+    else {
         return;
     };
     let Some(spans) = spans.as_deref() else {
         return;
     };
+    // `unit class C;` holds the rest of the unit as its body.
+    let unit = super::unit_span::unit_body(stmt)
+        .and_then(|body| super::unit_span::package_spans(Some(spans), body));
+    let spans = unit.as_deref().unwrap_or(spans);
     let mut block = spans.block;
     // A role's body is the block its type parameters belong to, and Rakudo
     // starts it at the role's name (`R[::T] { }`).
@@ -200,6 +234,38 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
     }
 }
 
+/// Give the `signature` of the pointy block `block` of a `for` loop
+/// (`for @a -> $x, $y { }`) the ranges the parser recorded for its
+/// parameters, and the signature the span from the first to the last.
+// Cost: O(p + size of the body), p = parameters.
+pub(super) fn for_pointy_block(
+    names: &crate::scope::NameScope,
+    params: &[ParamDef],
+    body: &[crate::ast::Stmt],
+) -> Result<RakuAstNode, crate::value::RuntimeError> {
+    let mut block = super::view::pointy_block(names, params, body, None)?;
+    place_signature(&mut block, params);
+    Ok(block)
+}
+
+// Cost: O(p), p = parameters.
+fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
+    let (Some(first), Some(last)) = (params.first(), params.last()) else {
+        return;
+    };
+    if !first.spans.param.is_some() || !last.spans.param.is_some() {
+        return;
+    }
+    let whole = crate::ast::SrcSpan::new(
+        first.spans.param.from as usize,
+        last.spans.param.to as usize,
+    );
+    with_child(block, "signature", |signature| {
+        parameters(signature, params);
+        super::origin::set_span(signature, whole);
+    });
+}
+
 /// Give a `Parameter`, its target and its type the origins of the text they
 /// were written at.
 // Cost: O(d), d = nesting of the type nodes.
@@ -233,13 +299,41 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         return;
     }
     super::origin::set_span(ty, span);
-    if matches!(
+    // `Int:D`: the inner `Type::Simple` spans all of it, its `Name` only the
+    // name before the smiley.
+    let smiled = matches!(
         ty.class,
-        RakuAstClass::TypeDefinedness | RakuAstClass::TypeSimple
-    ) && let Some(field) = ty.fields.first_mut()
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
+    );
+    let name_end = smiled.then(|| smiley_start(span)).flatten();
+    if (smiled || ty.class == RakuAstClass::TypeSimple)
+        && let Some(field) = ty.fields.first_mut()
     {
         with_value(&mut field.value, |inner| type_origin(inner, span));
+        if let Some(end) = name_end {
+            with_value(&mut field.value, |simple| {
+                if let Some(name) = simple.fields.first_mut() {
+                    with_value(&mut name.value, |name| {
+                        name.origin = Default::default();
+                        super::origin::set_span(
+                            name,
+                            crate::ast::SrcSpan::new(span.from as usize, end),
+                        )
+                    });
+                }
+            });
+        }
     }
+}
+
+/// Where the smiley (`:D`, `:U`, `:_`) of the type written at `span` starts.
+// Cost: O(n), n = length of the written type.
+fn smiley_start(span: crate::ast::SrcSpan) -> Option<usize> {
+    super::unit_source::with_text(span, |written| {
+        let at = written.len().checked_sub(2)?;
+        let smiley = written.get(at..)?;
+        matches!(smiley, ":D" | ":U" | ":_").then_some(span.from as usize + at)
+    })
 }
 
 /// Apply `f` to the node held in `node`'s field `name`, if it holds one.

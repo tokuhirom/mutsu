@@ -77,16 +77,21 @@ impl UnitSource {
         if ascii {
             for byte in text.bytes() {
                 chars += 1;
-                if byte == b'\n' {
+                if matches!(byte, b'\n' | 0x0B | 0x0C) {
                     line_starts.push(chars);
                 }
             }
         } else {
-            use unicode_segmentation::UnicodeSegmentation;
+            use crate::grapheme_break::UnicodeSegmentation;
             for (byte, grapheme) in text.grapheme_indices(true) {
                 char_starts.push(u32::try_from(byte).unwrap_or(u32::MAX));
                 chars += 1;
-                if grapheme == "\n" || grapheme == "\r\n" {
+                let mut scalars = grapheme.chars();
+                let single_break = matches!(
+                    (scalars.next(), scalars.next()),
+                    (Some(c), None) if crate::str_scan::is_line_break(c)
+                );
+                if single_break || grapheme == "\r\n" {
                     line_starts.push(chars);
                 }
             }

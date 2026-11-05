@@ -541,7 +541,7 @@ impl Interpreter {
                     // capture through its persisted shared cell ONLY — see
                     // `escaping_our_read` — short-circuiting the env lookup.
                     .or_else(|| self.escaping_our_read(name))
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     // A package-qualified variable lives in `our_vars`; an env
                     // entry under its name is a copy some frame left behind
                     // (a by-name write stores both), which a later write from
@@ -910,7 +910,7 @@ impl Interpreter {
                 let val = self
                     // A package-block `my @a` read by the package's own subs,
                     // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .package_scope_lexical(name)
+                    .package_scope_lexical_in(code, name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
@@ -975,7 +975,7 @@ impl Interpreter {
                     // binding — package_lexicals only holds this name's
                     // declaration-time snapshot, taken once at block exit
                     // (#8869).
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     .map(Ok)
                     .unwrap_or_else(|| {
                         // A never-declared `@*`-twigil (dynamic) variable: the
@@ -1109,7 +1109,7 @@ impl Interpreter {
                 let val = package_val
                     // A package-block `my %h` read by the package's own subs,
                     // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .or_else(|| self.package_scope_lexical(name))
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
@@ -1287,8 +1287,9 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(k), k = interned qualified names ending in the key's bare name, for a
-            // sigiled key of an ordinary package; any other key or stash is built whole as
-            // GetPseudoStash, O(v), v = env entries (-- see #9171); plus the one-key Index.
+            // sigiled key of an ordinary package, O(1) for a `$`/`@`/`%` key of GLOBAL::; any
+            // other key or stash is built whole as GetPseudoStash, O(v), v = env entries
+            // (-- see #9171); plus the one-key Index.
             // Rakudo: O(1).
             OpCode::GetPseudoStashKeyed(name_idx) => {
                 self.exec_get_pseudo_stash_keyed_op(code, *name_idx)?;
@@ -2010,6 +2011,14 @@ impl Interpreter {
                         // (`say (my @b = @a).raku`) compiles to this store
                         // rather than SetLocal, and had none of its rule.
                         decomposed
+                    } else if let Some(refilled) = {
+                        let current = self.env().get(&name).cloned();
+                        match current {
+                            Some(cur) => self.refill_shaped_array(&cur, &raw_val)?,
+                            None => None,
+                        }
+                    } {
+                        refilled
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }
@@ -2158,6 +2167,12 @@ impl Interpreter {
                         is_bind_ctx || is_rebind,
                     )?,
                 };
+                val = match &attr_site {
+                    Some(at) if at.has_prefetched_type() => {
+                        self.keep_attr_container_default(&name, val, is_bind_ctx || is_rebind)
+                    }
+                    _ => val,
+                };
                 if let Some(kind) = decl_readonly_kind {
                     self.mark_readonly_sym_with(name_sym, kind);
                     val = Self::readonly_value_binding(val, kind);
@@ -2167,7 +2182,12 @@ impl Interpreter {
                 // slot (`(my $p := (1,2))` in the mainline) lands here, and
                 // without the marker `@a = $p` itemized it (#9262).
                 if !is_internal_temp {
-                    self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
+                    self.update_bound_decont_marker(
+                        &name,
+                        name_sym,
+                        was_scalar_bind || is_bind_ctx,
+                        &val,
+                    );
                     // `$!attr := $var` seats the variable's own container, so
                     // the attribute stays a writable one (`nqp::isrwcont`)
                     // even though the stack carries only its value.
@@ -2710,6 +2730,11 @@ impl Interpreter {
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
                     {
+                        // The Proxy object `.VAR` hands back has no container to
+                        // assign into (#16299).
+                        if proxy_val.is_proxy_var_object() {
+                            return Err(RuntimeError::readonly_variable());
+                        }
                         let val = if assigned_nil { Value::NIL } else { val };
                         loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
                         *ip += 1;
@@ -3628,7 +3653,9 @@ impl Interpreter {
                             if matches!(
                                 inner.view(),
                                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
-                            ) || self.mixin_composes_method(&val, "iterator") =>
+                            ) || self.mixin_composes_method(&val, "iterator")
+                                // `Q.new but R` over an Iterable class (#15973).
+                                || self.instance_decomposes_on_array_assign(inner) =>
                         {
                             Value::scalar(val)
                         }
@@ -4284,8 +4311,8 @@ impl Interpreter {
             }
             // Cost: O(m), m = chars of a Str key (copied into the Pair); the
             // value is boxed as for MakePair. Rakudo: O(1) -- see #9252.
-            OpCode::MakeNamedArg => {
-                self.exec_make_named_arg_op(code);
+            OpCode::MakeNamedArg { readonly } => {
+                self.exec_make_named_arg_op(code, *readonly);
                 *ip += 1;
             }
             // Cost: O(m), m = chars of the key (the `String` key is copied).
@@ -4965,7 +4992,7 @@ impl Interpreter {
                         (*user_sink, *may_explode_failure)
                     }
                     OpCode::SinkPopCall(name_idx) => (
-                        self.sunk_call_result_runs_sink(code, *name_idx),
+                        self.sunk_call_result_runs_sink(code, *ip, *name_idx),
                         // A block that hands back its last statement's container
                         // sinks nothing inside it.
                         !self.sunk_call_result_is_block_container(code, *name_idx),
@@ -4976,13 +5003,16 @@ impl Interpreter {
                     // A Proxy in sink context is FETCHed, as Rakudo decontainerizes
                     // it (`$obj.rw-accessor;` runs the FETCH, which may die).
                     // Not for `SinkPopCall`: `f() = 1` on an `is rw` routine
-                    // sinks the assignment, which runs STORE alone.
-                    let val =
-                        if val.is_proxy_value() && matches!(code.ops[*ip], OpCode::SinkPop(..)) {
-                            self.auto_fetch_proxy(&val)?
-                        } else {
-                            val
-                        };
+                    // sinks the assignment, which runs STORE alone. Not for the
+                    // Proxy object `.VAR` hands back (#15893).
+                    let val = if val.is_proxy_value()
+                        && !val.is_proxy_var_object()
+                        && matches!(code.ops[*ip], OpCode::SinkPop(..))
+                    {
+                        self.auto_fetch_proxy(&val)?
+                    } else {
+                        val
+                    };
                     // A bare statement value whose class defines its own `sink`
                     // method invokes it in sink context (Raku semantics:
                     // `class C { method sink {...} }; C.new;` runs the sink).
@@ -5032,6 +5062,21 @@ impl Interpreter {
                         // the doc idiom `($b + 1) does role { method sink { $b++
                         // } }` mutates a caller lexical from inside sink.
                         let _ = self.dispatch_mixin_method_call(&val, "sink", Vec::new());
+                        self.apply_pending_caller_var_writeback(code);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // A type whose `^find_method` answers `sink` (no declared
+                    // `sink` method): the sunk value asks the metaobject, as
+                    // any method call does (#16331).
+                    if user_sink
+                        && sink_class.is_none()
+                        && !mixin_sink
+                        && self.user_find_method_declares(&val)
+                        && let ValueView::Instance { class_name, .. } = val.view()
+                        && !self.has_user_method(class_name.as_str(), "STORE")
+                    {
+                        let _ = self.try_user_find_method_dispatch(&val, "sink", &[]);
                         self.apply_pending_caller_var_writeback(code);
                         *ip += 1;
                         return Ok(());
@@ -7338,6 +7383,7 @@ impl Interpreter {
                 post_start,
                 end,
                 is_bare_block,
+                decont_result,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_block_scope_op(
@@ -7352,6 +7398,7 @@ impl Interpreter {
                         *end,
                     ],
                     *is_bare_block,
+                    *decont_result,
                     ip,
                     compiled_fns,
                 )?;

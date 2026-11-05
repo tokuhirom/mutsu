@@ -250,7 +250,7 @@ impl Interpreter {
                         if typed {
                             Self::namify_pair_item(map.typed_pair(k, v.clone()))
                         } else {
-                            Value::pair(k.clone(), v.deref_container())
+                            Value::pair(k.clone(), v.clone())
                         }
                     })
                     .collect()
@@ -322,7 +322,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_not_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap().hllize_operand();
         // Boolifying a Failure marks it as handled
         val.mark_failure_handled();
         let t = self.eval_truthy_result(&val)?;
@@ -395,6 +395,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // A raw BOOT scalar box is its high-level value at an operator (#12881).
+        let left = left.hllize_operand();
+        let right = right.hllize_operand();
         // Thread over junctions — concat uses left-first threading
         // (unlike arithmetic/comparison which uses right-first for tighter
         // junctions). When both operands are junctions and the right is
@@ -466,6 +469,8 @@ impl Interpreter {
         } else {
             v
         };
+        // ...and so does one inside a rendered `Pair`/`Hash` (#15772).
+        let v = self.fetch_nested_proxies_for_str(v)?;
         // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
         if let Some(r) = self.user_find_method_stringify(&v, "Stringy") {
             return r;
@@ -762,8 +767,18 @@ impl Interpreter {
         // `.Stringy`, which only `utf8` has (it decodes); any other Blob dies
         // with `X::Buf::AsStr` rather than contributing its bytes.
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
-            let left = Self::concat_operand_stringy(left)?;
-            let right = Self::concat_operand_stringy(right)?;
+            // rakudo reaches the Blob through `.Stringy` when the other side is
+            // a Str (`$blob ~ "a"`) and through `.Str` for anything else
+            // (`$blob ~ 1`, `$blob ~ []`); only the exception's wording shows it.
+            let method = if matches!(left.view(), ValueView::Str(_))
+                || matches!(right.view(), ValueView::Str(_))
+            {
+                "Stringy"
+            } else {
+                "Str"
+            };
+            let left = Self::concat_operand_stringy_via(left, method)?;
+            let right = Self::concat_operand_stringy_via(right, method)?;
             return Ok(crate::builtins::str_prim::concat(left, &right));
         }
         Ok(crate::builtins::str_prim::concat(left, &right))
@@ -787,6 +802,16 @@ impl Interpreter {
     /// Only `utf8` stringifies (it decodes); any other Blob dies with
     /// `X::Buf::AsStr` (method `Stringy`).
     pub(crate) fn concat_operand_stringy(v: Value) -> Result<Value, RuntimeError> {
+        Self::concat_operand_stringy_via(v, "Stringy")
+    }
+
+    /// [`Self::concat_operand_stringy`] naming `method` (`Stringy` or `Str`) in
+    /// the `X::Buf::AsStr` it throws for a non-`utf8` Blob.
+    // Cost: O(1) for a non-Blob value, O(n) to decode a `utf8` Blob, n = its bytes.
+    pub(crate) fn concat_operand_stringy_via(
+        v: Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
         if !Self::is_buf_value(&v) {
             return Ok(Value::str(crate::runtime::utils::coerce_to_str(&v)));
         }
@@ -795,7 +820,7 @@ impl Interpreter {
         {
             return decoded;
         }
-        Err(Self::buf_as_str_error(&v, "Stringy"))
+        Err(Self::buf_as_str_error(&v, method))
     }
 
     pub fn is_buf_value(val: &Value) -> bool {

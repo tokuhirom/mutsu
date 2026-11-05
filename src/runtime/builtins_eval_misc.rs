@@ -369,10 +369,28 @@ impl Interpreter {
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
-            let stmts = crate::rakuast::with_caller_operators(&operators, || {
-                crate::rakuast::lower(node)
-            })?;
-            return self.eval_lowered_unit(stmts);
+            let names = crate::rakuast::frontend::lower_scope(&operators);
+            let stmts = crate::rakuast::lower(&names, node)?;
+            // Pod blocks written into the tree are the unit's `$=pod`, which
+            // is the EVAL's own: the caller's is put back afterwards.
+            let Some(pod) = crate::rakuast::pod_source(node) else {
+                return self.eval_lowered_unit(stmts);
+            };
+            let previous_pod = self.env.get("=pod").cloned();
+            self.env.remove("=pod");
+            let result = match self.collect_pod_sources(&pod) {
+                Ok(()) => self.eval_lowered_unit(stmts),
+                Err(e) => Err(e),
+            };
+            match previous_pod {
+                Some(saved) => {
+                    self.env.insert("=pod".to_string(), saved);
+                }
+                None => {
+                    self.env.remove("=pod");
+                }
+            }
+            return result;
         }
         if let Some(first_arg) = Self::positional_value(args, 0)
             && let ValueView::Instance { attributes, .. } = first_arg.view()
@@ -382,9 +400,8 @@ impl Interpreter {
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
-            let stmts = crate::rakuast::with_caller_operators(&operators, || {
-                crate::rakuast::lower(node)
-            })?;
+            let names = crate::rakuast::frontend::lower_scope(&operators);
+            let stmts = crate::rakuast::lower(&names, node)?;
             return self.eval_lowered_unit(stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks

@@ -143,6 +143,10 @@ pub(crate) struct ModuleState {
     pub(crate) module_own_families:
         HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
     pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
+    /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
+    /// built on the first ask so every later ask returns the same `Hash` and
+    /// the same Pod objects (`at-unit($cu, '$=pod')[0] === $pod`).
+    pub(crate) loaded_unit_pads: HashMap<String, Value>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
     /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
     /// stay lexical to the importing scope.
@@ -286,6 +290,12 @@ pub(crate) struct ModuleState {
     /// `module_imported_lexical_names`, whose entries beat a same-keyed
     /// `$scalar`. Saved/restored around each nested load (#9389).
     pub(crate) module_export_terms: Vec<(String, Value)>,
+    /// Package-qualified terms a loaded module's `sub EXPORT` hook handed to
+    /// the module that `use`d it, as `(importer, key, value)`. The hook runs
+    /// inside the hook module's own load, so `module_export_terms` (the
+    /// innermost load's list) would file them under the wrong module; the
+    /// importer drains its own rows when its load finishes.
+    pub(crate) importer_export_terms: Vec<(String, String, Value)>,
     /// The env keys of the variables, constants and types the module being
     /// loaded binds in its mainline's pad for its own top-level `use`s
     /// (`lexical_imports::MODULE_UNIT_MARK`). When the load finishes they
@@ -351,6 +361,12 @@ pub(crate) struct ModuleState {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     pub(crate) unit_module_loading_stack: Vec<String>,
+    /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
+    /// name: what `CompUnit::Handle.export-sub` answers once the load is over
+    /// and the registry's `GLOBAL::EXPORT` has been handed back to the
+    /// enclosing compunit (#15371).
+    pub(crate) module_export_hooks:
+        std::sync::Arc<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
     /// The package a `use`/`need` must import INTO, when the statement is run
     /// by a body that is not a compunit mainline: a role's deferred body, or an
     /// `augment` body. Both re-point `current_package` at the declaring package
@@ -474,6 +490,13 @@ pub(crate) struct ModuleState {
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// Bumped whenever `lexical_import_sets` is written
+    /// (`Interpreter::finish_lexical_import_capture`); the per-site memo of a
+    /// `LexImportCall` (`LexImportSiteCaches`) is valid for one value of it.
+    /// Starts in a range of its own per interpreter
+    /// (`Interpreter::fresh_registry_write_gen`), so a memo one thread wrote
+    /// into a shared chunk never reads as current to another interpreter.
+    pub(crate) lexical_import_gen: u64,
     /// The multi candidates each lexical import set binds per family, merged
     /// with those of the earlier `use`s of its scope: a later `use` of the
     /// same family name adds its candidates to the earlier ones rather than
@@ -502,6 +525,28 @@ pub(crate) struct ModuleState {
     /// owner): code of any other compunit it calls reads its own top-level
     /// `use`s, not the chain (#14481).
     pub(crate) eval_import_unit: Option<Symbol>,
+    /// The import-region key of the running `EVAL` unit's own scope: the
+    /// routines the unit declares are compiled inside it (their
+    /// `enclosing_import_regions` hold it), so what the unit's `use` imported
+    /// is in their lexical outer.
+    pub(crate) eval_unit_region: Option<Symbol>,
+    /// The `block_scope_depth` at which the running `EVAL` unit's own top-level
+    /// statements run (the unit's run opens one block scope). A block nested in
+    /// the unit is deeper, and declares routines under the ordinary lexical
+    /// shadowing rules; the unit's top level still sees the caller's names as
+    /// ones it may not redeclare.
+    pub(crate) eval_unit_block_depth: usize,
+    /// `routine_stack` depth when the innermost `EVAL` unit started: a routine
+    /// entered since then declares its own lexical subs (#15869).
+    pub(crate) eval_unit_routine_depth: usize,
+    /// The capture bucket key of the innermost running `EVAL` unit (`None`
+    /// outside one): the named subs declared at the unit's top level capture
+    /// the unit's variables in `unit_lexicals[key]`, as a program's own
+    /// mainline subs do in `MAINLINE_UNIT_KEY`'s bucket (ADR-0024). A fresh
+    /// key per `EVAL` run, so two units never share cells.
+    pub(crate) eval_unit_capture_key: Option<std::sync::Arc<str>>,
+    /// Source of [`Self::eval_unit_capture_key`].
+    pub(crate) eval_unit_counter: u64,
     /// Classes whose declaration died while an `EVAL` unit was compiling it
     /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
     /// compile, so `isolated_eval_unit` does not merge these into the
@@ -701,6 +746,7 @@ impl ModuleState {
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: Default::default(),
+            loaded_unit_pads: HashMap::new(),
             module_registered_functions: Default::default(),
             module_registered_protos: Default::default(),
             packages_with_deferred_use_imports: Default::default(),
@@ -721,6 +767,7 @@ impl ModuleState {
             module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
@@ -735,6 +782,7 @@ impl ModuleState {
             reexported_var_owners: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
+            module_export_hooks: Default::default(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
@@ -753,11 +801,18 @@ impl ModuleState {
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
             lexical_import_sets: HashMap::new(),
+            lexical_import_gen: crate::runtime::Interpreter::fresh_registry_write_gen()
+                .into_inner(),
             lexical_set_families: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_import_unit: None,
+            eval_unit_region: None,
+            eval_unit_block_depth: 0,
+            eval_unit_routine_depth: 0,
+            eval_unit_capture_key: None,
+            eval_unit_counter: 0,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
             eval_prerun_sets: Vec::new(),
@@ -811,6 +866,7 @@ impl ModuleState {
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: self.loaded_modules.clone(),
+            loaded_unit_pads: self.loaded_unit_pads.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
             module_registered_protos: self.module_registered_protos.clone(),
             packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
@@ -831,6 +887,7 @@ impl ModuleState {
             module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
@@ -845,6 +902,7 @@ impl ModuleState {
             exported_token_defs: self.exported_token_defs.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
+            module_export_hooks: self.module_export_hooks.clone(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
@@ -863,11 +921,18 @@ impl ModuleState {
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_import_gen: crate::runtime::Interpreter::fresh_registry_write_gen()
+                .into_inner(),
             lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
+            eval_unit_region: self.eval_unit_region,
+            eval_unit_block_depth: self.eval_unit_block_depth,
+            eval_unit_routine_depth: self.eval_unit_routine_depth,
+            eval_unit_capture_key: self.eval_unit_capture_key.clone(),
+            eval_unit_counter: self.eval_unit_counter,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_prerun_sets: self.eval_prerun_sets.clone(),

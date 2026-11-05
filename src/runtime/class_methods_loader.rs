@@ -136,10 +136,7 @@ impl Interpreter {
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
         let saved_package = self.current_package_sym();
-        self.set_current_package_with_sym(
-            "GLOBAL".to_string(),
-            crate::symbol::Symbol::intern("GLOBAL"),
-        );
+        self.set_current_package_sym(crate::symbol::Symbol::intern("GLOBAL"));
         let result = (|| {
             let (stmts, _) = crate::parser::parse_program(&code).map_err(|err| {
                 RuntimeError::new(format!(
@@ -160,7 +157,7 @@ impl Interpreter {
             self.restore_routine_registry_eval(registry_snapshot);
             dispatch_result
         })();
-        self.set_current_package_with_sym(saved_package.as_str().to_owned(), saved_package);
+        self.set_current_package_sym(saved_package);
         crate::parser::set_parser_source_file(saved_source_file);
         result?;
 

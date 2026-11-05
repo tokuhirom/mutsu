@@ -518,7 +518,7 @@ impl Interpreter {
             // the env as a container of the type it captured, and is not a
             // declared type named `T`.
             let alias = self
-                .term_value(name)
+                .term_binding(name)
                 .map(|v| v.deref_container())
                 .or_else(|| self.env.get(name).cloned())
                 .or_else(|| self.package_symbol_alias(name).map(|v| v.deref_container()));
@@ -610,6 +610,31 @@ impl Interpreter {
         if self.has_type_direct(name) {
             return None;
         }
+        // A class declared with a compound name outside its parent prefix
+        // (`class Y::Errno` at file scope) is not declared inside `Y`, so its
+        // own short name is no lexical binding for code running inside the
+        // class: `has Errno $.errno` there names the imported `Errno`, not
+        // the class itself (#16035).
+        if self.is_compound_declared_name(target) {
+            let target_sym = Symbol::intern(target);
+            if crate::qualified::package_ancestors(self.current_package_sym())
+                .any(|pkg| pkg == target_sym)
+            {
+                // The class's own short name (registered in its compound
+                // name's prefix package `X`) binds nothing here, but an
+                // outer scope's import of the same name still does: `Errno`
+                // inside `class X::Errno` is the `use`d enum, found in the
+                // unit's GLOBAL aliases.
+                return self
+                    .types
+                    .package_type_aliases
+                    .get("GLOBAL")
+                    .and_then(|entries| entries.get(name))
+                    .filter(|outer| outer.as_str() != target.as_str())
+                    .filter(|outer| self.has_type_direct(outer))
+                    .cloned();
+            }
+        }
         (self.has_type_direct(target) || self.is_published_outer_package(name, target))
             .then(|| target.clone())
     }
@@ -628,10 +653,13 @@ impl Interpreter {
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
             || !self.module.module_scope_lexicals.contains_name(name)
-            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }
+        // A qualified key is held only when a `sub EXPORT` hook handed out a term
+        // under that exact spelling (`Map.new: 'Graph::Grid' => Graph::Grid`);
+        // the table is keyed by the full text, so the exact-name probe above is
+        // the whole test.
         self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
     }
 
@@ -987,6 +1015,13 @@ impl Interpreter {
         if !reg.has_lexical_type_key_for(qualified) {
             return None;
         }
+        // The scan below reads the four type maps only, so its answer holds
+        // until the next registry write (which drops the memo): a method that
+        // reads the bareword of a `my class` on every call paid the four
+        // whole-map walks each time.
+        if let Some(known) = reg.lexical_key_scans.get(qualified) {
+            return known;
+        }
         let prefix = format!("{qualified}\u{0}");
         // The declaration itself, never one of its curried specializations: a
         // lexical `my role R[::T]` curried with `Str` registers a class
@@ -1012,7 +1047,9 @@ impl Interpreter {
                 .or_else(|| reg.subsets.keys().find(matches))
                 .cloned()
         };
-        find(true).or_else(|| find(false))
+        let found = find(true).or_else(|| find(false));
+        reg.lexical_key_scans.insert(qualified, found.clone());
+        found
     }
 
     /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
@@ -1204,6 +1241,23 @@ impl Interpreter {
         }
         let name_sym = crate::symbol::Symbol::intern(&name);
         if crate::qualified::is_qualified(name_sym) {
+            // A nested-name type declared in the owner's package and spelled
+            // short (`has Window::Clauses $.w` for `Pk::Window::Clauses`) is
+            // not a registered name by itself: resolve it through the owner's
+            // enclosing packages like an unqualified name (#16359). A name
+            // that already is a registered type keeps its spelling.
+            if !self.has_type_direct(&name) {
+                let owner_sym = crate::symbol::Symbol::intern(owner);
+                for pkg in crate::qualified::package_ancestors(owner_sym) {
+                    let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                    if qualified != owner
+                        && self.has_type_direct(qualified)
+                        && !self.compound_name_segment_is_not_a_scope(qualified, pkg)
+                    {
+                        return qualified.to_string();
+                    }
+                }
+            }
             return name;
         }
         let owner_sym = crate::symbol::Symbol::intern(owner);

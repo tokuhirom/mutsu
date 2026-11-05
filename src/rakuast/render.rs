@@ -28,6 +28,9 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
         };
         return render_node(&shown, indent);
     }
+    if let Some(shown) = super::role_implicit::shown(node) {
+        return render_node(&shown, indent);
+    }
     if node.class == RakuAstClass::VarDeclarationSimple
         && let Some(shown) = super::attribute::without_implicit_traits(node)
     {
@@ -94,6 +97,7 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
             | RakuAstClass::VarDynamic
+            | RakuAstClass::VarDoc
             | RakuAstClass::VarCompilerLookup
             | RakuAstClass::VarCompilerFile
             | RakuAstClass::VarCompilerLine
@@ -344,6 +348,8 @@ fn render_inline_field(f: &RakuAstField) -> String {
 fn render_field_line(f: &RakuAstField, indent: usize, width: usize) -> String {
     let val = if f.name == Some("processors") {
         render_processors(&f.value, indent)
+    } else if f.name == Some("column-offsets") {
+        render_offsets(&f.value, indent)
     } else {
         render_field_value(&f.value, indent)
     };
@@ -351,6 +357,19 @@ fn render_field_line(f: &RakuAstField, indent: usize, width: usize) -> String {
         Some(key) => format!("{key:width$} => {val}"),
         None => val,
     }
+}
+
+/// A `Doc::LegacyRow`'s `column-offsets` is an `array[int]`, which `.raku`
+/// prints on one line: `(0,3)`, `(4,)`.
+fn render_offsets(fv: &RakuAstFieldValue, indent: usize) -> String {
+    let RakuAstFieldValue::List(items) = fv else {
+        return render_field_value(fv, indent);
+    };
+    let values = items.iter().map(render_leaf).collect::<Vec<_>>();
+    if let [only] = values.as_slice() {
+        return format!("({only},)");
+    }
+    format!("({})", values.join(","))
 }
 
 /// Rakudo renders a QuotedString's processor names as a word list (`<words
@@ -424,6 +443,11 @@ fn render_node_value(value: &Value, indent: usize) -> Option<String> {
                 return Some(super::subclass::gist_at(display.as_ref(), node, indent));
             }
             ValueView::Mixin(inner, _) => current = inner,
+            // A `config` entry of a `Doc::Block`.
+            ValueView::Pair(key, value) => {
+                let rendered = render_node_value(value, indent)?;
+                return Some(format!(":{key}({rendered})"));
+            }
             _ => return None,
         }
     }
@@ -442,10 +466,23 @@ fn render_leaf(v: &Value) -> String {
         // which is its `.gist`, not its `.Str` (`6.d`).
         ValueView::Version { .. } => format!("v{}", v.to_string_value()),
         // A Num leaf renders as its literal (`NumLiteral.new(1e0)`, `Inf`).
-        ValueView::Num(f) => crate::builtins::methods_0arg::raku_repr::format_num_raku(f),
+        ValueView::Num(f) => crate::value::raku_repr::format_num_raku(f),
         // A complex leaf renders as the angle-bracket literal that is its
         // `.raku` (`ComplexLiteral.new(<1+2i>)`).
         ValueView::Complex(..) => format!("<{}>", v.to_string_value()),
+        // A pair leaf (the `meta` of a `Doc::Markup` entity code) renders as its
+        // `.raku`: `:gt(">")` for an identifier key, `"0x41" => "A"` otherwise.
+        ValueView::Pair(key, value) => {
+            let key = key.to_string();
+            let mut chars = key.chars();
+            let identifier = chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+                && chars.all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+            if identifier {
+                format!(":{key}({})", render_leaf(value))
+            } else {
+                format!("{} => {}", render_str_literal(&key), render_leaf(value))
+            }
+        }
         // A rational leaf renders as its `.raku`, exactly (`RatLiteral.new(1.0)`,
         // every decimal digit), not as its `.Str` (`1`, rounded).
         ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {

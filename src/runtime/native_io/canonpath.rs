@@ -152,18 +152,22 @@ impl Interpreter {
             let after = &path[2..];
             // Server name must be non-empty and not start with a separator
             if !after.is_empty() && !after.starts_with('/') && !after.starts_with('\\') {
+                // rakudo's `<[\\/]> ** 2 <-[\\/]>+ <[\\/]> [ <-[\\/]>+ | $ ]`: the
+                // server needs a separator after it, and the share is either
+                // non-empty or the end of the path (`//a/` is all volume,
+                // `//a//b` and a bare `//a` have none).
                 if let Some(server_end) = after.find(['/', '\\']) {
                     let share_start = server_end + 1;
                     let share_end = after[share_start..]
                         .find(['/', '\\'])
                         .map(|p| share_start + p)
                         .unwrap_or(after.len());
-                    let volume = path[..2 + share_end].to_string();
-                    let rest = path[2 + share_end..].to_string();
-                    return (volume, rest);
+                    if share_end > share_start || share_start == after.len() {
+                        let volume = path[..2 + share_end].to_string();
+                        let rest = path[2 + share_end..].to_string();
+                        return (volume, rest);
+                    }
                 }
-                // Only server, no share -- whole thing is volume
-                return (path.to_string(), String::new());
             }
         }
         // Drive letter: X:
@@ -176,8 +180,25 @@ impl Interpreter {
         (String::new(), path.to_string())
     }
 
-    /// Like `split_win32_volume` but normalizes the volume (/ -> \).
+    /// The volume `canonpath`, `catdir` and `rel2abs` read, normalized (/ -> \):
+    /// unlike `splitpath` (`split_win32_volume`) it takes a server without a
+    /// share (`//a`, `//a/`) as the whole volume `\\a`, and the separators after
+    /// it are path separators (`//a//b` is `\\a` and `\b`).
     pub fn split_win32_volume_normalized(path: &str) -> (String, String) {
+        let bytes = path.as_bytes();
+        let is_sep = |b: u8| b == b'/' || b == b'\\';
+        if bytes.len() > 2 && is_sep(bytes[0]) && is_sep(bytes[1]) && !is_sep(bytes[2]) {
+            let after = &path[2..];
+            let server_end = after.find(['/', '\\']).unwrap_or(after.len());
+            let share_start = server_end + 1;
+            let share_end = after
+                .get(share_start..)
+                .filter(|share| !share.is_empty() && !share.starts_with(['/', '\\']))
+                .map(|share| share_start + share.find(['/', '\\']).unwrap_or(share.len()));
+            let end = share_end.unwrap_or(server_end).max(server_end);
+            let (vol, rest) = path.split_at(2 + end);
+            return (vol.replace('/', "\\"), rest.to_string());
+        }
         let (vol, rest) = Self::split_win32_volume(path);
         (vol.replace('/', "\\"), rest)
     }
@@ -267,7 +288,13 @@ impl Interpreter {
                 if let Some(sep1) = after.find(['/', '\\']) {
                     let after_server = &after[sep1 + 1..];
                     let share_end = after_server.find(['/', '\\']).unwrap_or(after_server.len());
-                    let unc_end = 2 + sep1 + 1 + share_end;
+                    // A server without a share (`//a/`, `//a//b`) is the volume
+                    // `\\a`; the separators after it belong to the path.
+                    let unc_end = if share_end == 0 {
+                        2 + sep1
+                    } else {
+                        2 + sep1 + 1 + share_end
+                    };
                     prefix = path[..unc_end].replace('/', "\\");
                     rest = &path[unc_end..];
                 } else {

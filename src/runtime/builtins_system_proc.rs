@@ -109,6 +109,13 @@ impl Interpreter {
     /// Create an IO::Pipe instance wrapping captured content.
     pub(super) fn make_io_pipe_bin(content: String, bin: bool) -> Value {
         use std::sync::atomic::{AtomicI64, Ordering};
+        // A text-mode handle reads the CR-LF grapheme as "\n" (universal
+        // newline), a pipe included: `run(...).out.slurp` of "x\r\ny" is "x\ny".
+        let content = if !bin && content.contains("\r\n") {
+            content.replace("\r\n", "\n")
+        } else {
+            content
+        };
         static NEXT_PIPE_ID: AtomicI64 = AtomicI64::new(1);
         let id = NEXT_PIPE_ID.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut map) = io_pipe_state_map().lock() {
@@ -227,6 +234,18 @@ impl Interpreter {
     }
 
     fn extract_in_option(value: &Value, opts: &mut ProcOptions) {
+        // A variable argument (`:out($fh)` in a call that also splats a
+        // list) arrives wrapped in its container reference.
+        let deref;
+        let value = {
+            let v = value.unwrap_varref();
+            if v.is_container_ref() {
+                deref = v.deref_container();
+                &deref
+            } else {
+                v
+            }
+        };
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -276,6 +295,18 @@ impl Interpreter {
     }
 
     fn extract_err_option(value: &Value, opts: &mut ProcOptions) {
+        // A variable argument (`:out($fh)` in a call that also splats a
+        // list) arrives wrapped in its container reference.
+        let deref;
+        let value = {
+            let v = value.unwrap_varref();
+            if v.is_container_ref() {
+                deref = v.deref_container();
+                &deref
+            } else {
+                v
+            }
+        };
         // :err can be an IO::Handle (redirect stderr to that file handle)
         if let ValueView::Instance {
             class_name,
@@ -292,6 +323,18 @@ impl Interpreter {
     }
 
     fn extract_out_option(value: &Value, opts: &mut ProcOptions) {
+        // A variable argument (`:out($fh)` in a call that also splats a
+        // list) arrives wrapped in its container reference.
+        let deref;
+        let value = {
+            let v = value.unwrap_varref();
+            if v.is_container_ref() {
+                deref = v.deref_container();
+                &deref
+            } else {
+                v
+            }
+        };
         // :out can be an IO::Handle (redirect stdout to that file handle)
         if let ValueView::Instance {
             class_name,

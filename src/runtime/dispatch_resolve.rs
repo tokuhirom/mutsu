@@ -245,9 +245,22 @@ impl Interpreter {
         // string is cloned because that last tie-break is load-bearing:
         // leaving it to the sort's stability would order those defs by however
         // the caller's gather happened to collect them.
+        //
+        // Between the rank and the declaration order sits the number of
+        // positional parameters constrained to exactly `Mu`: the rank counts
+        // neither `Mu` nor `Any` as narrowing (an unconstrained parameter IS
+        // `Any`), but `Any` is narrower than `Mu`, so a family `Mu`, `Any`,
+        // `Int` defers `Int` -> `Any` -> `Mu` whatever the declaration order
+        // (#15721).
         candidates.sort_by_cached_key(|(key, def)| {
+            let mu_params = def
+                .param_defs
+                .iter()
+                .filter(|p| !p.named && p.type_constraint.as_deref() == Some("Mu"))
+                .count();
             (
                 std::cmp::Reverse(self.candidate_specificity_rank(def)),
+                mu_params,
                 def.decl_order,
                 key.clone(),
             )
@@ -410,6 +423,20 @@ impl Interpreter {
             return Ok(Some(def));
         }
         crate::vm::vm_stats::record_function_full_resolve(name);
+        // `X::f(...)` where `X` is a lexical class (`my class X { our sub f }`)
+        // names the sub registered under the class's mangled storage name
+        // (#16653).
+        if let Some((pkg, short)) = crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+            && let Some(storage) = self.resolve_lexical_type_key(pkg.as_str())
+            && storage != pkg.as_str()
+        {
+            let mangled = crate::qualified::qualified_text(&storage, short.as_str());
+            let found =
+                self.resolve_function_with_types_keyed(mangled.as_str(), arg_values, arg_keys);
+            if matches!(found, Ok(Some(_))) {
+                return found;
+            }
+        }
         // The full resolution walk is the subsystem a slow Raku line most
         // often turns out to be spending its time in (ADR-0106 D4).
         let _region = crate::profile::enter(crate::profile::Region::CallResolve);

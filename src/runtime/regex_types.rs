@@ -40,6 +40,13 @@ pub(crate) struct RegexPattern {
 /// repeat per `regex_scan_positions` call.
 #[derive(Default)]
 pub(crate) struct PatternDerived {
+    /// This pattern is the body of a `rule` or `token` (its source began with
+    /// `:ratchet`), so a `<name>` call of it hands its caller ONE match and
+    /// none of its internal choice points, whatever the call site's own
+    /// ratchet is (rakudo ratchets the callee's whole result, even where a
+    /// sigspace term inside it stays backtrackable). Set where the callee's
+    /// body is parsed for a subrule call.
+    pub(crate) declared_ratchet: std::sync::atomic::AtomicBool,
     /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
     /// pattern many times during one match).
     pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
@@ -55,6 +62,10 @@ pub(crate) struct PatternDerived {
     /// decides between the two memos above and below. Derived once because it
     /// is asked on every scan.
     pub(crate) mentions_subrule: std::sync::OnceLock<bool>,
+    /// The name of the plain `$var` a code-free pattern begins with, whose
+    /// value (a literal) every match must start with. Derived once; see
+    /// `regex_prefilter::leading_var_name`.
+    pub(crate) leading_var: std::sync::OnceLock<Option<Box<str>>>,
     /// The same prefilter for a pattern that DOES mention a rule name, where
     /// the derivation is not a pure function of the pattern: the same name
     /// resolves to different bodies in different packages (`grammar H is G`
@@ -428,6 +439,10 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// [`Self::VarInterp`] inside a `:m` pattern whose marks were stripped
+    /// (`strip_marks_pattern`): the value's literal compares base characters
+    /// against the mark-stripped subject.
+    VarInterpMarkless(String),
     /// `<$name>` on a name the pattern declared (an in-regex `:my $name`, a
     /// hoisted leading `:my`, or a rule's runtime parameter): the assertion
     /// form of [`RegexAtom::VarInterp`]. The value is read when the atom is

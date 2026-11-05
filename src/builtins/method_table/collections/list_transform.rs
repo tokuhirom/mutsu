@@ -178,7 +178,19 @@ fn flat_hammer(target: &Value) -> Value {
 /// Array cases.
 // Cost: O(1) per call for lazy List/Array, LazyList and infinite Range;
 // otherwise O(t), t = leaves reached through flattenable nesting.
-pub(crate) fn flat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn flat(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // An `Iterable` instance among the elements is read through its own
+    // `iterator`, which only the interpreter can ask (#15322).
+    if crate::runtime::Interpreter::flat_may_hold_iterable_instance(target) {
+        return None;
+    }
+    flat_plain(target, args)
+}
+
+/// [`flat`] for a receiver known to hold no `Iterable` instance the
+/// flattener would have to ask.
+// Cost: as [`flat`] without the instance scan.
+pub(crate) fn flat_plain(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
             let leaves = crate::runtime::utils::shaped_array_leaves(target);

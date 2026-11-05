@@ -163,8 +163,8 @@ impl Interpreter {
     /// opcodes, whose callees bind through several tiers.
     // Cost: O(a), a = arguments (one tag probe each); O(a) moves when one is raw.
     pub(super) fn hllize_call_args(args: Vec<Value>) -> Vec<Value> {
-        if args.iter().any(Value::is_vm_collection) {
-            args.into_iter().map(Value::hllize_vm_collection).collect()
+        if args.iter().any(Value::needs_hllize_for_binding) {
+            args.into_iter().map(Value::hllize_for_binding).collect()
         } else {
             args
         }
@@ -267,6 +267,7 @@ impl Interpreter {
                 | "fail"
                 | "leave"
                 | "__mutsu_assign_method_lvalue"
+                | "__mutsu_temp_method_save"
                 | "__mutsu_assign_callable_lvalue"
                 | "__mutsu_index_assign_method_lvalue"
                 | "__mutsu_index_delete_method_lvalue"
@@ -318,6 +319,11 @@ impl Interpreter {
             if keeps.get(i).copied().unwrap_or(false) && arg.is_proxy_value() {
                 continue;
             }
+            // `.VAR` is the Proxy object itself, passed as the argument
+            // (`f($q.VAR)`), not a container to read (#15893).
+            if arg.is_proxy_var_object() {
+                continue;
+            }
             *arg = loan_env!(self, auto_fetch_proxy(arg))?;
         }
         Ok(args)
@@ -329,6 +335,9 @@ impl Interpreter {
         mut args: Vec<Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
         for arg in &mut args {
+            if arg.is_proxy_var_object() {
+                continue;
+            }
             *arg = loan_env!(self, auto_fetch_proxy(arg))?;
         }
         Ok(args)

@@ -63,7 +63,8 @@ impl Interpreter {
             self.stack.push(ty);
             return Ok(());
         }
-        self.push_bare_word_value(code.const_sym(name_idx), compiled_fns)?;
+        let foreign_unit = self.code_is_loaded_module_code(code);
+        self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
         if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
             && sym == name
             && bareword_memoizable(name)
@@ -84,7 +85,8 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, true)
+        let foreign_unit = self.code_is_loaded_module_code(code);
+        self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, true, foreign_unit)
     }
 
     /// Whether `env` leaves the bareword `name` to name its own type object:

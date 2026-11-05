@@ -98,8 +98,9 @@ impl RoutineStack {
         self.lexical_package_frames != 0
     }
 
-    pub(crate) fn push(&mut self, frame: RoutineFrame) {
+    pub(crate) fn push(&mut self, mut frame: RoutineFrame) {
         debug_assert_eq!(frame.fixtures, 0, "a frame with a record goes through push_with_fixtures");
+        frame.fixtures_floor = self.fixtures.len() as u32;
         if frame.lexical_package.is_some() {
             self.lexical_package_frames += 1;
         }
@@ -162,11 +163,58 @@ impl RoutineStack {
         self.fixtures.truncate(len);
     }
 
+    /// The unit-scoped named-sub frame (declared outside every routine and
+    /// closure body, see [`RoutineFrame::unit_scoped`]) that is running, when no method record sits
+    /// between it and the top of the stack: such a sub does not continue its
+    /// CALLER's method record, `self` / `$?CLASS` / `$?ROLE` being lexical to
+    /// the declaration, not dynamic (#16099). Block and closure frames (an
+    /// `EVAL`'s, an inlined bare block's) continue the enclosing record, so
+    /// look through them to the routine that runs them.
+    // Cost: O(b), b = the consecutive record-less block frames on top.
+    pub(crate) fn plain_sub_frame(&self) -> Option<&RoutineFrame> {
+        for f in self.frames.iter().rev() {
+            if f.fixtures != 0 || f.is_method {
+                return None;
+            }
+            if !f.is_block {
+                return (f.unit_scoped && self.fixtures.len() as u32 <= f.fixtures_floor)
+                    .then_some(f);
+            }
+        }
+        None
+    }
+
+    /// The stack index of the running routine when it is a unit-scoped plain
+    /// sub (see [`RoutineFrame::unit_scoped`]), looking through the inlined block
+    /// `try` bodies and inlined bare blocks it runs (a called closure ends the search). A routine-local `my sub` registered while the stack was
+    /// no deeper than this index belongs to a dynamic caller, not to this
+    /// sub's lexical scope (#16099).
+    // Cost: O(b), b = the consecutive block frames on top.
+    pub(crate) fn unit_scoped_sub_index(&self) -> Option<usize> {
+        for (idx, f) in self.frames.iter().enumerate().rev() {
+            // A `try` body or an inlined bare block has no declaring file of
+            // its own and belongs to the routine around it.
+            if f.is_block && (f.is_inlined_block || f.def_file.is_none()) {
+                continue;
+            }
+            // A closure the sub CALLS (`lives-ok { EVAL ... }`) runs in the
+            // scope it was created in, which is not the sub's: unknown here.
+            if f.is_block {
+                return None;
+            }
+            return (f.unit_scoped && !f.is_method).then_some(idx);
+        }
+        None
+    }
+
     /// The record of the innermost frame that has one (the fixture rule of
     /// ADR-14633 §2.1).
     // Cost: O(1).
     #[inline]
     pub(crate) fn top_fixtures(&self) -> Option<&FrameFixtures> {
+        if self.plain_sub_frame().is_some() {
+            return None;
+        }
         self.fixtures.last()
     }
 
@@ -312,6 +360,8 @@ mod tests {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
+            fixtures_floor: 0,
         }
     }
 
@@ -323,6 +373,14 @@ mod tests {
         assert_eq!(stack.any_lexical_package(), by_scan);
         let counted = stack.iter().filter(|f| f.lexical_package.is_some()).count();
         assert_eq!(stack.lexical_package_frames, counted);
+    }
+
+    /// A record-less block frame: continues the enclosing record.
+    fn block() -> RoutineFrame {
+        RoutineFrame {
+            is_block: true,
+            ..frame(false)
+        }
     }
 
     fn named(name: &str) -> RoutineFrame {
@@ -435,15 +493,40 @@ mod tests {
     }
 
     #[test]
+    fn a_plain_sub_frame_does_not_continue_its_callers_record() {
+        let mut stack = RoutineStack::default();
+        stack.push_with_fixtures(frame(false), fixtures("A"));
+        // A block between the method and the top still sees the record...
+        stack.push(block());
+        assert_eq!(class_of(&stack), "A");
+        // ...a sub declared outside every routine and called from the method
+        // does not, nor does a block the sub runs.
+        let unit_sub = RoutineFrame {
+            unit_scoped: true,
+            ..frame(false)
+        };
+        stack.push(unit_sub);
+        assert!(stack.top_fixtures().is_none());
+        stack.push(block());
+        assert!(stack.top_fixtures().is_none());
+        stack.pop();
+        stack.pop();
+        assert_eq!(class_of(&stack), "A");
+        // A sub declared inside a routine may see that routine's record.
+        stack.push(frame(false));
+        assert_eq!(class_of(&stack), "A");
+    }
+
+    #[test]
     fn records_are_cut_back_with_their_frames() {
         let mut stack = RoutineStack::default();
         assert!(stack.top_fixtures().is_none());
         stack.push_with_fixtures(frame(false), fixtures("A"));
-        stack.push(frame(false));
+        stack.push(block());
         stack.push_with_fixtures(frame(false), fixtures("B"));
         assert_eq!(class_of(&stack), "B");
-        // A frame without a record leaves the innermost record answering.
-        stack.push(frame(false));
+        // A block frame without a record leaves the innermost record answering.
+        stack.push(block());
         assert_eq!(class_of(&stack), "B");
         stack.pop();
         stack.pop();
@@ -466,7 +549,7 @@ mod tests {
     fn a_copied_frame_owns_a_clone_of_the_record() {
         let mut stack = RoutineStack::default();
         stack.push_with_fixtures(frame(false), fixtures("A"));
-        stack.push(frame(false));
+        stack.push(block());
         let original = stack.iter().next().copied().unwrap();
         stack.push_copy(original);
         assert_eq!(class_of(&stack), "A");

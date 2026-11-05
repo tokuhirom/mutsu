@@ -1024,9 +1024,22 @@ impl Interpreter {
                     } else if method != "message" && self.has_user_method(&cn, "message") {
                         // For .Str/.gist, prefer a user-defined `message` method
                         // (it may interpolate attributes).
+                        // A `message` that dies is no message (rakudo's `Str` and
+                        // `gist` swallow it, #16066): `Str` names the class's last
+                        // name part, `gist` the same as for no message at all.
                         let msg =
-                            self.call_method_with_values(target.clone(), "message", vec![])?;
-                        return Ok(with_backtrace(&target, msg.to_string_value()));
+                            match self.call_method_with_values(target.clone(), "message", vec![]) {
+                                Ok(msg) => msg.to_string_value(),
+                                Err(_) if method == "gist" => {
+                                    if attributes.as_map().contains_key("backtrace") {
+                                        format!("Died with {cn}")
+                                    } else {
+                                        format!("Unthrown {cn} with no message")
+                                    }
+                                }
+                                Err(_) => crate::builtins::method_table::exception_no_message_text(&cn),
+                            };
+                        return Ok(with_backtrace(&target, msg));
                     } else if let Some(msg) = attributes.as_map().get("message")
                         // A declared-but-undefined `has $.message` is not a
                         // message; rendering it would print the literal `(Any)`.
@@ -1041,10 +1054,18 @@ impl Interpreter {
                     } else if method == "message" {
                         // A class that reaches Exception through a role still
                         // has Exception.message even when it has no stored
-                        // message attribute. Match the native row's empty
-                        // default instead of falling through to "No such
-                        // method" for user-named exception classes.
-                        return Ok(Value::str(String::new()));
+                        // message attribute. rakudo stubs `Exception.message`
+                        // (`method message() { ... }`), so a class that never
+                        // implemented it answers the `X::StubCode` Failure, not
+                        // the empty text and not "No such method". The built-in
+                        // `X::AdHoc` (an empty payload is the empty text) and
+                        // `X::OS` keep answering as before.
+                        // TODO: `Exception.new.message` is a Failure in rakudo too;
+                        // the built-in rows answer an empty `Str` for it.
+                        if matches!(cn.as_str(), "X::AdHoc" | "X::OS" | "Exception") {
+                            return Ok(Value::str(String::new()));
+                        }
+                        return Ok(RuntimeError::stub_code_failure());
                     } else if cn == "X::AdHoc"
                         // `X::AdHoc` (what `die "..."` builds) carries its text in
                         // `payload`, not `message`.
@@ -1277,6 +1298,10 @@ impl Interpreter {
                 }
                 if class_attrs.is_empty() {
                     if !self.types.user_declared_classes.contains(&cn)
+                        // A resource keeps its path in the stored map, but has no
+                        // `path` method: rakudo's `Distribution::Resource` is not an
+                        // `IO::Path` (#16206).
+                        && !(cn == "Distribution::Resource" && method == "path")
                         && let Some(val) = attributes.as_map().get(method)
                     {
                         // Check for deprecated attribute accessor
@@ -2242,7 +2267,7 @@ impl Interpreter {
                 // e.g. `RakuAST::Name.from-identifier("x")` (`.new` is handled
                 // earlier in methods_object_dispatch_new).
                 if type_name.starts_with("RakuAST::")
-                    && let Some(node) = crate::rakuast::construct(&type_name, method, &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &type_name, method, &args)?
                 {
                     return Ok(node);
                 }
@@ -2666,7 +2691,7 @@ impl Interpreter {
                 let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
                 // A twiddle is an assignment to the attribute: a typed one
                 // refuses a value of the wrong type (`X::TypeCheck::Assignment`).
-                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.clone()) {
+                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.deref_container()) {
                     Ok(value) => value,
                     Err(err) => return Some(Err(err)),
                 };

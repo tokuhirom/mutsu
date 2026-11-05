@@ -161,11 +161,11 @@ pub(crate) fn with_then_branch(
             with_body.push(simple_pointy_bind(pname, &tmp_var, false));
         }
     }
-    // Tag the scaffold `given` so the RakuAST converter can tell it from a
+    // Tag the scaffold `given` so the RakuAST view can tell it from a
     // source-level one. A pointy body prepends its own binding to the same
     // `given`, a shape raku spells as a `PointyBlock` rather than an
     // implicit-topic `Block`, so it gets the distinct tag that makes the
-    // converter report the boundary instead of swallowing the parameter.
+    // view report the boundary instead of swallowing the parameter.
     let block_topic = Some(if param_name.is_none() {
         GivenWithKind::BlockTopic
     } else {

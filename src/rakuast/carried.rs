@@ -92,22 +92,38 @@ fn holds_nested_method(stmt: &Stmt) -> bool {
 // Cost: O(1) for the node itself (a regex: O(n), n = its nodes).
 pub(super) fn expr_carried(expr: &Expr) -> bool {
     match expr {
-        Expr::Literal(v) => !matches!(
-            v.view(),
-            ValueView::Regex(_)
-                | ValueView::RegexWithAdverbs(_)
-                | ValueView::Sub(_)
-                | ValueView::WeakSub(_)
-                | ValueView::Instance { .. }
-        ),
+        Expr::Literal(v) => match v.view() {
+            // The regex a `token`/`rule`/`regex` declaration holds: carried when it has
+            // no code, whose copy would keep the spelled parse's annotations.
+            ValueView::Regex(_) => v
+                .regex_source_tree()
+                .is_some_and(|tree| tree.declaration_kind.is_some()),
+            ValueView::RegexWithAdverbs(_)
+            | ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Instance { .. } => false,
+            _ => true,
+        },
         // A desugaring's temporary (`__ANON_ARRAY__`) is the compiler's own
         // name, carried as the parser built it.
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
-            plain_name(name) || name.starts_with("__")
+            plain_name(name) || name.starts_with("__") || context_free_name(expr, name)
         }
+        // `*` alone: the priming scope that curries it is planted by the
+        // enclosing `WhateverCurry`, so the term itself lowers to itself.
+        // `x[i] = v` and `x[i] := v`: read back as the parser built them; the bound
+        // value's marker (`IndexBindValue`) is the compiler's own.
+        Expr::IndexAssign { .. } | Expr::IndexBindValue(_) => true,
+        // `@a >>[&f]<< @b`: the function is the lexical `&f` the conversion names.
+        Expr::HyperFuncOp { func_name, .. } => plain_code_name(func_name),
+        Expr::Whatever => true,
+        // The `*` of a priming scope (`* + 1`): `WhateverCode::Argument` reads back as it.
+        Expr::WhateverArg => true,
         // A type name: the spelled parse leaves a lowercase bareword to
         // the lowering, which resolves it against what the unit imported.
         Expr::BareWord(word) => {
+            // `self` is a keyword: nothing the unit declares changes it.
+            word == "self" ||
             // `Pointer[int8]` is a parameterized type name as the parser wrote it.
             word.starts_with(|c: char| c.is_uppercase())
                 && (word.ends_with(']') && word.contains('[')
@@ -121,8 +137,16 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         Expr::Spelled(spelled) => !is_empty_statement(spelled),
         Expr::Ast(node) => match node.as_ref() {
             ParsedExpr::CompoundAssign(compound) => compound_carried(compound),
-            ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_) => true,
-            _ => false,
+            ParsedExpr::Assign(_)
+            | ParsedExpr::WordList(_)
+            | ParsedExpr::WordsAtom(_)
+            | ParsedExpr::SubscriptAdverbs(_)
+            | ParsedExpr::Supply(_)
+            | ParsedExpr::HyperPrefix(_)
+            | ParsedExpr::AtomicVar(_)
+            | ParsedExpr::ObjectHash(_)
+            | ParsedExpr::HyperAssign(_)
+            | ParsedExpr::InlineSubset(_) => true,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass
         // over a tree the parser already marked wraps it again), and a `||`
@@ -133,7 +157,21 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         }
         Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
         Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
-        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
+        Expr::Subst {
+            replacement,
+            replacement_thunk,
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            replacement,
+            replacement_thunk,
+            ..
+        } => {
+            replacement_thunk.is_some() || super::substitution::is_plain_qq_source(replacement)
+        }
+        // The code of a regex is finalized where it stands: the walk reaches `tree`, and the
+        // compiler puts it on the value.
+        Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => true,
         Expr::StringInterpolation(_)
         | Expr::Call { .. }
         | Expr::UserRoutineCall { .. }
@@ -165,6 +203,31 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::MetaOp { .. }
         | Expr::HyperOp { .. }
         | Expr::InfixFunc { .. }
+        // The priming scope the parser planted: the conversion marks the node it
+        // wraps and the lowering puts the marker back around it.
+        | Expr::WhateverCurry(_)
+        // `tr///`, and `s///` / `S///` whose replacement is a constant or already
+        // a per-match thunk, read back as the parser built them
+        // (`finalization_is_the_ordinary_tree`). An interpolating quote-form
+        // replacement becomes the thunk in the conversion.
+        | Expr::Transliterate { .. }
+        | Expr::ZenSlice(_)
+        | Expr::CaptureVar(_)
+        // `True`/`False`/`Empty` in a unit that imported through an `EXPORT` hook: the parser's
+        // shadowable keyword, which the lowering gives back unchanged.
+        | Expr::ShadowableTermKeyword { .. }
+        | Expr::CaptureLiteral(..)
+        | Expr::PseudoStash(_)
+        | Expr::MultiDimIndex { .. }
+        // `m:p($pos)/.../`: the adverb expressions are walked where they stand and the regex
+        // value's own tree is finalized by `visit_expr_mut`.
+        | Expr::MatchRegexDynamicAdverbs { .. }
+        | Expr::AssignExpr { .. }
+        | Expr::HyperMethodCallDynamic { .. }
+        | Expr::SymbolicDeref { .. }
+        | Expr::ChainedCompare { .. }
+        | Expr::Feed { .. }
+        | Expr::ControlFlow { .. }
         | Expr::Gather(_)
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
@@ -205,11 +268,69 @@ fn plain_name(name: &str) -> bool {
     }
 }
 
+/// A routine name the conversion reads as a lexical `&name`: an identifier
+/// (`&f`, `&foo-bar`), not a package-qualified or operator name.
+// Cost: O(k), k = length of the name.
+fn plain_code_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+}
+
+/// A variable the lowering hands back unchanged whatever the unit declares:
+/// the match and error variables (`$/`, `$!`), an attribute (`$!x`, `$.x`), a
+/// placeholder (`$^a`) and a positional capture (`$0`). A code variable is carried when
+/// it is a plain identifier (`&f`); a qualified or operator name is still read
+/// by the conversion.
+// Cost: O(1).
+fn context_free_name(expr: &Expr, name: &str) -> bool {
+    // A placeholder (`$^a`, `@:n`, `&^cb`) lowers back to the same caret- or
+    // colon-prefixed name whatever the unit declares.
+    if let Some(bare) = name.strip_prefix(['^', ':'])
+        && crate::ast::placeholders::is_placeholder_name(bare)
+    {
+        return true;
+    }
+    if matches!(expr, Expr::CodeVar(_)) {
+        // `&!code`: a private attribute holding code reads back as itself.
+        return plain_code_name(name) || name.strip_prefix('!').is_some_and(plain_code_name);
+    }
+    // A positional capture (`$0`) reads back as `Var::PositionalCapture`, whose
+    // index is the canonical integer.
+    if matches!(expr, Expr::Var(_))
+        && !name.is_empty()
+        && name.bytes().all(|b| b.is_ascii_digit())
+        && name.parse::<i64>().is_ok_and(|n| n.to_string() == name)
+    {
+        return true;
+    }
+    // The user lexical `$self` (its env key carries the sigil, ADR-0061) and a
+    // Pod variable (`$=pod`, `$=finish`) read back as the same name.
+    if matches!(expr, Expr::Var(_))
+        && (name == crate::env::LEX_SELF
+            || name.strip_prefix('=').is_some_and(|rest| {
+                !rest.is_empty() && rest.chars().all(|c| c.is_alphanumeric() || c == '_')
+            }))
+    {
+        return true;
+    }
+    match name {
+        "/" | "!" => true,
+        // An attribute: private (`$!x`) or public (`$.x`, `@.a`, `%.h`).
+        _ => name.strip_prefix(['!', '.']).is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+        }),
+    }
+}
+
 /// Whether a regex holds code (a block, an assertion, an interpolation): the
 /// regex `Value` keeps its own copy of that code, which still carries the
 /// spelled parse's annotations.
 // Cost: O(n), n = nodes of the regex.
-fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
+pub(super) fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     struct Code(bool);
     impl<'ast> Visit<'ast> for Code {
         fn visit_stmt(&mut self, _stmt: &'ast Stmt) {

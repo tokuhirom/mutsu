@@ -55,6 +55,11 @@ impl Interpreter {
         };
         let mut err = RuntimeError::new(gist);
         err.exception = Some(Box::new(mixed));
+        // The error that unwinds is a NEW one, so the verdict a `CATCH` that
+        // already ran inline at the `die` stamped on `inner` (ADR-0072) has to
+        // be carried over, or the region owning that `CATCH` would run it again
+        // (#16054).
+        err.set_catch_inline_verdict(inner.catch_inline_verdict());
         err
     }
 
@@ -196,6 +201,32 @@ impl Interpreter {
                     .unwrap_or_default();
                 return Some(ReactSubscription {
                     receiver: Some(rx),
+                    close_callbacks: Self::extract_supply_on_close_cbs(&(attributes).as_map()),
+                    last_callbacks: last_cbs,
+                    quit_callbacks: quit_cbs,
+                    is_lines,
+                    head_limit,
+                    ..ReactSubscription::new(callback)
+                });
+            }
+            // A `Channel.Supply` carries the channel itself: it is drained from
+            // the loop as one more consumer of the queue, exactly as the
+            // top-level subscription builder does (`build_react_subscriptions`).
+            // Without this a `supply { whenever $x.Supply.Channel.Supply { ... } }`
+            // body's inner subscription was dropped here and replayed as a finite
+            // source, so nothing it was fed afterwards arrived (#16026).
+            if let Some(ValueView::Channel(ch)) = attributes.as_map().get("channel").map(Value::view)
+            {
+                let last_cbs = items
+                    .get(2)
+                    .and_then(Self::react_value_array_items)
+                    .unwrap_or_default();
+                let quit_cbs = items
+                    .get(3)
+                    .and_then(Self::react_value_array_items)
+                    .unwrap_or_default();
+                return Some(ReactSubscription {
+                    channel: Some(ch.clone()),
                     close_callbacks: Self::extract_supply_on_close_cbs(&(attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,

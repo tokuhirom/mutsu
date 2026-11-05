@@ -52,11 +52,55 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
     // Static support scan + jump-target collection. Any opcode outside the
     // Tier A set rejects the whole range (no partial compilation).
     let mut targets: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    for op in &code.ops[start..end] {
+    for (i, op) in code.ops[start..end]
+        .iter()
+        .enumerate()
+        .map(|(k, op)| (start + k, op))
+    {
         if noarg_shim(op).is_some() || step_supported(op) {
             continue;
         }
         match op {
+            // A lexically imported routine's call (#14371): the op consumes
+            // the op after it when it runs the call itself, so `i + 2` is a
+            // branch target. Admitted only for the four ops its sites consume
+            // (not `GetExportTermOrJump`, whose term site jumps elsewhere).
+            // A built-in operator inside a unit with a `use` (ADR-8751 stage 2):
+            // the prefix either runs the operator op after it with the bound
+            // user candidates in scope (status SKIP, continue at `i + 2`) or
+            // leaves it to run as itself. Admitted for a straight-line
+            // operator op only.
+            OpCode::LexImportBuiltinOp { .. }
+                if i + 2 <= end
+                    && code.ops.get(i + 1).is_some_and(|next| {
+                        !matches!(
+                            next,
+                            OpCode::Jump(_)
+                                | OpCode::JumpIfFalse(_)
+                                | OpCode::JumpIfTrue(_)
+                                | OpCode::JumpIfNotNil(_)
+                                | OpCode::StateVarInitGuard(..)
+                                | OpCode::Return
+                                | OpCode::LexImportCall { .. }
+                                | OpCode::LexImportBuiltinOp { .. }
+                        ) && (noarg_shim(next).is_some() || step_supported(next))
+                    }) =>
+            {
+                targets.insert(i + 2);
+            }
+            OpCode::LexImportCall { .. }
+                if matches!(
+                    code.ops.get(i + 1),
+                    Some(
+                        OpCode::CallFunc { .. }
+                            | OpCode::CallOnCodeVar { .. }
+                            | OpCode::GetCodeVar(_)
+                            | OpCode::GetBareWord(_)
+                    )
+                ) && i + 2 <= end =>
+            {
+                targets.insert(i + 2);
+            }
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
@@ -109,6 +153,14 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
 /// emitted word/latch checks — see `TierB::emit_get_local`.
 fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
     code.local_read_plain(idx)
+}
+
+/// The word and bit of the atomic-name set that the emitted inline read of
+/// slot `idx` tests (see `TierB::emit_get_local`): the slot's own name, as the
+/// interpreter's `GetLocal` arm asks `atomic_name_possible`.
+// Cost: O(m), m = name bytes, once per compiled read.
+fn get_local_atomic_probe(code: &CompiledCode, idx: usize) -> (usize, u64) {
+    Interpreter::atomic_name_probe(code.locals.get(idx).map_or("", |name| name.as_str()))
 }
 
 /// Helper-call signatures used by the emitted code, imported once per
@@ -406,6 +458,7 @@ fn build(
                         codep,
                         *idx,
                         helpers::get_local as *const () as usize,
+                        get_local_atomic_probe(code, *idx as usize),
                     );
                 } else {
                     let idxv = b.ins().iconst(types::I32, *idx as i64);
@@ -430,6 +483,7 @@ fn build(
                         codep,
                         *slot,
                         helpers::get_local as *const () as usize,
+                        get_local_atomic_probe(code, *slot as usize),
                     );
                 } else {
                     let idxv = b.ins().iconst(types::I32, *slot as i64);
@@ -552,6 +606,45 @@ fn build(
                     helpers::call_func as *const () as usize,
                     &[interp, codep, opidx, fnsp],
                 )?;
+                check_status(&mut b, status);
+            }
+            OpCode::LexImportBuiltinOp { .. } => {
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_call,
+                    helpers::lex_import_builtin_op as *const () as usize,
+                    &[interp, codep, opidx, fnsp],
+                )?;
+                // SKIP: the shim ran the operator op at i + 1 itself.
+                let skip = b.ins().icmp_imm_u(
+                    cranelift_codegen::ir::condcodes::IntCC::Equal,
+                    status,
+                    super::vm_jit::JIT_STATUS_SKIP as i64,
+                );
+                let next = b.create_block();
+                b.ins().brif(skip, block_at[&(i + 2)], &[], next, &[]);
+                b.switch_to_block(next);
+                check_status(&mut b, status);
+            }
+            OpCode::LexImportCall { .. } => {
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_call,
+                    helpers::lex_import_call as *const () as usize,
+                    &[interp, codep, opidx, fnsp],
+                )?;
+                // SKIP: the shim ran the op at i + 1 itself; continue at i + 2
+                // (a target registered by the pre-pass).
+                let skip = b.ins().icmp_imm_u(
+                    cranelift_codegen::ir::condcodes::IntCC::Equal,
+                    status,
+                    super::vm_jit::JIT_STATUS_SKIP as i64,
+                );
+                let next = b.create_block();
+                b.ins().brif(skip, block_at[&(i + 2)], &[], next, &[]);
+                b.switch_to_block(next);
                 check_status(&mut b, status);
             }
             OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {

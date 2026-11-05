@@ -222,10 +222,126 @@ impl Interpreter {
             self.stack.push(cell);
             return Ok(());
         }
+        // A List item that is the cell of a native variable stays a container
+        // argument whatever the callee binds, so a multi dispatch sees the
+        // `byte` of `($b, $b)[0]` as rakudo does; any other element is read as
+        // a value (ADR-15309).
+        if mark.is_positional
+            && let Some(cell) = self.list_native_item_cell()
+        {
+            self.stack.pop();
+            self.stack.pop();
+            self.stack.push(cell);
+            return Ok(());
+        }
+        // A `Buf` element passed to a routine with a native parameter at that
+        // position is a native `uint*` container for dispatch, as in rakudo
+        // (`m($buf[0])` picks `multi m(byte)`; a `Blob` element stays `Int`):
+        // the value is read as usual and boxed in a native-typed cell.
+        let buf_native = if mark.is_positional {
+            self.buf_item_native_type(code, mark)
+        } else {
+            None
+        };
         // A callee that does not bind the container reads the value, exactly
         // as the plain `Index` op does.
         self.exec_index_op_with_positional(mark.is_positional)?;
-        self.decont_native_pos_ref_on_top()
+        self.decont_native_pos_ref_on_top()?;
+        if let Some(native) = buf_native
+            && let Some(top) = self.stack.last()
+        {
+            let native_cell = |value: Value| {
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
+                crate::value::register_container_constraint(&cell, native);
+                Value::container_ref(cell)
+            };
+            match top.view() {
+                ValueView::Int(_) => {
+                    let value = self.stack.pop().unwrap_or(Value::NIL);
+                    self.stack.push(native_cell(value));
+                }
+                // A slice (`$buf[2..5]`) is a List of the selected elements,
+                // each a native container (#15858): the callee's `@a[0]` then
+                // hands the cell on, as for a List literal of native variables.
+                ValueView::Array(items, crate::value::ArrayKind::List)
+                    if items.iter().all(|v| matches!(v.view(), ValueView::Int(_))) =>
+                {
+                    let cells: Vec<Value> = items.iter().cloned().map(native_cell).collect();
+                    self.stack.pop();
+                    self.stack.push(Value::array(cells));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// The native element type of the `Buf` the subscript on top of the stack
+    /// reads (`uint8` for a `buf8`), when the callee has a native-typed
+    /// parameter at this argument's position; `None` otherwise, and for a `Blob`
+    /// (whose elements rakudo dispatches as boxed `Int`).
+    // Cost: O(1) for a non-Buf receiver (one tag probe); a Buf receiver walks
+    // the callee's candidates once.
+    fn buf_item_native_type(
+        &mut self,
+        code: &CompiledCode,
+        mark: &crate::opcode::IndexArgRefMark,
+    ) -> Option<&'static str> {
+        let n = self.stack.len();
+        let target = self.stack.get(n.checked_sub(2)?)?;
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        let name = class_name.resolve();
+        let native = match name.as_str() {
+            "buf8" | "Buf[uint8]" | "Buf[byte]" => "uint8",
+            "buf16" | "Buf[uint16]" => "uint16",
+            "buf32" | "Buf[uint32]" => "uint32",
+            "buf64" | "Buf[uint64]" => "uint64",
+            _ => return None,
+        };
+        let crate::opcode::RwArgCallee::Named { name_idx } = &mark.mark.callee else {
+            return None;
+        };
+        let routine = Self::const_str(code, *name_idx);
+        let routine_sym = code.const_sym(*name_idx);
+        let positional = mark.mark.positional as usize;
+        self.routine_takes_native_at(routine, routine_sym, positional)
+            .then_some(native)
+    }
+
+    /// The cell a `List` (or a scalar holding one) already stores at the
+    /// integer index on top of the stack, when that cell is native-typed;
+    /// `None` for every other shape. Never promotes a slot: an `Array`'s slots
+    /// are fresh `Scalar`s, which rakudo does not dispatch as native.
+    /// Leaves the stack alone.
+    // Cost: O(1): two tag probes and one slot read.
+    fn list_native_item_cell(&self) -> Option<Value> {
+        let n = self.stack.len();
+        if n < 2 {
+            return None;
+        }
+        let ValueView::Int(i) = self.stack[n - 1].view() else {
+            return None;
+        };
+        let i = usize::try_from(i).ok()?;
+        let target = &self.stack[n - 2];
+        let held;
+        let target = if target.is_container_ref() {
+            held = target.deref_container();
+            &held
+        } else {
+            target
+        };
+        let ValueView::Array(
+            items,
+            crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+        ) = target.view()
+        else {
+            return None;
+        };
+        let slot = items.get(i)?;
+        slot.native_container_type().is_some().then(|| slot.clone())
     }
 
     /// `$native-array[$i]` answers the element's reference (`IntPosRef`, what

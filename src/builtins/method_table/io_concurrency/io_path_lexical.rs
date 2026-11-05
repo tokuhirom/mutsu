@@ -50,9 +50,17 @@ macro_rules! rown {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row0!("Str", str_row),
+    MethodRow {
+        owner: "IO::Path",
+        name: "Str",
+        arity: 0,
+        handler: Handler::Interp(str_interp_row),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     row0!("gist", gist_row),
     row0!("IO", io_row),
+    row0!("platform-library-name", platform_library_name_row),
     row0!("SPEC", spec_row),
     row0!("basename", basename_row, RowFlags::DEFINITE),
     row0!("dirname", dirname_row, RowFlags::DEFINITE),
@@ -95,11 +103,47 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
 ];
 
-/// `IO::Path.Str`: the path as given.
+/// `IO::Path.Str`: the path as given. `Str` of a `%?RESOURCES` entry
+/// (`Distribution::Resource`) is deprecated in rakudo and records its notice
+/// at the call site (#16055); an interpreter row because the notice needs the
+/// callsite's file and line.
 // Cost: O(p), p = chars of the path.
-fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+fn str_interp_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
+    if ctx.class == "Distribution::Resource" {
+        interp.check_deprecation_for_method(
+            "Str",
+            "Distribution::Resource",
+            "%?RESOURCES<key> directly",
+        );
+    }
     Some(Ok(Value::str(ctx.path)))
+}
+
+/// `Mu.Stringy` (what `~$r` and interpolation call) of a `%?RESOURCES` entry:
+/// rakudo reaches `Str` from inside `Mu.rakumod`, so the deprecation's
+/// `seen at:` names that frame and not the user's line (#16095). `None` for any
+/// other receiver, which takes the ordinary `Str` call.
+// Cost: O(p), p = chars of the path.
+pub(crate) fn resource_stringy(target: &Value) -> Option<Value> {
+    let ctx = PathCtx::of(target)?;
+    if ctx.class != "Distribution::Resource" {
+        return None;
+    }
+    crate::runtime::deprecation::record_deprecation(
+        "Method",
+        "Str",
+        "Distribution::Resource",
+        "%?RESOURCES<key> directly",
+        "SETTING::src/core.c/Mu.rakumod",
+        867,
+    );
+    Some(Value::str(ctx.path))
 }
 
 /// `IO::Path.gist`: the path as the `.IO` call that makes it.
@@ -128,11 +172,38 @@ fn gist_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     ))))
 }
 
-/// `IO::Path.IO`: the path itself.
+/// `IO::Path.IO`: the path itself (`Empty` for a path-less `Distribution::Resource`).
 // Cost: O(a), a = attributes of the instance.
 fn io_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
-    Some(Ok(Value::make_instance(ctx.class, ctx.attributes)))
+    // A `%?RESOURCES` key the distribution does not declare has no path:
+    // its `.IO` is `Empty`, as rakudo's `Distribution::Resource.IO` is.
+    if ctx.attributes.contains_key("pathless") {
+        return Some(Ok(Value::slip(Vec::new())));
+    }
+    // A `Distribution::Resource` answers the plain `IO::Path` it stands for.
+    let class = if ctx.class == "Distribution::Resource" {
+        Symbol::intern("IO::Path")
+    } else {
+        ctx.class
+    };
+    Some(Ok(Value::make_instance(class, ctx.attributes)))
+}
+
+/// `Distribution::Resource.platform-library-name`: the IO::Path of the resource's
+/// platform library file (`%?RESOURCES<libraries/foo>` already resolves to
+/// `libfoo.so`/`.dylib`). Only a resource answers it; `None` for a real
+/// `IO::Path`, which has no such method (NativeCall's `guess_library_name`).
+// Cost: O(a), a = attributes of the instance.
+fn platform_library_name_row(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let ctx = PathCtx::of(target)?;
+    if ctx.class != "Distribution::Resource" {
+        return None;
+    }
+    io_row(target, args)
 }
 
 /// `IO::Path.SPEC`: the `IO::Spec` type object the path follows.

@@ -343,19 +343,50 @@ pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
 /// row for `method`, the most recently applied first: a mixin reaches the rows
 /// of its roles ahead of its inner value's (`X::Promise::Broken.gist`, the
 /// wrapper role of a broken promise's exception). `None` when there are none.
-// Cost: O(1) for a non-`Mixin` or a name no row has; otherwise O(k log k), k =
-// roles mixed into the value.
+// Cost: O(1) for a non-`Mixin`, a name no row has, or a composition seen
+// before (thread-local memo); otherwise O(k log k), k = roles mixed into the value.
 pub(crate) fn mixin_role_owners_of(target: &Value, method: &str) -> Option<Vec<String>> {
     let ValueView::Mixin(_, mixins) = target.view() else {
         return None;
     };
     let method = Symbol::intern(method);
     name_index(method)?;
+    // The answer is a function of the shared, never-mutated-in-place override
+    // node and the method name, so a CArray element store asked it once per
+    // composition instead of rendering every role name per call (15k Ir,
+    // #16215). The entry owns a clone of the node: its address stays valid.
+    type Memo = rustc_hash::FxHashMap<
+        (usize, Symbol, bool),
+        (
+            crate::gc::Gc<crate::value::MixinOverrides>,
+            Option<Vec<String>>,
+        ),
+    >;
+    thread_local! {
+        static OWNERS_MEMO: std::cell::RefCell<Memo> = std::cell::RefCell::default();
+    }
+    // Rows of revision 6.e are in force or not (`RowFlags::in_force`).
+    let key = (
+        &**mixins as *const crate::value::MixinOverrides as usize,
+        method,
+        crate::parser::current_language_version_starts_with("6.e"),
+    );
+    if let Some(hit) = OWNERS_MEMO.with(|memo| memo.borrow().get(&key).map(|(_, v)| v.clone())) {
+        return hit;
+    }
     let owners: Vec<String> = crate::value::types::mixin_roles_applied_last_first(mixins, "")
         .into_iter()
         .filter(|role| owner_declares(role, method))
         .collect();
-    (!owners.is_empty()).then_some(owners)
+    let owners = (!owners.is_empty()).then_some(owners);
+    OWNERS_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.len() >= 4096 {
+            memo.clear();
+        }
+        memo.insert(key, (mixins.clone(), owners.clone()));
+    });
+    owners
 }
 
 /// Whether some class-method row ([`RowFlags::CLASS_METHOD`]) is named
@@ -407,14 +438,13 @@ pub(crate) fn owner_has_row(owner: &str, method: &str) -> bool {
 
 /// The names of the rows `owner` declares, in registration order, each once:
 /// the method table of an owner Rakudo's snapshot does not list (ADR-14032).
-// Cost: O(r), r = rows (a scan; introspection only).
+// Cost: O(log p + r) expected, p = builtin owners, r = this owner's rows.
 pub(crate) fn owner_row_names(owner: &str) -> Vec<&'static str> {
     let mut names: Vec<&'static str> = Vec::new();
-    for row in ALL
-        .iter()
-        .filter(|row| row.owner == owner && row.flags.in_force())
-    {
-        if !names.contains(&row.name) {
+    let mut seen = rustc_hash::FxHashSet::default();
+    for &id in super::table_const::rows_of_owner(owner) {
+        let row = ALL[usize::from(id)];
+        if row.flags.in_force() && seen.insert(row.name) {
             names.push(row.name);
         }
     }

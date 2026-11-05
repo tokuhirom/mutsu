@@ -21,8 +21,9 @@
 //! (`native_method_row_table.rs`), whose flags were baked from Rakudo once and
 //! drifted from both Rakudo and the rows (#11271).
 
+use super::method_snapshot_index_gen::OWNERS;
 use crate::builtins::method_table::{owner_has_row, owner_row_names};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use std::sync::OnceLock;
 
 const SNAPSHOT: &str = include_str!("rakudo_method_tables.txt");
@@ -95,52 +96,40 @@ fn revision_e() -> bool {
     crate::parser::current_language_version_starts_with("6.e")
 }
 
-/// One owner's snapshot lines, parsed into [`OwnerFacts`] on first use.
-struct OwnerSlot {
-    lines: Vec<&'static str>,
-    facts: OnceLock<OwnerFacts>,
-}
+/// The snapshot, by owner. Where each owner's lines are is a committed table
+/// (`method_snapshot_index_gen.rs`, checked by the `method_snapshot_index` test),
+/// so nothing scans the snapshot at startup; an owner's lists are parsed when
+/// that owner is first asked about, so a program that introspects a few types
+/// never pays for the other hundred (#14878).
+struct Snapshot;
 
-/// The snapshot, by owner. Indexing it only finds where each owner's lines
-/// are; an owner's lists are parsed when that owner is first asked about, so
-/// a program that introspects a few types never pays for the other hundred
-/// (#14878).
-struct Snapshot {
-    owners: FxHashMap<&'static str, OwnerSlot>,
-}
+/// One owner's parsed lists, by position in [`OWNERS`].
+static OWNER_FACTS: [OnceLock<OwnerFacts>; OWNERS.len()] =
+    [const { OnceLock::new() }; OWNERS.len()];
 
 impl Snapshot {
     /// The facts of `owner`, or `None` when the snapshot does not list it.
-    // Cost: O(1) expected; the first call per owner is O(l), l = bytes of that owner's lines.
+    // Cost: O(log n) to find the owner, n = owners in the snapshot; the first call per
+    // owner is O(l), l = bytes of that owner's lines.
     fn get(&self, owner: &str) -> Option<&OwnerFacts> {
-        let slot = self.owners.get(owner)?;
-        Some(slot.facts.get_or_init(|| parse_owner(&slot.lines)))
+        let at = OWNERS
+            .binary_search_by(|(name, _)| name.as_bytes().cmp(owner.as_bytes()))
+            .ok()?;
+        Some(OWNER_FACTS[at].get_or_init(|| {
+            let lines: Vec<&'static str> = OWNERS[at]
+                .1
+                .iter()
+                .map(|&(start, end)| &SNAPSHOT[start as usize..end as usize])
+                .collect();
+            parse_owner(&lines)
+        }))
     }
 }
 
-/// The snapshot index. Built on the first introspection call.
-// Cost: O(1) after the first call; that call is O(s), s = bytes of the snapshot
-// (one pass over the lines, reading only each line's first two fields).
+/// The snapshot. Nothing is built: see [`Snapshot`].
+// Cost: O(1).
 fn facts() -> &'static Snapshot {
-    static SNAPSHOT_INDEX: OnceLock<Snapshot> = OnceLock::new();
-    SNAPSHOT_INDEX.get_or_init(|| {
-        let mut owners: FxHashMap<&'static str, OwnerSlot> = FxHashMap::default();
-        for line in SNAPSHOT.lines().filter(|line| !line.starts_with('#')) {
-            let mut fields = line.splitn(3, '\t');
-            let (Some(_), Some(owner)) = (fields.next(), fields.next()) else {
-                continue;
-            };
-            owners
-                .entry(owner)
-                .or_insert_with(|| OwnerSlot {
-                    lines: Vec::new(),
-                    facts: OnceLock::new(),
-                })
-                .lines
-                .push(line);
-        }
-        Snapshot { owners }
-    })
+    &Snapshot
 }
 
 /// Parse one owner's lines into its lists.
@@ -191,13 +180,15 @@ fn row_reaches(owner: &str, name: &str, roles: bool) -> bool {
 /// Whether Rakudo declares `name` directly on the built-in `owner` (it is a
 /// key of `::(owner).^method_table`) and a row of `owner` implements it; for
 /// an owner the snapshot does not list, whether a row of `owner` does.
+/// Documented model extensions retain their mutsu declaration separately.
 /// `owner` is matched exactly, never folded: `.^can` asks once per MRO level.
 // Cost: O(k), k = rows named `name`, plus two set probes.
 pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
     owner_has_row(owner, name)
-        && facts()
-            .get(owner)
-            .is_none_or(|facts| facts.has(Kind::Declared, name))
+        && (crate::builtins::method_table::rakuast_reflection::model_extension(owner, name)
+            || facts()
+                .get(owner)
+                .is_none_or(|facts| facts.has(Kind::Declared, name)))
 }
 
 /// Whether `owner` has the method `name` at all: declared there
@@ -345,5 +336,40 @@ mod tests {
         let int = introspectable_names_for_owner("Int");
         assert!(int.contains(&"FatRat"));
         assert!(int.iter().all(|name| row_reaches("Int", name, false)));
+    }
+}
+
+#[cfg(test)]
+mod method_snapshot_index {
+    use super::*;
+
+    /// The committed owner index matches a fresh scan of the snapshot; when it
+    /// fails, run `python3 -I scripts/gen-method-snapshot-index.py`.
+    #[test]
+    fn committed_index_matches_the_snapshot() {
+        let mut scanned: std::collections::BTreeMap<&str, Vec<(u32, u32)>> = Default::default();
+        let mut pos = 0usize;
+        for line in SNAPSHOT.split('\n') {
+            let end = pos + line.len();
+            if !line.starts_with('#') {
+                let mut fields = line.splitn(3, '\t');
+                if let (Some(_), Some(owner)) = (fields.next(), fields.next()) {
+                    scanned
+                        .entry(owner)
+                        .or_default()
+                        .push((pos as u32, end as u32));
+                }
+            }
+            pos = end + 1;
+        }
+        let committed: Vec<(&str, Vec<(u32, u32)>)> =
+            OWNERS.iter().map(|(o, r)| (*o, r.to_vec())).collect();
+        let fresh: Vec<(&str, Vec<(u32, u32)>)> = scanned.into_iter().collect();
+        assert!(committed == fresh, "method_snapshot_index_gen.rs is stale");
+        assert!(
+            OWNERS
+                .windows(2)
+                .all(|w| w[0].0.as_bytes() < w[1].0.as_bytes())
+        );
     }
 }

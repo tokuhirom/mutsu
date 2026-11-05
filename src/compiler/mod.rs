@@ -1128,8 +1128,8 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+pub(crate) use crate::op_names as helpers_ops;
 pub(crate) use helpers_method_body::method_body_key;
-pub(crate) mod helpers_ops;
 mod helpers_phasers;
 mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
@@ -1149,6 +1149,7 @@ mod nqp_cond_forms;
 mod nqp_container_test;
 pub(crate) mod nqp_forms;
 mod nqp_lexical_forms;
+mod nqp_loop_control;
 mod nqp_object_forms;
 mod nqp_p6_forms;
 mod numeric_operand_names;
@@ -1306,6 +1307,15 @@ pub(crate) struct Compiler {
     /// the name resolves by name again after the loop. Reused by
     /// [`Self::alloc_local`] for the next binding of the same name.
     retired_loop_param_slots: HashMap<String, u32>,
+    /// The `&`-names whose declaration-only half the BEGIN prologue split off
+    /// (`VarMarks::static_bind_half`) and whose binding declaration has not
+    /// compiled yet. Once the prologue has ended (`prologue_ended`), a closure
+    /// compiled before that binding sees them as forward references, not as
+    /// outer code variables to capture (#16351).
+    static_half_amp: std::collections::HashSet<String>,
+    /// The compile has passed `Stmt::BeginPrologueEnd`: what follows is the
+    /// unit's run-time remainder.
+    prologue_ended: bool,
     /// The ENCLOSING compilation's scope chain (outermost first), for compilers
     /// that are compiling a nested body. `local_scopes` stops at the routine /
     /// closure boundary because slot allocation does, but the *lexical* chain does
@@ -1558,6 +1568,9 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// Names declared by the routines (method/sub bodies) enclosing the code
+    /// being compiled; see `CompiledCode::routine_scoped_free`.
+    pub(crate) routine_scoped_names: std::collections::HashSet<String>,
     /// ADR-0050: where a `return` compiled here goes, when it is not what
     /// `is_routine` / `lexically_in_routine` say — `(is_routine,
     /// lexically_in_routine)` of the block's own definition site. Set only by
@@ -1803,6 +1816,15 @@ pub(crate) struct Compiler {
     /// lexical block like `constant_vars_in_scope`, and handed to nested
     /// closure compilers by `inherit_enclosing_scopes`.
     lexical_type_shadows: std::collections::HashSet<String>,
+    /// Names a `use X` of this scope (the unit's own, or the enclosing block's)
+    /// declares as the package `X`: a bareword `X` after it names that package,
+    /// not a sigilless `\X` of an outer scope (#15806). A later `my \X` of the
+    /// same scope drops the name again.
+    use_declared_names: std::collections::HashSet<String>,
+    /// True for an `EVAL`'d unit (`mark_as_eval_unit`). It cannot see which
+    /// sigilless bindings its call site holds, so its own `use X` declares `X`
+    /// whether or not one is visible at compile time.
+    in_eval_unit: bool,
     /// Bare names of the lexical types (`my class`/`my role`/`my grammar`)
     /// declared in this scope or an enclosing one. A method body's compiler
     /// reads them through `lexical_type_shadows`, so a method names such a
@@ -1857,6 +1879,14 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
+    /// Type captures (`::T` in a signature) of this frame and of the frames
+    /// around it. A nested closure naming `T` reads the type its creating
+    /// frame captured, exactly like a captured variable; resolved by name at
+    /// call time it would read whatever same-named capture the CALLER has.
+    type_capture_locals: std::collections::HashSet<String>,
+    /// The type captures of the frames AROUND this one (see
+    /// [`Self::type_capture_locals`], which holds this frame's own).
+    enclosing_type_captures: std::collections::HashSet<String>,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -1990,13 +2020,9 @@ pub(crate) struct Compiler {
     /// interpret-path fallback) leaves it false. Only then may a `&name` read
     /// be recorded as having no lexical binding in scope (`amp_scope`).
     pub(crate) lexical_scope_known: bool,
-    /// When true, a `key => $var` Pair must NOT capture `$var`'s container.
-    /// Set while compiling call arguments: a named argument's value is passed
-    /// to the callee by the call's binding rules (and decontainerized for plain
-    /// params / attribute stores), so capturing the container there breaks code
-    /// that reads the bound value without deref (e.g. `.new(prefix => $dir)`).
-    /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
-    /// write-through (S02:1704).
+    /// Suppress incidental Pair capture within ordinary argument expressions.
+    /// A syntactic named argument or a positional data Pair retains its RHS
+    /// container; the callee decides between value binding and aliasing.
     suppress_pair_capture: bool,
     /// Set while compiling the value of a `key => my $ = expr` Pair: the
     /// anonymous scalar's container becomes the Pair's value as a writable
@@ -2113,6 +2139,8 @@ impl Compiler {
             top_level_is_block_body: false,
             pending_scope_frame: None,
             retired_loop_param_slots: HashMap::new(),
+            static_half_amp: std::collections::HashSet::new(),
+            prologue_ended: false,
             enclosing_scopes: Vec::new(),
             outer_write_names: Default::default(),
             role_param_scope: None,
@@ -2162,6 +2190,7 @@ impl Compiler {
             unit_tail_sinks: false,
             in_closure_body: false,
             lexically_in_routine: false,
+            routine_scoped_names: std::collections::HashSet::new(),
             return_routineness: None,
             eval_context_dead_routine: false,
             lexically_in_block: false,
@@ -2193,6 +2222,8 @@ impl Compiler {
             enclosing_readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             lexical_type_shadows: std::collections::HashSet::new(),
+            use_declared_names: std::collections::HashSet::new(),
+            in_eval_unit: false,
             lexical_types_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -2202,6 +2233,8 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
+            type_capture_locals: std::collections::HashSet::new(),
+            enclosing_type_captures: std::collections::HashSet::new(),
             enclosing_local_names: std::collections::HashSet::new(),
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
@@ -2559,7 +2592,10 @@ impl Compiler {
             && !name.starts_with(['$', '@', '%', '&', '.', '!', '^', '*'])
             && name != "_"
             && !name.contains("::")
-            && !name.starts_with("__mutsu_")
+            // The subscript temporaries of a compound assignment
+            // (`__mutsu_idx_N`) are read only through their own slot, so they
+            // take the slot-only stores like any `my $x` (#15917 follow-up).
+            && (!name.starts_with("__mutsu_") || name.starts_with("__mutsu_idx_"))
             && !name.starts_with("__ANON")
     }
 
@@ -2918,6 +2954,14 @@ impl Compiler {
         }
     }
 
+    /// Whether the bare word `name` is a type capture (`::T`) of a frame
+    /// AROUND the code being compiled, and not shadowed by one of this frame's
+    /// own.
+    // Cost: O(1), two hash probes.
+    fn in_closure_body_for_type_capture(&self, name: &str) -> bool {
+        self.enclosing_type_captures.contains(name) && !self.type_capture_locals.contains(name)
+    }
+
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
         // Code nested in a closure body is still inside it (ADR-12529).
@@ -2930,6 +2974,12 @@ impl Compiler {
             .extend(self.sigilless_locals.iter().cloned());
         sub.enclosing_sigilless
             .extend(self.enclosing_sigilless.iter().cloned());
+        sub.enclosing_type_captures.extend(
+            self.type_capture_locals
+                .iter()
+                .chain(self.enclosing_type_captures.iter())
+                .cloned(),
+        );
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
         sub.enclosing_underscore_implicit = if self.local_map.contains_key("@_") {
@@ -2947,6 +2997,18 @@ impl Compiler {
         }
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
+        // A routine around the nested code shadows a same-named class/package
+        // `my`; see `CompiledCode::routine_scoped_free`.
+        sub.routine_scoped_names
+            .extend(self.routine_scoped_names.iter().cloned());
+        if self.is_routine || self.lexically_in_routine {
+            sub.routine_scoped_names
+                .extend(self.local_map.keys().cloned());
+            for frame in self.local_scopes.iter() {
+                sub.routine_scoped_names
+                    .extend(frame.all_declared_names().cloned());
+            }
+        }
         sub.class_body_static_code_vars
             .extend(self.class_body_static_code_vars.iter().cloned());
         // A `:=`-bound container-less scalar stays container-less inside the
@@ -2992,6 +3054,8 @@ impl Compiler {
             .collect();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
+        sub.use_declared_names
+            .extend(self.use_declared_names.iter().cloned());
         sub.lexical_types_in_scope
             .extend(self.lexical_types_in_scope.iter().cloned());
     }
@@ -3351,6 +3415,7 @@ impl Compiler {
     }
 
     pub(crate) fn mark_as_eval_unit(&mut self) {
+        self.in_eval_unit = true;
         self.unit_tail_on_stack = true;
         self.push_local_scope();
         // The EVAL'd unit's declarations now land in this freshly-pushed frame,
@@ -3543,8 +3608,13 @@ impl Compiler {
     pub(super) fn note_untyped_local_declaration(&mut self, name: &str) {
         if Self::is_simple_scalar_store_name(name) {
             self.code.note_untyped_declaration(name);
-        } else {
-            self.note_declared_local(name);
+        } else if let Some(bare) = name.strip_prefix(['@', '%'])
+            && Self::is_plain_lexical_name(bare)
+        {
+            // An `@`/`%` declared without a constraint: only the plain
+            // lexical names are slot-addressed stores (the same names
+            // `note_declared_local` records).
+            self.code.note_untyped_declaration(name);
         }
     }
 
@@ -3579,7 +3649,15 @@ impl Compiler {
             return;
         }
         if pd.type_constraint.is_none() && pd.type_capture.is_none() {
-            self.note_untyped_local_declaration(&name);
+            if Self::is_simple_scalar_store_name(&name) {
+                self.code.note_untyped_declaration(&name);
+            } else {
+                // An untyped `@`/`%` PARAMETER is not an untyped slot: the
+                // binder carries a typed argument's constraint into this frame
+                // by name (`sub f(%p)` called with a `my Int %h`), which a store
+                // must still check. Only a `my` declaration is untyped.
+                self.note_declared_local(&name);
+            }
         } else if Self::is_simple_scalar_store_name(&name) {
             self.code.note_declared_local(&name);
         } else {
@@ -3742,7 +3820,14 @@ impl Compiler {
                     Expr::BareWord(s) => Some(s.as_str()),
                     _ => None,
                 };
-                let val_name = Self::extract_inner_varname(right);
+                // A sigilless alias value (`:p(alias)`) is stored under its
+                // term key, as a positional one is (#16230).
+                let val_name = match right.as_ref() {
+                    Expr::BareWord(n) if self.names_sigilless_binding(n) => {
+                        Some(crate::runtime::term_names::term_key(n))
+                    }
+                    _ => Self::extract_inner_varname(right),
+                };
                 if let (Some(k), Some(v)) = (key, val_name) {
                     Some(format!("{}={}", k, v))
                 } else {
@@ -3779,7 +3864,7 @@ impl Compiler {
     ///
     /// The test is on the SHAPE, not on the runtime value: rakudo agrees that
     /// `d("7".Int)` -- an in-range boxed `Int` produced at runtime -- picks
-    /// `Int`. Positions past 31 are never marked (a call with 32+ positional
+    /// `Int`. Positions past 15 are never marked (a call with 16+ positional
     /// arguments and a native `multi` candidate is not worth a wider carrier);
     /// leaving a bit clear only preserves the old ranking for that position.
     ///
@@ -3799,10 +3884,19 @@ impl Compiler {
         if args.len() == 1 && name.with_str(|n| matches!(n, "floor" | "ceiling" | "ceil")) {
             return u32::from(self.is_declared_native_arg(&args[0]));
         }
+        // Low half: positions that are genuinely native; high half: positions
+        // written as a (possibly folded) literal, which rakudo dispatches as a
+        // boxed value (#13065) but a `proto` gate still wants to see.
         let mut mask = 0u32;
-        for (i, arg) in args.iter().enumerate().take(32) {
-            if self.is_native_literal_arg(arg) {
+        for (i, arg) in args
+            .iter()
+            .enumerate()
+            .take(crate::runtime::LITERAL_MASK_SHIFT as usize)
+        {
+            if self.is_declared_native_arg(arg) {
                 mask |= 1 << i;
+            } else if self.is_native_literal_arg(arg) {
+                mask |= 1 << (i as u32 + crate::runtime::LITERAL_MASK_SHIFT);
             }
         }
         mask
@@ -5004,7 +5098,10 @@ impl Compiler {
         // A placeholder variable ($^x, @_, ...) directly in the mainline is
         // outside any sub or block -> X::Placeholder::Mainline. Emit the Die
         // first so it fires before any other statement runs.
-        if self.is_mainline && self.emit_regex_code_block_placeholder_die(stmts) {
+        if self.is_mainline
+            && (self.emit_regex_code_block_placeholder_die(stmts)
+                || self.emit_stray_block_placeholder_die(stmts))
+        {
             self.code.compute_needs_env_sync();
             return (self.code, self.compiled_functions);
         }
@@ -5104,8 +5201,11 @@ impl Compiler {
                 let is_last = Some(i) == tail_index;
                 // A sunk tail expression or call compiles exactly as any other
                 // statement, `SinkPop` included (`unit_tail_sinks`).
-                let sunk_tail =
-                    self.unit_tail_sinks && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. });
+                // A tail bare `{ ... }` is sunk the same way: compiled as a
+                // value, its own tail statement would be (`{ $_ = 'x'; /x/ }`
+                // as the program's last statement left its regex unmatched).
+                let sunk_tail = self.unit_tail_sinks
+                    && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. } | Stmt::Block(_));
                 if is_last && !sunk_tail {
                     match stmt {
                         Stmt::Expr(expr) => {
@@ -5156,7 +5256,7 @@ impl Compiler {
                             // A genuine source `{ ... }` is a Raku callframe; a
                             // compiler-synthesized block is not.
                             if matches!(stmt, Stmt::Block(_)) {
-                                self.compile_bare_block_inline(body);
+                                self.compile_unit_tail_bare_block(body);
                             } else {
                                 // `stmt` is a `SyntheticBlock` here (e.g. the
                                 // parser's wrapper for a tail `my $*x := ...`
@@ -5302,6 +5402,7 @@ impl Compiler {
             post_start: 0,
             end: 0,
             is_bare_block: false,
+            decont_result: false,
         });
         Self::compile_pre_phasers(self, stmts);
         self.code.patch_block_pre_end(idx);
@@ -5472,6 +5573,11 @@ impl Compiler {
                     if !self.emit_block_placeholder_die(body) {
                         for inner in body {
                             self.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                self.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                     prev_guard = Some(guard_idx);
@@ -5497,6 +5603,11 @@ impl Compiler {
                     if !self.emit_block_placeholder_die(body) {
                         for inner in body {
                             self.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                self.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                     prev_guard = Some(guard_idx);

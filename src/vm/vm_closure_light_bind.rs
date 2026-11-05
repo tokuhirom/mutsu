@@ -95,7 +95,7 @@ impl Interpreter {
         // here — a plain positional `$` parameter is a readonly item binding
         // with no caller container behind it — so the fold itself has nothing
         // to record.
-        self.take_pending_call_arg_sources();
+        self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
 
         // `@_` holds the positionals the signature did NOT consume, which at
@@ -117,7 +117,7 @@ impl Interpreter {
             // settled — no bare identifier is exempt.
             // Binding a parameter hllizes a raw `VMArray`/`VMHash` (ADR-12666).
             let val = Self::itemize_scalar_store_value(
-                crate::runtime::types::unwrap_varref_value(args[i].clone()).hllize_vm_collection(),
+                crate::runtime::types::unwrap_varref_value(args[i].clone()).hllize_for_binding(),
             );
             // A `Callable` bound to a `$` parameter is also published under its
             // `&`-sigiled spelling (`bind_param_value_sym` does the same). Only

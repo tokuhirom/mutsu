@@ -208,6 +208,19 @@ impl Interpreter {
         if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
+        // A `%?RESOURCES` entry shares the `IO::Path` rows without an
+        // `IO::Path` in its MRO (#15818): its native methods are the path's.
+        // Only the methods that take an argument: the table answers a call with
+        // plain arguments itself, and this is the by-owner fallback for the
+        // others (an `IO::Path` destination). The no-argument rows (`Str`, and
+        // `Mu`'s `Stringy`) stay where they are, so `~$resource` still reaches
+        // its `Mu` frame (#16095).
+        if class_name == "Distribution::Resource" {
+            return crate::builtins::method_table::distribution_resource::resource_answers(
+                method_name,
+            ) && io_path_method_takes_arguments(method_name)
+                && self.is_native_method("IO::Path", method_name);
+        }
         match (probe_key(class_name), probe_key(method_name)) {
             (Some(class), Some(method)) => self.is_native_method_memo(class, method),
             _ => self.is_native_method_uncached(class_name, method_name),
@@ -729,6 +742,36 @@ impl Interpreter {
         matches!(name, "pos" | "orig" | "target" | "from" | "to")
     }
 
+    /// [`Self::collect_class_attributes`] without the per-call clone of every
+    /// attribute definition: the merged list is built once per class and
+    /// registry `type_stamp`, and handed out shared. For a caller that only
+    /// reads the list.
+    // Cost: O(1) amortized; O(m * a) on a miss, m = classes in the MRO, a =
+    // attributes per class.
+    pub(crate) fn class_attributes_shared(
+        &mut self,
+        class_name: &str,
+    ) -> std::sync::Arc<Vec<ClassAttributeDef>> {
+        let key = Symbol::intern(class_name);
+        if self.caches.class_attributes_stamp == self.registry().type_stamp()
+            && let Some(attrs) = self.caches.class_attributes_shared.get(&key)
+        {
+            return std::sync::Arc::clone(attrs);
+        }
+        let attrs = std::sync::Arc::new(self.collect_class_attributes(class_name));
+        // Building the list may itself have touched the registry (an MRO
+        // memo): file the entry under the stamp it is valid for now.
+        let stamp = self.registry().type_stamp();
+        if self.caches.class_attributes_stamp != stamp {
+            self.caches.class_attributes_shared.clear();
+            self.caches.class_attributes_stamp = stamp;
+        }
+        self.caches
+            .class_attributes_shared
+            .insert(key, std::sync::Arc::clone(&attrs));
+        attrs
+    }
+
     pub(crate) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
@@ -925,6 +968,14 @@ impl Interpreter {
         }
         attrs
     }
+}
+
+/// Whether `IO::Path` declares a row for `method` that takes an argument.
+// Cost: two hash lookups.
+pub(super) fn io_path_method_takes_arguments(method: &str) -> bool {
+    let method = Symbol::intern(method);
+    let owner = Symbol::intern("IO::Path");
+    (1..=2).any(|arity| crate::builtins::method_table::owner_row(owner, method, arity).is_some())
 }
 
 /// Whether one of `owners` has a row for `method` at any arity a native call

@@ -30,7 +30,7 @@ pub(crate) enum Fold {
 /// fold of the `:m` adverb.
 // Cost: O(n), n = bytes of `s`.
 pub(crate) fn nomark(s: &str) -> String {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     s.graphemes(true).map(|g| Fold::Mark.unit(g)).collect()
 }
 

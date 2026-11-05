@@ -2,7 +2,7 @@
 //! named arguments (ADR-10723: a tree built in Raku equals the parsed one).
 //!
 //! Each class lists its arguments in the order rakudo 2026.09's `.raku` prints
-//! them, which is the order the read direction (`convert.rs`) stores the
+//! them, which is the order the read direction (`view.rs`) stores the
 //! fields in, so a constructed node renders and lowers exactly like a parsed
 //! one. Which arguments are required, and the defaults rakudo fills in
 //! (`Statement::For`'s `mode => "serial"`, `Term::Reduce`'s
@@ -39,6 +39,14 @@ enum Missing {
 const DEFAULT_SCOPES: &[(&str, &str)] = &[("RakuAST::VarDeclaration::Term", "my")];
 
 type Arg = (&'static str, Kind, Missing);
+
+// Cost: O(f), f = declared constructor fields.
+#[cfg(test)]
+pub(super) fn field_names(class: RakuAstClass) -> Vec<&'static str> {
+    schema(class.printed_name()).map_or_else(Vec::new, |(_, fields)| {
+        fields.iter().map(|(name, _, _)| *name).collect()
+    })
+}
 
 use Kind::{Flag, List, Node};
 use Missing::{DefaultFalse, DefaultStr, Omit, Required};
@@ -133,6 +141,46 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("dwim-left", Flag, Omit),
                 ("infix", Node, Required),
                 ("dwim-right", Flag, Omit),
+            ],
+        ),
+        // `directive` beats `abbreviated` beats `for` (see `exclusive_flags`).
+        "RakuAST::Doc::Block" => (
+            C::DocBlock,
+            &[
+                ("margin", Node, Omit),
+                ("type", Node, Required),
+                ("level", Node, Omit),
+                ("directive", Flag, Omit),
+                ("abbreviated", Flag, Omit),
+                ("for", Flag, Omit),
+                ("config", Node, Omit),
+                ("paragraphs", List, Omit),
+            ],
+        ),
+        "RakuAST::Doc::Markup" => (
+            C::DocMarkup,
+            &[
+                ("letter", Node, Required),
+                ("opener", Node, DefaultStr("<")),
+                ("closer", Node, DefaultStr(">")),
+                ("atoms", List, Omit),
+                ("meta", List, Omit),
+            ],
+        ),
+        "RakuAST::Doc::LegacyRow" => (
+            C::DocLegacyRow,
+            &[
+                ("column-dividers", Node, Omit),
+                ("column-offsets", List, Omit),
+                ("cells", List, Omit),
+            ],
+        ),
+        "RakuAST::Doc::Declarator" => (
+            C::DocDeclarator,
+            &[
+                ("WHEREFORE", Node, Required),
+                ("leading", List, Omit),
+                ("trailing", List, Omit),
             ],
         ),
         "RakuAST::Statement::Catch" => (C::StatementCatch, &[("body", Node, Required)]),
@@ -247,6 +295,7 @@ pub(super) fn is_supported(class: RakuAstClass) -> bool {
         class,
         RakuAstClass::Assignment
             | RakuAstClass::StatementSequence
+            | RakuAstClass::DocParagraph
             | RakuAstClass::Nqp
             | RakuAstClass::Label
             | RakuAstClass::FakeSignature
@@ -361,6 +410,8 @@ fn positional(class_name: &str, args: &[Value]) -> Option<Result<Value, RuntimeE
         "RakuAST::StatementSequence" => {
             node(RakuAstClass::StatementSequence, positional_fields(args))
         }
+        // The atoms of a paragraph: strings and `Doc::Markup` nodes.
+        "RakuAST::Doc::Paragraph" => node(RakuAstClass::DocParagraph, positional_fields(args)),
         // rakudo's signature is `(str $name)`, and `.raku` prints it that
         // way: a positional field, as the read direction stores it. A
         // `name => ...` spelling fills the same field.
@@ -412,6 +463,9 @@ fn build(
     for &(name, kind, missing) in schema {
         let given = super::named_arg(args, name)
             .filter(|v| !v.is_nil())
+            // An empty `ArgList` is the default `args`; rakudo's `.raku` leaves
+            // it out as it does when the argument is not passed.
+            .filter(|v| !(name == "args" && matches!(missing, Omit) && is_empty_arg_list(v)))
             .filter(|v| {
                 name != "scope"
                     || !DEFAULT_SCOPES
@@ -453,9 +507,43 @@ fn build(
             value,
         });
     }
+    if class == RakuAstClass::DocBlock {
+        exclusive_flags(&mut fields);
+    }
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class,
         fields,
     })))
+}
+
+/// A `Doc::Block` is one of a directive, an abbreviated block, an extended
+/// (`for`) block or a delimited one; rakudo keeps the first of those given,
+/// in that order, and a `level` of 0 is no level.
+// Cost: O(f), f = fields.
+fn exclusive_flags(fields: &mut Vec<RakuAstField>) {
+    let has = |fields: &[RakuAstField], name: &str| fields.iter().any(|f| f.name == Some(name));
+    let keep = ["directive", "abbreviated", "for"]
+        .into_iter()
+        .find(|name| has(fields, name));
+    // The configuration is kept as `key => node` pairs.
+    for f in fields.iter_mut().filter(|f| f.name == Some("config")) {
+        if let RakuAstFieldValue::Node(v) = &f.value
+            && let Some(pairs) = super::doc_block::config_pairs(v)
+        {
+            f.value = RakuAstFieldValue::List(pairs);
+        }
+    }
+    fields.retain(|f| match f.name {
+        Some(flag @ ("directive" | "abbreviated" | "for")) => Some(flag) == keep,
+        Some("level") => !matches!(&f.value, RakuAstFieldValue::Node(v) if v.as_int() == Some(0)),
+        _ => true,
+    });
+}
+
+/// Whether `value` is a `RakuAST::ArgList` with no arguments.
+// Cost: O(1).
+pub(super) fn is_empty_arg_list(value: &Value) -> bool {
+    matches!(value.view(), ValueView::RakuAst(node)
+        if node.class == RakuAstClass::ArgList && node.fields.is_empty())
 }

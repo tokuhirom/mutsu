@@ -131,6 +131,35 @@ pub(crate) fn amp_sym(name: Symbol) -> Symbol {
     sym
 }
 
+/// The reserved env key a class body's `my method NAME` files its sub form
+/// under (`crate::env::CLASS_LEXICAL_METHOD_PREFIX` + `NAME`), memoized per
+/// name id like [`amp_sym`]: the key is fixed by the call site, so no string is
+/// built or hashed after a name's first call. Symbols are global and
+/// append-only, so an entry never goes stale.
+// Cost: O(1) after a name's first call, which interns the key (O(len)).
+pub(crate) fn class_lexical_method_sym(name: Symbol) -> Symbol {
+    thread_local! {
+        /// `name id -> (key id) + 1`; 0 means not computed yet.
+        static KEYS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    }
+    let idx = name.raw() as usize;
+    let cached = KEYS.with(|c| c.borrow().get(idx).copied().unwrap_or(0));
+    if cached != 0 {
+        return Symbol::from_raw(cached - 1);
+    }
+    let sym = name.with_str(|n| {
+        Symbol::intern(&format!("{}{n}", crate::env::CLASS_LEXICAL_METHOD_PREFIX))
+    });
+    KEYS.with(|c| {
+        let mut table = c.borrow_mut();
+        if table.len() <= idx {
+            table.resize(idx + 1, 0);
+        }
+        table[idx] = sym.raw() + 1;
+    });
+    sym
+}
+
 /// Look up `"{name}/{arity}"` (already package-qualified `name`).
 pub(crate) fn arity_lookup(name: &str, arity: usize) -> Option<Symbol> {
     with_key(

@@ -219,24 +219,46 @@ impl Interpreter {
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
+            // A body that cannot see a role's parameters, its statics or the
+            // class a `::?CLASS` invocant captured (`cc.ignores_role_context`),
+            // over parameters typed with built-in types only, has nothing to
+            // bind for them: the call keeps the fast path (#16215).
+            let role_blind = cc.ignores_role_context()
+                && method_def.param_defs.iter().all(|pd| {
+                    pd.is_invocant
+                        || (pd.type_capture.is_none()
+                            && pd.type_constraint.as_deref().is_none_or(|tc| {
+                                let base = tc
+                                    .strip_suffix(":D")
+                                    .or_else(|| tc.strip_suffix(":U"))
+                                    .unwrap_or(tc);
+                                crate::runtime::utils::is_known_type_constraint(base)
+                            }))
+                });
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
                 pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
-            });
+            }) && !Self::fast_invocant_constraints_trivial(
+                method_def,
+                &base,
+                owner_class,
+                role_blind,
+            );
             // A `::T` type capture has to be BOUND before the body runs, and the
             // fast path has no binder step that does it. It used to be kept out
             // by accident: the capture lived in `type_constraint`, so either
             // `has_invocant_constraint` or the fast path's own nominal type check
             // (which `::T` could never satisfy) bounced the call. Now that the
             // capture is a field of its own, the gate has to name it (#7984).
-            let has_type_capture = method_def
-                .param_defs
-                .iter()
-                .any(|pd| pd.captured_type_name().is_some());
-            let has_role_bindings = method_def.role_param_bindings.is_some()
-                || self.class_role_param_bindings(owner_class).is_some()
-                || self
-                    .class_role_param_bindings(receiver_class_name)
-                    .is_some();
+            let has_type_capture = method_def.param_defs.iter().any(|pd| {
+                pd.captured_type_name().is_some()
+                    && !(pd.captures_class_fixture() && pd.is_invocant && role_blind)
+            });
+            let has_role_bindings = !role_blind
+                && (method_def.role_param_bindings.is_some()
+                    || self.class_role_param_bindings(owner_class).is_some()
+                    || self
+                        .class_role_param_bindings(receiver_class_name)
+                        .is_some());
             // Classify arguments the way the slow binder does
             // (`bind_function_args_values`): a string-keyed `Pair` (after VarRef
             // unwrap) is a named argument; everything else is positional. Two
@@ -394,9 +416,10 @@ impl Interpreter {
                 && !needs_default_eval
                 && !has_arg_mismatch
                 && !Self::method_binds_seq_into_array_param(method_def, &args)
-                // The fast path reads attributes off `self`'s own cell; a
-                // `Proxy` subclass's live in the cell passed separately.
-                && !matches!(base.view(), ValueView::Proxy { .. })
+                // A `Proxy` without a subclass cell has no attribute store to
+                // read; a subclass instance's lives in the same kind of cell
+                // an ordinary instance carries (`self_instance_attrs`).
+                && !matches!(base.view(), ValueView::Proxy { subclass: None, .. })
             {
                 // The fast binder below checks the parameter types itself;
                 // hand it this call's #10986 trust.
@@ -793,18 +816,35 @@ impl Interpreter {
                     .get(idx)
                     .is_some_and(|pd| pd.is_invocant)
             };
-            let params: Vec<String> = method_def
-                .params
-                .iter()
-                .enumerate()
-                .filter(|(idx, _)| !is_invocant(*idx))
-                .map(|(_, name)| name.clone())
-                .collect();
-            let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
-                .filter(|idx| !is_invocant(*idx))
-                .filter_map(|idx| method_def.param_defs.get(idx).cloned())
-                .collect();
-            (params.into(), defs.into())
+            // The invocant is the leading parameter (`::?CLASS:D:` of every
+            // role method of a CArray): bind the rest as a borrowed slice
+            // instead of cloning each `ParamDef` per call (#16215).
+            let lead = (0..method_def.params.len())
+                .take_while(|idx| is_invocant(*idx))
+                .count();
+            let all_leading = (lead..method_def.params.len()).all(|idx| !is_invocant(idx))
+                && method_def.param_defs.len() >= method_def.params.len();
+            if all_leading {
+                (
+                    std::borrow::Cow::Borrowed(&method_def.params[lead..]),
+                    std::borrow::Cow::Borrowed(
+                        &method_def.param_defs[lead..method_def.params.len()],
+                    ),
+                )
+            } else {
+                let params: Vec<String> = method_def
+                    .params
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, _)| !is_invocant(*idx))
+                    .map(|(_, name)| name.clone())
+                    .collect();
+                let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
+                    .filter(|idx| !is_invocant(*idx))
+                    .filter_map(|idx| method_def.param_defs.get(idx).cloned())
+                    .collect();
+                (params.into(), defs.into())
+            }
         } else {
             (
                 std::borrow::Cow::Borrowed(&method_def.params[..]),
@@ -994,8 +1034,12 @@ impl Interpreter {
             }
         }
         self.locals.refill_slots(cc.locals.len());
-        for (i, local_name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
+        // The names were interned when the chunk was built (`locals_sym`), so the
+        // per-call seed is an array read, not an interner round trip per local.
+        for i in 0..cc.locals.len() {
+            if let Some(sym) = cc.local_sym(i)
+                && let Some(val) = self.env().get_sym(sym)
+            {
                 self.locals[i] = val.clone();
             }
         }
@@ -1230,11 +1274,12 @@ impl Interpreter {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
                 // The frame's record answers the fixed names (ADR-14843).
-                if !local_name.is_empty() && !is_fixed_frame_name(local_name) {
-                    {
-                        let __v = self.locals[i].clone();
-                        self.env_mut().insert(local_name.clone(), __v);
-                    }
+                if !local_name.is_empty()
+                    && !is_fixed_frame_name(local_name)
+                    && let Some(sym) = cc.local_sym(i)
+                {
+                    let __v = self.locals[i].clone();
+                    self.env_mut().insert_sym_noting(sym, __v);
                 }
             }
 
@@ -1259,6 +1304,11 @@ impl Interpreter {
                     s,
                     "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
                 ) || method_def.params.iter().any(|p| p == s)
+                    // An enum the method declares binds its keys in the method's
+                    // scope; rakudo installs them in the method's package, which
+                    // `record_package_enum_key` mirrors. Merged back they would
+                    // shadow a same-named key of the caller's own enum (#16361).
+                    || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                     || bound_by_sub_signature(&method_def.param_defs, s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
@@ -1300,6 +1350,13 @@ impl Interpreter {
                     // A `|c` capture element read from a caller scalar
                     // (`capture_param_containers`) writes back the cell's
                     // final value.
+                    if let Some((key, name)) =
+                        crate::runtime::types::decode_capture_named_rw_param(param_name)
+                    {
+                        return self
+                            .capture_rw_named(key, name)
+                            .map(|val| (source_name.clone(), val));
+                    }
                     if let Some((key, elem_idx, None)) =
                         crate::runtime::types::decode_slurpy_rw_param(param_name)
                     {
@@ -1764,11 +1821,11 @@ impl Interpreter {
     // holding a ContainerRef (almost always 0).
     fn frame_container_refs<'a>(&self, code: &'a CompiledCode) -> Vec<(&'a str, Value)> {
         let mut refs = Vec::new();
-        for (slot, name) in code.locals.iter().enumerate() {
-            if let Some(v) = self.locals.get(slot)
-                && v.is_container_ref()
-                && !code.locals[..slot].contains(name)
-            {
+        // Walk the frame window directly (one bounds check for the whole walk
+        // instead of one per slot); a slot past the window has no value.
+        let window: &[Value] = &self.locals;
+        for (slot, (name, v)) in code.locals.iter().zip(window).enumerate() {
+            if v.is_container_ref() && !code.locals[..slot].contains(name) {
                 refs.push((name.as_str(), v.clone()));
             }
         }
@@ -1882,6 +1939,59 @@ impl Interpreter {
         }
     }
 
+    /// Whether every explicit invocant constraint of `method_def` is trivially
+    /// met by `base`, so the fast binder may skip the nominal check the full
+    /// binder runs: a plain defined instance against `Mu`, `::?CLASS` (the
+    /// class the method was resolved on) or its own class / the owner (with or
+    /// without `:D`). An invocant that captures a type, a `:U` / `:_`
+    /// smiley, a coercion or any other type keeps the full binder (which
+    /// also raises the concreteness / type-check errors).
+    // Cost: O(i), i = the method's invocant parameters (one).
+    fn fast_invocant_constraints_trivial(
+        method_def: &crate::runtime::MethodDef,
+        base: &Value,
+        owner_class: &str,
+        role_blind: bool,
+    ) -> bool {
+        // A role-mixed instance (`CArray[num64]`) is as defined as the
+        // instance it wraps, but its type is no class name: only `Mu` and
+        // `::?CLASS` accept it without the binder.
+        let is_mixin = matches!(base.view(), ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Instance { .. }));
+        let class_name = match base.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { class_name, .. } => class_name,
+                _ => return false,
+            },
+            // A `Proxy` subclass instance is as defined as any instance.
+            ValueView::Proxy {
+                subclass: Some((class_name, _)),
+                ..
+            } => *class_name,
+            _ => return false,
+        };
+        method_def
+            .param_defs
+            .iter()
+            .filter(|pd| pd.is_invocant)
+            .all(|pd| {
+                // A `::?CLASS` capture is harmless to a body that cannot see it.
+                if pd.type_capture.is_some() && !(role_blind && pd.captures_class_fixture()) {
+                    return false;
+                }
+                let Some(constraint) = pd.type_constraint.as_deref() else {
+                    return true;
+                };
+                let (name, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+                if !matches!(smiley, None | Some(":D")) {
+                    return false;
+                }
+                name == "Mu"
+                    || name == "::?CLASS"
+                    || (!is_mixin && (name == owner_class || name == class_name.as_str()))
+            })
+    }
+
     /// Fast path for read-only compiled methods. Bypasses all env_mut() calls
     /// to avoid the ~12μs Arc::make_mut deep clone. Populates locals directly
     /// from source data (the invocant's attribute cell, args, special
@@ -1890,22 +2000,88 @@ impl Interpreter {
     /// profiles); the returned map is `Some` only when the `:=` reconcile
     /// adjusted it beyond the cell contents.
     #[allow(clippy::too_many_arguments)]
-    /// Insert the fast path's bound parameters into `env`.
+    /// Whether the fast path writes the bound parameter `param_name` into the
+    /// frame env: not a plain scalar parameter the body reads through its slot
+    /// only. `names_by_string` is a body that looks a lexical up by a run-time
+    /// name (`EVAL`, `::('$x')`, `MY::`): it keeps every parameter in the env.
+    /// A parameter whose name the env already holds (a class-body static
+    /// injected for the method) is written too, so it shadows that entry as
+    /// the slot does. The invocant is the frame record's (ADR-14843).
+    // Cost: O(q), q = the method's parameters.
+    fn fast_param_in_env(
+        env: &crate::env::Env,
+        param_name: &str,
+        param_sym: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
+        names_by_string: bool,
+    ) -> bool {
+        if param_sym.is_frame_fixture() {
+            return false;
+        }
+        let slot_only = method_def
+            .param_storage_names()
+            .iter()
+            .position(|n| n.as_str() == param_name)
+            .and_then(|i| method_def.param_defs.get(i))
+            .is_some_and(|pd| {
+                !pd.sigilless
+                    && !pd.is_invocant
+                    && !pd.named
+                    && !pd.slurpy
+                    && pd.name.starts_with(|c: char| c.is_alphabetic())
+                    && !pd
+                        .traits
+                        .iter()
+                        .any(|t| t == "rw" || t == "copy" || t == "raw")
+            });
+        // A parameter some by-name reader of this frame reads (`needs_env_sync`:
+        // a grammar's token code block, an attribute default or a nested
+        // routine declared in the body) is in the env as well (#15863).
+        !(slot_only
+            && !names_by_string
+            && !cc.local_needs_env_sync(param_name)
+            && !env.contains_key_sym(param_sym))
+    }
+
+    /// Insert the fast path's bound parameters into the current frame env,
+    /// except those [`Self::fast_param_in_env`] leaves to their slots. A frame
+    /// with nothing to write never asks for the env mutably: the fresh
+    /// overlay shares the process-wide empty tier until its first insert, so
+    /// that ask alone copies it (one allocation per call).
     ///
     /// Symbol-keyed so a call does not allocate a `String` per parameter just
-    /// to hand it to `Symbol::intern` (the name is already a `&str` borrowed
-    /// from the method def). A parameter name IS name-derived, so unlike the
-    /// fixed well-known keys around it this must still run
-    /// [`crate::env::note_env_key`] — a placeholder parameter (`$^a`) is stored
-    /// under a `^`-prefixed key, and dropping that latch would leave
-    /// `placeholder_var_possible()` reading false while such a key is live.
-    fn insert_fast_param_values(
-        env: &mut crate::env::Env,
+    /// to hand it to `Symbol::intern`. A parameter name IS name-derived, so
+    /// this must still run [`crate::env::note_env_key`] -- a placeholder
+    /// parameter (`$^a`) is stored under a `^`-prefixed key, and dropping that
+    /// latch would leave `placeholder_var_possible()` reading false while such
+    /// a key is live.
+    // Cost: O(p * q), p = bound parameters, q = the method's parameters.
+    fn insert_fast_param_values_by_name(
+        &mut self,
         param_values: &super::vm_param_values::ParamValues<'_>,
+        method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
+        names_by_string: bool,
     ) {
+        let env = self.env();
+        let any = param_values.iter().any(|(name, sym, _)| {
+            Self::fast_param_in_env(env, name, *sym, method_def, cc, names_by_string)
+        });
+        if !any {
+            return;
+        }
+        let env = self.env_mut();
+        env.reserve(param_values.len());
         for (param_name, param_sym, param_val) in param_values.iter() {
-            // The invocant parameter is the frame record's (ADR-14843).
-            if param_sym.is_frame_fixture() {
+            if !Self::fast_param_in_env(
+                env,
+                param_name,
+                *param_sym,
+                method_def,
+                cc,
+                names_by_string,
+            ) {
                 continue;
             }
             crate::env::note_env_key(param_name);
@@ -2001,6 +2177,16 @@ impl Interpreter {
         }
 
         self.push_light_call_frame();
+        // The same thread-lane mask as the general method path
+        // (`call_compiled_method`): once the body has spawned a thread, the
+        // method's own `@`/`%` lexicals are published under their bare names,
+        // and on return they must stop answering the caller's same-named
+        // variable (#15020). Dropped, and so undone, on every exit path.
+        let _thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            method_def.param_defs.iter(),
+            &cc.locals,
+        );
         // See `call_compiled_function_named_inner`: an END registered inside this
         // method closes over a frame that dies on return.
         let end_phaser_mark_before = self.end_phaser_capture_mark();
@@ -2157,6 +2343,13 @@ impl Interpreter {
                         }
                     })
                 });
+                let bound = bound.map(|value| {
+                    if crate::value::attr_twigil_base(&pd.name).is_some() {
+                        value.deref_container()
+                    } else {
+                        value
+                    }
+                });
                 let val = match bound {
                     // `@`-sigiled (attributive) named param: re-home a List
                     // into an Array (mirrors `bind_param_value`); scalar named
@@ -2295,9 +2488,12 @@ impl Interpreter {
                             }
                         }
                     }
-                    let resolved_constraint = match pd {
-                        Some(pd) => self.resolved_param_constraint(pd, constraint),
-                        None => self.resolved_type_capture_name(constraint),
+                    let resolved_constraint: std::borrow::Cow<'_, str> = match pd {
+                        Some(pd) => self.resolved_param_constraint_cow(pd, constraint),
+                        None => match self.try_resolved_type_capture_name(constraint) {
+                            Some(resolved) => std::borrow::Cow::Owned(resolved),
+                            None => std::borrow::Cow::Borrowed(constraint),
+                        },
                     };
                     // A native-int parameter binds the coerced value -- the
                     // same unbox/wrap the sub binders apply (#9533): an
@@ -2359,7 +2555,7 @@ impl Interpreter {
                     let expected = if smiley.is_some() {
                         base_type
                     } else {
-                        resolved_constraint.as_str()
+                        &*resolved_constraint
                     };
                     // Type mismatch — fall back to slow path for proper error
                     unwind_fast_bind!();
@@ -2426,9 +2622,16 @@ impl Interpreter {
         // the only home of `self`, `__ANON_STATE#`, `?CLASS` and `?ROLE`; the
         // frame writes none of the four keys.
         if skip_env_setup {
-            let env = self.env_mut();
-            env.reserve(param_values.len());
-            Self::insert_fast_param_values(env, &param_values);
+            // A plain scalar parameter is read through its slot and nothing
+            // else names it (no closure, `skip_env_setup`); an aggregate,
+            // `rw`/`raw`/`copy` or sigilless parameter is shared by name with
+            // the caller's container and stays in the env.
+            self.insert_fast_param_values_by_name(
+                &param_values,
+                method_def,
+                cc,
+                cc.static_name_lookup || cc.needs_reflective_capture,
+            );
         } else {
             let env = self.env_mut();
             env.reserve(3 + param_values.len());
@@ -2439,7 +2642,12 @@ impl Interpreter {
             // env/locals from the live cell pre-op (`array_hash_attr_env_snapshot`),
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
-            Self::insert_fast_param_values(env, &param_values);
+            self.insert_fast_param_values_by_name(
+                &param_values,
+                method_def,
+                cc,
+                cc.static_name_lookup || cc.needs_reflective_capture,
+            );
         }
         // A light-bound plain `@x`/`%x` carries its constraint in the callee's
         // scope, which exists only now.
@@ -2449,6 +2657,14 @@ impl Interpreter {
             self.bind_light_aggregate_constraint(name, sym, &val);
             val.name_attribute_container(source.as_deref());
         }
+        // The call-site arg-source names describe THIS call's binding only. The
+        // light bind peeks them (`light_aggregate_binds`) instead of taking
+        // them, so left installed they would reach the first bind the method
+        // BODY makes: `CArray[uint8]` calls `^parameterize($, $)`, and
+        // `["off", None]` from `self.rs($off, 1)` matched its two-argument arity
+        // and bound `off` as a shared cell in the env, which the caller's slot
+        // never adopted (the ADR-0097 §15 divergence, #16037).
+        self.discard_pending_call_arg_sources();
         // A typed scalar `is copy` parameter is the method's own writable
         // variable: a store into it checks its declared type, which the
         // general binder records in the callee frame and this one did not
@@ -2890,24 +3106,6 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_body);
         crate::alloc_scope!("mfast:epilogue");
 
-        if !can_skip_merge {
-            // Non-can_skip_merge: AssignExpr may have written attribute values to
-            // env. Sync locals→env first so the merge/reconcile sees them.
-            for (i, local_name) in cc.locals.iter().enumerate() {
-                if local_name.starts_with('.')
-                    || local_name.starts_with('!')
-                    || local_name.starts_with("@!")
-                    || local_name.starts_with("@.")
-                    || local_name.starts_with("%!")
-                    || local_name.starts_with("%.")
-                {
-                    {
-                        let __v = self.locals[i].clone();
-                        self.env_mut().insert(local_name.clone(), __v);
-                    }
-                }
-            }
-        }
         // Snapshot this frame's final lexical state for any END phaser it
         // registered. A `my` in a fast-path method usually lives only in a local
         // slot, so the slots are pushed into the (about-to-be-discarded) callee
@@ -2969,6 +3167,8 @@ impl Interpreter {
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
+                        // As in the primary merge path above (#16361).
+                        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                         || bound_by_sub_signature(&method_def.param_defs, s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.

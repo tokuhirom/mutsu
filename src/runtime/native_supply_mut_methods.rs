@@ -266,7 +266,7 @@ impl Interpreter {
                     && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
                     && let Some(rx) = take_supply_channel(sid)
                 {
-                    let thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread_for_block(&tap_cb);
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
                     let done = done_cb.clone();
@@ -348,6 +348,12 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 );
                 let mut on_demand_quit: Option<Value> = None;
+                // The body's own error, kept whole: a `CATCH` that already ran
+                // inline at the `die` stamped a verdict on it, and rebuilding the
+                // error from the reason alone would drop that stamp, so the
+                // region that owns the `CATCH` would run it a second time
+                // (ADR-0072, #16030).
+                let mut on_demand_quit_err: Option<RuntimeError> = None;
                 // A `supply { }` block with no live `whenever` ends with its
                 // body (#12873): falling off the end, an explicit `done` or a
                 // `die`. Its CLOSE phasers then run once, here, rather than
@@ -458,8 +464,9 @@ impl Interpreter {
                             err.exception
                                 .as_deref()
                                 .cloned()
-                                .unwrap_or_else(|| Value::str(err.message.into_owned())),
+                                .unwrap_or_else(|| Value::str(err.message.to_string())),
                         );
+                        on_demand_quit_err = Some(err);
                     }
 
                     // Separate whenever subscription registrations from plain
@@ -875,7 +882,7 @@ impl Interpreter {
                                     1 => done_chain.pop(),
                                     _ => Some(Self::make_supply_done_chain(done_chain)),
                                 };
-                                let driver = self.clone_for_thread();
+                                let driver = self.clone_for_thread_for_block(&body_cb);
                                 let body_cb = body_cb.clone();
                                 let close_flag = rx.close_flag();
                                 let close_id = register_act_loop_close(close_flag.clone());
@@ -1419,7 +1426,8 @@ impl Interpreter {
                         // throwing out of `.share`.
                         supplier_quit(sid, quit_reason);
                     } else {
-                        return Err(Self::runtime_error_from_supply_reason(quit_reason));
+                        return Err(on_demand_quit_err
+                            .unwrap_or_else(|| Self::runtime_error_from_supply_reason(quit_reason)));
                     }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
@@ -1657,7 +1665,7 @@ impl Interpreter {
                     // the emitting thread is exactly the deadlock class this
                     // defers away.
                     delay_seconds = 0.0;
-                    let thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread_for_block(&tap_cb);
                     // No close flag: `Tap.close` drops the pump's sender
                     // (`drop_scheduled_pump`), so the act loop observes the
                     // disconnect and retires.
@@ -1750,7 +1758,6 @@ impl Interpreter {
             compiled_fns: None,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            deprecated_message: None,
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
@@ -1760,7 +1767,7 @@ impl Interpreter {
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
+            _state_scope_guard: None,
             captured_readonly: None,
             routine_cell: Default::default(),
         }));

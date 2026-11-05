@@ -32,9 +32,9 @@ mod walk_stmt;
 pub(crate) use walk_source::{walk_routine_traits, walk_signature_decl, walk_signature_var};
 
 pub(crate) use legacy_args::{legacy_arg_reads, legacy_arg_uses, legacy_arg_writes};
-pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
+pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut, walk_regex_tree_mut};
 use visit_mut::{exprs_mut, params_mut, traits_mut};
-use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};
+use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut};
 pub(crate) use walk_expr::walk_expr;
 pub(crate) use walk_mut_expr::walk_expr_mut;
 pub(crate) use walk_mut_stmt::{walk_stmt_mut, walk_stmts_mut};
@@ -138,6 +138,14 @@ pub(crate) trait Visit<'ast> {
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
         walk_expr(self, expr);
+    }
+
+    /// One statement list: the unit's top level, a block, a routine or closure
+    /// body. Every body the default recursion reaches arrives here as the
+    /// sibling list it is, so an analysis that judges statements against
+    /// their siblings (a duplicate declaration in one scope) overrides this.
+    fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        walk_stmts(self, body);
     }
 
     fn visit_param(&mut self, param: &'ast ParamDef) {
@@ -394,13 +402,13 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
             sequential: _,
         } => {
             v.visit_name(code, NameKind::Source);
-            walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         RegexNode::Quantified { atom, quantifier } => {
             v.visit_regex_node(atom);
             if let crate::regex_tree::QuantifierKind::Block(code) = &quantifier.kind {
                 v.visit_name(&code.code, NameKind::Source);
-                walk_stmts(v, &code.body);
+                v.visit_stmts(&code.body);
             }
             if let Some(separator) = &quantifier.separator {
                 v.visit_regex_node(&separator.node);
@@ -425,7 +433,7 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
             }
             if let Some((code, body)) = extension.code() {
                 v.visit_name(code, NameKind::Source);
-                walk_stmts(v, body);
+                v.visit_stmts(body);
             }
             if let Some((source, expr)) = extension.interpolation() {
                 v.visit_name(source, NameKind::Source);

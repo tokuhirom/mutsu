@@ -212,6 +212,11 @@ impl Interpreter {
             // That is the trust every NativeCall declaration gets.
             let cstr = unsafe { std::ffi::CStr::from_ptr(addr as *const std::ffi::c_char) };
             Value::str(cstr.to_string_lossy().into_owned())
+        } else if let Some(boxed) = self.native_object_of_type(&elem, addr) {
+            // A nested `CArray[T]` / `Pointer[T]` element boxes the same
+            // unmanaged object `nativecast` gives (#14894: `CArray[CArray[uint8]]`
+            // slots C filled, as `ASN1_STRING_to_UTF8`'s `unsigned char **out`).
+            boxed?
         } else {
             let name = match elem.view() {
                 ValueView::Package(name) => name.resolve(),

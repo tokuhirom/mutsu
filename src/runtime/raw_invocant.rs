@@ -53,6 +53,42 @@ pub(crate) fn any_raw_invocant_method_possible() -> bool {
     ANY_RAW_INVOCANT_METHOD.load(Ordering::Relaxed)
 }
 
+/// Words of [`RAW_INVOCANT_NAME_BITS`]: 1024 x 64 = 65536 bits.
+const RAW_NAME_WORDS: usize = 1024;
+
+/// A bit set over the method names that declare a raw invocant, indexed by the
+/// low 16 bits of the name's symbol id. Two names may share a bit (a
+/// collision answers `true` for a name that declares none), never the other
+/// way round, so the gate it feeds only ever errs towards running the correct
+/// resolve. Lock-free for the same reason [`ANY_RAW_INVOCANT_METHOD`] is: the
+/// gate runs on every `$var.method(...)`.
+static RAW_INVOCANT_NAME_BITS: [std::sync::atomic::AtomicU64; RAW_NAME_WORDS] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; RAW_NAME_WORDS];
+
+/// Record that a method named `name` declares a raw invocant. Called only from
+/// `Registry::note_raw_invocant_methods`, beside [`note_any_raw_invocant_method`].
+// Cost: O(1).
+pub(crate) fn note_raw_invocant_method_name(name: Symbol) {
+    let bit = name.raw_id() as usize & (RAW_NAME_WORDS * 64 - 1);
+    RAW_INVOCANT_NAME_BITS[bit >> 6].fetch_or(1 << (bit & 63), Ordering::Relaxed);
+}
+
+/// Whether a method called `name` may declare a raw invocant: `false` proves
+/// that no registered method of that name does, so a call of it never binds
+/// its invocant raw. The per-call pre-gate of the slice 3b arrival path --
+/// [`any_raw_invocant_method_possible`] says "somewhere", this says "under this
+/// name", so a program that loads one module with a raw-invocant method does
+/// not slow every other method call down.
+// Cost: O(1).
+#[inline]
+pub(crate) fn raw_invocant_method_possible_for(name: Symbol) -> bool {
+    if !any_raw_invocant_method_possible() {
+        return false;
+    }
+    let bit = name.raw_id() as usize & (RAW_NAME_WORDS * 64 - 1);
+    RAW_INVOCANT_NAME_BITS[bit >> 6].load(Ordering::Relaxed) & (1 << (bit & 63)) != 0
+}
+
 /// Native methods that Rakudo declares `is raw` on their invocant *and* which
 /// hand that invocant straight back, so `$a.NAME = v` writes through `$a`.
 ///
@@ -151,6 +187,12 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
+        if self.mixin_role_method_defs_any(target, method, |def| {
+            Self::method_is_rw_capable(def) && method_def_has_raw_invocant(def)
+        }) == Some(true)
+        {
+            return true;
+        }
         let class_name = Self::raw_invocant_class_name(target);
         if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
@@ -209,10 +251,49 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
+        if self.mixin_role_method_defs_any(target, method, method_def_has_raw_invocant)
+            == Some(true)
+        {
+            return true;
+        }
         let class_name = Self::raw_invocant_class_name(target);
         self.resolve_method(&class_name, method, method_args, target)
             .as_ref()
             .is_some_and(method_def_has_raw_invocant)
+    }
+
+    /// Whether `pred` holds for any candidate a `but`-mixed value's composed
+    /// roles declare for `method` (the first role that declares it answers):
+    /// a `Mixin` (`"abc" but R`) has no class of its own to resolve
+    /// against, its method is a role's (the dispatch
+    /// `dispatch_mixin_method_call` runs). `None` when `target` is no `Mixin`
+    /// or no composed role declares the method. Borrowed: no `MethodDef` is cloned.
+    // Cost: O(r + m), r = roles composed onto the value (a registry lookup each),
+    // m = candidates of the first role declaring the method.
+    fn mixin_role_method_defs_any(
+        &self,
+        target: &Value,
+        method: &str,
+        pred: impl Fn(&crate::runtime::decl_types::MethodDef) -> bool,
+    ) -> Option<bool> {
+        let ValueView::Mixin(_, mixins) = target.view() else {
+            return None;
+        };
+        let lookup = method.strip_prefix('!').unwrap_or(method);
+        // Borrowed: this runs on every call of a mixin's method (a CArray
+        // `AT-POS`), and cloning the role's whole method table cost ~18k Ir
+        // each time (#16215).
+        mixins
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+            .find_map(|role_name| {
+                self.with_mixin_role_def(mixins, role_name, |role| {
+                    role.methods
+                        .get(lookup)
+                        .map(|defs| defs.iter().any(&pred))
+                })
+                .flatten()
+            })
     }
 
     /// The class name a method is resolved against for an lvalue invocant.
@@ -220,10 +301,42 @@ impl Interpreter {
     /// Instance/type-object halves of ADR-0059) this answers for *any* value,
     /// because a raw invocant is exactly the case where the invocant is an
     /// ordinary `Int`/`Str`/... and the routine came from `augment class Any`.
+    // Cost: O(1) for an instance, type object or a memoized role-mixed instance;
+    // otherwise `what_type_name`'s.
     pub(crate) fn raw_invocant_class_name(target: &Value) -> String {
         match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),
+            ValueView::Mixin(inner, mixins) => {
+                // A role-mixed class instance: the name is a function of its
+                // override node (never mutated in place) and its class, and
+                // building it renders every role (~20k Ir per call of a
+                // CArray `AT-POS`, #16215). The entry owns a clone of the node
+                // so its address stays this composition's.
+                let ValueView::Instance { class_name, .. } = inner.view() else {
+                    return crate::value::what_type_name(target);
+                };
+                type Memo = rustc_hash::FxHashMap<
+                    (usize, Symbol),
+                    (crate::gc::Gc<crate::value::MixinOverrides>, String),
+                >;
+                thread_local! {
+                    static NAMES: std::cell::RefCell<Memo> = std::cell::RefCell::default();
+                }
+                let key = (&**mixins as *const crate::value::MixinOverrides as usize, class_name);
+                if let Some(hit) = NAMES.with(|m| m.borrow().get(&key).map(|(_, n)| n.clone())) {
+                    return hit;
+                }
+                let name = crate::value::what_type_name(target);
+                NAMES.with(|m| {
+                    let mut m = m.borrow_mut();
+                    if m.len() >= 4096 {
+                        m.clear();
+                    }
+                    m.insert(key, (mixins.clone(), name.clone()));
+                });
+                name
+            }
             _ => crate::value::what_type_name(target),
         }
     }
@@ -268,7 +381,27 @@ impl Interpreter {
         // first parameter. This call site supplies values, not source names.
         // Mirrors `try_rw_method_container_lvalue`.
         let saved_sources = self.take_pending_call_arg_sources();
-        let result = self.call_method_with_values(target.clone(), method, method_args.to_vec());
+        // A `but`-mixed value runs the role's method through the mixin
+        // dispatch, which takes the container from the arrival channel (the
+        // generic entry does not look through a boxed `Mixin`).
+        let role_raw = matches!(inner.view(), ValueView::Mixin(..))
+            && self.mixin_role_method_defs_any(&inner, method, method_def_has_raw_invocant)
+                == Some(true);
+        let result = if role_raw {
+            let previous = self.pending_raw_invocant.replace(Box::new(
+                crate::vm::vm_raw_invocant_arrival::PendingRawInvocant {
+                    method: method.to_string(),
+                    cell: target.clone(),
+                    raw_parameter: true,
+                    implicit_self: false,
+                },
+            ));
+            let result = self.call_method_with_values(inner.clone(), method, method_args.to_vec());
+            self.pending_raw_invocant = previous;
+            result
+        } else {
+            self.call_method_with_values(target.clone(), method, method_args.to_vec())
+        };
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         let result = result?;

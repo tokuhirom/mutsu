@@ -208,6 +208,24 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::VmIterBuf))
     }
 
+    /// Whether this word is a `BOOTInt` / `BOOTNum` / `BOOTStr` box
+    /// (ADR-11553 §3.1): an `Instance` of one of those three classes.
+    #[inline]
+    pub(in crate::value) fn is_boot_scalar_box(&self) -> bool {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Instance) => {
+                // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
+                let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
+                let class = attrs.class_name();
+                class == crate::symbol::wk::boot_int()
+                    || class == crate::symbol::wk::boot_num()
+                    || class == crate::symbol::wk::boot_str()
+            }
+            _ => false,
+        }
+    }
+
     /// Whether this word is a raw nqp `VMHash` (ADR-12666).
     #[inline]
     pub(in crate::value) fn is_vm_hash(&self) -> bool {
@@ -651,6 +669,34 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Mixin))
     }
 
+    /// Whether this word is a scalar leaf no container walk can descend into:
+    /// an `Int`, a `Num`, a `Str`, a `Bool`, `Nil` or a type object. A pure
+    /// tag probe; a `false` here says nothing (the caller then looks closer).
+    #[inline]
+    pub(in crate::value) fn is_scalar_leaf(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Int(_)
+                | Classified::Num(_)
+                | Classified::Kind(Kind::Str | Kind::Bool | Kind::Nil | Kind::Package)
+        )
+    }
+
+    /// How `flat`'s instance scan must treat this word, from the tag alone:
+    /// `Some(true)` an `Instance` or `Mixin` (it may be `Iterable`),
+    /// `Some(false)` a word `flat` never descends into or asks, `None` a plain
+    /// `List` or a `Slip`, whose elements the scan has to look at. The common
+    /// scalar element is one tag compare, where decoding a [`ValueView`] per
+    /// element cost ~14 ns (`List.flat`'s scan over 1M Ints, #15962).
+    #[inline]
+    pub(in crate::value) fn flat_scan_class(&self) -> Option<bool> {
+        match classify(self.0.get()) {
+            Classified::Kind(Kind::Instance | Kind::Mixin) => Some(true),
+            Classified::Kind(Kind::ArrayList | Kind::Slip | Kind::SlipItemized) => None,
+            _ => Some(false),
+        }
+    }
+
     /// Whether this word is a `Seq` — a pure tag probe.
     #[inline]
     pub(in crate::value) fn is_seq(&self) -> bool {
@@ -984,6 +1030,17 @@ impl NanBox {
         )
     }
 
+    /// Whether this is a `Pair` or a plain `Hash`, the aggregates whose
+    /// element containers a string context renders but that
+    /// `may_hide_a_stringifiable_list` does not cover. A pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_pair_or_hash(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::Pair | Kind::ValuePair | Kind::HashPlain | Kind::HashItemized)
+        )
+    }
+
     /// The `MatchNode` pointee if this is a lazy `Match`. The non-forcing
     /// probe behind the seam accessors' fast paths.
     #[inline]
@@ -1238,6 +1295,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     storer: &p.storer,
                     subclass: &p.subclass,
                     decontainerized: p.decontainerized,
+                    var_object: p.var_object,
                 }
             }
             Kind::ParametricRole => {

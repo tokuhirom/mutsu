@@ -19,6 +19,24 @@ use super::self_call::contextualized_self_call;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Mint the name of a bare `@` and record it in the current lexical scope,
+/// which declares it as a `state` array at the top of the enclosing block, as
+/// a bare `$` is (see `mint_anon_state_name`).
+// Cost: O(1).
+fn mint_anon_array_name() -> String {
+    let name = fresh_anon_array_name();
+    crate::parser::stmt::simple::record_anon_state_name(&format!("@{name}"));
+    name
+}
+
+/// [`mint_anon_array_name`] for a bare `%`.
+// Cost: O(1).
+fn mint_anon_hash_name() -> String {
+    let name = crate::ast::anon_state::fresh_hash_name();
+    crate::parser::stmt::simple::record_anon_state_name(&format!("%{name}"));
+    name
+}
+
 /// A fresh name for a bare `@` (each occurrence is its own anonymous array).
 // Cost: O(1).
 pub(crate) fn fresh_anon_array_name() -> String {
@@ -421,7 +439,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
-        return Ok((rest, Expr::ArrayVar(fresh_anon_array_name())));
+        return Ok((rest, Expr::ArrayVar(mint_anon_array_name())));
     }
     let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
@@ -628,7 +646,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
+        return Ok((rest, Expr::HashVar(mint_anon_hash_name())));
     }
     // Special: %*ENV
     let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;

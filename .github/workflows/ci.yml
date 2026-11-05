@@ -355,7 +355,7 @@ jobs:
 
       - name: Frontend debt does not grow
         # ADR-15334 section 3.3: SyntheticBlock references and `"__..."`
-        # literals in src/parser, and the lines of src/rakuast/convert.rs, stay
+        # literals in src/parser, and the lines of src/rakuast/view.rs, stay
         # at or below the ceilings in scripts/frontend-debt.d/. Self-tests its
         # comparison first.
         run: make check-frontend-debt
@@ -420,7 +420,7 @@ jobs:
       # The "ci-linux" dependency cache (opt-level 0 debug) — see `test-suites`
       # for why the release build and `debug-tap` keep separate keys.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -532,7 +532,7 @@ jobs:
       # recompile from scratch on every run. GC/JIT are runtime env vars, not
       # cargo features, so they never need a key of their own.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux-release"
           # Only PRs restore; only runs on main save. This keeps the cache warm
@@ -631,21 +631,38 @@ jobs:
           MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
 
-      - name: RakuAST round-trip frontend ratchet
-        # ADR-10723 Stage 0 (#10733): every t/ file listed in
-        # ci/rakuast-frontend-passing.txt must still pass when its program
-        # units run as `parse -> RakuAST -> lower` (MUTSU_RAKUAST=1). The
-        # list only grows (`scripts/rakuast-frontend.sh update`); a listed file
-        # that fails here is a regression in the RakuAST layer, fixed in the
-        # same PR rather than dropped from the list. Same per-file wrapper,
-        # timeout and -j4 as the TAP step above. There is no opt-out left to
-        # check (the `MUTSU_LEGACY=1` step of #15060 was deleted with it).
+      - name: RakuAST EVAL($ast) ratchet
+        # RakuAST C1 (#15759): every t/ file listed in
+        # ci/rakuast-ast-eval-passing.txt must still pass when it runs as
+        # `EVAL(slurp($file).AST)` (scripts/ast-eval-driver.raku): the typed
+        # nodes `.AST` builds, lowered back and executed. This is the write
+        # direction of the RakuAST layer through the public API; it replaced
+        # the MUTSU_RAKUAST=convert test mode (and its ratchet list), which is
+        # gone. The
+        # list only grows (`scripts/rakuast-frontend.sh eval-update`); a listed
+        # file that fails is a regression, fixed in the same PR.
         run: |
           mkdir -p tmp
-          scripts/rakuast-frontend.sh check
+          scripts/rakuast-frontend.sh eval-check
         env:
           MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
+          JOBS: "4"
+
+      - name: RakuAST .AST text ratchet
+        # RakuAST C1 (#15759): the `.AST` text of a pinned sample of roast
+        # files (ci/ast-text-corpus/rakudo.tsv, rakudo 2026.09's text hashed;
+        # the runner has no raku) must still equal rakudo's for every
+        # statement listed in ci/ast-text-corpus/identical.tsv. The list only
+        # grows (`scripts/ast-text-corpus.sh update`); a listed statement that
+        # stops matching is a regression in the renderer, fixed in the same PR
+        # rather than dropped from the list. A re-vendored roast file is
+        # skipped until `scripts/ast-text-corpus.sh golden` is run again.
+        run: |
+          mkdir -p tmp
+          scripts/ast-text-corpus.sh check
+        env:
+          MUTSU_BIN: target/release/mutsu
           JOBS: "4"
 
       - name: Site snippets still produce their documented output
@@ -946,7 +963,7 @@ jobs:
       # artifacts (no cranelift in one, a different target triple in the
       # other), so sharing their key would only evict entries they still need.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-lint-configs"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1025,7 +1042,7 @@ jobs:
           rustup default nightly-2026-08-01
 
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-miri"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1143,7 +1160,7 @@ jobs:
       # here: this builds for wasm32-unknown-unknown, whose linker is wasm-ld,
       # not the host cc — the `-fuse-ld=mold` flag would not apply.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-wasm"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1261,7 +1278,7 @@ jobs:
       # to recompile from scratch (the same reasoning as `test-suites`'s
       # separate release key).
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "ci-linux-debug-tap"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1335,3 +1352,51 @@ jobs:
           path: tmp/debug-tap.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # A red hourly run on `main` must reach a person: nobody watches a scheduled
+  # run's checks. `wasm-e2e` is post-merge only (ADR-11581), so the hourly run
+  # is the only place its failures show before a release; on 2026-11-01 it was
+  # red for hours and the first anyone looked was the v0.26.0 tag build. Open the
+  # `ci:main` tracking issue, or comment on it when this run fails a set of jobs
+  # that no earlier comment names (an hourly run that stays red the same way
+  # would otherwise add a comment per hour). Only scheduled runs report: a
+  # dispatch reports to whoever started it, and a release gate to the release.
+  report:
+    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri]
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: >-
+            test-check=${{ needs.test-check.result }}
+            lint-configs=${{ needs.lint-configs.result }}
+            test-suites=${{ needs.test-suites.result }}
+            wasm-e2e=${{ needs.wasm-e2e.result }}
+            debug-tap=${{ needs.debug-tap.result }}
+            miri=${{ needs.miri.result }}
+        run: |
+          set -euo pipefail
+          failed=""
+          for r in $RESULTS; do
+            [ "${r#*=}" = "failure" ] && failed="$failed ${r%%=*}"
+          done
+          line="Failed:${failed}"
+          body="CI on \`main\` failed at \`${GITHUB_SHA::12}\`: ${RUN_URL}
+
+          ${line}"
+          gh label create ci:main --color B60205 \
+            --description "Hourly CI failure on main (ci.yml)" 2>/dev/null || true
+          existing=$(gh issue list --label ci:main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create --label ci:main --title "CI on main is red" --body "$body"
+          elif ! gh issue view "$existing" --json body,comments \
+                 --jq '[.body, (.comments[].body)] | join("\n")' | grep -qxF "$line"; then
+            gh issue comment "$existing" --body "$body"
+          fi

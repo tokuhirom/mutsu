@@ -45,6 +45,9 @@ pub(crate) fn attribute_facts_from_args(args: &[Value]) -> impl Iterator<Item = 
         let ValueView::Pair(key, value) = arg.view() else {
             return Vec::new();
         };
+        // A named argument given as a variable arrives as its container
+        // (`:package(minted)`, #16230): record the value it holds.
+        let value = &value.deref_container();
         match key.as_str() {
             "name" => {
                 // Storage key is the BARE name (sigil+twigil stripped),
@@ -1463,6 +1466,35 @@ impl Interpreter {
                         }
                     }
                 }
+                // `Mu.new` is `self.bless(|%attrinit)`: a class (or composed
+                // role) that declares its own `bless` has it run for `.new`
+                // (ValueTypeCache's cache keyed on the `new` arguments). Its
+                // `self.Mu::bless(|%_)` reaches `dispatch_bless` directly, so
+                // this cannot recurse. Positional arguments keep the
+                // `Mu.new` rejection below.
+                if self.native_ctor_plan(Symbol::intern(class_key)).has_custom_bless
+                    && args
+                        .iter()
+                        .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                {
+                    // The user method itself: `call_method_with_values` finds
+                    // `Mu.bless`'s late table row first and would skip it.
+                    let dispatched = if let Some(result) =
+                        self.try_dispatch_compiled_method_direct(&target, "bless", &args)
+                    {
+                        result.map(|v| (v, AttrMap::new()))
+                    } else {
+                        self.run_instance_method_at(
+                            "newdispatch",
+                            class_key,
+                            AttrMap::new(),
+                            "bless",
+                            args.clone(),
+                            None,
+                        )
+                    };
+                    return dispatched.map(|(result, _updated)| result);
+                }
                 // Laid out like every other construction path (ADR-0121 D2):
                 // the slots also record which attributes hold only their seed
                 // (`nqp::attrinited`, D4).
@@ -1549,7 +1581,7 @@ impl Interpreter {
                 let class_mro = self.class_mro(class_key);
                 // When BUILD is defined, it controls attribute initialization,
                 // so we skip automatic named-arg-to-attribute mapping.
-                let any_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
+                let any_build = !ctor_plan.new_skips_phases && class_mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && self.registry().user_method_overloads(cn, "BUILD").is_some()
@@ -1560,7 +1592,7 @@ impl Interpreter {
                 // The plan's `has_build` counts them, from the class shape
                 // (re-ordering every role's submethods per construction was
                 // most of a `.new`, #12917).
-                let has_build_phase = any_build || ctor_plan.has_build;
+                let has_build_phase = any_build || (ctor_plan.has_build && !ctor_plan.new_skips_phases);
                 // A custom BUILD takes over named-arg → attribute mapping only
                 // for the attributes of the MRO layer declaring it; other
                 // layers still auto-assign (see `build_owning_attr_names`).
@@ -1590,68 +1622,10 @@ impl Interpreter {
                                 && self.is_attribute_buildable(class_key, k)
                                 && (!attrs_fully_known || sigil_map.contains_key(k.as_str()))
                             {
-                                let sigil = sigil_map.get(k).copied().unwrap_or('$');
-                                let mut value = v.clone();
-                                // A `Proxy` is FETCHed as it lands in the attribute's
-                                // Scalar (ADR-0040 §9).
-                                if sigil == '$' && value.is_proxy_value() {
-                                    value = self.auto_fetch_proxy(&value)?;
-                                }
-                                let attr_type_constraint = class_attrs_info
-                                    .iter()
-                                    .find(|attr| attr.name == *k && attr.sigil == sigil)
-                                    .and_then(|attr| {
-                                        super::attribute_type_constraint(
-                                            &class_attrs_info,
-                                            attr,
-                                            &attr_type_constraints,
-                                        )
-                                    });
-                                // A coercion-typed attribute (`has Int() $.x`)
-                                // coerces its provided value through the target
-                                // type (built-in coercion or a user COERCE method).
-                                if sigil == '$'
-                                    && let Some(tc) = attr_type_constraint.as_ref()
-                                    && crate::runtime::types::is_coercion_constraint(tc)
-                                {
-                                    value = self.coerce_value_for_constraint(tc, value);
-                                }
-                                // An `is Type` container attribute (`has @.a is
-                                // Buf`) is owned by its DECLARED container type,
-                                // which coerces the provided value itself (Buf,
-                                // BagHash, Array[T], ...). It must see the value
-                                // as supplied: running the generic sigil
-                                // coercion first list-assigns an already-correct
-                                // `Buf` into a one-element array (`my @a = $buf`
-                                // is `[Buf]` in raku too), and the declared type
-                                // was then rebuilt from that wrapper.
-                                let is_type = matches!(sigil, '@' | '%')
-                                    .then(|| self.attribute_is_type_in_mro(class_key, k))
-                                    .flatten();
-                                let coerced = if let Some(type_name) = is_type {
-                                    self.coerce_value_to_is_type(&type_name, sigil, value)?
-                                } else {
-                                    let coerced =
-                                        Self::coerce_provided_attr_value_by_sigil(value, sigil);
-                                    // A `%`-sigil attribute bound to a non-Hash
-                                    // object list-contextualizes it (Raku's
-                                    // Hash.STORE): an object with a custom
-                                    // `.iterator`/`.list` (e.g. `handles`)
-                                    // contributes its pairs.
-                                    if sigil == '%'
-                                        && matches!(coerced.view(), ValueView::Instance { .. })
-                                    {
-                                        self.coerce_object_to_hash(coerced)
-                                    } else {
-                                        coerced
-                                    }
-                                };
-                                let storage_key =
-                                    super::attribute_storage_key(&class_attrs_info, k, sigil);
-                                attrs.insert(
-                                    storage_key,
-                                    Self::itemize_attr_store_value(sigil, coerced),
-                                );
+                                self.store_ctor_named_value(
+                                    class_key, &ctor_plan, &mut attrs,
+                                    (k, sigil_map.get(k).copied().unwrap_or('$')), v.clone(),
+                                )?;
                             }
                             // When BUILD exists, named args are passed to BUILD
                             // which controls attribute initialization directly
@@ -1836,11 +1810,12 @@ impl Interpreter {
                     .iter()
                     .map(Symbol::resolve)
                     .find(|name| name.starts_with("RakuAST::"))
-                    && let Some(node) = crate::rakuast::construct(&native_parent, "new", &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &native_parent, "new", &args)?
                 {
                     inv_cell.set_rakuast_base(node);
                 }
                 for attr in class_attrs_info.clone() {
+                    let binding = self.attribute_binds_in_mro(class_key, &attr).then(|| attr.clone());
                     let attr_type_constraint = super::attribute_type_constraint(
                         &class_attrs_info,
                         &attr,
@@ -1897,6 +1872,12 @@ impl Interpreter {
                             default_is_seed,
                         });
                         attrs.insert_seed(storage_key, seed);
+                        continue;
+                    }
+                    if let Some(binding) = binding.filter(|_| !seeds && build_override.is_none()) {
+                        inv_cell.commit_attrs(attrs.clone());
+                        let value = self.bound_constructor_default(*class_name, &binding, &inv, &attrs)?;
+                        Self::bind_constructor_attribute(&mut attrs, storage_key, &attr_name, value);
                         continue;
                     }
                     // An `is built(&code)` override is an initializer the
@@ -2048,7 +2029,11 @@ impl Interpreter {
                 // inline here).
                 inv_cell.commit_attrs(attrs);
                 self.push_build_write_frame(&inv);
-                let build_result = self.run_build_phase(*class_name, &inv, &args);
+                let build_result = if ctor_plan.new_skips_phases {
+                    Ok(Ok(()))
+                } else {
+                    self.run_build_phase(*class_name, &inv, &args)
+                };
                 let build_writes = self.pop_build_write_frame();
                 match build_result? {
                     Ok(()) => {}
@@ -2099,7 +2084,7 @@ impl Interpreter {
                 }
                 // A class or role-composed TWEAK anywhere in the MRO, from the
                 // class shape (see `has_build_phase`).
-                if ctor_plan.has_tweak {
+                if ctor_plan.has_tweak && !ctor_plan.new_skips_phases {
                     // `fail` inside TWEAK yields a Failure `.new` returns.
                     if let Err(failure) = self.run_tweak_phase(*class_name, &inv, &args)? {
                         return Ok(failure);
@@ -2421,7 +2406,7 @@ impl Interpreter {
                 // RakuAST construction (Phase 4): `RakuAST::IntLiteral.new(42)`.
                 let resolved = name.resolve();
                 if resolved.starts_with("RakuAST::")
-                    && let Some(node) = crate::rakuast::construct(&resolved, "new", &args)?
+                    && let Some(node) = crate::rakuast::construct(&crate::scope::NameScope::default(), &resolved, "new", &args)?
                 {
                     return Ok(node);
                 }

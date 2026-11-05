@@ -335,6 +335,30 @@ impl Interpreter {
             self.call_method_with_values(target, "ASSIGN-POS", assign_args)?;
             return Ok(value);
         }
+        // `$undefined.AT-POS(i) = v`: `Any.AT-POS` on an undefined scalar
+        // autovivifies an Array into the variable, as `$undefined[i] = v`
+        // does (#16093).
+        if method == "AT-POS"
+            && method_args.len() == 1
+            && let Some(var_name) = target_var
+            && let ValueView::Package(n) = match target.view() {
+                ValueView::Scalar(inner) => inner.view(),
+                _ => target.view(),
+            }
+            && matches!(n.resolve().as_str(), "Any" | "Mu")
+            && let Some(idx) = method_args[0].as_int().and_then(|i| usize::try_from(i).ok())
+        {
+            let mut arr = Self::fresh_autoviv_container(true);
+            if let Some(()) = arr.with_array_mut(|gc, _| {
+                let data = crate::value::gc_data_mut(gc);
+                Self::autoviv_resize_tracking(data, idx, Value::package(Symbol::intern("Any")))
+                    .map(|()| data.items_mut()[idx] = value.clone())
+                    .ok()
+            }).flatten() {
+                self.env.insert_through(var_name.to_string(), arr);
+                return Ok(value);
+            }
+        }
         // Handle AT-KEY assignment on Hash: h.AT-KEY("k") = v  =>  ASSIGN-KEY("k", v)
         if method == "AT-KEY" && method_args.len() == 1 {
             let inner = match target.view() {
@@ -1214,6 +1238,28 @@ impl Interpreter {
                     method
                 )));
             }
+            // `$a.AT-POS(0) = v` on a plain scalar value: a non-positional
+            // invocant is its own 0th element (`Any.AT-POS`), and the call
+            // answers the variable's container (rakudo/rakudo@cfb221c3e2,
+            // #15933), so the assignment stores into the variable itself.
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+                if method == "AT-POS"
+                    && target_var.is_some()
+                    && matches!(method_args.as_slice(), [i] if i.as_int() == Some(0)) =>
+            {
+                if let Some(var_name) = target_var {
+                    self.env.insert_through(var_name.to_string(), value.clone());
+                }
+                return Ok(value);
+            }
             // A builtin value (`Array`, `Hash`, a `Seq`/`LazyList`, ...) asked for
             // an element (`$list.AT-POS(0) = v`): the call answers the element's
             // own container, assigned through exactly as for a type object above.
@@ -1364,6 +1410,14 @@ impl Interpreter {
                         // An attribute bound to a Proxy hands back what the
                         // Proxy FETCHes.
                         let held = self.fetch_proxy_for_store(held)?;
+                        // The accessor hands back the stored object, and an
+                        // assignment to an object that has a STORE (Array,
+                        // Hash, Buf) is that STORE -- the contents are replaced
+                        // in place, as rakudo's `infix:<=>` does.
+                        if let Some(stored) = self.store_into_aggregate_lvalue(&held, value.clone())
+                        {
+                            return Ok(stored);
+                        }
                         return Err(match held.view() {
                             ValueView::Nil | ValueView::Package(_) => {
                                 let type_name = match held.view() {

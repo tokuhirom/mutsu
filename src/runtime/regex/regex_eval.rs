@@ -14,6 +14,10 @@ pub(super) struct InlineCodeOutcome {
     pub(super) made: Option<Value>,
 }
 
+/// The in-regex variable that records a code block ran earlier in the rule's
+/// current frame (never a user-visible name).
+pub(super) const CODE_RAN_VAR: &str = "\u{0}code-ran";
+
 impl Interpreter {
     /// Parse a main-slang code string embedded in a regex (`{ … }` block,
     /// `<?{ … }>` assertion, `<{ … }>` interpolation, `** {code}` quantifier,
@@ -207,6 +211,43 @@ impl Interpreter {
     /// compiled body's `free_var_writes` instead
     /// (`writeback_assertion_free_var_writes` below), which the compiler already
     /// computed, so an assertion that assigns nothing pays nothing.
+    /// Evaluate a named atom's argument list at `pos`. When a code block ran
+    /// earlier in the rule (`CODE_RAN_VAR`), Rakudo has published the cursor as
+    /// `$/`, so the arguments see the match so far (`<.h($/.Str)>` after a `{ }`
+    /// gets the text matched up to the call); without one `$/` stays unset
+    /// (#16308).
+    // Cost: O(n) when a code block ran (the so-far text), n = chars matched so
+    // far in the rule; else as `eval_regex_arg_list`.
+    pub(in crate::runtime) fn eval_regex_call_args(
+        &mut self,
+        exprs: &[String],
+        caps: &RegexCaptures,
+        chars: &[char],
+        pos: usize,
+    ) -> Option<Vec<Value>> {
+        if !caps.regex_vars().contains_key(CODE_RAN_VAR) || !exprs.iter().any(|e| e.contains('/'))
+        {
+            return self.eval_regex_arg_list(exprs, caps);
+        }
+        let matched_so_far: String = chars[caps.inline_match_from().min(chars.len())..pos.min(chars.len())]
+            .iter()
+            .collect();
+        let visible = caps.inline_capture_view();
+        let live_target = super::regex_helpers::current_match_target()
+            .unwrap_or_else(|| MatchTarget::new(&matched_so_far));
+        let (from, to) = visible.inline_cursor_bounds(&matched_so_far);
+        let cursor = Value::make_match_object_full(
+            from,
+            to,
+            &visible.positional,
+            &visible.named,
+            live_target,
+        );
+        let mut with_cursor = caps.clone();
+        with_cursor.extend_regex_vars([("/".to_string(), cursor)]);
+        self.eval_regex_arg_list(exprs, &with_cursor)
+    }
+
     pub(super) fn eval_regex_inline_code(
         &mut self,
         code: &str,
@@ -674,131 +715,6 @@ impl Interpreter {
             }
         });
         out
-    }
-
-    /// Reduce-time grammar action hook for a `<subrule>` quantifier iteration.
-    /// Called from the quantifier loop after each iteration commits. When the
-    /// live parse is action-driven AND its matching already depends on a `$*`
-    /// dynamic var (the SEEN gate), run THIS iteration's subrule action so any
-    /// dyn-var write it performs (e.g. Template::Mustache's delimiter finalizer
-    /// `($*LEFT,$*RIGHT)=@delim`) is published to the overlay and thus visible to
-    /// the next iteration's pattern interpolation. No-op for ordinary grammars.
-    pub(super) fn maybe_run_reduce_time_dynvar_action(
-        &mut self,
-        token: &RegexToken,
-        new_caps: &RegexCaptures,
-    ) {
-        if !super::regex_helpers::dynvar_overlay_active() || !super::regex_helpers::dynvar_seen() {
-            return;
-        }
-        let Some(actions) = self.regex_state.current_grammar_actions.clone() else {
-            return;
-        };
-        let rule_name = match &token.atom {
-            RegexAtom::Named(n) => n.trim().to_string(),
-            _ => return,
-        };
-        // The sub-capture this iteration stored under (explicit `$<alias>=` wins).
-        let cap_name = token
-            .named_capture
-            .clone()
-            .unwrap_or_else(|| rule_name.clone());
-        let Some(sub) = new_caps
-            .named
-            .get(&Symbol::intern(&cap_name))
-            .and_then(|slot| slot.nodes.last())
-            .cloned()
-        else {
-            return;
-        };
-        self.run_reduce_time_action(&sub, &rule_name, actions);
-    }
-
-    /// Run a single subrule's grammar action env-isolated and publish any `$*`
-    /// dynamic-var writes it makes into the reduce-time overlay. The
-    /// isolated env is seeded with the overlay's current values so the action sees the
-    /// latest dynamic state; only vars whose value actually changes are published.
-    fn run_reduce_time_action(&mut self, sub: &CapNode, rule_name: &str, actions: Value) {
-        // Run on an INDEPENDENT deep copy of the actions object so any `self`
-        // attribute the action mutates does not leak into the real actions
-        // object — the authoritative post-parse action pass will run again and is
-        // the one whose `make`/`self` effects count. The reduce-time pass exists
-        // ONLY to extract `$*` dynamic-var writes (which flow through the isolated
-        // env into the overlay, not through actions state). `InstanceAttrs::clone`
-        // is a deep, fresh-cell copy.
-        //
-        // The copy gets a FRESH instance id: `invoke_grammar_actions` re-reads
-        // the actions object from the env after each dispatch by (class, id)
-        // match, and the isolated env holds the caller's ORIGINAL instance — a
-        // copy sharing the id would be silently swapped back to the original
-        // mid-walk, leaking every subsequent attribute mutation (pinned by
-        // t/grammar-reduce-time-dynvar.t test 5).
-        let mut actions = match actions.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } => {
-                // Deep-clone first (detaching shared containers), then rebuild
-                // under the fresh id — `InstanceAttrs` carries its id internally
-                // and `instance_parts` asserts the two agree.
-                let detached = (**attributes).clone().to_map();
-                let fresh_id = crate::value::next_instance_id();
-                Value::instance_parts(
-                    class_name,
-                    crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-                        class_name, detached, fresh_id, false,
-                    )),
-                    fresh_id,
-                )
-            }
-            _ => actions.clone(),
-        };
-        let kids = sub.kids();
-        // Mid-match synthesis — subject from the live engine scope (see
-        // `run_named_capture_actions`).
-        let target =
-            super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
-        let match_obj = Value::make_match_object_full(
-            sub.from as i64,
-            sub.to as i64,
-            &kids.positional,
-            &kids.named,
-            target,
-        );
-        // Seed the isolated env's `$*` vars from the overlay (latest delimiters
-        // etc.).
-        let mut env = self.env.clone();
-        for (k, v) in super::regex_helpers::dynvar_overlay_snapshot() {
-            env.insert(k, v);
-        }
-        let changed: Vec<(String, Value)> = self.run_regex_sub_eval(env, None, |scratch| {
-            // Baseline of `$*` vars visible to the action, to diff after it runs.
-            let baseline: ValueMap = scratch
-                .env
-                .iter()
-                .filter(|(k, _)| k.starts_with("*"))
-                .map(|(k, v)| (k.with_str(|s| s.to_string()), v.clone()))
-                .collect();
-            let _ = scratch.invoke_grammar_actions(match_obj, &mut actions, rule_name);
-            // Collect the changed `$*` vars before the env is restored.
-            scratch
-                .env
-                .iter()
-                .filter(|(k, _)| k.starts_with("*"))
-                .filter_map(|(k, v)| {
-                    let name = k.with_str(|s| s.to_string());
-                    match baseline.get(&name) {
-                        Some(old) if old == v => None,
-                        _ => Some((name, v.clone())),
-                    }
-                })
-                .collect()
-        });
-        // Publish changed `$*` vars into the overlay for subsequent matching.
-        for (name, val) in changed {
-            super::regex_helpers::dynvar_overlay_put(&name, val);
-        }
     }
 
     /// Create an X::Syntax::Regex::QuantifierValue exception with the given flag attribute set to True.

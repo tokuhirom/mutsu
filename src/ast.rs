@@ -678,6 +678,15 @@ impl ParamDef {
         self.implicit_invocant
     }
 
+    /// Whether this parameter captures the class a method was resolved on
+    /// (`::?CLASS`, with or without a `:D` / `:U` smiley), the invocant of
+    /// every role method written `method m(::?CLASS:D: ...)`.
+    // Cost: O(1).
+    pub(crate) fn captures_class_fixture(&self) -> bool {
+        self.captured_type_name()
+            .is_some_and(|name| name == "?CLASS" || name.starts_with("?CLASS:"))
+    }
+
     /// The name a `::T` type capture on this parameter binds, if any.
     ///
     /// The single oracle for "does this parameter capture a type, and under what
@@ -806,6 +815,25 @@ impl ParamDef {
             }
         }
         keys
+    }
+
+    /// Whether `key` is one of [`Self::named_external_keys`], without building
+    /// the list.
+    // Cost: O(a), a = aliases of the parameter.
+    pub(crate) fn answers_named_key(&self, key: &str) -> bool {
+        if !self.named {
+            return false;
+        }
+        if named_param_external_key(&self.name) == key {
+            return true;
+        }
+        self.named_alias
+            && self.sub_signature.as_ref().is_some_and(|aliases| {
+                aliases
+                    .iter()
+                    .filter(|a| a.named && !a.slurpy)
+                    .any(|a| a.answers_named_key(key))
+            })
     }
 
     /// The spelling that carries this parameter's sigil.
@@ -979,6 +1007,10 @@ pub(crate) struct RoutineBodyFacts {
     /// sinks (#11537; `routine_scans::result_is_decontainerized`). Says
     /// nothing about the `is rw`/`is raw` traits, which the caller checks.
     pub(crate) result_is_decontainerized: bool,
+    /// The body's result is the value of a plain call, so an `is raw` routine
+    /// hands back a fresh object rather than a container (#16331;
+    /// `result_decont::raw_result_is_fresh_call`).
+    pub(crate) result_is_fresh_call: bool,
     /// Line-insensitive identity of the declaration (params, param_defs, body
     /// with top-level `SetLine` markers stripped) — the redeclaration
     /// comparison keys on it. Carried here so a plan-derived def keeps its
@@ -2509,6 +2541,10 @@ pub(crate) enum Stmt {
         is_unit: bool,
         /// True when declared with `my package` (lexically scoped).
         is_my: bool,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote or a `unit` one.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     /// The run-time part of a class or package body whose declaration the
     /// BEGIN prologue moved ahead (ADR-0134 §7, slice 1 residue). It re-enters
@@ -3244,6 +3280,11 @@ pub(crate) enum Stmt {
         /// restored by a write-back rather than by a variable snapshot.
         #[serde(default)]
         type_invocant: bool,
+        /// The invocant is an element, not a variable (`temp @a[0].n = v`,
+        /// `temp %h<k>.n = v`): `var_name` is then empty and this expression
+        /// names the object whose attribute is saved and restored (#16165).
+        #[serde(default)]
+        invocant_expr: Option<Box<Expr>>,
     },
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,

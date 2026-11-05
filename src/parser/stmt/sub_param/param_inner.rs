@@ -4,7 +4,19 @@ use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::value::ValueView;
 
 pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
-    let (rest, mut p) = parse_single_param_inner(input)?;
+    let (mut rest, mut p) = parse_single_param_inner(input)?;
+    // A capture parameter (`|`, `|c`) takes no default, but rakudo parses one
+    // and rejects it as `X::Parameter::Default` rather than as a syntax error,
+    // so read it here and leave the verdict to the signature validator.
+    if input.starts_with('|') && p.slurpy && p.default.is_none() {
+        let (after, _) = ws(rest)?;
+        if after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
+            let (after, _) = ws(&after[1..])?;
+            let (after, default) = super::helpers::parse_param_default_expr(after)?;
+            p.default = Some(default);
+            rest = after;
+        }
+    }
     // The `is required` trait is exactly the `!` required marker; normalize it
     // onto the canonical `required` flag (and drop the now-redundant trait) so
     // all binding sites enforce it identically to `:$n!` — e.g. `:$n is required`
@@ -21,7 +33,7 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 /// Where the parameter `p`, read from `input` up to `rest`, was written: all
 /// of it, and its target variable (ADR-10723 Stage 2).
 // Cost: O(n), n = length of the parameter's source.
-fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
+pub(crate) fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
     let text = input[..input.len() - rest.len()].trim_end();
     let param = crate::parser::primary::source_span(input, &input[text.len()..]);
     let target = target_offset(text, p).map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
@@ -89,6 +101,14 @@ fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
     if super::helpers::is_anonymous_sigil_param(p) || is_anonymous_name(&p.name) {
         return anonymous_target_offset(text, &p.name);
+    }
+    // `|c`: a sigilless capture, whose target is the name after the `|`.
+    if p.sigilless && p.slurpy && text.starts_with('|') {
+        let after = &text[1..];
+        let at = 1 + after.len() - after.trim_start().len();
+        return (text[at..].starts_with(p.name.as_str())
+            && !text[at + p.name.len()..].starts_with(is_ident))
+        .then_some((at, p.name.len()));
     }
     let (needle, skip) = if p.sigilless {
         (format!("\\{}", p.name), 1)

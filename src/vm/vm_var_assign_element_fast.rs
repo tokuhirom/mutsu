@@ -140,6 +140,41 @@ impl Interpreter {
         self.try_fast_array_element_assign(code, name_idx, is_positional, target_slot, false)
     }
 
+    /// The plain builtin element type of a typed array (`my Int @a`) when
+    /// `value` is exactly such a value, so storing it needs no constraint
+    /// machinery: `Int` takes an `Int`/`BigInt`, `Str` a `Str`, `Num` a `Num`,
+    /// `Bool` a `Bool`. `None` for any other element type (a class, a subset,
+    /// a coercion type, a role, a native `int`), for container metadata the
+    /// lane does not reproduce (a key type, a declared type other than
+    /// `Array[T]`), and for a value the constraint would reject or coerce.
+    // Cost: O(1).
+    fn typed_element_admits(
+        items: &crate::value::ArrayData,
+        value: &Value,
+    ) -> Option<&'static str> {
+        if items.key_type.is_some() {
+            return None;
+        }
+        let vt = items.value_type.as_deref()?;
+        let (name, fits) = match (vt, value.view()) {
+            ("Int", ValueView::Int(_) | ValueView::BigInt(_)) => ("Int", true),
+            ("Str", ValueView::Str(_)) => ("Str", true),
+            ("Num", ValueView::Num(_)) => ("Num", true),
+            ("Bool", ValueView::Bool(_)) => ("Bool", true),
+            _ => return None,
+        };
+        if !fits {
+            return None;
+        }
+        // The declared container type, when present, is `Array[<element type>]`.
+        if let Some(d) = items.declared_type.as_deref()
+            && d.strip_prefix("Array[").and_then(|r| r.strip_suffix(']')) != Some(name)
+        {
+            return None;
+        }
+        Some(name)
+    }
+
     /// True when a recorded `:=` bind pair names the `@`/`%` variable this
     /// element store is about to write, so the store may have to be reconciled with a
     /// second local slot holding a detached copy of the container.
@@ -214,9 +249,9 @@ impl Interpreter {
     /// - a positional subscript on an `@`-sigiled name that is not itself named
     ///   by a `:=` bind pair recorded in this frame, and no pending `=`-element
     ///   share;
-    /// - a plain non-negative `Int` index that is already **in range** (an
-    ///   autovivifying store needs the full path's native-fill and hole
-    ///   bookkeeping);
+    /// - a plain non-negative `Int` index that is **in range or exactly one past
+    ///   the end** (an append); a store that leaves a gap sizes the array by
+    ///   the subscript and needs the full path's bound and hole bookkeeping;
     /// - a plain rvalue (not a bind marker, not `Nil`);
     /// - the variable resolves, in env, to a plain mutable `Array`/`ItemArray`
     ///   with no embedded type metadata, no declared shape, no `is default`,
@@ -227,8 +262,8 @@ impl Interpreter {
     ///   mean the store must write *through* it;
     /// - no per-element index metadata and no shaped-array declaration exists
     ///   anywhere in the program (the two monotonic latches).
-    // Cost: O(1) (an in-range slot write through `ArrayData::live_mut`, which leaves
-    // a pending front head offset in place).
+    // Cost: O(1) amortized (an in-range slot write through `ArrayData::live_mut`, which
+    // leaves a pending front head offset in place, or an append one past the end).
     pub(crate) fn try_fast_array_element_assign(
         &mut self,
         code: &CompiledCode,
@@ -376,44 +411,73 @@ impl Interpreter {
         ) {
             return None;
         }
-        // A typed array (`my Int @a`, `my int @a`) needs the full path's
-        // constraint check and native wrapping. Read from the array's own
-        // embedded metadata (ADR-0042), not a name-keyed map.
-        if items.has_type_meta() {
-            return None;
-        }
-        // ... and the name-keyed constraint the declaration may still carry.
-        // Latched: no typed lexical in the program, no probe.
-        let typed_decl = match target_slot {
-            Some(slot) => self
-                .slot_type_constraint_value(code, slot as usize, var_name, Some(var_sym))
-                .is_some(),
-            None => self.var_type_constraint_sym(var_sym).is_some(),
+        // A typed array (`my Int @a`) needs a constraint check, and a native one
+        // (`my int @a`) native wrapping. Read from the array's own embedded
+        // metadata (ADR-0042), not a name-keyed map. The lane serves only the
+        // plain builtin element types whose check is a tag test on the value
+        // (`typed_element_admits`); every other typed array, and every value it
+        // would reject (the error is the full path's to raise), takes the full path.
+        let embedded_type = if items.has_type_meta() {
+            if items.has_native_backing() || items.default.is_some() {
+                return None;
+            }
+            Some(Self::typed_element_admits(
+                &items,
+                &self.stack[stack_len - 2],
+            )?)
+        } else {
+            None
         };
-        if typed_decl {
+        // ... and the name-keyed constraint the declaration may still carry:
+        // it must say what the array itself says (nothing, or the same plain
+        // type), or the full path settles the disagreement.
+        // Latched: no typed lexical in the program, no probe.
+        let record_agrees = match target_slot {
+            Some(slot) => {
+                match self.slot_type_constraint_value(code, slot as usize, var_name, Some(var_sym))
+                {
+                    None => true,
+                    Some(rec) => matches!(
+                        (rec.view(), embedded_type),
+                        (ValueView::Str(tc), Some(vt)) if tc.as_str() == vt
+                    ),
+                }
+            }
+            None => match self.var_type_constraint_sym(var_sym) {
+                None => true,
+                Some(rec) => embedded_type == Some(rec.as_str()),
+            },
+        };
+        if !record_agrees {
             return None;
         }
-        // In-range only: an autovivifying store must resize with the right
-        // native fill and materialize the hole set, which is the slow path's job.
-        if i >= items.len() {
+        // In range, or exactly one past the end (the append idiom
+        // `@a[$i] = $v` building an array element by element). A store that
+        // leaves a gap sizes the array by the subscript, which is the slow
+        // path's job (it owns the bound on that); an append creates no hole,
+        // and `ArrayData::store_element` (the body `ASSIGN-POS` shares) grows
+        // by one element and records it.
+        if i > items.len() {
             return None;
         }
         // The destination slot must be a plain value. Anything container-shaped
         // there means the store writes THROUGH it (a `:=`-bound cell, a `Proxy`,
         // an itemized `Scalar` element, a varref back-reference) and the slow
-        // path owns every one of those rules.
-        match items.items().get(i).map(Value::view) {
-            Some(
-                ValueView::ContainerRef(_)
-                | ValueView::Scalar(_)
-                | ValueView::Proxy { .. }
-                | ValueView::VarRef { .. },
-            ) => return None,
-            Some(ValueView::Pair(name, _)) if name.as_str().starts_with("__mutsu_bound") => {
-                return None;
+        // path owns every one of those rules. An append has no slot yet.
+        if i < items.len() {
+            match items.items().get(i).map(Value::view) {
+                Some(
+                    ValueView::ContainerRef(_)
+                    | ValueView::Scalar(_)
+                    | ValueView::Proxy { .. }
+                    | ValueView::VarRef { .. },
+                ) => return None,
+                Some(ValueView::Pair(name, _)) if name.as_str().starts_with("__mutsu_bound") => {
+                    return None;
+                }
+                None => return None,
+                Some(_) => {}
             }
-            None => return None,
-            Some(_) => {}
         }
         // `@a[0] = @a` stores the array *itself* (a genuinely circular
         // structure, as in rakudo) rather than an itemized copy -- a distinction

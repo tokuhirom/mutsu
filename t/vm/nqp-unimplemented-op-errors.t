@@ -29,10 +29,11 @@ throws-like 'use nqp; nqp::reverse("abc")', X::AdHoc,
     'an unimplemented nqp op fails instead of aliasing to the Raku builtin';
 
 # (`nqp::chars` was the example here until the CBOR::Simple slice implemented
-# it, then `nqp::objectid` until the object-op slice (#11499) did -- the
-# example must stay an op mutsu does NOT provide.)
-throws-like 'use nqp; nqp::setwho($_, 1)', X::AdHoc,
-    message => /'nqp::setwho'/,
+# it, then `nqp::objectid` until the object-op slice (#11499) did, then
+# `nqp::setwho` until the last object-op slice did -- the example must stay an
+# op mutsu does NOT provide.)
+throws-like 'use nqp; nqp::forceouterctx($_, 1)', X::AdHoc,
+    message => /'nqp::forceouterctx'/,
     'and names the op it could not provide';
 
 # (`nqp::substr` was the example here until the String::Utils slice implemented

@@ -351,9 +351,10 @@ impl Interpreter {
                     compiled_fns,
                     is_decl_expr_thunk,
                     compiled_routine: None,
-                    deprecated_message: None,
                     source_line: None,
-                    source_file: None,
+                    // The thunk is lexical to the unit that declared the attribute, wherever
+                    // `.build` is later called from (a Red `Dirtable` method calls it).
+                    source_file: self.current_source_file(),
                     owned_captures: Vec::new(),
                     authoritative_captures: Vec::new(),
                     own_cell_captures: Vec::new(),
@@ -361,7 +362,7 @@ impl Interpreter {
                     captured_fatal_mode: false,
                     param_name_syms_cache: std::sync::OnceLock::new(),
                     source_file_sym_cache: std::sync::OnceLock::new(),
-                    state_scope_guard: None,
+                    _state_scope_guard: None,
                     captured_readonly: None,
                     routine_cell: Default::default(),
                 };

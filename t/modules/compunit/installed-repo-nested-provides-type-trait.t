@@ -11,6 +11,6 @@ plan 2;
 
 my $r = run($*EXECUTABLE, '-I', 'inst#t/fixtures/installed-nested-provides', '-e',
     'use InstQual::Hash; my %h is InstQual::Hash = a => 1; say %h.^name',
-    :out, :err, :env(%*ENV, MUTSU_RAKUAST => 'convert'));
+    :out, :err);
 is $r.out.slurp(:close).trim, 'InstQual::Hash', 'imported qualified type in a variable is-trait round-trips';
 is $r.exitcode, 0, 'exit code 0';

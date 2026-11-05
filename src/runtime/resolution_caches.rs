@@ -10,6 +10,9 @@ pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
 /// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
 pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
 
+/// A `(class, method)` deferral expansion shared between callers.
+pub(crate) type SharedDeferralExpansion = std::sync::Arc<Vec<(Symbol, super::MethodDef)>>;
+
 /// `multi_light_cache`'s entry: a type-deterministic multi call's winning
 /// candidate and the compiled body the positional light path runs for it
 /// (its `compiled_fns` key, re-validated by fingerprint on every hit).
@@ -33,7 +36,30 @@ pub(crate) struct MultiPlanLight {
 
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
-    pub(super) protect_block_cache: ProtectBlockCache,
+    /// The env-dependent half of a `protect` block's analysis, keyed by the
+    /// body's compiled code and which of its locals / global names its captured
+    /// env holds (two bitmasks), so a loop that builds a fresh closure per
+    /// iteration reuses one result. Holds the `Arc` so the address cannot be
+    /// reused while the entry lives.
+    ///
+    /// The env-independent half of a `protect` block's analysis, by the body's
+    /// compiled code (see [`ProtectBlockOps`]). Holds the `Arc` so the address
+    /// cannot be reused while the entry lives.
+    pub(super) protect_block_bindings: HashMap<
+        (usize, u64, u64),
+        (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            super::ProtectBlockBindings,
+        ),
+    >,
+    /// See above: the env-independent half.
+    pub(super) protect_block_ops: HashMap<
+        usize,
+        (
+            std::sync::Arc<crate::opcode::CompiledCode>,
+            std::sync::Arc<super::ProtectBlockOps>,
+        ),
+    >,
     /// The type object a `C[T]` type constraint stands for when `C` declares
     /// its own `method ^parameterize`, keyed by the constraint's spelling
     /// (`types::meta_parameterized`). Rakudo evaluates such a constraint once,
@@ -362,6 +388,24 @@ pub(crate) struct ResolutionCaches {
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
     pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> does the class's MRO reach a built-in
+    /// method of this name` (`Interpreter::class_reaches_builtin_method`):
+    /// a function of the MRO and the fixed method table, so cleared with
+    /// `dispatch_multi_candidate` on a registry change.
+    pub(crate) builtin_method_reached: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// `Interpreter::class_attributes_shared`: the merged attribute list of a
+    /// class, shared instead of cloned per call. A function of the registry
+    /// alone, so it is exact while `class_attributes_stamp` equals the
+    /// registry's `type_stamp` and is dropped when the stamp moves.
+    pub(crate) class_attributes_shared:
+        rustc_hash::FxHashMap<Symbol, std::sync::Arc<Vec<super::ClassAttributeDef>>>,
+    pub(crate) class_attributes_stamp: u64,
+    /// `Interpreter::deferral_expansion_shared`: the structural deferral
+    /// expansion of `(class, method)`, valid while `deferral_expansion_stamp`
+    /// equals the registry's `type_stamp`.
+    pub(crate) deferral_expansion_shared:
+        rustc_hash::FxHashMap<(Symbol, Symbol), SharedDeferralExpansion>,
+    pub(crate) deferral_expansion_stamp: u64,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
@@ -464,6 +508,55 @@ pub(crate) struct ResolutionCaches {
     /// is one refcount bump and leaves the table untouched.
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
+    /// The winning candidate of a role method called on a mixin, by what the
+    /// verdict reads (see `Interpreter::mixin_winner_key`).
+    pub(crate) mixin_method_winner: rustc_hash::FxHashMap<
+        crate::runtime::MixinWinnerKey,
+        Option<(Symbol, crate::runtime::MethodDef)>,
+    >,
+    /// The straight-line role method a call on a mixin resolved to, by the
+    /// composition node's identity, the method, the receiver's definedness
+    /// and the arguments' type keys, valid while the registry has not been
+    /// written (`Interpreter::mixin_straight_front_hit`). A hit skips the whole
+    /// role walk of `dispatch_mixin_method_call`.
+    pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
+        crate::runtime::MixinFrontKey,
+        crate::runtime::MixinFrontEntry,
+    >,
+    /// The dispatch-key symbol of a role mixin over a class instance or type
+    /// object, by the identity of its shared `Gc<MixinOverrides>` node; the
+    /// entry keeps the node alive so the address cannot be reused
+    /// (`Interpreter::mixin_composition_key_sym`).
+    pub(crate) mixin_key_sym_by_node: rustc_hash::FxHashMap<
+        usize,
+        (crate::gc::Gc<crate::value::MixinOverrides>, crate::symbol::Symbol),
+    >,
+    /// The `.WHAT` of a role-mixed class instance, by the identity of its
+    /// shared `Gc<MixinOverrides>` node and the instance's class. The entry
+    /// keeps the node alive so the address cannot be reused by another
+    /// composition (`Interpreter::mixin_what_value`).
+    pub(crate) mixin_what_by_node: rustc_hash::FxHashMap<
+        (usize, crate::symbol::Symbol),
+        (crate::gc::Gc<crate::value::MixinOverrides>, crate::value::Value),
+    >,
+    /// `has_class_scoped_subs` answers per class name, valid for the
+    /// `class_subs` table state they were computed from (its
+    /// `CowTable::state_id`): the answer scans every class that declares a
+    /// sub, on every method call.
+    pub(crate) class_scoped_subs:
+        std::cell::RefCell<((usize, u64), rustc_hash::FxHashMap<String, bool>)>,
+    /// Subscript stores for which the user `postcircumfix` candidates in scope
+    /// were run and none delegated to the CORE routine (see
+    /// `remap_index_through_user_postcircumfix`); the values keep the
+    /// addresses in the key alive.
+    pub(crate) subscript_no_delegation:
+        rustc_hash::FxHashMap<crate::vm::SubscriptCaptureKey, Vec<crate::value::Value>>,
+    /// Whether the function table holds a user `postcircumfix:<[ ]>` /
+    /// `<{ }>` routine, valid for the table version it was computed from:
+    /// `(version, bit0 positional known, bit1 positional answer, bit2
+    /// associative known, bit3 associative answer)`. Version 0 is "never
+    /// computed" (table versions start at 1).
+    pub(crate) user_subscript_routine_gate: std::cell::Cell<(u64, u8)>,
     /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
     /// probe every typed store makes (`var_type_constraint_value_sym`). The
     /// mapping is a pure function of the name, so caching it is sound

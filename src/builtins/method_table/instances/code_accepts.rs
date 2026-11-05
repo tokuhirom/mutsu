@@ -62,7 +62,9 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `Regex.ACCEPTS`: `$topic.match(self)`, the `Match` or `Nil`.
 // Cost: the regex engine's on the topic's string.
 fn regex(interp: &mut Interpreter, target: &Value, args: &[Value], _named: Named<'_>) -> Answer {
-    Some(interp.dispatch_match_method(args[0].clone(), std::slice::from_ref(target)))
+    // Through the row `.match` uses, which installs the regex's defining
+    // scope: a regex built in a sub from its lexicals (`/$g/`) keeps its values.
+    Some(interp.dispatch_match_row(args[0].clone(), vec![target.clone()]))
 }
 
 /// `WhateverCode.ACCEPTS`: the predicate called with the topic, as a `Bool`

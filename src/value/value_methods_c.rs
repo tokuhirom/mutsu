@@ -86,6 +86,7 @@ impl Value {
             made: Default::default(),
             children,
             match_memo: Default::default(),
+            reduced: Default::default(),
         };
         Value::lazy_match(std::sync::Arc::new(cap), target)
     }

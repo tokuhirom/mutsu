@@ -54,7 +54,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Relational / Logic | 40 / 40 | 0 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
-| Objects | 30 / 31 | 1 | #11499 |
+| Objects | 31 / 31 | 0 | #11499 |
 | Parametric Extensions | 5 / 5 | 0 | #11499 |
 | Profiling | 1 / 3 | 2 | #11504 |
 | Serialization context | 15 / 16 | 1 | #11504 |
@@ -68,12 +68,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 25 / 26 | 1 | #11505 |
-| **Total** | **569 / 575** | **6** | |
+| **Total** | **570 / 575** | **5** | |
 
 ## Missing ops by category
 
 - **NativeCall** (#11504): `nativecallinvoke`
-- **Objects** (#11499): `setwho`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `forceouterctx`
 - **Rakudo p6* (HLL)** (#11505): `p6staticouter`

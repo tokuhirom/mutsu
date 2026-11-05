@@ -86,6 +86,26 @@ impl Env {
         }
     }
 
+    /// `key` as the CALLER sees it: skip the running call frame's tiers (down
+    /// to and including its frame root), then look the name up from the
+    /// caller's env, through the caller's own frame and its static link (the
+    /// lexical scopes it is declared in), never through an older caller. For a
+    /// callee binding its arguments: a same-named variable of a grand-caller is
+    /// another variable (#16177), while a free variable the caller reads from
+    /// an enclosing scope is the caller's own. `None` when the running frame
+    /// has no caller above it (the program scope).
+    // Cost: O(d), d = the two frames' tiers.
+    pub(crate) fn get_sym_in_caller_frame(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            let parent = cur.parent.as_deref();
+            if cur.frame_root {
+                return super::static_link::with_static_links_honoured(|| parent?.get_sym(key));
+            }
+            cur = parent?;
+        }
+    }
+
     /// A variable's type record (`__mutsu_type::x` and kin) when the running
     /// code declares the variable itself (ADR-13757 step 4): the record was
     /// written in this frame, so the lookup ends at the frame root and never

@@ -76,6 +76,25 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
                             out.push(ch);
                         }
                     }
+                    // `"a{ $x; 1 }b"`: an interpolated code block, spelled back
+                    // as the block it was written as.
+                    crate::ast::Expr::DoStmt(stmt)
+                        if let crate::ast::Stmt::Block(body) = stmt.as_ref() =>
+                    {
+                        let mut statements = Vec::new();
+                        for stmt in body {
+                            match stmt {
+                                crate::ast::Stmt::SetLine(..) => {}
+                                crate::ast::Stmt::Expr(expr) => {
+                                    statements.push(expression_source(expr)?);
+                                }
+                                _ => return None,
+                            }
+                        }
+                        out.push('{');
+                        out.push_str(&statements.join("; "));
+                        out.push('}');
+                    }
                     other => {
                         out.push('{');
                         out.push_str(&expression_source(other)?);
@@ -103,7 +122,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         crate::ast::Expr::PostfixOp { op, expr } => Some(format!(
             "{}{}",
             expression_source(expr)?,
-            crate::compiler::helpers_ops::token_kind_to_op_name(op)
+            crate::op_names::token_kind_to_op_name(op)
         )),
         // `-> { ... }`: a pointy block with an empty signature.
         crate::ast::Expr::AnonSubParams {
@@ -138,7 +157,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         crate::ast::Expr::BareWord(name) => Some(name.clone()),
         crate::ast::Expr::Unary { op, expr, .. } => Some(format!(
             "{}{}",
-            crate::compiler::helpers_ops::token_kind_to_op_name(op),
+            crate::op_names::token_kind_to_op_name(op),
             expression_source(expr)?
         )),
         // Whatever-derived match indexes such as `*-1` need the operator
@@ -150,7 +169,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             right,
             ..
         } if matches!(left.as_ref(), crate::ast::Expr::Whatever)
-            && crate::compiler::helpers_ops::token_kind_to_op_name(op) == "-" =>
+            && crate::op_names::token_kind_to_op_name(op) == "-" =>
         {
             Some(format!("*-{}", expression_source(right)?))
         }
@@ -171,7 +190,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         } => Some(format!(
             "{} {} {}",
             expression_source(left)?,
-            crate::compiler::helpers_ops::token_kind_to_op_name(op),
+            crate::op_names::token_kind_to_op_name(op),
             expression_source(right)?
         )),
         // Keep a dynamic selector grouped when a constructed RakuAST regex is

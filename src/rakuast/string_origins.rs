@@ -16,7 +16,7 @@ use crate::value::{Value, ValueView};
 /// Place the segments of `node`, an interpolating `QuotedString` with an
 /// origin.
 // Cost: O(n + s), n = length of the string's source, s = segments.
-pub(super) fn interpolated(node: &mut RakuAstNode) {
+pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -63,7 +63,7 @@ pub(super) fn interpolated(node: &mut RakuAstNode) {
                 variable_at(&segment, cursor, end)
             }
             RakuAstClass::Block => block_at(&mut segment, cursor, end),
-            RakuAstClass::ApplyPostfix => postfix_at(&mut segment, cursor, end),
+            RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
             _ => None,
         };
         let Some((at, next)) = placed else {
@@ -223,7 +223,12 @@ fn interpolated_variable(node: &RakuAstNode) -> Option<&RakuAstNode> {
 /// a backslash or a comment, which could hide its closing bracket, is left
 /// alone.
 // Cost: O(n), n = length of the interpolation.
-fn postfix_at(segment: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
+fn postfix_at(
+    names: &crate::scope::NameScope,
+    segment: &mut RakuAstNode,
+    cursor: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
     let name = leaf_text(interpolated_variable(segment)?)?;
     let postfix = super::infix_origins::child(segment, "postfix")?.class;
     let to = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
@@ -259,6 +264,22 @@ fn postfix_at(segment: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(u
         super::call_origins::postfix_call(&mut node, SrcSpan::new(cursor, to));
         *segment = node;
     } else {
+        // The subscript's expressions were read without positions.
+        if matches!(
+            postfix,
+            RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex
+        ) {
+            let open = cursor + name.len() + 1;
+            let inner =
+                super::unit_source::with_text(SrcSpan::new(open, to - 1), |t| Some(t.to_string()));
+            if let Some(inner) = inner {
+                super::infix_origins::with_child(segment, "postfix", |sub| {
+                    super::infix_origins::with_child(sub, "index", |list| {
+                        super::fragment_origins::statements(names, list, &inner, open)
+                    })
+                });
+            }
+        }
         super::list_origins::postcircumfix(segment);
     }
     Some((cursor, to))

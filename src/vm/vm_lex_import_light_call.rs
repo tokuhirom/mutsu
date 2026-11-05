@@ -29,12 +29,14 @@ impl Interpreter {
         if def.deprecated_message.is_some() || def.is_test_assertion || self.stack.len() < arity {
             return Ok(false);
         }
-        if self
-            .decode_arg_sources_shared(code, arg_sources_idx)
-            .is_some_and(|(_, has_slip)| has_slip)
-        {
+        // The light binder reads no rw-source slots, so the site is asked only
+        // whether it spreads a `|EXPR` (no decode, no slot-map refill); the map
+        // is left empty as `decode_arg_sources_shared` leaves it for a site
+        // without slotted sources.
+        if Self::stack_args_have_slip(code, arg_sources_idx) {
             return Ok(false);
         }
+        self.pending_call_arg_source_slots.clear();
         let name = Self::const_str(code, name_idx);
         let start = self.stack.len() - arity;
         // The parser's synthetic callsite-line Pair, last when present, is
@@ -47,15 +49,10 @@ impl Interpreter {
             .then(|| Self::callsite_line_of_view(&self.stack[end].view()))
             .flatten();
         let args = &self.stack[start..end];
-        let light =
-            !args.iter().any(|a| {
-                matches!(
-                    a.unwrap_varref().view(),
-                    ValueView::Pair(..) | ValueView::ValuePair(..)
-                ) || Self::extract_junction_from_arg(a.unwrap_varref()).is_some()
-            }) && Self::is_positional_light_call_eligible(cf, name, args.len(), args, Some(code))
-                && !Self::call_shares_container_into_scalar_param(cf, args)
-                && self.wrap_sub_id_for_name(name).is_none();
+        let light = !args.iter().any(Self::arg_needs_general_call)
+            && Self::is_positional_light_call_eligible(cf, name, args.len(), args, Some(code))
+            && !Self::call_shares_container_into_scalar_param(cf, args)
+            && self.wrap_sub_id_for_name(name).is_none();
         if !light {
             return Ok(false);
         }
@@ -74,5 +71,20 @@ impl Interpreter {
         let result = self.maybe_fetch_rw_proxy(result, !cf.returns_container())?;
         self.stack.push(result);
         Ok(true)
+    }
+
+    /// Whether `arg` (a Pair, named or positional, or a Junction, possibly
+    /// behind a variable wrapper or a Scalar) sends the call to the general
+    /// entry. One `view()` of the unwrapped argument answers it; the Junction
+    /// case equals `extract_junction_from_arg(..).is_some()` without cloning
+    /// the eigenstates.
+    // Cost: O(1).
+    #[inline]
+    fn arg_needs_general_call(arg: &Value) -> bool {
+        match arg.unwrap_varref().view() {
+            ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Junction { .. } => true,
+            ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
+            _ => false,
+        }
     }
 }

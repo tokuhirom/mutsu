@@ -1050,11 +1050,40 @@ impl Compiler {
                 && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
                 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '\''))
             {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern(name),
-                    args: call_args,
-                    listop: false,
-                });
+                // `.&splice(...)` names a routine, never the list method: for the
+                // names the parser keeps apart when a program declares or imports
+                // one (`splice`, `push`, `say`, ...) it is the same
+                // `UserRoutineCall` the written-out `splice($x, ...)` becomes.
+                let call = if matches!(
+                    name.as_str(),
+                    "push"
+                        | "pop"
+                        | "shift"
+                        | "unshift"
+                        | "append"
+                        | "prepend"
+                        | "splice"
+                        | "caller"
+                        | "say"
+                        | "put"
+                        | "print"
+                        | "note"
+                        | "die"
+                        | "fail"
+                ) {
+                    Expr::UserRoutineCall {
+                        name: Symbol::intern(name),
+                        args: call_args,
+                        listop: false,
+                    }
+                } else {
+                    Expr::Call {
+                        name: Symbol::intern(name),
+                        args: call_args,
+                        listop: false,
+                    }
+                };
+                self.compile_expr(&call);
                 return;
             }
             self.compile_expr(&Expr::CallOn {

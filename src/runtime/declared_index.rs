@@ -22,29 +22,55 @@ pub(crate) struct DeclaredIndex {
 /// Most families remembered before the oldest is dropped.
 const FAMILIES_CAP: usize = 8;
 
+/// The non-static facts a remembered index was built from: the registry
+/// stamp and, per name, the answer of the lexical-env check that gated the
+/// fast conformance path (`true` = the name is plain). The index stays valid
+/// while the stamp is unchanged and every fact still reads the same.
+pub(crate) struct IndexDeps {
+    pub(crate) stamp: u64,
+    /// `(name, is_sub, answer)`; `is_sub` picks the `sub_ok` check, else `sup_ok`.
+    pub(crate) facts: Vec<(Symbol, bool, bool)>,
+    /// `(sub, sup, answer)` pairs the fast path declined; the general walk's
+    /// answer, re-asked on every reuse.
+    pub(crate) opaque: Vec<(Symbol, Symbol, bool)>,
+}
+
 #[derive(Default)]
 pub(crate) struct DeclaredIndexCache {
-    families: Vec<(Vec<u32>, Arc<DeclaredIndex>)>,
+    /// `None` deps: built from static relations only, valid forever.
+    families: Vec<(Vec<u32>, Arc<DeclaredIndex>, Option<IndexDeps>)>,
 }
 
 impl DeclaredIndexCache {
     /// The index of the family whose sorted key ids are `sorted_ids`, built
     /// from `ranks` (in the same canonical order) on a miss.
-    // Cost: O(n) on a hit (comparing the ids), O(n^2 * r) on a miss, n =
-    // candidates, r = one `conforms` call.
-    pub(crate) fn get(&self, sorted_ids: &[u32]) -> Option<Arc<DeclaredIndex>> {
+    // Cost: O(n + f * c) on a hit (comparing the ids, then re-checking the f
+    // remembered facts at c apiece), O(n^2 * r) on a miss, n = candidates,
+    // r = one `conforms` call.
+    pub(crate) fn get(
+        &self,
+        sorted_ids: &[u32],
+        holds: &dyn Fn(&IndexDeps) -> bool,
+    ) -> Option<Arc<DeclaredIndex>> {
         self.families
             .iter()
-            .find(|(ids, _)| ids == sorted_ids)
-            .map(|(_, index)| Arc::clone(index))
+            .find(|(ids, _, deps)| ids == sorted_ids && deps.as_ref().is_none_or(holds))
+            .map(|(_, index, _)| Arc::clone(index))
     }
 
     // Cost: O(1).
-    pub(crate) fn insert(&mut self, sorted_ids: Vec<u32>, index: Arc<DeclaredIndex>) {
+    pub(crate) fn insert(
+        &mut self,
+        sorted_ids: Vec<u32>,
+        index: Arc<DeclaredIndex>,
+        deps: Option<IndexDeps>,
+    ) {
+        // A stale entry for the same family is replaced, not kept beside it.
+        self.families.retain(|(ids, _, _)| *ids != sorted_ids);
         if self.families.len() >= FAMILIES_CAP {
             self.families.remove(0);
         }
-        self.families.push((sorted_ids, index));
+        self.families.push((sorted_ids, index, deps));
     }
 
     // Cost: O(1).

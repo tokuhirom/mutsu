@@ -8,6 +8,7 @@ mod registry_gen;
 pub(crate) mod stack_id;
 pub(crate) mod unbounded_range;
 mod undeclared_names;
+pub(crate) mod experimental_pragma;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unicode_name_prop;

@@ -351,13 +351,12 @@ fn run_main() {
         input
     };
 
-    // `-M'Module args'` is `use Module args;` in the program's own unit (so the
-    // module's `EXPORT` addresses it through `$*CU`): written on the program's
-    // first line, which keeps every line number. A bare module name loads
-    // before the program as before.
-    let (with_args, preload_modules): (Vec<String>, Vec<String>) = preload_modules
-        .into_iter()
-        .partition(|module| module.contains(char::is_whitespace));
+    // `-M'Module args'` (and a bare `-MModule`) is `use Module args;` in the
+    // program's own unit (so the module's `EXPORT` addresses it through `$*CU`,
+    // and what it does to a dynamic variable such as `$*ARGFILES` survives into
+    // the program): written on the program's first line, which keeps every line
+    // number.
+    let (with_args, preload_modules): (Vec<String>, Vec<String>) = (preload_modules, Vec::new());
     let input = if with_args.is_empty() {
         input
     } else {

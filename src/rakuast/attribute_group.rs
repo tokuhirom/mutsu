@@ -1,8 +1,9 @@
 //! Parenthesized `has` declarations as one source RakuAST signature.
 
-use super::convert::{build_type_node, leaf_field, node_field, unsupported};
+use super::view::{build_type_node, leaf_field, node_field, unsupported};
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 const ATTRIBUTES: &str = "attribute-group-members";
@@ -11,7 +12,10 @@ const ATTRIBUTES: &str = "attribute-group-members";
 /// declarations as hidden semantic metadata, since traits on a grouped `has`
 /// are not printed in Rakudo's constructor-form gist.
 // Cost: O(a), a = total size of the attribute declarations and their expressions.
-pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn to_signature(
+    names: &NameScope,
+    attributes: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     let mut parameters = Vec::with_capacity(attributes.len());
     let mut members = Vec::with_capacity(attributes.len());
     let mut common_type: Option<&str> = None;
@@ -55,7 +59,7 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
                 leaf_field(Some("optional"), Value::truth(false)),
             ],
         })));
-        let Some(member) = super::attribute_decl::convert(attribute)? else {
+        let Some(member) = super::attribute_decl::view_node(names, attribute)? else {
             return Err(unsupported("grouped attribute declaration"));
         };
         let expression = super::lower::named_child(&member, "expression")?;
@@ -67,7 +71,7 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
         value: RakuAstFieldValue::List(parameters),
     }];
     if let Some(ty) = common_type {
-        signature_fields.push(node_field(Some("returns"), build_type_node(ty)?));
+        signature_fields.push(node_field(Some("returns"), build_type_node(names, ty)?));
     }
     let mut fields = vec![node_field(
         Some("signature"),
@@ -79,7 +83,7 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
     )];
     fields.push(leaf_field(Some("scope"), Value::str("has".to_string())));
     if let Some(ty) = common_type {
-        fields.push(node_field(Some("type"), build_type_node(ty)?));
+        fields.push(node_field(Some("type"), build_type_node(names, ty)?));
     }
     fields.push(RakuAstField {
         name: Some(ATTRIBUTES),
@@ -94,36 +98,61 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
 
 /// Rakudo displays the declaration before a colon argument list and hides
 /// declarations parsed from that list. Preserve those declarations as hidden
-/// model metadata so evaluating the RakuAST still installs them.
+/// model metadata so evaluating the RakuAST still installs them. The result is
+/// the statement of the visible declaration: a modifier written after the
+/// whole statement (`has Int $.a: has Str $.b = 1 if 1`) is on it.
 // Cost: O(a), a = total size of the declarations and expressions in the colon argument list.
-pub(super) fn convert_colon(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_colon(
+    names: &NameScope,
+    attributes: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
     let Some(visible) = attributes.last() else {
         return Err(unsupported("empty attribute colon argument list"));
     };
-    let Some(statement) = super::attribute_decl::convert(visible)? else {
-        return Err(unsupported("attribute colon argument list"));
-    };
-    let mut declaration = super::lower::named_child(&statement, "expression")?.clone();
+    let mut statement = member_statement(names, visible)?;
     let mut members = Vec::with_capacity(attributes.len());
     for attribute in attributes {
-        let Some(member) = super::attribute_decl::convert(attribute)? else {
-            return Err(unsupported("attribute colon argument list"));
-        };
+        let member = member_statement(names, attribute)?;
         members.push(Value::rakuast(Box::new(
             super::lower::named_child(&member, "expression")?.clone(),
         )));
     }
+    let Some(field) = statement
+        .fields
+        .iter_mut()
+        .find(|field| field.name == Some("expression"))
+    else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let ValueView::RakuAst(declaration) = value.view() else {
+        return Err(unsupported("attribute colon argument list"));
+    };
+    let mut declaration = declaration.clone();
     declaration.fields.push(RakuAstField {
         name: Some(ATTRIBUTES),
         value: RakuAstFieldValue::List(members),
     });
-    Ok(declaration)
+    field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(declaration)));
+    Ok(statement)
+}
+
+/// The statement a member of a colon argument list is: a plain `has`, or one
+/// that carries statement modifiers.
+fn member_statement(names: &NameScope, member: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    match member {
+        Stmt::HasDecl { .. } => super::attribute_decl::view_node(names, member)?,
+        _ => super::view::view_stmt(names, member)?,
+    }
+    .ok_or_else(|| unsupported("attribute colon argument list"))
 }
 
 /// Lower the hidden members back through the parser's shared class-body
 /// expansion, retaining traits and attribute-specific runtime behavior.
 // Cost: O(a), a = total size of attribute declarations and their expressions.
-pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let Some(field) = node
         .fields
         .iter()
@@ -141,7 +170,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         let ValueView::RakuAst(member) = member.view() else {
             return Err(unsupported("grouped attribute metadata"));
         };
-        attributes.push(super::attribute_decl::lower(member)?);
+        attributes.push(super::attribute_decl::lower(names, member)?);
     }
     super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeGroup(
         attributes,
@@ -150,7 +179,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// Lower an attribute declaration and its hidden colon-argument declarations.
 // Cost: O(a), a = total size of declarations and expressions in the colon argument list.
-pub(super) fn lower_colon(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_colon(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let Some(field) = node
         .fields
         .iter()
@@ -166,7 +195,7 @@ pub(super) fn lower_colon(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         let ValueView::RakuAst(member) = member.view() else {
             return Err(unsupported("attribute colon metadata"));
         };
-        attributes.push(super::attribute_decl::lower(member)?);
+        attributes.push(super::attribute_decl::lower(names, member)?);
     }
     super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeColonArglist(
         attributes,

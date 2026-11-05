@@ -116,9 +116,9 @@ impl SupplySender {
     /// watching when the Supply is tapped) keeps re-reading its baseline until
     /// then, rather than queueing what happened before anyone listened.
     pub(crate) fn ever_subscribed(&self) -> bool {
-        self.broadcast
-            .upgrade()
-            .is_some_and(|b| b.ever_subscribed.load(Ordering::Acquire))
+        self.broadcast.upgrade().is_some_and(|b| {
+            b.ever_subscribed.load(Ordering::Acquire) || b.tap_pending.load(Ordering::Acquire)
+        })
     }
 }
 
@@ -188,6 +188,14 @@ impl SupplyReceiver {
     /// A source that marks itself exclusive keeps the old behaviour —
     /// `take_supply_channel` removes it from the registry, so the first
     /// consumer owns the stream — while everything else fans out.
+    /// A `whenever` has registered this stream and its tap is still to come
+    /// (see [`Broadcast::tap_pending`]): a producer that starts at the first
+    /// tap starts now, and what it reports queues upstream for that tap.
+    // Cost: O(1).
+    pub(crate) fn note_pending_tap(&self) {
+        self.broadcast.tap_pending.store(true, Ordering::Release);
+    }
+
     pub(crate) fn mark_exclusive(&self) {
         self.broadcast.exclusive.store(true, Ordering::Release);
     }
@@ -341,6 +349,7 @@ pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
         subscribers: Mutex::new(Vec::new()),
         upstream_done: AtomicBool::new(false),
         ever_subscribed: AtomicBool::new(false),
+        tap_pending: AtomicBool::new(false),
         exclusive: AtomicBool::new(false),
         wakers: Arc::clone(&wakers),
         signal: Signal::default(),

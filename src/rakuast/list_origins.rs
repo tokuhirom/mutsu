@@ -35,9 +35,13 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             _ => None,
         })
         .collect();
-    let Some(ranges) = ranges.filter(|r| r.len() >= 2) else {
+    // One operand is a list only through its trailing comma (`("a",)`).
+    let Some(ranges) = ranges.filter(|r| !r.is_empty()) else {
         return;
     };
+    if ranges.len() == 1 && op != "," {
+        return;
+    }
     // Each gap holds exactly the operator, between whitespace and comments,
     // in one spelling throughout (`…` for `...`).
     let mut last_op = None;
@@ -75,6 +79,7 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             to = comma + 1;
         }
     }
+    // A lone operand with no trailing comma is not a list.
     let Some(op_at) = last_op else {
         return;
     };
@@ -110,8 +115,54 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
         ('[', ']')
     };
     if let Some(inside) = bracketed(from, to, brackets) {
-        with_child_at(node, 0, |list| statement_list(list, inside));
+        with_child_at(node, 0, |list| {
+            place_lone_dotty(list, inside);
+            statement_list(list, inside);
+        });
     }
+}
+
+/// `($a .= lc)`: a bracketed list of one statement whose expression is a `.=`
+/// application the parser did not place. The text inside the brackets,
+/// trimmed, is exactly that application.
+// Cost: O(n), n = length of `inside`.
+fn place_lone_dotty(list: &mut RakuAstNode, inside: SrcSpan) {
+    let [field] = list.fields.as_mut_slice() else {
+        return;
+    };
+    let RakuAstFieldValue::Node(held) = &mut field.value else {
+        return;
+    };
+    let ValueView::RakuAst(statement) = held.view() else {
+        return;
+    };
+    if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+        return;
+    }
+    let Some(expression) = child_at(statement, 0) else {
+        return;
+    };
+    if expression.class != RakuAstClass::ApplyDottyInfix || expression.origin.0.is_some() {
+        return;
+    }
+    let Some(span) = super::unit_source::with_text(inside, |text| {
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = text.trim();
+        (!trimmed.is_empty()).then(|| {
+            SrcSpan::new(
+                inside.from as usize + lead,
+                inside.from as usize + lead + trimmed.len(),
+            )
+        })
+    }) else {
+        return;
+    };
+    let mut statement = RakuAstNode::clone(statement);
+    with_child_at(&mut statement, 0, |dotty| {
+        super::origin::set_span(dotty, span);
+        super::call_origins::dotty_assign(dotty, span);
+    });
+    *held = Value::rakuast(Box::new(statement));
 }
 
 /// `operand[...]` / `operand{...}`: the subscript runs from the operand's
@@ -121,9 +172,16 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some((_, to)) = byte_range(node) else {
         return;
     };
-    let Some((_, from)) = child(node, "operand").and_then(byte_range) else {
+    let Some((_, operand_end)) = child(node, "operand").and_then(byte_range) else {
         return;
     };
+    // Parentheses around the operand (`(@a)[0]`) are not a node of their
+    // own, so the subscript starts after their `)`.
+    let from = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
+        let rest = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
+        Some(operand_end + (text.len() - rest.len()))
+    })
+    .unwrap_or(operand_end);
     let Some(subscript) = child(node, "postfix") else {
         return;
     };

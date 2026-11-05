@@ -13,6 +13,9 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
     if let Some(v) = super::compile_inputs::uname_const_value(konst) {
         return Some(v);
     }
+    if let Some(v) = crate::value::sig_elem_flags::sig_elem_const(konst) {
+        return Some(v);
+    }
     // Cost: O(1) at run time (every constant folds to an integer literal at compile time).
     Some(match konst {
         "BINARY_ENDIAN_NATIVE" => 0,
@@ -39,6 +42,33 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
         "CCLASS_NEWLINE" => 4096,
         "CCLASS_WORD" => 8192,
         "CCLASS_ANY" => 65535,
+        // QRegex::NFA edge types (`nqp::const::EDGE_*`), as rakudo's NQP
+        // defines them; the `_M` range edges deliberately follow MoarVM's
+        // numbering (22/23), not their position in this list.
+        "EDGE_FATE" => 0,
+        "EDGE_EPSILON" => 1,
+        "EDGE_CODEPOINT" => 2,
+        "EDGE_CODEPOINT_NEG" => 3,
+        "EDGE_CHARCLASS" => 4,
+        "EDGE_CHARCLASS_NEG" => 5,
+        "EDGE_CHARLIST" => 6,
+        "EDGE_CHARLIST_NEG" => 7,
+        "EDGE_SUBRULE" => 8,
+        "EDGE_CODEPOINT_I" => 9,
+        "EDGE_CODEPOINT_I_NEG" => 10,
+        "EDGE_GENERIC_VAR" => 11,
+        "EDGE_CHARRANGE" => 12,
+        "EDGE_CHARRANGE_NEG" => 13,
+        "EDGE_CODEPOINT_LL" => 14,
+        "EDGE_CODEPOINT_I_LL" => 15,
+        "EDGE_CODEPOINT_M" => 16,
+        "EDGE_CODEPOINT_M_NEG" => 17,
+        "EDGE_CODEPOINT_M_LL" => 18,
+        "EDGE_CODEPOINT_IM" => 19,
+        "EDGE_CODEPOINT_IM_NEG" => 20,
+        "EDGE_CODEPOINT_IM_LL" => 21,
+        "EDGE_CHARRANGE_M" => 22,
+        "EDGE_CHARRANGE_M_NEG" => 23,
         // Normalization forms for `nqp::strtocodes`.
         "NORMALIZE_NONE" => 0,
         "NORMALIZE_NFC" => 1,
@@ -299,7 +329,11 @@ impl Compiler {
             {
                 let is_until = name.ends_with("until");
                 let repeat = name.starts_with("nqp::repeat_");
-                if sunk {
+                if sunk && super::nqp_loop_control::body_names_loop_control(&args[1]) {
+                    // A `last` / `next` in the body needs a registered loop:
+                    // the ordinary `while` lowering, its value dropped.
+                    self.compile_nqp_controlled_loop(&args[0], &args[1], is_until, repeat);
+                } else if sunk {
                     self.compile_nqp_sunk_loop(&args[0], &args[1], is_until, repeat);
                 } else {
                     self.compile_nqp_value_loop(&args[0], &args[1], is_until, repeat);
@@ -308,6 +342,20 @@ impl Compiler {
             }
             _ => false,
         }
+    }
+
+    /// Whether `e` is a call of one of the `nqp::` loop forms.
+    // Cost: O(1).
+    pub(super) fn is_nqp_loop_call(e: &Expr) -> bool {
+        matches!(
+            e,
+            Expr::Call { name, args, .. }
+                if args.len() == 2
+                    && matches!(
+                        name.as_str(),
+                        "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
+                    )
+        )
     }
 
     /// Run `f` as the compilation of a statement-root expression: a
@@ -360,6 +408,53 @@ impl Compiler {
             self.code.emit(OpCode::Jump(loop_start as i32));
             self.code.patch_jump(jump_end);
         }
+        let nil_idx = self.code.add_constant(Value::NIL);
+        self.code.emit(OpCode::LoadConst(nil_idx));
+    }
+
+    /// A sunk `nqp::` loop whose body names `last` / `next` / `redo`: the same
+    /// `while` / `repeat ... while` statement the parser builds for Raku source,
+    /// which registers the loop for those controls. Yields Nil, as the jump loop does.
+    // Cost: O(1) per iteration (the registered-loop opcodes).
+    fn compile_nqp_controlled_loop(
+        &mut self,
+        cond: &Expr,
+        body: &Expr,
+        is_until: bool,
+        repeat: bool,
+    ) {
+        let body = vec![Stmt::Expr(body.clone())];
+        let cond = if is_until {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(cond.clone()),
+                word: false,
+            }
+        } else {
+            cond.clone()
+        };
+        let stmt = if repeat {
+            Stmt::Loop {
+                init: None,
+                cond: Some(cond),
+                step: None,
+                body,
+                repeat: true,
+                label: None,
+                is_until,
+                is_bare_term: false,
+            }
+        } else {
+            Stmt::While {
+                cond,
+                body,
+                label: None,
+                is_statement_modifier: false,
+                is_until,
+                is_bare_term: false,
+            }
+        };
+        self.with_stmt_root(|c| c.compile_stmt(&stmt));
         let nil_idx = self.code.add_constant(Value::NIL);
         self.code.emit(OpCode::LoadConst(nil_idx));
     }

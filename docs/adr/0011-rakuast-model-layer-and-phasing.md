@@ -546,7 +546,7 @@ earlier ones.
 ### File layout
 
 - `src/rakuast/mod.rs` — `RakuAstNode`, `RakuAstClass`, the class-metadata table.
-- `src/rakuast/convert.rs` — internal AST → `RakuAstNode` (Phase 1+2).
+- `src/rakuast/view.rs` — internal AST → `RakuAstNode` (Phase 1+2).
 - `src/rakuast/render.rs` — `.gist`/`.raku` and (Phase 2) `.DEPARSE`.
 - `src/rakuast/lower.rs` — `RakuAstNode` → internal AST (Phase 5).
 - `Value::RakuAst` variant in `src/value/mod.rs`; `.AST` dispatch in the `Str` method path.

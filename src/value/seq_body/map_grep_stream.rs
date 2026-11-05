@@ -53,6 +53,34 @@ impl SeqBody {
             && matches!(state.source, SeqSource::MapGrep { .. })
     }
 
+    /// Whether this body is an untouched `IO::Handle.lines` / `.words` Seq
+    /// that a `.map` / `.grep` / `.pairs` / `.antipairs` can pipe from on
+    /// demand ([`SeqBody::take_io_lines_pipe_source`]) instead of reading the
+    /// whole handle first (#16065). The `.kv` flavour counts elements itself
+    /// and stays on the eager path.
+    // Cost: O(1).
+    pub(crate) fn has_io_lines_pipe_source(&self) -> bool {
+        let state = self.lock_state();
+        !state.cache_requested
+            && !state.retained
+            && matches!(state.source, SeqSource::IoLines { kv: false, .. })
+    }
+
+    /// Steal the handle source of [`SeqBody::has_io_lines_pipe_source`], leaving
+    /// the body `Taken` (a `.map` consumes its receiver), as the
+    /// [`SeqSource::IoLines`] a pipe stage then pulls one line at a time.
+    // Cost: O(1).
+    pub(crate) fn take_io_lines_pipe_source(&self) -> Option<SeqSource> {
+        let mut state = self.lock_state();
+        if state.cache_requested
+            || state.retained
+            || !matches!(state.source, SeqSource::IoLines { kv: false, .. })
+        {
+            return None;
+        }
+        Some(std::mem::replace(&mut state.source, SeqSource::Taken))
+    }
+
     /// Advance the [`SeqSource::MapGrep`] of a stream body built from
     /// [`SeqBody::take_map_grep_stream_source`]: hand it to `pull`, which
     /// advances its `pos` and returns the elements it produced plus whether
@@ -81,8 +109,9 @@ impl SeqBody {
         Ok(Some(items))
     }
 
-    /// Claim a not-yet-finished `.map`/`.grep` source for a `for` loop to
-    /// stream. Returns the elements an earlier prefix pull already stored
+    /// Claim a not-yet-finished `.map`/`.grep` source, or a `Seq.new($iterator)`
+    /// one (#15820: the iterator's `pull-one` must interleave with the loop
+    /// body), for a `for` loop to stream. Returns the elements an earlier prefix pull already stored
     /// (the loop iterates those first) and the source itself, leaving the body
     /// `Taken` until [`SeqBody::finish_map_grep_streaming`] puts it back:
     /// while the loop runs nothing else may pull the same source, as Rakudo
@@ -93,7 +122,12 @@ impl SeqBody {
     // Cost: O(1), or O(p) for p elements an earlier prefix pull stored.
     pub(crate) fn claim_map_grep_for_streaming(&self) -> Option<(Vec<Value>, SeqSource)> {
         let mut state = self.lock_state();
-        if state.cache_requested || !matches!(state.source, SeqSource::MapGrep { .. }) {
+        if state.cache_requested
+            || !matches!(
+                state.source,
+                SeqSource::MapGrep { .. } | SeqSource::Iterator(_)
+            )
+        {
             return None;
         }
         let source = std::mem::replace(&mut state.source, SeqSource::Taken);

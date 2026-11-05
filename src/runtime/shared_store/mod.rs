@@ -21,6 +21,8 @@ use std::sync::{Arc, Mutex, RwLock};
 mod retire;
 use retire::{ChildList, Holder};
 
+pub(crate) mod capture_check;
+
 // Lineage-store maps are String-keyed and hit on every spawn's seeding loop;
 // use FxHash instead of SipHash (variable names are program identifiers, not
 // attacker-controlled data, so HashDoS hardening buys nothing here).
@@ -272,6 +274,9 @@ impl SharedStore {
     /// Falls back to this lineage when the name is new (a first write with no
     /// prior declaration behaves as a declaration here).
     pub(crate) fn set(&self, key: &str, value: Value) {
+        if capture_check::enabled() {
+            capture_check::note_lane_access(key, "set");
+        }
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
@@ -380,6 +385,9 @@ impl SharedStore {
         key: &str,
         f: impl FnOnce(&mut Value) -> R,
     ) -> Option<R> {
+        if capture_check::enabled() {
+            capture_check::note_lane_access(key, "mut");
+        }
         let target = self.owner_of(key)?;
         let mut guard = target.own.write().unwrap();
         let r = guard.get_mut(key).map(f);

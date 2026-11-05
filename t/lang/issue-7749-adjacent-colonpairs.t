@@ -5,8 +5,8 @@ plan 7;
 no worries;
 
 my $manna = :a1:b2:c3;
-is $manna.^name, 'Pair', 'an adjacent colonpair run stays a Pair';
-is $manna.raku, ':a1', 'the first value-shorthand pair wins as the term value';
+is $manna.^name, 'List', 'an adjacent colonpair run is a List (RakuAST)';
+is $manna.raku, '$(:a1, :b2, :c3)', 'the List holds every pair';
 
 my $list = (:a1:b2:c3);
 is $list.^name, 'List', 'an adjacent colonpair run in parens is a List';

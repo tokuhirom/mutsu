@@ -32,6 +32,23 @@ impl Interpreter {
         self.auto_fetch_proxy(&value)
     }
 
+    /// [`Self::fetch_proxy_for_store`] for the value a plain `$` variable
+    /// assignment lands. `.VAR` hands back the Proxy object itself, so
+    /// `my $v = $q.VAR` keeps it as a VALUE with no FETCH (#15893): the Scalar
+    /// wrapper keeps the slot a value holder, so a read does not FETCH it and
+    /// `$v = 5` replaces it instead of calling the Proxy's STORE. Every other
+    /// store boundary (array element, operand, argument) still FETCHes.
+    // Cost: O(1) for a non-Proxy.
+    pub(crate) fn fetch_proxy_for_scalar_store(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if value.is_proxy_var_object() {
+            return Ok(Value::scalar(value));
+        }
+        self.fetch_proxy_for_store(value)
+    }
+
     /// Whether a container-mutator argument carries a `Proxy` that the store
     /// will land in an element container — the argument itself, or the value
     /// half of a `Pair` (`%h.push(k => $p)` stores that value in `%h<k>`).
@@ -131,7 +148,7 @@ impl Interpreter {
                 let sources: Vec<Value> = items.iter().cloned().collect();
                 let mut fetched = Vec::with_capacity(sources.len());
                 for item in sources {
-                    fetched.push(self.fetch_proxy_for_store(item)?);
+                    fetched.push(self.fetch_proxy_for_scalar_store(item)?);
                 }
                 value.with_array_mut(|items, _kind| {
                     let data = crate::gc::Gc::make_mut(items);
@@ -146,7 +163,7 @@ impl Interpreter {
                 let mut fetched = Vec::with_capacity(sources.len());
                 for (k, v) in sources {
                     if v.is_proxy_value() {
-                        let v = self.fetch_proxy_for_store(v)?;
+                        let v = self.fetch_proxy_for_scalar_store(v)?;
                         fetched.push((k, v));
                     }
                 }

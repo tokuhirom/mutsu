@@ -381,6 +381,33 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // A bare-word call of a routine imported at run time (`errno.symbol`
+        // for an `is raw` sub returning a `Proxy`): the receiver is the
+        // routine's result, not a variable, so a read of it FETCHes exactly as
+        // `CallMethod` does for a `CallFunc` receiver (#16556).
+        if target_slot.is_none()
+            && let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
+            && let ValueView::Proxy {
+                subclass: None,
+                decontainerized: false,
+                ..
+            } = self.stack[target_idx].deref_container().view()
+            && !matches!(
+                name.raw,
+                "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            )
+        {
+            let proxy = self.stack[target_idx].deref_container();
+            self.stack[target_idx] = self.auto_fetch_proxy(&proxy)?;
+        }
+        // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
+        // object is answered without the probe chain below.
+        if let Some(result) =
+            self.try_pseudo_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // ADR-0121 D3: a generated accessor already resolved to a slot of the
         // receiver's layout reads it before the probe chain runs (see
         // `vm_accessor_lane`).
@@ -786,6 +813,17 @@ impl Interpreter {
         // pure code (`@a.splice(1, 1, (7,8).map({...}))` flattens the Seq into
         // the array), so a still-deferred `.map` argument has to run first.
         self.reify_map_grep_seq_args(&args)?;
+        // `.of` of a reflected element cell (`($t,)[0].VAR.of`) is the type the
+        // cell was declared with, `Mu` for an unconstrained one (#15853).
+        if method == "of"
+            && args.is_empty()
+            && let ValueView::ContainerView(cell) = target.view()
+        {
+            let of = crate::value::lookup_container_constraint(&cell)
+                .unwrap_or_else(|| "Mu".to_string());
+            self.stack.push(Value::package(Symbol::intern(&of)));
+            return Ok(());
+        }
         // Mutating methods reached through `.VAR` must retain the underlying
         // cell so the established container writeback paths can update it.
         let target = if !matches!(method, "WHAT" | "^name" | "VAR")
@@ -1161,7 +1199,7 @@ impl Interpreter {
         if modifier.is_none()
             && matches!(target.view(), ValueView::Array(..))
             && !args.iter().any(Value::is_junction_value)
-            && !(self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
+            && !(self.threads.shared_vars_active && self.container_lane_applies(target_name))
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)

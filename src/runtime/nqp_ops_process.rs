@@ -128,7 +128,7 @@ impl Interpreter {
                 let parts = args.get(1).map(Self::nqp_list_strings).unwrap_or_default();
                 Ok(Value::str(parts.join(&sep)))
             }
-            // Cost: O(n + m), n = chars of $str, m = chars of $sep (std str::split, two-way search); plus O(k) values produced.
+            // Cost: O(n * m), n = chars of $str, m = chars of $sep (grapheme-boundary hits only, str_prim::split); plus O(k) values produced.
             "split" => {
                 let sep = args
                     .first()
@@ -141,10 +141,7 @@ impl Interpreter {
                     // One element per grapheme, as MoarVM splits.
                     crate::builtins::str_prim::graphemes(&Value::str(target))
                 } else {
-                    target
-                        .split(&sep)
-                        .map(|s| Value::str(s.to_string()))
-                        .collect()
+                    crate::builtins::str_prim::split(&Value::str(target), &sep)
                 };
                 Ok(Value::vm_array(parts))
             }
@@ -363,8 +360,8 @@ impl Interpreter {
             "currentthread" | "newthread" | "threadrun" | "threadjoin" | "threadid"
             | "threadyield" | "threadlockcount" => return self.call_nqp_op_thread(op, args),
             // Method lookup by name (#11499): runtime/nqp_ops_object.rs.
-            "findmethod" | "tryfindmethod" | "rebless" | "setparameterizer" | "parameterizetype"
-            | "typeparameterized" | "typeparameters" | "typeparameterat" => {
+            "findmethod" | "tryfindmethod" | "rebless" | "setwho" | "setparameterizer"
+            | "parameterizetype" | "typeparameterized" | "typeparameters" | "typeparameterat" => {
                 return self.call_nqp_op_object(op, args);
             }
             _ => return self.call_nqp_op_text(op, args),

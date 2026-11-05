@@ -303,7 +303,7 @@ impl Interpreter {
     pub(crate) fn array_name_is_shared(&self, arr_name: &str) -> bool {
         // ...unless this lineage re-declared the name: then the store's entry
         // belongs to the shadowed outer binding, not to this frame's array.
-        if self.container_name_is_redeclared(arr_name) {
+        if !self.container_lane_applies(arr_name) {
             return false;
         }
         self.atomic_array_entry_exists(arr_name)
@@ -434,15 +434,7 @@ impl Interpreter {
             // step above — writing into `env[arr_name]` here would either
             // silently vanish (nothing reads it back) or, worse, pollute the
             // loading scope's own same-named `env` entry.
-            if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
-                *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
-            } else if let Some(ValueView::ContainerRef(cell)) =
-                self.env.get(arr_name).map(Value::view)
-            {
-                *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
-            } else {
-                self.env.insert(arr_name.to_string(), updated.clone());
-            }
+            self.store_shared_lane_result(arr_name, updated.clone());
         }
         (result, updated)
     }
@@ -520,14 +512,7 @@ impl Interpreter {
             new_arr
         };
         self.threads.note_dirty(arr_name);
-        if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
-        } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view)
-        {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
-        } else {
-            self.env.insert(arr_name.to_string(), updated);
-        }
+        self.store_shared_lane_result(arr_name, updated);
         value
     }
 
@@ -589,14 +574,7 @@ impl Interpreter {
             new_hash
         };
         self.threads.note_dirty(hash_name);
-        if let Some(cell) = self.unit_lexical_container_cell(hash_name) {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
-        } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(hash_name).map(Value::view)
-        {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
-        } else {
-            self.env.insert(hash_name.to_string(), updated);
-        }
+        self.store_shared_lane_result(hash_name, updated);
         value
     }
 

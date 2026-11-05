@@ -221,6 +221,13 @@ impl Interpreter {
             } else {
                 target
             };
+        // `Bool(Mu)` (Test's `proclaim`) is a boolean chokepoint like `?` and
+        // `if`: `Value::truthy` cannot pull, so a not-yet-run `gather`/`.map`
+        // Seq must have its first element read first, or it coerces to False
+        // (`ok find(...)` of File::Find's lazy result).
+        if base_target == "Bool" {
+            let _ = self.reify_map_grep_prefix(&value, 1);
+        }
         // A coercion type only converts a value that is not already of its
         // target type (Rakudo: `sub f(List() $l)` binds an itemized `$[1, 2]`
         // as that Array). Coercing the item container instead wrapped the
@@ -253,6 +260,23 @@ impl Interpreter {
                 return Ok(coerced);
             }
             return Err(coerce_impossible_error(target, &value));
+        }
+        // A `%?RESOURCES` entry answers `.IO` natively, so `IO()` coerces it
+        // to the IO::Path of its file (`sub f(IO() $css)` given `%?RESOURCES<x.css>`).
+        if base_target == "IO"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = value.view()
+            && class_name == "Distribution::Resource"
+        {
+            let path = attributes
+                .as_map()
+                .get("path")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            return Ok(self.make_io_path_instance(&path));
         }
         // The same rule for a TYPE OBJECT. A coercion type calls the named
         // method on its argument, and a method call on a type object dispatches
@@ -525,6 +549,23 @@ impl Interpreter {
                 value
             };
             let resolved_target = self.resolve_constraint_alias(target);
+            // A target declared in the running package under a nested name
+            // (`module Pk { class Column::List {...}; sub f(Column::List(Any)
+            // $c) {...} }` registers `Pk::Column::List`) is found the way a
+            // bareword type is, or its `COERCE` is never looked up.
+            //
+            // Only a nested name needs this: a plain `Bool`/`Str`/`Int` target
+            // (every `Test` assertion coerces `Bool(Mu)`) is not package-relative,
+            // and the lookup interns its name (`named_call_intern_budget`).
+            let resolved_target = if !crate::qualified::is_qualified_str(&resolved_target)
+                || self.has_type_direct(&resolved_target)
+            {
+                resolved_target
+            } else if let Some(found) = self.resolve_type_in_current_package(&resolved_target) {
+                std::borrow::Cow::Owned(found)
+            } else {
+                resolved_target
+            };
             // A subset target (`my subset S of N where ...; my S() $x`)
             // coerces to its refinee and then checks the refinement, as
             // Rakudo's coercion protocol does: a value already in the subset

@@ -41,8 +41,8 @@ impl Interpreter {
         // "Cannot resolve caller". (Raku lets a plain SUB see an enclosing
         // dispatcher, but a method call always establishes its own, so the leak
         // is only ever wrong.)
-        let new_base_override =
-            method_name == "new" && self.has_user_method_including_role(receiver_class, method_name);
+        let new_base_override = matches!(method_name, "new" | "bless")
+            && self.has_user_method_including_role(receiver_class, method_name);
         // `Mu`'s own answers (`defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, and `gist`
         // and `perl` everywhere, `Str`/`raku` of a type object) are the base candidate too.
         let mu_base_override = (matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
@@ -126,10 +126,7 @@ impl Interpreter {
             ValueView::Package(_) | ValueView::Mixin(..)
         ) && !Self::invocant_carries_native_storage(&invocant)
             && self.has_user_method(receiver_class, method_name)
-            && {
-                let mro = self.class_mro(receiver_class);
-                Self::builtin_method_level(&mro, method_name).is_some()
-            };
+            && self.class_reaches_builtin_method(receiver_class, method_name);
         let grammar_rule_override = super::regex::regex_builtin_rule::is_builtin_rule_name(method_name)
             && matches!(invocant.view(), ValueView::Instance { .. })
             && self.class_is_grammar(receiver_class)
@@ -269,7 +266,11 @@ impl Interpreter {
                 Some(super::NativeBase::GrammarRule)
             } else if container_protocol_override {
                 Some(super::NativeBase::Storage)
-            } else if core_type_override || any_base_override {
+            } else if core_type_override
+                || any_base_override
+                || (Self::plain_io_handle_view(&invocant).is_some()
+                    && self.has_user_method(receiver_class, method_name))
+            {
                 Some(super::NativeBase::Value)
             } else if builtin_ancestor_override {
                 Some(super::NativeBase::BuiltinAncestor)

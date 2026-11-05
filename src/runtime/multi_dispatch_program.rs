@@ -50,6 +50,18 @@ pub(crate) struct StageProgram {
     /// In narrowness order; the candidates that cannot take the call's
     /// arity are left out.
     steps: Vec<ProgramStep>,
+    /// Some step is a value-independent candidate of any other shape (named,
+    /// slurpy, sigilless parameters) whose verdict the general matcher gave
+    /// for the stage's key. Such a program is run by the captured-dispatcher
+    /// path only; the multi light call, which binds plain positionals, never
+    /// takes it.
+    has_general_steps: bool,
+    /// The winner of a program with no value check at all: every verdict
+    /// came from the argument-type key, so the tie analysis (`prune` /
+    /// `settle_ranked_matches`: dispatch shapes, `is default`, ambiguity)
+    /// gives the same answer on every call of this key. Set once, by the
+    /// first call whose settle produced a winner without any exception.
+    settled: std::sync::OnceLock<Arc<FunctionDef>>,
 }
 
 impl StageProgram {
@@ -66,7 +78,8 @@ impl StageProgram {
     /// only a program whose checks are inline expressions of the argument.
     // Cost: O(s·k), s = steps, k = checks per step.
     pub(crate) fn checks_are_inline_wheres(&self) -> bool {
-        self.steps.iter().all(|step| {
+        !self.has_general_steps
+            && self.steps.iter().all(|step| {
             step.checks
                 .iter()
                 .all(|check| matches!(check, ValueCheck::Where { .. }))
@@ -77,20 +90,25 @@ impl StageProgram {
 impl Interpreter {
     /// Build the program for `stage` from a call whose arguments carry the
     /// stage's type key, or `None` when some candidate needs the general walk.
+    /// With `allow_general`, a candidate of any shape whose verdict the
+    /// argument-type key decides (see [`Self::verdict_is_key_decided`]) is
+    /// answered once by the general matcher instead of ending the program,
+    /// and a call with named arguments may have a program.
     // Cost: O(c·p) type checks, c = candidates, p = parameters; once per key.
     pub(super) fn build_stage_program(
         &mut self,
         args: &[Value],
         stage: &[PlanEntry],
+        allow_general: bool,
     ) -> Option<StageProgram> {
-        if stage.is_empty()
-            || args
-                .iter()
-                .any(|arg| arg.unwrap_varref().is_string_pair_value())
-        {
+        let has_named = args
+            .iter()
+            .any(|arg| arg.unwrap_varref().is_string_pair_value());
+        if stage.is_empty() || (has_named && !allow_general) {
             return None;
         }
         let mut steps: Vec<ProgramStep> = Vec::with_capacity(stage.len());
+        let mut has_general_steps = false;
         for entry in stage {
             if entry.reads_value {
                 return None;
@@ -99,30 +117,72 @@ impl Interpreter {
             // The stage holds every arity of the name (its tiers are built
             // over all of them); one that cannot take this many positionals
             // never binds, so it needs no step.
-            if Self::arity_excludes(def, args.len()) {
+            if !has_named && Self::arity_excludes(def, args.len()) {
                 continue;
             }
             // A placeholder-signature block (`params` of `^a` with no
             // `param_defs`) is matched by arity alone in the general walk.
-            if def.param_defs.len() != args.len()
-                || (def.param_defs.is_empty() && !def.params.is_empty())
-                || !def.param_defs.iter().all(Self::is_simple_positional_param)
-                || !Self::simple_where_reads_no_parameter(&def.param_defs)
-            {
+            let simple = !has_named
+                && def.param_defs.len() == args.len()
+                && !(def.param_defs.is_empty() && !def.params.is_empty())
+                && def.param_defs.iter().all(Self::is_simple_positional_param)
+                && Self::simple_where_reads_no_parameter(&def.param_defs);
+            if simple {
+                let (nominal_ok, checks) =
+                    self.with_candidate_package(Some(def.package), |this| {
+                        this.split_candidate_checks(args, &def.param_defs)
+                    })?;
+                steps.push(ProgramStep {
+                    key: entry.key,
+                    def: def.clone(),
+                    nominal_ok,
+                    checks,
+                });
+            } else if allow_general && self.verdict_is_key_decided(def) {
+                let nominal_ok = self.args_match_multi_candidate_in_scope(args, def);
+                if self.take_where_exception().is_some() {
+                    return None;
+                }
+                has_general_steps = true;
+                steps.push(ProgramStep {
+                    key: entry.key,
+                    def: def.clone(),
+                    nominal_ok,
+                    checks: Vec::new(),
+                });
+            } else {
                 return None;
             }
-            let (nominal_ok, checks) = self.with_candidate_package(Some(def.package), |this| {
-                this.split_candidate_checks(args, &def.param_defs)
-            })?;
-            steps.push(ProgramStep {
-                key: entry.key,
-                def: def.clone(),
-                nominal_ok,
-                checks,
-            });
         }
         steps.sort_by(|a, b| a.key.total_cmp(&b.key));
-        Some(StageProgram { steps })
+        Some(StageProgram {
+            settled: std::sync::OnceLock::new(),
+            steps,
+            has_general_steps,
+        })
+    }
+
+    /// Whether the general matcher's verdict on `def` is a pure function of
+    /// the argument-type key the stage was built for: no `where`, no `subset`
+    /// or type-capture constraint, no literal value, no sub-signature and no
+    /// code signature on any parameter (each reads the argument's value or
+    /// identity). Defaults are evaluated at bind time, not by the match.
+    // Cost: O(p), p = parameters.
+    fn verdict_is_key_decided(&self, def: &FunctionDef) -> bool {
+        !def.param_defs.is_empty()
+            && def.param_defs.iter().all(|pd| {
+                pd.where_constraint.is_none()
+                    && pd.literal_value.is_none()
+                    && pd.code_signature.is_none()
+                    && pd.outer_sub_signature.is_none()
+                    && (pd.sub_signature.is_none() || pd.named_alias)
+                    && pd.type_capture.is_none()
+                    && pd.type_constraint.as_deref().is_none_or(|tc| {
+                        !self.constraint_is_subset(tc)
+                            && self.try_resolved_type_capture_name(tc).is_none()
+                            && !tc.contains('(')
+                    })
+            })
     }
 
     /// Whether `def` cannot bind `positionals` positional arguments (and no
@@ -169,7 +229,7 @@ impl Interpreter {
                             arg: idx,
                             constraint: tc.to_string(),
                         });
-                    } else if !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
+                    } else if !self.native_dispatch_arg_matches(tc, args, Some(idx))
                         || !self.param_constraint_accepts(tc, &arg)
                     {
                         nominal_ok = false;
@@ -200,6 +260,9 @@ impl Interpreter {
         args: &[Value],
         program: &StageProgram,
     ) -> Resolved {
+        if let Some(winner) = program.settled.get() {
+            return Ok(Some(winner.clone()));
+        }
         let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
         let mut best_key: Option<MultiRank> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
@@ -242,14 +305,21 @@ impl Interpreter {
                 return Err(err);
             }
         };
-        self.settle_ranked_matches(
+        let key_decided = threw.is_none() && program.steps.iter().all(|s| s.checks.is_empty());
+        let settled = self.settle_ranked_matches(
             name,
             args,
             matches,
             threw,
             outer_where_exception,
             tier_bind_check,
-        )
+        );
+        if key_decided
+            && let Ok(Some(winner)) = &settled
+        {
+            let _ = program.settled.set(winner.clone());
+        }
+        settled
     }
 
     fn run_value_checks(

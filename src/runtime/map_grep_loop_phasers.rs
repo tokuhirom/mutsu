@@ -70,10 +70,7 @@ impl Interpreter {
                 continue;
             }
             let mut phaser_data = data.clone();
-            phaser_data.body = std::sync::Arc::new(body.clone());
-            phaser_data.compiled_code = None;
-            phaser_data.compiled_fns = None;
-            phaser_data.compiled_routine = None;
+            Self::compile_phaser_body(&mut phaser_data, body.clone());
             let phaser = Value::sub_value(crate::gc::Gc::new(phaser_data));
             self.call_sub_value(phaser, args.clone())?;
         }

@@ -4,6 +4,13 @@ use super::*;
 use unicode_normalization::UnicodeNormalization;
 
 thread_local! {
+    /// Whether the class range being read starts / ends at a surrogate code
+    /// point (`<[\x[D800] .. \x[DBFF]]>`). A surrogate is no character, so each
+    /// end is clamped to the nearest scalar value outside the block; a range
+    /// whose two ends are both surrogates names no scalar value at all and is
+    /// empty, as rakudo accepts it.
+    static RANGE_START_SURROGATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static RANGE_END_SURROGATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// `pkg::name` keys of the tokens [`Interpreter::token_class_fold`] is
     /// currently folding, to cut self-referential class folds.
     static FOLDING_TOKENS: std::cell::RefCell<std::collections::HashSet<crate::symbol::Symbol>> =
@@ -154,8 +161,14 @@ impl Interpreter {
                                 hex.push(ch);
                                 chars.next();
                             }
-                            let result =
-                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32);
+                            let result = u32::from_str_radix(&hex, 16)
+                                .ok()
+                                .and_then(char::from_u32)
+                                .or_else(|| {
+                                    (!is_neg && Self::peek_dotdot(&chars))
+                                        .then(|| range_start_surrogate(&hex))
+                                        .flatten()
+                                });
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
@@ -176,8 +189,14 @@ impl Interpreter {
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
-                            if let Some(ch) =
-                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            if let Some(ch) = u32::from_str_radix(&hex, 16)
+                                .ok()
+                                .and_then(char::from_u32)
+                                .or_else(|| {
+                                    (!is_neg && Self::peek_dotdot(&chars))
+                                        .then(|| range_start_surrogate(&hex))
+                                        .flatten()
+                                })
                             {
                                 if is_neg {
                                     EscResult::NegChar(ch)
@@ -246,6 +265,10 @@ impl Interpreter {
                                 chars.next();
                             }
                             let end = Self::read_cc_char(&mut chars).unwrap_or(ch);
+                            if take_empty_surrogate_range() {
+                                tally.separate();
+                                continue;
+                            }
                             if end < ch {
                                 PENDING_REGEX_ERROR.with(|e| {
                                     *e.borrow_mut() = Some(RuntimeError::new(format!(
@@ -339,6 +362,11 @@ impl Interpreter {
                     chars.next();
                 }
                 let end = Self::read_cc_char(&mut chars).unwrap_or(c);
+                if take_empty_surrogate_range() {
+                    tally.separate();
+                    has_items = true;
+                    continue;
+                }
                 if end < c {
                     PENDING_REGEX_ERROR.with(|e| {
                         *e.borrow_mut() = Some(RuntimeError::new(format!(
@@ -753,6 +781,7 @@ impl Interpreter {
     /// Read a single character from a character class, handling escape sequences.
     /// Used for reading range endpoints like the `z` in `a..z` or `\]` in `\[..\]`.
     fn read_cc_char(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+        RANGE_END_SURROGATE.with(|f| f.set(false));
         let ch = chars.next()?;
         if ch == '\\' {
             let esc = chars.next()?;
@@ -799,13 +828,13 @@ impl Interpreter {
                             hex.push(c);
                             chars.next();
                         }
-                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                        range_end_codepoint(&hex)
                     } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
                         let mut hex = String::new();
                         while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
                             hex.push(chars.next().unwrap());
                         }
-                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                        range_end_codepoint(&hex)
                     } else {
                         Some(esc)
                     }
@@ -1393,4 +1422,39 @@ impl Interpreter {
         }
         s.len()
     }
+}
+
+/// Whether the range just read has surrogate code points at both ends (so it
+/// is empty); clears the flags either way.
+// Cost: O(1).
+fn take_empty_surrogate_range() -> bool {
+    let start = RANGE_START_SURROGATE.with(|f| f.replace(false));
+    let end = RANGE_END_SURROGATE.with(|f| f.replace(false));
+    start && end
+}
+
+/// The character a `\x` escape names as the *end* of a class range
+/// (`<[\xA0..\xD8FF]>`). A surrogate is no character (no string holds one), so
+/// a range ending in one ends at the last scalar value below the surrogates,
+/// as rakudo matches it.
+// Cost: O(k), k = number of digits.
+fn range_end_codepoint(hex: &str) -> Option<char> {
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    if (0xD800..=0xDFFF).contains(&value) {
+        RANGE_END_SURROGATE.with(|f| f.set(true));
+        return Some('\u{D7FF}');
+    }
+    char::from_u32(value)
+}
+
+/// The start of a class range written as a surrogate (`<[\xD800..\xE000]>`)
+/// begins at the first scalar value above the surrogates.
+// Cost: O(k), k = number of digits.
+fn range_start_surrogate(hex: &str) -> Option<char> {
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    let surrogate = (0xD800..=0xDFFF).contains(&value);
+    if surrogate {
+        RANGE_START_SURROGATE.with(|f| f.set(true));
+    }
+    surrogate.then_some('\u{E000}')
 }

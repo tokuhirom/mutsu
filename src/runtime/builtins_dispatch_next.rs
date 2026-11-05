@@ -270,7 +270,7 @@ impl Interpreter {
         };
         env.insert(
             Self::SAMEWITH_LEXICAL_NAME_KEY.to_string(),
-            Value::str(ctx.name.clone()),
+            Value::str(ctx.name.to_string()),
         );
         if let Some(inv) = &ctx.invocant {
             env.insert(Self::SAMEWITH_LEXICAL_INVOCANT_KEY.to_string(), inv.clone());
@@ -330,7 +330,10 @@ impl Interpreter {
             // has already run, so the base candidate simply returns the type
             // object under registration.
             "new_type" => Some(match self.types.pending_declare_new_type.clone() {
-                Some(type_obj) => Ok(type_obj),
+                Some(type_obj) => {
+                    self.declare_subset_refinement(&type_obj, receiver, &args);
+                    Ok(type_obj)
+                }
                 // No DECLARE in flight: this is a plain
                 // `MyHOW.new_type(:name<X>)` on a user subclass of a builtin
                 // metamodel HOW, so the base candidate is the native
@@ -540,6 +543,9 @@ impl Interpreter {
             "new" if self.package_has_native_ctor_base(&invocant) => {
                 Some(self.dispatch_native_new(invocant, args.to_vec()))
             }
+            // `Mu.bless` is the base candidate of a user `method bless`
+            // (`callsame` / `nextsame` / `callwith` inside it).
+            "bless" => Some(self.dispatch_bless(&invocant, args.to_vec())),
             "clone" | "new" => {
                 let mut full = vec![invocant];
                 full.extend_from_slice(args);
@@ -614,6 +620,17 @@ impl Interpreter {
                     _ => value,
                 }));
             }
+        }
+        // `Array.BIND-POS` binds the element in the backing storage's shared
+        // node (an overriding `method BIND-POS($i, \v) { nextsame }` reaches
+        // it as the base candidate, #15989). A list refuses the bind.
+        if is_array
+            && method_name == "BIND-POS"
+            && let Some(outcome) = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                Self::array_pos_late(storage, method_name, args)
+            })?
+        {
+            return Some(outcome);
         }
         let method_sym = Symbol::intern(method_name);
         // `Array.AT-POS` answers the element's container (rw), so an
@@ -746,8 +763,11 @@ impl Interpreter {
             "ASSIGN-KEY" | "STORE_AT_KEY" | "BIND-KEY" | "DELETE-KEY"
         ) && matches!(inner.view(), ValueView::Hash(..))
         {
-            // `STORE_AT_KEY` and `BIND-KEY` store the value, as `ASSIGN-KEY` does.
-            let method_name = if matches!(method_name, "STORE_AT_KEY" | "BIND-KEY") {
+            // `STORE_AT_KEY` stores the value, as `ASSIGN-KEY` does. `BIND-KEY`
+            // is the `Hash` row's own bind: a bare value lands in a read-only
+            // cell, so a later `ASSIGN-KEY` on the key is refused (Hash::Util's
+            // `lock_value`, #16244).
+            let method_name = if method_name == "STORE_AT_KEY" {
                 "ASSIGN-KEY"
             } else {
                 method_name
@@ -789,6 +809,42 @@ impl Interpreter {
             return Some(result);
         }
         self.try_native_method(inner, Symbol::intern(method_name), args)
+    }
+
+    /// `value` itself when it is a plain `IO::Handle` instance (the inner value
+    /// of a mixin wrapper), else `None`.
+    // Cost: O(1).
+    fn plain_io_handle_instance(value: &Value) -> Option<Value> {
+        match value.view() {
+            ValueView::Instance { class_name, .. } if class_name.as_str() == "IO::Handle" => {
+                Some(value.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// A plain view (same cell) of an instance whose class is an `IO::*` handle
+    /// class with roles mixed in (`IO::Handle+{R}`, `IO::CatHandle+{R}`): the
+    /// view has the base class, without the mixin. `None` for anything else.
+    // Cost: O(1).
+    pub(crate) fn plain_io_handle_view(value: &Value) -> Option<Value> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+        else {
+            return None;
+        };
+        let name = class_name.as_str();
+        let (base, _) = name.split_once("+{")?;
+        base.starts_with("IO::").then(|| {
+            Value::instance_sharing_cell(
+                &attributes,
+                Symbol::intern(base),
+                attributes.instance_id(),
+            )
+        })
     }
 
     /// The default `gist`/`raku`/`Str` of an instance, the last candidate of a
@@ -852,7 +908,7 @@ impl Interpreter {
                 return Some(self.construct_proxy_subclass(&class_name, args));
             }
             if name.starts_with("RakuAST::") && name != class_name {
-                match crate::rakuast::construct(&name, "new", args) {
+                match crate::rakuast::construct(&crate::scope::NameScope::default(), &name, "new", args) {
                     Ok(Some(node)) => {
                         return Some(self.dispatch_bless(invocant, args.to_vec()).and_then(
                             |instance| {
@@ -1205,7 +1261,17 @@ impl Interpreter {
                     let result = match container {
                         Some(cell) => cell,
                         None => self
-                            .read_public_attribute_accessor(&invocant, &name, &args)
+                            .read_public_attribute_accessor(
+                                // A role mixed into an instance (`$obj but role {
+                                // method m { callsame } }`) defers to the instance's own
+                                // accessor, read from the instance under the mixin.
+                                &match invocant.view() {
+                                    ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                                    _ => invocant.clone(),
+                                },
+                                &name,
+                                &args,
+                            )
                             .unwrap_or_else(|| {
                                 let owner_name = owner.resolve();
                                 Err(
@@ -1272,10 +1338,24 @@ impl Interpreter {
                     };
                     let result = if let Some(res) = bridge {
                         res?
+                    } else if let Some(plain) = Self::plain_io_handle_view(&invocant) {
+                        // A role mixed into an open handle (`$*ARGFILES does R`,
+                        // reblessed to `IO::Handle+{R}`): the base behind the
+                        // role's `callsame` is the native `IO::Handle` method on
+                        // the same handle, without the mixin.
+                        self.call_method_with_values(plain, &name, args)?
                     } else if matches!(invocant.view(), ValueView::Instance { .. }) {
                         // An instance whose class has no storage bridge
                         // (`Storage` handled it above): the default rendering.
                         self.any_base_native_entry(&invocant, &name, &args)?
+                    } else if let ValueView::Mixin(inner, _) = invocant.view()
+                        && let Some(plain) = Self::plain_io_handle_instance(inner)
+                    {
+                        // A parameterized role mixed into an open handle
+                        // (`$*ARGFILES does R[:reset]`) stays a mixin wrapper
+                        // over the plain handle: the base behind its
+                        // `callsame` is the native method on that handle.
+                        self.call_method_with_values(plain, &name, args)?
                     } else if let ValueView::Mixin(inner, _) = invocant.view() {
                         // A role mixed into a container-subclass instance
                         // (`$dict but Info`): the instance's own storage is

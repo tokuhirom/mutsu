@@ -156,7 +156,7 @@ pub(crate) fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
         Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
         // `(1 xx *) Z <a b>`: a meta operator's operands are curry-spine
         // positions too, so the infinite repeat inside them stays a repeat.
-        Expr::MetaOp { left, right, .. } => {
+        Expr::MetaOp { left, right, .. } | Expr::HyperOp { left, right, .. } => {
             contains_xx_with_bare_whatever(left) || contains_xx_with_bare_whatever(right)
         }
         // Follow only the curry spine (the operand positions `contains_whatever`
@@ -288,6 +288,14 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             ..
         } if name == "xx" => contains_whatever(left) || contains_whatever(right),
         Expr::Binary { left, right, .. } => {
+            contains_whatever(left)
+                || contains_whatever(right)
+                || is_wrapped_whatevercode(left)
+                || is_wrapped_whatevercode(right)
+        }
+        // A hyper operator is not Whatever-aware: `(1, 2) »+» *` is a
+        // WhateverCode like any other infix with a `*` operand (#16402).
+        Expr::HyperOp { left, right, .. } => {
             contains_whatever(left)
                 || contains_whatever(right)
                 || is_wrapped_whatevercode(left)

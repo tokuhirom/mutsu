@@ -17,8 +17,7 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
-/// The hidden attribute holding the native value of a BOOT scalar box.
-const BOOT_VALUE: &str = "__mutsu_boot_value";
+use crate::value::BOOT_SCALAR_VALUE_ATTR as BOOT_VALUE;
 
 /// The BOOT scalar type behind `name`, as the `is*` test spells it.
 // Cost: O(1).
@@ -96,16 +95,7 @@ impl Interpreter {
     /// The native value inside a BOOT scalar box (`None` for any other value).
     // Cost: O(1).
     pub(crate) fn unbox_boot_scalar(obj: &Value) -> Option<Value> {
-        let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = obj.view()
-        else {
-            return None;
-        };
-        boot_scalar_kind(class_name.as_str())?;
-        attributes.as_map().get(BOOT_VALUE).cloned()
+        obj.boot_scalar_payload()
     }
 
     /// `nqp::isint` / `isnum` / `isstr`: 1 for a BOOT box (or type object) of

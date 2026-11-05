@@ -657,6 +657,28 @@ impl Interpreter {
             .flat_map(|op| op.declared_vars.iter().map(|name| name.resolve().to_string()))
             .collect();
         for op in &role.deferred_body {
+            // A lexical `my constant` is initialised once per role, not once
+            // per composing class (#16255): a later composition of a
+            // non-parametric role reuses the binding the first one persisted.
+            // (`my @x = $?CLASS.^attributes` stays per composition.)
+            let constant_key = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if role_arg_values.is_empty() => Some((base_role_name.to_string(), name.clone())),
+                _ => None,
+            };
+            let reused = constant_key
+                .as_ref()
+                .and_then(|key| self.registry().role_evaluated_constants.get(key).cloned());
+            if let Some(bindings) = reused {
+                for (env_key, value) in bindings {
+                    self.env.insert(env_key, value);
+                }
+                continue;
+            }
             // A sub-level `proto` declares one routine per role: registered
             // by the first composition (or, exported, at declaration), never
             // again.
@@ -717,13 +739,17 @@ impl Interpreter {
             // (`register_role_body_exported_subs`), and a body statement
             // that calls one (`my constant H = det()`) finds it there. A
             // second copy of such a sub under the composer's package was
-            // what a trait applied the second time (#13645).
+            // what a trait applied the second time (#13645). An `is export`
+            // sub is no exception: composed into a class of another
+            // compunit it would otherwise be re-declared in the composer's
+            // package, where the role's private helpers (`SL::FS::ser`)
+            // are out of reach of its body (Shareable via Storable::Lite).
             let runs_in_role_package = role_lexical_package.is_none()
                 && op.kind == crate::opcode::DeferredBodyOpKind::Plain
                 && !(is_lexical_sub_decl
                     && matches!(
                         op.raw,
-                        Stmt::SubDecl { multi: true, .. } | Stmt::SubDecl { is_export: true, .. }
+                        Stmt::SubDecl { multi: true, .. }
                     ));
             let lexical_sub_name = match &op.raw {
                 Stmt::SubDecl {
@@ -813,6 +839,18 @@ impl Interpreter {
                 && let Some(key) = sub_proto_key
             {
                 self.registry_mut().role_registered_sub_protos.insert(key);
+            }
+            if r.is_ok()
+                && let Some(key) = constant_key
+            {
+                let term_key = format!("{}{}", crate::term_names::TERM_PREFIX, key.1);
+                let bindings: Vec<(String, Value)> = [key.1.clone(), term_key]
+                    .into_iter()
+                    .filter_map(|k| self.env.get(&k).cloned().map(|v| (k, v)))
+                    .collect();
+                if !bindings.is_empty() {
+                    self.registry_mut().role_evaluated_constants.insert(key, bindings);
+                }
             }
             if r.is_ok()
                 && let (Some(package), Some(name)) =
@@ -1130,6 +1168,22 @@ impl Interpreter {
                                 param.clone(),
                                 Value::package(Symbol::intern(arg)),
                             );
+                            // The parent's own parameter is bound for the class
+                            // too, so its `BUILD`/methods see `T` as the argument
+                            // this role forwarded (`role Q[::U] does R[U]` composed
+                            // as `Q[Array]` binds R's `T` to `Array`, #15588).
+                            // Only a type-named argument: a literal (`R["g"]`) is a
+                            // value the role registration already bound.
+                            if arg
+                                .chars()
+                                .next()
+                                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                                && !arg.contains(['"', '\''])
+                            {
+                                cx.out
+                                    .class_role_param_bindings
+                                    .insert(param.clone(), Value::package(Symbol::intern(arg)));
+                            }
                         }
                         self.propagate_composed_role_parent_specs(
                             cx,

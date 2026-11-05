@@ -74,6 +74,11 @@ fn streamed_owners(target: &Value) -> Option<&'static [&'static str]> {
         ValueView::LazyList(ll) => (ll.is_genuinely_lazy()
             && (ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch()))
         .then(|| super::lazy_pull::owners_of(target)),
+        // An untouched `IO::Handle.lines` / `.words` Seq: its stages pull the
+        // handle a line at a time (#16065), as the `Seq` it is.
+        ValueView::Seq(body) if body.has_io_lines_pipe_source() => {
+            Some(super::lazy_pull::owners_of(target))
+        }
         _ if Interpreter::is_lazy_pipe_source(target) => Some(RANGE),
         _ => None,
     }

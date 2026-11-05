@@ -37,14 +37,21 @@ impl Interpreter {
     /// and the same CHECK-time validation (undeclared names, redeclarations,
     /// ...) before it runs (#13295).
     pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
-        self.with_eval_import_scope(|interp| {
-            interp.run_compunit(|interp| {
-                interp.isolated_eval_unit(|interp| {
-                    interp.validate_eval_source(&stmts)?;
-                    interp.run_eval_unit_stmts(stmts)
+        // The tree was parsed elsewhere, so the parser's import table holds
+        // none of what its `use` statements import; the CHECK-time routine
+        // scan reads it (#15868).
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
+        let result = crate::parser::with_rakuast_lexical_scope(|| {
+            Self::register_lowered_unit_imports(&stmts);
+            self.with_eval_import_scope(|interp| {
+                interp.run_compunit(|interp| {
+                    interp.isolated_eval_unit(|interp| interp.validate_and_run_eval_unit(stmts, true))
                 })
             })
-        })
+        });
+        crate::parser::clear_parser_lib_paths();
+        result
     }
 
     /// Run `body` as an EVAL'd compilation unit: snapshot what the unit may
@@ -60,7 +67,22 @@ impl Interpreter {
         let saved_eval_chain = self.module.eval_import_chain.replace(eval_chain);
         let eval_unit = self.executing_unit_sym();
         let saved_eval_unit = self.module.eval_import_unit.replace(eval_unit);
+        let saved_unit_depth =
+            std::mem::replace(&mut self.module.eval_unit_block_depth, self.block_scope_depth + 1);
+        let saved_unit_routine_depth =
+            std::mem::replace(&mut self.module.eval_unit_routine_depth, self.routine_stack.len());
+        self.module.eval_unit_counter += 1;
+        let unit_capture_key: std::sync::Arc<str> = std::sync::Arc::from(format!(
+            "{}{}>",
+            crate::runtime::EVAL_UNIT_CAPTURE_PREFIX,
+            self.module.eval_unit_counter
+        ));
+        let saved_unit_capture_key = self
+            .module
+            .eval_unit_capture_key
+            .replace(unit_capture_key.clone());
         let routine_snapshot = self.snapshot_routine_registry();
+        let hidden_local_subsets = self.hide_dynamic_callers_local_subs();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
         // reinstates module-owned routines so a later re-use can find the
@@ -207,6 +229,9 @@ impl Interpreter {
         }
         self.module.eval_import_chain = saved_eval_chain;
         self.module.eval_import_unit = saved_eval_unit;
+        self.module.eval_unit_block_depth = saved_unit_depth;
+        self.module.eval_unit_routine_depth = saved_unit_routine_depth;
+        self.module.eval_unit_capture_key = saved_unit_capture_key;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;
@@ -214,6 +239,7 @@ impl Interpreter {
         // snippet: a later EVAL starts in the caller's package again (#12135).
         self.set_current_package(saved_package);
         self.restore_routine_registry_eval(routine_snapshot);
+        self.restore_hidden_local_subsets(hidden_local_subsets);
         let eval_main_keys: Vec<Symbol> = self
             .registry()
             .functions

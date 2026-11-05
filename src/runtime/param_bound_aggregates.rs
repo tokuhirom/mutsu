@@ -18,7 +18,7 @@
 //! its value is dropped, so no other container can sit at a recorded address
 //! while the entry exists. Dead entries are swept on an amortized schedule.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::gc::WeakGc;
 use crate::value::{ArrayData, HashData, Value, ValueView};
@@ -61,7 +61,9 @@ fn identify(value: &Value) -> Option<(usize, Bound)> {
 /// The live parameter-bound containers of one name.
 #[derive(Clone, Default)]
 struct NameBindings {
-    by_addr: HashMap<usize, Bound>,
+    /// Keyed by container address; Fx-hashed (the key is a heap address and a
+    /// name, never program input, and every `@`/`%` parameter bind probes this).
+    by_addr: FxHashMap<usize, Bound>,
     /// Entry count at which dead entries are swept, doubled after each sweep
     /// so the amortized cost per recorded binding stays constant.
     sweep_at: usize,
@@ -72,7 +74,7 @@ const MIN_SWEEP_AT: usize = 16;
 /// Name -> every live container a parameter of that name was bound to.
 #[derive(Clone, Default)]
 pub(crate) struct ParamBoundAggregates {
-    names: HashMap<String, NameBindings>,
+    names: FxHashMap<String, NameBindings>,
 }
 
 impl ParamBoundAggregates {

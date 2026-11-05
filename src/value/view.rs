@@ -115,6 +115,7 @@ pub enum ValueView<'a> {
         storer: &'a Value,
         subclass: &'a Option<(Symbol, ProxySubclassAttrs)>,
         decontainerized: bool,
+        var_object: bool,
     },
     ParametricRole {
         base_name: Symbol,
@@ -682,6 +683,7 @@ impl Value {
             storer: Box::new(storer),
             subclass,
             decontainerized,
+            var_object: false,
         })
     }
 
@@ -742,6 +744,20 @@ impl Value {
     #[inline]
     pub(crate) fn is_proxy_value(&self) -> bool {
         self.0.is_proxy()
+    }
+
+    /// Whether this is a `Proxy` that `.VAR` produced: the container object
+    /// itself, which a store lands as a value instead of FETCHing it.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_proxy_var_object(&self) -> bool {
+        matches!(
+            self.view(),
+            ValueView::Proxy {
+                var_object: true,
+                ..
+            }
+        )
     }
 
     /// Whether this is a string-keyed `Pair` (`ValueView::Pair`). A pure tag
@@ -858,6 +874,20 @@ impl Value {
         self.0.is_mixin()
     }
 
+    /// Whether this is a scalar leaf (`Int`, `Num`, `Str`, `Bool`, `Nil`, a type
+    /// object) that no container walk descends into. A pure tag probe.
+    #[inline]
+    pub(crate) fn is_scalar_leaf(&self) -> bool {
+        self.0.is_scalar_leaf()
+    }
+
+    /// `flat`'s instance-scan class of this word from its tag alone; see
+    /// `peek::flat_scan_class`.
+    #[inline]
+    pub(crate) fn flat_scan_class(&self) -> Option<bool> {
+        self.0.flat_scan_class()
+    }
+
     /// Whether this is a `Seq`. A pure tag probe (see [`Self::is_junction_value`]).
     #[inline]
     pub(crate) fn is_seq_value(&self) -> bool {
@@ -872,6 +902,13 @@ impl Value {
     #[inline]
     pub(crate) fn may_hide_a_stringifiable_list(&self) -> bool {
         self.0.may_hide_a_stringifiable_list()
+    }
+
+    /// Whether this is a `Pair` or a plain `Hash`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_pair_or_hash_value(&self) -> bool {
+        self.0.is_pair_or_hash()
     }
 
     /// Whether this is a `LazyList`. A pure tag probe (see
@@ -1001,6 +1038,7 @@ impl Value {
                 storer,
                 subclass,
                 decontainerized,
+                ..
             } => Some((*fetcher, *storer, subclass, decontainerized)),
             _ => None,
         }

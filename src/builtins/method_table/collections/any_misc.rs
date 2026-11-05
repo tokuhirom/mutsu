@@ -134,6 +134,8 @@ pub(crate) fn serial(target: &Value, _args: &[Value]) -> Result<Value, RuntimeEr
 // Cost: O(e), e = elements of the invocant list.
 pub(crate) fn chrs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let val_to_i64 = |v: &Value| -> i64 {
+        // An `IntStr` (`<67 97>` elements) reads as its integer part.
+        let v = crate::value::rat_parts::unwrap_mixin(v.clone());
         match v.view() {
             ValueView::Int(i) => i,
             ValueView::Num(f) => f as i64,
@@ -144,7 +146,14 @@ pub(crate) fn chrs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
     // ...) cannot be converted: `chrs` answers a `Failure` (#13195).
     let refused = |elems: &[Value]| -> Option<Value> {
         elems.iter().enumerate().find_map(|(index, elem)| {
-            (!matches!(elem.view(), ValueView::Int(_) | ValueView::Str(_))).then(|| {
+            // An `IntStr` is an `Int` (and a `Str`); `RatStr`/`NumStr` are neither.
+            let base = match elem.view() {
+                ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Int(_)) => {
+                    inner.as_ref().clone()
+                }
+                _ => elem.clone(),
+            };
+            (!matches!(base.view(), ValueView::Int(_) | ValueView::Str(_))).then(|| {
                 RuntimeError::type_check_operation_failure(
                     &format!("converting element #{index} to .chr"),
                     elem.clone(),

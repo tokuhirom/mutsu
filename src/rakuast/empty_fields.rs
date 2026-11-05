@@ -42,7 +42,8 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
         | C::CallNameWithoutParentheses
         | C::CallMethod
         | C::CallPrivateMethod
-        | C::CallNameAsMethod => &["args"],
+        | C::CallNameAsMethod
+        | C::CallMetaMethod => &["args"],
         C::Sub | C::PointyBlock => &["signature"],
         _ => &[],
     }
@@ -68,6 +69,7 @@ pub(super) fn empty_node(node: &RakuAstNode, field: &str, class: RakuAstClass) -
         origin: super::NodeOrigin(
             node.origin.1.get(field).cloned(),
             EmptyOrigins::default(),
+            None,
             None,
         ),
     }))
@@ -102,6 +104,7 @@ pub(crate) fn materialized(node: &RakuAstNode) -> Option<RakuAstNode> {
     }
     let declared = super::fields::model_fields(node.class);
     let mut out = node.clone();
+    let before_len = out.fields.len();
     for name in names {
         if out.fields.iter().any(|f| f.name == Some(*name)) {
             continue;
@@ -130,5 +133,7 @@ pub(crate) fn materialized(node: &RakuAstNode) -> Option<RakuAstNode> {
             },
         );
     }
-    Some(out)
+    // A class that lists a visited field but declares no empty node for it
+    // has nothing to fill in.
+    (out.fields.len() > before_len).then_some(out)
 }

@@ -135,7 +135,14 @@ fn substr_rw_row(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(place.value().descalarize().view(), ValueView::Str(_)) {
+    // A `Str` or a `but`-mixed one (`"abc" but R`, whose roles may add an
+    // `AT-POS` that calls `SELF.substr-rw`).
+    let is_str = match place.value().descalarize().view() {
+        ValueView::Str(_) => true,
+        ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Str(_)),
+        _ => false,
+    };
+    if !is_str {
         return None;
     }
     let name = place.name()?.to_string();

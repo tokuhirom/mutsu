@@ -11,6 +11,27 @@ fn compound_read_is_positional(target: &Expr, is_positional: bool) -> bool {
     is_positional && !matches!(target, Expr::Index { .. })
 }
 
+/// Whether `index` may be evaluated twice -- once for the read of the current
+/// element, once for the store -- with no observable difference, so the
+/// compound assignment needs no temporary to hold it: a literal, or a plain
+/// scalar variable (`%h{$k} += 1`, `%h<k> += 1`). Both evaluations come before
+/// the right-hand side runs (the store's index is pushed first, `index_first`),
+/// so a right-hand side that rebinds the variable (`%h{$k} += ($k = 5)`) still
+/// meets the subscript the statement started with. Anything else (a call, an
+/// operator, `$k++`) is evaluated once into the temporary.
+fn index_is_reevaluable(index: &Expr) -> bool {
+    match index {
+        Expr::Literal(_) => true,
+        Expr::Var(name) => {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        }
+        _ => false,
+    }
+}
+
 fn compound_index_assign_expr<F>(
     target: Expr,
     index: Expr,
@@ -20,6 +41,23 @@ fn compound_index_assign_expr<F>(
 where
     F: FnOnce(Expr) -> Expr,
 {
+    if index_is_reevaluable(&index) {
+        // No temporary and no isolating block: the read and the store each
+        // evaluate the subscript themselves (see `index_is_reevaluable`).
+        let lhs_expr = Expr::Index {
+            target: Box::new(target.clone()),
+            index: Box::new(index.clone()),
+            is_positional: compound_read_is_positional(&target, is_positional),
+            spelling: Default::default(),
+        };
+        return Expr::IndexAssign {
+            target: Box::new(target),
+            index: Box::new(index),
+            value: Box::new(build_assigned_value(lhs_expr)),
+            is_positional,
+            spelling: Default::default(),
+        };
+    }
     let tmp_idx = format!(
         "__mutsu_idx_{}",
         TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)

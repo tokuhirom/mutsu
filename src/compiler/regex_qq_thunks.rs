@@ -87,10 +87,14 @@ impl Compiler {
     /// The closure a `"..."` atom's `body` lowers to: the body read as a qq
     /// string, as a block. `None` when the body interpolates nothing.
     pub(super) fn regex_qq_thunk_expr(body: &str) -> Option<Expr> {
-        let expr = crate::parse_dispatch::parse_qq_interpolation(body).ok()?;
+        let mut expr = crate::parse_dispatch::parse_qq_interpolation(body).ok()?;
         if matches!(expr, Expr::Literal(_)) {
             return None;
         }
+        // The body is parsed here, not by the unit's parse, so no lowering
+        // pass has taken the spellings (a late-classified bareword, `{ Q }`)
+        // off it: the compiler accepts none.
+        crate::ast::spelled::strip_spelling(&mut expr);
         Some(Expr::AnonSub {
             body: vec![Stmt::Expr(expr)],
             is_rw: false,

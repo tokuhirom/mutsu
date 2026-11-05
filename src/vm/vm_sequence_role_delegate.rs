@@ -86,7 +86,26 @@ impl Interpreter {
             && (self.has_user_method(&cn, "iterator") || attributes.contains_key("iterator"))
     }
 
-    // Cost: O(n) to drain the iterator, n = items the iterator yields.
+    /// How many items `method(args)` of a `Sequence` needs from its iterator:
+    /// `Some(n)` for a prefix consumer (`head(n)`, `head`, a bare `first`,
+    /// `AT-POS(i)`), `None` when it needs the whole sequence. Rakudo's
+    /// `Sequence` pulls these lazily, so an endless iterator still answers.
+    // Cost: O(1).
+    fn sequence_prefix_need(method: &str, args: &[Value]) -> Option<usize> {
+        let int_arg = |v: &Value| match v.deref_container().view() {
+            ValueView::Int(i) if i >= 0 => usize::try_from(i).ok(),
+            _ => None,
+        };
+        match (method, args) {
+            ("head", []) | ("first", []) => Some(1),
+            ("head", [n]) => int_arg(n),
+            ("AT-POS", [i]) => int_arg(i).and_then(|i| i.checked_add(1)),
+            _ => None,
+        }
+    }
+
+    // Cost: O(n) to drain the iterator, n = items the iterator yields; a
+    // prefix consumer (`head(k)`, `AT-POS(i)`) pulls only that prefix, O(k).
     pub(crate) fn try_sequence_role_delegate(
         &mut self,
         target: &Value,
@@ -142,15 +161,45 @@ impl Interpreter {
         }
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
+        let need = Self::sequence_prefix_need(method, args);
+        // `map` / `grep` / `first(matcher)` are lazy in Rakudo's `Sequence`: a
+        // lazy `Seq` over the class's own iterator takes the call, so a
+        // following `head(n)` pulls only what it needs and an endless iterator
+        // answers (#16133).
+        if matches!(method, "map" | "grep") || (method == "first" && !args.is_empty()) {
+            let iterator = if self.has_user_method(&cn, "iterator") {
+                self.user_iterator_of(target)
+            } else {
+                Ok(attributes
+                    .as_map()
+                    .get("iterator")
+                    .cloned()
+                    .unwrap_or(Value::NIL))
+            };
+            let iterator = match iterator {
+                Ok(iterator) => iterator,
+                Err(e) => return Some(Err(e)),
+            };
+            let seq = self.try_native_seq_construct(&[iterator]);
+            if method == "first" {
+                // Stops pulling at the first match.
+                return match self.first_over_map_grep_seq(&seq, method, args) {
+                    Ok(Some(hit)) => Some(Ok(hit)),
+                    Ok(None) => Some(self.dispatch_on_list_value(seq, method_sym, args)),
+                    Err(e) => Some(Err(e)),
+                };
+            }
+            return Some(self.dispatch_on_list_value(seq, method_sym, args));
+        }
         let items = if self.has_user_method(&cn, "iterator") {
             if matches!(target.view(), ValueView::Mixin(..)) {
                 // The class's own `iterator`, with the mixed value as `self`
                 // (not the Sequence role's, which would wrap the instance).
                 self.call_user_iterator_on_mixin(target)
-                    .and_then(|iterator| self.drive_iterator_value_items(iterator))
+                    .and_then(|iterator| self.drive_iterator_value_items_upto(iterator, need))
                     .map(|(items, _)| items)
             } else {
-                self.drive_user_iterator_items(target)
+                self.drive_user_iterator_items_upto(target, need)
             }
         } else {
             let iterator = attributes
@@ -158,7 +207,7 @@ impl Interpreter {
                 .get("iterator")
                 .cloned()
                 .unwrap_or(Value::NIL);
-            self.drive_iterator_value_items(iterator)
+            self.drive_iterator_value_items_upto(iterator, need)
                 .map(|(items, advanced)| {
                     // The cursor lives in the iterator: keep the moved one, so a
                     // second `.List` continues where the first stopped.
@@ -174,9 +223,21 @@ impl Interpreter {
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
-        if let Some(r) = self.try_native_method(&list, method_sym, args) {
-            return Some(r);
+        Some(self.dispatch_on_list_value(list, method_sym, args))
+    }
+
+    /// `method(args)` on the list-ish `value` the sequence's items became:
+    /// the native method first, then the compiled/interpreted dispatch.
+    // Cost: that of the method called.
+    fn dispatch_on_list_value(
+        &mut self,
+        value: Value,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(r) = self.try_native_method(&value, method_sym, args) {
+            return r;
         }
-        Some(self.try_compiled_method_or_interpret_sym(list, method_sym, args.to_vec()))
+        self.try_compiled_method_or_interpret_sym(value, method_sym, args.to_vec())
     }
 }

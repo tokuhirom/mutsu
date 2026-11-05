@@ -5,12 +5,13 @@ use super::methods_signature_errors::{
 use super::*;
 
 impl Interpreter {
+    // Cost: O(a + d), a = arguments, d = shape dimensions.
     pub(super) fn shaped_dims_from_new_args(
         &self,
         args: &[Value],
     ) -> Result<Option<Vec<usize>>, RuntimeError> {
         let shape_val = match args.iter().find_map(|arg| match arg.view() {
-            ValueView::Pair(name, value) if name == "shape" => Some(value.clone()),
+            ValueView::Pair(name, value) if name == "shape" => Some(value.deref_container()),
             _ => None,
         }) {
             Some(v) => v,
@@ -37,13 +38,9 @@ impl Interpreter {
                         return Ok(None);
                     }
                 }
-                ValueView::Enum { enum_type, .. } => {
-                    let registry = self.registry();
-                    let Some(variants) = registry.enum_types.get(&enum_type.resolve()) else {
-                        return Ok(None);
-                    };
-                    vec![Value::int(variants.len() as i64)]
-                }
+                // An enum VALUE (`my @a[Deuce]`) is its numeric value; only the
+                // enum TYPE object above counts its variants.
+                ValueView::Enum { value, .. } => vec![Value::int(value.as_i64())],
                 _ => return Ok(None),
             }
         };
@@ -89,13 +86,10 @@ impl Interpreter {
                         return Ok(None);
                     }
                 }
-                ValueView::Enum { enum_type, .. } => {
-                    let registry = self.registry();
-                    let Some(variants) = registry.enum_types.get(&enum_type.resolve()) else {
-                        return Ok(None);
-                    };
-                    variants.len()
-                }
+                ValueView::Enum { value, .. } => match value.as_i64() {
+                    i if i > 0 => i as usize,
+                    i => return Err(RuntimeError::illegal_dimension_in_shape(i)),
+                },
                 _ => return Ok(None),
             };
             dims.push(n);

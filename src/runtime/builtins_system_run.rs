@@ -121,7 +121,7 @@ impl Interpreter {
         let opts_env: Option<HashMap<String, String>> = if opts.env_explicit {
             Some(opts.env.clone())
         } else {
-            match self.env.get("%*ENV").map(Value::view) {
+            match self.process_env_hash().as_ref().map(Value::view) {
                 Some(ValueView::Hash(map)) => Some(
                     map.iter()
                         .map(|(k, v)| (k.clone(), v.to_string_value()))
@@ -242,6 +242,7 @@ impl Interpreter {
                                 child,
                                 capture_out: opts.capture_out,
                                 capture_err: opts.capture_err,
+                                bin: opts.bin,
                             },
                         );
                     }
@@ -531,7 +532,7 @@ impl Interpreter {
             for (k, v) in opts.env {
                 command.env(k, v);
             }
-        } else if let Some(ValueView::Hash(map)) = self.env.get("%*ENV").map(Value::view) {
+        } else if let Some(ValueView::Hash(map)) = self.process_env_hash().as_ref().map(Value::view) {
             command.env_clear();
             for (k, v) in map.iter() {
                 command.env(k, v.to_string_value());

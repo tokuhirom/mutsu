@@ -1,27 +1,26 @@
 #!/bin/bash
-# The RakuAST frontend ratchets (ADR-10723 Stage 0, #10733; Stage 3 flip).
+# The RakuAST write-direction ratchet (ADR-10723; RakuAST C1, #15759).
 #
 # Since Stage 3 the default frontend runs every compilation unit as `parse ->
 # RakuAST -> lower` (src/rakuast/frontend.rs), so "passes by default" is what
 # `make test` already gates. One ratchet remains here:
 #
-# - `check` runs ci/rakuast-frontend-passing.txt under MUTSU_RAKUAST=convert,
-#   the level where no subtree crosses as the parser's own tree and every node
-#   goes through `convert` and `lower` (what `.AST` and `EVAL($ast)` do). The
-#   list may only grow.
+# - `eval-check` runs ci/rakuast-ast-eval-passing.txt through
+#   scripts/run-t-ast-eval.sh: each file runs as `EVAL(slurp($file).AST)`, the
+#   write direction of the RakuAST layer through the public API. It replaced the
+#   `MUTSU_RAKUAST=convert` test mode (and its ci/rakuast-frontend-passing.txt),
+#   which is gone. The read direction is `scripts/ast-text-corpus.sh check`.
 #
 # Usage:
-#   scripts/rakuast-frontend.sh check    # run the listed files in the mode; fail if any fails
-#   scripts/rakuast-frontend.sh survey   # run every t/ file in the mode; print the count
-#   scripts/rakuast-frontend.sh update   # survey, then rewrite the list (only ever adds files)
-#   scripts/rakuast-frontend.sh causes   # why the files outside the list do not pass (see below)
+#   scripts/rakuast-frontend.sh eval-check   # run the listed files; fail if any fails
+#   scripts/rakuast-frontend.sh eval-update  # run every t/ file as EVAL($ast); add the new passes to the list
 #
-# `causes` runs every t/ file that is NOT in the list and records, in
-# tmp/rakuast-causes/results.tsv, `PASS`, `DIFF` (runs, but fails differently from
-# the ordinary frontend) or `REFUSE` (the first construct the conversion or the
-# lowering refuses), then prints the causes by file count
-# (scripts/rakuast-causes.py). A file is counted under its FIRST refusal only, so a
-# cause's count is an upper bound on what fixing it moves into the list.
+# A file that reads `$?FILE`, `$?DIR`, `$*PROGRAM` or `$?LINE` names the driver
+# (scripts/ast-eval-driver.raku) when run this way, as it would on rakudo, so it
+# can never join the list.
+#
+# Run it against a release build with the precompile cache removed
+# (`rm -rf ~/.cache/mutsu`): CI is always cold, and a warm cache hid failures.
 #
 #   MUTSU_BIN  interpreter to run (default target/release/mutsu)
 #   JOBS       parallel jobs (default: nproc)
@@ -31,91 +30,45 @@ cd "$(dirname "$0")/.."
 
 MUTSU_BIN="${MUTSU_BIN:-target/release/mutsu}"
 JOBS="${JOBS:-$(nproc)}"
-LIST=ci/rakuast-frontend-passing.txt
-export MUTSU_BIN MUTSU_RAKUAST="${MUTSU_RAKUAST:-convert}"
+EVAL_LIST=ci/rakuast-ast-eval-passing.txt
+export MUTSU_BIN
 
-# Prints the files among "$@" that pass in the mode.
-passing_files() {
-  printf '%s\n' "$@" | xargs -P "$JOBS" -I{} sh -c \
-    'if scripts/run-t-test.sh "$1" >/dev/null 2>&1; then echo "$1"; fi' _ {} | LC_ALL=C sort
+eval_listed_files() {
+  grep -v -e '^#' -e '^$' "$EVAL_LIST" || true
 }
 
-listed_files() {
-  grep -v -e '^#' -e '^$' "$LIST" || true
-}
-
-case "${1:-check}" in
-  check)
+case "${1:-eval-check}" in
+  eval-check)
     missing=0
     while read -r f; do
       if [ ! -f "$f" ]; then
-        echo "rakuast-frontend: $f is listed in $LIST but does not exist; remove it" >&2
+        echo "rakuast-frontend: $f is listed in $EVAL_LIST but does not exist; remove it" >&2
         missing=1
       fi
-    done < <(listed_files)
+    done < <(eval_listed_files)
     [ "$missing" -eq 0 ] || exit 1
     # prove names each failing file, which a bare count would not.
-    mapfile -t files < <(listed_files)
-    echo "rakuast-frontend: ${#files[@]} files must pass under MUTSU_RAKUAST=$MUTSU_RAKUAST"
-    prove -j"$JOBS" --merge -e scripts/run-t-test.sh "${files[@]}"
+    mapfile -t files < <(eval_listed_files)
+    echo "rakuast-frontend: ${#files[@]} files must pass as EVAL(slurp(\$file).AST)"
+    prove -j"$JOBS" --merge -e scripts/run-t-ast-eval.sh "${files[@]}"
     ;;
-  survey | update)
+  eval-update)
     mapfile -t all < <(find t -name '*.t' | LC_ALL=C sort)
-    pass=$(passing_files "${all[@]}")
-    count=$(printf '%s\n' "$pass" | grep -c . || true)
-    echo "rakuast-frontend: $count / ${#all[@]} t/ files pass under MUTSU_RAKUAST=$MUTSU_RAKUAST"
-    if [ "$1" = update ]; then
-      # A ratchet only grows: keep every file already listed that still exists,
-      # even if it failed this survey (`check` is what reports that).
-      {
-        sed -n '/^#/p' "$LIST"
-        { listed_files | while read -r f; do [ -f "$f" ] && echo "$f"; done; printf '%s\n' "$pass"; } |
-          grep . | LC_ALL=C sort -u
-      } > "$LIST.new"
-      mv "$LIST.new" "$LIST"
-      echo "rakuast-frontend: $LIST now lists $(listed_files | wc -l) files"
-    fi
-    ;;
-  causes)
-    out=tmp/rakuast-causes
-    mkdir -p "$out"
-    find t -name '*.t' | LC_ALL=C sort > "$out/all.txt"
-    listed_files | LC_ALL=C sort > "$out/listed.txt"
-    LC_ALL=C comm -23 "$out/all.txt" "$out/listed.txt" > "$out/outside.txt"
-    echo "rakuast-frontend: $(wc -l < "$out/outside.txt") t/ files are outside $LIST"
-    cause_of() {
-      f="$1"
-      msg=$(timeout 30 "$MUTSU_BIN" "$f" 2>&1 >/dev/null </dev/null |
-        grep -m1 -o 'does not round-trip through RakuAST: .*' | head -c 400)
-      if [ -n "$msg" ]; then
-        printf 'REFUSE\t%s\t%s\n' "$f" "${msg#does not round-trip through RakuAST: }"
-      else
-        timeout 30 "$MUTSU_BIN" "$f" >/dev/null 2>&1 </dev/null
-        rc=$?
-        if [ "$rc" -eq 0 ]; then
-          printf 'PASS\t%s\n' "$f"
-        elif [ "$rc" -ge 128 ] && [ "$rc" -ne 143 ]; then
-          # Killed by a signal (139 = SIGSEGV, 134 = SIGABRT, ...): a crash of
-          # the interpreter, not a diff. The file is named so it can be rerun
-          # under the debugger (#12499). A `timeout` expiry (124) is a DIFF.
-          printf 'CRASH\t%s\t%s\n' "$f" "$rc"
-        else
-          printf 'DIFF\t%s\n' "$f"
-        fi
-      fi
-    }
-    export -f cause_of
-    xargs -P "$JOBS" -I{} bash -c 'cause_of {}' < "$out/outside.txt" > "$out/results.tsv"
-    python3 -I scripts/rakuast-causes.py "$out/results.tsv"
-    # A crash is never filed under DIFF: print the files so the run that hit it
-    # is not lost (#12499).
-    if grep -q '^CRASH' "$out/results.tsv"; then
-      echo "rakuast-frontend: the interpreter was killed by a signal on:" >&2
-      grep '^CRASH' "$out/results.tsv" | cut -f2,3 >&2
-    fi
+    pass=$(printf '%s\n' "${all[@]}" | xargs -P "$JOBS" -I{} sh -c \
+      'if scripts/run-t-ast-eval.sh "$1" >/dev/null 2>&1; then echo "$1"; fi' _ {} | LC_ALL=C sort)
+    echo "rakuast-frontend: $(printf '%s\n' "$pass" | grep -c . || true) / ${#all[@]} t/ files pass as EVAL(slurp(\$file).AST)"
+    # A ratchet only grows: keep every file already listed that still exists.
+    {
+      sed -n '/^#/p' "$EVAL_LIST"
+      { eval_listed_files | while read -r f; do [ -f "$f" ] && echo "$f"; done; printf '%s\n' "$pass"; } |
+        grep . | LC_ALL=C sort -u
+    } > "$EVAL_LIST.new"
+    mv "$EVAL_LIST.new" "$EVAL_LIST"
+    echo "rakuast-frontend: $EVAL_LIST now lists $(eval_listed_files | wc -l) files"
+    echo "rakuast-frontend: run 'scripts/rakuast-frontend.sh eval-check' (cold cache) before committing the list" >&2
     ;;
   *)
-    echo "usage: $0 check|survey|update|causes" >&2
+    echo "usage: $0 eval-check|eval-update" >&2
     exit 2
     ;;
 esac

@@ -23,154 +23,7 @@ const CORE_CODE_REF_FUNCTION_NAMES: &[&str] = &[
     "cache",
 ];
 
-pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
-    "postcircumfix:<[ ]>",
-    "postcircumfix:<{ }>",
-    "defined",
-    "undefine",
-    "say",
-    "print",
-    "put",
-    "note",
-    "dd",
-    "die",
-    "fail",
-    "succeed",
-    "next",
-    "last",
-    "redo",
-    "warn",
-    "sink",
-    "quietly",
-    "exit",
-    "RUN-MAIN",
-    "abs",
-    "is-prime",
-    "sign",
-    "val",
-    "sqrt",
-    "floor",
-    "ceiling",
-    "ceil",
-    "round",
-    "exp",
-    "log",
-    "cis",
-    "sin",
-    "cos",
-    "tan",
-    "asin",
-    "acos",
-    "atan",
-    "sec",
-    "cosec",
-    "cotan",
-    "asec",
-    "acosec",
-    "acotan",
-    "sinh",
-    "cosh",
-    "tanh",
-    "sech",
-    "cosech",
-    "cotanh",
-    "asinh",
-    "acosh",
-    "atanh",
-    "asech",
-    "acosech",
-    "acotanh",
-    "chr",
-    "ord",
-    "unival",
-    "univals",
-    "chars",
-    "chomp",
-    "chop",
-    "flip",
-    "lc",
-    "uc",
-    "tc",
-    "trim",
-    "elems",
-    "end",
-    "keys",
-    "values",
-    "pairs",
-    "sort",
-    "reverse",
-    "rotate",
-    "join",
-    "map",
-    "grep",
-    "roundrobin",
-    "rotor",
-    "push",
-    "pop",
-    "shift",
-    "unshift",
-    "append",
-    "prepend",
-    "dir",
-    "chdir",
-    "QX",
-    "qx",
-    "indir",
-    "run",
-    "splice",
-    "flat",
-    "unique",
-    "repeated",
-    "squish",
-    "min",
-    "max",
-    "minmax",
-    "sum",
-    "any",
-    "all",
-    "none",
-    "one",
-    "so",
-    "not",
-    "truncate",
-    "atan2",
-    "roots",
-    "substr",
-    "substr-rw",
-    "subbuf-rw",
-    "words",
-    "comb",
-    "rand",
-    "sprintf",
-    "zprintf",
-    "printf",
-    "pack",
-    "unpack",
-    "uniname",
-    "uninames",
-    "uniprop",
-    "unimatch",
-    "uniparse",
-    "parse-names",
-    "parse-base",
-    "symlink",
-    "link",
-    "spurt",
-    "slurp",
-    "open",
-    "close",
-    "unlink",
-    "mkdir",
-    "rmdir",
-    "rename",
-    "copy",
-    "move",
-    "chmod",
-    "lines",
-    "get",
-    "prompt",
-    "repl",
-];
+pub(crate) use crate::builtin_functions::BUILTIN_FUNCTION_NAMES;
 
 impl Interpreter {
     /// `.VAR` on a subscript of a NAMED container (`@a[0]`, `%h<k>`). The
@@ -649,6 +502,7 @@ impl Interpreter {
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_temp_method_save" => self.builtin_temp_method_save(&args),
             "__mutsu_push_through_accessor" => self.builtin_push_through_accessor(&args),
             "__mutsu_index_assign_method_lvalue" => self.builtin_index_assign_method_lvalue(&args),
             "__mutsu_index_delete_method_lvalue" => self.builtin_index_delete_method_lvalue(&args),
@@ -674,6 +528,8 @@ impl Interpreter {
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
             "__mutsu_cross_xx" => self.builtin_cross_xx(&args),
             "__mutsu_zip_assign" => self.builtin_zip_assign(&args),
+            "__mutsu_hyper_assign_merge" => self.builtin_hyper_assign_merge(&args),
+            "__mutsu_hyper_assign_view" => self.builtin_hyper_assign_view(&args),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_subscript_adverb_error" => Self::builtin_subscript_adverb_error(&args),
             "__mutsu_subscript_named_adverbs" => self.builtin_subscript_named_adverbs(&args),
@@ -730,6 +586,23 @@ impl Interpreter {
             "__mutsu_quotewords_atom" => self.builtin_quotewords_atom(&args),
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
             "undefine" => Ok(Value::package(crate::symbol::wk::any())),
+            // Compiled in front of every `undefine`: the use is a deprecation.
+            "__mutsu_deprecated_undefine" => {
+                let file = self
+                    .env
+                    .get("*PROGRAM-NAME")
+                    .map(|v| v.deref_container().to_string_value())
+                    .unwrap_or_default();
+                super::deprecation::record_deprecation(
+                    "Core",
+                    "undefine",
+                    "6.e",
+                    "another way: assign a Nil; for Arrays/Hashes, assign Empty or () instead.",
+                    &file,
+                    self.cur_source_line,
+                );
+                Ok(Value::NIL)
+            }
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.
@@ -815,6 +688,13 @@ impl Interpreter {
                 let name = name.to_string_value();
                 let tags: Vec<String> = args[1..].iter().map(|a| a.to_string_value()).collect();
                 let pkg = self.current_package();
+                // A type declared in the module's own `EXPORT::<tag>` stash is
+                // already imported by the stash's own export list; filing a
+                // variable export under the stash package would make the import
+                // bind its short name to nothing (#16332).
+                if Self::export_stash_tag(&pkg).is_some() {
+                    return Ok(Value::NIL);
+                }
                 self.register_exported_var(pkg, name, tags);
                 Ok(Value::NIL)
             }
@@ -1362,13 +1242,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_builtin_function(name: &str) -> bool {
-        // Cost: O(len(name)) -- one hash probe; the slice it indexes is ~150
-        // names, which a linear `contains` compared one by one on every call.
-        static NAMES: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
-            std::sync::OnceLock::new();
-        NAMES
-            .get_or_init(|| BUILTIN_FUNCTION_NAMES.iter().copied().collect())
-            .contains(name)
+        crate::builtin_functions::is_builtin_function(name)
     }
 
     /// MOP pseudo-methods (`WHAT`, `HOW`, `VAR`) that Raku also exposes as

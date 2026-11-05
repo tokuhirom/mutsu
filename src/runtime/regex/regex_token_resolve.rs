@@ -219,6 +219,14 @@ impl Interpreter {
         // alternation.
         self.inject_class_body_statics(sub_pkg.as_str());
         let parsed = self.parse_regex(sub_pat);
+        if let Some(parsed) = &parsed
+            && sub_pat.trim_start().starts_with(":ratchet")
+        {
+            parsed
+                .derived
+                .declared_ratchet
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         if switch_pkg {
             self.set_current_package_shared_sym(saved_pkg);
         }
@@ -612,6 +620,8 @@ impl Interpreter {
                 callable_id: 0,
                 code: 0,
                 fixtures: 0,
+                unit_scoped: false,
+                fixtures_floor: 0,
             };
             interp.record_profile_routine_frame(&frame);
             interp.routine_stack.push(frame);

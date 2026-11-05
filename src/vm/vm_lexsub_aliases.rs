@@ -388,12 +388,25 @@ impl Interpreter {
     /// `name` (the shared cell), or `None`.
     #[inline]
     pub(crate) fn lexsub_alias_slot(&self, name: &str) -> Option<&Value> {
+        self.lexsub_alias_slot_sym(name, None)
+    }
+
+    /// [`Self::lexsub_alias_slot`] for a caller that holds `name` interned (a
+    /// read path's constant-pool symbol): the latest-cell probe then does not
+    /// intern the name again on every read.
+    // Cost: as `lexsub_alias_slot`.
+    #[inline]
+    pub(crate) fn lexsub_alias_slot_sym(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<&Value> {
         if self.active_loop_param_shadows(name) {
             return None;
         }
         match self.lexsub_alias_sym(name) {
             Some(alias) => self.env().get_sym(alias),
-            None => self.lexsub_latest_cell(name),
+            None => self.lexsub_latest_cell(name, name_sym),
         }
     }
 
@@ -409,7 +422,7 @@ impl Interpreter {
     /// answering only where the env has no binding of `name` at all.
     // Cost: O(1) expected; two hash probes.
     #[inline]
-    fn lexsub_latest_cell(&self, name: &str) -> Option<&Value> {
+    fn lexsub_latest_cell(&self, name: &str, name_sym: Option<Symbol>) -> Option<&Value> {
         if self.lexicals.lexsub_latest_cells.is_empty() {
             return None;
         }
@@ -420,7 +433,7 @@ impl Interpreter {
         let entry = self
             .lexicals
             .lexsub_latest_cells
-            .get(&(frame.name, Symbol::intern(name)))?;
+            .get(&(frame.name, name_sym.unwrap_or_else(|| Symbol::intern(name))))?;
         // A program-scope routine of the same name, package and file (a
         // `sub sv { $s }` beside a routine's nested `sub sv { $s }`) runs a
         // body of its own with its own captured cells: the nested sub's
@@ -440,7 +453,7 @@ impl Interpreter {
         match self.lexsub_alias_sym(name) {
             Some(alias) => self.env_mut().get_mut_sym(alias),
             None => {
-                self.lexsub_latest_cell(name)?;
+                self.lexsub_latest_cell(name, None)?;
                 let frame = self.routine_stack().last()?.name;
                 crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                     .get_mut(&(frame, Symbol::intern(name)))

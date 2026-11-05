@@ -7,6 +7,32 @@ use super::source_code_text::CodeText;
 use super::*;
 
 impl Interpreter {
+    /// Prepend every builtin prelude the unit's text `code` asks for. One
+    /// list for every entry that runs a unit's statements (the program and an
+    /// `EVAL`'d string or tree), so a unit that needs a prelude gets it on
+    /// each of them (#16203).
+    // Cost: O(g * n), g = number of gates, n = size of the unit's text view.
+    pub(super) fn inject_unit_preludes(code: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        Self::inject_prelude_roles(code, stmts);
+        Self::inject_iosocket_prelude(code, stmts);
+        Self::inject_repository_spec_prelude(code, stmts);
+        Self::inject_distribution_locally_prelude(code, stmts);
+        Self::inject_trait_mod_does_prelude(code, stmts);
+        Self::inject_trait_mod_of_prelude(code, stmts);
+        Self::inject_trait_mod_is_default_prelude(code, stmts);
+        Self::inject_trait_mod_is_export_prelude(code, stmts);
+        Self::inject_metamodel_role_prelude(code, stmts);
+        Self::inject_enumeration_prelude(code, stmts);
+        Self::inject_iterator_role_prelude(code, stmts);
+        Self::inject_hash_ordered_prelude(code, stmts);
+        Self::inject_x_wrapper_prelude(code, stmts);
+        Self::inject_x_comp_prelude(code, stmts);
+        Self::inject_precomp_api_prelude(code, stmts);
+        Self::inject_formatter_syntax_prelude(code, stmts);
+        Self::inject_deparse_prelude(code, stmts);
+        Self::inject_container_descriptor_prelude(code, stmts);
+    }
+
     /// Prepend builtin prelude role definitions to `stmts` when the source
     /// references them. Currently this provides the parametric `Rational` role
     /// for user classes written as `does Rational[...]`. The prelude is parsed
@@ -220,35 +246,51 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend the `Metamodel::Naming` / `Metamodel::Stashing` metaroles
-    /// ([`METAMODEL_ROLE_PRELUDE`]) to a program that composes either of them.
+    /// Prepend the metaroles a custom HOW composes ([`METAMODEL_ROLE_PRELUDE`]:
+    /// `Naming`, `Stashing`, `DefaultParent`, `Mixins`, ...) to a program or
+    /// module that names them.
     ///
-    /// Gated on the role names themselves rather than on a bare `Metamodel`:
+    /// Gated on each role's own name rather than on a bare `Metamodel`:
     /// `Metamodel::Primitives` is dispatched natively and needs nothing
     /// injected, and `.^name`/`.^compose` mention no `Metamodel::` name at all,
-    /// so keying on the prefix would prepend two role declarations to most
-    /// programs that merely introspect. A program declaring its own role of
-    /// either name keeps it (the prelude would collide with it), exactly as
-    /// [`Self::inject_prelude_roles`] treats `role Rational`.
+    /// so keying on the prefix would prepend role declarations to most
+    /// programs that merely introspect. A role is injected when the source
+    /// names it, and not when the source declares its own role of that name
+    /// (the prelude would collide with it), exactly as
+    /// [`Self::inject_prelude_roles`] treats `role Rational`. Injected for
+    /// modules too: a custom HOW usually lives in one (`UI::HTMLWindow`'s
+    /// `class WindowHOW is Metamodel::ClassHOW does Metamodel::DefaultParent`).
     pub(super) fn inject_metamodel_role_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        let wants_naming =
-            source.contains("Metamodel::Naming") && !source.contains("role Metamodel::Naming");
-        let wants_stashing =
-            source.contains("Metamodel::Stashing") && !source.contains("role Metamodel::Stashing");
-        if !wants_naming && !wants_stashing {
-            return;
-        }
         use std::sync::OnceLock;
-        static METAMODEL_ROLE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = METAMODEL_ROLE_STMTS.get_or_init(|| {
-            crate::runtime::prelude_source::parse_prelude_source(METAMODEL_ROLE_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default()
-        });
-        if prelude.is_empty() {
+        static METAMODEL_ROLE_STMTS: OnceLock<Vec<(String, Vec<Stmt>)>> = OnceLock::new();
+        let mentions_metamodel = source.contains("Metamodel::");
+        if !mentions_metamodel {
             return;
         }
-        let mut combined = prelude.clone();
+        let roles = METAMODEL_ROLE_STMTS.get_or_init(|| {
+            METAMODEL_ROLE_PRELUDE
+                .iter()
+                .map(|(name, code)| {
+                    let parsed = crate::runtime::prelude_source::parse_prelude_source(code)
+                        .map(|(s, _)| s)
+                        .unwrap_or_default();
+                    (format!("Metamodel::{name}"), parsed)
+                })
+                .collect()
+        });
+        let mut combined: Vec<Stmt> = Vec::new();
+        for (full_name, prelude) in roles {
+            if prelude.is_empty()
+                || !source.contains(full_name.as_str())
+                || source.contains(format!("role {full_name}").as_str())
+            {
+                continue;
+            }
+            combined.extend(prelude.iter().cloned());
+        }
+        if combined.is_empty() {
+            return;
+        }
         combined.append(stmts);
         *stmts = combined;
     }
@@ -616,9 +658,19 @@ mod tests {
     #[test]
     fn forward_declared_sub_installs_with_compiled_bytecode() {
         let mut interp = Interpreter::new();
-        let (stmts, _) =
-            crate::parse_dispatch::parse_source("sub add($a, $b); sub add($a, $b) { $a + $b }")
-                .expect("parse");
+        // The parser no longer produces a bodiless `sub add(...);` (rakudo rejects
+        // it, #16210), but an AST built elsewhere (a RakuAST lowering) can carry
+        // an empty-bodied forward declaration: build that shape from the stub.
+        let (mut stmts, _) = crate::parse_dispatch::parse_source(
+            "sub add($a, $b) {...}; sub add($a, $b) { $a + $b }",
+        )
+        .expect("parse");
+        for stmt in stmts.iter_mut() {
+            if let Stmt::SubDecl { body, .. } = stmt {
+                body.clear();
+                break;
+            }
+        }
         interp
             .preregister_top_level_subs(&stmts)
             .expect("preregister");

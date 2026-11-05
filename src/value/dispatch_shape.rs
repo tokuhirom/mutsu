@@ -295,6 +295,8 @@ pub(crate) enum DispatchShape {
     /// `Signature` (opaque): its renderings and parameter list are
     /// attributes the compiler set.
     Signature,
+    /// `Parameter` (opaque): its accessors are attributes the compiler set.
+    Parameter,
     /// A member of an `Int`-valued enum (opaque): a value kind, answering the
     /// rows of the roles Rakudo composes into the enum type.
     EnumNumeric,
@@ -325,7 +327,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 104] = [
+    pub(crate) const ALL: [DispatchShape; 105] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -430,6 +432,7 @@ impl DispatchShape {
         DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
         DispatchShape::Signature,
+        DispatchShape::Parameter,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -708,6 +711,11 @@ impl DispatchShape {
         if const_str_eq(owner, "Capture") {
             return const_list_contains(&CAPTURE_FOR_MATCH, method);
         }
+        // The native integer coercion rows already handle every Cool receiver:
+        // ranges read their count and paths read their string representation.
+        if const_list_contains(crate::native_types::NATIVE_INT_COERCE_METHODS, method) {
+            return true;
+        }
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
                 || const_list_contains(&COOL_TEXT_FOR_MATCH, method)
@@ -721,8 +729,12 @@ impl DispatchShape {
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
                 && const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method))
-            // `IO::Path.chars` is `Cool.chars` of the path (§9.112).
-            || (matches!(self, DispatchShape::IoPath) && const_str_eq(method, "chars"))
+            // `IO::Path.chars` is `Cool.chars` of the path (§9.112), and a
+            // `Range`/`Seq` is `Cool` too: `(1..3).chars` is `"1..3".chars`.
+            || (matches!(
+                self,
+                DispatchShape::IoPath | DispatchShape::Range | DispatchShape::Seq
+            ) && const_str_eq(method, "chars"))
     }
 
     /// Whether `Mu`'s `Int`/`Numeric` row (`method_table::ctors_mop::mu_numeric`)
@@ -780,13 +792,20 @@ impl DispatchShape {
     // miss).
     #[inline]
     pub(crate) fn from_instance_class(class: Symbol) -> Option<DispatchShape> {
-        instance_shapes().get(&class).copied().or_else(|| {
+        if instances::is_known_shapeless(class) {
+            return None;
+        }
+        let shape = instance_shapes().get(&class).copied().or_else(|| {
             // An `Attribute` reblessed by `$attr does R` keeps answering the
             // meta-object's own methods; the mixin type's role methods win
             // over them through the user-override check every row entry makes.
             crate::value::attribute_class::is_attribute_class(class)
                 .then_some(DispatchShape::Attribute)
-        })
+        });
+        if shape.is_none() {
+            instances::note_shapeless(class);
+        }
+        shape
     }
 }
 

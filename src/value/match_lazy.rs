@@ -403,6 +403,16 @@ impl Value {
         match self.0.match_node_weak() {
             Some(weak) => {
                 node.match_memo.set(weak);
+                // The two nodes now present one Match, so the action that ran
+                // for either at the reduction has run for both: the post-parse
+                // walk reaches this Match through `own`, the dispatch ran on
+                // `node` (#16410).
+                if node.reduced.get() {
+                    own.cap.reduced.set();
+                }
+                if own.cap.reduced.get() {
+                    node.reduced.set();
+                }
                 true
             }
             None => false,

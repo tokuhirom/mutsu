@@ -112,7 +112,8 @@ pub(in crate::parser) fn unit_offset_of(input: &str) -> Option<usize> {
 
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
 
-/// Byte offsets of every `\n` in a source buffer, ascending.
+/// Byte offsets of every line break in a source buffer, ascending
+/// ([`crate::str_scan::line_break_offsets`]).
 ///
 /// `current_line_number` is called once per statement *attempt*, backtracking
 /// included — hundreds of thousands of times over one module parse — and used
@@ -124,6 +125,32 @@ static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMAR
 /// sub-parse.
 type NewlineIndex = std::rc::Rc<[usize]>;
 
+thread_local! {
+    /// The line base the next `set_original_source` adopts; see
+    /// [`lend_line_base`].
+    static PENDING_LINE_BASE: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Lend the lines that precede unit offset `offset` to the next parse, which
+/// parses a copy of the unit's text starting there, so its `$?LINE` counts
+/// from the line the copy came from. Undo with [`clear_line_base`].
+pub(in crate::parser) fn lend_line_base(offset: usize) {
+    let lines = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        match (&origin.attempts, origin.attempt_base) {
+            (Some(attempts), Some(_)) => newlines_before(&attempts.borrow().newlines, offset),
+            (_, None) => origin.line_base + newlines_before(origin.newlines(), offset),
+            _ => origin.line_base,
+        }
+    });
+    PENDING_LINE_BASE.with(|p| p.set(Some(lines)));
+}
+
+/// Drop a line base no parse adopted.
+pub(in crate::parser) fn clear_line_base() {
+    PENDING_LINE_BASE.with(|p| p.set(None));
+}
+
 /// Count the newlines that precede `offset` in a buffer whose newline offsets
 /// are `newlines`.
 fn newlines_before(newlines: &[usize], offset: usize) -> i64 {
@@ -132,7 +159,7 @@ fn newlines_before(newlines: &[usize], offset: usize) -> i64 {
 
 /// Collect the newline offsets of `source`.
 fn newline_index(source: &str) -> NewlineIndex {
-    source.match_indices('\n').map(|(i, _)| i).collect()
+    crate::str_scan::line_break_offsets(source).into()
 }
 
 /// The source buffer `$?LINE` is computed against: where it lives, how long it
@@ -155,6 +182,10 @@ struct SourceOrigin {
     attempt_base: Option<usize>,
     /// What the buffer's offsets are relative to in the unit.
     span_base: SpanBase,
+    /// The lines of the enclosing unit that precede this buffer, for a buffer
+    /// that is a copy of a fragment of it (a regex code block): `$?LINE` adds
+    /// them to the line within the copy.
+    line_base: i64,
 }
 
 impl SourceOrigin {
@@ -166,6 +197,7 @@ impl SourceOrigin {
         attempts: None,
         attempt_base: None,
         span_base: SpanBase::Unit,
+        line_base: 0,
     };
 
     fn newlines(&self) -> &[usize] {
@@ -212,6 +244,7 @@ pub(super) fn set_original_source(source: &str) {
             span_base: PENDING_SPAN_BASE
                 .with(|p| p.take())
                 .unwrap_or(SpanBase::Unit),
+            line_base: PENDING_LINE_BASE.with(|p| p.take()).unwrap_or(0),
         };
     });
     fragment_attempts::adopt_lent_attempts();
@@ -407,10 +440,7 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
             let offset = input_ptr - origin.ptr;
             // A fragment copied out of the enclosing unit starts on the line
             // its copy came from.
-            let unit_lines = match (&origin.attempts, origin.attempt_base) {
-                (Some(attempts), Some(base)) => newlines_before(&attempts.borrow().newlines, base),
-                _ => 0,
-            };
+            let unit_lines = origin.line_base;
             return unit_lines + newlines_before(origin.newlines(), offset) + 1;
         }
         // Check leaked regions (from heredoc parsing)

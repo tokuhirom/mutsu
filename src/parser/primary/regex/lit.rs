@@ -1106,6 +1106,13 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
     } else {
         (version, rest)
     };
+    // `v33 => False` is a pair whose key is the bareword `v33` (the fat-arrow
+    // operator quotes a preceding identifier), not the version literal `v33`.
+    if rest.trim_start_matches([' ', '\t']).starts_with("=>")
+        && version.bytes().all(|b| b.is_ascii_alphanumeric())
+    {
+        return Err(PError::expected("version number"));
+    }
     Ok((rest, Expr::Literal(Value::version_from_str(version))))
 }
 

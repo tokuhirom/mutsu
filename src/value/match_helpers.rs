@@ -172,7 +172,7 @@ pub(crate) fn match_value_to(val: &Value) -> i64 {
 // Cost: O(n), n = chars of `.orig` for the ASCII/CRLF scan; a non-trivial
 // subject also pays an O(p) grapheme count, p = chars of the prefix.
 pub(crate) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     let Some(orig) = val.match_orig() else {
         return cp;
     };
@@ -190,7 +190,7 @@ pub(crate) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
 // Cost: O(1) for ASCII without `\r\n`; otherwise O(p), p = chars before the
 // `g`-th grapheme.
 pub(crate) fn grapheme_to_cp_index(text: &str, g: usize) -> usize {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     if text.is_ascii() && !text.contains("\r\n") {
         return g;
     }

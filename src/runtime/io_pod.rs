@@ -183,10 +183,6 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Pod::Config"), attrs)
     }
 
-    pub(crate) fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
-        Self::make_pod_item_with_config(level, contents, ValueMap::default())
-    }
-
     pub(crate) fn make_pod_item_with_config(
         level: i64,
         contents: Vec<Value>,
@@ -284,7 +280,7 @@ impl Interpreter {
         if let Some(rest) = term.strip_prefix('#') {
             let rest = rest.trim_start();
             term = rest.to_string();
-            config.entry("numbered".to_string()).or_insert(Value::TRUE);
+            config.entry("numbered".to_string()).or_insert(Value::int(1));
         }
         let body_lines: Vec<String> = match term_idx {
             Some(i) => all_lines[i + 1..].to_vec(),

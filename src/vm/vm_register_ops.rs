@@ -99,6 +99,28 @@ impl Interpreter {
     /// `topic` (`Some(slot)`, or `Some(NOT_A_LOCAL)` for `env`) captures the
     /// frame's `$_` onto the value for `Regex.Bool` (`RegexClosure::topic`):
     /// a local slot by value, an env-held `$_` as its container cell.
+    /// The `Pragma` name under which a regex closure's scope records its
+    /// defining compunit ([`Self::regex_pattern_has_code`]).
+    pub(crate) const REGEX_UNIT_KEY: &'static str = "regex-unit";
+
+    /// Whether a regex literal's pattern text holds code that runs at match
+    /// time: `$( )`, `<{ }>` or a `{ }` block that is not a `{n,m}` quantifier.
+    /// Only decides whether the defining unit is worth carrying.
+    // Cost: O(n), n = pattern length.
+    fn regex_pattern_has_code(base: &Value) -> bool {
+        let ValueView::Regex(p) = base.view() else {
+            return false;
+        };
+        p.contains("$(") || p.contains("<{") || {
+            let b = p.as_bytes();
+            b.iter().enumerate().any(|(i, &c)| {
+                c == b'{'
+                    && b.get(i + 1)
+                        .is_some_and(|n| !n.is_ascii_digit() && !matches!(n, b',' | b'}' | b'*'))
+            })
+        }
+    }
+
     pub(super) fn capture_regex_closure(
         &mut self,
         code: &CompiledCode,
@@ -174,6 +196,18 @@ impl Interpreter {
                     .as_str()
                     .to_string(),
                 Value::TRUE,
+            );
+        }
+        // The code of a regex literal (`$(f())`, `{ f() }`, `<{ f() }>`) runs
+        // wherever the regex is matched, but the routines it names are those
+        // of the compunit it was written in: carry that unit along (#16512).
+        if Self::regex_pattern_has_code(base) {
+            scope.insert(
+                crate::meta_ns::MetaNs::Pragma
+                    .key_for_str(Self::REGEX_UNIT_KEY)
+                    .as_str()
+                    .to_string(),
+                Value::str(self.current_unit.resolve().to_string()),
             );
         }
         // The defining frame's `$_` (see `RegexClosure::topic`): a set local
@@ -1015,7 +1049,7 @@ impl Interpreter {
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) -> (Vec<Symbol>, Vec<Symbol>) {
         let own_cells = !code.needs_cell_unvouched_locals.is_empty()
-            || !code.needs_cell_unvouched_containers.is_empty();
+            || !code.needs_cell_captured_containers.is_empty();
         if self.frame_authoritative.is_empty() && !own_cells {
             return (Vec::new(), Vec::new());
         }
@@ -1034,7 +1068,7 @@ impl Interpreter {
             let vouched = self.frame_authoritative.contains(sym);
             let own = own_cells
                 && (code.needs_cell_unvouched_locals.contains(sym)
-                    || code.needs_cell_unvouched_containers.contains(sym));
+                    || code.needs_cell_captured_containers.contains(sym));
             if !(vouched || own) {
                 continue;
             }
@@ -1652,9 +1686,7 @@ impl Interpreter {
             && self
                 .env()
                 .capture_view()
-                .get(&crate::symbol::Symbol::intern(
-                    "__mutsu_declared_method_capture",
-                ))
+                .get(&crate::symbol::well_known::declared_method_capture())
                 .is_some_and(|value| value.as_int() == Some(2))
         {
             let capture_view = self.env().capture_view();
@@ -1709,7 +1741,7 @@ impl Interpreter {
         // gate off `alloc_local` get-or-creates by name, so duplicates are
         // structurally impossible and this is byte-identical.
         // An own `@`/`%` the closure rebinds: its declaration gave it a
-        // container cell (`needs_cell_unvouched_containers`); make that a
+        // container cell (`needs_cell_captured_containers`); make that a
         // binding cell, so the closure's `@y := ...` reseats the binding this
         // frame's slot shares (ADR-12529 §3, slice 25). Scalars take the same
         // step in the loop below.
@@ -1736,7 +1768,7 @@ impl Interpreter {
         // slots on purpose: an ordinary `my @a` still takes the decl site, so
         // the per-capture cost ADR-0039 measured (`@o.shift xx $_`) is unchanged.
         let has_unvouched_param_container =
-            !code.needs_cell_unvouched_containers.is_empty() && !code.param_local_slots.is_empty();
+            !code.needs_cell_captured_containers.is_empty() && !code.param_local_slots.is_empty();
         if !has_unvouched
             && !has_unvouched_param_container
             && ((code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
@@ -1766,7 +1798,7 @@ impl Interpreter {
             // creation ops share this code, so keep it lock-free for all.)
             let s = sym.resolve();
             // `@`/`%`/`&` are never boxed here. A container's cell — including
-            // the unvouched-escaping one (`needs_cell_unvouched_containers`) —
+            // the escaping-captured one (`needs_cell_captured_containers`) —
             // is created at its DECLARATION site instead
             // (`box_decl_local_container_cell`, ADR-0039): a closure creation op
             // can run orders of magnitude more often than the declaration it
@@ -1780,7 +1812,7 @@ impl Interpreter {
                 // ... except a PARAMETER, which has no decl site either: deliver
                 // its unvouched-container cell here (see the flag above).
                 if has_unvouched_param_container
-                    && code.needs_cell_unvouched_containers.contains(sym)
+                    && code.needs_cell_captured_containers.contains(sym)
                     && !cc.authoritative_free_vars.contains(sym)
                     && let Some(idx) =
                         Self::resolve_capture_slot(code, &cc.free_var_parent_slots, fv_i, *sym)

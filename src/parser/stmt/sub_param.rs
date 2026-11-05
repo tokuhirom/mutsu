@@ -26,6 +26,7 @@ mod where_constraint;
 // make_param is pub(crate): used from crate::parser::primary::misc::lambda
 pub(crate) use helpers::{
     fold_parenthesised_pointy_params, in_param_default, make_param, parse_literal_param_value,
+    parse_param_default_expr,
 };
 
 // These were pub(super) in the original file (visible within `stmt`).
@@ -34,6 +35,7 @@ pub(super) use method_decl::{
     expr_position_method_decl, mark_params_as_invocant, method_decl, method_decl_body,
     method_decl_body_my, submethod_decl,
 };
+pub(crate) use param_inner::param_spans;
 pub(super) use param_inner::parse_single_param;
 pub(super) use type_constraint::{
     check_invalid_type_smiley, parse_implicit_invocant_marker, parse_of_type_constraint_chain,

@@ -357,7 +357,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
-        self.push_routine_with_visibility(package, name, line, file, def_file, false, 0);
+        self.push_routine_with_visibility(package, name, line, file, def_file, false, 0, false);
     }
 
     /// A routine's `$_` is its own: a typed `$_` the *caller* declared (a
@@ -387,6 +387,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
         is_hidden_from_backtrace: bool,
         code: usize,
+        unit_scoped: bool,
     ) {
         self.drop_inherited_topic_constraint();
         let invocation_id = self.take_invocation_id();
@@ -415,6 +416,8 @@ impl Interpreter {
             callable_id: 0,
             code,
             fixtures: 0,
+            unit_scoped,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -462,6 +465,8 @@ impl Interpreter {
             callable_id,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push_with_fixtures(frame, fixtures);
@@ -532,6 +537,8 @@ impl Interpreter {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -891,7 +898,9 @@ impl Interpreter {
     /// an absent `?ROLE` env key is.
     // Cost: O(1).
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
-        let fixtures = self.frame_fixtures()?;
+        let Some(fixtures) = self.frame_fixtures() else {
+            return self.declaration_site_fixture(sym);
+        };
         if sym == crate::symbol::wk::self_() {
             fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
@@ -900,6 +909,25 @@ impl Interpreter {
             fixtures.role.map(Value::package)
         } else {
             None
+        }
+    }
+
+    /// `?CLASS` / `?ROLE` of a plain named sub (no record of its own): the
+    /// package it was declared in, when that is a class or role body. `self`
+    /// has no declaration-site value (#16099).
+    // Cost: O(1).
+    fn declaration_site_fixture(&self, sym: Symbol) -> Option<Value> {
+        let package = self.routine_stack.plain_sub_frame()?.package;
+        let is_class_decl = sym == crate::symbol::wk::class_decl();
+        let is_role_decl = sym == crate::symbol::wk::role_decl();
+        if !(is_class_decl || is_role_decl) || package.as_str().is_empty() {
+            return None;
+        }
+        let name = package.as_str();
+        if self.is_role(name) {
+            is_role_decl.then(|| Value::package(package))
+        } else {
+            (is_class_decl && self.has_class(name)).then(|| Value::package(package))
         }
     }
 
@@ -1500,17 +1528,6 @@ impl Interpreter {
 
     pub(crate) fn set_current_package(&mut self, pkg: String) {
         let sym = Symbol::intern(&pkg);
-        self.set_current_package_with_sym(pkg, sym);
-    }
-
-    /// [`Self::set_current_package`] for a caller that already holds the
-    /// package's `Symbol` (a `CompiledFunction`'s cached `package_sym`). The
-    /// by-name entry point re-hashed the package name on every named call
-    /// (#7736).
-    pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
-        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
-        debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
-        let _ = pkg;
         self.set_current_package_sym(sym);
     }
 
@@ -1805,6 +1822,8 @@ mod call_site_file_tests {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
+            fixtures_floor: 0,
         }
     }
 

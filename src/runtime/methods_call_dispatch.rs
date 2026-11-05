@@ -163,6 +163,16 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
+        // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
+        // methods beyond the meta-object ones every object answers.
+        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+            && !matches!(method, "WHAT" | "HOW" | "WHO" | "VAR" | "defined")
+            && !method.starts_with('^')
+        {
+            return Err(super::methods_signature_errors::make_method_not_found_error(
+                method, "NQPMu", false,
+            ));
+        }
         if super::any_cool_method_gate::fmt_has_no_candidate(&target, method) {
             return Err(make_multi_no_match_error(method));
         }
@@ -366,6 +376,14 @@ impl Interpreter {
         mut args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
+        // A role method on a mixin this funnel already ran as a straight-line
+        // lane call for arguments of these types goes straight back to it,
+        // ahead of the probes below (#16215).
+        if !args.is_empty()
+            && let Some(result) = self.mixin_front_hit(&target, method, &args)
+        {
+            return result;
+        }
         let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything
@@ -699,6 +717,14 @@ impl Interpreter {
         } else {
             target
         };
+        // A stage over a `Seq.new($iterator)` nothing has pulled (#16132): the
+        // consume step above left it untouched, so run the stage before any
+        // eager implementation reads the still-empty body.
+        if matches!(target.view(), ValueView::Seq(ref body) if body.unpulled_iterator().is_some())
+            && let Some(stage) = self.lazy_stream(&target, method, &args)
+        {
+            return Ok(stage);
+        }
         if target_was_seq
             && method == "iterator"
             && matches!(target.view(), ValueView::Instance { .. })
@@ -1559,6 +1585,33 @@ impl Interpreter {
             return result;
         }
 
+        // `$obj.BUILDALL(@autovivs, %attrinit)` on a `.CREATE`d instance
+        // (a hand-written `bless`): initialise the attributes as `bless` does,
+        // in place, and answer the instance.
+        if method == "BUILDALL"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && let Some(init) = args.get(1)
+            && let ValueView::Hash(init) = init.view()
+        {
+            let named: Vec<Value> = init
+                .iter()
+                .map(|(k, v)| Value::pair(k.to_string(), v.clone()))
+                .collect();
+            let built = self.dispatch_bless(&Value::package(class_name), named)?;
+            if let ValueView::Instance {
+                attributes: built_attrs,
+                ..
+            } = built.view()
+            {
+                attributes.commit_attrs(built_attrs.to_map());
+            }
+            return Ok(target.clone());
+        }
+
         // Custom type method dispatch
         if !matches!(
             method,
@@ -1965,7 +2018,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
-                let attrs = self.collect_class_attributes(&cn);
+                let attrs = self.class_attributes_shared(&cn);
                 let public: Vec<String> = attrs
                     .iter()
                     .filter(|a| a.is_public)

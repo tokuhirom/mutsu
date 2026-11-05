@@ -88,6 +88,14 @@ impl Interpreter {
             vec![derefed_operand]
         } else if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(&ll)?
+        } else if !spec.item_operand
+            && crate::builtins::native_base::has_iterable_payload(&list_value)
+            && let Some(items) = self.try_iterable_instance_items(&list_value)?
+        {
+            // An instance of an `is Range` / `is Seq` subclass is the list it
+            // carries (`[+] Q.new(1, 3)` is `1 + 2 + 3`); a user class that
+            // merely does `Iterable` stays one operand (#15322).
+            items
         } else {
             runtime::value_to_list(&list_value)
         };
@@ -414,7 +422,10 @@ impl Interpreter {
                             out.push(acc.clone());
                             let mut idx = 1usize;
                             while idx + step <= list.len() {
-                                let mut call_args = vec![acc];
+                                // Sized for the accumulator plus the step: `vec![acc]` has
+                                // capacity 1, so the extend reallocated once per fold step.
+                                let mut call_args = Vec::with_capacity(1 + step);
+                                call_args.push(acc);
                                 call_args.extend(list[idx..idx + step].iter().cloned());
                                 let v = self.reduction_step_with_args(
                                     op_shape.as_ref(),
@@ -656,7 +667,8 @@ impl Interpreter {
                         let mut right_edge = list.len().saturating_sub(1);
                         while right_edge >= step {
                             let start = right_edge - step;
-                            let mut call_args = list[start..right_edge].to_vec();
+                            let mut call_args = Vec::with_capacity(step + 1);
+                            call_args.extend(list[start..right_edge].iter().cloned());
                             call_args.push(acc);
                             let v = self.reduction_step_with_args(
                                 op_shape.as_ref(),
@@ -672,7 +684,8 @@ impl Interpreter {
                         let mut acc = list[0].clone();
                         let mut idx = 1usize;
                         while idx + step <= list.len() {
-                            let mut call_args = vec![acc];
+                            let mut call_args = Vec::with_capacity(1 + step);
+                            call_args.push(acc);
                             call_args.extend(list[idx..idx + step].iter().cloned());
                             let v = self.reduction_step_with_args(
                                 op_shape.as_ref(),

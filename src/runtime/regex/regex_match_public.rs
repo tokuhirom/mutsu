@@ -277,7 +277,8 @@ impl Interpreter {
                 Vec::new()
             } else {
                 let default_caps = RegexCaptures::default();
-                self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?
+                let values = self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?;
+                self.mark_rw_regex_args(&spec, self.current_package_sym(), values)
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(
                 &spec,
@@ -349,7 +350,7 @@ impl Interpreter {
         // The rest of the pattern reads a hoisted `:my`/`:let`/`:our` scalar
         // at match time (see `add_runtime_names`), as it would had the
         // declaration stayed in it.
-        let hoisted_scalars: Vec<String> = declarators
+        let mut hoisted_scalars: Vec<String> = declarators
             .iter()
             .filter(|(decl_name, _)| matches!(decl_name.as_str(), "my" | "let" | "our"))
             .flat_map(|(_, stmt_src)| {
@@ -357,10 +358,28 @@ impl Interpreter {
                 super::super::regex_parse_core::scalar_names_in_decl(decl)
             })
             .collect();
+        // A `$var` of a pattern with a code block is read where the cursor
+        // reaches it, since the block can assign it, and a loop can re-enter
+        // an atom written before the block (ADR-12917, direction 2).
+        // Without a block nothing can write a variable during the match, so a
+        // plain value is read there too only to keep one body per pattern; a
+        // `Regex` value keeps the splice, which isolates its captures.
+        let (pattern_scalars, _) =
+            super::regex_late_scalars::scalars_in_pattern(&remaining_pattern);
+        for name in pattern_scalars {
+            // A `constant` is inlined at compile time (its value is part of
+            // the declarative prefix), so it stays spliced.
+            if self.late_scalar_reads_at_match_time(&name, true)
+                && !self.is_compile_time_constant_scalar(&name)
+                && !hoisted_scalars.contains(&name)
+            {
+                hoisted_scalars.push(name);
+            }
+        }
         let remaining_pattern =
             super::regex_rule_params::add_runtime_names(&hoisted_scalars, &remaining_pattern);
         if declarators.is_empty() {
-            let result = self.regex_match_with_captures_core(pattern, text);
+            let result = self.regex_match_with_captures_core(&remaining_pattern, text);
             if let Some(caps) = &result {
                 self.persist_embedded_my_decls(caps, &HashSet::new());
             }

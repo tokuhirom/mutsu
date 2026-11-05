@@ -64,7 +64,7 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // A bare `$var` interpolating an in-regex lexical is not a compile-time
         // literal; terminate (constants are inlined as literals before this
         // atom kind is ever produced, so they never reach here — see §2).
-        RegexAtom::VarInterp(_) | RegexAtom::QqInterp { .. } => LtmAtomMode::Terminate,
+        RegexAtom::VarInterp(_) | RegexAtom::VarInterpMarkless(_) | RegexAtom::QqInterp { .. } => LtmAtomMode::Terminate,
         // `<$x>` of a declared lexical: its pattern is the value at match
         // time, as for `<{ code }>`.
         RegexAtom::VarAssertion(_) => LtmAtomMode::Terminate,

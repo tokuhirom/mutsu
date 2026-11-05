@@ -61,6 +61,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Distribution::Resources") => {
             "Distribution::Resources"
         }
+        // The lexical pad of a unit (`CompUnit::Handle.unit`, `nqp::ctxlexpad`)
+        // is an MVMContext lexpad in raku, not a `Hash`: `nqp::iterator`,
+        // `existskey` and `atkey` take it. mutsu keeps the pad as a hash and
+        // carries the type as its declared type.
+        ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("BOOTContext") => {
+            "BOOTContext"
+        }
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
         | ValueView::RangeExcl(_, _)
@@ -100,7 +107,11 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
         }
         ValueView::Nil => "Nil",
-        ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
+        ValueView::Sub(data) => match data
+            .env
+            .get_sym(crate::symbol::well_known::callable_type())
+            .map(Value::view)
+        {
             Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",
             Some(ValueView::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
             Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
@@ -195,6 +206,6 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         }
         ValueView::HashEntryRef { .. } => value_type_name(&value.hash_entry_read()),
         ValueView::ContainerRef(_) => value.with_deref(value_type_name),
-        ValueView::ContainerView(_) => "Scalar",
+        ValueView::ContainerView(cell) => crate::value::container_view_class(&cell),
     }
 }

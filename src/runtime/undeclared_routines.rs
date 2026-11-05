@@ -71,13 +71,21 @@ fn known_without_an_interpreter(
     name: &str,
     declared: &HashSet<String>,
     if_imports: &HashSet<&str>,
+    mode: ScanMode,
 ) -> bool {
-    known_from_the_unit_alone(name, declared) || imported_here(name, if_imports)
+    known_from_the_unit_alone(name, declared, mode) || imported_here(name, if_imports)
 }
 
 /// The part of [`known_without_an_interpreter`] that depends on the unit's
 /// AST alone, so it can be recorded with the unit (ADR-12026 §2.1).
-fn known_from_the_unit_alone(name: &str, declared: &HashSet<String>) -> bool {
+fn known_from_the_unit_alone(name: &str, declared: &HashSet<String>, mode: ScanMode) -> bool {
+    // `pack` / `unpack` are experimental: undeclared unless the unit says
+    // `use experimental :pack`, and a unit that does is not judged at all
+    // (`use experimental` ends the check). An `EVAL` inherits its caller's
+    // pragma, which the snippet cannot see, so it keeps them known (#13346).
+    if mode == ScanMode::Mainline && matches!(name, "pack" | "unpack") {
+        return declared.contains(name);
+    }
     declared.contains(name)
         || Interpreter::is_builtin_function(name)
         || Interpreter::is_test_function_name(name)
@@ -117,6 +125,53 @@ struct Unexplained {
     body_scoped: HashSet<String>,
 }
 
+/// Whether a unit's imports cannot be seen before it runs: a `use` of a module
+/// that may import routines or types, after a `use lib` that its module search
+/// depends on. The unit's `use`s are pre-run only up to the first `use lib`
+/// (`run_eval_hook_uses`), so whatever the later ones import is unknown to the
+/// CHECK-time name checks, and judging any bareword would risk a false positive,
+/// exactly as the mainline check gives up on a unit with such a `use`.
+// Cost: O(s), s = statements of the unit.
+pub(crate) fn imports_follow_use_lib(stmts: &[Stmt]) -> bool {
+    let mut after_lib = false;
+    for stmt in stmts {
+        match stmt {
+            _ if contains_use_lib(std::slice::from_ref(stmt)) => after_lib = true,
+            Stmt::Use { module, .. } if after_lib && !conditional::imports_no_routines(module) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether a `use lib` appears anywhere in the unit, nested blocks included.
+/// A `use` that follows one imports from a path nothing has added yet when the
+/// EVAL's pre-run looks at it, so the pre-run leaves such a unit to run in
+/// position.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn contains_use_lib(stmts: &[Stmt]) -> bool {
+    use crate::ast_visit::{Visit, walk_stmt};
+    #[derive(Default)]
+    struct UseLib(bool);
+    impl<'ast> Visit<'ast> for UseLib {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if matches!(stmt, Stmt::Use { module, .. } if module == "lib") {
+                self.0 = true;
+            }
+            if !self.0 {
+                walk_stmt(self, stmt);
+            }
+        }
+    }
+    let mut found = UseLib::default();
+    for stmt in stmts {
+        found.visit_stmt(stmt);
+    }
+    found.0
+}
+
 /// The AST half of the mainline undeclared-routine check, recorded with a
 /// precompiled unit (ADR-12026 §2.1): every call that the unit's own
 /// declarations and the static tables leave unexplained. The parser's import
@@ -151,7 +206,7 @@ pub(crate) fn record_mainline_calls(stmts: &[Stmt]) -> Option<RecordedCalls> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared))
+        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared, ScanMode::Mainline))
         .collect();
     let mut body_scoped: Vec<String> = body_scoped_calls(&calls, &scan.body_routines)
         .into_iter()
@@ -203,7 +258,11 @@ fn body_scoped_calls(calls: &[(String, i64)], body_routines: &HashSet<String>) -
 }
 
 fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
-    let mut scan = Scan::new(mode == ScanMode::Eval);
+    scan_unit_ordered(stmts, mode, false)
+}
+
+fn scan_unit_ordered(stmts: &[Stmt], mode: ScanMode, term_order: bool) -> Scan {
+    let mut scan = Scan::new(mode == ScanMode::Eval, term_order);
     if scan.eval {
         scan.walk_unit(stmts);
     } else {
@@ -232,7 +291,7 @@ fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
     let calls: Vec<(String, i64)> = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports))
+        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports, mode))
         .collect();
     // An `EVAL`'d snippet's caller may have a routine of the same name, which
     // only the registry knows about.
@@ -263,6 +322,7 @@ pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
     let scan = scan_unit(stmts, ScanMode::Eval);
     let mut declared = scan.declared;
     declared.extend(scan.body_routines);
+    declared.extend(scan.all_terms);
     declared
 }
 
@@ -279,6 +339,7 @@ pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
 pub(crate) fn check_undeclared_routines_without_interpreter(
     stmts: &[Stmt],
 ) -> Result<(), RuntimeError> {
+    check_terms_in_source_order(stmts)?;
     let Some(found) = unexplained_calls(stmts, ScanMode::Mainline) else {
         return Ok(());
     };
@@ -295,6 +356,59 @@ pub(crate) fn check_undeclared_routines_without_interpreter(
         *line,
         suggestions,
     ))
+}
+
+/// A term used before its declaration (ADR-15760 Amendment 1, slice 1b):
+/// `say x; my \x = 1`. Rakudo hoists routines only, so a sigilless variable,
+/// a `constant` or an enum key is visible from its declaration on, in the
+/// statement list that declares it and the lists nested in it; a bareword
+/// naming one earlier is `Undeclared routine` unless something else explains
+/// it. The ordinary check cannot see this: it runs on the phaser-reordered
+/// tree, which has hoisted the declarations, so this one runs on the unit as
+/// parsed. It judges the calls the unit's terms would have excused and
+/// nothing else (the ordinary check reports the rest), and gives up exactly
+/// where that check does.
+// Cost: O(n + c), n = size of the unit's AST, c = bareword calls.
+pub(crate) fn check_terms_in_source_order(stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    match premature_term_use(stmts) {
+        Some(found) => Err(found.into_error()),
+        None => Ok(()),
+    }
+}
+
+/// The first bareword that names a term of the unit before the term's
+/// declaration, and nothing else explains.
+struct PrematureTerm {
+    name: String,
+    line: i64,
+    declared_routines: HashSet<String>,
+}
+
+impl PrematureTerm {
+    fn into_error(self) -> RuntimeError {
+        let suggestions = Interpreter::static_routine_suggestions(&self.name, &self.declared_routines);
+        Interpreter::undeclared_routine_error(&self.name, self.line, suggestions)
+    }
+}
+
+// Cost: O(n + c), as `check_terms_in_source_order`.
+fn premature_term_use(stmts: &[Stmt]) -> Option<PrematureTerm> {
+    let scan = scan_unit_ordered(stmts, ScanMode::Mainline, true);
+    if scan.bail || scan.all_terms.is_empty() || !scan.conditional_uses.is_empty() {
+        return None;
+    }
+    let none = HashSet::new();
+    let (name, line) = scan.calls.iter().find(|(name, _)| {
+        scan.all_terms.contains(name)
+            && !scan.body_routines.contains(name)
+            && !known_without_an_interpreter(name, &scan.declared, &none, ScanMode::Mainline)
+            && !super::eval_name_scans::is_core_term(name)
+    })?;
+    Some(PrematureTerm {
+        name: name.clone(),
+        line: *line,
+        declared_routines: scan.declared_routines,
+    })
 }
 
 impl Interpreter {
@@ -318,6 +432,23 @@ impl Interpreter {
             err.set_line(Some(line as usize));
         }
         err
+    }
+
+    /// [`check_terms_in_source_order`] for an `EVAL`'d unit: a routine the
+    /// caller (or the registry) has under that name explains the bareword.
+    // Cost: O(n + r), n = size of the unit's AST, r = cost of one registry lookup.
+    pub(crate) fn check_eval_terms_in_source_order(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let Some(found) = premature_term_use(stmts) else {
+            return Ok(());
+        };
+        if self.has_function(&found.name)
+            || self.has_multi_function_unindexed(&found.name)
+            || self.has_proto(&found.name)
+            || self.env().contains_key(&format!("&{}", found.name))
+        {
+            return Ok(());
+        }
+        Err(found.into_error())
     }
 
     /// Reject a mainline call to a routine that is declared nowhere in the
@@ -428,6 +559,11 @@ impl Interpreter {
                 // A capitalised callee (only judged in `EVAL`) is a coercion
                 // when a type of that name exists, and a core term (`IterationEnd`)
                 // is not a routine call at all.
+                // A parameterized type used as an invocant (`array[uint8].new`)
+                // is a type, whatever the case of its base.
+                || name.split_once('[').is_some_and(|(base, _)| {
+                    base == "array" || self.has_type(base) || Self::is_builtin_type(base)
+                })
                 || (name.starts_with(|c: char| c.is_ascii_uppercase())
                     && (self.has_type(name)
                         || self.has_class(name)
@@ -473,6 +609,17 @@ mod tests {
     fn an_attribute_does_not_declare_a_routine() {
         assert!(check(&parse("class C { has $.foo; method m { foo() } }")).is_err());
         assert!(check(&parse("class C { has $.foo; method m { $.foo } }")).is_ok());
+    }
+
+    #[test]
+    fn a_term_is_visible_from_its_declaration_on() {
+        assert!(check(&parse("say x; my \\x = 1")).is_err());
+        assert!(check(&parse("say x; constant x = 1")).is_err());
+        assert!(check(&parse("say x; enum E <x y>")).is_err());
+        assert!(check(&parse("{ my \\x = 1 }; say x")).is_err());
+        assert!(check(&parse("my \\x = 1; { say x }")).is_ok());
+        assert!(check(&parse("say x; sub x { 1 }")).is_ok());
+        assert!(check(&parse("say pi; constant pi = 3")).is_ok());
     }
 
     #[test]

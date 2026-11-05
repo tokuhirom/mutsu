@@ -40,13 +40,16 @@ pub(crate) mod thread_lock_count;
 
 // Re-export pub(crate) items accessed from outside `runtime` module
 pub(crate) use state::{
-    SupplyEvent, has_supply_channel, is_whenever_closed, next_whenever_id,
+    SupplyEvent, bind_whenever_close_flag, has_supply_channel, is_whenever_closed, next_whenever_id,
+    unbind_whenever_close_flag,
     split_supply_chunks_into_lines, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 pub(crate) use proc::ProcStream;
 
+mod descriptor_forward;
 pub(in crate::runtime) use act_loop::ActLoop;
+pub(in crate::runtime) use descriptor_forward::{forward_stream_bytes, request_native_descriptor};
 pub(in crate::runtime) use attr_publish::AttrPublisher;
 pub(in crate::runtime) use native_shim::native_method_shim;
 
@@ -59,8 +62,8 @@ pub(in crate::runtime) use state::{
     get_supply_done_taps, get_supply_quit_taps, get_supply_taps, is_supply_live_tapped,
     mark_proc_async_merged_supply_started, mark_supply_live_tapped, mark_supply_replayed,
     next_async_socket_id, next_supply_id, proc_async_merged_supply_started, proc_stdin_map,
-    register_promise_combinator_sources, register_supply_done_tap, register_supply_quit_tap, register_supply_tap, register_supply_tap_with_lines, get_supply_tap_line_modes,
-    register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output,
+    register_promise_combinator_sources, register_supply_done_tap, register_supply_quit_tap, register_supply_tap, note_whenever_source_registered, register_supply_tap_with_lines, get_supply_tap_line_modes,
+    register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output, 
     set_supply_enc, supplier_done_deferred, supplier_emit, supplier_id_from_attrs,
     supplier_mark_terminal_delivered, supplier_reset,
     supplier_reset_keep_quit, supplier_take_preserved_backlog, supplier_take_preserved_terminal,
@@ -501,7 +504,15 @@ impl Interpreter {
             );
             return self.run_builtin_method_wrap(class_name, &invocant, method, &args, &chain);
         }
-        let dispatch_class = if matches!(
+        // A `%?RESOURCES` entry shares the `IO::Path` rows (#15818): a call the
+        // table's own entry declined (an `IO::Path` argument is not a plain one)
+        // finds them here by that owner, as it does for an `IO::Path` receiver.
+        let dispatch_class = if class_name == "Distribution::Resource"
+            && crate::builtins::method_table::distribution_resource::resource_answers(method)
+            && super::class_introspection::io_path_method_takes_arguments(method)
+        {
+            Some("IO::Path".to_string())
+        } else if matches!(
             class_name,
             "IO::Path"
                 | "IO::Handle"

@@ -37,7 +37,11 @@ class GLOBAL::Perl6::Compiler {
     method implementation() { $*RAKU.compiler.name }
     method compiler_progname() { $*RAKU.compiler.name }
 }
+"#;
 
+/// Rakudo's core `REPL` class, registered only when the program has not declared a
+/// type of that name itself (the REPL distribution declares `role REPL`).
+pub(super) const REPL_CLASS_PRELUDE: &str = r#"
 class GLOBAL::REPL {
     has Mu $.compiler;
     has Bool $!multi-line-enabled;

@@ -184,6 +184,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 storer: p.storer,
                 subclass: p.subclass,
                 decontainerized: p.decontainerized,
+                var_object: p.var_object,
             }
         }
         Kind::ParametricRole => {

@@ -1583,11 +1583,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
-                let arg = if crate::ast::collect_unattached_placeholders(&body)
-                    .into_iter()
-                    .any(|placeholder| placeholder != "%_")
+                // A `start` block takes no signature, so a placeholder used
+                // directly in it can never be captured: rakudo rejects the
+                // program at compile time, in a routine body as much as in
+                // the mainline (#16303). `%_` is legal in a method.
+                let arg = if let Some(placeholder) =
+                    crate::ast::collect_unattached_placeholders(&body)
+                        .into_iter()
+                        .find(|placeholder| placeholder != "%_")
                 {
-                    crate::ast::parsed::ParsedExpr::start_body(body)
+                    return Err(start_block_placeholder_error(&placeholder));
                 } else {
                     make_anon_sub(body)
                 };
@@ -1973,6 +1978,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = crate::parser::primary::parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        // `name()` with a declared type of that name is the type's coercion
+        // type literal even when a same-named `sub` is declared too: the
+        // type wins the bare/parenthesised term, and the sub stays
+        // reachable as `&name()` (a `CallOn` of `CodeVar`).
+        if args.is_empty()
+            && crate::parser::stmt::simple::is_user_declared_type(&name)
+            && crate::parser::stmt::simple::is_user_declared_sub(&name)
+        {
+            return Ok((
+                rest,
+                Expr::Literal(Value::package(Symbol::intern(&format!("{name}(Any)")))),
+            ));
+        }
         if let Some((package, member)) = name.rsplit_once("::")
             && matches!(package, "MY" | "OUTER")
             && !member.is_empty()
@@ -2512,6 +2530,37 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             && r[next.len_utf8()..].chars().next().is_none_or(|c| {
                 c.is_whitespace() || matches!(c, ']' | ')' | '}' | '>' | ',' | ';')
             });
+        // A package-qualified name that is no declared type
+        // (`SDL::GetTextureBlendMode ($!texture, $mode)`, a routine of a
+        // package that may not be loaded here) followed by a spaced
+        // parenthesized list is a call of that routine, as in raku. The
+        // set-operator spellings (`IO::Path (elem) @types`, `(-)`, ...) are
+        // never an argument list, which keeps a qualified type an infix operand.
+        let unknown_qualified_call_paren = next == '('
+            && name.contains("::")
+            && !name_is_declared_type
+            && r.find(')').is_some_and(|close| {
+                !matches!(
+                    r[1..close].trim(),
+                    "elem"
+                        | "cont"
+                        | "-"
+                        | "|"
+                        | "&"
+                        | "^"
+                        | "+"
+                        | "."
+                        | "<"
+                        | ">"
+                        | "<="
+                        | ">="
+                        | "<+"
+                        | "<-"
+                        | "<."
+                        | ">."
+                        | "(<=)"
+                )
+            });
         // Only trigger if next token starts a term (not an operator)
         if !type_before_bare_sigil
             && (next == '$'
@@ -2529,7 +2578,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '\u{201D}'
             || next == '\u{201E}'
             || next == '\u{FF62}'
-            || (next == '(' && !is_type_like_name)
+            || (next == '(' && (!is_type_like_name || unknown_qualified_call_paren))
             || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
             // A Unicode numeric literal (vulgar fraction `⅔`, superscript, ...)
@@ -2832,4 +2881,19 @@ fn mark_bare_term(stmt: &mut crate::ast::Stmt) {
         crate::ast::Stmt::Ast(node) => node.mark_bare_loop_term(),
         _ => {}
     }
+}
+
+/// The fatal compile error for a placeholder variable used directly inside a
+/// `start { ... }` block, which takes no signature.
+// Cost: O(1).
+fn start_block_placeholder_error(placeholder: &str) -> PError {
+    let exception = crate::method_signature_shared::placeholder_scope_error("block", placeholder);
+    // Spell the message in the `"X::Type: text"` convention as well as
+    // attaching the structured exception, so an expression-level caller that
+    // rebuilds the error keeps the class (see
+    // `placeholder_overrides_signature_error`).
+    let message = format!(
+        "X::Placeholder::Block: Placeholder variable '{placeholder}' may not be used here because the surrounding block does not take a signature."
+    );
+    PError::fatal_with_exception(message, Box::new(exception))
 }

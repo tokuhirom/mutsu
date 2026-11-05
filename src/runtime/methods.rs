@@ -139,10 +139,7 @@ pub(crate) fn make_not_enough_dimensions_error(
     attrs.insert("needed-dimensions".to_string(), Value::int(needed as i64));
     attrs.insert(
         "message".to_string(),
-        Value::str(format!(
-            "Not enough dimensions: got {}, needed {}",
-            got, needed
-        )),
+        Value::str(format!("Cannot {operation} a {needed} dimension array with only {got} dimensions")),
     );
     let mut err = RuntimeError::new("X::NotEnoughDimensions");
     err.exception = Some(Box::new(Value::make_instance(

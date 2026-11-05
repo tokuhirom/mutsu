@@ -63,15 +63,25 @@ impl Interpreter {
         let sym = code.locals_sym.get(idx).copied()?;
         if code.needs_cell_named_sub.contains(&sym)
             || code.needs_cell_ref_capture_slots.contains(&(idx as u32))
-            || code.needs_cell_unvouched_containers.contains(&sym)
+            || code.needs_cell_captured_containers.contains(&sym)
             || code.needs_cell_escaping_our_sub.contains(&sym)
             || code.self_capture_decl_locals.contains(&sym)
         {
             return None;
         }
-        // Name-keyed metadata a declaration clears when it exists at all.
-        if crate::env::sigilless_readonly_keys_possible()
-            || crate::env::closure_meta_keys_possible()
+        // Name-keyed metadata a declaration clears when it exists at all: THIS
+        // slot's sigilless-readonly marker and alias key. They were asked as
+        // two program-wide latches, so a program that had bound any sigilless
+        // name (`my \z = 1` somewhere, as EC's `secp256k1` does) took the
+        // full cascade for every declaration in it (~1.2K instructions each);
+        // the per-name "ever an env key" bit answers the question this lane
+        // actually has (#15981).
+        if (crate::env::sigilless_readonly_keys_possible()
+            && code
+                .readonly_sym(idx)
+                .is_none_or(crate::symbol::maybe_env_key))
+            || (crate::env::closure_meta_keys_possible()
+                && code.alias_sym(idx).is_none_or(crate::symbol::maybe_env_key))
             || !self.local_bind_pairs.is_empty()
             || !self.pending_alias_bind_names.is_empty()
         {

@@ -204,17 +204,15 @@ pub(crate) fn wrap_native_int_for_binding(
     }
     // Full-width signed native types don't wrap — they should throw on overflow.
     if matches!(native_type, "int" | "int64") {
-        return Err(crate::value::RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer",
-            big_val.bits()
-        )));
+        return Err(crate::value::RuntimeError::cannot_unbox_bigint(
+            big_val.bits(),
+        ));
     }
     // Full-width unsigned types: positive overflow throws, negative values wrap.
     if matches!(native_type, "uint" | "uint64") && big_val > NumBigInt::from(0u64) {
-        return Err(crate::value::RuntimeError::new(format!(
-            "Cannot unbox {} bit wide bigint into native integer",
-            big_val.bits()
-        )));
+        return Err(crate::value::RuntimeError::cannot_unbox_bigint(
+            big_val.bits(),
+        ));
     }
     let wrapped = native_types::wrap_native_int(native_type, &big_val);
     Ok(wrapped
@@ -436,6 +434,23 @@ pub(in crate::runtime) fn encode_slurpy_rw_param(
         None => -1,
     };
     format!("{SLURPY_RW_MARKER}{slurpy_key}\u{1}{elem_idx}\u{1}{src}")
+}
+
+const CAPTURE_NAMED_RW_MARKER: &str = "\u{1}N\u{1}";
+
+/// Encode the writeback of a NAMED argument a `|c` capture keeps as the
+/// caller's container (`capture_named_container`): `capture_key` is the
+/// callee env key of the capture, `name` the named argument's key.
+pub(in crate::runtime) fn encode_capture_named_rw_param(capture_key: &str, name: &str) -> String {
+    format!("{CAPTURE_NAMED_RW_MARKER}{capture_key}\u{1}{name}")
+}
+
+/// Decode [`encode_capture_named_rw_param`]: `(capture_key, name)`, or `None`
+/// for any other `rw_bindings` param-name.
+pub(crate) fn decode_capture_named_rw_param(param: &str) -> Option<(&str, &str)> {
+    param
+        .strip_prefix(CAPTURE_NAMED_RW_MARKER)?
+        .split_once('\u{1}')
 }
 
 /// Decode a slurpy element writeback param-name. Returns
@@ -1005,6 +1020,18 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         if bind_name.is_empty() {
             continue;
         }
+        // A `@`/`%` leaf takes the aggregate itself, not the cell of the scalar
+        // variable that held it: `np(33, :$k)` reaches `:offset(:@k)!` through
+        // an exported proto's capture as a `ContainerRef` (Math::NumberTheory).
+        let deref_leaf;
+        let value = if bind_name.starts_with(['@', '%'])
+            && matches!(value.view(), ValueView::ContainerRef(_))
+        {
+            deref_leaf = value.deref_container();
+            &deref_leaf
+        } else {
+            value
+        };
         // An `@` leaf binds a Seq through `.cache` exactly like a plain `:@x`
         // (`check_and_coerce_param_type`): the wrapper `ParamDef` carries the
         // caller-facing key, so its sigil never triggers that coercion.
@@ -1106,7 +1133,18 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
             bind_named_rename_sub_signature(interpreter, nested, value, wrapper_traits)?;
         } else {
             mark_leaf_readonly(interpreter, bind_name);
-            interpreter.bind_param_value(bind_name, value.clone());
+            // `:f(:$format) is copy` owns a fresh container: a forwarded
+            // read-only cell (`:$format` from a caller's plain param, reaching
+            // here through a `|%args` slip) must not be bound as is, or the
+            // body's `$format = ...` hits the caller's read-only cell (WWW::Ollama).
+            let copy_only = wrapper_traits.iter().any(|t| t == "copy")
+                && !wrapper_traits.iter().any(|t| t == "rw" || t == "raw");
+            let bound = if copy_only && !bind_name.starts_with(['@', '%']) {
+                value.deref_container()
+            } else {
+                value.clone()
+            };
+            interpreter.bind_param_value(bind_name, bound);
             interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
         }
     }

@@ -205,7 +205,8 @@ pub(super) fn platform_library_name(name: &str) -> String {
 /// directory resolves to: the platform name (`libfoo.so`) when it exists,
 /// otherwise the library file of another platform's naming that the directory
 /// ships (`foo.dll`, `foo.so`, `libfoo.dylib`), as rakudo's `-I` repository
-/// answers; the platform name when nothing matches.
+/// answers; the declared name itself when a file of exactly that name exists;
+/// the platform name when nothing matches.
 // Cost: O(f), f = entries of `resources/libraries`.
 pub(super) fn library_resource_file_name(libraries_dir: &std::path::Path, name: &str) -> String {
     let platform = platform_library_name(name);
@@ -223,7 +224,15 @@ pub(super) fn library_resource_file_name(libraries_dir: &std::path::Path, name: 
         })
         .collect();
     candidates.sort();
-    candidates.into_iter().next().unwrap_or(platform)
+    if let Some(first) = candidates.into_iter().next() {
+        return first;
+    }
+    // A resource shipped under exactly the declared name (`libraries/foo` as a
+    // file `foo`) is that file, whatever the platform would call a library.
+    if libraries_dir.join(name).is_file() {
+        return name.to_string();
+    }
+    platform
 }
 
 pub(super) fn hash_strings(strings: &[&str]) -> u64 {

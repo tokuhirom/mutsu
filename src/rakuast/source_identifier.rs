@@ -1,20 +1,24 @@
 //! Conversion of source-written identifiers, independent of generated helpers.
-use super::convert::{call_name, leaf_field, node_field, unsupported};
+use super::view::{call_name, leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstNode, name_parts};
 use crate::ast::Expr;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value};
 
 /// Source provenance applies to this identifier only. Arguments still pass
 /// through ordinary conversion, including its generated-construct guards.
 // Cost: O(n), n = identifier length and converted argument nodes.
-pub(super) fn written_identifier(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn written_identifier(
+    names: &NameScope,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Var(name) => Ok(written_variable("$", name)),
         Expr::ArrayVar(name) => Ok(written_variable("@", name)),
         Expr::HashVar(name) => Ok(written_variable("%", name)),
         Expr::CodeVar(name) => Ok(written_variable("&", name)),
         Expr::Call { name, args, listop } | Expr::UserRoutineCall { name, args, listop } => {
-            named_routine_call(expr, name.as_str(), args, *listop)
+            named_routine_call(names, expr, name.as_str(), args, *listop)
         }
         _ => Err(unsupported(
             "source identifier without an identifier expression",
@@ -23,12 +27,13 @@ pub(super) fn written_identifier(expr: &Expr) -> Result<RakuAstNode, RuntimeErro
 }
 
 pub(super) fn named_routine_call(
+    names: &NameScope,
     expr: &Expr,
     name: &str,
     args: &[Expr],
     listop: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = call_name(name, args, listop)?;
+    let mut node = call_name(names, name, args, listop)?;
     if matches!(expr, Expr::UserRoutineCall { .. }) {
         node.fields
             .push(super::declared_routines::user_call_field());
@@ -64,6 +69,17 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::VarDynamic,
             fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
+        };
+    }
+    // `$=pod` / `$=finish`: a Pod variable, whose `name` is what follows `$=`.
+    if sigil == "$"
+        && let Some(pod) = name.strip_prefix('=')
+        && matches!(pod, "pod" | "finish")
+    {
+        return RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::VarDoc,
+            fields: vec![leaf_field(None, Value::str(pod.to_string()))],
         };
     }
     if name_parts::is_qualified_identifier(name) {

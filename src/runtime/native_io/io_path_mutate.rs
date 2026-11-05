@@ -13,6 +13,20 @@ impl Interpreter {
         (p, path_buf)
     }
 
+    /// The destination of a `copy` / `move` / `rename`: an `IO::Path` argument
+    /// resolves against its own `CWD` (a path built as `$dir.add($name)` from a
+    /// `chdir`-relative directory keeps the directory it was made under), anything
+    /// else against the cwd as a plain string does.
+    // Cost: O(p), p = the destination path length.
+    fn io_path_destination(&self, arg: Option<&Value>, text: &str) -> PathBuf {
+        if let Some(ValueView::Instance { attributes, .. }) = arg.map(Value::view)
+            && attributes.as_map().get("path").is_some()
+        {
+            return self.resolve_io_path_buf(&attributes.as_map(), text);
+        }
+        self.resolve_path(text)
+    }
+
     /// `IO::Path.spurt($content, :append, :createonly, :enc)`: write the content
     /// in one go. No `io_handles` entry: it opens, writes and drops its file.
     /// The encoding lookup (`encode_with_encoding`) reads the VM-owned
@@ -113,20 +127,11 @@ impl Interpreter {
             if let Some(err) = self.failure_to_runtime_error_if_unhandled(&mode_value) {
                 return Err(err);
             }
-            let mode_int = match mode_value.view() {
-                ValueView::Int(i) => i as u32,
-                // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
-                // already-evaluated integer in the inner value; coerce through it.
-                ValueView::Mixin(..) | ValueView::BigInt(_) => {
-                    crate::runtime::to_int(&mode_value) as u32
-                }
-                ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Invalid mode: {}",
-                        mode_value.to_string_value()
-                    )));
-                }
+            let Some(mode_int) = super::fs_ops::chmod_mode(&mode_value) else {
+                return Err(RuntimeError::new(format!(
+                    "Invalid mode: {}",
+                    mode_value.to_string_value()
+                )));
             };
             Ok(self.chmod_op(&path_buf, mode_int))
         }
@@ -211,7 +216,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new(format!("{} requires destination", method)))?;
         let createonly = Self::named_bool(args, "createonly");
-        let dest_buf = self.resolve_path(&dest);
+        let dest_buf = self.io_path_destination(args.first(), &dest);
         Ok(if method == "copy" {
             self.copy_file_op(&path_buf, &dest_buf, createonly)
         } else {

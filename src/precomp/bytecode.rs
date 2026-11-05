@@ -73,6 +73,10 @@ struct CodeMetadata {
     latches: CompileLatches,
     effects: ParseEffects,
     facts: ModuleLoadFacts,
+    /// [`payload_checksum`] of the AST and compiled sections as written. A file
+    /// damaged afterwards fails it at load, so the entry is a miss (and is
+    /// removed) instead of a routine body that cannot be decoded on first use.
+    payload_checksum: u64,
 }
 
 /// A cached module entry, not yet decoded beyond its metadata.
@@ -127,6 +131,12 @@ pub(crate) fn load_code_entry(source_path: &Path, source: &str) -> Option<CodeEn
         return None;
     }
     let (ast, payload) = split_section(rest)?;
+    if payload_checksum(ast, payload) != meta.payload_checksum {
+        // Damaged after it was written: a miss, so the module is recompiled
+        // and a clean entry replaces this one.
+        let _ = fs::remove_file(&file);
+        return None;
+    }
     Some(CodeEntry {
         context: meta.context,
         inputs: meta.inputs,
@@ -136,6 +146,19 @@ pub(crate) fn load_code_entry(source_path: &Path, source: &str) -> Option<CodeEn
         ast: ast.to_vec(),
         payload: payload.to_vec(),
     })
+}
+
+/// A fast, non-cryptographic digest of the AST and compiled sections. It only
+/// has to notice accidental damage (a truncated write, a flipped bit): the entry
+/// is already private to the user, so it is not a security boundary.
+// Cost: O(n), n = bytes of the two sections (about 1 cycle per 8 bytes).
+fn payload_checksum(ast: &[u8], payload: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = rustc_hash::FxHasher::default();
+    hasher.write_usize(ast.len());
+    hasher.write(ast);
+    hasher.write(payload);
+    hasher.finish()
 }
 
 /// A `u32` length-prefixed section, and what follows it.
@@ -166,6 +189,7 @@ pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEn
         latches: entry.latches,
         effects: entry.effects.clone(),
         facts: entry.facts.clone(),
+        payload_checksum: payload_checksum(entry.ast, entry.payload),
     };
     let Ok(meta_bytes) = bincode::serde::encode_to_vec(&meta, bincode::config::standard()) else {
         return;

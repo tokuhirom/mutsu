@@ -53,41 +53,6 @@ impl RwWritebackSlots {
             .copied()
     }
 
-    /// The names that have an entry owned by `depth`.
-    // Cost: O(n), n = names with pending entries.
-    pub(crate) fn names_at_depth(&self, depth: usize) -> std::collections::HashSet<String> {
-        self.by_name
-            .iter()
-            .filter(|(_, entries)| entries.iter().any(|(_, d)| *d == depth))
-            .map(|(name, _)| name.clone())
-            .collect()
-    }
-
-    /// Move the entries `from` owns for the `names` to depth `to`. An
-    /// interpreter-path call (`call_sub_value`) binds its arguments before any
-    /// call frame is pushed, so the binder's `len - 1` owner depth names the
-    /// caller's parent; the call site's drain looks the slot up under the
-    /// caller's own depth.
-    // Cost: O(k * d), k = names, d = pending entries per name.
-    pub(crate) fn rekey_depth<'a>(
-        &mut self,
-        names: impl IntoIterator<Item = &'a String>,
-        from: usize,
-        to: usize,
-    ) {
-        for name in names {
-            let Some(entries) = self.by_name.get_mut(name) else {
-                continue;
-            };
-            if entries.iter().any(|(_, d)| *d == to) {
-                continue;
-            }
-            if let Some(entry) = entries.iter_mut().find(|(_, d)| *d == from) {
-                entry.1 = to;
-            }
-        }
-    }
-
     /// Drop the entry for `name` owned by `depth`.
     // Cost: O(d), d = pending entries for this name.
     pub(crate) fn remove(&mut self, name: &str, depth: usize) {

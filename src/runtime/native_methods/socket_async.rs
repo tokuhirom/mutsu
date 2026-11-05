@@ -169,7 +169,15 @@ impl Interpreter {
                         let mut conn_attrs = HashMap::new();
                         conn_attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
                         conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
-                        conn_attrs.insert("socket-host".to_string(), Value::str(accept_host.clone()));
+                        // The accepted connection's local address
+                        // (`getsockname`), not the name `listen` was given:
+                        // `listen("localhost", ...)` answers `127.0.0.1`
+                        // (#16029).
+                        let local_host = stream
+                            .local_addr()
+                            .map(|a| a.ip().to_string())
+                            .unwrap_or_else(|_| accept_host.clone());
+                        conn_attrs.insert("socket-host".to_string(), Value::str(local_host));
                         conn_attrs.insert("socket-port".to_string(), Value::int(actual_port as i64));
                         conn_attrs.insert(
                             "peer-host".to_string(),
@@ -261,7 +269,7 @@ impl Interpreter {
                     // loop as any channel-backed tap (#12892), so an idle
                     // listener holds no worker.
                     if let Some(rx) = take_supply_channel(supply_id) {
-                        super::ActLoop::new(self.clone_for_thread(), callback).start(rx, None);
+                        super::ActLoop::new(self.clone_for_thread_for_block(&callback), callback).start(rx, None);
                     }
                 }
 

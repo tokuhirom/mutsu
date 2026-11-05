@@ -17,11 +17,8 @@ sub named(Str $code, Str $path) { $code.subst(:g, 'PATH', $path ~ ++$serial) }
 my @inside =
     'do block',      'class CPATH { do { my sub h { 5 }; method m { h() } } }; CPATH.new.m',                '5',
     '.^methods',     'class CPATH { do { method hidden { 1 } } }; CPATH.^methods(:local).map(*.name).grep(/hidden/).join(",")', 'hidden',
-    'has-scoped',    'class CPATH { do { my method pm { 9 }; method m { self.&pm } } }; CPATH.new.m',        '9';
-
-# These close over a `my` variable of the nested block: the file path only.
-# TODO: they die with "Variable '$n' is not declared" inside EVAL (#15468).
-my @file-only =
+    'has-scoped',    'class CPATH { do { my method pm { 9 }; method m { self.&pm } } }; CPATH.new.m',        '9',
+    # These close over a `my` variable of the nested block (#15468).
     'bare block',    'class CPATH { { my $n = 7; method m { $n } } }; CPATH.new.m',                          '7',
     'if branch',     'class CPATH { if 1 { my $n = 8; method m { $n } } }; CPATH.new.m',                     '8',
     'two methods',   'class CPATH { do { my $n = 2; method a { $n }; method b { $n + 1 } } }; CPATH.new.a ~ CPATH.new.b', '23',
@@ -41,10 +38,6 @@ for @inside -> $name, $code, $expected {
     is as-file(named($code, 'F')), $expected, "$name: as a file";
     is EVAL(named($code, 'S')).Str, $expected, "$name: as an EVAL string";
     is EVAL(named($code, 'A').AST).Str, $expected, "$name: as EVAL of the string's .AST";
-}
-
-for @file-only -> $name, $code, $expected {
-    is as-file(named($code, 'F')), $expected, "$name: as a file";
 }
 
 for @outside -> $name, $code, $expected {

@@ -1,12 +1,66 @@
 use super::Value;
 use super::ValueView;
+use super::sig_elem_flags;
 use super::user_facing_type_name;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueMap;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// Compiles a synthesized closure body once per key (`runtime::synth_closure`
+/// installs it); the value layer cannot name the compiler.
+pub(crate) type SynthCompile = fn(
+    &str,
+    &[String],
+    &[ParamDef],
+    &[Stmt],
+) -> (
+    Arc<crate::opcode::CompiledCode>,
+    Arc<crate::opcode::CompiledFns>,
+);
+
+static SYNTH_COMPILE: OnceLock<SynthCompile> = OnceLock::new();
+
+/// Install the synthesized-closure compiler; the first call wins.
+// Cost: O(1).
+pub(crate) fn install_synth_compile(compile: SynthCompile) {
+    let _ = SYNTH_COMPILE.set(compile);
+}
+
+/// A zero-parameter code object running `body`: the shared compiled chunk for
+/// that text once the compiler is installed, else an AST body.
+// Cost: O(b) for the text key, b = size of the body; the compile happens once
+// per distinct text.
+fn synthesized_thunk(name: &str, body: Vec<Stmt>, is_rw: bool) -> Value {
+    let Some(compile) = SYNTH_COMPILE.get() else {
+        return Value::make_sub(
+            Symbol::intern(""),
+            Symbol::intern(name),
+            Vec::new(),
+            Vec::new(),
+            body,
+            is_rw,
+            crate::env::Env::new(),
+        );
+    };
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{body:?}{is_rw}").hash(&mut hasher);
+        format!("signature-thunk:{:x}", hasher.finish())
+    };
+    let chunk = compile(&key, &[], &[], &body);
+    Value::make_sub_compiled(
+        Symbol::intern(name),
+        Vec::<String>::new(),
+        Vec::<ParamDef>::new(),
+        body,
+        crate::env::Env::new(),
+        chunk,
+    )
+}
 
 pub(crate) use super::signature_smartmatch::{signature_smartmatch, signature_smartmatch_with};
 
@@ -1033,6 +1087,30 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
             _ => "Any",
         })),
     };
+    // `.nominal_type` drops a coercion's source type (`Int(Str)` is `Int`),
+    // `.coerce_type` is that target type (`Mu` when the type is no coercion),
+    // and `.of` is the type itself.
+    let (nominal_type, coerce_type) = match type_val.view() {
+        ValueView::Package(name) => match name.resolve().split_once('(') {
+            Some((target, _)) if !target.is_empty() => (
+                Value::Package(Symbol::intern(target)),
+                Value::Package(Symbol::intern(target)),
+            ),
+            _ => (type_val.clone(), Value::Package(Symbol::intern("Mu"))),
+        },
+        _ => (type_val.clone(), Value::Package(Symbol::intern("Mu"))),
+    };
+    attrs.insert("nominal_type".to_string(), nominal_type);
+    attrs.insert("coerce_type".to_string(), coerce_type);
+    attrs.insert("of".to_string(), type_val.clone());
+    attrs.insert(
+        "untyped".to_string(),
+        Value::Bool(p.type_constraint.as_deref() == Some("Mu")),
+    );
+    attrs.insert("onearg".to_string(), Value::Bool(p.onearg));
+    // TODO: `is item` is not a parameter trait here yet (the declaration is
+    // refused), so no parameter is itemized.
+    attrs.insert("is-item".to_string(), Value::FALSE);
     attrs.insert("type".to_string(), type_val);
     attrs.insert("type_captures".to_string(), Value::array(type_captures));
 
@@ -1059,6 +1137,31 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
 
     // optional
     attrs.insert("optional".to_string(), Value::Bool(p.is_optional()));
+
+    // `$!flags`: the same properties as rakudo's one-word bit field, so the
+    // MOP can read and write them (`Parameter.^attributes`).
+    let flags = sig_elem_flags::flags_word(&sig_elem_flags::FlagInputs {
+        sigil,
+        twigil: extract_twigil(&variable_param(p).name),
+        invocant: p.is_invocant,
+        multi_invocant: p.multi_invocant,
+        rw: is_rw,
+        copy: is_copy,
+        raw: is_raw || p.is_capture,
+        optional: p.is_optional() && !is_slurpy_any && !p.is_capture,
+        capture: p.is_capture,
+        slurpy_pos: p.slurpy && !p.double_slurpy && !p.onearg && sigil != '%',
+        slurpy_named: p.slurpy && sigil == '%',
+        slurpy_lol: p.double_slurpy,
+        slurpy_onearg: p.onearg,
+        definedness: definedness_modifier(p.type_constraint.as_deref()),
+        coercive: p
+            .type_constraint
+            .as_deref()
+            .is_some_and(|t| t.ends_with(')') && t.contains('(')),
+        default_is_literal: matches!(p.default_expr.as_deref(), Some(Expr::Literal(_))),
+    });
+    attrs.insert("flags".to_string(), Value::int(flags));
 
     // invocant
     attrs.insert("invocant".to_string(), Value::Bool(p.is_invocant));
@@ -1111,15 +1214,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
     // (rakudo), not a missing method — `with $param.default` must still work.
     let default_val = if let Some(ref default_expr) = p.default_expr {
         let body = vec![Stmt::Expr(*default_expr.clone())];
-        Value::make_sub(
-            Symbol::intern(""),
-            Symbol::intern("<default>"),
-            Vec::new(),
-            Vec::new(),
-            body,
-            false,
-            crate::env::Env::new(),
-        )
+        synthesized_thunk("<default>", body, false)
     } else {
         Value::Package(Symbol::intern("Code"))
     };
@@ -1676,15 +1771,7 @@ fn where_expr_to_value(expr: &Expr) -> Value {
         Expr::AnonSub { body, is_rw, .. } => {
             // Block constraint: { $_ % 2 == 0 }
             // Create a Sub with no explicit params — $_ is handled implicitly
-            Value::make_sub(
-                Symbol::intern(""),
-                Symbol::intern("<anon>"),
-                Vec::new(),
-                Vec::new(),
-                body.clone(),
-                *is_rw,
-                crate::env::Env::new(),
-            )
+            synthesized_thunk("<anon>", body.clone(), *is_rw)
         }
         Expr::BareWord(name) => {
             // Type constraint like `Int`, `Str`, etc.
@@ -1703,15 +1790,7 @@ fn where_expr_to_value(expr: &Expr) -> Value {
                 expr.clone()
             };
             let body = vec![Stmt::Expr(body)];
-            Value::make_sub(
-                Symbol::intern(""),
-                Symbol::intern("<constraints>"),
-                Vec::new(),
-                Vec::new(),
-                body,
-                false,
-                crate::env::Env::new(),
-            )
+            synthesized_thunk("<constraints>", body, false)
         }
     }
 }

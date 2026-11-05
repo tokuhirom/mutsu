@@ -399,8 +399,14 @@ impl Compiler {
         }
         // NEXT phasers run in LIFO (reverse declaration) order per Raku spec
         next_ph.reverse();
-        // LEAVE phasers run in LIFO (reverse declaration) order per Raku spec
-        let leave_ph_reversed: Vec<Stmt> = leave_ph.iter().rev().cloned().collect();
+        // LEAVE phasers run in LIFO (reverse declaration) order per Raku spec;
+        // so do KEEP and UNDO. `leave_ph` itself is reversed, so the normal
+        // completion path below queues them the same way the early-exit
+        // `exit_ph` does.
+        leave_ph.reverse();
+        keep_ph.reverse();
+        undo_ph.reverse();
+        let leave_ph_reversed: Vec<Stmt> = leave_ph.clone();
         // An iteration that exits early -- `next`/`last`/`redo`/`return`, raised
         // in the body or by a closure it calls -- runs NEXT (for a `next` aimed
         // at this loop), then UNDO, then LEAVE, before the signal reaches the

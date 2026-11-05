@@ -9,26 +9,29 @@
 //!
 //! The parser takes a `whenever`'s pointy block apart into the statement's
 //! `params` / `param_defs` / `body`, the way `Expr::Lambda` and
-//! `Expr::AnonSubParams` hold them, so the converter rebuilds that expression
+//! `Expr::AnonSubParams` hold them, so the view rebuilds that expression
 //! for the body and the lowering takes it apart again. It records `done` and
 //! `done()` as the same `Stmt::ReactDone`; that renders as the bare call,
 //! which lowers to the bare word the compiler reads as the completion unless
 //! a lexical `&done` shadows it.
 
-use super::convert::{
-    block_node, blockoid, convert_expr, name_from_identifier, node_field, true_field,
-};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
+use super::view::{block_node, blockoid, name_from_identifier, node_field, true_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, RoutineDeclarator, Stmt};
+use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
 /// `react { body }`, or `react STATEMENT` (`blorst`), whose one statement the
 /// node holds directly.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_react(body: &[Stmt], blorst: bool) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_react(
+    names: &NameScope,
+    body: &[Stmt],
+    blorst: bool,
+) -> Result<RakuAstNode, RuntimeError> {
     let blorst = match (blorst, body) {
-        (false, _) => block_node(body)?,
+        (false, _) => block_node(names, body)?,
         (
             true,
             [
@@ -39,9 +42,9 @@ pub(super) fn convert_react(body: &[Stmt], blorst: bool) -> Result<RakuAstNode, 
                     body,
                 },
             ],
-        ) => convert_whenever(supply, params, param_defs, body)?,
-        (true, [Stmt::Expr(expr)]) => convert_expr(expr)?,
-        (true, _) => return Err(super::convert::unsupported("react with a statement body")),
+        ) => view_whenever(names, supply, params, param_defs, body)?,
+        (true, [Stmt::Expr(expr)]) => view_expr(names, expr)?,
+        (true, _) => return Err(super::view::unsupported("react with a statement body")),
     };
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -75,7 +78,8 @@ fn whenever_block(params: &[String], param_defs: &[ParamDef], body: &[Stmt]) -> 
 
 /// `whenever SUPPLY BLOCK`.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_whenever(
+pub(super) fn view_whenever(
+    names: &NameScope,
     supply: &Expr,
     params: &[String],
     param_defs: &[ParamDef],
@@ -91,17 +95,17 @@ pub(super) fn convert_whenever(
                 true_field("implicit-topic"),
                 true_field("required-topic"),
                 true_field("may-have-signature"),
-                node_field(Some("body"), blockoid(body)?),
+                node_field(Some("body"), blockoid(names, body)?),
             ],
         }
     } else {
-        convert_expr(&whenever_block(params, param_defs, body))?
+        view_expr(names, &whenever_block(params, param_defs, body))?
     };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementWhenever,
         fields: vec![
-            node_field(Some("trigger"), convert_expr(supply)?),
+            node_field(Some("trigger"), view_expr(names, supply)?),
             node_field(Some("body"), block),
         ],
     })
@@ -109,28 +113,28 @@ pub(super) fn convert_whenever(
 
 /// `supply { body }` -> `StatementPrefix::Supply(Block)`.
 // Cost: O(n), n = size of the body.
-pub(super) fn convert_supply(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementPrefixSupply,
-        fields: vec![node_field(None, block_node(body)?)],
+        fields: vec![node_field(None, block_node(names, body)?)],
     })
 }
 
 /// `StatementPrefix::Supply(Block)` -> the parser's expansion of the block.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_supply(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_supply(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let block = named_child_or_positional(node)?;
     if block.class != RakuAstClass::Block {
         return Err(super::lower::unsupported(node));
     }
-    super::lower::with_block_scope(block, |body| {
+    super::lower::with_block_scope(names, block, |body| {
         Ok(super::supply_lower::supply_method_call(body))
     })
 }
 
 /// `done`, as the bare call rakudo parses it to.
-pub(super) fn convert_done() -> RakuAstNode {
+pub(super) fn view_done() -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CallNameWithoutParentheses,
@@ -140,12 +144,12 @@ pub(super) fn convert_done() -> RakuAstNode {
 
 /// `StatementPrefix::React` -> `Stmt::React`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_react(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_react(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let blorst = named_child_or_positional(node)?;
     let (body, is_blorst) = match blorst.class {
-        RakuAstClass::Block => (lower_block(blorst)?, false),
-        RakuAstClass::StatementWhenever => (vec![lower_whenever(blorst)?], true),
-        _ => (vec![Stmt::Expr(lower_expr(blorst)?)], true),
+        RakuAstClass::Block => (lower_block(names, blorst)?, false),
+        RakuAstClass::StatementWhenever => (vec![lower_whenever(names, blorst)?], true),
+        _ => (vec![Stmt::Expr(lower_expr(names, blorst)?)], true),
     };
     Ok(Stmt::React {
         body,
@@ -155,18 +159,18 @@ pub(super) fn lower_react(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// `Statement::Whenever` -> `Stmt::Whenever`.
 // Cost: O(n), n = size of the node.
-pub(super) fn lower_whenever(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let supply = lower_expr(named_child(node, "trigger")?)?;
+pub(super) fn lower_whenever(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let supply = lower_expr(names, named_child(node, "trigger")?)?;
     let block = named_child(node, "body")?;
     if block.class == RakuAstClass::Block {
         return Ok(Stmt::Whenever {
             supply,
             params: Vec::new(),
             param_defs: Vec::new(),
-            body: lower_block(block)?,
+            body: lower_block(names, block)?,
         });
     }
-    let (params, param_defs, body) = match lower_expr(block)? {
+    let (params, param_defs, body) = match lower_expr(names, block)? {
         Expr::Lambda {
             param,
             body,

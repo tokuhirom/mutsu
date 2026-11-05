@@ -58,9 +58,12 @@ impl Interpreter {
             RegexAtom::NamedBackref(name) => {
                 named_backref_end(name, caps, chars, pos).map(|end| (end, RegexCaptures::default()))
             }
-            RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
+            RegexAtom::VarInterp(name)
+            | RegexAtom::VarInterpMarkless(name)
+            | RegexAtom::VarAssertion(name) => {
                 let assertion = matches!(atom, RegexAtom::VarAssertion(_));
-                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, false)) {
+                let markless = matches!(atom, RegexAtom::VarInterpMarkless(_));
+                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, markless)) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -118,17 +121,30 @@ impl Interpreter {
         pos: usize,
         (ignore_case, markless): (bool, bool),
     ) -> VarInterpTarget {
+        // `$name` is the key a scalar is filed under in the env and in a
+        // rule's window; it is built on the stack (a name is a few bytes), not
+        // formatted into a `String` once or twice per atom evaluation.
+        let mut sigiled_buf = [0u8; 64];
+        let sigiled: std::borrow::Cow<'_, str> = if name.len() < sigiled_buf.len() {
+            sigiled_buf[0] = b'$';
+            sigiled_buf[1..=name.len()].copy_from_slice(name.as_bytes());
+            std::borrow::Cow::Borrowed(
+                std::str::from_utf8(&sigiled_buf[..=name.len()]).unwrap_or_default(),
+            )
+        } else {
+            std::borrow::Cow::Owned(format!("${name}"))
+        };
         let val = caps
             .regex_vars()
             .get(name)
-            .or_else(|| caps.regex_vars().get(&format!("${name}")))
+            .or_else(|| caps.regex_vars().get(&*sigiled))
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .or_else(|| self.env.get(&format!("${name}")).cloned())
+            .or_else(|| self.env.get(&sigiled).cloned())
             // A `constant` the running module imported lives only in the
             // module-scope table, never in this frame's env (the parse-time
             // interpolation falls back to it the same way).
-            .or_else(|| self.regex_package_chain_var_fallback(&format!("${name}")));
+            .or_else(|| self.regex_package_chain_var_fallback(&sigiled));
         let val = val.map(Value::into_deref);
         if assertion {
             return self.var_assertion_target(val, ignore_case);
@@ -136,24 +152,64 @@ impl Interpreter {
         let is_regex = val.as_ref().is_some_and(|v| {
             matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
         });
+        // A junction interpolates as the alternation of its eigenstates, each
+        // a literal or, for a `Regex` member, its pattern.
+        let is_junction = val
+            .as_ref()
+            .is_some_and(|v| matches!(v.view(), ValueView::Junction { .. }));
         let ref_text = match &val {
-            Some(v) if is_regex => Self::regex_alternation_sources(v, false).swap_remove(0),
+            Some(v) if is_regex => std::borrow::Cow::Owned(
+                Self::regex_alternation_sources(v, false).swap_remove(0),
+            ),
+            Some(v) if is_junction => {
+                let mut text = String::new();
+                Self::push_value_as_regex_pattern(v, &mut text);
+                std::borrow::Cow::Owned(text)
+            }
             Some(v) => match v.view() {
-                ValueView::Nil | ValueView::Package(_) => String::new(),
-                _ => v.to_string_value(),
+                ValueView::Nil | ValueView::Package(_) => std::borrow::Cow::Borrowed(""),
+                // A string value is compared in place, not copied per atom
+                // evaluation (one per start position of the find loop).
+                ValueView::Str(_) => match v.as_str() {
+                    Some(text) => std::borrow::Cow::Borrowed(text),
+                    None => std::borrow::Cow::Owned(v.to_string_value()),
+                },
+                _ => std::borrow::Cow::Owned(v.to_string_value()),
             },
-            None => String::new(),
+            None => std::borrow::Cow::Borrowed(""),
         };
         // A markless run compares bases, so a plain value becomes a pattern
         // too: its markless program does the comparison.
-        if is_regex || ((ignore_case || markless) && !ref_text.is_empty()) {
+        if is_regex || is_junction || ((ignore_case || markless) && !ref_text.is_empty()) {
+            // A `Regex` value is entered as a call frame of its own: its
+            // captures stay its own (`$re`'s groups do not number into the
+            // caller's) and it runs in its defining scope when it closed over
+            // one, as the `<$re>` form does.
+            let closure_scope = val.as_ref().and_then(Value::regex_closure_scope);
+            let _scope_guard = closure_scope
+                .clone()
+                .map(super::regex_helpers::RegexInterpClosureScopeGuard::activate);
             let mut source = String::from(if ignore_case { ":i " } else { "" });
-            if is_regex {
+            if is_regex || is_junction {
                 source.push_str(&ref_text);
             } else {
                 source.push_str(&Self::escape_regex_scalar_literal(&ref_text));
             }
             return match self.parse_regex(&source) {
+                Some(parsed) if is_regex => VarInterpTarget::Pattern(match closure_scope {
+                    Some(scope) => std::sync::Arc::new(RegexPattern::single_token(
+                        RegexAtom::CaptureIsolatedGroupScoped((*parsed).clone(), scope),
+                    )),
+                    None => RegexPattern::capture_isolated(&parsed),
+                }),
+                // Under `:i` the subject was case-folded with its multi-char
+                // expansions (`ﬁ` -> `fi`), so the value's literals fold too.
+                Some(parsed) if markless => VarInterpTarget::Pattern(
+                    super::regex_helpers::strip_marks_pattern(&parsed),
+                ),
+                Some(parsed) if ignore_case => VarInterpTarget::Pattern(
+                    super::regex_casefold::casefold_pattern_cached(&parsed),
+                ),
                 Some(parsed) => VarInterpTarget::Pattern(parsed),
                 None => VarInterpTarget::End(None),
             };

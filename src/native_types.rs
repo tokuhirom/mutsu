@@ -87,13 +87,27 @@ pub(crate) fn is_narrow_atomic_int_type(name: &str) -> bool {
 /// `$obj.^can($field)` before falling back — the shape
 /// `Template::Mustache`'s context lookup has — then calls a method that
 /// silently answers 0 instead of moving on to the next candidate.
-const NATIVE_INT_COERCE_METHODS: &[&str] = &[
+pub(crate) const NATIVE_INT_COERCE_METHODS: &[&str] = &[
     "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
 ];
 
 /// Whether `name` is spelled as a native-integer coercion method on `Cool`.
 pub(crate) fn is_native_int_coerce_method(name: &str) -> bool {
     NATIVE_INT_COERCE_METHODS.contains(&name)
+}
+
+/// The class of the native reference `.VAR` reports for a lexical declared
+/// with the native type `ty`: `my uint8 $x; $x.VAR.^name` is `UIntLexRef`
+/// (`None` for a type that is not a native scalar type).
+// Cost: O(1).
+pub(crate) fn native_lex_ref_class(ty: &str) -> Option<&'static str> {
+    Some(match ty {
+        "int" | "int8" | "int16" | "int32" | "int64" => "IntLexRef",
+        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" => "UIntLexRef",
+        "num" | "num32" | "num64" => "NumLexRef",
+        "str" => "StrLexRef",
+        _ => return None,
+    })
 }
 
 /// Returns true if `name` is a native array element type.

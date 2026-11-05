@@ -515,6 +515,59 @@ const FLAG_CHUNKS: usize = 512;
 static FLAG_TABLE: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
     [const { OnceLock::new() }; FLAG_CHUNKS];
 
+/// A lock-free, process-global memo of a pure function of a symbol's string,
+/// indexed by symbol id: the [`FLAG_TABLE`] mechanism for a caller that needs
+/// its own bits (a method-name classification, ADR-15737 D2). Ids are global
+/// and append-only and the function is pure, so a racing writer stores the same
+/// value; a reader that loses the race recomputes. Bit 15 is the table's own
+/// "computed" marker, so a memoized value uses bits 0..=14.
+pub(crate) struct SymbolMemo {
+    chunks: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS],
+}
+
+impl SymbolMemo {
+    const COMPUTED: u16 = 1 << 15;
+
+    pub(crate) const fn new() -> Self {
+        Self {
+            chunks: [const { OnceLock::new() }; FLAG_CHUNKS],
+        }
+    }
+
+    /// `compute(sym.as_str())`, computed once per symbol. An id past the
+    /// table's reach recomputes every time (correct, unmemoized).
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> u16) -> u16 {
+        self.get_with(sym, compute)
+    }
+
+    /// The same memo for a function that also captures this memo's immutable
+    /// owner metadata. Each memo must still map a symbol to one stable value.
+    // Cost: O(1) on a hit; O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get_with(&self, sym: Symbol, compute: impl FnOnce(&str) -> u16) -> u16 {
+        let idx = sym.0 as usize;
+        let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
+            return compute(sym.as_str());
+        };
+        if let Some(chunk) = cell.get() {
+            let v = chunk[idx & (FLAG_CHUNK_LEN - 1)].load(Ordering::Relaxed);
+            if v & Self::COMPUTED != 0 {
+                return v & !Self::COMPUTED;
+            }
+        }
+        let v = compute(sym.as_str());
+        debug_assert!(
+            v & Self::COMPUTED == 0,
+            "memo value must leave bit 15 clear"
+        );
+        let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
+        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v | Self::COMPUTED, Ordering::Relaxed);
+        v
+    }
+}
+
 /// The already-allocated flag slot for `idx`, if any. `None` means "not
 /// memoized yet" (or an id beyond the table), never "no such symbol".
 #[inline]
@@ -601,6 +654,34 @@ pub(crate) fn mark_env_key(sym: Symbol) {
         None if f & flags::SIGILLESS_ALIAS_KEY != 0 => crate::alias_key_log::note(sym, false),
         None => {}
     }
+}
+
+/// Set the first time a *dynamic variable's* key (`*x`, `$*OUT`) is written
+/// into an env **tier** (an overlay or a capture layer; the two base tiers of
+/// built-in dynamics do not count). Monotonic and process-wide: a clear flag
+/// proves no env tier anywhere holds a dynamic variable, so a scan for them can
+/// be skipped (`Interpreter::inherit_puller_dynamics`).
+static DYNAMIC_TIER_KEY_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// [`mark_env_key`] for a key written into an env tier: also latches
+/// [`dynamic_tier_key_seen`] when the key names a dynamic variable. Every site
+/// that puts a key into a [`crate::env_tier::Tier`] calls this one.
+// Cost: O(1).
+#[inline]
+pub(crate) fn mark_tier_key(sym: Symbol) {
+    mark_env_key(sym);
+    if sym.flags() & flags::DYNAMIC_VAR_ENV_KEY != 0 {
+        DYNAMIC_TIER_KEY_SEEN.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether any env tier has ever held a dynamic variable's key. `false` is a
+/// proof that none does now.
+// Cost: O(1).
+#[inline]
+pub(crate) fn dynamic_tier_key_seen() -> bool {
+    DYNAMIC_TIER_KEY_SEEN.load(Ordering::Relaxed)
 }
 
 /// [`maybe_env_key`] and [`Symbol::is_routine_owned`] in one read of the flag
@@ -716,6 +797,15 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The BOOT scalar type objects, asked of every type object a binder
+        /// sees (`Value::boot_scalar_type_object`): a symbol compare, not an
+        /// `as_str` plus three string compares per bind.
+        boot_int => "BOOTInt";
+        /// The `Failure` class, asked by every definedness test on an instance
+        /// (`value_is_defined`, `value_is_concrete`).
+        failure_class => "Failure";
+        boot_num => "BOOTNum";
+        boot_str => "BOOTStr";
         /// The backing attributes of an Array-, Hash- or Baggy-subclass
         /// instance. Asked of every `Instance` that is itemized, passed or
         /// stored, so the probe must not hash the literal each time
@@ -769,6 +859,14 @@ pub(crate) mod wk {
         made => "made";
         /// The `Any` type object, the value a routine's fresh topic is seeded with.
         any => "Any";
+        /// The `Mu` type object, asked of every nominal conformance check
+        /// (`nominal_type_conforms_general`).
+        mu => "Mu";
+        /// The numeric role names whose core ancestors `builtin_role_ancestors`
+        /// answers; every other name has none.
+        rational_role => "Rational";
+        real_role => "Real";
+        numeric_role => "Numeric";
         /// The class of a `Signature` value, whose `SigInfo` lives in a
         /// registry keyed by instance id until its last holder dies
         /// (`value::signature::sig_instance_born`).
@@ -853,6 +951,11 @@ pub(crate) mod wk {
         /// call no captured candidate accepts goes to the built-in operator
         /// instead of failing (ADR-8751 stage 2).
         multi_dispatch_builtin_fallback => "__mutsu_multi_dispatch_builtin_fallback";
+        /// On the same dispatcher when the imported family carries its own
+        /// `proto sub infix:<op>`: the proto shadows the built-in operator
+        /// (rakudo: only its candidates exist), so a call none of them accepts
+        /// is `X::Multi::NoMatch` rather than the built-in's answer.
+        multi_dispatch_proto_shadows_core => "__mutsu_multi_dispatch_proto_shadows_core";
         /// The `Method` object a `.assuming`-primed method callable invokes
         /// (`$type.^lookup('m').assuming($obj)`), so the call binds its
         /// invocant the way the object's own `CALL-ME` does.
@@ -1060,6 +1163,14 @@ impl Symbol {
     /// Computed on first ask and cached per thread. Test the result with the
     /// `flags::*` constants, e.g.
     /// `sym.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0`.
+    /// The interned id: dense and process-unique, for the lock-free bit sets
+    /// that are keyed by symbol (`raw_invocant::raw_invocant_method_possible_for`).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn raw_id(self) -> u32 {
+        self.0
+    }
+
     pub(crate) fn flags(self) -> u16 {
         let idx = self.0 as usize;
         if let Some(slot) = flag_slot(idx) {
@@ -1329,6 +1440,16 @@ pub(crate) mod well_known {
     #[inline]
     pub(crate) fn callable_type() -> Symbol {
         static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_callable_type"));
+        *SYM
+    }
+
+    /// Marks an env as a declared method's capture (`1`: the declaration
+    /// frame's, `2`: a class-how added method's); asked on every closure
+    /// creation inside a method (`box_captured_lexicals`).
+    #[inline]
+    pub(crate) fn declared_method_capture() -> Symbol {
+        static SYM: LazyLock<Symbol> =
+            LazyLock::new(|| Symbol::intern("__mutsu_declared_method_capture"));
         *SYM
     }
 

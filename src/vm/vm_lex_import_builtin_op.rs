@@ -21,11 +21,35 @@ use super::*;
 use crate::runtime::dispatch_state::LexicalOperatorScope;
 
 impl Interpreter {
+    /// Whether the operator site is known to run as built in: no import set
+    /// in the process binds an operator's candidates (#13906), or this site
+    /// already found the operator unbound under the current import-set
+    /// generation (#7817). A lookup under a built-in operator fallback answers
+    /// differently (`lexical_import_binding`), so it is never memoized.
+    // Cost: O(1), three atomic loads.
+    #[inline]
+    pub(super) fn lex_import_site_known_absent(
+        &self,
+        code: &CompiledCode,
+        chain_idx: u32,
+        name_idx: u32,
+    ) -> bool {
+        self.module.lexical_operator_import_sets.is_empty()
+            || (self.module.builtin_op_fallback_depth == 0
+                && code.lex_import_sites.operator_absent(
+                    code.constants.len(),
+                    name_idx as usize,
+                    self.module.lexical_import_gen,
+                    chain_idx,
+                ))
+    }
+
     /// Run the op at `ip + 1` with the user candidates of the built-in
     /// operator `name_idx` that one of the import sets of chain `chain_idx`
     /// binds, or as it is when none binds them. Returns the ip after that op.
-    // Cost: O(1) when no import set binds an operator; else an O(c) probe,
-    // c = enclosing `use`-blocks; plus the op at ip + 1.
+    // Cost: O(1) when no import set binds an operator or this site already
+    // found the operator unbound (this import-set generation); else an O(c)
+    // probe, c = enclosing `use`-blocks; plus the op at ip + 1.
     pub(super) fn exec_lex_import_builtin_op_site(
         &mut self,
         code: &CompiledCode,
@@ -34,11 +58,12 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<usize, RuntimeError> {
-        // No import set in the process binds an operator's candidates: the op
-        // runs as built in, without asking the chain (#13906).
-        if self.module.lexical_operator_import_sets.is_empty() {
+        if self.lex_import_site_known_absent(code, chain_idx, name_idx) {
             return Ok(ip + 1);
         }
+        let sites = code.constants.len();
+        let generation = self.module.lexical_import_gen;
+        let memoizable = self.module.builtin_op_fallback_depth == 0;
         let name = code.const_sym(name_idx);
         let dispatcher = code
             .lexical_import_chains
@@ -54,6 +79,14 @@ impl Interpreter {
             });
         let mut next_ip = ip + 1;
         let Some(dispatcher) = dispatcher else {
+            if memoizable {
+                code.lex_import_sites.remember_operator_absent(
+                    sites,
+                    name_idx as usize,
+                    generation,
+                    chain_idx,
+                );
+            }
             return Ok(next_ip);
         };
         self.dispatch
@@ -72,7 +105,7 @@ impl Interpreter {
     /// `name` in scope for the op running in this routine frame
     /// ([`Self::exec_lex_import_builtin_op_site`]).
     // Cost: O(s), s = nested operator scopes (usually 0 or 1).
-    fn lexical_operator_dispatcher(&self, name: &str) -> Option<&Value> {
+    pub(super) fn lexical_operator_dispatcher(&self, name: &str) -> Option<&Value> {
         let scopes = &self.dispatch.lexical_operator_scopes;
         if scopes.is_empty() {
             return None;
@@ -154,6 +187,17 @@ impl Interpreter {
             .env
             .get_sym(crate::symbol::wk::multi_dispatch_candidates())
             .and_then(|value| value.as_list_items().map(ToOwned::to_owned))?;
-        Some(self.try_captured_candidates(&dispatcher, &candidates, name, args))
+        let shadowed_by_proto = data
+            .env
+            .contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core());
+        let declined_args = shadowed_by_proto.then(|| args.clone());
+        let result = self.try_captured_candidates(&dispatcher, &candidates, name, args);
+        // The family carries a user `proto sub infix:<op>`, which shadows the
+        // core routine (rakudo: only the proto's own candidates exist), so a
+        // call none of them takes is `X::Multi::NoMatch`, never the core answer.
+        if let (Ok(None), Some(args)) = (&result, declined_args) {
+            return Some(Err(self.multi_no_match_error(name, &args)));
+        }
+        Some(result)
     }
 }

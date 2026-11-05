@@ -158,6 +158,18 @@ impl Interpreter {
         if let Some(value) = self.try_user_str_infix(kind.infix_name(), &left, &right)? {
             return Ok(value);
         }
+        self.str_cmp_values_core(kind, left, right)
+    }
+
+    /// [`Self::str_cmp_values`] without the user-candidate probe: the CORE
+    /// operator (`&CORE::infix:<eq>`, #15922).
+    // Cost: as `str_cmp_values`.
+    pub(crate) fn str_cmp_values_core(
+        &mut self,
+        kind: StrCmp,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         // `eval_binary_with_junctions` takes a plain `fn`, so the comparison is
         // picked here rather than captured.
@@ -250,6 +262,18 @@ impl Interpreter {
         if let Some(result) = self.try_user_infix(name, &left, &right)? {
             return Ok(result);
         }
+        self.min_max_values_core(is_min, left, right)
+    }
+
+    /// [`Self::min_max_values`] without the user-candidate probe: the CORE
+    /// operator (`&CORE::infix:<min>`, #15922).
+    // Cost: as `min_max_values`.
+    pub(crate) fn min_max_values_core(
+        &mut self,
+        is_min: bool,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         if !crate::runtime::types::value_is_defined(&left) {
             return Ok(right);
         }
@@ -263,7 +287,22 @@ impl Interpreter {
         if is_failure(&right) {
             return Ok(right);
         }
-        let ord = cmp_values(&left, &right);
+        // An object with its own `Str`/`Stringy` orders by that string, as the
+        // `cmp` operator does (#15940); `cmp_values` is the structural order
+        // and knows nothing of user methods.
+        let ord = if self.has_user_stringifier_operand(&left)
+            || self.has_user_stringifier_operand(&right)
+        {
+            match self.cmp_value(left.clone(), right.clone())?.view() {
+                ValueView::Enum { key, .. } if key.as_str() == "Less" => std::cmp::Ordering::Less,
+                ValueView::Enum { key, .. } if key.as_str() == "More" => {
+                    std::cmp::Ordering::Greater
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        } else {
+            cmp_values(&left, &right)
+        };
         let keep_left = if is_min { ord.is_le() } else { ord.is_ge() };
         Ok(if keep_left { left } else { right })
     }
@@ -287,6 +326,7 @@ impl Interpreter {
         op: &str,
         left: &Value,
         right: &Value,
+        core_only: bool,
     ) -> Option<Result<Value, RuntimeError>> {
         // A metaop hands over list elements ref-preserving (`($a,) Zeq ...`
         // wraps `$a` so `=:=` can see the container); these are all value
@@ -295,14 +335,21 @@ impl Interpreter {
         let decont = |v: &Value| v.unwrap_varref().deref_container();
         let (l, r) = (decont(left), decont(right));
         if let Some(kind) = StrCmp::from_op(op) {
-            return Some(self.str_cmp_values(kind, l, r));
+            return Some(if core_only {
+                self.str_cmp_values_core(kind, l, r)
+            } else {
+                self.str_cmp_values(kind, l, r)
+            });
         }
         Some(match op {
+            "leg" if core_only => self.str_leg_core(l, r),
             "leg" => self.str_leg(l, r),
             "before" => self.before_after_values(true, l, r),
             "after" => self.before_after_values(false, l, r),
             "===" => self.identical_values(false, l, r),
             "!==" => self.identical_values(true, l, r),
+            "min" if core_only => self.min_max_values_core(true, l, r),
+            "max" if core_only => self.min_max_values_core(false, l, r),
             "min" => self.min_max_values(true, l, r),
             "max" => self.min_max_values(false, l, r),
             _ => return None,

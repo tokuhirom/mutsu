@@ -25,15 +25,19 @@ const CTOR: RowFlags = RowFlags::OWNER_ONLY
     .or(RowFlags::ANY_NAMED)
     .or(RowFlags::JUNCTION_ARGS)
     .or(RowFlags::TYPE_OBJECT_OK);
+const RAW_CTOR: RowFlags = CTOR.or(RowFlags::RAW_NAMED);
 
 macro_rules! late {
     ($owner:literal, $name:literal, $handler:ident) => {
+        late!($owner, $name, $handler, CTOR)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Interp($handler),
-            flags: CTOR,
+            flags: $flags,
             named: &[],
         }
     };
@@ -58,31 +62,31 @@ pub(super) static ROWS: &[MethodRow] = &[
     late!("MixHash", "new-from-pairs", new_from_pairs),
     // Rakudo declares `new` on each of these classes; the answer is `Mu.new`'s
     // (`dispatch_new` builds the built-in value or the user subclass).
-    late!("Array", "new", new),
-    late!("Backtrace", "new", new),
-    late!("Bag", "new", new),
-    late!("BagHash", "new", new),
-    late!("Complex", "new", new),
-    late!("Date", "new", new),
-    late!("DateTime", "new", new),
-    late!("Duration", "new", new),
-    late!("IO::Path", "new", new),
-    late!("Instant", "new", new),
-    late!("Int", "new", new),
-    late!("List", "new", new),
-    late!("Map", "new", new),
-    late!("Mix", "new", new),
-    late!("MixHash", "new", new),
-    late!("Num", "new", new),
-    late!("Pair", "new", new),
-    late!("Rat", "new", new),
-    late!("Seq", "new", new),
-    late!("Set", "new", new),
-    late!("SetHash", "new", new),
-    late!("Signature", "new", new),
-    late!("Semaphore", "new", new),
-    late!("Mu", "new", new),
-    late!("Mu", "bless", bless),
+    late!("Array", "new", new, RAW_CTOR),
+    late!("Backtrace", "new", new, RAW_CTOR),
+    late!("Bag", "new", new, RAW_CTOR),
+    late!("BagHash", "new", new, RAW_CTOR),
+    late!("Complex", "new", new, RAW_CTOR),
+    late!("Date", "new", new, RAW_CTOR),
+    late!("DateTime", "new", new, RAW_CTOR),
+    late!("Duration", "new", new, RAW_CTOR),
+    late!("IO::Path", "new", new, RAW_CTOR),
+    late!("Instant", "new", new, RAW_CTOR),
+    late!("Int", "new", new, RAW_CTOR),
+    late!("List", "new", new, RAW_CTOR),
+    late!("Map", "new", new, RAW_CTOR),
+    late!("Mix", "new", new, RAW_CTOR),
+    late!("MixHash", "new", new, RAW_CTOR),
+    late!("Num", "new", new, RAW_CTOR),
+    late!("Pair", "new", new, RAW_CTOR),
+    late!("Rat", "new", new, RAW_CTOR),
+    late!("Seq", "new", new, RAW_CTOR),
+    late!("Set", "new", new, RAW_CTOR),
+    late!("SetHash", "new", new, RAW_CTOR),
+    late!("Signature", "new", new, RAW_CTOR),
+    late!("Semaphore", "new", new, RAW_CTOR),
+    late!("Mu", "new", new, RAW_CTOR),
+    late!("Mu", "bless", bless, RAW_CTOR),
 ];
 
 /// The call's arguments, named ones after the positional ones.

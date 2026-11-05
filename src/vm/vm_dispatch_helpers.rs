@@ -56,7 +56,7 @@ impl Interpreter {
                     return Ok(v);
                 }
             }
-            if let Some(result) = self.comparison_family_values(canonical, left, right) {
+            if let Some(result) = self.comparison_family_values(canonical, left, right, false) {
                 return result;
             }
         }
@@ -351,7 +351,7 @@ impl Interpreter {
     pub(super) fn value_needs_numeric_bridge(value: &Value) -> bool {
         matches!(
             value.view(),
-            ValueView::Instance { .. } | ValueView::ContainerRef(_)
+            ValueView::Instance { .. } | ValueView::ContainerRef(_) | ValueView::Package(_)
         )
     }
 
@@ -359,7 +359,10 @@ impl Interpreter {
     /// `Stringy`/`Str`. `coerce_stringy_operand` hands every other shape back
     /// untouched, so there is nothing to gain by routing them through it.
     pub(super) fn value_needs_stringy_bridge(value: &Value) -> bool {
-        matches!(value.view(), ValueView::Instance { .. })
+        matches!(
+            value.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        )
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
@@ -922,7 +925,13 @@ impl Interpreter {
                 .as_deref()
                 .or(compiled_fns)
                 .unwrap_or(&empty_fns);
-            return self.run_decl_code(&cc, fns);
+            // Lexical to the unit that declared it: bareword visibility
+            // (`module_name_hidden_here`) follows the executing unit, not the
+            // unit of whoever calls `.build`.
+            let entered = self.enter_source_file(data.source_file.as_deref());
+            let result = self.run_decl_code(&cc, fns);
+            self.leave_source_file(entered);
+            return result;
         }
 
         // Fast path: Sub with compiled_code
@@ -1010,6 +1019,12 @@ impl Interpreter {
             ..
         } = target.view()
         {
+            // A plain builtin operator on two operands (#15847).
+            if !is_regex
+                && let Some(result) = self.try_plain_infix_routine_value(package, name, &args)
+            {
+                return result;
+            }
             let pkg = package.resolve();
             let name_str = name.resolve();
             // Junction autothreading for operator routines called as values (e.g.
@@ -1092,6 +1107,17 @@ impl Interpreter {
                 && (!matches!(args[0].view(), ValueView::Package(_)) || name_str != "new")
             {
                 let invocant = args[0].clone();
+                // A role mixed into a native value (`my %h does R`, whose `R`
+                // overrides `AT-KEY`): the method object names the core type's
+                // own method, so it runs on the native base and not through the
+                // override that called it (`call_sub_value` does the same;
+                // Hash::Util saves `%h.can('AT-KEY').head` before `does Locked`).
+                if matches!(invocant.view(), ValueView::Mixin(..))
+                    && let Some(result) =
+                        self.mixin_base_native_entry(&invocant, &name_str, &args[1..])
+                {
+                    return result;
+                }
                 return self.try_compiled_method_or_interpret(
                     invocant,
                     &name_str,

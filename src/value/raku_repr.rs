@@ -45,7 +45,7 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
 /// True when `c` attaches to a preceding base character (Extend / combining).
 // Cost: O(1).
 fn extends_grapheme(c: char) -> bool {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     let mut buf = [0u8; 8];
     let mut t = String::from("a");
     t.push_str(c.encode_utf8(&mut buf));
@@ -129,10 +129,10 @@ pub(crate) fn format_num_str(f: f64) -> String {
     let sign = if f < 0.0 { "-" } else { "" };
 
     // For numbers that are naturally expressible without scientific notation
-    // (the half-open magnitude window [1e-4, 1e15)), use fixed-point
+    // (the half-open magnitude window [1e-4, 1e16)), use fixed-point
     // representation. For others, use scientific notation — matching `Num.Str`,
-    // so `1e15` prints `1e+15` while `9e14` stays `900000000000000`.
-    if (1e-4..1e15).contains(&abs_f) {
+    // so `1e16` prints `1e+16` while `1e15` stays `1000000000000000`.
+    if (1e-4..1e16).contains(&abs_f) {
         // Find shortest fixed-point round-trip representation
         for prec in 0..=20 {
             let candidate = format!("{sign}{abs_f:.prec$}");
@@ -963,11 +963,12 @@ fn raku_value_node(v: &Value) -> String {
             } else if (n % d) == num_bigint::BigInt::from(0) {
                 format!("{}.0", n / d)
             } else {
-                // If denominator doesn't fit in i64, use fraction notation
-                // (matches Raku behavior: standard Rats with uint64 denominator
-                // get decimal form, but larger denominators get fraction form).
+                // A denominator past uint64 gets the fraction form
+                // (roast S32-num/rat.t: 0.9999999999999999999999), one that
+                // still fits it prints as the decimal when it terminates
+                // (rakudo: `(1/2**63).raku` is the decimal).
                 use num_traits::ToPrimitive;
-                if d.abs().to_i64().is_none() {
+                if d.abs().to_u64().is_none() {
                     return format!("<{}/{}>", n, d);
                 }
                 // Check if denominator is a power of 2 and 5 (terminating decimal)
@@ -1449,6 +1450,7 @@ pub(crate) fn setbagmix_raku_named(v: &Value, type_override: Option<&str>) -> Op
 
 /// Coerce a value to a native integer type (e.g. `.byte()`, `.int8()`, `.uint32()`).
 /// Wraps out-of-range values using modular arithmetic.
+// Cost: O(n + b), n = chars parsed from a string representation, b = integer bits.
 pub(crate) fn native_int_coerce_method(
     target: &Value,
     type_name: &str,
@@ -1457,6 +1459,11 @@ pub(crate) fn native_int_coerce_method(
     use num_traits::ToPrimitive;
 
     let big_val: NumBigInt = match target.view() {
+        ValueView::Package(_) if target.isa_check("Int") => {
+            return Err(RuntimeError::new(
+                "Can only perform big integer operations on concrete objects",
+            ));
+        }
         ValueView::Int(i) => NumBigInt::from(i),
         ValueView::BigInt(n) => (**n).clone(),
         ValueView::Num(f) => {

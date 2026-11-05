@@ -1,9 +1,11 @@
 mod methods_introspect;
 pub(crate) use methods_introspect::embedded_container_type_name;
 mod methods_io_dispatch;
+mod flat_iterable_instances;
 mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
+pub(crate) use methods_mixin_dispatch::{MixinFrontEntry, MixinFrontKey, MixinWinnerKey};
 mod methods_mixin_what_cache;
 mod methods_mut;
 mod methods_mut_dispatch;

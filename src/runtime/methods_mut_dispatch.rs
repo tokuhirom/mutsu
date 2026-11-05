@@ -344,7 +344,10 @@ impl Interpreter {
             } else if target_var.starts_with('&') {
                 "Sub"
             } else {
-                "Scalar"
+                // A native-typed lexical's container is a native reference.
+                self.var_type_constraint(target_var)
+                    .and_then(|tc| crate::native_types::native_lex_ref_class(&tc))
+                    .unwrap_or("Scalar")
             };
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::str(display_name));
@@ -719,7 +722,7 @@ impl Interpreter {
             }
 
             if args.len() == 1 && !self.is_native_method(&class_name.resolve(), method) {
-                let class_attrs = self.collect_class_attributes(&class_name.resolve());
+                let class_attrs = self.class_attributes_shared(&class_name.resolve());
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {

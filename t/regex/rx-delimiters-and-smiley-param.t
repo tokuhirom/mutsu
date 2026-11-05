@@ -23,16 +23,16 @@ ok "ab" ~~ rx{a}, 'rx{ } bracket delimiter still works';
 # as `Array[Int]:D`. Regression pin for Net::IP::Parse BUILD signature.
 
 sub f1(Array:D[Int] $x) { $x.elems }
-is f1([1, 2, 3]), 3, 'Array:D[Int] param (smiley before parametrization)';
+is f1(Array[Int].new(1, 2, 3)), 3, 'Array:D[Int] param (smiley before parametrization)';
 
 sub f2(Array[Int]:D $x) { $x.elems }
-is f2([1, 2, 3]), 3, 'Array[Int]:D param (smiley after parametrization) still works';
+is f2(Array[Int].new(1, 2, 3)), 3, 'Array[Int]:D param (smiley after parametrization) still works';
 
 sub f3(Hash:D[Int] $x) { $x.elems }
 is f3({ a => 1, b => 2 }), 2, 'Hash:D[Int] param';
 
 # combined with a where-clause junction, as in the dist
 sub f4(Array:D[Int] :$octets where $octets.elems == 4 | 16) { $octets.elems }
-is f4(octets => [1, 2, 3, 4]), 4, 'Array:D[Int] named param with where-junction';
+is f4(octets => Array[Int].new(1, 2, 3, 4)), 4, 'Array:D[Int] named param with where-junction';
 
 done-testing;

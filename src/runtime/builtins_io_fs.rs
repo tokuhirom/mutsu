@@ -157,18 +157,19 @@ impl Interpreter {
                 _ => positional.push(arg),
             }
         }
-        let source = positional
+        // `resolve_io_arg_path` reads an IO::Path (or a `%?RESOURCES` entry,
+        // which shares its rows) for the file it names, and stringifies
+        // anything else.
+        let (src_buf, source) = positional
             .first()
-            .map(|v| v.to_string_value())
+            .map(|v| self.resolve_io_arg_path(v))
             .ok_or_else(|| RuntimeError::new("copy requires a source path"))?;
-        let dest = positional
+        let (dest_buf, dest) = positional
             .get(1)
-            .map(|v| v.to_string_value())
+            .map(|v| self.resolve_io_arg_path(v))
             .ok_or_else(|| RuntimeError::new("copy requires a destination path"))?;
         check_null_in_path(&source)?;
         check_null_in_path(&dest)?;
-        let src_buf = self.resolve_path(&source);
-        let dest_buf = self.resolve_path(&dest);
         Ok(self.copy_file_op(&src_buf, &dest_buf, createonly))
     }
 
@@ -211,20 +212,11 @@ impl Interpreter {
                 .first()
                 .cloned()
                 .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
-            let mode_int = match mode_value.view() {
-                ValueView::Int(i) => i as u32,
-                // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
-                // already-evaluated integer in the inner value; coerce through it.
-                ValueView::Mixin(..) | ValueView::BigInt(_) => {
-                    crate::runtime::to_int(&mode_value) as u32
-                }
-                ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Invalid mode: {}",
-                        mode_value.to_string_value()
-                    )));
-                }
+            let Some(mode_int) = crate::runtime::native_io::fs_ops::chmod_mode(&mode_value) else {
+                return Err(RuntimeError::new(format!(
+                    "Invalid mode: {}",
+                    mode_value.to_string_value()
+                )));
             };
             // `chmod 0o755, <a b>` passes a single list argument; flatten so
             // each path is chmod'd individually rather than stringifying the

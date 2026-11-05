@@ -394,13 +394,18 @@ impl Interpreter {
                                 program.atom_ic[i as usize],
                             ),
                             atom @ (RegexAtom::VarInterp(name)
+                            | RegexAtom::VarInterpMarkless(name)
                             | RegexAtom::VarAssertion(name)) => match self.var_interp_target(
                                 name,
                                 matches!(atom, RegexAtom::VarAssertion(_)),
                                 levels.top().caps(),
                                 chars,
                                 pos,
-                                (program.atom_ic[i as usize], program.markless),
+                                (
+                                    program.atom_ic[i as usize],
+                                    program.markless
+                                        || matches!(atom, RegexAtom::VarInterpMarkless(_)),
+                                ),
                             ) {
                                 VarInterpTarget::End(end) => {
                                     pc += 1;
@@ -560,7 +565,7 @@ impl Interpreter {
                         let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
-                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars) {
+                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars, pos) {
                             None => false,
                             Some(ResolvedCall {
                                 verdict,
@@ -622,6 +627,9 @@ impl Interpreter {
                                             false
                                         } else {
                                             let stack_base = stack.len();
+                                            // A `rule`/`token` callee returns one
+                                            // match, whatever this site's ratchet.
+                                            let commit = commit || callee.declared_ratchet();
                                             enter_frame!(
                                                 callee,
                                                 callee_pkg,
@@ -962,7 +970,6 @@ impl Interpreter {
                     | RxOp::Collect { .. }
                     | RxOp::SepEmit { .. }
                     | RxOp::SepNames { .. }
-                    | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
                     | RxOp::EmptyRange

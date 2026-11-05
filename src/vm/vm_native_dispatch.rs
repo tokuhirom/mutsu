@@ -192,6 +192,22 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // `(C.new, 9).flat` reads the `iterator` of an `Iterable` element
+        // (#15322); the pure flattener cannot, so expand those elements first.
+        if method_sym.as_str() == "flat"
+            && args.is_empty()
+            && Self::flat_may_hold_iterable_instance(target)
+            && !self.user_shadows_builtin(target, method_sym, args, false)
+        {
+            // The pure flattener answers what is left: the expanded list
+            // holds no instance any more, and one that holds an instance with
+            // no elements of its own (or a `Mixin`) flattens as a plain item.
+            return match self.expand_iterable_instances(target) {
+                Ok(Some(expanded)) => crate::builtins::method_table::flat_list(&expanded, &[]),
+                Ok(None) => crate::builtins::method_table::flat_list(target, &[]),
+                Err(err) => Some(Err(err)),
+            };
+        }
         // `Any.kv`/`.pairs`/... are `self.list.<method>`: an object that
         // overrides `list` answers from that list, not as one item.
         if let Some(view) = self
@@ -207,6 +223,11 @@ impl Interpreter {
         // it, not through the range or seq it carries (#15361): the instance
         // dispatch (`own_iteration_view`) answers.
         if args.is_empty() && self.payload_instance_lists_own_iterator(target, method_name) {
+            return None;
+        }
+        // The same subclass with its own `list` answers `join`/`Array`/... from
+        // it (#16022).
+        if args.is_empty() && self.payload_instance_reads_own_list(target, method_name) {
             return None;
         }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed

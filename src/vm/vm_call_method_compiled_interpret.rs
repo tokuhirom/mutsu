@@ -395,12 +395,12 @@ impl Interpreter {
                         let invocant_for_dispatch = target.clone();
                         let pushed_dispatch = loan_env!(
                             self,
-                            push_method_dispatch_frame(
-                                cn,
-                                method,
+                            push_method_dispatch_frame_sym(
+                                class_sym,
+                                method_sym,
                                 &args,
                                 invocant_for_dispatch,
-                                Some((owner_class.as_str(), &method_def))
+                                Some((owner_class, &method_def))
                             )
                         );
                         let invocant = Some(target);
@@ -578,7 +578,7 @@ impl Interpreter {
                     let cc = entry.compiled_code.clone();
                     let can_skip_merge = entry.can_skip_merge;
                     return self.dispatch_compiled_method(
-                        cn,
+                        class_sym,
                         owner_class,
                         method_sym,
                         &method_def,
@@ -692,7 +692,7 @@ impl Interpreter {
 
                     self.arm_multi_method_winner_trust(&method_def);
                     return self.dispatch_compiled_method(
-                        cn,
+                        class_sym,
                         owner_class,
                         method_sym,
                         &method_def,

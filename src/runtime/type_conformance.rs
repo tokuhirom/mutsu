@@ -83,6 +83,13 @@ pub(crate) struct ConformanceCache {
     /// Answers given by the registry or the env (everything but the static
     /// RakuAST / `Mu` / `Any` relations); see [`Interpreter::assign_tiers_memoised`].
     dependent_answers: Cell<u64>,
+    /// Answers the fast path declined and the general walk gave: they read the
+    /// env arbitrarily, so a ranking that saw one is never remembered.
+    opaque_answers: Cell<u64>,
+    /// While a declared index is being built: the env facts the fast path
+    /// answered from (`(name raw id, is_sub)` -> answer), so the index can be
+    /// remembered under them.
+    dep_facts: RefCell<Option<DepLog>>,
     tier_memo: RefCell<Vec<TierMemoEntry>>,
     /// `DeclaredKey` -> small id, so a candidate pair is a pair of integers.
     declared_ids: RefCell<rustc_hash::FxHashMap<multi_rank::DeclaredKey, u32>>,
@@ -96,9 +103,24 @@ pub(crate) struct ConformanceCache {
 
 impl ConformanceCache {
     // Cost: O(1).
-    pub(super) fn note_dependent_answer(&self) {
+    pub(super) fn note_opaque_answer(&self, sub: Symbol, sup: Symbol, answer: bool) {
         self.dependent_answers.set(self.dependent_answers.get() + 1);
+        if let Some(log) = self.dep_facts.borrow_mut().as_mut() {
+            log.opaque.insert((sub.raw(), sup.raw()), answer);
+        } else {
+            self.opaque_answers.set(self.opaque_answers.get() + 1);
+        }
     }
+}
+
+/// What a declared index under construction was answered from.
+#[derive(Default)]
+pub(crate) struct DepLog {
+    /// `(name raw id, is_sub)` -> the per-name env check's answer.
+    facts: rustc_hash::FxHashMap<(u32, bool), bool>,
+    /// `(sub, sup)` raw ids -> the general walk's answer for a pair the fast
+    /// path declined; re-asked on reuse, since it reads the env arbitrarily.
+    opaque: rustc_hash::FxHashMap<(u32, u32), bool>,
 }
 
 /// The tiers `assign_tiers` gave one candidate set, keyed by the ranks it
@@ -260,7 +282,11 @@ impl Interpreter {
             sup_facts.sup_ok = self.compute_conformance_sup_is_plain(sup);
             sup_facts.sup_serial = serial;
         }
-        if !sup_facts.sup_ok {
+        let sup_ok = sup_facts.sup_ok;
+        if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
+            log.facts.insert((sup.raw(), false), sup_ok);
+        }
+        if !sup_ok {
             return None;
         }
         let sub_facts = names.get_or_default(sub)?;
@@ -268,13 +294,22 @@ impl Interpreter {
             sub_facts.sub_ok = !self.is_int_enum_type_name(&sub.resolve());
             sub_facts.sub_serial = serial;
         }
-        if !sub_facts.sub_ok {
+        let sub_ok = sub_facts.sub_ok;
+        if let Some(log) = cache.dep_facts.borrow_mut().as_mut() {
+            log.facts.insert((sub.raw(), true), sub_ok);
+        }
+        if !sub_ok {
             return None;
         }
         let ancestors = sub_facts
             .ancestors
             .get_or_insert_with(|| self.compute_conformance_ancestors(sub));
         let ancestors = ancestors.as_deref()?;
+        // The role-parent walk compares a reduced name (`R[Int]` -> `R`), which
+        // the id lookup below cannot do: the general walk answers it.
+        if sup.with_str(|n| n.contains('[')) {
+            return None;
+        }
         let id = sup.raw();
         // An MRO is a handful of names: a scan beats a binary search.
         Some(if ancestors.len() <= 16 {
@@ -299,11 +334,19 @@ impl Interpreter {
         {
             return None;
         }
-        {
+        let (is_class, is_role) = {
             let registry = self.registry();
-            if !registry.classes.contains_key(name) || registry.roles.contains_key(name) {
-                return None;
-            }
+            (
+                registry.classes.contains_key(name),
+                registry.roles.contains_key(name),
+            )
+        };
+        // A name that is both (or neither) is not one of the two shapes below.
+        if is_class == is_role {
+            return None;
+        }
+        if is_role {
+            return self.compute_role_conformance_ancestors(name);
         }
         let mut ids: Vec<u32> = self
             .mro_readonly(name)
@@ -314,6 +357,57 @@ impl Interpreter {
             ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
         }
         // Sorted for the binary search; an MRO is a handful of names.
+        ids.sort_unstable();
+        ids.dedup();
+        Some(Arc::from(ids))
+    }
+
+    /// The names a registered role `name` conforms to, as the general walk
+    /// finds them for the role's type object: everything reachable through the
+    /// role-parent graph (`role_type_object_distance`, parent names reduced
+    /// with `role_base_name`), the role's own class MRO (empty or itself for a
+    /// role) and the roles it composes. A built-in role keeps the catalog's
+    /// answer, so `None` for it. Reads the registry only, so it lasts as long
+    /// as the registry stamp, like a class's.
+    // Cost: O(g), g = roles reachable through the role-parent graph.
+    fn compute_role_conformance_ancestors(&self, name: &str) -> Option<Ancestors> {
+        if !crate::builtin_types::ancestry::builtin_role_ancestors(name).is_empty() {
+            return None;
+        }
+        let mut ids: Vec<u32> = Vec::new();
+        {
+            let registry = self.registry();
+            let mut seen = std::collections::HashSet::new();
+            seen.insert(name.to_string());
+            let mut layer = vec![name.to_string()];
+            while !layer.is_empty() {
+                let mut next = Vec::new();
+                for role in &layer {
+                    let Some(parents) = registry.role_parents.get(role) else {
+                        continue;
+                    };
+                    for parent in parents {
+                        let parent = Self::role_base_name(parent);
+                        if !seen.insert(parent.to_string()) {
+                            continue;
+                        }
+                        ids.push(Symbol::intern(parent).raw());
+                        if registry.roles.contains_key(parent) {
+                            next.push(parent.to_string());
+                        }
+                    }
+                }
+                layer = next;
+            }
+            if let Some(roles) = registry.class_composed_roles.get(name) {
+                ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
+            }
+        }
+        ids.extend(
+            self.mro_readonly(name)
+                .iter()
+                .map(|ancestor| Symbol::intern(ancestor).raw()),
+        );
         ids.sort_unstable();
         ids.dedup();
         Some(Arc::from(ids))
@@ -393,13 +487,47 @@ impl Interpreter {
         };
         let (order, pos_of) = declared_index::canonical_order(&ids);
         let sorted_ids: Vec<u32> = order.iter().map(|&i| ids[i]).collect();
-        let cached = cache.declared_index.borrow().get(&sorted_ids);
+        let cached = cache
+            .declared_index
+            .borrow()
+            .get(&sorted_ids, &|deps| self.index_deps_hold(deps));
         let index = cached.unwrap_or_else(|| {
             let canonical: Vec<&MultiRank> = order.iter().map(|&i| &ranks[i]).collect();
             let before = cache.dependent_answers.get();
+            let opaque_before = cache.opaque_answers.get();
+            let outer_log = cache
+                .dep_facts
+                .replace(Some(DepLog::default()));
             let index = Arc::new(declared_index::build(&canonical, &conforms));
+            let log = cache.dep_facts.replace(outer_log).unwrap_or_default();
             if cache.dependent_answers.get() == before {
-                cache.declared_index.borrow_mut().insert(sorted_ids.clone(), Arc::clone(&index));
+                cache.declared_index.borrow_mut().insert(
+                    sorted_ids.clone(),
+                    Arc::clone(&index),
+                    None,
+                );
+            } else if cache.opaque_answers.get() == opaque_before {
+                // Every non-static answer came from the registry (stamp) or
+                // from a per-name env check recorded in `facts`: the index
+                // holds while both still read the same.
+                let deps = declared_index::IndexDeps {
+                    stamp: self.registry().type_stamp(),
+                    facts: log
+                        .facts
+                        .into_iter()
+                        .map(|((raw, is_sub), ok)| (Symbol::from_raw(raw), is_sub, ok))
+                        .collect(),
+                    opaque: log
+                        .opaque
+                        .into_iter()
+                        .map(|((sub, sup), ok)| (Symbol::from_raw(sub), Symbol::from_raw(sup), ok))
+                        .collect(),
+                };
+                cache.declared_index.borrow_mut().insert(
+                    sorted_ids.clone(),
+                    Arc::clone(&index),
+                    Some(deps),
+                );
             }
             index
         });
@@ -440,6 +568,25 @@ impl Interpreter {
             wanted,
             tiers,
         });
+    }
+
+    /// Whether a remembered declared index's registry stamp and per-name env
+    /// facts still read as they did when it was built.
+    // Cost: O(f * c + q * h), f = the remembered facts, c = one env binding probe,
+    // q = the remembered declined pairs, h = one general hierarchy walk.
+    fn index_deps_hold(&self, deps: &declared_index::IndexDeps) -> bool {
+        deps.stamp == self.registry().type_stamp()
+            && deps.facts.iter().all(|&(name, is_sub, ok)| {
+                if is_sub {
+                    !self.is_int_enum_type_name(&name.resolve()) == ok
+                } else {
+                    self.compute_conformance_sup_is_plain(name) == ok
+                }
+            })
+            && deps
+                .opaque
+                .iter()
+                .all(|&(sub, sup, ok)| self.nominal_type_conforms_general(sub, sup) == ok)
     }
 
     /// Whether `sup` is a RakuAST name without a smiley, the shape the

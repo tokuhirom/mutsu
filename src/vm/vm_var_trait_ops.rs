@@ -176,6 +176,19 @@ impl Interpreter {
                 self.ensure_parametric_role_pun_class(&base_name.resolve(), type_args)
         {
             punned
+        } else if (name.starts_with('%') || name.starts_with('@'))
+            && !trait_name.contains('[')
+            && self.registry().roles.contains_key(&trait_name)
+            && !self.registry().classes.contains_key(&trait_name)
+            // A bare role whose type parameters all have defaults is punned
+            // with those defaults bound, as `Q.new` does (`role Q[::T = Int]`:
+            // `my %h is Q` sees `T` as `Int`, #15991).
+            && let Ok(Some(punned)) = self.default_parametric_role_pun(&Value::package(
+                crate::symbol::Symbol::intern(&trait_name),
+            ))
+            && let ValueView::Package(punned_name) = punned.view()
+        {
+            punned_name.resolve()
         } else {
             trait_name
         };
@@ -921,6 +934,12 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            // A role whose type parameters all have defaults (`role R[::T = Int]`)
+            // is punned with those defaults bound, as `R.new` does; `new` on the
+            // unspecialized type object left the capture to whatever was in scope.
+            let type_obj = self
+                .default_parametric_role_pun(&type_obj)?
+                .unwrap_or(type_obj);
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Computed after `new`: a bare role (`role R is Hash`) is punned by
             // `new`, and only the punned class's MRO reaches `Hash`.
@@ -1190,12 +1209,42 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Call `trait_mod:<is>` the way a class or role declaration does. The
+    /// by-name search misses a candidate that a module's own `use` imported
+    /// into that module's compunit (the import lives in the module-scope
+    /// lexicals, which `&trait_mod:<is>` resolves through), and when other
+    /// candidates ARE visible (a `use NativeCall` in a method body brings its
+    /// own) it finds those and none matches: on a no-candidate answer, try
+    /// that code object, so `class X is Singleton` inside a module that
+    /// `use`s the trait's provider reaches the provider's `trait_mod:<is>`
+    /// (Pop, #15827). A second no-candidate answer returns the first error.
+    // Cost: the dispatch of the trait candidates, twice on the fallback.
+    pub(crate) fn vm_call_trait_mod_is(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        match self.vm_call_function("trait_mod:<is>", args.clone()) {
+            Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                // The same resolution `&trait_mod:<is>` gets (module-scope
+                // lexicals included).
+                let code = self.resolve_code_var_unshadowed("trait_mod:<is>");
+                if code.is_nil() {
+                    return Err(err);
+                }
+                match self.vm_call_sub_value(code, args) {
+                    Err(second) if Self::is_trait_mod_no_candidate(&second) => Err(err),
+                    other => other,
+                }
+            }
+            other => other,
+        }
+    }
+
     /// Whether `e` is the "none of these signatures matches" verdict for
     /// `trait_mod:<is>` itself, rather than an error from inside a handler.
     pub(crate) fn is_trait_mod_no_candidate(e: &RuntimeError) -> bool {
         let msg = &e.message;
         msg.contains("No matching candidates for proto sub: trait_mod:<is>")
             || msg.contains("Cannot resolve caller trait_mod:<is>")
+            // Registered somewhere, but no candidate is visible to this unit.
+            || msg.contains("Unknown function: trait_mod:<is>")
     }
 
     /// Resolve an `is Alias` trait name that is a `constant` bound to a type

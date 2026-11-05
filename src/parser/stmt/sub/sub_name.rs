@@ -14,6 +14,39 @@ pub(crate) fn parse_sub_name(input: &str) -> PResult<'_, String> {
     Ok((rest, name))
 }
 
+/// `sub meow:sym<bar> {}`: from language version 6.d on, the `:sym<>` colonpair
+/// of a plain (non-operator) subroutine name is reserved for the grammar
+/// multi-dispatch convention and raises `X::Syntax::Reserved` (6.c reports it
+/// as `X::Syntax::Extension::Category` instead, which is not modelled here).
+// Cost: O(|name|).
+pub(crate) fn reserved_sym_colonpair_error(name: &str) -> Option<PError> {
+    let base = name.split(':').next().unwrap_or(name);
+    if is_operator_category(base)
+        || !(name.contains(":sym<") || name.contains(":sym\u{ab}"))
+        || crate::parser::stmt::simple::current_language_version_starts_with("6.c")
+    {
+        return None;
+    }
+    let message = "The :sym<> colonpair is reserved";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        crate::value::Value::str(message.to_string()),
+    );
+    attrs.insert(
+        "reserved".to_string(),
+        crate::value::Value::str(":sym<>".to_string()),
+    );
+    let exception = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Reserved"),
+        attrs,
+    );
+    Some(PError::fatal_with_exception(
+        message.to_string(),
+        Box::new(exception),
+    ))
+}
+
 /// Like [`parse_sub_name`], but also accepts `dispatch:<...>` (e.g.
 /// `dispatch:<.?>`, a custom-dispatch override invoked in place of the
 /// ordinary `.?method` fallback). Verified against rakudo: `sub

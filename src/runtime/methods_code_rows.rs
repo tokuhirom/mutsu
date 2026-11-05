@@ -42,7 +42,6 @@ impl Interpreter {
                 compiled_fns: None,
                 compiled_routine: None,
                 is_decl_expr_thunk: false,
-                deprecated_message: None,
                 source_line: None,
                 source_file: None,
                 owned_captures: Vec::new(),
@@ -52,7 +51,7 @@ impl Interpreter {
                 captured_fatal_mode: false,
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
-                state_scope_guard: None,
+                _state_scope_guard: None,
                 captured_readonly: None,
                 routine_cell: Default::default(),
             };
@@ -440,6 +439,10 @@ impl Interpreter {
                 let key = crate::qualified::qualified(package, name);
                 let is_stub = self.registry().functions.get(&key).is_some_and(|def| def.is_stub);
                 return Some(Value::truth(is_stub));
+            }
+            // A `Method` object (`.^methods`, `.^lookup`) records it as an attribute.
+            ValueView::Instance { attributes, .. } => {
+                return attributes.as_map().get("yada").cloned();
             }
             _ => return None,
         };

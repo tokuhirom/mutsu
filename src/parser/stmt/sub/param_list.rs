@@ -342,15 +342,19 @@ pub(crate) fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> 
             rest = r;
             continue;
         }
+        // Parameters are comma-separated: rakudo rejects the Perl 5 prototype
+        // spelling `($$$$)` (an anonymous sigil followed by another parameter
+        // with no comma) as a malformed parameter (#16210).
         if !r.starts_with(',')
             && starts_with_sigil_param(r)
             && params.last().is_some_and(is_anonymous_sigil_param)
         {
-            let (r, mut p) = parse_single_param(r)?;
-            p.multi_invocant = multi_invocant;
-            params.push(p);
-            rest = r;
-            continue;
+            return Err(PError::raw_with_what(
+                "X::Syntax::Malformed: Malformed parameter".to_string(),
+                Some(r.len()),
+                "X::Syntax::Malformed",
+                "parameter",
+            ));
         }
         if !r.starts_with(',') {
             // Check for --> return type annotation at end of param list

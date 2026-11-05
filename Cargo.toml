@@ -13,7 +13,7 @@ default-members = ["."]
 
 [package]
 name = "mutsu"
-version = "0.25.0"
+version = "0.26.1"
 edition = "2024"
 rust-version = "1.99.0"
 license = "Artistic-2.0"
@@ -90,8 +90,6 @@ num-traits = "0.2"
 # KEEP: floored div/mod and gcd on BigInt. It is a dependency of num-bigint
 # anyway, so dropping the direct use would remove nothing from the graph.
 num-integer = "0.1"
-# KEEP (a): grapheme cluster segmentation (UAX #29), tracking Unicode versions.
-unicode-segmentation = "1.13.3"
 # KEEP (a): NFC/NFD/NFKC/NFKD normalization, tracking Unicode versions.
 unicode-normalization = "0.1"
 # KEEP (b): REPL line editing (native only).
@@ -130,11 +128,11 @@ libloading = { version = "0.9", optional = true }
 # run time (native only).
 libffi = { version = "5", optional = true }
 # KEEP (a): the Cranelift method JIT (ADR-0004), behind the `jit` feature.
-cranelift-codegen = { version = "0.136", optional = true }
-cranelift-frontend = { version = "0.136", optional = true }
-cranelift-jit = { version = "0.136", optional = true }
-cranelift-module = { version = "0.136", optional = true }
-cranelift-native = { version = "0.136", optional = true }
+cranelift-codegen = { version = "0.137", optional = true }
+cranelift-frontend = { version = "0.137", optional = true }
+cranelift-jit = { version = "0.137", optional = true }
+cranelift-module = { version = "0.137", optional = true }
+cranelift-native = { version = "0.137", optional = true }
 
 [dev-dependencies]
 # Used only by `builtins::unicode_name_gen` to (re)generate and verify the

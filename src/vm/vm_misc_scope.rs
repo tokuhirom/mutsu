@@ -607,6 +607,7 @@ impl Interpreter {
         code: &CompiledCode,
         bounds: [u32; 7],
         is_bare_block: bool,
+        decont_result: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -730,6 +731,18 @@ impl Interpreter {
         } else {
             self.run_range(code, body_start, queue_start, compiled_fns)
         };
+        // A routine that returns no container hands its caller the tail's
+        // VALUE: read it through its container now, so a LEAVE/KEEP phaser
+        // that writes through that container (`Cfg.level = "info"` after
+        // `Cfg.level = "trace"; Cfg.level`) cannot change it (#15491).
+        if decont_result
+            && body_result.is_ok()
+            && self.stack.len() > stack_base
+            && let Some(top) = self.stack.last_mut()
+            && top.is_container_ref()
+        {
+            *top = top.deref_container();
+        }
         let body_value = if self.stack.len() > stack_base {
             self.stack.last().cloned()
         } else if self.topic_state.last_topic_value != topic_before {

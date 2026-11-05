@@ -342,6 +342,7 @@ impl Interpreter {
         // candidate; the memo lists them so the walk is O(candidate levels),
         // not O(MRO depth) with a registry probe per level.
         let levels = self.method_candidate_levels(class_name, method_name);
+        let augment_cutoff = self.registry().augment_cutoff(mro, method_name);
         for &level in levels.iter() {
             let level = level as usize;
             if level >= mro.len() {
@@ -400,6 +401,11 @@ impl Interpreter {
                 }
                 for (def_idx, def) in overloads.iter().enumerate() {
                     if def.is_private {
+                        continue;
+                    }
+                    // An `augment`ed candidate the class's own dispatcher
+                    // predates is not part of it (#16049).
+                    if augment_cutoff.is_some_and(|cutoff| cutoff.hides(level, def)) {
                         continue;
                     }
                     // Submethods are NOT inherited: skip if defined on an

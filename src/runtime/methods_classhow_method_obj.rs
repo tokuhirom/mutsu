@@ -101,7 +101,7 @@ impl Interpreter {
         // RakuAST model classes are native type objects and therefore have no
         // ClassDef entry. Keep method_table in lockstep with
         // `.^methods(:local)` by deriving both from the same model metadata.
-        if let Some(names) = crate::rakuast::local_method_names(class_name) {
+        if let Some(names) = crate::builtins::method_table::rakuast_reflection::local_method_names(class_name) {
             for name in names {
                 table.insert(
                     name.to_string(),
@@ -321,6 +321,8 @@ impl Interpreter {
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
         attrs.insert("multi".to_string(), Value::FALSE);
+        // A native method (or a grammar token) has a body, not a `...` stub.
+        attrs.insert("yada".to_string(), Value::FALSE);
         attrs.insert("rw".to_string(), Value::FALSE);
         attrs.insert("readonly".to_string(), Value::TRUE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
@@ -536,6 +538,11 @@ impl Interpreter {
         }
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
         attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
+        // `Routine.yada`: the body is a bare `...` (`method m { ... }`).
+        attrs.insert(
+            "yada".to_string(),
+            Value::truth(!is_dispatcher && Self::sub_body_is_yada_stub(&method_def.body)),
+        );
         attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));
         attrs.insert("readonly".to_string(), Value::truth(!method_def.is_rw));
         // `Code.line`/`Code.file` — the declaration site, reported for a
@@ -946,7 +953,7 @@ impl Interpreter {
         // `.^method_table` by consulting their shared model metadata. Like an
         // ordinary `.^can` this spans the whole MRO, not just the receiver's
         // own class, so an inherited model method is found too.
-        if let Some(names) = crate::rakuast::inherited_method_names(&class_name) {
+        if let Some(names) = crate::builtins::method_table::rakuast_reflection::inherited_method_names(&class_name) {
             return if names.contains(&method_name) {
                 vec![Value::routine_parts(
                     Symbol::intern(&class_name),

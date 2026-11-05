@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
-use unicode_segmentation::UnicodeSegmentation;
+use crate::grapheme_break::UnicodeSegmentation;
 
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
@@ -41,23 +41,6 @@ thread_local! {
     /// regex declaration look already initialized.
     pub(crate) static GRAMMAR_DYNVAR_SCOPE_KEYS: RefCell<Vec<std::collections::HashSet<String>>> =
         const { RefCell::new(Vec::new()) };
-    /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
-    /// action methods that run at *reduce time* (during matching). The regex
-    /// match engine is `&self`, so an action's dyn-var write (e.g.
-    /// Template::Mustache's delimiter finalizer `($*LEFT,$*RIGHT)=@delim`) cannot
-    /// mutate `self.env` mid-match. Instead the reduce-time action runs in a
-    /// scratch interpreter and its changed `$*` vars are published here;
-    /// `interpolate_regex_scalars` consults this overlay BEFORE `self.env` so
-    /// subsequent subrule matches re-interpolate their patterns with the new
-    /// values. `Some` only while a grammar-actions parse is live (the common
-    /// non-grammar case stays `None` for zero lookup cost). Keyed by the env name
-    /// form (sigil-less, twigil-kept: `$*LEFT` -> `"*LEFT"`).
-    pub(crate) static REGEX_DYNVAR_OVERLAY: RefCell<Option<HashMap<String, Value>>> = const { RefCell::new(None) };
-    /// Set true once `interpolate_regex_scalars` resolves a `$*` dynamic var
-    /// while a grammar-actions parse is live — i.e. the grammar's matching
-    /// actually depends on a dynamic variable. The reduce-time action hook only
-    /// fires when this is true, so ordinary (non-dyn-var) grammars pay nothing.
-    pub(crate) static REGEX_GRAMMAR_DYNVAR_SEEN: Cell<bool> = const { Cell::new(false) };
     /// The defining scope of a `<$re>`-interpolated `Regex` closure, active
     /// while `self`/`self.env` is re-parsing/re-interpolating THAT regex's
     /// OWN pattern text (issue #8951). `<$re>` resolves `$re`'s pattern
@@ -68,20 +51,13 @@ thread_local! {
     /// later interpolated). The `&self` interpolation pre-pass consults it
     /// while resolving `$re`'s text (an embedded `$(...)`/`@(...)` is left
     /// for match time, where `CaptureIsolatedGroupScoped` installs the same
-    /// scope); like [`REGEX_DYNVAR_OVERLAY`] it overlays reads without
+    /// scope); it overlays reads without
     /// mutating the live interpreter. `None` on the overwhelmingly common path where
     /// no `Regex` value being interpolated is itself a closure.
     pub(crate) static REGEX_INTERP_CLOSURE_SCOPE: RefCell<Option<Arc<ValueMap>>> = const { RefCell::new(None) };
-    /// Log of every named subrule that *reduced* (matched successfully) during the
-    /// live `Grammar.parse(:actions(...))`, in reduce order (children before their
-    /// parent, since the matcher recurses). Rakudo dispatches an action method the
-    /// moment its rule matches and never un-dispatches it when the surrounding
-    /// pattern later backtracks; mutsu instead walks the finished match tree, so a
-    /// parse that FAILS overall used to run no actions at all even though several
-    /// subrules had matched. This log lets both the failure path and successful
-    /// parses with backtracked reductions replay them. `Some` only while an
-    /// action-driven parse is live.
-    pub(crate) static REDUCED_SUBRULES: RefCell<Option<ReducedSubruleLog>> = const { RefCell::new(None) };
+    /// Set while a `Grammar.parse(:actions(...))` dispatches each subrule's action
+    /// at its reduction (ADR-7576); see [`reduce_dispatch_armed`].
+    pub(crate) static REDUCE_DISPATCH: Cell<bool> = const { Cell::new(false) };
     /// In-regex `:my`/`:let` lexicals to seed the *next* capture store with.
     ///
     /// A sub-pattern that is lexically part of the same regex — a lookaround, a
@@ -315,259 +291,55 @@ pub(crate) fn is_enclosing_regex_var(name: &str) -> bool {
     ENCLOSING_REGEX_VARS.with(|s| s.borrow().contains(name))
 }
 
-/// Hard cap on `ReducedSubruleLog` entries. The log only feeds the *failure*
-/// replay, so dropping the tail of a pathologically large parse costs nothing
-/// but keeps a long action-driven parse from accumulating unbounded memory.
-const REDUCED_SUBRULE_LOG_CAP: usize = 20_000;
-
-/// Reduce-order log of named-subrule matches — see `REDUCED_SUBRULES`.
-#[derive(Default)]
-pub(crate) struct ReducedSubruleLog {
-    /// `(rule name to dispatch the action under, that rule's captures)`. The
-    /// name is the atom's interned `lookup_sym`: recording a reduction must not
-    /// allocate a `String` per subrule match (#12409).
-    entries: Vec<(Symbol, std::sync::Arc<CapNode>)>,
-    /// De-dups one exact capture node: mutsu's matcher may revisit the same
-    /// candidate while enumerating a subrule's possible ends, but distinct
-    /// nodes at the same span represent distinct reductions on different
-    /// backtracking paths and must remain observable to grammar actions.
-    seen: rustc_hash::FxHashSet<(Symbol, usize, usize, usize)>,
+/// Whether a subrule that just reduced should run its grammar action now: an
+/// action-driven parse is live and the matcher is in its real pass (never the
+/// LTM measurement or a failure-position probe, ADR-0009).
+// Cost: O(1).
+pub(crate) fn reduce_dispatch_armed() -> bool {
+    REDUCE_DISPATCH.with(Cell::get)
+        && !LTM_DECLARATIVE_MODE.with(Cell::get)
+        && !CODE_ATOMS_INERT.with(Cell::get)
 }
 
-impl ReducedSubruleLog {
-    pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
-        self.entries
-            .into_iter()
-            .map(|(rule, caps)| (rule.resolve(), caps))
-            .collect()
-    }
+/// Arms reduction-time action dispatch for one `Grammar.parse(:actions(...))`,
+/// restoring the enclosing parse's setting on drop.
+pub(crate) struct ReduceDispatchGuard {
+    prev: bool,
+}
 
-    /// Return reductions that have a later reduction with the same rule and
-    /// span.  The last node is the one retained by the successful match tree;
-    /// earlier nodes are reductions from backtracked alternatives whose action
-    /// effects Raku preserves.
-    ///
-    /// `surviving` holds the spans of the successful tree's nodes: a reduction
-    /// whose span no surviving node has was inside a failed alternative (the
-    /// caller backtracked past it entirely), and Raku preserved its action too.
-    pub(crate) fn into_repeated_entries(
-        self,
-        surviving: impl FnOnce() -> crate::value::regex_caps::SurvivingSpans,
-    ) -> Vec<(String, std::sync::Arc<CapNode>)> {
-        let entries = self.entries;
-        if entries.is_empty() {
-            return Vec::new();
+impl ReduceDispatchGuard {
+    pub(crate) fn arm() -> Self {
+        ReduceDispatchGuard {
+            prev: REDUCE_DISPATCH.with(|flag| flag.replace(true)),
         }
-        // Built once, and only when a log exists: it walks the whole tree.
-        let surviving = surviving();
-        let mut last = rustc_hash::FxHashMap::<(Symbol, usize, usize), usize>::default();
-        for (index, (rule, caps)) in entries.iter().enumerate() {
-            last.insert((*rule, caps.from, caps.to), index);
-        }
-        let repeated: Vec<_> = entries
-            .iter()
-            .enumerate()
-            .map(|(index, (rule, caps))| {
-                last.get(&(*rule, caps.from, caps.to)).copied() != Some(index)
-                    || !surviving.contains(&(*rule, caps.from, caps.to))
-            })
-            .collect();
-        entries
-            .into_iter()
-            .zip(repeated)
-            .filter_map(|((rule, caps), repeated)| repeated.then(|| (rule.resolve(), caps)))
-            .collect()
     }
 }
 
-#[cfg(test)]
-mod reduced_subrule_log_tests {
-    use super::*;
-
-    #[test]
-    fn repeated_entries_keep_only_superseded_rule_and_span() {
-        let cap = |from, to| {
-            Arc::new(CapNode {
-                from,
-                to,
-                sym: None,
-                action_name: None,
-                made: Default::default(),
-                children: None,
-                match_memo: Default::default(),
-            })
-        };
-        let log = ReducedSubruleLog {
-            entries: vec![
-                (Symbol::intern("a"), cap(0, 1)),
-                (Symbol::intern("b"), cap(0, 1)),
-                (Symbol::intern("a"), cap(1, 2)),
-                (Symbol::intern("a"), cap(0, 1)),
-            ],
-            seen: Default::default(),
-        };
-        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)]
-            .into_iter()
-            .map(|(rule, from, to)| (Symbol::intern(rule), from, to))
-            .collect();
-        let repeated = log.into_repeated_entries(|| surviving);
-        assert_eq!(repeated.len(), 1);
-        assert_eq!(repeated[0].0, "a");
-        assert_eq!((repeated[0].1.from, repeated[0].1.to), (0, 1));
-    }
-}
-
-/// Record a named subrule's successful match for the failure-path action replay.
-/// No-op unless an action-driven parse is live, and never while the matcher is
-/// only *measuring* a declarative prefix or probing the failure position
-/// (ADR-0009: those passes must have no observable side effects).
-pub(crate) fn record_reduced_subrule(rule: Symbol, caps: &std::sync::Arc<CapNode>) {
-    if LTM_DECLARATIVE_MODE.with(Cell::get) || CODE_ATOMS_INERT.with(Cell::get) {
-        return;
-    }
-    REDUCED_SUBRULES.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        let Some(log) = slot.as_mut() else {
-            return;
-        };
-        if log.entries.len() >= REDUCED_SUBRULE_LOG_CAP {
-            return;
-        }
-        if log.seen.insert((
-            rule,
-            caps.from,
-            caps.to,
-            std::sync::Arc::as_ptr(caps) as usize,
-        )) {
-            log.entries.push((rule, caps.clone()));
-        }
-    });
-}
-
-/// Activates the reduce log for one `Grammar.parse(:actions(...))`, restoring any
-/// enclosing parse's log on drop.
-pub(crate) struct ReducedSubruleGuard {
-    prev: Option<ReducedSubruleLog>,
-}
-
-impl ReducedSubruleGuard {
-    pub(crate) fn activate() -> Self {
-        let prev =
-            REDUCED_SUBRULES.with(|slot| slot.borrow_mut().replace(ReducedSubruleLog::default()));
-        ReducedSubruleGuard { prev }
-    }
-
-    /// Take the entries logged so far, leaving a fresh empty log in place.
-    pub(crate) fn take_entries() -> Vec<(String, std::sync::Arc<CapNode>)> {
-        REDUCED_SUBRULES.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            match slot.as_mut() {
-                Some(log) => std::mem::take(log).into_entries(),
-                None => Vec::new(),
-            }
-        })
-    }
-
-    /// Take only reductions superseded by a later node at the same rule/span.
-    pub(crate) fn take_repeated_entries(
-        captures: &crate::value::regex_caps::RegexCaptures,
-    ) -> Vec<(String, std::sync::Arc<CapNode>)> {
-        REDUCED_SUBRULES.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            match slot.as_mut() {
-                Some(log) => std::mem::take(log).into_repeated_entries(|| captures.tree_spans()),
-                None => Vec::new(),
-            }
-        })
-    }
-}
-
-impl Drop for ReducedSubruleGuard {
+impl Drop for ReduceDispatchGuard {
     fn drop(&mut self) {
-        REDUCED_SUBRULES.with(|slot| *slot.borrow_mut() = self.prev.take());
+        REDUCE_DISPATCH.with(|flag| flag.set(self.prev));
     }
 }
 
-/// Look up a `$*` dynamic var in the reduce-time overlay (see
-/// `REGEX_DYNVAR_OVERLAY`). `name` is the env form without sigil (e.g. `*LEFT`).
-/// Returns `None` when the overlay is inactive or has no entry for the name.
-pub(crate) fn dynvar_overlay_get(name: &str) -> Option<Value> {
-    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().as_ref().and_then(|m| m.get(name).cloned()))
+thread_local! {
+    /// The compunit whose regex literal's code is running (#16512): the code
+    /// names routines of the unit it was written in, not of the routine that
+    /// happens to do the match. Set while a regex closure's scope is installed
+    /// for a match; read by `Interpreter::executing_unit_sym`.
+    static REGEX_DEFINING_UNIT: std::cell::Cell<Option<Symbol>> = const { std::cell::Cell::new(None) };
 }
 
-/// True while a grammar-actions parse has an active dyn-var overlay.
-pub(crate) fn dynvar_overlay_active() -> bool {
-    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().is_some())
+/// Make `unit` the defining unit of the running regex code, returning the
+/// previous one (to hand back to this function on exit).
+// Cost: O(1).
+pub(crate) fn replace_defining_unit(unit: Option<Symbol>) -> Option<Symbol> {
+    REGEX_DEFINING_UNIT.with(|u| u.replace(unit))
 }
 
-/// Record that the live grammar parse interpolated a `$*` dynamic var, enabling
-/// the reduce-time action hook for the rest of the parse.
-pub(crate) fn dynvar_mark_seen() {
-    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(true));
-}
-
-/// Whether any `$*` dynamic var has been interpolated during the live parse.
-pub(crate) fn dynvar_seen() -> bool {
-    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.get())
-}
-
-/// Reset the overlay to empty (and clear the SEEN flag) at the start of a fresh
-/// top-level grammar scan. A scan evolves the overlay left-to-right; a NEW scan
-/// of the whole input (e.g. the candidate-selection pass vs the real match, or a
-/// re-`parse`) must begin with the initial dynamic-var state from `self.env`,
-/// not the values a previous scan left behind. No-op when the overlay is
-/// inactive (non-grammar matching).
-pub(crate) fn dynvar_overlay_reset_scan() {
-    REGEX_DYNVAR_OVERLAY.with(|slot| {
-        let mut b = slot.borrow_mut();
-        if b.is_some() {
-            *b = Some(HashMap::default());
-        }
-    });
-    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(false));
-}
-
-/// Clone the current overlay contents (empty when inactive). Used to seed a
-/// reduce-time action's scratch interpreter with the latest dyn-var values.
-pub(crate) fn dynvar_overlay_snapshot() -> HashMap<String, Value> {
-    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().clone().unwrap_or_default())
-}
-
-/// Publish a changed `$*` dynamic var into the overlay so subsequent subrule
-/// pattern interpolation sees it. `name` is the env form (e.g. `*LEFT`).
-pub(crate) fn dynvar_overlay_put(name: &str, value: Value) {
-    REGEX_DYNVAR_OVERLAY.with(|slot| {
-        if let Some(m) = slot.borrow_mut().as_mut() {
-            m.insert(name.to_string(), value);
-        }
-    });
-}
-
-/// RAII guard that activates the reduce-time dyn-var overlay for the duration of
-/// a grammar-actions parse and restores the previous state (overlay + seen flag)
-/// on drop, so nested/re-entrant `Grammar.parse` calls stay balanced.
-pub(crate) struct RegexDynvarOverlayGuard {
-    prev_overlay: Option<HashMap<String, Value>>,
-    prev_seen: bool,
-}
-
-impl RegexDynvarOverlayGuard {
-    pub(crate) fn activate() -> Self {
-        let prev_overlay =
-            REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow_mut().replace(HashMap::default()));
-        let prev_seen = REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.replace(false));
-        RegexDynvarOverlayGuard {
-            prev_overlay,
-            prev_seen,
-        }
-    }
-}
-
-impl Drop for RegexDynvarOverlayGuard {
-    fn drop(&mut self) {
-        REGEX_DYNVAR_OVERLAY.with(|slot| *slot.borrow_mut() = self.prev_overlay.take());
-        REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(self.prev_seen));
-    }
+/// The defining unit of the regex code running now, if any.
+// Cost: O(1).
+pub(crate) fn defining_unit() -> Option<Symbol> {
+    REGEX_DEFINING_UNIT.with(|u| u.get())
 }
 
 /// Consult [`REGEX_INTERP_CLOSURE_SCOPE`] for a name, or `None` when it is
@@ -743,6 +515,8 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
                 _ => RegexAtom::LiteralGrapheme(g.clone()),
             }
         }
+        // The value is read at match time: its literal compares bases too.
+        RegexAtom::VarInterp(name) => RegexAtom::VarInterpMarkless(name.clone()),
         RegexAtom::Named(name) => {
             // Named subrule / literal string match — strip marks from the name
             let stripped: String = name.nfd().filter(|c| !is_combining_mark(*c)).collect();

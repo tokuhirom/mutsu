@@ -11,6 +11,7 @@
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::parsed::{ParsedExpr, WordItem, WordList, WordSource, WordsAtom};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
@@ -153,16 +154,16 @@ pub(super) fn lower_word_quote(quotewords: bool, val: bool, text: &str) -> Expr 
 
 /// The `QuotedString` of a word quote as written.
 // Cost: O(n), n = length of the quote's text.
-pub(super) fn list_node(list: &WordList) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn list_node(names: &NameScope, list: &WordList) -> Result<RakuAstNode, RuntimeError> {
     match &list.source {
         WordSource::Plain { quotewords, text } => {
-            Ok(super::convert::word_quote_with(*quotewords, list.val, text))
+            Ok(super::view::word_quote_with(*quotewords, list.val, text))
         }
         WordSource::Interpolating {
             text,
             delimiter,
             interpolates,
-        } => super::word_quote::convert(list.val, text, *delimiter, *interpolates),
+        } => super::word_quote::view_node(names, list.val, text, *delimiter, *interpolates),
     }
 }
 
@@ -170,7 +171,7 @@ pub(super) fn list_node(list: &WordList) -> Result<RakuAstNode, RuntimeError> {
 /// (`processors => ("words",)`, or `<words val>`) over its interpolation
 /// segments.
 // Cost: O(n), n = size of the string.
-pub(super) fn atom_node(atom: &WordsAtom) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn atom_node(names: &NameScope, atom: &WordsAtom) -> Result<RakuAstNode, RuntimeError> {
     let items = match &atom.string {
         Expr::StringInterpolation(items) => items.as_slice(),
         other => std::slice::from_ref(other),
@@ -178,8 +179,8 @@ pub(super) fn atom_node(atom: &WordsAtom) -> Result<RakuAstNode, RuntimeError> {
     let segments = items
         .iter()
         .map(|item| {
-            Ok(Value::rakuast(Box::new(super::convert::interp_segment(
-                item,
+            Ok(Value::rakuast(Box::new(super::view::interp_segment(
+                names, item,
             )?)))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;

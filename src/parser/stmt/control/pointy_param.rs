@@ -1,7 +1,18 @@
 use super::*;
 
 pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
-    let (r, mut param) = parse_pointy_param_inner(input)?;
+    let (mut r, mut param) = parse_pointy_param_inner(input)?;
+    // A default on a capture parameter (`-> |c = 42`) is `X::Parameter::Default`
+    // in rakudo, not a syntax error: read it and let the validator reject it.
+    if input.starts_with('|') && param.slurpy && param.default.is_none() {
+        let (after, _) = ws(r)?;
+        if after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
+            let (after, _) = ws(&after[1..])?;
+            let (after, default) = crate::parser::stmt::sub_param::parse_param_default_expr(after)?;
+            param.default = Some(default);
+            r = after;
+        }
+    }
     // A capture parameter takes a sub-signature that unpacks the captured
     // arguments: `-> |c ($a, $b)`, `-> | ($, $v)`.
     if input.starts_with('|') {

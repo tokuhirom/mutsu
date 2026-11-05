@@ -73,7 +73,17 @@ impl Interpreter {
         let suffix: String = chars[end..].concat();
         let new_str = format!("{}{}{}", prefix, replacement, suffix);
 
-        let result = Value::str(new_str);
+        // A `but`-mixed Str keeps its mixin: the splice rewrites the string,
+        // not the roles the value does (`"abc" but R` stays `Str+{R}`).
+        let result = match target.view() {
+            ValueView::Mixin(_, mixins) => {
+                Value::mixin_parts(
+                    std::sync::Arc::new(Value::str(new_str)),
+                    crate::gc::Gc::new((**mixins).clone()),
+                )
+            }
+            _ => Value::str(new_str),
+        };
         if let Some(container) = container {
             if let Some(stored) = self.assign_lvalue_container(&container, result) {
                 stored?;
@@ -451,6 +461,68 @@ impl Interpreter {
         Ok(updated)
     }
 
+    /// Remove `count` elements at `offset` from `bytes` (Raku's `Buf.splice`
+    /// argument rules), insert the replacement, and return the removed elements.
+    /// Shared by the named-receiver path and the by-value row.
+    // Cost: O(e + k), e = elements, k = replacement elements.
+    pub(crate) fn splice_buf_bytes(bytes: &mut Vec<Value>, args: &[Value]) -> Vec<Value> {
+    // .splice(offset?, count?, replacement*): remove `count` elements
+    // at `offset` (defaults: offset 0, count = rest), insert the
+    // replacement bytes, return a Buf of the removed elements. With no
+    // args this removes everything (offset 0, count = len). A negative
+    // offset/count counts from the end (Raku semantics).
+    let len = bytes.len() as i64;
+    let resolve = |v: &Value| -> i64 {
+        match v.view() {
+            ValueView::Int(i) => i,
+            ValueView::Whatever => len,
+            ValueView::Num(n) => n as i64,
+            ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Int(i) => i,
+                _ => 0,
+            },
+            _ => 0,
+        }
+    };
+    let offset = match args.first() {
+        Some(v) => {
+            let o = resolve(v);
+            if o < 0 { (len + o).max(0) } else { o.min(len) }
+        }
+        None => 0,
+    };
+    let count = match args.get(1) {
+        Some(v) => {
+            let c = resolve(v);
+            if c < 0 { (len - offset + c).max(0) } else { c }
+        }
+        None => len - offset,
+    };
+    let start = offset as usize;
+    let end = ((offset + count).min(len).max(offset)) as usize;
+    // Replacement bytes: flatten any remaining args (Buf/Blob bytes or
+    // integer bytes).
+    let mut replacement: Vec<Value> = Vec::new();
+    for arg in args.iter().skip(2) {
+        match arg.view() {
+            ValueView::Instance { attributes, .. }
+                if buf_elems(&attributes).is_some() =>
+            {
+                replacement.extend(buf_elems_or_empty(&attributes));
+            }
+            // A plain list/array of replacement values (`<3 2 1>`,
+            // `(3, 2, 1)`): coerce each element to a byte, matching
+            // the scalar arm — otherwise Str elements leak into the
+            // Buf and render as 0.
+            ValueView::Array(items, ..) => replacement
+                .extend(items.iter().map(|it| Value::int(resolve(it) & 0xff))),
+            _ => replacement.push(Value::int(resolve(arg) & 0xff)),
+        }
+    }
+    bytes.splice(start..end, replacement).collect()
+    }
+
     pub(crate) fn buf_pop_shift_splice(
         &mut self,
         target_var: &str,
@@ -513,61 +585,7 @@ impl Interpreter {
                 Ok(shifted)
             }
             "splice" => {
-                // .splice(offset?, count?, replacement*): remove `count` elements
-                // at `offset` (defaults: offset 0, count = rest), insert the
-                // replacement bytes, return a Buf of the removed elements. With no
-                // args this removes everything (offset 0, count = len). A negative
-                // offset/count counts from the end (Raku semantics).
-                let len = bytes.len() as i64;
-                let resolve = |v: &Value| -> i64 {
-                    match v.view() {
-                        ValueView::Int(i) => i,
-                        ValueView::Whatever => len,
-                        ValueView::Num(n) => n as i64,
-                        ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
-                        ValueView::Mixin(inner, _) => match inner.as_ref().view() {
-                            ValueView::Int(i) => i,
-                            _ => 0,
-                        },
-                        _ => 0,
-                    }
-                };
-                let offset = match args.first() {
-                    Some(v) => {
-                        let o = resolve(v);
-                        if o < 0 { (len + o).max(0) } else { o.min(len) }
-                    }
-                    None => 0,
-                };
-                let count = match args.get(1) {
-                    Some(v) => {
-                        let c = resolve(v);
-                        if c < 0 { (len - offset + c).max(0) } else { c }
-                    }
-                    None => len - offset,
-                };
-                let start = offset as usize;
-                let end = ((offset + count).min(len).max(offset)) as usize;
-                // Replacement bytes: flatten any remaining args (Buf/Blob bytes or
-                // integer bytes).
-                let mut replacement: Vec<Value> = Vec::new();
-                for arg in args.iter().skip(2) {
-                    match arg.view() {
-                        ValueView::Instance { attributes, .. }
-                            if buf_elems(&attributes).is_some() =>
-                        {
-                            replacement.extend(buf_elems_or_empty(&attributes));
-                        }
-                        // A plain list/array of replacement values (`<3 2 1>`,
-                        // `(3, 2, 1)`): coerce each element to a byte, matching
-                        // the scalar arm — otherwise Str elements leak into the
-                        // Buf and render as 0.
-                        ValueView::Array(items, ..) => replacement
-                            .extend(items.iter().map(|it| Value::int(resolve(it) & 0xff))),
-                        _ => replacement.push(Value::int(resolve(arg) & 0xff)),
-                    }
-                }
-                let removed: Vec<Value> = bytes.splice(start..end, replacement).collect();
+                let removed = Self::splice_buf_bytes(&mut bytes, &args);
                 let updated = Value::write_back_sharing(
                     &attrs_cell,
                     class_name_sym,

@@ -676,6 +676,18 @@ impl Interpreter {
         } = raw.view()
         {
             let cn = class_name.resolve();
+            // An unbounded `Range` subclass instance stays a reify-on-demand
+            // array like a bare `1..*` (`my @a = R.new(0, Inf)`, #15480),
+            // unless the class overrides how it iterates.
+            if let Some(range) = attributes
+                .as_map()
+                .get(crate::builtins::native_base::RANGE_PAYLOAD)
+                && !self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, "list")
+                && let Some(lazy) = crate::runtime::utils::infinite_range_to_lazy_array(range)
+            {
+                return Ok(Some(lazy));
+            }
             // An `Iterable` with its own `iterator` populates the array from
             // it -- lazily when that iterator reports `is-lazy` (#15305).
             if !attributes.contains_key("__mutsu_array_storage")
@@ -717,8 +729,18 @@ impl Interpreter {
         // role, not in the wrapped class's method table.  List assignment of
         // such an Iterable (for example `@ = DataFrame`) must therefore use
         // the role dispatch path just like reductions and `for` loops do.
-        if matches!(iterable.view(), ValueView::Mixin(..)) {
-            if self.mixin_composes_method(iterable, "iterator") {
+        if let ValueView::Mixin(inner, _) = iterable.view() {
+            // A `but`-mixed `Iterable` instance (`Q.new but role {...}`) keeps
+            // the wrapped class's own `iterator`, with the mixed value as
+            // `self` (#15973).
+            let inner_iterable = match inner.view() {
+                ValueView::Instance { class_name, .. } => {
+                    let cn = class_name.resolve();
+                    self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "iterator")
+                }
+                _ => false,
+            };
+            if self.mixin_composes_method(iterable, "iterator") || inner_iterable {
                 return self.drive_user_iterator_items(iterable).map(Some);
             }
             return Ok(None);
@@ -850,8 +872,10 @@ impl Interpreter {
     }
 
     /// The elements of an instance of a `Seq` or `Range` subclass: the value
-    /// it carries, read through its `list` (the inherited `Seq.list` /
-    /// `Range.list`).
+    /// it carries, read through the base type's own `list`. Iteration (`for`,
+    /// `map`, `@`-assignment) reads `self.iterator`, never a `list` the subclass
+    /// declares -- that one answers an explicit `.list` only (#16013); a
+    /// subclass with its own `iterator` is iterated through it (#15353).
     // Cost: O(n), n = the sequence's elements.
     fn iterable_payload_items(
         &mut self,
@@ -860,15 +884,28 @@ impl Interpreter {
         if !crate::builtins::native_base::has_iterable_payload(iterable) {
             return Ok(None);
         }
-        // A subclass with its own `iterator` (and no `list`) is iterated through
-        // it: `Range.list` / `Seq.list` read `self.iterator` (#15353).
-        if let ValueView::Instance { class_name, .. } = iterable.view() {
-            let cn = class_name.resolve();
-            if self.has_user_method(&cn, "iterator") && !self.has_user_method(&cn, "list") {
-                return Ok(None);
-            }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterable.view()
+        else {
+            return Ok(None);
+        };
+        let cn = class_name.resolve();
+        if self.has_user_method(&cn, "iterator") {
+            return Ok(None);
         }
-        let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+        let payload = {
+            let map = attributes.as_map();
+            map.get(crate::builtins::native_base::RANGE_PAYLOAD)
+                .or_else(|| map.get(crate::builtins::native_base::SEQ_PAYLOAD))
+                .cloned()
+        };
+        let Some(payload) = payload else {
+            return Ok(None);
+        };
+        let list = self.try_compiled_method_or_interpret(payload, "list", vec![])?;
         Ok(Some(crate::runtime::utils::value_to_list(&list)))
     }
 
@@ -877,21 +914,48 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.drive_user_iterator_items_upto(iterable, None)
+    }
+
+    /// The `Iterator` a user class's `iterator` method answers for `iterable`
+    /// (with the mixed value as `self` under a `but` mixin).
+    // Cost: O(1) plus the user `iterator` method's own cost.
+    pub(crate) fn user_iterator_of(&mut self, iterable: &Value) -> Result<Value, RuntimeError> {
+        Ok(
+            if matches!(iterable.view(), ValueView::Mixin(..))
+                && self.is_iterator_sequence_instance(iterable)
+            {
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if matches!(iterable.view(), ValueView::Mixin(..))
+                && !self.mixin_composes_method(iterable, "iterator")
+            {
+                // Only the wrapped class declares `iterator` (`Q.new but role {...}`):
+                // run it with the mixed value as `self` (#15973).
+                self.call_user_iterator_on_mixin(iterable)?
+            } else if let Some(result) =
+                self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
+            {
+                result?
+            } else {
+                self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
+            },
+        )
+    }
+
+    /// [`Self::drive_user_iterator_items`] that stops pulling after `limit`
+    /// items (`None` pulls to `IterationEnd`): a consumer that needs only a
+    /// prefix (`.head(3)`) must not drain an endless iterator (#15081).
+    // Cost: O(min(n, limit)) pull-one calls, n = items the iterator yields.
+    pub(crate) fn drive_user_iterator_items_upto(
+        &mut self,
+        iterable: &Value,
+        limit: Option<usize>,
+    ) -> Result<Vec<Value>, RuntimeError> {
         // The class's own `iterator` of a `but`-mixed `does Sequence` instance
         // runs with the mixed value as `self`; the `Sequence` role's `iterator`
         // would wrap the instance (#14921).
-        let iterator = if matches!(iterable.view(), ValueView::Mixin(..))
-            && self.is_iterator_sequence_instance(iterable)
-        {
-            self.call_user_iterator_on_mixin(iterable)?
-        } else if let Some(result) =
-            self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
-        {
-            result?
-        } else {
-            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
-        };
-        self.drive_iterator_value_items(iterator)
+        let iterator = self.user_iterator_of(iterable)?;
+        self.drive_iterator_value_items_upto(iterator, limit)
             .map(|(items, _)| items)
     }
 
@@ -902,6 +966,18 @@ impl Interpreter {
     pub(crate) fn drive_iterator_value_items(
         &mut self,
         iterator: Value,
+    ) -> Result<(Vec<Value>, Value), RuntimeError> {
+        self.drive_iterator_value_items_upto(iterator, None)
+    }
+
+    /// [`Self::drive_iterator_value_items`] that stops after `limit` items
+    /// (`None`: until `IterationEnd`); the advanced iterator comes back, so the
+    /// unread rest stays available.
+    // Cost: O(min(n, limit)) pull-one calls, n = items yielded.
+    pub(crate) fn drive_iterator_value_items_upto(
+        &mut self,
+        iterator: Value,
+        limit: Option<usize>,
     ) -> Result<(Vec<Value>, Value), RuntimeError> {
         // Drive `pull-one` through a temp *variable*, not a bare value: a user
         // `Iterator` instance keeps its cursor in its own attributes, and an
@@ -914,6 +990,9 @@ impl Interpreter {
         self.set_env_with_main_alias(tmp, iterator);
         let mut items = Vec::new();
         let result = loop {
+            if limit.is_some_and(|l| items.len() >= l) {
+                break Ok(());
+            }
             let cur = self.get_env_with_main_alias(tmp).unwrap_or(Value::NIL);
             let val = match self.call_method_mut_with_values(tmp, cur, "pull-one", vec![]) {
                 Ok(v) => v,

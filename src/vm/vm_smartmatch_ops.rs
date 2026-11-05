@@ -166,6 +166,8 @@ impl Interpreter {
         // write-throughs at their own sites).
         let rhs_names = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
         self.apply_smartmatch_sync(code, &rhs_names);
+        let adverb_names = Self::smartmatch_rhs_adverb_names(code, rhs_start, rhs_end);
+        self.apply_smartmatch_adverb_sync(code, &adverb_names);
         let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
         self.topic_state.in_smartmatch_rhs = true;
         self.topic_state.transliterate_in_smartmatch = false;
@@ -416,16 +418,21 @@ impl Interpreter {
             // The subject of a bare `/regex/` is coerced quietly -- see
             // `quiet_topic_for_regex_match`. Only for a regex RHS: a value
             // smartmatch against a type object is a type test, not a string one.
-            let left = if lhs_is_implicit_topic
+            let bare_regex_rhs = lhs_is_implicit_topic
                 && matches!(
                     right.view(),
                     ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-                ) {
+                );
+            let skip_undefined_topic = bare_regex_rhs && self.implicit_topic_is_undefined(&left);
+            let left = if bare_regex_rhs {
                 self.quiet_topic_for_regex_match(left)
             } else {
                 left
             };
-            if let Some(matched) = native_lhs_match {
+            if skip_undefined_topic {
+                // No match is attempted: `$/` and the regex's code blocks are untouched.
+                Value::NIL
+            } else if let Some(matched) = native_lhs_match {
                 Value::truth(if negate { !matched } else { matched })
             } else {
                 self.eval_smartmatch_with_junctions_ex(left, right, negate, rhs_is_match_regex)?

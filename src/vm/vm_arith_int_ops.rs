@@ -395,10 +395,9 @@ impl Interpreter {
             right
         };
         let Some(n_raw) = crate::runtime::Interpreter::parse_repeat_count(&right)? else {
-            return Err(crate::runtime::Interpreter::repeat_error(
-                "X::Numeric::CannotConvert",
-                "Cannot convert Inf to Int".to_string(),
-            ));
+            // `'a' x Inf` is a Failure (X::NYI), not an exception.
+            self.stack.push(RuntimeError::nyi_failure("Cat object"));
+            return Ok(());
         };
         let n = n_raw.max(0) as usize;
         // Infix `x` stringifies its LEFT operand via `.Str` (the right operand is

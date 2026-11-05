@@ -18,13 +18,14 @@
 //! ([`enum_variants_from_body`]), so a round-tripped enum takes the same path
 //! the parsed one did.
 
-use super::convert::{
-    convert_expr, leaf_field, node_field, plain_infix, quoted_string, statement_expression,
-};
 use super::lower::{list_field, lower_expr, named_child, positional_leaf, unsupported};
+use super::view::{
+    leaf_field, node_field, plain_infix, quoted_string, statement_expression, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{EnumVariantForm, Expr};
 use crate::parser::enum_variants_from_body;
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 type Variants = Vec<(String, Option<Expr>)>;
@@ -36,11 +37,12 @@ const DYNAMIC: &str = "__DYNAMIC__";
 /// spelling it recorded.
 // Cost: O(v), v = variants.
 pub(super) fn enum_term_node(
+    names: &NameScope,
     variants: &[(String, Option<Expr>)],
     form: &EnumVariantForm,
 ) -> Result<RakuAstNode, RuntimeError> {
     match form {
-        EnumVariantForm::Words => word_term(variants, "words"),
+        EnumVariantForm::Words => word_term(names, variants, "words"),
         EnumVariantForm::EmptyWords(raw) => Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::QuotedString,
@@ -58,18 +60,73 @@ pub(super) fn enum_term_node(
                 },
             ],
         }),
-        EnumVariantForm::QuoteWords => word_term(variants, "quotewords"),
-        EnumVariantForm::PairList => pair_list_term(variants),
+        EnumVariantForm::QuoteWords => word_term(names, variants, "quotewords"),
+        EnumVariantForm::PairList => pair_list_term(names, variants),
         EnumVariantForm::Computed => match variants {
-            [(name, Some(body))] if name == DYNAMIC => computed_term(body),
-            _ => Err(super::convert::unsupported("enum with a computed body")),
+            [(name, Some(body))] if name == DYNAMIC => computed_term(names, body),
+            _ => Err(super::view::unsupported("enum with a computed body")),
         },
     }
 }
 
+/// Give the `term` of the `Type::Enum` `node` the ranges of the text it was
+/// written as: a parenthesized body is parsed again as a fragment and its
+/// ranges copied over, a `<...>` word quote spans the brackets and its literal
+/// the text between them. Anything else keeps no range: exact or absent.
+// Cost: O(n), n = length of the declaration's source, plus the parse of a
+// parenthesized body.
+pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, with_child};
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let located = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
+        let at = text.find(['(', '<'])?;
+        let term = text.get(at..)?.trim_end();
+        let closed = (term.starts_with('(') && term.ends_with(')'))
+            || (term.starts_with('<') && term.ends_with('>') && !term.starts_with("<<"));
+        closed.then(|| (from + at, term.to_string()))
+    });
+    let Some((at, term_text)) = located else {
+        return;
+    };
+    with_child(node, "term", |term| {
+        if term.origin.0.is_some() {
+            return;
+        }
+        match term.class {
+            RakuAstClass::CircumfixParentheses => {
+                super::fragment_origins::expression(names, term, &term_text, at);
+                // The statement inside the parentheses spans their text.
+                super::list_origins::circumfix(term);
+            }
+            RakuAstClass::QuotedString if term_text.starts_with('<') => {
+                let inner = &term_text[1..term_text.len() - 1];
+                super::origin::set_span(term, crate::ast::SrcSpan::new(at, at + term_text.len()));
+                let literal_at = crate::ast::SrcSpan::new(at + 1, at + term_text.len() - 1);
+                if let Some(RakuAstFieldValue::List(segments)) = term
+                    .fields
+                    .iter_mut()
+                    .find(|f| f.name == Some("segments"))
+                    .map(|f| &mut f.value)
+                    && let [only] = segments.as_mut_slice()
+                    && let ValueView::RakuAst(literal) = only.view()
+                    && literal.class == RakuAstClass::StrLiteral
+                    && super::infix_origins::leaf_text(literal).as_deref() == Some(inner)
+                {
+                    let mut literal = RakuAstNode::clone(literal);
+                    super::origin::set_span(&mut literal, literal_at);
+                    *only = Value::rakuast(Box::new(literal));
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
 /// A computed body is the parenthesized term itself.
-fn computed_term(body: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let node = convert_expr(body)?;
+fn computed_term(names: &NameScope, body: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let node = view_expr(names, body)?;
     if node.class == RakuAstClass::CircumfixParentheses {
         return Ok(node);
     }
@@ -94,6 +151,7 @@ fn parenthesized(expr: RakuAstNode) -> RakuAstNode {
 /// "Red Green" when the node is evaluated. A `«…»` body may hold colonpair
 /// variants; each is a `QuoteWordsAtom` segment between the literal words.
 fn word_term(
+    names: &NameScope,
     variants: &[(String, Option<Expr>)],
     processor: &'static str,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -108,7 +166,7 @@ fn word_term(
             continue;
         };
         if processor != "quotewords" {
-            return Err(super::convert::unsupported(
+            return Err(super::view::unsupported(
                 "word-quoted enum with explicit values",
             ));
         }
@@ -120,7 +178,7 @@ fn word_term(
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(name.clone())),
-                node_field(Some("value"), convert_expr(value)?),
+                node_field(Some("value"), view_expr(names, value)?),
             ],
         };
         segments.push(Value::rakuast(Box::new(RakuAstNode {
@@ -160,7 +218,10 @@ fn str_literal(text: String) -> Value {
 }
 
 /// The parenthesized pair-list term.
-fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
+fn pair_list_term(
+    names: &NameScope,
+    variants: &[(String, Option<Expr>)],
+) -> Result<RakuAstNode, RuntimeError> {
     if variants.is_empty() {
         return Ok(RakuAstNode {
             origin: Default::default(),
@@ -179,7 +240,7 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
         .iter()
         .map(|(name, value)| {
             let value = match value {
-                Some(value) => convert_expr(value)?,
+                Some(value) => view_expr(names, value)?,
                 // A bare `'name'` element: the parser keeps no value for it.
                 None => {
                     return Ok(Value::rakuast(Box::new(quoted_string(Value::str(
@@ -214,13 +275,14 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
 /// The variants and spelling of an enum's `term` (the lowering direction).
 // Cost: O(v), v = variants.
 pub(super) fn lower_enum_term(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let term = named_child(node, "term")?;
     match term.class {
-        RakuAstClass::QuotedString => lower_word_term(term),
+        RakuAstClass::QuotedString => lower_word_term(names, term),
         RakuAstClass::CircumfixParentheses => {
-            let body = lower_expr(term)?;
+            let body = lower_expr(names, term)?;
             Ok(match enum_variants_from_body(&body) {
                 Some(variants) => (variants, EnumVariantForm::PairList),
                 None => (
@@ -233,10 +295,13 @@ pub(super) fn lower_enum_term(
     }
 }
 
-fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), RuntimeError> {
+fn lower_word_term(
+    names: &NameScope,
+    term: &RakuAstNode,
+) -> Result<(Variants, EnumVariantForm), RuntimeError> {
     let processors = list_field(term, "processors")?;
-    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
-    let form = match names.as_slice() {
+    let processor_names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    let form = match processor_names.as_slice() {
         ["words", "val"] => EnumVariantForm::Words,
         ["quotewords", "val"] => EnumVariantForm::QuoteWords,
         _ => return Err(unsupported(term)),
@@ -259,7 +324,7 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
                 variants.extend(text.split_whitespace().map(|name| (name.to_string(), None)));
             }
             RakuAstClass::QuoteWordsAtom if form == EnumVariantForm::QuoteWords => {
-                variants.push(lower_atom_pair(term, segment)?);
+                variants.push(lower_atom_pair(names, term, segment)?);
             }
             _ => return Err(unsupported(term)),
         }
@@ -274,6 +339,7 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
 
 /// A `:key(value)` / `:key` colonpair word of a `«…»` body.
 fn lower_atom_pair(
+    names: &NameScope,
     term: &RakuAstNode,
     atom: &RakuAstNode,
 ) -> Result<(String, Option<Expr>), RuntimeError> {
@@ -284,7 +350,7 @@ fn lower_atom_pair(
     match pair.class {
         RakuAstClass::ColonPairValue => {
             let key = super::lower::leaf_str(pair, "key")?;
-            let value = lower_expr(named_child(pair, "value")?)?;
+            let value = lower_expr(names, named_child(pair, "value")?)?;
             Ok((key, Some(value)))
         }
         RakuAstClass::ColonPairTrue => match positional_leaf(pair)?.view() {

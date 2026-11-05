@@ -191,8 +191,9 @@ impl Interpreter {
                 caller_class.as_deref().unwrap_or("GLOBAL"),
             )));
         }
-        Some(
-            self.run_resolved_method_compiled_or_treewalk(
+        let on_var_object = target.is_proxy_var_object();
+        let result = self
+            .run_resolved_method_compiled_or_treewalk(
                 &class_name,
                 &owner,
                 pm_name,
@@ -201,8 +202,30 @@ impl Interpreter {
                 args.to_vec(),
                 Some(target.clone()),
             )
-            .map(|(result, _)| result),
-        )
+            .map(|(result, _)| result);
+        // `$proxy.VAR!meth` runs with the Proxy container itself as `self`, and
+        // a method that hands `self` back hands back that container, which a
+        // later `my $x = ...` FETCHes (AttrX::Mooish's `AttrProxy.new`).
+        // Only the `.VAR` call site itself yields the unfetched object.
+        Some(match result {
+            Ok(value) if on_var_object && value.is_proxy_var_object() => {
+                Ok(Self::proxy_container_of(value))
+            }
+            other => other,
+        })
+    }
+
+    /// The Proxy `value` (a `.VAR` object) as the container it stands for: a
+    /// store into the variable it lands in FETCHes, and it is no longer the
+    /// read-only `.VAR` object.
+    // Cost: O(1).
+    fn proxy_container_of(value: Value) -> Value {
+        match value.into_proxy_parts() {
+            Some((fetcher, storer, subclass, _)) => {
+                Value::proxy_parts(fetcher, storer, subclass, false)
+            }
+            None => Value::NIL,
+        }
     }
 
     pub(super) fn dispatch_private_method_on_non_instance(
@@ -848,6 +871,16 @@ impl Interpreter {
             return Some(res);
         }
 
+        // `self.Mu::bless(|%_)` from a class's own `bless` override, made on
+        // an EXISTING instance (`Point.new.bless-via-new`): Mu's `bless`
+        // creates an instance of the RECEIVER's class, bypassing the
+        // override. Viewing the receiver as a plain `Mu` (the fallback below)
+        // would build a `Mu` instead. The type-object form takes the native
+        // constructor path in `dispatch_qualified_non_instance_method`.
+        if qualifier == "Mu" && actual_method == "bless" {
+            return Some(self.dispatch_bless(&Value::package(inst_class), args));
+        }
+
         // A qualified call naming a builtin ancestor whose method is not a
         // user method (`$date.Date::succ` from a `class Workdate is Date`
         // whose own `succ` must not be re-entered): view the receiver as a
@@ -1107,7 +1140,11 @@ impl Interpreter {
                         self.commit_mixin_role_method_attrs(
                             mixins,
                             qualifier,
-                            &role,
+                            &role
+                                .attributes
+                                .iter()
+                                .map(|attr| attr.name.clone())
+                                .collect::<Vec<String>>(),
                             inner_cell.as_ref(),
                             updated,
                         );
@@ -1139,6 +1176,26 @@ impl Interpreter {
                     target.clone(),
                     &inst_cn_str,
                 )));
+            }
+            // `self.R::output` where `output` is the public attribute accessor
+            // of the qualifier class `R` (`has $.output`): the mixin's
+            // overriding method is the one being asked to step aside, so the
+            // read goes to the inner instance's attribute -- falling through
+            // re-entered the mixin's own `output` (the same read the plain
+            // instance path does).
+            if args.is_empty()
+                && in_mro
+                && let ValueView::Instance { attributes, .. } = inner.as_ref().view()
+                && self
+                    .collect_class_attributes(qualifier)
+                    .iter()
+                    .any(|attr| attr.is_public && attr.name == actual_method)
+            {
+                return Some(Ok(attributes
+                    .as_map()
+                    .get(actual_method)
+                    .cloned()
+                    .unwrap_or(Value::NIL)));
             }
             let qualifier_has_user_new = {
                 let registry = self.registry();
@@ -1290,6 +1347,12 @@ impl Interpreter {
                     Some(target.clone()),
                 );
                 return Some(res.map(|(result, _updated)| result));
+            }
+            // `self.Metamodel::SubsetHOW::new_type(...)` in a user HOW's own
+            // `new_type`: the native metamethod that mints the type. Falling
+            // through re-entered the overriding method forever (#16347).
+            if actual_method == "new_type" && Self::is_metamodel_class_name(qualifier) {
+                return Some(self.metamodel_new_type(&pkg_name, &args));
             }
             // A qualified constructor call to a builtin ancestor with no user
             // `new` of its own (e.g. `self.Date::new(...)` from inside a

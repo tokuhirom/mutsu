@@ -146,6 +146,7 @@ impl Interpreter {
             tiered: false,
             tier_bind_check: false,
             arity_fits: arity_fits(),
+            is_default: def.is_default,
         }
     }
 
@@ -167,26 +168,39 @@ impl Interpreter {
             );
             return fast;
         }
-        self.caches.type_conformance.note_dependent_answer();
-        self.nominal_type_conforms_general(sub, sup)
+        let answer = self.nominal_type_conforms_general(sub, sup);
+        self.caches
+            .type_conformance
+            .note_opaque_answer(sub, sup, answer);
+        answer
     }
 
     // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
-    fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
+    pub(super) fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
         if sub == sup {
             return true;
         }
         // `Any` and `Mu` are ancestors of every type, including the ones the
         // hierarchy walk below cannot place from a type object.
-        if sup.with_str(|n| n == "Mu") || (sup.with_str(|n| n == "Any") && !sub.with_str(|n| n == "Mu")) {
+        // Compared as interned symbols: this runs ~25k times per Red
+        // `^create`, and each `with_str` test was a string read plus compare.
+        let (any, mu) = (crate::symbol::wk::any(), crate::symbol::wk::mu());
+        if sup == mu || (sup == any && sub != mu) {
             return true;
         }
-        if sub.with_str(|n| matches!(n, "Any" | "Mu")) {
+        if sub == any || sub == mu {
             return false;
         }
-        if sub.with_str(|sub| {
-            sup.with_str(|sup| crate::builtin_types::ancestry::builtin_role_ancestors(sub).contains(&sup))
-        }) {
+        // Only the three numeric roles have a core ancestor list.
+        if (sub == crate::symbol::wk::rational_role()
+            || sub == crate::symbol::wk::real_role()
+            || sub == crate::symbol::wk::numeric_role())
+            && sub.with_str(|sub| {
+                sup.with_str(|sup| {
+                    crate::builtin_types::ancestry::builtin_role_ancestors(sub).contains(&sup)
+                })
+            })
+        {
             return true;
         }
         sup.with_str(|sup| {

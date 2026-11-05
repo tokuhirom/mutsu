@@ -5,7 +5,15 @@
 //! existing compiler input. ADR-10723 proposes making this model the frontend
 //! IR; its round-trip mode currently exercises that boundary.
 
+mod accessors;
 mod adverb_origins;
+mod model_methods;
+mod positional_fields;
+pub use accessors::node_accessor;
+pub(crate) use doc_source::pod_source;
+#[cfg(test)]
+pub(crate) use model_methods::accessor_schema;
+pub use model_methods::constructor_method_names;
 mod anon_state;
 mod assign_lower;
 mod assign_target;
@@ -30,27 +38,42 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod decl_origins;
+mod doc_block;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
+mod fragment_origins;
 pub(crate) mod hyper_assign;
 mod if_branch;
 pub(crate) mod list_infix;
+pub(crate) mod literalize;
 mod loop_bind;
+mod named_docs;
 pub(crate) mod nested_methods;
+pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
+mod pod_blocks;
+mod pod_entities;
+mod pod_nested;
+mod pod_table;
 pub(crate) mod pointy_bind;
+pub(crate) mod post_declared;
+mod quote_nesting;
+mod regex_call_origins;
 mod regex_origins;
+mod regex_symbolic_origins;
 pub(crate) mod sections;
 pub(crate) mod signature_expand;
+mod stmt_call;
 mod trait_is_constructor;
 mod with_branch;
 use constructor_positional::single_positional_class;
-mod convert;
 mod core_term_names;
 mod statements;
+mod view;
 use crate::core_type_names;
+use crate::scope::NameScope;
 mod decl_compound_assign;
 mod decl_modifier_split;
 mod sigilless_lower;
@@ -60,11 +83,23 @@ pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
 mod decl_traits;
 mod declarator_docs;
+
+/// The `#|` / `#=` docs a node carries (leading, trailing).
+// Cost: O(1).
+pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
+    declarator_docs::docs_of(node)
+}
+mod anon_body_origins;
+pub(crate) mod apply_queries;
+pub(crate) mod arg_list_queries;
+pub(crate) mod block_queries;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 mod doc_phaser;
+mod doc_source;
+mod doc_str;
 mod dynamic_method;
 mod enum_term;
 mod expr_block_origins;
@@ -78,10 +113,15 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
-pub(crate) use infix_func::{add_colonpair, with_caller_operators};
+pub(crate) mod name_queries;
+pub(crate) mod parameter_queries;
+pub(crate) use infix_func::add_colonpair;
 mod assign_ro;
+mod call_term_origins;
 mod carried;
+mod decl_postfix_origins;
 mod finalize;
+pub(crate) mod implicit_signature;
 mod infix_origins;
 mod infix_spelling;
 mod inherited_fields;
@@ -125,10 +165,12 @@ mod regex_extension;
 mod regex_quantifier;
 mod regex_sym;
 mod regex_variable_alias;
+mod regex_view;
 mod render;
 mod resolve;
 mod role;
 mod role_header;
+mod role_implicit;
 mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;
@@ -158,12 +200,14 @@ mod type_ctor;
 mod type_lower;
 mod underscore_bindings;
 pub(crate) mod unit_source;
+mod unit_span;
 mod unspell;
 mod use_origins;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
+mod whatever_origins;
 mod word_list;
 mod word_quote;
 
@@ -186,7 +230,7 @@ pub struct RakuAstNode {
     pub origin: NodeOrigin,
 }
 
-/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `convert`
+/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `view`
 /// made below the statement level), and the origins of the empty nodes its
 /// absent fields stand for ([`empty_fields`]). It takes no part in a node's
 /// equality: two trees that differ only in where they were written are the
@@ -197,6 +241,9 @@ pub struct NodeOrigin(
     pub empty_fields::EmptyOrigins,
     /// What `RakuAST::Lookup.resolution` answers (see [`resolve`]).
     pub Option<Value>,
+    /// The package a `Method`'s implicit invocant parameter is typed by
+    /// (`implicit_signature`); `None` outside a package.
+    pub Option<Box<str>>,
 );
 
 impl PartialEq for NodeOrigin {
@@ -223,7 +270,7 @@ pub enum RakuAstFieldValue {
     Adverb(&'static str),
 }
 
-/// Every known RakuAST node kind. Exhaustive `match` on this in the converter
+/// Every known RakuAST node kind. Exhaustive `match` on this in the view
 /// and renderer (and, later, the lowerer) keeps the layer honest as it grows —
 /// adding a kind is a compile error until every site handles it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,6 +319,11 @@ pub enum RakuAstClass {
     RegexAssertionPredicateBlock,
     RegexAssertionInterpolatedBlock,
     RegexInterpolation,
+    DocBlock,
+    DocMarkup,
+    DocDeclarator,
+    DocParagraph,
+    DocLegacyRow,
     RegexAlternation,
     RegexSequentialAlternation,
     RegexQuantifiedAtom,
@@ -339,6 +391,7 @@ pub enum RakuAstClass {
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
     VarDynamic,
+    VarDoc,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -664,6 +717,11 @@ impl RakuAstClass {
             RegexAssertionPredicateBlock => "RakuAST::Regex::Assertion::PredicateBlock",
             RegexAssertionInterpolatedBlock => "RakuAST::Regex::Assertion::InterpolatedBlock",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
+            DocBlock => "RakuAST::Doc::Block",
+            DocMarkup => "RakuAST::Doc::Markup",
+            DocDeclarator => "RakuAST::Doc::Declarator",
+            DocParagraph => "RakuAST::Doc::Paragraph",
+            DocLegacyRow => "RakuAST::Doc::LegacyRow",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -724,6 +782,7 @@ impl RakuAstClass {
             VarCompilerDistribution => "RakuAST::Var::Compiler::Distribution",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
+            VarDoc => "RakuAST::Var::Doc",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -932,6 +991,7 @@ impl RakuAstClass {
         matches!(
             self,
             RakuAstClass::Assignment
+                | RakuAstClass::Signature
                 | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::DottyInfixCall
@@ -1190,6 +1250,11 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionPredicateBlock,
     RakuAstClass::RegexAssertionInterpolatedBlock,
     RakuAstClass::RegexInterpolation,
+    RakuAstClass::DocBlock,
+    RakuAstClass::DocMarkup,
+    RakuAstClass::DocDeclarator,
+    RakuAstClass::DocParagraph,
+    RakuAstClass::DocLegacyRow,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,
     RakuAstClass::RegexQuantifiedAtom,
@@ -1259,6 +1324,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarCompilerDistribution,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
+    RakuAstClass::VarDoc,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,
@@ -1496,6 +1562,14 @@ pub(crate) fn lower_parsed_stmt(
     node: crate::ast::parsed::ParsedStmt,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
     conditional_lower::lower_parsed(node)
+}
+
+/// The `Name` node of the identifier `identifier`, written where `origin` says.
+// Cost: O(k), k = length of the identifier.
+pub(crate) fn name_node_at(identifier: &str, origin: &NodeOrigin) -> Value {
+    let mut name = view::name_from_identifier(identifier);
+    name.origin = origin.clone();
+    Value::rakuast(Box::new(name))
 }
 
 /// The name a `RakuAST::Sub` node declares (`foo` of `sub foo { }`), if it has one.
@@ -1762,20 +1836,43 @@ pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> 
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
 pub(crate) fn parameter_param_def(
+    names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<crate::ast::ParamDef, RuntimeError> {
-    lower::lower_parameter_def(node)
+    lower::lower_parameter_def(names, node)
 }
 
-/// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
-pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
+/// A check over the parsed unit, in source order, that the frontend itself
+/// cannot make (it needs the runtime's name tables).
+pub type UnitCheck<'a> = &'a dyn Fn(&[crate::ast::Stmt]) -> Result<(), RuntimeError>;
+
+/// No extra check.
+pub fn no_unit_check(_: &[crate::ast::Stmt]) -> Result<(), RuntimeError> {
+    Ok(())
+}
+
+/// Entry point for `Str.AST`: parse the source, run `unit_check` on the parsed
+/// statements, convert, wrap in `Value::RakuAst`.
+pub fn str_dot_ast_checked(
+    names: &NameScope,
+    source: &str,
+    unit_check: UnitCheck<'_>,
+) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let unit_docs = crate::parser::decl_doc::take_unit_docs();
+    // Rakudo's `.AST` raises the compile errors running the code does
+    // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
+    // declaration.
+    post_declared::check(&stmts, names)?;
+    unit_check(&stmts)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let mut node = convert::statement_list(&stmts)?;
+    let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
+    pod_blocks::insert(names, &mut node, source, &stmts);
+    named_docs::attach(&mut node, unit_docs);
     Ok(Value::rakuast(Box::new(node)))
 }
 
@@ -1783,10 +1880,11 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
 /// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
 pub fn compile_time_compunit(
+    names: &NameScope,
     source: &str,
     imported: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
-    let cu = str_dot_ast_compunit(source)?;
+    let cu = str_dot_ast_compunit(names, source, &no_unit_check)?;
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
@@ -1803,11 +1901,15 @@ pub fn compile_time_compunit(
 /// different names); mutsu derives one from the source and a process-wide
 /// counter, which keeps that distinctness.
 // Cost: O(n), n = source length (the parse dominates).
-pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_compunit(
+    names: &NameScope,
+    source: &str,
+    unit_check: UnitCheck<'_>,
+) -> Result<Value, RuntimeError> {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast(source)?;
+    let statement_list = str_dot_ast_checked(names, source, unit_check)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1847,9 +1949,14 @@ pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
 /// An absent or undefined `$slang` (rakudo's `Mu $slang?` default) is the
 /// plain parse. Any other value names the module verbatim — rakudo has no
 /// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
-pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
+pub fn str_dot_ast_with_slang(
+    names: &NameScope,
+    source: &str,
+    slang: Option<&str>,
+    unit_check: UnitCheck<'_>,
+) -> Result<Value, RuntimeError> {
     let Some(slang) = slang.filter(|s| !s.is_empty()) else {
-        return str_dot_ast(source);
+        return str_dot_ast_checked(names, source, unit_check);
     };
     let module = format!("L10N::{slang}");
     let activation = crate::runtime::slang_activation::run_slang_activation(
@@ -1864,7 +1971,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
     let result = (|| {
         crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
-        str_dot_ast(source)
+        str_dot_ast_checked(names, source, unit_check)
     })();
     crate::parser::set_l10n_preseed(None);
     crate::parser::restore_slang_state(saved_modes, saved_vocabulary);
@@ -1883,10 +1990,13 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// return-type traits, plus the supported named-field constructors.
 // Cost: O(n), n = arguments and contained list elements or identifier bytes.
 pub fn construct(
+    names: &NameScope,
     class_name: &str,
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    let read_named = crate::value::call_args::read_named_args(args);
+    let args = read_named.as_ref();
     // An array element or a bound variable arrives as its `ContainerRef` cell
     // (`Name.from-identifier(@parts.head)`); a node stores the value inside.
     if args
@@ -1894,12 +2004,13 @@ pub fn construct(
         .any(|arg| matches!(arg.view(), ValueView::ContainerRef(_)))
     {
         let read: Vec<Value> = args.iter().map(Value::deref_container).collect();
-        return construct_values(class_name, method, &read);
+        return construct_values(names, class_name, method, &read);
     }
-    construct_values(class_name, method, args)
+    construct_values(names, class_name, method, args)
 }
 
 fn construct_values(
+    names: &NameScope,
     class_name: &str,
     method: &str,
     args: &[Value],
@@ -1915,7 +2026,7 @@ fn construct_values(
         return result.map(Some);
     }
     if method == "new"
-        && let Some(result) = package_traits::construct(class_name, args)
+        && let Some(result) = package_traits::construct(names, class_name, args)
     {
         return result.map(Some);
     }
@@ -2070,10 +2181,13 @@ fn construct_values(
         }];
         if let Some(arg_list) = named_arg(args, "args") {
             require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
-            fields.push(RakuAstField {
-                name: Some("args"),
-                value: RakuAstFieldValue::Node(arg_list),
-            });
+            // An empty `ArgList` is the default; rakudo's `.raku` leaves it out.
+            if !named_ctor::is_empty_arg_list(&arg_list) {
+                fields.push(RakuAstField {
+                    name: Some("args"),
+                    value: RakuAstFieldValue::Node(arg_list),
+                });
+            }
         }
         // `$x.?m` / `$x.+m` / `$x.*m`: a method call's dispatcher.
         if class == RakuAstClass::CallMethod
@@ -3041,6 +3155,53 @@ fn construct_values(
             fields,
         }))));
     }
+    // `Slurpy::Flattened.new`, `Backtrack::Greedy.new`, ...: a bare marker class
+    // whose constructor answers the type object itself (rakudo: `.new === $type`).
+    if method == "new"
+        && let Some(class) = class_from_name(class_name)
+        && class.renders_bare()
+    {
+        if !args.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "{class_name}.new expects no arguments"
+            )));
+        }
+        return Ok(Some(slurpy_marker_value(class)));
+    }
+    // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
+    // from a simple (single identifier) name node.
+    if class_name == "RakuAST::Term::Enum" && method == "new" {
+        let identifier = match args {
+            [name] => match name.view() {
+                ValueView::RakuAst(node) if node.class == RakuAstClass::Name => {
+                    match node.fields.as_slice() {
+                        [
+                            RakuAstField {
+                                name: None,
+                                value: RakuAstFieldValue::Node(id),
+                            },
+                        ] if id.as_str().is_some() => Some(id.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(identifier) = identifier else {
+            return Err(RuntimeError::new(
+                "RakuAST::Term::Enum.new expects one simple RakuAST::Name",
+            ));
+        };
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TermEnum,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(identifier),
+            }],
+        }))));
+    }
     if let Some(class) = zero_positional_class(class_name, method) {
         if !args.is_empty() {
             return Err(RuntimeError::new(format!(
@@ -3196,7 +3357,7 @@ fn construct_values(
                 "may-have-signature",
             ] {
                 if named_arg(args, name).is_some_and(|value| value.truthy()) {
-                    fields.push(convert::true_field(name));
+                    fields.push(view::true_field(name));
                 }
             }
         }
@@ -3671,404 +3832,9 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
     )
 }
 
-pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
-    if let Some(child) = regex_extension::nested_accessor(node, method) {
-        return Some(child);
-    }
-    // A statement records where it began, and so does a node of a family the
-    // parser builds in its RakuAST shape (ADR-10723 Stage 2); every other node
-    // (and a hand-built one) has no origin, which reads as `Nil` so `with`
-    // skips it.
-    if method == "origin" {
-        return Some(origin::origin_of(node).unwrap_or(Value::NIL));
-    }
-    // A lookup's resolution, added by [`resolve`] to the unit tree `$*CU`
-    // answers (and absent from a tree built any other way, which resolves
-    // nothing).
-    if method == "compile-time-value"
-        && matches!(
-            node.class,
-            RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar
-        )
-    {
-        return Some(resolve::declared_type(node));
-    }
-    if node.class == RakuAstClass::Nqp && matches!(method, "op" | "args") {
-        let mut positional = node.fields.iter().filter(|f| f.name.is_none());
-        let op = positional.next()?;
-        if method == "op" {
-            return match &op.value {
-                RakuAstFieldValue::Node(v) => Some(v.clone()),
-                _ => None,
-            };
-        }
-        return Some(Value::real_array(
-            positional
-                .filter_map(|f| match &f.value {
-                    RakuAstFieldValue::Node(v) => Some(v.clone()),
-                    _ => None,
-                })
-                .collect(),
-        ));
-    }
-    if method == "is-block-statement" {
-        match node.class {
-            // A statement ends where its block does, or at a semicolon.
-            RakuAstClass::StatementExpression => return Some(Value::TRUE),
-            // A block is a block statement when it is a statement itself.
-            RakuAstClass::Block | RakuAstClass::PointyBlock => {
-                return Some(Value::truth(node.origin.2.as_ref().is_some_and(|mark| {
-                    mark.truthy() && mark.to_string_value() != "immediate"
-                })));
-            }
-            _ => {}
-        }
-    }
-    // 1 for the body of a conditional or loop (it runs in place), else 0.
-    if method == "is-immediate-block-user-body" && node.class == RakuAstClass::Block {
-        let immediate = node
-            .origin
-            .2
-            .as_ref()
-            .is_some_and(|mark| mark.to_string_value() == "immediate");
-        return Some(Value::int(i64::from(immediate)));
-    }
-    if method == "name" && node.class == RakuAstClass::WhateverCodeArgument {
-        return Some(
-            node.origin
-                .2
-                .clone()
-                .unwrap_or_else(|| Value::str("_whatever_arg_1".to_string())),
-        );
-    }
-    if method == "return-type" && node.class == RakuAstClass::VarAttribute {
-        return Some(
-            node.origin
-                .2
-                .clone()
-                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
-        );
-    }
-    // A variable of an anonymous subset keeps its `where` on that subset.
-    if method == "where"
-        && node.class == RakuAstClass::VarDeclarationSimple
-        && !node.fields.iter().any(|f| f.name == Some("where"))
-        && let Some(field) = node.fields.iter().find(|f| f.name == Some("type"))
-        && let RakuAstFieldValue::Node(ty) = &field.value
-        && let ValueView::RakuAst(ty) = ty.view()
-        && ty.class == RakuAstClass::TypeSubset
-    {
-        return node_accessor(ty, "where");
-    }
-    if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
-        return Some(resolve::container_type(node));
-    }
-    if is_resolvable_lookup(node.class) {
-        match method {
-            // A package declaration keeps its qualified name there, not a resolution.
-            "is-resolved" => {
-                return Some(Value::truth(
-                    node.origin.2.is_some() && resolve::package_qualified_name(node).is_none(),
-                ));
-            }
-            "resolution" if resolve::package_qualified_name(node).is_some() => {
-                return Some(Value::NIL);
-            }
-            "resolution" => return Some(node.origin.2.clone().unwrap_or(Value::NIL)),
-            _ => {}
-        }
-    }
-    for f in &node.fields {
-        if f.name == Some(method) && !is_unvisited_field(node, f) {
-            return Some(field_to_value(&f.value));
-        }
-    }
-    // Methods rakudo computes from the attributes (`default-scope`, `scope`
-    // without a written scope, `Name.is-anonymous`, `Call::Method.dispatch`).
-    if let Some(value) = derived_methods::call(node, method) {
-        return Some(value);
-    }
-    // This inherited Block capability defaults to false and is not one of
-    // the class's local model fields reported by reflection.
-    if node.class == RakuAstClass::Block && method == "may-have-signature" {
-        return Some(Value::truth(false));
-    }
-    // `code-statements` (undocumented in rakudo; `static::CLI`'s analysis
-    // reads it, #15608) answers the same statements as `statements` for every
-    // statement kind measured under `raku` (expressions, declarations, `use`,
-    // phasers, loops, `CATCH`, empty statements).
-    if (method == "statements"
-        && matches!(
-            node.class,
-            RakuAstClass::StatementList | RakuAstClass::StatementSequence | RakuAstClass::SemiList
-        ))
-        || (method == "code-statements"
-            && matches!(
-                node.class,
-                RakuAstClass::StatementList | RakuAstClass::SemiList
-            ))
-        || (method == "args" && node.class == RakuAstClass::ArgList)
-    {
-        let items = node
-            .fields
-            .iter()
-            .filter(|f| !origin::is_origin(f))
-            .map(|f| field_to_value(&f.value))
-            .collect();
-        return Some(Value::array(items));
-    }
-    // Positional-leaf accessors: a node whose positional field is its payload
-    // exposes it under a class-specific name (`IntLiteral.value`,
-    // `Var::Lexical.name`). Regex sequences and alternations are the one
-    // variadic case: their accessor returns all positional children as a List.
-    if matches!(
-        node.class,
-        RakuAstClass::RegexSequence
-            | RakuAstClass::RegexAlternation
-            | RakuAstClass::RegexSequentialAlternation
-            | RakuAstClass::RegexConjunction
-            | RakuAstClass::RegexSequentialConjunction
-            | RakuAstClass::RegexAssertionCharClass
-    ) && fields::positional_accessor(node.class) == Some(method)
-    {
-        let items = node
-            .fields
-            .iter()
-            .filter(|f| f.name.is_none())
-            .map(|f| field_to_value(&f.value))
-            .collect();
-        return Some(Value::array(items));
-    }
-    // The named-field loop above runs first, so a class with a named field of
-    // the same name (e.g. `Call::Name.name`) is unaffected.
-    if fields::positional_accessor(node.class) == Some(method)
-        && let Some(f) = node.fields.first()
-        && f.name.is_none()
-    {
-        return Some(field_to_value(&f.value));
-    }
-    // `Var::Lexical.sigil` / `Var::Dynamic.sigil`: derived from the spelling.
-    if method == "sigil"
-        && node.class.is_simple_variable()
-        && let Some(f) = node.fields.first()
-        && let RakuAstFieldValue::Node(v) = &f.value
-        && let ValueView::Str(s) = v.view()
-        && let Some(sigil) = s.chars().next()
-    {
-        return Some(Value::str(sigil.to_string()));
-    }
-    // `VarDeclaration::Simple.name`: the full spelling, sigil, twigil and
-    // `desigilname` together (`$x`, `$*x`, `@!a`), as rakudo derives it.
-    if method == "name"
-        && node.class == RakuAstClass::VarDeclarationSimple
-        && let Ok(sigil) = lower::leaf_str(node, "sigil")
-        && let Some(RakuAstFieldValue::Node(desigil)) = node
-            .fields
-            .iter()
-            .find(|f| f.name == Some("desigilname"))
-            .map(|f| &f.value)
-        && let Some(desigil) = lower::rakuast_node_of(desigil)
-        && let Some(name_parts::NameShape::Identifier(desigil)) = name_parts::name_shape(desigil)
-    {
-        let twigil = lower::leaf_str(node, "twigil").unwrap_or_default();
-        return Some(Value::str(format!("{sigil}{twigil}{desigil}")));
-    }
-    // `Name.from-identifier("a")` stores one identifier leaf; `.parts` answers
-    // the one `Name::Part::Simple` it denotes (rakudo does not split on `::`).
-    if method == "parts"
-        && node.class == RakuAstClass::Name
-        && let Some(RakuAstField {
-            name: None,
-            value: RakuAstFieldValue::Node(v),
-        }) = node.fields.first()
-        && let ValueView::Str(s) = v.view()
-    {
-        return Some(Value::array(vec![name_parts::simple_part(&s)]));
-    }
-    // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.
-    if method == "canonicalize"
-        && let Some(name_parts::NameShape::Identifier(s)) = name_parts::name_shape(node)
-    {
-        return Some(Value::str(s));
-    }
-    // A field the class DECLARES but this node does not carry still answers:
-    // rakudo models every field as an attribute, so an absent optional clause
-    // reads as an undefined type object (or `()` / `False` / `0`) rather than
-    // dying. That is what makes `.defined` the way to test for one — see
-    // `fields::Absent`.
-    let (name, absent) = fields::model_fields(node.class)
-        .iter()
-        .chain(inherited_fields::for_class(node.class))
-        .find(|(name, _)| *name == method)?;
-    match absent {
-        fields::Absent::EmptyNode(class) => Some(empty_fields::empty_node(node, name, *class)),
-        _ => absent.value(),
-    }
-}
-
-/// Native methods currently exposed directly by a RakuAST model class.
-///
-/// This intentionally describes mutsu's implemented model API rather than
-/// copying Rakudo's compiler-internal `IMPL-*` methods.  The result feeds
-/// `.^methods(:local)`, so callers can discover constructors and accessors
-/// without the RakuAST classes having ordinary registry entries.
-pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
-    if let Some(names) = inherited_fields::local_names(class_name) {
-        return Some(names);
-    }
-    // The core declarations a resolved lookup answers (see [`resolve`]).
-    if matches!(
-        class_name,
-        "RakuAST::Declaration::External::Setting"
-            | "RakuAST::Declaration::External::Constant"
-            | "RakuAST::Declaration::Import"
-            | "RakuAST::Declaration::LexicalPackage"
-    ) {
-        return Some(vec!["compile-time-value"]);
-    }
-    let class = class_from_name(class_name)?;
-    let mut names = Vec::new();
-
-    match class.constructor() {
-        Constructor::FromIdentifier
-            if matches!(class, RakuAstClass::Name | RakuAstClass::TermEnum) =>
-        {
-            names.push("from-identifier");
-            if class == RakuAstClass::Name {
-                names.push("from-identifier-parts");
-                names.push("new");
-            }
-        }
-        Constructor::New if constructor_is_supported(class) => names.push("new"),
-        _ => {}
-    }
-    names.extend(accessor_names(class));
-    // The accessor over a class's single positional field (`Infix.operator`).
-    if let Some(accessor) = fields::positional_accessor(class)
-        && !names.contains(&accessor)
-    {
-        names.push(accessor);
-    }
-    names.extend(derived_methods::names(class));
-    if class == RakuAstClass::CompUnit {
-        names.push("add-check-code");
-        names.push("add-sorry");
-        names.push("sorries");
-        names.push("worries");
-        names.push("has-check-time-problems");
-        names.push("add-worry");
-        names.push("replace-statement-list");
-    }
-    if matches!(class, RakuAstClass::StatementList | RakuAstClass::SemiList) {
-        names.push("code-statements");
-    }
-    // (A statement's own `.^methods` does not list it: rakudo inherits it.)
-    if matches!(class, RakuAstClass::Block | RakuAstClass::PointyBlock) {
-        names.push("is-block-statement");
-    }
-    if class == RakuAstClass::Block {
-        names.push("is-immediate-block-user-body");
-    }
-    if class == RakuAstClass::VarAttribute {
-        names.push("return-type");
-    }
-    if class == RakuAstClass::WhateverCodeArgument {
-        names.push("name");
-    }
-    if class == RakuAstClass::VarDeclarationSimple {
-        for name in ["container-type", "return-type", "original-type"] {
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
-    if matches!(
-        class,
-        RakuAstClass::VarDeclarationSimple
-            | RakuAstClass::ParameterTargetVar
-            | RakuAstClass::Sub
-            | RakuAstClass::Method
-            | RakuAstClass::Submethod
-            | RakuAstClass::TypeCapture
-            | RakuAstClass::VarDeclarationConstant
-            | RakuAstClass::Block
-            | RakuAstClass::PointyBlock
-            | RakuAstClass::TypeSubset
-            | RakuAstClass::Class
-            | RakuAstClass::Role
-            | RakuAstClass::Grammar
-            | RakuAstClass::Module
-            | RakuAstClass::Package
-            | RakuAstClass::RoleBody
-    ) {
-        names.push("compile-time-value");
-    }
-    if class == RakuAstClass::Nqp {
-        names.push("op");
-        names.push("args");
-    }
-    // The hidden name and signature a role's body holds in the unit tree.
-    if class == RakuAstClass::RoleBody {
-        names.push("name");
-        names.push("signature");
-    }
-    if is_resolvable_lookup(class) {
-        names.push("is-resolved");
-        names.push("resolution");
-    }
-    if matches!(
-        class,
-        RakuAstClass::Parameter | RakuAstClass::Block | RakuAstClass::PointyBlock
-    ) {
-        names.push("meta-object");
-    }
-    if class == RakuAstClass::StatementExpression {
-        names.push("set-expression");
-    }
-    if class == RakuAstClass::ArgList {
-        names.push("push");
-    }
-    if matches!(
-        class,
-        RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix
-    ) {
-        names.push("add-colonpair");
-    }
-    if class == RakuAstClass::StatementList {
-        names.push("add-statement");
-        names.push("unshift-statement");
-    }
-    names.sort_unstable();
-    names.dedup();
-    Some(names)
-}
-
-/// The public methods a RakuAST model class exposes *including* the ones it
-/// inherits, for `.^methods` (whose default, per
-/// `Type/Metamodel/MethodContainer.rakudoc`, is "methods of the class and its
-/// parents, stopping at Cool/Any/Mu" — `:local` is the narrower set
-/// [`local_method_names`] returns). Walks the model MRO and drops the `Any` /
-/// `Mu` tail, so the result grows automatically as the abstract RakuAST classes
-/// gain model methods of their own.
-pub fn inherited_method_names(class_name: &str) -> Option<Vec<&'static str>> {
-    let mro = type_object_mro(class_name)?;
-    let mut names = Vec::new();
-    for cls in &mro {
-        if cls == "Any" || cls == "Mu" {
-            break;
-        }
-        if let Some(local) = local_method_names(cls) {
-            names.extend(local);
-        }
-    }
-    names.sort_unstable();
-    names.dedup();
-    Some(names)
-}
-
 /// Model fields declared directly by a RakuAST class, for `.^attributes(:local)`.
 ///
-/// As with [`local_method_names`], these are mutsu's public model fields rather
+/// These are mutsu's public model fields rather
 /// than Rakudo's backend storage slots.
 pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
     if let Some(names) = inherited_fields::local_names(class_name) {

@@ -70,7 +70,7 @@ impl Interpreter {
     // Cost: O(a), a = the grammar's attributes (`create_instance`), plus O(1) when
     // a subject is published (`orig` shares its payload) or O(n), n = chars of
     // the subject, to build it.
-    pub(super) fn new_grammar_cursor(&mut self, chars: &[char], pos: usize, pkg: Symbol) -> Value {
+    pub(in crate::runtime) fn new_grammar_cursor(&mut self, chars: &[char], pos: usize, pkg: Symbol) -> Value {
         let cursor = self.create_instance(pkg);
         let orig = match super::regex_helpers::current_match_target() {
             // Only when `chars` IS the published subject's own buffer: a nested

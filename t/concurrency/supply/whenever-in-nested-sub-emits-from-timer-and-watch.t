@@ -71,6 +71,8 @@ plan 5;
         last if @seen.grep('.cro.yml');
     }
     ok @seen.grep('svc'), 'the new directory itself is reported';
+    # Also holds as `EVAL(slurp($file).AST)`: a `sub` nested in an EVAL unit's
+    # `supply` block stays callable from the whenever callback's thread (#16198).
     ok @seen.grep('.cro.yml'), 'a file created inside it is reported by the nested watcher';
 }
 

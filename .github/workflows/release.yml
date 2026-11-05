@@ -99,7 +99,7 @@ jobs:
       # are scoped to their own ref), and `main` runs only reviewed, merged
       # code, so restoring here is accepted for the build-time saving.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 # zizmor: ignore[cache-poisoning]
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: ${{ matrix.target }}
 
@@ -184,7 +184,7 @@ jobs:
       # are scoped to their own ref), and `main` runs only reviewed, merged
       # code, so restoring here is accepted for the build-time saving.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2 # zizmor: ignore[cache-poisoning]
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: x86_64-unknown-linux-gnu
 

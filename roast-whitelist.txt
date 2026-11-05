@@ -35,9 +35,11 @@ roast/APPENDICES/A01-limits/misc.t
 roast/APPENDICES/A01-limits/overflow.t
 roast/APPENDICES/A02-some-day-maybe/concreteness.t
 roast/APPENDICES/A02-some-day-maybe/io-cathandle.t
+roast/APPENDICES/A02-some-day-maybe/misc.t
 roast/APPENDICES/A02-some-day-maybe/multi-no-match.t
 roast/MISC/bug-coverage-6.d.t
 roast/MISC/bug-coverage-stress.t
+roast/MISC/misc.t
 roast/S01-perl-5-integration/array.t
 roast/S01-perl-5-integration/basic.t
 roast/S01-perl-5-integration/class.t
@@ -112,6 +114,7 @@ roast/S02-magicals/subname.t
 roast/S02-names-vars/contextual.t
 roast/S02-names-vars/fmt.t
 roast/S02-names-vars/list_array_perl.t
+roast/S02-names-vars/names.t
 roast/S02-names-vars/perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names-vars/variables-and-packages.t
@@ -765,6 +768,7 @@ roast/S15-nfg/GraphemeBreakTest-0.t
 roast/S15-nfg/GraphemeBreakTest-1.t
 roast/S15-nfg/GraphemeBreakTest-2.t
 roast/S15-nfg/GraphemeBreakTest-3.t
+roast/S15-nfg/GraphemeBreakTest-4.t
 roast/S15-nfg/case-change.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/concat-stable.t
@@ -1068,6 +1072,7 @@ roast/S32-basics/pairup.t
 roast/S32-basics/warn.t
 roast/S32-basics/xxKEY.t
 roast/S32-basics/xxPOS-native.t
+roast/S32-basics/xxPOS.t
 roast/S32-container/buf.t
 roast/S32-container/cat.t
 roast/S32-container/roundrobin.t

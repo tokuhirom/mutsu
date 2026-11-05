@@ -1031,7 +1031,13 @@ impl Interpreter {
     /// rather than itemize. The `ItemizeVar` opcode reads this marker. Plain
     /// assignment to a scalar clears any stale marker (guarded by
     /// `bound_decont_active` so the common no-bind case stays cheap).
-    pub(super) fn update_bound_decont_marker(&mut self, name: &str, is_bind: bool, val: &Value) {
+    pub(super) fn update_bound_decont_marker(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        is_bind: bool,
+        val: &Value,
+    ) {
         if is_bind && name.starts_with('!') {
             self.note_bound_private_attr(name, val);
         }
@@ -1078,14 +1084,15 @@ impl Interpreter {
                 _ => false,
             };
             if is_container {
-                let key = MetaNs::BoundDecont.key_for_str(name);
+                let key = MetaNs::BoundDecont.key(name_sym);
+                Self::note_bound_decont_name(name_sym);
                 self.env_mut().insert_sym_noting(key, Value::TRUE);
                 self.bound_decont_active().set(true);
                 return;
             }
         }
         if self.bound_decont_active().get() {
-            let key = MetaNs::BoundDecont.key_for_str(name);
+            let key = MetaNs::BoundDecont.key(name_sym);
             self.env_mut().remove_sym(key);
         }
     }
@@ -1153,7 +1160,7 @@ impl Interpreter {
         self.locals[idx] = holder.clone();
         // Clear any stale bound-decont marker inherited from an earlier bind of
         // the same name (this `=` share is itemized, not a `:=` decont alias).
-        self.update_bound_decont_marker(&name, false, &val);
+        self.update_bound_decont_marker(&name, Symbol::intern(&name), false, &val);
         // Keep the marker for legacy bare share slots and the compiler's
         // itemization-exempt temporaries. A holder cell takes the ordinary
         // write-through path, which replaces its itemized inner word.

@@ -33,6 +33,25 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Value> {
         let stream = crate::builtins::method_table::lazy_stream::stream_of(target, method)?;
+        // A handle's `lines` Seq is consumed by the stage: the stage reads
+        // from a fresh Seq over the same handle, and the receiver is spent.
+        if let ValueView::Seq(body) = target.view() {
+            if body.unpulled_iterator().is_some() {
+                // `Seq.new($iterator)` (#16132): hand the iterator to a fresh
+                // lazy Seq, as `.map` / `.grep` do, and spend the receiver.
+                let iterator = body.take_iterator_source().ok()??;
+                let lazy = body.is_lazy();
+                let fresh = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(
+                    iterator,
+                ));
+                if lazy {
+                    fresh.mark_lazy();
+                }
+                return stream(self, &Value::seq_body(fresh), args);
+            }
+            let source = body.take_io_lines_pipe_source()?;
+            return stream(self, &Value::seq_deferred(source), args);
+        }
         stream(self, target, args)
     }
 

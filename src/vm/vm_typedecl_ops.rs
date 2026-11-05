@@ -650,6 +650,18 @@ impl Interpreter {
                 }
                 err
             })?;
+            // The real declaration composes the class here, in source order. An
+            // `augment` that ran earlier only saw its hoisted shell and froze the
+            // shell's dispatchers, but a class declared AFTER the augment sees the
+            // augmented candidates (#16314).
+            if !is_hoisted_shell {
+                let class_sym = crate::symbol::Symbol::intern(&storage_name);
+                let mut reg = self.registry_mut();
+                if !reg.frozen_dispatchers.is_empty() {
+                    reg.frozen_dispatchers
+                        .retain(|(class, _), _| *class != class_sym);
+                }
+            }
             // Take the rollback snapshot `register_class_decl` leaves behind
             // for a deferred `is` trait IMMEDIATELY, into a local: a nested
             // declaration in this class's own body runs its own
@@ -903,7 +915,11 @@ impl Interpreter {
                 {
                     self.compose_declare_attribute_metaclass(&storage_name, &attr_class)?;
                 }
-                if declare_how_has_compose {
+                // A hoisted shell's compose would run on the metaobject the
+                // in-place pass keeps (it re-registers the class and composes it
+                // again), so a HOW accumulating state in `compose` would see the
+                // class composed twice (#15022).
+                if declare_how_has_compose && !is_hoisted_shell {
                     self.registry_mut()
                         .pending_class_compose
                         .push(storage_name.clone());
@@ -930,7 +946,8 @@ impl Interpreter {
             // repeated on every entry of the enclosing code, must not.
             let has_trait_mod = !traits_ran_in_shell
                 && (self.has_proto("trait_mod:<is>")
-                    || self.has_multi_candidates("trait_mod:<is>"));
+                    || self.has_multi_candidates("trait_mod:<is>")
+                    || self.has_any_trait_mod_is());
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
@@ -950,8 +967,7 @@ impl Interpreter {
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     // As in rakudo, an `is foo(...)` no candidate accepts is
                     // an unknown parent, whichever candidates exist.
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
@@ -979,8 +995,7 @@ impl Interpreter {
                     let spelling =
                         parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
@@ -1600,8 +1615,7 @@ impl Interpreter {
                         None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             return Err(self.unknown_parent_error(&qualified_name, trait_name));
@@ -1615,8 +1629,7 @@ impl Interpreter {
                 // comment on the class-registration site above).
                 for trait_name in &role_deferred {
                     let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
-                    {
+                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                             return Err(self.unknown_parent_error(&qualified_name, trait_name));

@@ -276,6 +276,34 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> CoreInfixVerdict {
+        self.core_infix_wins_memoized(name, def, left, right, false)
+    }
+
+    /// [`Self::core_infix_candidate_wins`] for a candidate the registry does not
+    /// hold (one a block-scoped `use` imported, [`Self::core_infix_verdict`]),
+    /// memoized in the same table: the verdict is a function of the operator,
+    /// the candidate and the operand types, whichever table the candidate
+    /// lives in. Unmemoized it was ~42K instructions of a ~115K-instruction
+    /// FiniteField `*` (#15981).
+    // Cost: as `core_infix_candidate_wins`.
+    pub(crate) fn core_infix_captured_verdict(
+        &mut self,
+        name: &str,
+        def: &Arc<FunctionDef>,
+        left: &Value,
+        right: &Value,
+    ) -> CoreInfixVerdict {
+        self.core_infix_wins_memoized(name, def, left, right, true)
+    }
+
+    fn core_infix_wins_memoized(
+        &mut self,
+        name: &str,
+        def: &Arc<FunctionDef>,
+        left: &Value,
+        right: &Value,
+        captured: bool,
+    ) -> CoreInfixVerdict {
         let key = self.core_infix_wins_key(name, def, left, right);
         let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
@@ -284,7 +312,11 @@ impl Interpreter {
         {
             return *wins;
         }
-        let wins = self.core_infix_candidate_wins_uncached(name, def, left, right);
+        let wins = if captured {
+            self.core_infix_verdict(name, def, left, right)
+        } else {
+            self.core_infix_candidate_wins_uncached(name, def, left, right)
+        };
         if let Some(key) = key {
             debug_assert_eq!(generation, self.caches.fn_resolve_gen);
             self.caches
@@ -352,6 +384,13 @@ impl Interpreter {
             // candidate matches, and that is `call_infix_fallback`'s question.
             return CoreInfixVerdict::User;
         };
+        // A `proto sub infix:<op>` of the user's own declares a new lexical
+        // routine that SHADOWS the core one (rakudo: its candidates are the
+        // only ones), so there is no core candidate to tie with. Only a bare
+        // `multi infix:<op>` joins the core set.
+        if self.registry().has_proto(def.package.resolve().as_str(), name) || self.has_proto(name) {
+            return CoreInfixVerdict::User;
+        }
         let Some(core) = self.narrowest_core_infix_candidate(&shape, left, right) else {
             return CoreInfixVerdict::User;
         };

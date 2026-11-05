@@ -150,7 +150,7 @@ fn truth_field(name: &'static str) -> RakuAstField {
 
 /// The node for a tree atom.
 // Cost: O(n), n = number of specified characters.
-pub(super) fn convert(atom: &CharClassAtom) -> RakuAstNode {
+pub(super) fn view_node(atom: &CharClassAtom) -> RakuAstNode {
     let (kind, negated, characters) = match atom {
         CharClassAtom::Backslash { class, negated } => {
             (RegexCharClassKind::from_backslash(*class), *negated, None)

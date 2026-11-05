@@ -114,6 +114,17 @@ impl Interpreter {
         for (sym, val) in lexsub_bindings {
             env.insert_sym(sym, val);
         }
+        // `&?ROUTINE` is a lexical: the closure means the routine it is
+        // written in, whenever and from wherever it runs.
+        if compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.reads_routine_magical)
+        {
+            let routine = self.enclosing_routine_value();
+            if !routine.is_nil() {
+                env.insert(Self::CAPTURED_ROUTINE_KEY.to_string(), routine);
+            }
+        }
         if spec.freeze_readonly_captures {
             self.freeze_readonly_owned_captures(
                 code,
@@ -191,7 +202,6 @@ impl Interpreter {
             compiled_fns,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            deprecated_message: None,
             source_line,
             // Not `current_source_file()`: that reads the dynamically-scoped
             // `?FILE` env var, which only tracks the unit currently being
@@ -208,7 +218,7 @@ impl Interpreter {
             captured_fatal_mode: self.module.lexical_fatal_mode,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard,
+            _state_scope_guard: state_scope_guard,
             captured_readonly,
             routine_cell: spec.routine_cell.unwrap_or_default(),
         }))

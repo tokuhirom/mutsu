@@ -966,6 +966,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             (rest, Vec::new())
         };
         let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
+        // `has Inp() $.x .= new` / `has Int(Str) $.x .= new`: the method is
+        // called on the target type of the coercion, not on the coercion.
+        let target_name = match target_name.split_once('(') {
+            Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => target.to_string(),
+            _ => target_name,
+        };
         let target_expr = if target_name == "::?CLASS" {
             Expr::Var("?CLASS".to_string())
         } else if target_name == "::?ROLE" {
@@ -1339,6 +1345,29 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         Some(s) => vec![s],
         None => Vec::new(),
     };
+    // `has Int $.a: has Str $.b = "q" if 1;`: the nested declaration is the
+    // arglist of the first, so a modifier written after it governs the whole
+    // statement (rakudo shows it on the first declaration).
+    let stmt = if has_modifier {
+        stmt
+    } else {
+        match take_nested_modifiers(&mut stmts) {
+            Some(moved) => {
+                let node = crate::ast::parsed::ParsedStmt::Modified(crate::ast::parsed::Modified {
+                    stmt: Box::new(stmt),
+                    condition: moved.condition,
+                    loop_: moved.loop_,
+                    // Only the end is recorded; the statement parser places the start.
+                    body: crate::ast::SrcSpan {
+                        from: moved.body.to,
+                        ..moved.body
+                    },
+                });
+                crate::parser::stmt::control::finish(node).map_err(PError::from_typed)?
+            }
+            None => stmt,
+        }
+    };
     stmts.push(stmt);
     Ok((
         colon_rest,
@@ -1444,4 +1473,34 @@ fn bind_adverb(inner: &str) -> Option<bool> {
         return word_end(value).then_some(true);
     }
     word_end(rest).then_some(true)
+}
+
+/// The statement modifiers of a nested attribute declaration, taken off it:
+/// the declaration stays in place, plain.
+struct MovedModifiers {
+    condition: Option<crate::ast::parsed::StatementModifier>,
+    loop_: Option<crate::ast::parsed::StatementModifier>,
+    body: crate::ast::SrcSpan,
+}
+
+// Cost: O(a), a = nested declarations.
+fn take_nested_modifiers(stmts: &mut [Stmt]) -> Option<MovedModifiers> {
+    for slot in stmts.iter_mut() {
+        let Stmt::Ast(node) = slot else { continue };
+        let crate::ast::parsed::ParsedStmt::Modified(m) = node.as_mut() else {
+            continue;
+        };
+        if !matches!(m.stmt.peel_parsed(), Stmt::HasDecl { .. }) {
+            continue;
+        }
+        let moved = MovedModifiers {
+            condition: m.condition.take(),
+            loop_: m.loop_.take(),
+            body: m.body,
+        };
+        let inner = (*m.stmt).clone();
+        *slot = inner;
+        return Some(moved);
+    }
+    None
 }

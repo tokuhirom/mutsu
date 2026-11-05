@@ -44,6 +44,10 @@ const VIA_LIST: [&str; 21] = [
     "minpairs",
 ];
 
+/// The methods of a `Range`/`Seq` subclass that read the subclass's own `list`
+/// when it declares one (see [`Interpreter::payload_instance_reads_own_list`]).
+const PAYLOAD_LIST_METHODS: [&str; 5] = ["join", "Array", "List", "pick", "Str"];
+
 /// Where a receiver's elements come from.
 enum Source {
     /// Its own `iterator`: the [`VIA_ITERATOR`] methods, and `flat` when it
@@ -61,7 +65,11 @@ impl Source {
             Source::Iterator { iterable } => {
                 VIA_ITERATOR.contains(&method) || (*iterable && method == "flat")
             }
-            Source::List => VIA_ITERATOR.contains(&method) || VIA_LIST.contains(&method),
+            Source::List => {
+                VIA_ITERATOR.contains(&method)
+                    || VIA_LIST.contains(&method)
+                    || PAYLOAD_LIST_METHODS.contains(&method)
+            }
         }
     }
 }
@@ -101,6 +109,31 @@ impl Interpreter {
             && !self.has_user_method(&class, method)
     }
 
+    /// Whether `method` on `target`, an instance of an `is Range` / `is Seq`
+    /// subclass that declares `list` (and no `iterator`), reads that `list`
+    /// rather than the range or seq it carries: `Range.join` / `.Array` /
+    /// `.List` / `.pick` / `.Str` are written on `self.list` (#16022; measured
+    /// against Rakudo 2026.09).
+    // Cost: O(m) name scan plus memoized method probes, m = names in the set.
+    pub(crate) fn payload_instance_reads_own_list(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> bool {
+        if !PAYLOAD_LIST_METHODS.contains(&method)
+            || !crate::builtins::native_base::has_iterable_payload(target)
+        {
+            return false;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let class = class_name.resolve();
+        self.has_user_method(&class, "list")
+            && !self.has_user_method(&class, "iterator")
+            && !self.has_user_method(&class, method)
+    }
+
     // Cost: O(m), m = names in the set.
     fn list_method_via_own_iterator(method: &str) -> bool {
         matches!(method, "list" | "List" | "Array" | "join")
@@ -134,7 +167,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !VIA_ITERATOR.contains(&method) && !VIA_LIST.contains(&method) && method != "flat" {
+        if !VIA_ITERATOR.contains(&method)
+            && !VIA_LIST.contains(&method)
+            && !PAYLOAD_LIST_METHODS.contains(&method)
+            && method != "flat"
+        {
             return None;
         }
         let source = self.iteration_source(target, method)?;
@@ -210,6 +247,17 @@ impl Interpreter {
                 }
                 if class == "Backtrace" {
                     return Some(Source::List);
+                }
+                // A `Range`/`Seq` subclass keeps the base type's own `iterator`
+                // (the carried range or sequence), so declaring only `list`
+                // redirects the `self.list` methods but not those that read
+                // `self.iterator` (`map`, `grep`, `sort`, ..., #16022).
+                if crate::builtins::native_base::has_iterable_payload(target)
+                    && !self.has_user_method(&class, "iterator")
+                    && !VIA_LIST.contains(&method)
+                    && !PAYLOAD_LIST_METHODS.contains(&method)
+                {
+                    return None;
                 }
                 if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
                     return Some(Source::Iterator { iterable: false });

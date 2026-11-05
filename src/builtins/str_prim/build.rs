@@ -150,7 +150,7 @@ pub(crate) fn flip(s: &str) -> Value {
 ///
 /// Cost: O(n), n = chars of `s` (per-grapheme NFD + case map, then NFC).
 pub(crate) fn titlecase_each(s: &str) -> Value {
-    use unicode_segmentation::UnicodeSegmentation;
+    use crate::grapheme_break::UnicodeSegmentation;
     let mut out = String::with_capacity(s.len());
     for g in s.graphemes(true) {
         out.push_str(&crate::builtins::unicode::case_convert_grapheme(

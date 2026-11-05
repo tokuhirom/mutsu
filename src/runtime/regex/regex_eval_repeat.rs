@@ -375,7 +375,7 @@ impl Interpreter {
         // node's `ast` was committed on the capture delta there. A grammar that
         // declares no dynvar therefore has nothing to do here, and descending
         // anyway would deep-copy shared `Arc` nodes through `make_mut` (each is
-        // already in `REDUCED_SUBRULES` and/or a `snapshot()`) to leave them
+        // already in a `snapshot()`) to leave them
         // byte-identical. Such grammars are the overwhelming majority.
         if self.regex_state.grammar_rule_dynvar_decls.is_empty() {
             return;
@@ -473,6 +473,9 @@ impl Interpreter {
                 }
                 continue;
             }
+            let decl = decl
+                .strip_prefix(crate::runtime::methods_grammar::DEFERRED_DYNVAR_INIT)
+                .unwrap_or(decl);
             if let Some((stmts, id)) = self.parse_regex_code_cached_with_id(&format!("{decl};")) {
                 let _ = self.eval_block_value_cached(&stmts, id);
             }

@@ -157,6 +157,40 @@ impl Interpreter {
         Some(result)
     }
 
+    /// Whether one of the `LexImportBuiltinOp` prefixes in the light body is
+    /// live: an import set of the op's own chain binds a dispatcher for its
+    /// operator, which the prefix would then run the op through. The same
+    /// probe the prefix makes (`exec_lex_import_builtin_op_site`); false at
+    /// once while no import set in the process binds an operator.
+    // Cost: O(1) while no set binds an operator; else O(n * c), n = the
+    // body's prefixed ops, c = the chain's import sets.
+    fn light_body_has_live_operator_import(&self, cc: &CompiledCode) -> bool {
+        if self.module.lexical_operator_import_sets.is_empty() {
+            return false;
+        }
+        cc.ops.iter().any(|op| {
+            let OpCode::LexImportBuiltinOp {
+                chain_idx,
+                name_idx,
+            } = op
+            else {
+                return false;
+            };
+            cc.lexical_import_chains
+                .get(*chain_idx as usize)
+                .and_then(|chain| {
+                    self.lexical_import_operator_binding(chain, cc.const_sym(*name_idx))
+                })
+                .is_some_and(|binding| {
+                    matches!(
+                        binding,
+                        crate::runtime::lexical_imports::LexicalImport::Code(value)
+                            if Self::is_builtin_operator_dispatcher(&value)
+                    )
+                })
+        })
+    }
+
     /// Whether the call qualifies, and how its arguments bind. Reads only.
     fn closure_light_admits<'p>(
         &self,
@@ -170,7 +204,21 @@ impl Interpreter {
         // Per-process latches the slot read and the upvalue read consult by
         // name once set, and the lvalue context a `GetLocal` serves a
         // container for.
-        if !crate::vm::vm_jit::local_read_unspoiled()
+        //
+        // The atomic-variable source of the slot-read latch is a per-NAME
+        // fact, so once an atomic exists somewhere only a closure whose own
+        // parameters could be one declines, as `GetLocal`'s fast path decides
+        // (#12120). Declining for the whole process sent every closure call in
+        // a program that loaded a module with one `my atomicint` (Cro's
+        // `$current-id`) through the general call, ~12x the cost (#9170).
+        let unspoiled = crate::vm::vm_jit::local_read_unspoiled();
+        if !(unspoiled || crate::vm::vm_jit::local_read_unspoiled_by_any_name())
+            || (!unspoiled
+                && cc
+                    .locals
+                    .iter()
+                    .any(|name| Self::atomic_name_possible(name)))
+            || (shape.lex_import_ops && self.light_body_has_live_operator_import(cc))
             || self.rw_return_context
             || !self.lexicals.escaping_our_lexical_names.is_empty()
             || !data.assumed_positional.is_empty()
@@ -287,10 +335,10 @@ impl Interpreter {
                 LightBind::Def(params) => Self::apply_scalar_param_bind(params[i].bind(), arg),
                 LightBind::Placeholders => Self::itemize_scalar_store_value(arg),
                 LightBind::Legacy => Self::itemize_scalar_store_value(
-                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection(),
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_for_binding(),
                 ),
                 LightBind::Topic => {
-                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection()
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_for_binding()
                 }
             };
             if !val.is_plain_local_read() {
@@ -315,7 +363,7 @@ impl Interpreter {
         // What the binders consume on every call, so a later writeback in the
         // caller's frame cannot pick this call's sources up.
         self.pending_rw_writeback_sources.clear();
-        self.take_pending_call_arg_sources();
+        self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
         self.static_call_args = false;
 

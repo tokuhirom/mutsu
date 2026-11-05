@@ -135,6 +135,14 @@ impl Compiler {
         if matches!(s, "e" | "tau") {
             return Some(true);
         }
+        // `--> Enum::Value`: a qualified spelling of a declared enum value is a
+        // definite return of that value; the enum's own name is a declared type.
+        if let Some((enum_name, value)) = s.rsplit_once("::")
+            && super::compile_inputs::is_user_declared_enum_value(value)
+            && super::compile_inputs::is_user_declared_type(enum_name)
+        {
+            return Some(true);
+        }
         // A package-qualified name (`static::Types::Fact`, a type imported from
         // a lower-case-named module) is a type, never a value term.
         if s.contains("::")
@@ -183,6 +191,10 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
+        // A named `sub` in a value-position branch is visible to the whole
+        // branch too (the statement-position twin is in
+        // `compile_body_with_implicit_try_inner`).
+        self.hoist_sub_decls(stmts, true);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
@@ -893,7 +905,20 @@ impl Compiler {
         // still a block literal the enclosing block re-clones on every run, so
         // its `state` still restarts per execution (`if 1 { state $n; ++$n }`).
         let state_reset = self.emit_branch_state_reset(stmts, is_statement_modifier);
-        self.compile_resolved_branch_body(stmts, is_statement_modifier);
+        // A branch's own `my $*x` ends with the branch: run it as a real block,
+        // as `compile_if_construct` does for a branch it jumps to (#16199).
+        // (A branch that also declares a lexical type keeps the branch scope
+        // that takes the type back, which a `do` wrapper does not.)
+        let dynamic_block =
+            if is_statement_modifier || super::body_scans::declares_lexical_type(stmts) {
+                None
+            } else {
+                super::body_scans::scope_dynamic_branch(stmts, false)
+            };
+        self.compile_resolved_branch_body(
+            dynamic_block.as_deref().unwrap_or(stmts),
+            is_statement_modifier,
+        );
         self.patch_nested_block_state_reset(state_reset);
     }
 
@@ -1061,6 +1086,10 @@ impl Compiler {
         } else {
             self.hoist_typed_var_decls(stmts);
             self.hoist_require_stubs(stmts);
+            // A named `sub` declared in an `if`/`else` branch is visible to the
+            // whole branch (Linux::Fuser calls `do_tests(...)` above its
+            // `sub do_tests` inside `if $*KERNEL.name eq 'linux' { ... }`).
+            self.hoist_sub_decls(stmts, true);
             let last = stmts.len().wrapping_sub(1);
             for (i, s) in stmts.iter().enumerate() {
                 if tail_as_value && i == last {

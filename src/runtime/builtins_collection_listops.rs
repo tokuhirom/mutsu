@@ -416,10 +416,14 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
-        let list = Value::array_with_kind(
+        let mut list = Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
+        // `flat(C.new, 9)` reads the `iterator` of an `Iterable` argument (#15322).
+        if let Some(expanded) = self.expand_iterable_instances(&list)? {
+            list = expanded;
+        }
         let mut result = Vec::new();
         crate::builtins::flat_val(&list, &mut result, true);
         Ok(Value::seq(result))

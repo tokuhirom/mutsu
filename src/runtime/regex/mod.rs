@@ -1,4 +1,5 @@
 mod regex_alias_subcap;
+mod regex_reduce_dispatch;
 mod regex_rule_def_file;
 pub(crate) mod regex_arg_purity;
 mod regex_atom_leaf;
@@ -12,6 +13,7 @@ mod regex_code_atom;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
+pub(crate) mod regex_late_scalars;
 pub(crate) mod regex_rule_params;
 mod regex_eval;
 mod regex_eval_class;

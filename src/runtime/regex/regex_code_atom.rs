@@ -102,6 +102,10 @@ impl Interpreter {
                 break 'run if pass {
                     let mut new_caps = RegexCaptures::default();
                     new_caps.extend_regex_vars(outcome.writes);
+                    new_caps.extend_regex_vars([(
+                        super::regex_eval::CODE_RAN_VAR.to_string(),
+                        Value::TRUE,
+                    )]);
                     new_caps.ast = outcome.made;
                     Some((pos, new_caps))
                 } else {
@@ -138,6 +142,10 @@ impl Interpreter {
             }
             let mut new_caps = RegexCaptures::default();
             new_caps.extend_regex_vars(outcome.writes);
+            new_caps.extend_regex_vars([(
+                super::regex_eval::CODE_RAN_VAR.to_string(),
+                Value::TRUE,
+            )]);
             // The `make` belongs to the rule node being matched: it rides
             // the capture delta so the trail undoes it if this branch is
             // abandoned, and `build_named_candidates_from_inner` commits it
@@ -198,6 +206,34 @@ impl Interpreter {
                 .iter()
                 .any(|name| super::regex_helpers::grammar_dynvar_scope_active(name))
             {
+                // A declaration nested in a group of the rule was bound
+                // uninitialised at rule entry (`DEFERRED_DYNVAR_INIT`); reaching
+                // the group runs its initializer and installs the value for the
+                // rest of the rule and the rules it calls (#16307).
+                for stmt in stmts.iter() {
+                    let Stmt::VarDecl {
+                        name,
+                        expr,
+                        has_initializer: true,
+                        is_our: false,
+                        ..
+                    } = stmt
+                    else {
+                        continue;
+                    };
+                    if !crate::env::is_dynamic_var_name(name)
+                        || !self.grammar_dynvar_is_deferred(name)
+                    {
+                        continue;
+                    }
+                    let value = self
+                        .eval_block_value(&[Stmt::Expr(expr.clone())])
+                        .unwrap_or(Value::NIL);
+                    let value = crate::runtime::utils::shape_value_for_sigiled_target(name, &value);
+                    for key in Self::grammar_dynvar_env_keys(name) {
+                        self.env.insert(key, value.clone());
+                    }
+                }
                 for name in declared_dynamic_keys {
                     // An uninitialized `:my $*x;` reads as the `Any` type
                     // object but may have no env entry yet; it is still

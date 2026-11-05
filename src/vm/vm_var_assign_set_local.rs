@@ -113,6 +113,12 @@ impl Interpreter {
             return Ok(raw_popped.clone());
         }
         let decontained_popped = raw_popped.deref_container();
+        // An itemized `$a` (`my $a = [5, 6, 7] but M`) reaches the bind as a
+        // `Scalar` around the mixin: the Positional check reads what it holds.
+        let decontained_popped = match decontained_popped.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => decontained_popped,
+        };
         // `but`/`does` wraps the value in a `Mixin` view, which none of the
         // arms below matched — so `my @p := <a b> but R` failed the bind even
         // though `$p ~~ Positional` (a different oracle) answered True. A
@@ -388,6 +394,17 @@ impl Interpreter {
     /// [`Self::set_local_scalar_fast_metadata_clear`] above is.
     #[inline]
     pub(super) fn slot_type_constraint_possible(code: &CompiledCode, idx: usize) -> bool {
+        // This chunk's own declaration of the slot proved it carries no
+        // constraint (`my $s`): a same-named TYPED variable some loaded module
+        // declared is another variable, and the per-name latch below cannot
+        // tell them apart. Without this, one `my Str $s` in a module took
+        // every untyped `$s ~= ...`, `$s++` and `my $s = ...` of the program
+        // off its fast path (`use Cro::HTTP2::RequestParser`: `$s ~= 'a'` in a
+        // loop cost 7x the bare program, #9170). The same fact
+        // `native_typed_store_is_identity` already acts on for a plain store.
+        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
+            return false;
+        }
         match code.locals_sym.get(idx).copied() {
             Some(sym) => Self::env_type_constraint_seen_for(sym),
             None => Self::env_type_constraint_seen(),
@@ -486,8 +503,9 @@ impl Interpreter {
     /// `JSON::Fast` set it for every program), so it is asked first and the
     /// name's own marker second: the full path removes exactly that key, which
     /// is a no-op when it is absent (#14774).
-    // Cost: O(1): one relaxed load; once the latch is set, one memoized key and
-    // one env probe.
+    // Cost: O(1): one relaxed load; once the latch is set, one more for the
+    // name's own bit, and only a name that ever got a marker pays a memoized key
+    // and an env probe.
     #[inline]
     fn slot_has_bound_decont_marker(&self, code: &CompiledCode, idx: usize) -> bool {
         if !self.bound_decont_active().get() {
@@ -496,6 +514,10 @@ impl Interpreter {
         let Some(&sym) = code.locals_sym.get(idx) else {
             return true;
         };
+        // No marker was ever written under this name: nothing to find or clear.
+        if !Self::bound_decont_name_possible(sym) {
+            return false;
+        }
         matches!(
             self.env()
                 .get_sym(crate::meta_ns::MetaNs::BoundDecont.key(sym))
@@ -510,12 +532,17 @@ impl Interpreter {
     // Cost: O(1), plus one env lookup once any marker exists.
     #[inline]
     fn slot_has_sigilless_readonly_marker(&self, code: &CompiledCode, idx: usize) -> bool {
+        // `maybe_env_key` first: a marker key that was never written anywhere
+        // (the common name, even in a program that has bound some other
+        // sigilless name) is answered by one flag-word read, where `get_sym`
+        // hashes the frame's own overlay before it can say so (#15981).
         crate::env::sigilless_readonly_keys_possible()
             && code.readonly_sym(idx).is_some_and(|sym| {
-                matches!(
-                    self.env().get_sym(sym).map(Value::view),
-                    Some(ValueView::Bool(true))
-                )
+                crate::symbol::maybe_env_key(sym)
+                    && matches!(
+                        self.env().get_sym(sym).map(Value::view),
+                        Some(ValueView::Bool(true))
+                    )
             })
     }
 
@@ -570,15 +597,24 @@ impl Interpreter {
         idx: usize,
         value: &Value,
     ) -> bool {
+        // The slot's own declaration already answered this, at compile time —
+        // see `DeclaredConstraint`. Only `Unrecorded`/`Conflicting` fall
+        // through to the env probe this replaces, which was 138 instructions
+        // per store and 9.2% of an `nqp::add_i` loop (#8877).
+        //
+        // `Untyped` is asked before the subset test below: a slot its own
+        // declaration proved to carry no constraint has nothing a subset could
+        // redirect, so a program that loaded any module declaring a subset
+        // (Cro's) kept every untyped `my $x = ...` in a loop off the
+        // declaration lane for no reason (#9170).
+        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
+            return true;
+        }
         // A subset anywhere in the program can redirect a constraint name, so
         // the constraint below would no longer be self-describing.
         if !self.registry().subsets.is_empty() {
             return false;
         }
-        // The slot's own declaration already answered this, at compile time —
-        // see `DeclaredConstraint`. Only `Unrecorded`/`Conflicting` fall
-        // through to the env probe this replaces, which was 138 instructions
-        // per store and 9.2% of an `nqp::add_i` loop (#8877).
         match code.declared_constraint(idx) {
             DeclaredConstraint::NativeInt => return matches!(value.view(), ValueView::Int(_)),
             DeclaredConstraint::NativeStr => return matches!(value.view(), ValueView::Str(_)),
@@ -588,7 +624,9 @@ impl Interpreter {
             // reached, for one load instead of an env walk.
             DeclaredConstraint::NonNative => return false,
             DeclaredConstraint::Untyped => return true,
-            DeclaredConstraint::Unrecorded | DeclaredConstraint::Conflicting => {}
+            DeclaredConstraint::Unrecorded
+            | DeclaredConstraint::Declared
+            | DeclaredConstraint::Conflicting => {}
         }
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
@@ -652,15 +690,22 @@ impl Interpreter {
             }
         }
         // The one probe the full path would run anyway: a shared cell or Proxy
-        // parked in env under this name, which the slot adopts and then writes
-        // through. Rare, but not latched by any flag, so it is asked for real.
+        // parked in THIS frame's env overlay under this name, which the slot
+        // adopts and then writes through. Rare, but not latched by any flag, so
+        // it is asked for real -- of the frame's own overlay, as the `GetLocal`
+        // read asks it (`local_cell_adoption_target`, ADR-0097 §15): a slot is
+        // this frame's own variable, and a same-named container in a CALLER's
+        // tier is another variable. Asking the whole chain made the question
+        // cost the length of the chain (every name a loaded module puts in
+        // scope) on each scalar store, to decline a fast path for a caller's
+        // container the store must not touch anyway (#7817).
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
-        if self
-            .env()
-            .get_for(name, name_sym)
-            .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
-        {
+        let overlay_hit = match name_sym {
+            Some(sym) => self.env().overlay_get_sym(sym),
+            None => self.env().overlay_get(name),
+        };
+        if overlay_hit.is_some_and(|v| v.is_container_ref() || v.is_proxy_value()) {
             return false;
         }
         // -- committed: from here the store cannot fall back --
@@ -792,7 +837,7 @@ impl Interpreter {
         let box_decl = self.vardecl_context().get()
             && (!code.needs_cell_named_sub.is_empty()
                 || !code.needs_cell_ref_capture_slots.is_empty()
-                || !code.needs_cell_unvouched_containers.is_empty()
+                || !code.needs_cell_captured_containers.is_empty()
                 || !code.dynamic_declared_sym.is_empty());
         // An `our sub` declared in a bare block captures this local but outlives the
         // block (it lives in the package registry, with no closure env). Box the
@@ -908,13 +953,13 @@ impl Interpreter {
             // captures and this frame cannot vouch for becomes a shared cell at
             // its DECLARATION, so the closure's binding is distinguishable from a
             // same-named container in whatever frame happens to be calling it.
-            // See `CompiledCode::needs_cell_unvouched_containers` for why the
+            // See `CompiledCode::needs_cell_captured_containers` for why the
             // decl site and not the capture site.
             if box_decl
                 && code
                     .locals_sym
                     .get(idx as usize)
-                    .is_some_and(|sym| code.needs_cell_unvouched_containers.contains(sym))
+                    .is_some_and(|sym| code.needs_cell_captured_containers.contains(sym))
             {
                 self.box_decl_local_container_cell(code, idx as usize, true);
             }
@@ -1148,7 +1193,8 @@ impl Interpreter {
         // installs the Proxy itself, which is what makes `$p = 1` fire `STORE`.
         // See `Interpreter::fetch_proxy_for_store`.
         if !is_bind && !is_rebind && !scalar_bind && !param_raw_bind {
-            raw_popped = self.fetch_proxy_for_store(raw_popped)?;
+            // `my $v = $q.VAR` keeps the Proxy object as a value (#15893).
+            raw_popped = self.fetch_proxy_for_scalar_store(raw_popped)?;
         }
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Assigning it to an `@`/`%` container reifies the Seq (raku list
@@ -1307,7 +1353,8 @@ impl Interpreter {
         // split so both paths are covered. `raw_popped` is only borrowed.
         {
             let name = &code.locals[idx];
-            self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
+            let name_sym = code.local_sym(idx).unwrap_or_else(|| Symbol::intern(name));
+            self.update_bound_decont_marker(name, name_sym, scalar_bind || is_bind, &raw_popped);
             // `$!attr := $var` seats the variable's own container, so the
             // attribute stays a writable one (`nqp::isrwcont`) although the
             // stack carries only its value.
@@ -1433,8 +1480,15 @@ impl Interpreter {
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub). Same latch: the `__mutsu_sigilless_readonly::*`
             // key only exists once the program creates a sigilless/`:=` alias.
+            //
+            // `env_mut()` copies the env when it is shared, and the key is
+            // almost never there: probe first (the latch keeps a never-written
+            // key at one flag-word read), so a declaration in a loop body does
+            // not copy the env once per iteration in a program that happens to
+            // have bound a sigilless name somewhere (#15981).
             if crate::env::sigilless_readonly_keys_possible()
                 && let Some(sym) = code.readonly_sym(idx)
+                && self.env().contains_key_sym(sym)
             {
                 self.env_mut().remove_sym(sym);
             }
@@ -1457,6 +1511,7 @@ impl Interpreter {
             // (#9244).
             if crate::env::closure_meta_keys_possible()
                 && let Some(sym) = code.alias_sym(idx)
+                && self.env().contains_key_sym(sym)
             {
                 self.env_mut().remove_sym(sym);
             }
@@ -1553,6 +1608,17 @@ impl Interpreter {
             // exactly the `:=` source→target slot pairs of this frame, so it
             // does not match the capture-boxed loop local this clear exists for
             // (whose cell is shared with a CLOSURE, not with a sibling slot).
+            //
+            // A dynamic declaration (`my $*X`) is the exception: a `:=` that read
+            // the CALLER's `$*X` (`my $h := $*X` before the block that declares
+            // `my $*X`) is not a sibling lexical of the new variable, and its pair
+            // would make the fresh `$*X`'s writes land in `$h` (#14875).
+            if code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*')
+            {
+                self.local_bind_pairs.retain(|&(source, _)| source != idx);
+            }
             let bound_by_sibling_lexical = self
                 .local_bind_pairs
                 .iter()
@@ -2082,7 +2148,7 @@ impl Interpreter {
                 let lhs_current = self.locals[idx].deref_container();
                 let items = runtime::value_to_list(&assigned);
                 let item_count = items.len();
-                let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                let mut shaped_items: Vec<Value> = Self::shaped_assign_items(items, shape[0])?;
                 if item_count < shape[0] {
                     // Pad with the element type's default (native arrays: int->0,
                     // num->0e0, str->""), not Nil, so clearing a shaped num array
@@ -2493,6 +2559,7 @@ impl Interpreter {
         if !is_vardecl
             && crate::env::sigilless_readonly_keys_possible()
             && let Some(readonly_sym) = code.readonly_sym(idx)
+            && crate::symbol::maybe_env_key(readonly_sym)
             && let Some(alias_sym) = code.alias_sym(idx)
             && matches!(
                 self.env().get_sym(readonly_sym).map(Value::view),
@@ -2918,10 +2985,27 @@ impl Interpreter {
                     .env()
                     .get(&resolved_source)
                     .is_some_and(Value::is_container_ref);
+            // A raw/rw parameter bound to a caller variable that no saved frame
+            // env vouches for (a mainline lexical on the call that first reaches
+            // it): the binder already minted the shared cell for the caller's
+            // variable and installed it under its name, and the parameter is a
+            // sigilless alias of that name. Binding something to the parameter
+            // (`$!attr := $param`) must join that cell, or the bound name keeps
+            // a snapshot the caller's variable never sees (#15708).
+            let param_alias_cell = !source_in_same_scope
+                && val_is_simple_scalar
+                && !is_percall_pseudo_var
+                && !synthetic_index_source
+                && resolved_source != source_name
+                && self
+                    .env()
+                    .get(&resolved_source)
+                    .is_some_and(Value::is_container_ref);
             if (source_in_outer_frame
                 || (is_rebind && source_in_same_scope && val_is_simple_scalar)
                 || decl_bind_same_scope_scalar
-                || env_source_cell)
+                || env_source_cell
+                || param_alias_cell)
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
@@ -3207,6 +3291,31 @@ impl Interpreter {
                 self.locals[idx].view(),
                 ValueView::ContainerRef(ref arc) if arc.is_readonly()
             );
+        // A variable bound to another variable that holds a Proxy
+        // (`my $p := $q`) shares `$q`'s cell, which holds the Proxy: the
+        // assignment reaches the same STORE (#16306).
+        let cell_held_proxy = match self.locals[idx].view() {
+            ValueView::ContainerRef(_) => {
+                let inner = self.locals[idx].deref_container();
+                (inner.is_proxy_value()
+                    && matches!(inner.view(), ValueView::Proxy { storer, .. } if !storer.is_nil()))
+                .then_some(inner)
+            }
+            _ => None,
+        };
+        if !is_bind
+            && !is_rebind
+            && !scalar_bind
+            && !is_vardecl
+            && let Some(inner) = cell_held_proxy
+        {
+            if inner.is_proxy_var_object() {
+                return Err(RuntimeError::readonly_variable());
+            }
+            loan_env!(self, assign_proxy_lvalue(inner, val))?;
+            self.apply_pending_rw_writeback(code);
+            return Ok(());
+        }
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
             && !is_rebind
@@ -3278,6 +3387,12 @@ impl Interpreter {
             && let ValueView::Proxy { storer, .. } = self.locals[idx].view()
             && !storer.is_nil()
         {
+            // A variable bound to the Proxy object `.VAR` hands back has no
+            // container to assign into (`my $b := $q.VAR; $b = 5`): Rakudo dies
+            // with the readonly-variable error and never calls STORE (#16299).
+            if self.locals[idx].is_proxy_var_object() {
+                return Err(RuntimeError::readonly_variable());
+            }
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             // A Proxy STORE wrote the referent caller lexical by name; drain the
@@ -3560,11 +3675,15 @@ impl Interpreter {
                 // (writing through would clobber `$h`). An undeclared `$*x := ...`
                 // in a callee rebinds the caller's dynamic, so it keeps writing
                 // through.
-                || (synthetic_index_source
-                    && code
-                        .locals_sym
-                        .get(idx)
-                        .is_some_and(|sym| code.dynamic_declared_sym.contains(sym)))
+                //
+                // The same holds for a rebind to any non-container value
+                // (`my $*OUT = $*ERR; $*OUT := $handle`): writing through would
+                // leave the `$*OUT` twin key naming the old handle, so `say`
+                // kept printing to it (#16173).
+                || code
+                    .locals_sym
+                    .get(idx)
+                    .is_some_and(|sym| code.dynamic_declared_sym.contains(sym))
                 || name.starts_with(['@', '%']))
             && !val.is_container_ref()
             && !name.starts_with('&')
@@ -3574,6 +3693,13 @@ impl Interpreter {
             );
         if rebind_detaches_env_cell {
             self.env_mut().insert(name.to_string(), val.clone());
+            // A dynamic (`my $*OUT`) has a twin key (`$*OUT` / `*OUT`) that
+            // `say` / `put` / `print` read by name: the detached binding
+            // must reach it too, or the output keeps going to the old handle
+            // (#16173).
+            if let Some(twin) = crate::runtime::utils::twigil_dynamic_alias(name) {
+                self.env_mut().insert(twin, val.clone());
+            }
         } else if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.

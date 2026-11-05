@@ -145,18 +145,13 @@ impl Interpreter {
                 (Symbol::intern(&type_name), type_name)
             }
         };
-        // RakuAST model classes are native type objects with no registry entry,
-        // so the MRO walk below finds nothing for them. Answer from the same
-        // model metadata `.^methods` and `.^can` use, keeping the three in
-        // lockstep — `RakuAST::IntLiteral.^lookup("value")` returned `(Mu)`
-        // while `.^can("value")` found it.
-        if let Some(names) = crate::rakuast::inherited_method_names(&class_name_str) {
-            return names.contains(&method_name).then(|| {
-                Value::routine_parts(
-                    Symbol::intern(&class_name_str),
-                    Symbol::intern(method_name),
-                    false,
-                )
+        // Model rows are declared on their measured MRO owners, not on each
+        // concrete leaf. Reflection must retain that owner in the Method.
+        if let Some(mro) = crate::rakuast::type_object_mro(&class_name_str) {
+            return mro.iter().find_map(|owner| {
+                crate::builtins::method_table::rakuast_reflection::local_method_names(owner)
+                    .filter(|names| names.contains(&method_name))
+                    .map(|_| self.make_native_method_object(method_name, owner))
             });
         }
         // Check user-defined class methods first, walking the receiver's full
@@ -239,6 +234,7 @@ impl Interpreter {
                         nested_capture_index: None,
                         captured_readonly: None,
                         routine_cell: Default::default(),
+                        augment_epoch: 0,
                     }]
                 } else {
                     continue;
@@ -584,9 +580,6 @@ impl Interpreter {
     /// recompiling the AST through the tree-walk carrier at every call
     /// (#14572). `env` is what the callable closes over and `param_defs` the
     /// signature including the invocant.
-    // TODO: also compile a method that nests subs: its callable runs the
-    // body's nested `sub` through the chunk's own table, which a callable
-    // built here does not install yet.
     // Cost: O(1).
     pub(super) fn method_def_compiled_callable(
         owner: &str,
@@ -599,9 +592,6 @@ impl Interpreter {
         // A def with no table of nested subs has none: both compile paths
         // record the table only when it is non-empty.
         let fns = def.compiled_fns.clone().unwrap_or_default();
-        if !fns.is_empty() {
-            return None;
-        }
         Some(Value::make_sub_compiled_in(
             (Symbol::intern(owner), Symbol::intern(name)),
             (def.params.clone(), param_defs.to_vec(), (*def.body).clone()),

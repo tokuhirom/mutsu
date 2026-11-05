@@ -330,6 +330,20 @@ impl Interpreter {
             x_idx,
             replacement_thunk,
         )?;
+        // A Junction topic autothreads, as the `.subst` method call does (#15627):
+        // each eigenstate is substituted on its own and the results are again a
+        // Junction of the same kind. `$/` is the last eigenstate's.
+        let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+        if matches!(topic.view(), ValueView::Junction { .. }) {
+            let mut last_slash = Value::NIL;
+            let result = self.subst_autothread(&op, qq_thunks, &topic, &mut last_slash);
+            self.env_mut().insert("_".to_string(), topic.clone());
+            let result = result?;
+            self.env_mut().assign_match_var(last_slash.clone());
+            self.publish_subst_capture_env(&last_slash);
+            self.stack.push(result);
+            return Ok(());
+        }
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.
         let slash = outcome.slash.clone();
@@ -337,6 +351,30 @@ impl Interpreter {
         self.publish_subst_capture_env(&slash);
         self.stack.push(Value::str(outcome.text));
         Ok(())
+    }
+
+    /// `S///` over `topic`, descending into Junction eigenstates (nested
+    /// junctions included) and rebuilding a Junction of the same kind. Sets `$_`
+    /// to each plain eigenstate for the run; the caller restores it.
+    // Cost: O(e * (n + r)), e = eigenstates, n = their text length.
+    fn subst_autothread(
+        &mut self,
+        op: &SubstOp,
+        qq_thunks: Option<&[(Symbol, u32)]>,
+        topic: &Value,
+        last_slash: &mut Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Junction { kind, values } = topic.view() {
+            let mut out = Vec::with_capacity(values.len());
+            for eigenstate in values.iter() {
+                out.push(self.subst_autothread(op, qq_thunks, eigenstate, last_slash)?);
+            }
+            return Ok(Value::junction(kind, out));
+        }
+        self.env_mut().insert("_".to_string(), topic.clone());
+        let outcome = self.run_subst_with_qq_thunks(op, qq_thunks)?;
+        *last_slash = outcome.slash;
+        Ok(Value::str(outcome.text))
     }
 
     /// Publish the captures of the post-substitution match through the same

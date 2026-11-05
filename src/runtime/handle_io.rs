@@ -30,7 +30,9 @@ impl Interpreter {
         separators
     }
 
+    // Cost: O(s + b), s = separators, b = separator bytes copied.
     pub(super) fn parse_nl_in_value(value: &Value) -> Vec<Vec<u8>> {
+        let value = value.deref_container();
         match value.view() {
             ValueView::Array(items, _) => items
                 .iter()

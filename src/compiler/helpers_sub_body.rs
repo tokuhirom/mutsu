@@ -218,6 +218,9 @@ impl Compiler {
             .iter()
             .flat_map(|frame| frame.keys())
             .filter(|k| k.starts_with('&'))
+            // A binding the BEGIN prologue declared but whose run-time half has
+            // not compiled yet is a forward reference for this closure (#16351).
+            .filter(|k| !(self.prologue_ended && self.static_half_amp.contains(*k)))
             .cloned()
             // A role method's closure outlives the frame that bound the role's
             // `&` parameters, so it has to capture them like any outer `&name`.
@@ -377,6 +380,9 @@ impl Compiler {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
             }
+            if let Some(cap) = &pd.type_capture {
+                sub_compiler.type_capture_locals.insert(cap.clone());
+            }
             // Also allocate locals for sub_signature parameters (array unpacking)
             // so that they get proper local slots and don't leak between recursive calls.
             if let Some(sub_params) = &pd.sub_signature {
@@ -438,6 +444,7 @@ impl Compiler {
                 post_start: 0,
                 end: 0,
                 is_bare_block: false,
+                decont_result: !(is_rw || is_raw || crate::opcode::body_uses_return_rw(body)),
             });
             // PRE phasers (forward order, before ENTER)
             Self::compile_pre_phasers(&mut sub_compiler, body);
@@ -535,6 +542,11 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in body {
                             sub_compiler.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -556,6 +568,11 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in body {
                             sub_compiler.compile_stmt(inner);
+                            // A statement `given` nets a stack value; a phaser
+                            // body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -662,6 +679,16 @@ impl Compiler {
         sub_compiler.resolve_frame_lexical_routines(body);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
+        if !sub_compiler.routine_scoped_names.is_empty() {
+            let shadowed: Vec<crate::symbol::Symbol> = sub_compiler
+                .code
+                .free_var_syms
+                .iter()
+                .filter(|sym| sym.with_str(|n| sub_compiler.routine_scoped_names.contains(n)))
+                .copied()
+                .collect();
+            sub_compiler.code.routine_scoped_free = shadowed;
+        }
         // See the twin call in `compile_closure_body_of_kind`: a
         // parameter default / `where` constraint reads its outer lexicals from
         // the `ParamDef` AST at call time, invisibly to the op scan. A named
@@ -723,6 +750,7 @@ impl Compiler {
             package_sym_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             package_routine_scoped_cache: std::sync::OnceLock::new(),
+            light_signature_cache: std::sync::OnceLock::new(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan(crate::runtime::named_fast_fill);
@@ -1115,7 +1143,7 @@ impl Compiler {
                         if Self::needs_phaser_block_scope(stmts) {
                             sub_compiler.compile_real_phaser_block_scope(stmts);
                         } else {
-                            sub_compiler.compile_block_inline(stmts);
+                            sub_compiler.compile_tail_block_inline(stmts);
                         }
                         sub_compiler.patch_nested_block_state_reset(state_reset);
                         continue;
@@ -1264,6 +1292,18 @@ impl Compiler {
             .copied()
             .collect();
         self.record_type_body_written_lexicals(writes);
+        // The declaring frame boxes the outer scalars this body captures, as it
+        // does for a method (`compile_method_body`, ADR-0032).
+        let boxed: Vec<crate::symbol::Symbol> = cf
+            .container_ref_capture_syms
+            .iter()
+            .chain(cf.free_var_writes.iter())
+            .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+            .copied()
+            .collect();
+        if !boxed.is_empty() {
+            self.bubble_container_ref_capture_syms(&boxed);
+        }
         // Same reads fold `compile_method_body` performs on its own compile —
         // this body has no runtime closure-creation op either, so the enclosing
         // frame learns which outer lexicals it reads only through this channel
@@ -1517,6 +1557,9 @@ impl Compiler {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
             }
+            if let Some(cap) = &pd.type_capture {
+                sub_compiler.type_capture_locals.insert(cap.clone());
+            }
             // A destructured sub-signature param (`-> (\i, \j) { i + j }`) carries
             // its real bindings in `sub_signature`. A sigilless sub-param IS the
             // bare word in the body and must shadow a same-named term constant
@@ -1582,6 +1625,7 @@ impl Compiler {
                 post_start: 0,
                 end: 0,
                 is_bare_block: false,
+                decont_result: false,
             });
             Self::compile_pre_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_block_pre_end(idx);
@@ -1632,6 +1676,10 @@ impl Compiler {
                     } else {
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                     }
                 }
@@ -1728,7 +1776,7 @@ impl Compiler {
                     if Self::needs_phaser_block_scope(stmts) {
                         sub_compiler.compile_real_phaser_block_scope(stmts);
                     } else {
-                        sub_compiler.compile_block_inline(stmts);
+                        sub_compiler.compile_tail_block_inline(stmts);
                     }
                     continue;
                 }
@@ -1790,6 +1838,10 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -1815,6 +1867,10 @@ impl Compiler {
                         let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
                         for inner in ph_body {
                             sub_compiler.compile_stmt(inner);
+                            // A phaser body is sunk (#15613).
+                            if Compiler::stmt_nets_a_stack_value(inner) {
+                                sub_compiler.code.emit(OpCode::Pop);
+                            }
                         }
                         prev_guard = Some(guard_idx);
                     }
@@ -1894,7 +1950,7 @@ impl Compiler {
                                 // `compile_synthetic_block_inline`.
                                 sub_compiler.compile_synthetic_block_inline(stmts);
                             } else {
-                                sub_compiler.compile_block_inline(stmts);
+                                sub_compiler.compile_tail_block_inline(stmts);
                             }
                             continue;
                         }

@@ -15,17 +15,46 @@ impl Interpreter {
     /// value's own `.WHAT`, wrapped with the shared, composition-keyed
     /// `overrides` node every value with the same composition uses (see
     /// [`Self::mixin_composition_overrides`]).
+    // Cost: O(1) on a class-instance memo hit, else O(r log r) for the composition key.
     pub(super) fn mixin_what_value(
         &mut self,
         inner: &Arc<Value>,
-        mixins: &crate::value::MixinOverrides,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A class instance's composition is fixed by its shared override node
+        // (never mutated in place once built) and its class, so the result is
+        // memoized by both: a CArray element store re-derived this ~127k Ir
+        // per call (#16215).
+        let node_key = match (inner.as_ref().view(), args.is_empty()) {
+            (ValueView::Instance { class_name, .. }, true) => {
+                Some((
+                    &**mixins as *const crate::value::MixinOverrides as usize,
+                    class_name,
+                ))
+            }
+            _ => None,
+        };
+        if let Some(key) = node_key
+            && let Some((_, what)) = self.caches.mixin_what_by_node.get(&key)
+        {
+            return Ok(what.clone());
+        }
         let base_what = self.mixin_base_what(inner, mixins, args)?;
         let base_type_name = base_what.to_string_value();
         let key = crate::value::types::mixin_composition_key(&base_type_name, mixins);
         let overrides = self.mixin_composition_overrides(key, mixins);
-        Ok(Value::mixin_parts(Arc::new(base_what), overrides))
+        let what = Value::mixin_parts(Arc::new(base_what), overrides);
+        if let Some(key) = node_key {
+            let memo = &mut self.caches.mixin_what_by_node;
+            if memo.len() >= 4096 {
+                memo.clear();
+            }
+            // The entry owns a clone of the node, so its address stays this
+            // composition's for as long as the entry lives.
+            memo.insert(key, (mixins.clone(), what.clone()));
+        }
+        Ok(what)
     }
 
     /// The type a role composition is layered on: `inner`'s own `.WHAT`, or
@@ -168,5 +197,37 @@ impl Interpreter {
         let key = crate::value::types::mixin_composition_key(&base_type_name, &mixins);
         let overrides = self.mixin_composition_overrides(key, &mixins);
         Ok(Value::mixin_parts(Arc::new(base_what), overrides))
+    }
+}
+
+impl Interpreter {
+    /// The symbol a role mixin over a class instance or type object keys as
+    /// in a multi-dispatch key: its base class and composition, memoized per
+    /// composition node. `None` for any other inner value (an allomorph, a
+    /// native value), whose dispatch reads more than the class and the roles.
+    // Cost: O(1) on a node seen before; O(r log r) to build the key once,
+    // r = composed roles.
+    pub(crate) fn mixin_composition_key_sym(
+        &mut self,
+        inner: &Value,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
+    ) -> Option<Symbol> {
+        let node = &**mixins as *const crate::value::MixinOverrides as usize;
+        if let Some((_, sym)) = self.caches.mixin_key_sym_by_node.get(&node) {
+            return Some(*sym);
+        }
+        let base = match inner.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return None,
+        };
+        let key = crate::value::types::mixin_composition_key(base.as_str(), mixins);
+        let sym = Symbol::intern(&format!("Mixin\u{0}{}\u{0}{}", base.as_str(), key));
+        let memo = &mut self.caches.mixin_key_sym_by_node;
+        if memo.len() >= 4096 {
+            memo.clear();
+        }
+        memo.insert(node, (mixins.clone(), sym));
+        Some(sym)
     }
 }

@@ -15,6 +15,7 @@ my @inside =
     'array broadcast',   'my @a = 1, 2, 3; @a »=» 7; @a.join(",")',                           '7,7,7',
     'array list',        'my @a = 1, 2, 3; @a »=» (4, 5, 6); @a.join(",")',                    '4,5,6',
     'dwim both',         'my @a = 1, 2, 3; @a «=» (9, 8); @a.join(",")',                       '9,8,9',
+    'dwim left',         'my @a = 1, 2, 3; @a «=« (9, 8); @a.join(",")',                       '9,8,3',
     'list targets',      'my ($x, $y); ($x, $y) »=» (5, 6); $x ~ $y',                          '56',
     'list broadcast',    'my ($x, $y); ($x, $y) »=» 5; $x ~ $y',                               '55',
     'nested targets',    'my ($a, $b, $c, $d); (($a, ($b, $c)), $d) »=« ((4, (5, 6)), 7); $a ~ $b ~ $c ~ $d', '4567',
@@ -22,8 +23,6 @@ my @inside =
     'declared targets',  '(my $a, my $b) »=» (1, 2); $a ~ $b',                                  '12',
     'value is list',     'my ($x, $y); my $r = (($x, $y) »=» (5, 6)); $r.join(",")',          '5,6',
     'hash target',       'my %h = a => 1, b => 2; %h »=» 0; %h.values.sum',                    '0';
-
-# TODO: `@a «=« (9, 8)` loses the unreached left element (#15527).
 
 # Declared in the calling scope: the snippet only names them.
 my @outside =

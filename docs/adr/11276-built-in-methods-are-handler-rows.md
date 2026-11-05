@@ -5783,3 +5783,123 @@ question that justified the decline ("does a bridge resolve this receiver furthe
   `Array` reaches `Any` and must be declined here), an `is Array` instance, a user `splice`, a `Mu`-rooted user class. A wrapper alone is never a reason to decline.
 - Behaviour change toward Rakudo: the mixin's type name in the message. The instance and cell cases already matched.
 - **Found, not fixed**: Rakudo answers `(my @a = 1,2,3; @a but Tag).splice(1,1)` with `[1, 3, Mu]` (a length quirk of its mixin copy); mutsu answers `[1, 3]`. Not pinned by a test.
+
+### 9.199 Slice 5: native integer coercer entry (2026-11-01)
+
+`refactor/11276-native-int-coercer-entry` removes the entire native integer
+coercer branch from `native_method_0arg_cascade`. All eleven coercion names
+already have `Cool` and `Int` rows in `scalars::real_misc` (22 rows). The
+cascade had recognized the names separately and called the primitive directly:
+narrow-width names were absent from the audited `Cool` numeric names of closed
+collection shapes, so those receivers could not reach the existing rows.
+
+The initial `scripts/method-rows-report.py --arms` inventory was 4 pure-cascade
+arms, 216 runtime arms and 3 VM mutation-helper arms (223 total). These counts
+do not measure this branch, which used a predicate rather than quoted-name arms.
+
+Admission now reads `native_types::NATIVE_INT_COERCE_METHODS`: closed shapes
+reach the existing `Cool` rows, and the shapeless resolver admits only `Cool`
+receivers. This preserves the exclusion of `Pair` and ordinary user instances.
+The rows accept type objects too: `Cool` coerces to zero, while the shared
+primitive now refuses the undefined `Int` with Rakudo's concrete-integer error.
+The latter is a behavior correction toward Rakudo, pinned alongside the
+collection, IO path, native-array and shaped-array cases in
+`t/nativecall/native-int-coercer-entry-rows.t`. A Rust test additionally pins
+that the closed Range and IO path receivers are answered by rows themselves,
+before any cascade can run. No other cascade guard is removed in this slice.
+
+### 9.200 Slice 5 inventory: the pure Code entry (2026-11-01)
+
+`refactor/11276-code-pure-row-lookup` audits the surviving pure Code entry.
+The zero-argument cascade gates on `Capture`/`clone`, and `code::pure_answer`
+matches those names again and calls the handlers directly. The registry already
+has the three relevant rows: `Code.Capture`, `Code.clone` and `Block.clone`.
+The owner chain is already centralized by ADR-14477's `code_class::owners_of`.
+`Mu.clone` is the third caller of the pure entry, for a `Sub` receiver.
+
+The deletion unit is both method-name gates and their direct handler routing.
+The replacement looks up the nearest registered owner row and uses the existing
+pure invocation/guard machinery. An interpreter-only row must decline without
+falling through to a pure ancestor. No per-class shape decision changes here.
+The initial arm inventory remains 223 total arms, 119 naming built-in methods;
+the method-name gates here are not the report's quoted-name cascade arms.
+
+The pure owner entry resolves the nearest zero-argument row before invoking it
+through `admits`/`invoke`; a nearest interpreter row therefore declines without
+running an ancestor. Code's pure entry and `Mu.clone` use that lookup. Instance
+code-class classification is memoized by its immutable class symbol, including
+negative results and mixin base names, so expanding the receiver-based entry
+does not copy or re-scan class names on every native method call. This is a
+classification memo, not a cache of mutable method resolution.
+
+### 9.201 Slice 5 inventory: Seq state guards (2026-11-03)
+
+`refactor/11276-seq-state-row-guards` audits the remaining Seq prologue in
+`native_method_0arg_cascade`: marking `cache` requested, refusing `is-lazy`
+on a consumed body, and passing through the deferred IO `kv` value already
+produced by the VM consumption step. `dispatch_core` no longer has a Seq
+receiver block; its surviving receiver-specific entries are Code and RakuAST.
+The arm report is unchanged: 223 total quoted-name arms, 119 built-in names.
+
+The cache mark already belongs to `Seq.cache` (also shared by `Any.cache`).
+The consumed check belongs to the lazy-query primitive used by the Seq and Mu
+rows. The IO `kv` passthrough belongs to `Any.kv`, which must preserve the
+VM's streaming result instead of reading the unpulled body's empty seed.
+The deletion unit is the complete three-way Seq prologue. Validation includes
+direct row-entry probes, Rakudo state/streaming regressions, the full debug TAP
+cross-check and the release roast whitelist with that prologue removed.
+
+The full prologue is removed. `Seq.is-lazy` is the shared primitive reached by
+both the Seq and Mu rows, including direct owner-row invocation; `Any.kv`
+preserves an already-indexed deferred IO body's identity. Three direct row
+probes pin the consumed refusal, cache request without pulling, and IO body
+identity. The consumed-query probe failed before the migration. Twelve Raku
+oracle assertions cover ordinary method calls and cache/IO consumption.
+
+The oracle also found a separate timing difference: `IO::Handle.words.kv`
+advances Rakudo's handle immediately but remains unpulled in mutsu. The
+indexed values agree. This pre-existing difference is tracked by #16012;
+`lines.kv` remains unpulled on both interpreters.
+
+### 9.202 Slice 5 inventory: RakuAST accessor entry (2026-11-03)
+
+`refactor/11276-rakuast-accessor-entry` audits the two remaining RakuAST
+branches in `dispatch_core`: a native node and a user instance carrying its
+native node payload both call `rakuast::node_accessor` by method name. The
+existing opaque `RakuAstNode` shape registers the shared Node operations,
+but has no rows for the model's per-class accessors.
+
+The deletion unit is both direct accessor calls. Accessors will use static
+rows and the existing pure owner-chain entry, with the declaring MRO level
+measured against Rakudo. A closure in each row can carry its static field
+name to the shared reader, so no new handler ABI or startup-time registry
+builder is needed. Native nodes and subclass payloads must share this entry.
+The existing model schema remains the accessor declaration source; generated
+row data must be checked against it. Snapshot ownership is measured with
+Rakudo 2026.09, installed as an isolated reference binary because the host's
+ordinary `raku` is 2026.07.
+
+Both direct calls are removed. The generated family adds 457 rows and 300
+immutable model owner chains. A per-class symbol memo caches selected row IDs
+(including interpreter-only barriers), never field values or user-class
+metadata. The reader remains the single existing accessor implementation;
+its scalar field scan and copying deficit is tracked separately by #16130.
+Reflection reads the same declaring rows through the compile-time owner
+index. `.^lookup` retains the declaring owner instead of the concrete leaf.
+
+The 2026.09 oracle measured 724 getter declarations. It corrected the former
+`Sub.compile-time-value` row to `Routine`, removed the nonexistent HashIndex
+`assignee`, and restricted `original-blorst` to FIRST and POST. The existing
+Call::BlockMethod alias retains its own storage spelling; it is explicitly
+distinguished from Rakudo's Call::TermAsMethod. The method-table generator
+now measures RakuAST owners through validated static type spellings, because
+some nested packages have raw NQP namespaces that dynamic lookup cannot read.
+The generated snapshot records these measured declarations; no compiler
+internal methods become available without implementing a row.
+
+The existing hash-capture model extension (ADR-10723 section 6.92) keeps
+`Regex::NamedCapture.hash` on the model class. Rakudo reserves that syntax
+and only inherits Any's conversion method; the generator explicitly records
+the mutsu declaration separately, without altering the measured snapshot.
+Block topic/exception flags also retain the measured undefined Bool defaults
+when omitted, including through PointyBlock inheritance.

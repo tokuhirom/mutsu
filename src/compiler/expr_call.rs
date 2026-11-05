@@ -1388,6 +1388,14 @@ impl Compiler {
         }
         // Rewrite undefine($var) -> $var = Any (assign type object to the variable)
         if name == "undefine" && args.len() == 1 {
+            // `undefine` is deprecated from 6.d on: record the use (rakudo
+            // reports it at exit, "Saw 1 occurrence of deprecated code").
+            self.compile_expr(&Expr::Call {
+                name: Symbol::intern("__mutsu_deprecated_undefine"),
+                args: Vec::new(),
+                listop: false,
+            });
+            self.code.emit(OpCode::Pop);
             // Handle `undefine temp $var`. `temp`/`let` is a statement prefix, so
             // the argument is a `DoStmt(Stmt::Let { .. })`; it used to reach here
             // as `Call("temp", [$var])` only because `temp` was not a term and
@@ -1659,79 +1667,19 @@ impl Compiler {
                 || name.resolve().as_str() == "splice")
             && !suppress_listop_rewrite
         {
-            // Autovivification: when the first arg is an `Expr::Index` referring
-            // to a missing slot (e.g. `push @array[2], ...` / `push %h<key>, ...`),
-            // we must create an Array in that slot before the method call.
-            // Rewrite as `<slot> = <slot> // []; <slot>.method(args)`.
-            if let Expr::Index { .. } = &args[0]
-                && matches!(
-                    name.resolve().as_str(),
-                    "push" | "unshift" | "append" | "prepend"
-                )
-            {
-                let slot = args[0].clone();
-                let viv_assign = Expr::IndexAssign {
-                    target: match &slot {
-                        Expr::Index { target, .. } => target.clone(),
-                        _ => unreachable!(),
-                    },
-                    index: match &slot {
-                        Expr::Index { index, .. } => index.clone(),
-                        _ => unreachable!(),
-                    },
-                    value: Box::new(Expr::Binary {
-                        left: Box::new(slot.clone()),
-                        op: TokenKind::SlashSlash,
-                        right: Box::new(Expr::BracketArray(Vec::new(), false)),
-                        form: Default::default(),
-                    }),
-                    is_positional: match &slot {
-                        Expr::Index { is_positional, .. } => *is_positional,
-                        _ => true,
-                    },
-                    spelling: Default::default(),
-                };
-                let method_call = Expr::MethodCall {
-                    target: Box::new(slot.clone()),
-                    name: *name,
-                    args: args[1..].to_vec(),
-                    modifier: None,
-                    quoted: false,
-                    sugar: false,
-                };
-                // Write the method call result back to the slot so that
-                // nested hash mutations (e.g. `push %h<a><b>, 1, 2`)
-                // are visible through the parent hash.
-                let writeback = Expr::IndexAssign {
-                    target: match &slot {
-                        Expr::Index { target, .. } => target.clone(),
-                        _ => unreachable!(),
-                    },
-                    index: match &slot {
-                        Expr::Index { index, .. } => index.clone(),
-                        _ => unreachable!(),
-                    },
-                    value: Box::new(method_call),
-                    is_positional: match &slot {
-                        Expr::Index { is_positional, .. } => *is_positional,
-                        _ => true,
-                    },
-                    spelling: Default::default(),
-                };
-                let do_block =
-                    Expr::desugar_block(vec![Stmt::Expr(viv_assign), Stmt::Expr(writeback)]);
-                self.compile_expr(&do_block);
-            } else {
-                let method_call = Expr::MethodCall {
-                    target: Box::new(args[0].clone()),
-                    name: *name,
-                    args: args[1..].to_vec(),
-                    modifier: None,
-                    quoted: false,
-                    sugar: false,
-                };
-                self.compile_expr(&method_call);
-            }
+            // `push %h<key>, ...` / `push @a[2], ...` is the method call on the
+            // slot: the method form autovivifies a missing slot with the
+            // container's own element type (`has Array[Dist] %!h`) and writes a
+            // nested slot back (`push %h<a><b>, 1, 2`) (#16115).
+            let method_call = Expr::MethodCall {
+                target: Box::new(args[0].clone()),
+                name: *name,
+                args: args[1..].to_vec(),
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            };
+            self.compile_expr(&method_call);
         }
         // sink: evaluate the expression (including calling blocks), discard result, push Nil
         else if name == "sink" && args.len() == 1 {

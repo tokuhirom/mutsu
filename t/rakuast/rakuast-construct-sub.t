@@ -54,7 +54,7 @@ is $named.gist, q:to/END/.chomp, 'named Sub renders its name before its body';
     )
     END
 
-my @methods = RakuAST::Sub.^methods(:local)>>.name;
+my @methods = RakuAST::Sub.^methods>>.name;
 ok 'new' (elem) @methods && 'name' (elem) @methods && 'body' (elem) @methods,
     'Sub introspection exposes its constructor and accessors';
 

@@ -12,24 +12,26 @@
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::value::{Value, ValueView};
 
 /// Place `node`, a node just converted, and its operator / name / argument
 /// parts, from the origins its children carry.
 // Cost: O(f + n), f = fields of `node`, n = length of the source text read.
-pub(super) fn derive(node: &mut RakuAstNode) {
+pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(node);
-            super::decl_origins::derive(node);
+            super::decl_origins::derive(names, node);
         }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);
             super::signature_decl_origins::declaration(node);
         }
         RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
+        RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
             super::list_origins::circumfix(node)
         }
@@ -37,13 +39,13 @@ pub(super) fn derive(node: &mut RakuAstNode) {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
         }
-        RakuAstClass::QuotedString => super::string_origins::interpolated(node),
+        RakuAstClass::QuotedString => super::string_origins::interpolated(names, node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
-            super::regex_origins::quoted(node)
+            super::regex_origins::quoted(names, node)
         }
         RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration
-        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(node),
+        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(names, node),
         RakuAstClass::Block
         | RakuAstClass::Sub
         | RakuAstClass::PointyBlock
@@ -181,6 +183,7 @@ fn apply_infix(node: &mut RakuAstNode) {
     let Some((text, inner)) = child(node, "infix").and_then(written) else {
         return;
     };
+    let (left, right) = super::whatever_origins::operand_ranges(node, &text, left, right);
     let own = byte_range(node);
     // The operator follows the left operand after whitespace, or ends where
     // whitespace before the right operand begins.
@@ -254,7 +257,10 @@ fn leading_variable(node: &mut RakuAstNode) {
     if left.origin.0.is_some()
         || !matches!(
             left.class,
-            RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute
+            RakuAstClass::VarLexical
+                | RakuAstClass::VarDynamic
+                | RakuAstClass::VarAttribute
+                | RakuAstClass::VarAttributePublic
         )
     {
         return;

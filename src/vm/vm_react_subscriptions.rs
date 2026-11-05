@@ -387,6 +387,7 @@ impl Interpreter {
             }
             if let Some(rx) = &sub.receiver {
                 rx.register_waker(&waker);
+                Self::bind_sub_close_flag(sub);
             }
         }
         // Publish this loop's waker so sources wired up mid-loop (a nested
@@ -414,6 +415,9 @@ impl Interpreter {
             }
             if let Some(rx) = &sub.receiver {
                 rx.unregister_waker(waker.id());
+                if let Some(id) = sub.whenever_id {
+                    crate::runtime::native_methods::unbind_whenever_close_flag(id);
+                }
             }
         }
         result
@@ -431,6 +435,17 @@ impl Interpreter {
                 ValueView::Promise(_) | ValueView::Channel(_) | ValueView::Instance { .. }
             )
             && matches!(items[1].view(), ValueView::Sub(_))
+    }
+
+    /// Let `Tap.close` of this subscription's `whenever` close its receiver
+    /// queue, for a competing source (a connection's read Supply, #16092).
+    // Cost: O(1) expected.
+    fn bind_sub_close_flag(sub: &ReactSubscription) {
+        if let (Some(id), Some(rx)) = (sub.whenever_id, &sub.receiver)
+            && rx.is_exclusive()
+        {
+            crate::runtime::native_methods::bind_whenever_close_flag(id, rx.close_flag());
+        }
     }
 
     /// Adopt any `whenever` subscription registered while the drive loop was
@@ -477,6 +492,7 @@ impl Interpreter {
             }
             if let Some(rx) = &sub.receiver {
                 rx.register_waker(waker);
+                Self::bind_sub_close_flag(sub);
             }
         }
         // Arm any `whenever <Promise>` markers this batch's nested `supply { }`

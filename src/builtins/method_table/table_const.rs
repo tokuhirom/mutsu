@@ -253,13 +253,15 @@ const fn build_names() -> NameIndex {
     index
 }
 
-const NAME_INDEX: NameIndex = build_names();
+// Later const computations need only the compact per-row name index. The
+// larger string table is emitted once as a static, never copied from a const.
+const ROW_NAME: [u16; N] = build_names().row_name;
 
 /// The distinct method names, sorted bytewise.
-pub(super) static NAMES: [&str; U] = NAME_INDEX.names;
+pub(super) static NAMES: [&str; U] = build_names().names;
 /// `NAME_ROWS[NAME_START[u]..NAME_START[u + 1]]` are the rows named `NAMES[u]`,
 /// in id order.
-pub(super) static NAME_START: [u16; U + 1] = NAME_INDEX.start;
+pub(super) static NAME_START: [u16; U + 1] = build_names().start;
 pub(super) static NAME_ROWS: [u16; N] = NAME_ORDER;
 
 const fn count_owners() -> usize {
@@ -308,6 +310,19 @@ const fn build_owners() -> OwnerIndex {
 }
 
 const OWNER_INDEX: OwnerIndex = build_owners();
+
+static OWNER_NAMES: [&str; P] = OWNER_INDEX.owners;
+static OWNER_STARTS: [u16; P + 1] = OWNER_INDEX.start;
+static OWNER_ROWS: [u16; N] = OWNER_ORDER;
+
+/// Runtime reflection uses the same compile-time owner index as shape lookup.
+// Cost: O(log p), p = builtin owners; no scan of unrelated rows.
+pub(super) fn rows_of_owner(owner: &str) -> &'static [u16] {
+    let Ok(index) = OWNER_NAMES.binary_search(&owner) else {
+        return &[];
+    };
+    &OWNER_ROWS[usize::from(OWNER_STARTS[index])..usize::from(OWNER_STARTS[index + 1])]
+}
 
 /// The positions in `OWNER_ORDER` of the rows `owner` declares.
 const fn owner_range(owner: &str) -> (usize, usize) {
@@ -451,7 +466,7 @@ const fn register() -> Registered {
     let mut gen_id = [0u16; G];
     let mut n = 0;
     for_each_registration!(|shape, row, id| {
-        let name = NAME_INDEX.row_name[id as usize] as usize;
+        let name = ROW_NAME[id as usize] as usize;
         let mut arity = row.arity;
         while arity <= arity_hi(row) {
             assert!(arity < 8, "an arity of 8 or more does not fit a mask byte");
@@ -516,7 +531,7 @@ const fn mut_arities() -> [u8; U] {
     while id < N {
         let row = ROWS[id];
         if row.handler.is_mut() {
-            let name = NAME_INDEX.row_name[id] as usize;
+            let name = ROW_NAME[id] as usize;
             let mut arity = row.arity;
             while arity <= arity_hi(row) {
                 out[name] |= 1 << arity;

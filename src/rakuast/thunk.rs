@@ -7,7 +7,7 @@
 //! postfix chain (`WhateverCode.new`) where the source primed `* + 1` only.
 //!
 //! Rakudo carries the same decision on the node itself (its dump shows the
-//! `WhateverCode` thunk beside the `ApplyInfix`). The converter does likewise:
+//! `WhateverCode` thunk beside the `ApplyInfix`). The view does likewise:
 //! the node that an [`crate::ast::Expr::WhateverCurry`] wrapped carries a hidden
 //! `thunk` field, and lowering puts the marker back around it. A hand-built tree
 //! has none, so it is still primed from its shape.

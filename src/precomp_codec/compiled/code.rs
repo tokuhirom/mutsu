@@ -123,10 +123,11 @@ impl Encode for CompiledCode {
             captured_mutated_locals,
             needs_cell_locals,
             needs_cell_unvouched_locals,
-            needs_cell_unvouched_containers,
+            needs_cell_captured_containers,
             needs_cell_regex,
             type_body_written_lexicals,
             authoritative_free_vars,
+            routine_scoped_free,
             self_capture_decl_locals,
             captures_own_declaration,
             outer_code_var_names,
@@ -143,6 +144,7 @@ impl Encode for CompiledCode {
             static_name_lookup,
             uses_dispatcher,
             may_observe_named_slurpy,
+            reads_routine_magical,
             is_supply_block_body,
             eval_context_target_callable_id,
             supply_emitter_sym,
@@ -153,6 +155,7 @@ impl Encode for CompiledCode {
             attr_sites: _,
             bareword_sites: _,
             method_sites: _,
+            lex_import_sites: _,
             type_decl_sites: _,
             local_read_plain: _,
             rebound_slots,
@@ -287,10 +290,11 @@ impl Encode for CompiledCode {
         captured_mutated_locals.encode(encoder)?;
         needs_cell_locals.encode(encoder)?;
         needs_cell_unvouched_locals.encode(encoder)?;
-        needs_cell_unvouched_containers.encode(encoder)?;
+        needs_cell_captured_containers.encode(encoder)?;
         needs_cell_regex.encode(encoder)?;
         type_body_written_lexicals.encode(encoder)?;
         authoritative_free_vars.encode(encoder)?;
+        routine_scoped_free.encode(encoder)?;
         self_capture_decl_locals.encode(encoder)?;
         captures_own_declaration.encode(encoder)?;
         encode_string_set(outer_code_var_names, encoder)?;
@@ -307,6 +311,7 @@ impl Encode for CompiledCode {
         static_name_lookup.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
         may_observe_named_slurpy.encode(encoder)?;
+        reads_routine_magical.encode(encoder)?;
         is_supply_block_body.encode(encoder)?;
         eval_context_target_callable_id.encode(encoder)?;
         supply_emitter_sym.encode(encoder)?;
@@ -439,10 +444,11 @@ impl Decode<DecodeCtx> for CompiledCode {
             captured_mutated_locals: Decode::decode(decoder)?,
             needs_cell_locals: Decode::decode(decoder)?,
             needs_cell_unvouched_locals: Decode::decode(decoder)?,
-            needs_cell_unvouched_containers: Decode::decode(decoder)?,
+            needs_cell_captured_containers: Decode::decode(decoder)?,
             needs_cell_regex: Decode::decode(decoder)?,
             type_body_written_lexicals: Decode::decode(decoder)?,
             authoritative_free_vars: Decode::decode(decoder)?,
+            routine_scoped_free: Decode::decode(decoder)?,
             self_capture_decl_locals: Decode::decode(decoder)?,
             captures_own_declaration: Decode::decode(decoder)?,
             outer_code_var_names: decode_set(decoder)?,
@@ -459,6 +465,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             static_name_lookup: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,
             may_observe_named_slurpy: Decode::decode(decoder)?,
+            reads_routine_magical: Decode::decode(decoder)?,
             is_supply_block_body: Decode::decode(decoder)?,
             eval_context_target_callable_id: Decode::decode(decoder)?,
             supply_emitter_sym: Decode::decode(decoder)?,
@@ -469,6 +476,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: Default::default(),
             rebound_slots: Decode::decode(decoder)?,

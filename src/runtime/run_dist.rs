@@ -12,8 +12,8 @@ impl Interpreter {
         method: &str,
     ) -> Result<Value, RuntimeError> {
         if method == "split"
-            && matches!(target.view(), ValueView::Instance { class_name, attributes, .. }
-                if class_name == "IO::Path" && attributes.contains_key("resource"))
+            && matches!(target.view(), ValueView::Instance { class_name, .. }
+                if class_name == "Distribution::Resource")
         {
             return self.call_method_with_values(target, "slurp", vec![]);
         }
@@ -180,6 +180,9 @@ impl Interpreter {
         // constraints (`has Distribution::Resources $.resources`) see it.
         let mut data: crate::value::HashData = result.into();
         data.declared_type = Some("Distribution::Resources".to_string());
+        // ...whose `AT-KEY` answers a Resource for every key, path-less when
+        // the distribution declares none (#15816).
+        data.default = Some(Box::new(self.make_pathless_resource_instance()));
         Value::hash_with_data(Value::hash_arc(data))
     }
 

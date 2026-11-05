@@ -45,9 +45,10 @@ impl Interpreter {
     /// a known gap for a role that was never punned (see `resolution_sequence.rs`'s module doc)
     /// which `resolve_all_methods_with_owner` does not share, and this function must not
     /// regress it.
-    fn own_overloads_at_level(&mut self, owner: &str, method_name: &str) -> Option<Vec<MethodDef>> {
+    // Cost: O(1) probe + O(overload count) copy; both names arrive interned (ADR-15737 D2b).
+    fn own_overloads_at_level(&mut self, owner: Symbol, method: Symbol) -> Option<Vec<MethodDef>> {
         self.registry()
-            .get_method_overloads_with_role_fallback(owner, method_name)
+            .get_method_overloads_with_role_fallback_sym(owner, method)
             .map(|overloads| overloads.to_vec())
     }
 
@@ -63,11 +64,21 @@ impl Interpreter {
             if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
+            // An undeclared type is `Any`, and `Any` is narrower than `Mu`: they
+            // score their MRO depth (2 and 1) like any other type, so a family
+            // `Mu`, `Any`, `Int` defers `Int` -> `Any` -> `Mu` whatever the
+            // declaration order (#15721).
             let Some(tc) = pd.type_constraint.as_deref() else {
+                total += 2;
                 continue;
             };
             let base = Self::constraint_base_for_distance(tc);
-            if base == "Any" || base == "Mu" {
+            if base == "Any" {
+                total += 2;
+                continue;
+            }
+            if base == "Mu" {
+                total += 1;
                 continue;
             }
             let resolved = if self.registry().subsets.contains_key(base) {
@@ -113,12 +124,44 @@ impl Interpreter {
     /// Build the flat deferral expansion for `(class_name, method_name)` — see the module doc.
     /// Structural (no argument filtering): the caller matches this against a specific call's
     /// `arg_values` exactly as it did `resolve_all_methods_with_owner`'s output.
+    /// [`Self::resolve_deferral_expansion`], built once per `(class, method)`
+    /// and registry `type_stamp` and handed out shared: the expansion is
+    /// structural (a function of the registry alone), and rebuilding it cloned
+    /// every candidate `MethodDef` on each method call that needs a frame.
+    // Cost: O(1) amortized; a miss is `resolve_deferral_expansion`'s.
+    pub(crate) fn deferral_expansion_shared(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> std::sync::Arc<Vec<(Symbol, MethodDef)>> {
+        let key = (Symbol::intern(class_name), Symbol::intern(method_name));
+        if self.caches.deferral_expansion_stamp == self.registry().type_stamp()
+            && let Some(hit) = self.caches.deferral_expansion_shared.get(&key)
+        {
+            return std::sync::Arc::clone(hit);
+        }
+        let built = std::sync::Arc::new(self.resolve_deferral_expansion(class_name, method_name));
+        // The build may itself have touched the registry (an MRO memo): file
+        // the entry under the stamp it is valid for now.
+        let stamp = self.registry().type_stamp();
+        if self.caches.deferral_expansion_stamp != stamp {
+            self.caches.deferral_expansion_shared.clear();
+            self.caches.deferral_expansion_stamp = stamp;
+        }
+        self.caches
+            .deferral_expansion_shared
+            .insert(key, std::sync::Arc::clone(&built));
+        built
+    }
+
     pub(crate) fn resolve_deferral_expansion(
         &mut self,
         class_name: &str,
         method_name: &str,
     ) -> Vec<(Symbol, MethodDef)> {
         let mro = self.class_mro(class_name);
+        // Interned once here, not once per MRO level and pass (ADR-15737 D2b).
+        let method_sym = Symbol::intern(method_name);
         let mro_depth: HashMap<Symbol, usize> =
             mro.iter().enumerate().map(|(idx, s)| (*s, idx)).collect();
         // Pass 1: bottom-up (nearest-ancestor-first among those still to visit), so a level's
@@ -126,16 +169,15 @@ impl Interpreter {
         let mut governing: HashMap<Symbol, Vec<(Symbol, MethodDef)>> = HashMap::new();
         for (idx, owner) in mro.iter().enumerate().rev() {
             let is_ancestor = idx > 0;
-            let owner_str = owner.as_str();
             let own_multis: Vec<MethodDef> = self
-                .own_overloads_at_level(owner_str, method_name)
+                .own_overloads_at_level(*owner, method_sym)
                 .into_iter()
                 .flatten()
                 .filter(|d| d.is_multi && !d.is_private && !(d.is_my && is_ancestor))
                 .collect();
             let explicit_proto = self
                 .registry()
-                .method_entry_proto(owner_str, method_name)
+                .method_entry_proto_sym(*owner, method_sym)
                 .is_some();
             if own_multis.is_empty() && !explicit_proto {
                 continue;
@@ -154,8 +196,7 @@ impl Interpreter {
         let mut expansion = Vec::new();
         for (idx, owner) in mro.iter().enumerate() {
             let is_ancestor = idx > 0;
-            let owner_str = owner.as_str();
-            let Some(overloads) = self.own_overloads_at_level(owner_str, method_name) else {
+            let Some(overloads) = self.own_overloads_at_level(*owner, method_sym) else {
                 continue;
             };
             if overloads.iter().any(|d| d.is_multi) {

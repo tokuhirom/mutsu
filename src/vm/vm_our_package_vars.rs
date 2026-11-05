@@ -256,11 +256,24 @@ impl Interpreter {
     /// such an alias.
     // Cost: O(n) in the length of `name`, plus one env lookup for the head.
     pub(crate) fn package_alias_var_name(&self, name: &str) -> Option<String> {
+        // A term key (`\Graph::Cycle`, the sigilless `my \Graph::Cycle` a
+        // block-scoped `use` of a `sub EXPORT` hook declares) names a term, not
+        // a package variable. Its head `\Graph` is itself a term bound to the
+        // package, so reading it as a `constant` alias of a package rewrote the
+        // write to the plain `Graph::Cycle` and left the term key at its
+        // declaration seed (#16283).
+        if name.starts_with(crate::term_names::TERM_PREFIX) {
+            return None;
+        }
         let (sigil, rest) = match name.as_bytes().first() {
             Some(b'@' | b'%') => name.split_at(1),
             _ => ("", name),
         };
-        if !crate::qualified::is_qualified(Symbol::intern(rest)) {
+        // A `__mutsu_*` key is the interpreter's own metadata, never a user
+        // package variable: its `__mutsu_sigilless_readonly::\type` shape
+        // reads as a qualified name, and resolving its head as a package
+        // alias cost ~24k Ir per write (#15688).
+        if rest.starts_with("__mutsu_") || !crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
         let real = self.resolve_package_alias_prefix(rest)?;

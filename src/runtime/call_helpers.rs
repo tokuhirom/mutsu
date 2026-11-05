@@ -18,6 +18,15 @@ impl Interpreter {
         self.pending_call_arg_sources = sources;
     }
 
+    /// Drop the pending call arg-source names without taking them: the shared
+    /// list is released (a refcount decrement), where
+    /// [`Self::take_pending_call_arg_sources`] would copy it, every name
+    /// included, whenever the call site's constant still shares it.
+    // Cost: O(1).
+    pub(crate) fn discard_pending_call_arg_sources(&mut self) {
+        self.pending_call_arg_sources = None;
+    }
+
     pub(crate) fn take_pending_call_arg_sources(&mut self) -> Option<Vec<Option<String>>> {
         self.pending_call_arg_sources
             .take()
@@ -304,7 +313,7 @@ impl Interpreter {
             if let ValueView::Pair(key, value) = arg.view()
                 && key == name
             {
-                return Some(value.clone());
+                return Some(value.deref_container());
             }
         }
         None

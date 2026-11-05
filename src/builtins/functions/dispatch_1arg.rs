@@ -1,13 +1,13 @@
 use super::math::factorial_bigint;
 use super::uniparse::uniparse_impl;
 use crate::builtins::rng::builtin_srand;
+use crate::grapheme_break::UnicodeSegmentation;
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
-use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
     // Eager list operations (combinations/permutations/...) cannot run on a
@@ -267,7 +267,13 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // Cost: O(n), n = chars of the argument.
         "flip" => {
             let s = arg.to_string_value();
-            let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
+            let reversed: String = {
+                let mut gs: Vec<&str> = s.graphemes(true).collect();
+                gs.reverse();
+                gs.concat()
+            }
+            .nfc()
+            .collect();
             Some(Ok(Value::str(reversed)))
         }
         // Cost: O(1), the same lazy Seq as `Str.words`.
@@ -462,9 +468,10 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
                 ValueView::Num(f) => raku_round_to_value(f),
                 ValueView::Int(i) => Value::int(i),
-                ValueView::Rat(n, d) if d != 0 => {
-                    let f = crate::value::rat_to_f64(n, d);
-                    raku_round_to_value(f)
+                // A Rat rounds exactly, through the one implementation `.round`
+                // uses: an f64 detour loses the low digits past 2**53.
+                ValueView::Rat(_, d) if d != 0 => {
+                    return crate::builtins::method_table::scalars::real::round_of(arg);
                 }
                 ValueView::BigInt(_) | ValueView::BigRat(..) | ValueView::FatRat(..) => {
                     return crate::builtins::method_table::scalars::real::round_of(arg);
@@ -623,25 +630,34 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     }
                 })
         }
+        // `defined($x)` is `$x.defined`: one implementation (the method's), so a
+        // container the argument arrives in (an `AT-KEY` element slot, a
+        // `Scalar`) is looked through exactly as the method looks through it
+        // (#16080). A case the method leaves to the interpreter falls through.
         "defined" => {
-            // For junctions, autothread .defined and collapse to Bool
-            if let ValueView::Junction { .. } = arg.view() {
-                if let Some(Ok(result)) = crate::builtins::methods_0arg::native_method_0arg(
-                    arg,
-                    crate::symbol::Symbol::intern("defined"),
-                ) {
-                    Some(Ok(result))
-                } else {
-                    Some(Ok(Value::TRUE))
-                }
+            // An element slot (`%h.AT-KEY('k')` of a missing key) arrives as the
+            // lazy `HashEntryRef`; test the value it reads, not the slot.
+            let read;
+            let arg = if let ValueView::HashEntryRef { .. } = arg.view() {
+                read = arg.hash_entry_read();
+                &read
             } else {
+                arg
+            };
+            // The method leaves some receivers to the interpreter (`None`);
+            // those are defined unless a type object, an empty Slip or a Failure.
+            crate::builtins::methods_0arg::native_method_0arg(
+                arg,
+                crate::symbol::Symbol::intern("defined"),
+            )
+            .or_else(|| {
                 Some(Ok(Value::truth(match arg.view() {
                     ValueView::Nil | ValueView::Package(_) => false,
                     ValueView::Slip(items) if items.is_empty() => false,
                     ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                     _ => true,
                 })))
-            }
+            })
         }
         // `elems($x)` is defined as `$x.elems`; delegate to the single `.elems`
         // method impl instead of a drifting second copy. The inline version here

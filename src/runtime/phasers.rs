@@ -47,9 +47,12 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
 /// Unlike the general case, closures in EVAL cannot reference locally
 /// declared subs from a parent scope (the EVAL scope is already the
 /// outermost scope), so lifting BEGIN from them is safe.
-pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
+///
+/// Returns the length of the unit's BEGIN prologue (zero when the unit has no
+/// BEGIN-time effect).
+pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) -> usize {
     crate::runtime::begin_prologue::lift_nested_exports(stmts);
-    reorder_recursive(stmts, true, true);
+    let mut prologue_len = reorder_recursive(stmts, true, true);
     // Second pass: lift BEGIN from closure bodies to the top level.
     let mut extra_begin: Vec<Stmt> = Vec::new();
     for stmt in stmts.iter_mut() {
@@ -78,8 +81,9 @@ pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
             stmts.insert(insert_pos + i, s);
         }
         // Re-run reorder to properly sort the newly inserted phasers
-        reorder_recursive(stmts, true, true);
+        prologue_len += reorder_recursive(stmts, true, true);
     }
+    prologue_len
 }
 
 /// Lift BEGIN phasers from a closure that is a top-level statement's whole
@@ -191,8 +195,25 @@ fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool, mut lifted: L
 /// Flatten SyntheticBlock wrappers (e.g. from `my $x ~= "o"`).
 /// Only flattens blocks that don't contain MarkReadonly, since those
 /// need to stay as atomic units (e.g. `my $x := 42`).
+///
+/// The exit phasers of a variable's `will leave` / `will keep` / `will undo`
+/// traits (a `SyntheticBlock` holding the declaration and the phasers) are not
+/// left where the declaration is: they go to the FRONT of the level's list, in
+/// source order. The compiler queues a block's exit phasers from the back, so
+/// the front ones run last, i.e. after every `LEAVE { }` block, each group last
+/// declared first, as rakudo orders them.
 fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
+    let is_exit = |stmt: &Stmt| {
+        matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                ..
+            }
+        )
+    };
     let old = std::mem::take(stmts);
+    let mut trait_exits: Vec<Stmt> = Vec::new();
     for stmt in old {
         if let Stmt::SyntheticBlock(ref inner) = stmt {
             let has_mark_readonly = inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(..)));
@@ -202,11 +223,25 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
             if has_mark_readonly || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {
-                stmts.extend(inner);
+                // A `will` expansion: the declaration plus its exit phasers.
+                if inner.iter().any(|s| matches!(s, Stmt::VarDecl { .. }))
+                    && inner.iter().any(is_exit)
+                {
+                    let (exits, rest): (Vec<Stmt>, Vec<Stmt>) =
+                        inner.into_iter().partition(is_exit);
+                    trait_exits.extend(exits);
+                    stmts.extend(rest);
+                } else {
+                    stmts.extend(inner);
+                }
             }
         } else {
             stmts.push(stmt);
         }
+    }
+    if !trait_exits.is_empty() {
+        trait_exits.append(stmts);
+        *stmts = trait_exits;
     }
 }
 
@@ -619,6 +654,15 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     if marks.begin_static {
         return Some((stmt.clone(), None));
     }
+    // An expansion the parser builds with `has_initializer: false` but a real
+    // initializer expression -- the staging temp and the targets of
+    // `my ($a, $b) = RHS` read each other in order -- has no static half to
+    // split off: splitting would drop its initializer (`has_init` is false) and
+    // leave every target `Any` in a unit that has a CHECK/INIT phaser (#15728).
+    // Only a bare `my @a;` / `my %h;` / `my $x;` carries a default literal.
+    if !*has_initializer && !is_default_literal(init_expr) {
+        return None;
+    }
     // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
     // sigil-based default literal (`Literal(Array([]))` / `Literal(Hash({}))`),
     // not `Literal(NIL)` — so testing the initializer expression against a NIL
@@ -699,4 +743,23 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         target_is_sigilless: false,
     });
     Some((static_decl, assign))
+}
+
+/// Whether `expr` is the literal a bare declaration (`my $x;`, `my @a;`,
+/// `my %h;`) is parsed with: `Nil`, an empty array or an empty hash, as a
+/// literal or (for a hash) an empty composer expression.
+// Cost: O(1).
+fn is_default_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(v) => match v.view() {
+            crate::value::ValueView::Array(items, _) => items.is_empty(),
+            crate::value::ValueView::Hash(map) => map.is_empty(),
+            _ => true,
+        },
+        // `my %h;` is parsed with an empty hash composer expression.
+        Expr::Hash(pairs, _) => pairs.is_empty(),
+        // `Any`, `Int`, ... the type object a typed bare declaration holds.
+        Expr::BareWord(_) => true,
+        _ => false,
+    }
 }

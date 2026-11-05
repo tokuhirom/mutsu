@@ -290,7 +290,25 @@ impl Interpreter {
         }
         if self.wrap_sub_id_for_name(name).is_some() {
             let sub = self.get_wrapped_sub(name)?;
-            return self.wrapped_sub_is_the_callee(&sub, name).then_some(sub);
+            if self.wrapped_sub_is_the_callee(&sub, name) {
+                return Some(sub);
+            }
+            // The bare-name entry belongs to a same-named routine of another
+            // package; the one this call reaches is recorded under its
+            // qualified name.
+            return self
+                .dispatch
+                .wrap_name_to_sub
+                .iter()
+                .filter(|(key, _)| {
+                    key.as_str() != name
+                        && crate::qualified::is_qualified_str(key)
+                        && crate::qualified::unqualified_part(Symbol::intern(key)).as_str()
+                            == name
+                })
+                .map(|(_, sub)| sub)
+                .find(|sub| self.wrapped_sub_is_the_callee(sub, name))
+                .cloned();
         }
         let name = Symbol::intern(name);
         if !crate::qualified::is_qualified(name) {
@@ -342,7 +360,19 @@ impl Interpreter {
                 self.registry()
                     .has_multi_function(None, &[wrapped.package], name)
             }
-            None => true,
+            // Nothing registered answers `name` here. When `name` is also a
+            // core routine, the call is the core one unless the wrapped
+            // routine is reachable by scope -- imported, declared in this
+            // package, or global. A module-private `sub open` that was
+            // `.wrap`ped (or is native) must not capture the importing
+            // script's core `open` (#16010).
+            None => {
+                !Self::is_builtin_function(name)
+                    || self.env.contains_key(&format!("&{name}"))
+                    || self.env_key_imported_here(Symbol::intern(&format!("&{name}")))
+                    || crate::qualified::is_global_package(wrapped.package)
+                    || self.current_package_sym() == wrapped.package
+            }
         }
     }
 
@@ -426,6 +456,17 @@ impl Interpreter {
         self.lexicals
             .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));
+        // A package variable of a lexical class (`my class X { our $v }`) is
+        // keyed by the class's mangled storage name; `$X::v` spells the
+        // user-facing one, so the same container is stored there too (#16620).
+        if key.contains('\u{0}') {
+            let facing = crate::value::user_facing_type_name(&key);
+            if facing.as_ref() != key.as_str() {
+                self.lexicals
+                    .our_vars
+                    .insert(facing.into_owned(), value.clone());
+            }
+        }
         self.lexicals.our_vars.insert(key, value);
     }
 
@@ -1347,6 +1388,11 @@ impl Interpreter {
                 // subclasses need the metamodel dispatch frame too or
                 // `callsame` cannot reach the native metamethod.
                 | "Metamodel::ParametricRoleHOW"
+                // A subset metaclass too: `callwith`/`nextwith` from a
+                // `new_type` override reaches the native subset-minting
+                // `new_type` (#16347).
+                | "Metamodel::SubsetHOW"
+                | "Perl6::Metamodel::SubsetHOW"
                 | "Perl6::Metamodel::ClassHOW"
                 | "Perl6::Metamodel::GrammarHOW"
                 | "Perl6::Metamodel::ParametricRoleHOW"
@@ -1366,11 +1412,32 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
+        self.push_method_samewith_context_named(
+            receiver_class,
+            std::borrow::Cow::Owned(method_name.to_string()),
+            args,
+            invocant,
+        );
+    }
+
+    /// [`Self::push_method_samewith_context`] for a caller that holds the
+    /// method name as an interned `&'static str`: the context borrows it, so
+    /// the common call (no deferral builtin anywhere in the program) allocates
+    /// nothing for the name.
+    // Cost: O(1) when no unit mentions `samewith` or a deferral builtin;
+    // otherwise O(a), a = the call's argument count (copied into the context).
+    pub(crate) fn push_method_samewith_context_named(
+        &mut self,
+        receiver_class: &str,
+        name: std::borrow::Cow<'static, str>,
+        args: &[Value],
+        invocant: Option<Value>,
+    ) {
         // Nothing in the program can read the invocant, the arguments or the
         // metamodel entry below (see `opcode::samewith_context_possible`): the
         // only reader left wants the routine name for an error message.
         if !crate::opcode::samewith_context_possible() {
-            self.push_samewith_context(method_name, None, None);
+            self.push_samewith_context_named(name, None, None);
             return;
         }
         // A role mixed into a class's native HOW (`$class.HOW does
@@ -1381,12 +1448,12 @@ impl Interpreter {
             matches!(inv.view(), crate::value::ValueView::Mixin(..))
                 && Self::how_target_from_value(inv).is_some()
         });
-        self.push_samewith_context(method_name, invocant, Some(args.to_vec()));
+        self.push_samewith_context_named(name.clone(), invocant, Some(args.to_vec()));
         if native_how_mixin || self.is_metamodel_how_class(receiver_class) {
             self.dispatch.metamodel_dispatch_stack.push((
                 self.dispatch.samewith_context_stack.len(),
                 receiver_class.to_string(),
-                method_name.to_string(),
+                name.to_string(),
                 args.to_vec(),
             ));
         }
@@ -1427,24 +1494,25 @@ impl Interpreter {
         matched_winner: Option<(Symbol, u64)>,
     ) -> Vec<(Symbol, super::MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
-        let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
+        let expansion = self.deferral_expansion_shared(receiver_class, method_name);
         let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
-        for (owner, def) in expansion {
+        for (owner, def) in expansion.iter() {
+            let owner = *owner;
             // Reuse only the resolved winner's successful applicability test;
             // every other multi candidate still needs its own signature match.
             if !def.is_multi
                 || matched_winner.is_some_and(|(matched_owner, fp)| {
-                    owner == matched_owner && self.method_def_fingerprint(&def) == fp
+                    owner == matched_owner && self.method_def_fingerprint(def) == fp
                 })
                 || self.method_args_match_for_invocant(
                     receiver_class,
-                    &def,
+                    def,
                     args,
                     role_bindings.as_ref(),
                     Some(invocant),
                 )
             {
-                all_candidates.push((owner, def));
+                all_candidates.push((owner, def.clone()));
             }
         }
         all_candidates
@@ -1846,10 +1914,27 @@ impl Interpreter {
         invocant: Option<Value>,
         args: Option<Vec<Value>>,
     ) {
+        self.push_samewith_context_named(
+            std::borrow::Cow::Owned(name.to_string()),
+            invocant,
+            args,
+        );
+    }
+
+    /// [`Self::push_samewith_context`] with the name already owned or
+    /// borrowed from an interned symbol, so a caller holding a `Symbol` pays
+    /// no allocation for it.
+    // Cost: O(1).
+    pub(crate) fn push_samewith_context_named(
+        &mut self,
+        name: std::borrow::Cow<'static, str>,
+        invocant: Option<Value>,
+        args: Option<Vec<Value>>,
+    ) {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: name.to_string(),
+                name,
                 invocant,
                 callable: None,
                 args,
@@ -1863,7 +1948,7 @@ impl Interpreter {
         self.dispatch
             .samewith_context_stack
             .push(super::SamewithContext {
-                name: String::new(),
+                name: std::borrow::Cow::Borrowed(""),
                 invocant: None,
                 callable: Some(callable),
                 args: None,

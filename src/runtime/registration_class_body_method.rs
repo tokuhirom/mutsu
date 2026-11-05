@@ -253,6 +253,7 @@ impl Interpreter {
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
             routine_cell: method_cell.clone(),
+            augment_epoch: 0,
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.
@@ -266,22 +267,6 @@ impl Interpreter {
         let mut candidate_idx = 0;
         let is_lexical_only = decl.is_my && !decl.is_submethod;
         let is_our_only = decl.is_our;
-        // The `my method` value runs the method's own compiled chunk (#14572).
-        // The method was registered from its own plan, so a missing table of
-        // nested subs means it has none.
-        let compiled_lexical_method = is_lexical_only
-            .then(|| (def.compiled_code.clone(), def.compiled_fns.clone()))
-            .and_then(|(code, fns)| {
-                let fns = fns.unwrap_or_default();
-                // A write to an enclosing variable needs the carrier's by-name
-                // write-back (the routine path gates on the same fact).
-                code.filter(|c| {
-                    fns.is_empty()
-                        && c.free_var_writes.is_empty()
-                        && c.free_var_container_writes.is_empty()
-                })
-                .map(|code| (code, fns))
-            });
         if !is_lexical_only && !is_our_only {
             // ADR-0019 F4c-9b: the registry's `method_entries` table is the
             // sole store now -- every write goes straight through the
@@ -460,7 +445,7 @@ impl Interpreter {
         if decl.is_my && !decl.is_submethod {
             let (my_params, my_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
-            let func_def = crate::ast::FunctionDef {
+            let mut func_def = crate::ast::FunctionDef {
                 is_cached: false,
                 package: Symbol::intern(cx.name),
                 name: Symbol::intern(&resolved_method_name),
@@ -489,23 +474,20 @@ impl Interpreter {
                 body_facts_cache: std::sync::OnceLock::new(),
                 routine_cell: Default::default(),
             };
+            // The sub form compiles like any routine, so a call of the value
+            // runs bytecode instead of recompiling the AST (#14572).
+            let compiled = self.otf_compile_function_def_in_sets(&func_def, &[]);
+            func_def.compiled = Some(std::sync::Arc::new(
+                crate::compiled_lazy::RoutineBody::plain(crate::compiled_lazy::LazyFn::owned(
+                    compiled,
+                )),
+            ));
             // The class body's registry restore drops the short name, but the
             // methods of the class are closures over this scope: carry the
             // routine in the env under the reserved block-lexical key, the way
             // a `my sub` of the body does, so `foo(self)` / `&foo` resolve from
             // a sibling method (Proxy's `callwith :&FETCH, :&STORE`).
-            let mut lexical_sub = self.sub_value_from_function_def(func_def.clone());
-            if let Some(chunk) = &compiled_lexical_method
-                && let crate::value::ValueView::Sub(data) = lexical_sub.view()
-            {
-                lexical_sub = Value::make_sub_compiled_in(
-                    (data.package, data.name),
-                    (data.params.clone(), data.param_defs.clone(), data.body.clone()),
-                    data.is_rw,
-                    data.env.clone(),
-                    chunk.clone(),
-                );
-            }
+            let lexical_sub = self.sub_value_from_function_def(func_def.clone());
             self.env.insert(
                 format!("{}{resolved_method_name}", crate::env::CLASS_LEXICAL_METHOD_PREFIX),
                 lexical_sub.clone(),

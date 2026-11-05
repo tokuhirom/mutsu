@@ -249,6 +249,21 @@ impl Interpreter {
         method: &str,
         target: &Value,
     ) -> Result<(), RuntimeError> {
+        // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
+        // methods beyond the meta-object ones; the native `gist`/`raku` lanes
+        // would otherwise answer before the dispatcher's gate sees it.
+        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+            && matches!(
+                method,
+                "raku" | "gist" | "perl" | "Str" | "say" | "put" | "print"
+            )
+        {
+            return Err(
+                crate::runtime::methods_signature_errors::make_method_not_found_error(
+                    method, "NQPMu", false,
+                ),
+            );
+        }
         if !matches!(method, "raku" | "gist") {
             return Ok(());
         }
@@ -688,7 +703,14 @@ impl Interpreter {
         // The pre-gate is spelled out here rather than left to the callee so a
         // program that declares no raw-invocant method never even resolves the
         // method name: this runs on every `CallMethod` in the program.
-        let armed_raw_invocant = if crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+        // A modified call (`.?m`, `.+m`, ...) keeps the program-wide gate, since
+        // the name it dispatches is the modifier's rewrite of this one.
+        let raw_possible = if modifier_idx.is_some() {
+            crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+        } else {
+            crate::runtime::raw_invocant::raw_invocant_method_possible_for(name.sym)
+        };
+        let armed_raw_invocant = if raw_possible
             && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
         {
             self.arm_raw_invocant_arrival_from_receiver(
@@ -846,6 +868,16 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
+        // object is answered without the probe chain below. Ahead of the
+        // accessor-ref marker take, which the lane requires to be unset.
+        if modifier_idx.is_none()
+            && let Some(result) =
+                self.try_pseudo_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
@@ -986,6 +1018,18 @@ impl Interpreter {
             && let ValueView::ContainerRef(cell) = target.view()
         {
             self.stack.push(Value::container_view(cell.clone()));
+            return Ok(());
+        }
+        // `.of` of a reflected element cell (`($t,)[0].VAR.of`) is the type the
+        // cell was declared with, `Mu` for an unconstrained one: the cell's own
+        // `of`, not the `of` of the value it holds (#15853).
+        if method == "of"
+            && args.is_empty()
+            && let ValueView::ContainerView(cell) = target.view()
+        {
+            let of = crate::value::lookup_container_constraint(&cell)
+                .unwrap_or_else(|| "Mu".to_string());
+            self.stack.push(Value::package(Symbol::intern(&of)));
             return Ok(());
         }
         // A method invocant that is a first-class element container

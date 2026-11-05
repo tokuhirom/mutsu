@@ -174,11 +174,11 @@ impl Compiler {
             }
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_
             Expr::MatchRegex(v) => {
-                self.compile_match_regex(v);
+                self.compile_match_regex_topic(v, false);
             }
             Expr::MatchRegexTree { value, tree } => {
                 let value = value.with_regex_source_tree(tree.clone());
-                self.compile_match_regex(&value);
+                self.compile_match_regex_topic(&value, false);
             }
             Expr::MatchRegexDynamicAdverbs {
                 value,
@@ -384,6 +384,13 @@ impl Compiler {
                     self.code.emit(OpCode::GetGlobal(name_idx));
                     return;
                 }
+                // A name this scope's `use X` declared as the package `X`
+                // (#15806): the package, past a sigilless `\X` of an outer scope.
+                if self.use_declared_names.contains(name.as_str()) {
+                    let idx = self.code.add_constant(Value::package(Symbol::intern(name)));
+                    self.code.emit(OpCode::LoadConst(idx));
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.
@@ -423,6 +430,13 @@ impl Compiler {
                     // declared later, or a parameter of this very routine —
                     // cannot shadow it.
                     self.code.emit(OpCode::GetLocal(slot));
+                } else if self.in_closure_body_for_type_capture(name) {
+                    // A type capture (`::T`) of an ENCLOSING routine, read from a
+                    // nested closure: a by-name read `compute_free_vars` records
+                    // as a free variable, so the closure captures the type its
+                    // creating frame bound instead of the caller's `T`.
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
                     // scope, read here from a nested — possibly escaping — closure.
@@ -527,6 +541,7 @@ impl Compiler {
                 // argument. Read-and-clear before compiling anything, so a
                 // nested list inside an element is not marked as well.
                 let rw_arg_callee = self.pending_rw_arg_list_callee.take();
+                let is_root_list = self.expr_depth <= 1;
                 // Elements are stored into the list -> a closure element escapes.
                 self.with_escape(true, |c| {
                     for (elem_idx, elem) in elems.iter().enumerate() {
@@ -556,7 +571,15 @@ impl Compiler {
                             // `.head` of `<b c>` flattens into a slurpy).
                             c.raw_list_elem_terminal = true;
                         }
-                        c.compile_expr(elem);
+                        // A comma list at statement root is in sink context, and rakudo
+                        // sinks each of its elements: an `nqp::while` there runs eagerly
+                        // (Math::Combinatorics' `(my $j := $!k), nqp::while(...), ...`)
+                        // instead of building a lazy Seq nobody pulls.
+                        if is_root_list && Self::is_nqp_loop_call(elem) {
+                            c.with_stmt_root(|c| c.compile_expr(elem));
+                        } else {
+                            c.compile_expr(elem);
+                        }
                         c.scalar_bind_autovivify = saved_autoviv;
                         c.bind_terminal = saved_terminal;
                         c.raw_list_elem_terminal = saved_raw_list_elem;
@@ -625,7 +648,9 @@ impl Compiler {
                             c.compile_expr(left);
                             c.compile_expr(right);
                             c.emit_wrap_var_ref(name);
-                            c.code.emit(OpCode::MakeNamedArg);
+                            c.code.emit(OpCode::MakeNamedArg {
+                                readonly: c.is_readonly_param_operand(right),
+                            });
                             continue;
                         }
                         // A named element whose value isn't a bare variable
@@ -706,6 +731,20 @@ impl Compiler {
                     quoted: false,
                     sugar: false,
                 });
+            }
+            // `*<a>:k` / `*[1]:v` / `*<a>:p`: the bare `*` target makes the
+            // whole adverb call a WhateverCode. Prime it around the call, as the
+            // `:exists` form does around its node (#15446); the curry replaces the
+            // `*`, so the inner call no longer matches this arm.
+            Expr::Call { name, args, listop }
+                if name.with_str(|n| n == "__mutsu_subscript_adverb")
+                    && matches!(args.first(), Some(Expr::WhateverArg)) =>
+            {
+                self.compile_expr(&Expr::WhateverCurry(Box::new(Expr::Call {
+                    name: *name,
+                    args: args.clone(),
+                    listop: *listop,
+                })));
             }
             Expr::Call { name, args, .. } => {
                 if name.with_str(|n| n == "EVAL") {
@@ -1334,7 +1373,13 @@ impl Compiler {
                     }
                 }
                 self.compile_expr(expr);
-                let spec = ReductionSpec::lower(op.as_str());
+                // A `$` variable is one item of the argument list: an instance
+                // of an `is Range` / `is Seq` subclass in it is NOT read as the
+                // list it carries (`my $q = Q.new(1, 3); [+] $q` is 3, while
+                // `[+] Q.new(1, 3)` is 6, #15322). An instance has no itemized
+                // form, so the spec records where the operand came from.
+                let mut spec = ReductionSpec::lower(op.as_str());
+                spec.item_operand = !is_scan && Self::expr_is_scalar_var(expr);
                 self.emit_lex_import_meta(spec.base);
                 let op_idx = self.code.add_reduction_spec(spec);
                 self.code.emit(OpCode::Reduction(op_idx));
@@ -1881,6 +1926,7 @@ impl Compiler {
             negate: false,
             shortcircuit: true,
             reverse: false,
+            item_operand: false,
             base: crate::symbol::Symbol::intern(op),
         });
         self.code.emit(OpCode::Reduction(op_idx));

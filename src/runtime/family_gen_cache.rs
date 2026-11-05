@@ -139,6 +139,34 @@ impl<K: Eq + Hash, V> FamilyGenCache<K, V> {
         self.revalidate(generation, key, family)
     }
 
+    /// [`Self::get`] for a `&self` reader: the same answer, but a hit under a
+    /// moved map generation is served without re-tagging the slot, so the
+    /// next `&mut` reader still takes the (cold) re-tag.
+    // Cost: O(1) expected, plus one `family` call when the map generation moved.
+    pub(crate) fn peek(&self, generation: u64, key: &K, family: impl FnOnce() -> u64) -> Option<V>
+    where
+        V: Clone,
+    {
+        let slots = self.entries.get(key)?;
+        if slots.recent.generation == generation {
+            return Some(slots.recent.value.clone());
+        }
+        if let Some(older) = &slots.older
+            && older.generation == generation
+        {
+            return Some(older.value.clone());
+        }
+        let fam = family();
+        if slots.recent.family == fam {
+            return Some(slots.recent.value.clone());
+        }
+        slots
+            .older
+            .as_ref()
+            .filter(|o| o.family == fam)
+            .map(|o| o.value.clone())
+    }
+
     /// [`Self::get`]'s map-generation miss: re-tag the slot computed under the
     /// family's current generation, if any. Kept out of line so the hit path
     /// stays small enough to inline.

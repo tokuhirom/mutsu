@@ -91,6 +91,7 @@ pub(super) const fn opaque(
         S::PredictiveIterator => ("PredictiveIterator", &["PredictiveIterator", "Iterator"]),
         S::Stash => ("Stash", &["Stash"]),
         S::Signature => ("Signature", &["Signature"]),
+        S::Parameter => ("Parameter", &["Parameter"]),
         // An enum member by its payload kind: the roles Rakudo composes into
         // every enum type, the more specific first (ADR-11276 §9.125).
         S::EnumNumeric => ("NumericEnumeration", &["NumericEnumeration", "Enumeration"]),
@@ -107,7 +108,7 @@ pub(super) const fn opaque(
                 "RakuAST::Statement::Expression",
                 "RakuAST::ArgList",
                 "RakuAST::ApplyInfix",
-                "RakuAST::Sub",
+                "RakuAST::Routine",
                 "RakuAST::Parameter",
             ],
         ),

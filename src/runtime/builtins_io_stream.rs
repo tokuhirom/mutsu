@@ -67,17 +67,62 @@ impl Interpreter {
             .get_dynamic_handle("$*IN")
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            // At end of input `prompt` returns the `Any` type object (like
-            // `get`), not an empty string: `prompt(...).defined` is False.
+            // At end of input `prompt` returns `Nil` (like `get`), not an empty
+            // string: `prompt(...).defined` is False.
             return Ok(match self.read_line_from_handle_value(&handle)? {
-                Some(line) => Value::str(line),
-                None => Value::package(crate::symbol::wk::any()),
+                // `prompt` answers `val($line)`: a numeric-looking line is an
+                // allomorph (`IntStr`, `RatStr`, ...), anything else a plain Str.
+                Some(line) => super::builtins_collection::builtin_val(&[Value::str(line)]),
+                None => Value::NIL,
             });
         }
-        Ok(Value::package(crate::symbol::wk::any()))
+        Ok(Value::NIL)
+    }
+
+    /// `lines()` / `get()` are `$*ARGFILES.lines` / `$*ARGFILES.get`: when
+    /// roles were mixed into the default input handle (`$*ARGFILES does R`),
+    /// the mixin's override has to run, with the native method reachable
+    /// through its `callsame`.
+    // Cost: O(1) to decline; the method call otherwise.
+    // The right shape is the compiler lowering a zero-argument `lines()` /
+    // `get()` to `$*ARGFILES.lines` / `.get`; this keeps the builtin and
+    // dispatches to the mixin only when roles were mixed into the handle.
+    fn argfiles_mixin_method(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty() {
+            return None;
+        }
+        let handle = self.default_input_handle()?;
+        let mixed = match handle.view() {
+            ValueView::Mixin(..) => true,
+            ValueView::Instance { class_name, .. } => {
+                class_name.as_str().starts_with("IO::Handle+{")
+            }
+            _ => false,
+        };
+        if !mixed {
+            return None;
+        }
+        // The mixin's `callsame` reaches the native method, which reads through
+        // this same function: only the outermost call dispatches to the mixin.
+        thread_local! {
+            static IN_ARGFILES_MIXIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if IN_ARGFILES_MIXIN.with(|c| c.replace(true)) {
+            return None;
+        }
+        let result = self.call_method_with_values(handle, name, Vec::new());
+        IN_ARGFILES_MIXIN.with(|c| c.set(false));
+        Some(result)
     }
 
     pub(super) fn builtin_get(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.argfiles_mixin_method("get", args) {
+            return result;
+        }
         let handle = args
             .first()
             .cloned()
@@ -117,6 +162,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.argfiles_mixin_method("lines", args) {
+            return result;
+        }
         if let Some(result) = self.try_io_path_content_sub(args, false) {
             return result;
         }
@@ -157,6 +205,23 @@ impl Interpreter {
             .first()
             .cloned()
             .or_else(|| self.default_input_handle());
+        // A default input handle with roles mixed in (`$*ARGFILES does R`) is
+        // still the open handle: read through a plain `IO::Handle` view of the
+        // same cell. (Not done in `handle_id_from_value`: a mixin of `$*OUT`
+        // that overrides `print` must keep seeing its own method.)
+        let handle = handle.map(|h| match h.view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name.as_str().starts_with("IO::Handle+{") => Value::instance_sharing_cell(
+                &attributes,
+                crate::symbol::Symbol::intern("IO::Handle"),
+                attributes.instance_id(),
+            ),
+            _ => h,
+        });
         if let Some(handle) = handle {
             let mut limit: Option<usize> = None;
             let mut close_after = false;
@@ -183,7 +248,14 @@ impl Interpreter {
                 // No limit: return a lazy IO lines iterator so that
                 // consumers (e.g. for-loop) can read on demand.
                 // This allows `last` in `-ne` mode to exit without
-                // waiting for stdin EOF.
+                // waiting for stdin EOF. `:close` closes the handle once a
+                // read reaches EOF (#16128).
+                if close_after {
+                    self.with_handle_mut(&handle, |state| {
+                        state.close_on_exhaust = true;
+                        Ok(())
+                    })?;
+                }
                 return Ok(Value::lazy_io_lines(handle, false, false));
             }
             let mut lines = Vec::new();
@@ -234,16 +306,13 @@ impl Interpreter {
                     _ => {}
                 }
             }
-            if limit.is_none() {
-                // No limit: return a lazy word iterator so a partial consumer
-                // (e.g. `words($fh, :close)[1,2]`) leaves the handle open, while a
-                // full consumer triggers close-on-exhaust when `:close` was given.
-                if close_after {
-                    self.with_handle_mut(&handle, |state| {
-                        state.close_on_exhaust = true;
-                        Ok(())
-                    })?;
-                }
+            // No limit: read eagerly like `IO::Handle.words`, except `:close`
+            // (see `io_handle_words`).
+            if limit.is_none() && close_after {
+                self.with_handle_mut(&handle, |state| {
+                    state.close_on_exhaust = true;
+                    Ok(())
+                })?;
                 return Ok(Value::lazy_io_lines(handle, false, true));
             }
             let mut words = Vec::new();

@@ -153,6 +153,37 @@ impl Interpreter {
         }
     }
 
+    /// The sub form of a class body's `my method NAME`, when a bare call of
+    /// `NAME` inside a method of that class means it. `None` unless the
+    /// reserved env key exists (a `my method` was registered and this frame's
+    /// closure chain carries it), no nearer lexical `&NAME` slot shadows it, and
+    /// the name is not a multi or proto family.
+    // Cost: O(1) -- one memoized key, one flag-word read, plus one env probe
+    // once a `my method` of that name was ever registered.
+    #[inline]
+    pub(super) fn class_lexical_method_callable(
+        &mut self,
+        code: &CompiledCode,
+        name_sym: Symbol,
+    ) -> Option<Value> {
+        if self.in_lvalue_assignment || crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        let key = dispatch_key::class_lexical_method_sym(name_sym);
+        if !crate::symbol::maybe_env_key(key) {
+            return None;
+        }
+        if !code
+            .local_slots_of(dispatch_key::amp_sym(name_sym))
+            .is_empty()
+            || self.has_multi_candidates_cached_sym(name_sym)
+        {
+            return None;
+        }
+        let sub = self.env().get_sym(key).cloned()?;
+        matches!(sub.view(), ValueView::Sub(_)).then_some(sub)
+    }
+
     pub(crate) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
         if let ValueView::Sub(sub) = val.view() {
             let stored = sub.name.resolve();
@@ -316,15 +347,23 @@ impl Interpreter {
     }
 
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
-        let imported_alias = self.env_key_imported_here(Symbol::intern(&format!("&{name}")));
-        !(Self::is_control_flow_function_name(name)
+        if Self::is_control_flow_function_name(name)
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
-            || (!imported_alias
-                && (crate::runtime::Interpreter::is_builtin_function(name)
-                    || self.has_function(name)
-                    || self.has_proto_cached(name)
-                    || self.has_multi_candidates_cached(name))))
+        {
+            return false;
+        }
+        // A same-named builtin or registered routine makes the lexical
+        // ineligible unless the `&name` key was imported here. The name-only
+        // probes go first: for the common case of a plain `my &b` none of them
+        // holds, and then the imported-alias test (a `format!`, an intern and an
+        // env read -- ~1.5k Ir per call) is never needed. It is a pure read, so
+        // the order does not change the answer.
+        let name_collides = crate::runtime::Interpreter::is_builtin_function(name)
+            || self.has_function(name)
+            || self.has_proto_cached(name)
+            || self.has_multi_candidates_cached(name);
+        !name_collides || self.env_key_imported_here(Symbol::intern(&format!("&{name}")))
     }
 
     /// The value shapes [`Self::lexical_amp_var_callable`] dispatches
@@ -1283,6 +1322,10 @@ impl Interpreter {
                             // The named-share writeback reads the arg sources;
                             // make them available to bind_function_args_values.
                             self.set_pending_call_arg_sources(decoded_sources);
+                            // The by-name route publishes a caller's shared
+                            // `is rw` cell before binding; so does this
+                            // cached one (#16377).
+                            self.publish_rw_arg_cells(&cf.param_defs, &args);
                             let r = self.call_compiled_function_named(
                                 &cf,
                                 std::mem::take(&mut args),
@@ -2261,6 +2304,26 @@ impl Interpreter {
                             ValueView::Sub(data) if data.returns_container()
                         )
                     });
+            // A class body's `my method NAME` called in its sub form from a
+            // sibling method (`NAME(self, $x)`): the registry holds the sub
+            // form but never resolves it by the short name from here, so the
+            // call used to climb the whole ladder (six full resolutions) down
+            // to the interpreter terminal's last-resort lookup of this very
+            // reserved key. A lexical beats a same-named package routine, so
+            // ask the key first. Gated by the key's env flag word, so a
+            // program with no `my method` pays one load.
+            if !lexical_rw_callable
+                && let Some(callable) = self.class_lexical_method_callable(code, name_sym)
+            {
+                let result = self.call_lexical_callable_with_sources(
+                    callable,
+                    args,
+                    &arg_sources,
+                    Some(compiled_fns),
+                );
+                self.set_pending_call_arg_sources(None);
+                return result;
+            }
             let compiled = if !self.has_proto_cached_sym(name, name_sym) && !lexical_rw_callable {
                 self.find_compiled_function_memo(
                     compiled_fns,
@@ -2975,7 +3038,19 @@ impl Interpreter {
         // after EVERY interpreter-native builtin call (`make`, in a
         // grammar-action walk, is one per action), forcing a full
         // registry rescan per call.
-        if self.registry_write_generation() != reg_gen_before {
+        //
+        // Not for a re-dispatch (`samewith`, `nextwith`, `callwith`, ...): it
+        // only runs the next candidate's code, and any registration that code
+        // performs announces itself through its own call or registration path.
+        // Taking a registry write guard while resolving the next candidate is
+        // not a change to the function set, and discarding every memo after it
+        // made each `.new` through Red's `callwith`/`samewith` chain re-probe
+        // `has_multi_*` for every name it then asked about again.
+        if !matches!(
+            name,
+            "samewith" | "nextwith" | "callwith" | "callsame" | "nextsame"
+        ) && self.registry_write_generation() != reg_gen_before
+        {
             self.invalidate_fn_resolution();
         }
         // substr-rw / subbuf-rw return a Proxy that must be preserved
@@ -3432,6 +3507,9 @@ impl Interpreter {
                 uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
                 result_is_decontainerized: crate::ast::result_decont::result_is_decontainerized(
                     &def.param_defs,
+                    &def.body,
+                ),
+                result_is_fresh_call: crate::ast::result_decont::raw_result_is_fresh_call(
                     &def.body,
                 ),
                 registration_identity: crate::ast::registration_identity_fingerprint(

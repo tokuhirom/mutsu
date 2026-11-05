@@ -93,6 +93,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         var
     };
     let name = format!("{}{}", prefix, var);
+    let after_var = rest;
     let (rest, _) = ws(rest)?;
     let var_expr = if sigil == b'@' {
         Expr::ArrayVar(var.clone())
@@ -101,6 +102,10 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         Expr::Var(name.clone())
     };
+    // The target is a term the `.AST` conversion renders, and this path reads
+    // it without `primary`: note where it was written, so the equal terms
+    // after it (`$n = $n.abs if $n.WHAT`) take their own ranges.
+    crate::parser::primary::note_origin(input, after_var, &written_target(&var_expr));
 
     // Mutating method compound assignment: $x.m += expr
     if let Some(after_dot) = rest.strip_prefix('.')

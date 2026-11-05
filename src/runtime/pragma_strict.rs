@@ -22,12 +22,22 @@ use crate::value::ValueView;
 
 const PRAGMA: &str = "strict";
 
+/// The env key of the `strict` pragma mark, built once: `env_is_no_strict`
+/// runs on every variable read that misses the other stores, and interning
+/// `PRAGMA` there cost a string hash each time (~160 Ir; ~1,600 interns per
+/// AttrX::Mooish iteration, #15688).
+// Cost: O(1) after the first call.
+fn pragma_key() -> Symbol {
+    static KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+    *KEY.get_or_init(|| MetaNs::Pragma.key_for_str(PRAGMA))
+}
+
 impl Interpreter {
     /// Record `use strict` (`on`) / `no strict` in this scope.
     // Cost: O(1) expected, one env insert.
     pub(crate) fn mark_strict_pragma(&mut self, on: bool) {
         self.env_mut().insert_sym(
-            MetaNs::Pragma.key_for_str(PRAGMA),
+            pragma_key(),
             if on { Value::TRUE } else { Value::FALSE },
         );
     }
@@ -51,8 +61,7 @@ impl Interpreter {
     // Cost: O(1) expected, one env probe.
     pub(crate) fn env_is_no_strict(env: &crate::env::Env) -> bool {
         matches!(
-            env.get_sym(MetaNs::Pragma.key_for_str(PRAGMA))
-                .map(Value::view),
+            env.get_sym(pragma_key()).map(Value::view),
             Some(ValueView::Bool(false))
         )
     }

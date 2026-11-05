@@ -133,6 +133,7 @@ impl Interpreter {
                 }
             }
         }
+        let running = packages.clone();
         packages.into_iter().find_map(|pkg| {
             if crate::qualified::is_global_name(&pkg) {
                 return None;
@@ -147,8 +148,13 @@ impl Interpreter {
             // scope does not shadow `List` inside `Foo`, but a non-core
             // `Foo::Bar` is found through `Foo`'s stash (`unit class Foo;
             // use Foo::Bar; ... Bar.new`).
+            // A class declared with a compound name (`class X::Errno` at file
+            // scope) is no lexical binding for its own short name from inside
+            // itself, core name or not: `Errno($code)` in its methods names the
+            // imported `Errno`, not the class (#16035). The chain's `X` is only
+            // the prefix of the running package.
             if self.registry().compound_declared_types.contains_key(&key)
-                && self.unshadowed_builtin_type_name(name)
+                && (self.unshadowed_builtin_type_name(name) || running.contains(&key))
             {
                 return None;
             }
@@ -371,6 +377,21 @@ impl Interpreter {
         false
     }
 
+    /// Whether a user-declared class inherits (transitively) from `Array` or
+    /// `List`, i.e. its instances are positional containers whose `[ ]`
+    /// subscript numifies the index.
+    // Cost: O(d), d = depth of the class's parent chain.
+    pub(crate) fn class_inherits_array(&self, name: &str) -> bool {
+        if name == "Array" || name == "List" {
+            return true;
+        }
+        let parents = {
+            let reg = self.registry();
+            reg.classes.get(name).map(|cd| cd.parents.clone())
+        };
+        parents.is_some_and(|ps| ps.iter().any(|p| self.class_inherits_array(p)))
+    }
+
     /// Check if a class has scoped subs declared in its body.
     /// True if `class_name` has recorded class-body `my` lexicals (statics)
     /// stored in `package_lexicals` by `register_class_decl`. A method reading
@@ -482,6 +503,20 @@ impl Interpreter {
         class_name: &str,
         saved: &mut Vec<(String, Option<Value>)>,
     ) {
+        self.inject_class_body_statics_saving_except(class_name, saved, &[]);
+    }
+
+    /// [`Self::inject_class_body_statics_saving`] leaving alone the names in
+    /// `except`: the callee's free variables that an enclosing routine of the
+    /// callee declares (`CompiledCode::routine_scoped_free`). Those are that
+    /// routine's own bindings, not the class body's same-named `my` (#16077).
+    // Cost: O(s * e), s = class-body statics, e = |except| (usually 0).
+    pub(crate) fn inject_class_body_statics_saving_except(
+        &mut self,
+        class_name: &str,
+        saved: &mut Vec<(String, Option<Value>)>,
+        except: &[Symbol],
+    ) {
         let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
             return;
         };
@@ -493,6 +528,9 @@ impl Interpreter {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, v) in to_inject {
+            if except.iter().any(|sym| sym.with_str(|n| n == k)) {
+                continue;
+            }
             saved.push((k.clone(), self.env.get(&k).cloned()));
             self.env.insert(k, v);
         }
@@ -515,12 +553,39 @@ impl Interpreter {
             .contains(class_name)
     }
 
-    // Cost: O(1) expected for a class that declares subs; otherwise O(k) over the
-    // k classes that do, with no allocation.
+    // Cost: O(1) once a class name was asked since the last `class_subs` write; the
+    // first ask is O(k) over the k classes that declare subs.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         // Single guard for both reads (no user-code re-entry here, so let-binding
         // is safe and avoids a same-thread recursive read lock).
         let registry = self.registry();
+        let state = registry.class_subs.state_id();
+        {
+            let memo = self.caches.class_scoped_subs.borrow();
+            if memo.0 == state
+                && let Some(answer) = memo.1.get(class_name)
+            {
+                return *answer;
+            }
+        }
+        let answer = Self::scan_class_scoped_subs(&registry, class_name);
+        let mut memo = self.caches.class_scoped_subs.borrow_mut();
+        if memo.0 != state {
+            *memo = (state, Default::default());
+        }
+        if memo.1.len() >= 4096 {
+            memo.1.clear();
+        }
+        memo.1.insert(class_name.to_string(), answer);
+        answer
+    }
+
+    // Cost: O(1) expected for a class that declares subs; otherwise O(k) over the
+    // k classes that do, with no allocation.
+    fn scan_class_scoped_subs(
+        registry: &crate::runtime::registry::RegistryReadGuard<'_>,
+        class_name: &str,
+    ) -> bool {
         // A package-qualified spelling of either side (`Outer::Inner` against
         // `Inner`), tested without building the `::name` strings: this runs on
         // every method call, over every class that declares a sub.

@@ -5,9 +5,10 @@ use crate::builtins::stream_decoder::{ChunkDecoder, Codec};
 use crate::value::AttrMap;
 use std::io::{Read, Write};
 
-/// Create a Buf Value from raw bytes.
+/// Create a `Buf[uint8]` Value from raw bytes, the type rakudo delivers for a
+/// process stream's `:bin` chunks (#16150).
 fn make_buf_value(bytes: &[u8]) -> Value {
-    crate::value::value_buf::make_buf_from_u8(bytes)
+    crate::value::value_buf::make_buf_from_bytes(Symbol::intern("Buf[uint8]"), bytes)
 }
 
 /// The Supply channels one Proc::Async reader thread emits its decoded chunks to.
@@ -425,7 +426,7 @@ impl Interpreter {
                 // is never mirrored into the process environment (#11241), as
                 // in rakudo, so it is the child's whole environment.
                 if env.is_none()
-                    && let Some(env_hash) = self.env.get("%*ENV")
+                    && let Some(env_hash) = self.process_env_hash()
                     && let ValueView::Hash(map) = env_hash.view()
                 {
                     env = Some(
@@ -504,29 +505,6 @@ impl Interpreter {
                 // down hands the pid to another thread, which may then ask this
                 // object for it.
                 publish.publish(&attrs);
-
-                if let Some(ValueView::Instance {
-                    attributes: stdout_attrs,
-                    ..
-                }) = attrs.get("stdout").map(Value::view)
-                    && let Some(ValueView::Promise(promise)) = stdout_attrs
-                        .as_map()
-                        .get("native_descriptor_promise")
-                        .map(Value::view)
-                {
-                    promise.try_keep(Value::int(1)).ok();
-                }
-                if let Some(ValueView::Instance {
-                    attributes: stderr_attrs,
-                    ..
-                }) = attrs.get("stderr").map(Value::view)
-                    && let Some(ValueView::Promise(promise)) = stderr_attrs
-                        .as_map()
-                        .get("native_descriptor_promise")
-                        .map(Value::view)
-                {
-                    promise.try_keep(Value::int(2)).ok();
-                }
 
                 // Resolve ready promise if set
                 if let Some(ValueView::Promise(ready)) = attrs.get("ready_promise").map(Value::view)
@@ -722,7 +700,15 @@ impl Interpreter {
                 // falling back to it here is correct, just not incremental
                 // for that (uncommon) case.
                 let mut live_tap_handles = Vec::new();
-                for sid in [stdout_supply_id, stderr_supply_id].into_iter().flatten() {
+                // The merged `.Supply` is served live too when it was requested
+                // with `:bin`: its replay off the collected text could only
+                // deliver `Str`, while the reader threads emit `Buf` chunks
+                // into its channel (#15647).
+                let merged_live = (stdout_bin && stderr_bin).then_some(merged_supply_id).flatten();
+                for sid in [stdout_supply_id, stderr_supply_id, merged_live]
+                    .into_iter()
+                    .flatten()
+                {
                     if !self.async_state.supply_emit_buffer.is_empty()
                         || self.async_state.react_active > 0
                     {
@@ -751,7 +737,7 @@ impl Interpreter {
                         mark_supply_live_tapped(sid);
                         let quit_cb = quit_cbs.next();
                         let done_cb = done_cbs.next().filter(|d| !d.is_nil());
-                        let thread_interp = self.clone_for_thread();
+                        let thread_interp = self.clone_for_thread_for_block(&cb);
                         let close_flag = rx.close_flag();
                         let close_id = register_act_loop_close(close_flag.clone());
                         // Consumer-side tap callback: raku does not route its
@@ -820,6 +806,11 @@ impl Interpreter {
                                     let mut quit = false;
                                     crate::runtime::proc_spawn::pump_pipe(stdout, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
+                                        if let Some(sid) = sid {
+                                            crate::runtime::native_methods::forward_stream_bytes(
+                                                sid, &raw, false,
+                                            );
+                                        }
                                         if bin_mode {
                                             if !sinks.is_empty() {
                                                 sinks.emit(make_buf_value(chunk));
@@ -843,6 +834,9 @@ impl Interpreter {
                                     // (the channel/`collected` path above only handles the
                                     // default UTF-8 case).
                                     if let Some(sid) = sid {
+                                        crate::runtime::native_methods::forward_stream_bytes(
+                                            sid, &raw, true,
+                                        );
                                         set_supply_collected_bytes(sid, raw);
                                     }
                                     collected
@@ -873,6 +867,11 @@ impl Interpreter {
                                     let mut quit = false;
                                     crate::runtime::proc_spawn::pump_pipe(stderr, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
+                                        if let Some(sid) = sid {
+                                            crate::runtime::native_methods::forward_stream_bytes(
+                                                sid, &raw, false,
+                                            );
+                                        }
                                         if bin_mode {
                                             if !sinks.is_empty() {
                                                 sinks.emit(make_buf_value(chunk));
@@ -892,6 +891,9 @@ impl Interpreter {
                                         }
                                     }
                                     if let Some(sid) = sid {
+                                        crate::runtime::native_methods::forward_stream_bytes(
+                                            sid, &raw, true,
+                                        );
                                         set_supply_collected_bytes(sid, raw);
                                     }
                                     collected
@@ -1362,6 +1364,15 @@ impl Interpreter {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
                 }
                 attrs.insert("supply_selected".to_string(), Value::TRUE);
+                // `.Supply(:bin)` delivers the merged output as `Buf`s: both
+                // readers emit bytes into the merged channel.
+                let requested_bin = args.iter().any(
+                    |arg| matches!(arg.view(), ValueView::Pair(key, value) if key == "bin" && value.truthy()),
+                );
+                if requested_bin {
+                    attrs.insert("stdout_mode".to_string(), Value::str_from("bin"));
+                    attrs.insert("stderr_mode".to_string(), Value::str_from("bin"));
+                }
                 Ok((attrs.get("supply").cloned().unwrap_or(Value::NIL), attrs))
             }
             ProcAsyncOp::Print | ProcAsyncOp::Put | ProcAsyncOp::Say => {

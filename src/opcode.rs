@@ -2237,8 +2237,9 @@ pub(crate) enum OpCode {
     /// literal's named-lane element `\(:$a)`) that intends the in-band
     /// named marker to reach the callee's binder. Same payload and runtime
     /// shape as `MakePair` (pop value, pop key, push a Pair) — only the
-    /// resulting flavour differs.
-    MakeNamedArg,
+    /// resulting flavour differs. `readonly` records a plain readonly scalar
+    /// parameter operand, whose binding remains readonly through transport.
+    MakeNamedArg { readonly: bool },
     /// Convert Pair(k,v) → ValuePair(Str(k),v) so it's treated as positional arg
     ContainerizePair,
 
@@ -2836,6 +2837,12 @@ pub(crate) enum OpCode {
         /// callframe in Raku, so it must contribute an anonymous frame to a
         /// backtrace captured while executing inside it.
         is_bare_block: bool,
+        /// True for the body of a routine that does not return a container
+        /// (no `is rw`/`is raw`/`return-rw`): its tail value is decontainerized
+        /// before the LEAVE/KEEP queue runs, so a phaser that writes through
+        /// the container the tail left on the stack cannot change what the
+        /// caller reads (#15491).
+        decont_result: bool,
     },
     /// Lightweight block scope for an `if`/`unless`/`else` branch body that
     /// declares a block-local `my`. Unlike `BlockScope` (which does a full
@@ -5132,6 +5139,7 @@ mod const_pool_dedup {
             post_start: 3,
             end: 3,
             is_bare_block: true,
+            decont_result: false,
         });
         code.ops.push(OpCode::LoadNil);
         code.ops.push(OpCode::SetLocalDecl {
@@ -5479,6 +5487,7 @@ pub(crate) fn compiled_routine_metadata(
                 &effective_param_defs,
                 body,
             ),
+            result_is_fresh_call: crate::ast::result_decont::raw_result_is_fresh_call(body),
             registration_identity: crate::ast::registration_identity_fingerprint(
                 params,
                 &effective_param_defs,
@@ -5603,11 +5612,17 @@ fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
 
 /// Names a class (or role) body `my`/`state`-declares at its own top level (ADR-0019
 /// D6-1), mirroring `persist_class_body_statics`'s `declared_statics` scan:
-/// a top-level (unflattened) `Stmt::VarDecl` that is neither `our` nor
-/// `dynamic`. Precomputed once at plan lowering instead of re-walked on
-/// every registration.
+/// a top-level `Stmt::VarDecl` that is neither `our` nor `dynamic`. A bound
+/// `@`/`%` declaration (`my %h := ...`) is wrapped in a parser
+/// `SyntheticBlock`, which is not a scope: its declaration is the body's own,
+/// so the synthetic blocks are opened (a missed one left the name out of the
+/// class's statics and its methods read a same-named lexical of whichever
+/// module was loaded first). Precomputed once at plan lowering instead of
+/// re-walked on every registration.
+// Cost: O(n), n = statements of the body plus those in its synthetic blocks.
 fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
-    body.iter()
+    crate::ast::scope_statements(body)
+        .into_iter()
         .filter_map(|stmt| match stmt {
             Stmt::VarDecl {
                 name,
@@ -7538,7 +7553,7 @@ pub(crate) struct CompiledCode {
     /// membership (the whole point is the mutation analysis never saw the write).
     ///
     /// SCALARS and `&` code lexicals. The `@`/`%` half of the same complement is
-    /// `needs_cell_unvouched_containers` — same rule, different delivery site.
+    /// `needs_cell_captured_containers` — same rule, different delivery site.
     ///
     /// `&` used to be in NEITHER set, on the reasoning that "a `Sub` value must
     /// not be boxed, and rebinding `&f` is a name-write the vouch already sees".
@@ -7568,8 +7583,21 @@ pub(crate) struct CompiledCode {
     /// name's process-wide meaning. See
     /// `news/2026-09/a-captured-parameter-gets-the-cell-too.md`.
     pub(crate) needs_cell_unvouched_locals: Vec<Symbol>,
-    /// The `@`/`%` half of `needs_cell_unvouched_locals`: own container lexicals
-    /// an escaping child closure captures that this frame cannot vouch for.
+    /// Own container lexicals (`@`/`%`) an escaping child closure captures, plus
+    /// those a nested closure rebinds. Every one gets a shared `ContainerRef`
+    /// cell at its declaration.
+    ///
+    /// ADR-16595 rule 1: this used to be only the complement of the ADR-0055
+    /// vouch (`needs_cell_unvouched_containers`), on the reasoning that a vouched
+    /// capture already resolves to its own binding. That holds on one thread
+    /// only. A vouched container (the owning frame never writes it) that a
+    /// `tap` or `.then` callback captures and later runs on another thread had
+    /// no cell, so that thread could reach it only through the name-keyed
+    /// `shared_vars` lane, and only because some unrelated spawn had published
+    /// it (`supply-block-nested-whenever-serialize.t`'s `@log`). Thread escape
+    /// cannot be decided at compile time, so every escaping capture gets the
+    /// cell; the vouch keeps only its single-thread read role
+    /// (`authoritative_free_vars`).
     ///
     /// The container lane exists because the hijack `needs_cell_unvouched_locals`
     /// closes is NOT a staleness defect. A container is reference-shared, so the
@@ -7608,7 +7636,7 @@ pub(crate) struct CompiledCode {
     /// A second exclusion, for a name a THREAD-escaping nested closure
     /// captures, was retired once ADR-0068 synchronized the celled store
     /// (`news/2026-09/thread-escaping-container-cell-exclusion-retired.md`).
-    pub(crate) needs_cell_unvouched_containers: Vec<Symbol>,
+    pub(crate) needs_cell_captured_containers: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
     /// literal loaded via `OpCode::LoadRegexClosure` closes over its defining
@@ -7648,6 +7676,12 @@ pub(crate) struct CompiledCode {
     /// than declared by the creator, and all non-plain-lexical names (dynamics,
     /// the topic, `self`, `__mutsu_*`) — keeps the don't-overwrite merge.
     pub(crate) authoritative_free_vars: Vec<Symbol>,
+    /// The subset of this code's free variables that an ENCLOSING ROUTINE (a
+    /// method or sub around this nested `sub`) declares. They are lexically
+    /// nearer than a same-named `my` in the surrounding class/package body, so
+    /// a read must not resolve to the package store (`package_scope_lexical`)
+    /// ahead of the enclosing routine's own binding (#15986).
+    pub(crate) routine_scoped_free: Vec<Symbol>,
     /// Locals whose own `my $x = ...` *initializer* creates a closure that
     /// captures `$x` itself — the self-recursive closure (`my $f = -> $n { ...
     /// $f($n-1) ... }`). The capture op runs BEFORE the declaration's store, so
@@ -7791,6 +7825,11 @@ pub(crate) struct CompiledCode {
     /// only to throw it away. Over-approximating is always safe: a false
     /// positive just keeps the old behaviour.
     pub(crate) may_observe_named_slurpy: bool,
+    /// True if this code, or a closure nested in it, reads `&?ROUTINE`. The
+    /// creating frame then binds the enclosing routine into the closure it
+    /// builds (`build_closure`), because `&?ROUTINE` is a lexical: a block that
+    /// runs after its routine returned (a lazy `map`) still means THAT routine.
+    pub(crate) reads_routine_magical: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `rakuast::supply_lower`).
@@ -7874,6 +7913,10 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// #14371: one memo per string constant, remembering the routine a
+    /// `LexImportCall` site naming that constant resolved to, for one
+    /// lexical-import-set generation (see `exec_lex_import_call_site`).
+    pub(crate) lex_import_sites: crate::value::LexImportSiteCaches,
     /// Per-string-constant memo for `SetVarType*`'s constraint resolution
     /// (see [`crate::value::TypeDeclSiteCaches`]).
     pub(crate) type_decl_sites: crate::value::TypeDeclSiteCaches,
@@ -8453,6 +8496,7 @@ impl CompiledCode {
             static_name_lookup: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
+            reads_routine_magical: false,
             source_line: None,
             is_pointy_block: false,
             is_whatever_code: false,
@@ -8519,10 +8563,11 @@ impl CompiledCode {
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_unvouched_locals: Vec::new(),
-            needs_cell_unvouched_containers: Vec::new(),
+            needs_cell_captured_containers: Vec::new(),
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             authoritative_free_vars: Vec::new(),
+            routine_scoped_free: Vec::new(),
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
@@ -8538,6 +8583,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
@@ -8822,6 +8868,18 @@ impl CompiledCode {
     pub(crate) fn capture_free_var_set(&self) -> &rustc_hash::FxHashSet<Symbol> {
         self.free_var_sym_set
             .get_or_init(|| self.free_var_syms.iter().copied().collect())
+    }
+
+    /// Whether `name` is mentioned by this chunk: one of its free variables, or
+    /// a string constant (a type, bareword or routine name an op carries).
+    // Cost: O(c), c = constants of the chunk.
+    pub(crate) fn mentions_name(&self, name: &Symbol) -> bool {
+        self.capture_free_var_set().contains(name)
+            || name.with_str(|n| {
+                self.constants
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Str(s) if s.as_str() == n))
+            })
     }
 
     /// The enum-bare env keys (`enum_bare_key`) of this chunk's free variables.
@@ -9238,6 +9296,19 @@ impl CompiledCode {
     /// `declared_here`) and `compute_free_vars`.
     // Cost: O(l), l = locals; once per compiled chunk.
     fn compute_fresh_locals(&mut self) {
+        // An `@`/`%` slot whose binding a `:=` rebinds after its declaration
+        // (here or in a nested closure) can carry a typed container's
+        // constraint by name from then on (`runtime_var_bind_meta`): it is not
+        // an untyped slot, whatever its declaration said. Slots rebound this
+        // way are final only now (`compute_free_vars` folds the closures').
+        for &slot in &self.rebound_slots {
+            if let Some(desc) = self.binding_descs.get_mut(slot as usize)
+                && !desc.flags.simple_scalar_local()
+                && desc.declared_constraint == crate::binding_desc::DeclaredConstraint::Untyped
+            {
+                desc.declared_constraint = crate::binding_desc::DeclaredConstraint::Unrecorded;
+            }
+        }
         for (desc, sym) in self.binding_descs.iter_mut().zip(self.locals_sym.iter()) {
             // The "initialize once per declaration site" marker of an
             // expression-position container declaration (`==> my @v`,
@@ -9273,7 +9344,7 @@ impl CompiledCode {
     /// variable): only [`crate::binding_desc::BindingDesc::declared_here`]
     /// follows from it.
     pub(crate) fn note_declared_local(&mut self, name: &str) {
-        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Unrecorded);
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Declared);
     }
 
     /// Record that `name` is out of the bake's reach — a trait was applied to
@@ -9344,6 +9415,17 @@ impl CompiledCode {
                 if let Some(&c) = pending.get(name.as_str()) {
                     desc.declared_here = true;
                     if desc.flags.simple_scalar_local() {
+                        desc.declared_constraint = match c {
+                            crate::binding_desc::DeclaredConstraint::Declared => {
+                                crate::binding_desc::DeclaredConstraint::Unrecorded
+                            }
+                            other => other,
+                        };
+                    } else if c == crate::binding_desc::DeclaredConstraint::Untyped {
+                        // An `@`/`%` declared without a constraint, in every
+                        // declaration of its slot (a typed one would have
+                        // folded this to `Conflicting`): a store has none to
+                        // check, so it skips the by-name record probe.
                         desc.declared_constraint = c;
                     }
                 }
@@ -10035,6 +10117,36 @@ impl CompiledCode {
         )
     }
 
+    /// Whether this body is a straight line of local reads and `nqp::` ops
+    /// that name no lexical, and none of the locals it reads is the frame
+    /// fixture `?CLASS` / `?ROLE`: it cannot observe a role's type parameters,
+    /// the role package's statics or the class a `::?CLASS` invocant captured
+    /// (`CArray`'s `ASSIGN-POS` / `AT-POS` are `nqp::bindpos_n(self, $pos,
+    /// $value)`), so a call may skip binding them (#16215).
+    // Cost: O(n), n = ops of the chunk.
+    pub(crate) fn ignores_role_context(&self) -> bool {
+        self.closure_compiled_codes.is_empty()
+            && self.ops.iter().all(|op| match op {
+                OpCode::GetLocal(slot) => self
+                    .locals
+                    .get(*slot as usize)
+                    .is_some_and(|name| !matches!(name.as_str(), "?CLASS" | "?ROLE")),
+                OpCode::NqpOp { id, .. } => !nqp_op_names_lexical(*id, false),
+                _ => false,
+            })
+    }
+
+    /// Whether the local named `name` is mirrored into `env` on store
+    /// (`needs_env_sync`): some by-name reader of this frame can read it.
+    // Cost: O(l), l = locals of the chunk.
+    pub(crate) fn local_needs_env_sync(&self, name: &str) -> bool {
+        self.locals
+            .iter()
+            .position(|l| l == name)
+            .and_then(|slot| self.needs_env_sync.get(slot).copied())
+            .unwrap_or(false)
+    }
+
     /// Whether this routine's parameters -- and the stores to its slot-only
     /// locals -- must be mirrored into `env` by name: a reflective op that can reach another frame's lexical exists
     /// somewhere, or this chunk (or a closure nested in it) looks one up by a
@@ -10127,6 +10239,20 @@ impl CompiledCode {
                 // `::('Foo::Bar')`): a sigiled constant or a name computed at
                 // run time may be a variable of the running frame (#13595).
                 OpCode::IndirectTypeLookup => !self.indirect_lookup_names_type(i),
+                // `PROCESS::<$x>` reads the process's dynamic variables (`$*x`,
+                // the env keys that start with `*`), which are never
+                // slot-only, so no frame has to mirror a local into `env` for
+                // it. One such read (Cro's `UnhandledErrorReporter`) latched
+                // the process-global flag and put every `my` declaration of
+                // every other chunk on the env-mirroring path (#9170).
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx)
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "PROCESS::"
+                    ) =>
+                {
+                    false
+                }
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
                 | OpCode::GetOuterVar { .. }
@@ -10920,6 +11046,21 @@ impl CompiledCode {
         declared
     }
 
+    /// Whether a closure nested anywhere below this code, reached only through
+    /// closures that do not themselves escape, escapes and captures `sym`.
+    // Cost: O(c * f), c = closures in this subtree, f = their free variables;
+    // compile time only.
+    pub(crate) fn captured_by_escaping_descendant(&self, sym: Symbol) -> bool {
+        self.closure_compiled_codes
+            .iter()
+            .enumerate()
+            .any(|(i, child)| {
+                child.free_var_syms.contains(&sym)
+                    && (self.closure_escapes.get(i).copied().unwrap_or(false)
+                        || child.captured_by_escaping_descendant(sym))
+            })
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
@@ -11062,8 +11203,16 @@ impl CompiledCode {
                     self.constants.get(idx as usize).map(Value::view)
             {
                 for item in items.iter() {
-                    // Entries are either `Str(name)` or `Pair(name, Int(slot))`.
-                    let name = match item.view() {
+                    // Entries are `Str(name)` or `Pair(name, Int(slot))`; a
+                    // named argument wraps its descriptor as
+                    // `[FALSE, descriptor]` (`add_arg_sources_constant`), and
+                    // `f :p($y)` can write `$y` through an `is rw`/`is raw`
+                    // parameter just as `f $y` can.
+                    let descriptor = match item.view() {
+                        ValueView::Array(parts, ..) if parts.len() == 2 => parts[1].clone(),
+                        _ => item.clone(),
+                    };
+                    let name = match descriptor.view() {
                         ValueView::Str(s) => Some(s.to_string()),
                         ValueView::Pair(k, _) => Some(k.to_string()),
                         _ => None,
@@ -11078,6 +11227,11 @@ impl CompiledCode {
                     // `&f = ...` rebind is a name-write and is still caught; an
                     // `is raw` param rebinding a passed `&`-arg remains a known
                     // gap of this analysis.
+                    // A named argument's source is encoded `key=var`.
+                    let name = name.map(|n| match n.split_once('=') {
+                        Some((_, var)) => var.to_string(),
+                        None => n,
+                    });
                     if let Some(name) = name
                         && !name.starts_with('&')
                     {
@@ -11361,7 +11515,7 @@ impl CompiledCode {
         // that declares the name, which records the name's slots as rebound
         // (see `free_var_rebinds`).
         // The own names a nested closure rebinds (see the container lane of
-        // `needs_cell_unvouched_containers` below).
+        // `needs_cell_captured_containers` below).
         let nested_rebound_own: Vec<Symbol> = self
             .closure_compiled_codes
             .iter()
@@ -11539,7 +11693,14 @@ impl CompiledCode {
                         .free_var_parent_slots
                         .get(fv_i)
                         .is_none_or(Option::is_some);
-                if is_own && escapes && declared_at_emit {
+                // A non-escaping closure (a `xx` thunk, a call-argument block)
+                // that holds an escaping closure capturing the name hands the
+                // capture on: the escape happens one level down, but the owner
+                // is still this frame (ADR-16595 rule 1).
+                if is_own
+                    && declared_at_emit
+                    && (escapes || nested.captured_by_escaping_descendant(*sym))
+                {
                     escaping_captured_own.insert(*sym);
                 }
                 if is_own && self_mutated.contains(sym) {
@@ -11797,7 +11958,17 @@ impl CompiledCode {
         // semantics at call time — see `authoritative_free_vars`. This is the one
         // place that knows `captured_mutated`, and the nested codes are still
         // uniquely owned here, so `make_mut` does not clone.
-        let vouched: std::collections::HashSet<Symbol> = self
+        // A type capture (`::T` in the signature, the local `__type_capture__T`)
+        // binds `T` once and is never reassigned, so a closure that names `T`
+        // keeps ITS creator's type however the caller has bound `T`.
+        let type_capture_syms: Vec<Symbol> = self
+            .locals
+            .iter()
+            .filter_map(|name| name.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX))
+            .filter(|bare| !bare.is_empty())
+            .map(Symbol::intern)
+            .collect();
+        let mut vouched: std::collections::HashSet<Symbol> = self
             .locals
             .iter()
             .filter(|name| crate::env::is_user_lexical_or_term_key(name))
@@ -11823,6 +11994,36 @@ impl CompiledCode {
                         || self.scalar_bind_locals.contains(sym))
             })
             .collect();
+        // A `hyper for` / `race for` runs its inline body bytecode on worker
+        // threads, not a closure, so the closure scan above never sees the
+        // body's references as captures. Every own lexical the body names is
+        // an escaping capture all the same (ADR-16595 rule 2): it gets the
+        // declaration-site cell, so a worker reaches it through the cell
+        // instead of a name-keyed lane.
+        for (pos, op) in self.ops.iter().enumerate() {
+            let OpCode::ForLoop(spec) = op else { continue };
+            if !spec.threaded {
+                continue;
+            }
+            let (start, end) = (pos + 1, (spec.body_end as usize).min(self.ops.len()));
+            let mut touched = vec![false; self.locals.len()];
+            self.mark_name_access_slots(start, end, &mut touched);
+            self.mark_local_access_slots(start, end, &mut touched);
+            // Names the body declares itself are per-iteration, not shared.
+            let mut declared_in_body: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
+            for body_op in &self.ops[start.min(end)..end] {
+                if let OpCode::SetLocalDecl { slot, .. } = body_op {
+                    declared_in_body.insert(*slot as usize);
+                }
+            }
+            for (slot, hit) in touched.iter().enumerate() {
+                if *hit && !declared_in_body.contains(&slot) {
+                    escaping_captured_own.insert(Symbol::intern(&self.locals[slot]));
+                }
+            }
+        }
+        vouched.extend(type_capture_syms);
         // ADR-0055 §7.3 / ADR-0025 slice 2: the dichotomy "an escaping-captured
         // plain scalar is either authoritative or a shared cell" is only
         // exhaustive if the complement of the vouch also gets a cell. Compute it
@@ -11846,7 +12047,7 @@ impl CompiledCode {
                         // `box_captured_lexicals` boxes `$` scalars and, for this
                         // unvouched-escaping case only, `&` code lexicals; an
                         // `@`/`%` lexical takes the decl-site container cell
-                        // instead (`needs_cell_unvouched_containers`, just below).
+                        // instead (`needs_cell_captured_containers`, just below).
                         //
                         // `&` used to be excluded here alongside `@`/`%`, but it has
                         // no decl-site cell to fall back on, so it landed in NEITHER
@@ -11858,9 +12059,12 @@ impl CompiledCode {
                     })
                 }),
         );
-        // The container half of the same complement. It is delivered at the
+        // The container half. Unlike the scalar half above it is NOT limited to
+        // the vouch's complement: a vouched container still needs the cell to be
+        // reachable from another thread without the name-keyed lane (ADR-16595
+        // rule 1; see the field's doc comment). It is delivered at the
         // DECLARATION site rather than at each capture, so the set is computed
-        // here (where the vouch is known) but consumed by `exec_set_local_op`.
+        // here but consumed by `exec_set_local_op`.
         //
         // An `is <Type>` variable trait used to exclude its name here as well.
         // `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain Hash at the
@@ -11882,12 +12086,10 @@ impl CompiledCode {
         // reseats and this frame's slot shares. Without it the rebind landed
         // in the closure's env alone, and only the call's return merge carried
         // it back (ADR-12529 §3, slice 25).
-        let mut decl_cell_containers: std::collections::HashSet<Symbol> = escaping_captured_own
-            .into_iter()
-            .filter(|sym| !vouched.contains(sym))
-            .collect();
+        let mut decl_cell_containers: std::collections::HashSet<Symbol> =
+            escaping_captured_own.into_iter().collect();
         decl_cell_containers.extend(nested_rebound_own);
-        self.needs_cell_unvouched_containers =
+        self.needs_cell_captured_containers =
             sorted_by_name(decl_cell_containers.into_iter().filter(|sym| {
                 sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
             }));
@@ -12205,6 +12407,7 @@ impl CompiledCode {
         // A closure nested in a method body resolves `%_` through the method's
         // env, so its mention counts as this code's.
         self.may_observe_named_slurpy |= code.may_observe_named_slurpy;
+        self.reads_routine_magical |= code.reads_routine_magical;
         let idx = self.closure_compiled_codes.len() as u32;
         self.closure_compiled_codes.push(Arc::new(code));
         self.closure_escapes.push(escapes);
@@ -12234,6 +12437,16 @@ impl CompiledCode {
             && s.as_str() == "samewith"
         {
             self.uses_samewith = true;
+        }
+        if !self.reads_routine_magical
+            && let OpCode::GetCodeVar(name_idx)
+            | OpCode::GetCodeVarLocal { name_idx, .. }
+            | OpCode::CallOnCodeVar { name_idx, .. } = &op
+            && let Some(v) = self.constants.get(*name_idx as usize)
+            && let ValueView::Str(s) = v.view()
+            && s.as_str() == "?ROUTINE"
+        {
+            self.reads_routine_magical = true;
         }
         if !self.uses_callframe {
             match &op {
@@ -14206,6 +14419,11 @@ pub(crate) struct CompiledFunction {
     pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
     /// Memoized [`Self::package_is_routine_scoped`].
     pub(crate) package_routine_scoped_cache: std::sync::OnceLock<bool>,
+    /// Memoized signature-level half of the positional-light eligibility
+    /// (`Interpreter::light_signature_static_ok` with no `where` verified): it
+    /// reads only this routine's own fields, so it cannot change after the
+    /// routine is built.
+    pub(crate) light_signature_cache: std::sync::OnceLock<bool>,
 }
 
 impl CompiledFunction {
@@ -14817,6 +15035,7 @@ mod compiled_fns_identity {
             package_sym_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             package_routine_scoped_cache: std::sync::OnceLock::new(),
+            light_signature_cache: std::sync::OnceLock::new(),
         }
     }
 

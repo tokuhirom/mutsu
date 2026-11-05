@@ -204,7 +204,7 @@ impl Interpreter {
             quoted: true, sugar: false,
         })];
         let params: Vec<String> = sub_param_defs.iter().map(|p| p.name.clone()).collect();
-        let def = FunctionDef {
+        let mut def = FunctionDef {
             is_cached: false,
             package: Symbol::intern(class_name),
             name: Symbol::intern(op_name),
@@ -238,6 +238,12 @@ impl Interpreter {
             body_facts_cache: std::sync::OnceLock::new(),
             routine_cell: Default::default(),
         };
+        // The forwarding body is compiled once here, so a call of the exported
+        // sub runs bytecode instead of recompiling the AST (#14572).
+        let compiled = self.otf_compile_function_def_in_sets(&def, &[]);
+        def.compiled = Some(std::sync::Arc::new(crate::compiled_lazy::RoutineBody::plain(
+            crate::compiled_lazy::LazyFn::owned(compiled),
+        )));
         // Register as a typed multi candidate under the class package, mirroring
         // the `multi sub` registration keys so `import` copies it and operator
         // dispatch type-checks the invocant.

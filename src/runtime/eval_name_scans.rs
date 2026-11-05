@@ -135,6 +135,18 @@ impl<'ast> Visit<'ast> for ModuleNames {
             self.names.insert(name.to_string());
         }
     }
+
+    // `require Module` declares the name `Module` for the statements after it.
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if let Expr::Call { name, args, .. } = expr
+            && name.as_str() == "require"
+            && let Some(Expr::Literal(module)) = args.first()
+            && let crate::value::ValueView::Package(module) = module.view()
+        {
+            self.names.insert(module.resolve());
+        }
+        walk_expr(self, expr);
+    }
 }
 
 /// The constants, value terms and types the `use`s of a subtree import, by
@@ -206,6 +218,9 @@ struct UndeclaredName<'a> {
     /// The line of the statement being walked, for the mainline's message.
     line: i64,
     found_line: i64,
+    /// The import sets the unit's own top-level `use`s fill (the pre-run
+    /// bound its routines there, not in the registry or the env).
+    unit_sets: Vec<Symbol>,
 }
 
 impl UndeclaredName<'_> {
@@ -249,6 +264,10 @@ impl UndeclaredName<'_> {
             // A routine an enclosing block's `use` bound in its lexical import
             // set, not in the registry (ADR-8751).
             || interp.lexically_imported_routine(name)
+            || (!self.unit_sets.is_empty()
+                && interp
+                    .lexical_import_binding(&self.unit_sets, Symbol::intern(name))
+                    .is_some())
             // The env entry `_` is the topic `$_`, never a term: a sigilless
             // `_` lives under its term key `\_` (ADR-12441).
             || (name != "_" && interp.env().contains_key(name))
@@ -361,6 +380,11 @@ impl Interpreter {
             type_like_only,
             line: 1,
             found_line: 1,
+            unit_sets: crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
+                .into_iter()
+                .flatten()
+                .chain(self.module.eval_prerun_sets.iter().copied())
+                .collect(),
         };
         walk_stmts(&mut scan, stmts);
         scan.found.map(|name| (name, scan.found_line))
@@ -478,6 +502,13 @@ impl Interpreter {
     // Cost: O(n * l), n = size of the unit's AST, l = cost of one
     // registry/env lookup.
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // A class or sub named by a run-time value declares a name the walk cannot
+        // see: no bareword of the unit is judged (as for the mainline check).
+        let mut dynamic = super::undeclared_names::DynamicDeclaration::default();
+        walk_stmts(&mut dynamic, stmts);
+        if dynamic.found {
+            return Ok(());
+        }
         let mut declared = scope_blind_declared_names(stmts);
         // What the snippet's `use`/`need` statements bring in: the modules
         // themselves and the types their sources declare (`use A; A.new`).

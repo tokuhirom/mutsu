@@ -153,16 +153,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // `RakuAST::Sub.compile-time-value`: the routine a resolved call of a unit
-    // sub stands for (#15610), read from the interpreter on demand.
-    MethodRow {
-        owner: "RakuAST::Sub",
-        name: "compile-time-value",
-        arity: 0,
-        handler: Handler::Interp(sub_value),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     // `RakuAST::Parameter.meta-object`: the `Parameter` the node declares
     // (`static::Analyzer` reads its type, `rw`, `copy`, ...; #15610).
     MethodRow {
@@ -324,7 +314,7 @@ fn method_value(
 
 /// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
 // Cost: O(1) plus the interpreter's lookup of the name.
-fn sub_value(
+pub(super) fn sub_value(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
@@ -442,7 +432,7 @@ fn sub_value(
 
 /// `Parameter.meta-object` of a `RakuAST::Parameter` node.
 // Cost: O(size of the parameter node).
-fn parameter_meta_object(
+pub(super) fn parameter_meta_object(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
@@ -464,9 +454,11 @@ fn parameter_meta_object(
     if let Some(own) = routine_parameter(interp, node) {
         return Some(Ok(own));
     }
-    Some(crate::rakuast::parameter_param_def(node).map(|def| {
-        crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
-    }))
+    Some(
+        crate::rakuast::parameter_param_def(&crate::scope::NameScope::default(), node).map(|def| {
+            crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
+        }),
+    )
 }
 
 /// The `Parameter` the declared routine holds for the node's position.
@@ -728,6 +720,14 @@ fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
+    // The implicit parameters of a method's signature, and the expansion of a
+    // public attribute variable, are visited though the source wrote neither.
+    if let Some(with_signature) = crate::rakuast::implicit_signature::method_with_signature(node) {
+        return field_children(&with_signature);
+    }
+    if let Some(expansion) = crate::rakuast::implicit_signature::public_attribute_expansion(node) {
+        return vec![expansion];
+    }
     // A field Rakudo fills with an empty node is visited too.
     if let Some(filled) = crate::rakuast::empty_fields::materialized(node) {
         return children(&filled);
@@ -849,6 +849,44 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
+        // Rakudo's `Name` visits the expression of each `::(EXPR)` part
+        // (`<::("w")>`, `::("w")`) and nothing else of its parts.
+        RakuAstClass::Name => {
+            let exprs: Vec<Value> = node
+                .fields
+                .iter()
+                .filter_map(|f| match &f.value {
+                    RakuAstFieldValue::List(items) => Some(items),
+                    _ => None,
+                })
+                .flatten()
+                .filter_map(|part| match part.view() {
+                    ValueView::RakuAst(part)
+                        if part.class == crate::rakuast::RakuAstClass::NamePartExpression =>
+                    {
+                        part.fields.iter().find_map(|f| match &f.value {
+                            RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
+                                Some(v.clone())
+                            }
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                })
+                .collect();
+            (!exprs.is_empty()).then_some(exprs)
+        }
+        // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
+        RakuAstClass::TermEnum => {
+            let identifier = node.fields.iter().find_map(|f| match &f.value {
+                RakuAstFieldValue::Node(v) => v.as_str().map(str::to_string),
+                _ => None,
+            })?;
+            Some(vec![crate::rakuast::name_node_at(
+                &identifier,
+                &node.origin,
+            )])
+        }
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))
@@ -884,10 +922,17 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             Some(field_children(&rest))
         }
         RakuAstClass::Parameter => {
-            // An explicit type (a `Type::Simple`, not the implicit `Any`
-            // setting type) belongs to the declaration of the target too.
+            // An explicit type (a `Type::Simple` or `Int:D`'s
+            // `Type::Definedness`, not the implicit `Any` setting type)
+            // belongs to the declaration of the target too.
             let explicit_type = node_value("type").filter(|t| {
-                matches!(t.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::TypeSimple)
+                matches!(t.view(), ValueView::RakuAst(n)
+                if matches!(
+                    n.class,
+                    RakuAstClass::TypeSimple
+                        | RakuAstClass::TypeDefinedness
+                        | RakuAstClass::TypeAnyDefinedness
+                ))
             })?;
             let target = node_value("target")?;
             let ValueView::RakuAst(target_node) = target.view() else {

@@ -24,6 +24,7 @@ fn collect_use_declared_type_names(
     interp: &Interpreter,
     module: &str,
     extra_dirs: &[String],
+    exported_only: bool,
     out: &mut HashSet<String>,
 ) -> bool {
     // `use Foo:auth<zef:x>` carries its dist selectors appended to the module
@@ -71,7 +72,18 @@ fn collect_use_declared_type_names(
         }
         if j > start {
             let name: String = bytes[start..j].iter().collect();
-            if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+            // A module the EVAL's pre-run already loaded imported what it
+            // exports and no more: a declaration without `is export` stays
+            // unknown to the unit.
+            let exported = !exported_only || {
+                let mut k = j;
+                while k < bytes.len() && !matches!(bytes[k], '{' | ';') {
+                    k += 1;
+                }
+                let traits: String = bytes[j..k].iter().collect();
+                traits.contains("is export")
+            };
+            if exported && name.starts_with(|c: char| c.is_ascii_uppercase()) {
                 // `role A::Greeter is export` is imported as `Greeter`.
                 let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(&name));
                 if short.as_str() != name && !short.as_str().is_empty() {
@@ -203,7 +215,7 @@ impl Interpreter {
             &[],
         )
         .out;
-        collect_use_declared_type_names(self, module, &lib_dirs, &mut HashSet::new())
+        collect_use_declared_type_names(self, module, &lib_dirs, false, &mut HashSet::new())
     }
 
     /// Every type name this unit declares, plus those its `use`d modules
@@ -222,10 +234,13 @@ impl Interpreter {
         )
         .out;
         let harvest = |module: &str, out: &mut HashSet<String>| {
-            // A module the EVAL's pre-run already loaded is in the
-            // interpreter's own scope; its source says more than it imports.
-            !self.module.eval_prerun_modules.contains(module)
-                && collect_use_declared_type_names(self, module, &lib_dirs, out)
+            // A module the EVAL's pre-run already loaded binds its exports in
+            // an import region the registry's short-name lookup does not read
+            // (`use NativeCall; sub f(Pointer $p)`), so the exported
+            // declarations of its source count, and only those.
+            let preran = self.module.eval_prerun_modules.contains(module);
+            // Its hook, if any, already ran: the import set is known.
+            collect_use_declared_type_names(self, module, &lib_dirs, preran, out) && !preran
         };
         scan(
             TypeDecls {
@@ -279,7 +294,14 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let declared = Self::unit_declared_types(stmts).types;
+        // The types the unit's own `use` statements bring in count too
+        // (`use NativeCall; has Pointer[Pointer] $.p`): they have not run yet
+        // when this check does, as for the undeclared-name check.
+        let types = self.eval_declared_types(stmts);
+        if types.imports_through_export_hook {
+            return Ok(());
+        }
+        let declared = types.types;
         if let Some(name) = scan(TypeArgs::new(self, &declared), stmts).found {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(
@@ -385,9 +407,7 @@ impl Interpreter {
                 let (types, terms) = caller_names;
                 let stmts = crate::rakuast::frontend::round_trip_eval(
                     &stmts,
-                    || types,
-                    || terms,
-                    op_names,
+                    crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 )?;
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
@@ -395,7 +415,8 @@ impl Interpreter {
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
                 self.check_eval_undeclared_routines(&stmts)?;
-                self.check_eval_post_declared_types(&stmts)?;
+                self.check_eval_terms_in_source_order(&stmts)?;
+                crate::rakuast::post_declared::check(&stmts, &crate::scope::NameScope::default())?;
                 let mut stmts = self.inject_eval_methods_into_class(stmts);
                 crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
                 let phaser_stmts: Vec<Stmt> = stmts

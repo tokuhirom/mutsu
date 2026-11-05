@@ -214,6 +214,26 @@ impl Compiler {
     /// boundary to carry the `is_bare_block` flag. Synthesized blocks
     /// (`Stmt::SyntheticBlock`) and non-block inline bodies (do/sub/if-branch)
     /// must keep using [`Self::compile_block_inline`] directly — they are not frames.
+    /// [`Compiler::compile_bare_block_inline`] for a unit's tail block that
+    /// declares named routines: the block's `DoBlockExpr` restores the routine
+    /// registry on exit (`scope_routines`), so a `multi infix:<->` declared in a
+    /// module's last `{ ... }` does not stay visible to the module's other
+    /// routines (#15981). Otherwise it is the inline form: same env, value on
+    /// the stack, no extra scope.
+    pub(super) fn compile_unit_tail_bare_block(&mut self, stmts: &[Stmt]) {
+        if !stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. }))
+            || Self::has_catch_or_control(stmts)
+        {
+            self.compile_bare_block_inline(stmts);
+            return;
+        }
+        let state_reset = self.emit_nested_block_state_reset(stmts);
+        self.code.emit(OpCode::PushBlockFrame);
+        self.compile_do_block_expr(stmts, &None, crate::ast::DoBlockOrigin::Desugar);
+        self.code.emit(OpCode::PopBlockFrame);
+        self.patch_nested_block_state_reset(state_reset);
+    }
+
     pub(super) fn compile_bare_block_inline(&mut self, stmts: &[Stmt]) {
         // A genuine source `{ … }` in tail (value) position is still a block
         // literal re-cloned every time its enclosing block runs, so its own
@@ -223,9 +243,25 @@ impl Compiler {
         // says `0` on every call).
         let state_reset = self.emit_nested_block_state_reset(stmts);
         self.code.emit(OpCode::PushBlockFrame);
-        self.compile_block_inline(stmts);
+        self.compile_tail_block_inline(stmts);
         self.code.emit(OpCode::PopBlockFrame);
         self.patch_nested_block_state_reset(state_reset);
+    }
+
+    /// Compile the body of a tail-position bare block inline, leaving its value
+    /// on the stack. A body that reaches a `when`/`default` goes through
+    /// `DoBlockExpr` instead: the plain inlined form has no `SucceedBarrier`, so
+    /// the matched clause's succeed would unwind out of the enclosing routine (or
+    /// the mainline, as "succeed without when clause") rather than end this block
+    /// with the clause's value -- `{ when True { say 1 }; say 2 }` as the last
+    /// statement.
+    // Cost: O(n), n = size of the block body.
+    pub(super) fn compile_tail_block_inline(&mut self, stmts: &[Stmt]) {
+        if Self::body_has_toplevel_when(stmts) && !Self::has_catch_or_control(stmts) {
+            self.compile_do_block_expr(stmts, &None, crate::ast::DoBlockOrigin::Desugar);
+        } else {
+            self.compile_block_inline(stmts);
+        }
     }
 
     /// [`Compiler::compile_bare_block_inline`]'s twin for a tail block that
@@ -442,6 +478,24 @@ impl Compiler {
                     Stmt::VarDecl { name, marks, .. }
                         if marks.bound && !name.starts_with(['@', '%']) =>
                     {
+                        self.compile_stmt(stmt);
+                        self.emit_get_named_var(name);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    // A block-final `my $*x = ...` is the statement form's
+                    // declaration too: the hand-inlined arm below stores into
+                    // the ENCLOSING scope's slot for the name (no slot of its
+                    // own), so the block's exit had nothing to take back and
+                    // the declaration outlived its block (#16199).
+                    Stmt::VarDecl {
+                        name,
+                        is_state: false,
+                        is_our: false,
+                        constant: None,
+                        is_dynamic: true,
+                        ..
+                    } if !name.starts_with(['@', '%']) => {
                         self.compile_stmt(stmt);
                         self.emit_get_named_var(name);
                         self.pop_dynamic_scope_lexical(saved);

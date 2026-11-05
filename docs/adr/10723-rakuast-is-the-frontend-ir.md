@@ -60,7 +60,7 @@ temp-var destructuring, `-<<@a` becomes a `__mutsu_hyper_prefix` call, and so on
 `.AST` runs, the distinction raku keeps is gone, so every RakuAST node that differs from rakudo's
 needs **a new marker smuggled through the internal AST** (`src/parser/` holds roughly 300
 `"__…"` internal-name string literals, many of them such markers) and **a converter arm that reverse-engineers the desugaring**
-(`src/rakuast/convert.rs` is 4k lines; `lower.rs` another 3k). Each of these is a separate
+(`src/rakuast/view.rs` is 4k lines; `lower.rs` another 3k). Each of these is a separate
 ticket — #10653, #10654, #10655 are the latest three — and the campaign has no end state:
 "renders the same node as rakudo for an arbitrary program" is unreachable by construction,
 because the information is destroyed before conversion.
@@ -121,7 +121,7 @@ runs through `lower`. This is what Stage 0 (§2.2) is for.
   (ADR-0137) and every analysis over the internal AST keep working on it. This ADR does **not**
   rewrite the compiler or add an execution engine (AGENTS.md hard rule), and it does not move
   compile-time analyses onto RakuAST.
-- **`src/rakuast/convert.rs` is retired.** Once the parser emits RakuAST for a construct, the
+- **`src/rakuast/view.rs` is retired.** Once the parser emits RakuAST for a construct, the
   internal-AST → RakuAST arm for it is dead code and is deleted. When the last arm goes, the
   module goes.
 
@@ -2246,7 +2246,7 @@ records the traits that were written, so the second mechanism could only serve a
 parse built; measured over the ratchet's 8,702 `t/` files under `MUTSU_RAKUAST=1` it was reached by
 none, and it is deleted: `routine_traits::{add_custom, method_custom_traits, custom_argument,
 has_generic_traits}`, `IsTraits::with_precedence`, `routine_source::return_type_spelling`,
-`convert::ReturnSpelling`, and the `export_tags` / `spelling` fields of `proto::ProtoDecl`.
+`view::ReturnSpelling`, and the `export_tags` / `spelling` fields of `proto::ProtoDecl`.
 `routine_node` renders the return type as the signature's `-->` and `routine_source::apply`
 replaces it with the written `returns` / `of` trait, as it already did. A routine whose folded
 fields name a trait with no written record is refused ("... and no written-trait record"). The
@@ -2280,7 +2280,7 @@ an argument list keep their place and their shape. A header whose fields name a 
 says was written is refused ("class traits without a written-trait record"); an `also is Parent;` /
 `also is rw;` lifted out of a role body stays the existing normalization boundary.
 
-Deleted: `convert::class_traits` and `parent_type_node`, `decl_traits::class_custom_traits`,
+Deleted: `view::class_traits` and `parent_type_node`, `decl_traits::class_custom_traits`,
 `role_header::{ordered_traits, lower_order}`, `RoleHeaderTrait` and `Stmt::RoleDecl::header_order` (the
 field no longer exists in the tree an ordinary parse builds either), the role arm's `DoesDecl` header
 scan for traits. Three differences from rakudo this removes, each now in
@@ -2303,7 +2303,7 @@ assignment statements is unchanged. The rest of the list is the queue for furthe
 
 ### 6.113 Signatures: a parameter records the form of its target (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
 
-Third slice of Stage 2 row 2. `convert::parameter` rebuilt a parameter's form from the execution
+Third slice of Stage 2 row 2. `view::parameter` rebuilt a parameter's form from the execution
 placeholder the parser binds it under: `__type_only__` (`sub f(Int)`), `__subsig__` (`(…)`), `@`
 (`[…]`), `__for_unpack*` / `__for_unpack_array_N` (the same two in a `for` header) and
 `__type_capture__T` (`::T`). Four spellings named one thing, and `"@"` is ambiguous by name alone.
@@ -2317,8 +2317,8 @@ of which sets the form and derives the placeholder, so the two cannot disagree. 
 `literal_parameter` read `target` and never a placeholder name.
 
 Deleted: `parameter_destructure::anonymous_destructuring_form` (the name and `__for_unpack` pattern
-matcher), `convert::{TYPE_ONLY_PARAM, ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE}`, the
-placeholder comparisons in `convert::parameter`, `named_param` and `lower`, and three hand-written
+matcher), `view::{TYPE_ONLY_PARAM, ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE}`, the
+placeholder comparisons in `view::parameter`, `named_param` and `lower`, and three hand-written
 `ParamDef` literals in the parser (`for_params`, `pointy_param`). The execution layer still binds
 under the placeholders; dropping them is the last slice of the row (#15025).
 
@@ -2328,7 +2328,7 @@ Step 2 of the §6.113 plan. A parameter's `traits` held three strings that were 
 `invocant` (a shadow of `ParamDef::is_invocant`, which nearly every reader tested as
 `is_invocant || traits.any("invocant")`), `implicit-invocant` (an invocant the source never named,
 `method (Foo:D:)`) and `does-target` (derived by `does_target::mark_does_targets`, not written).
-`convert::parameter` filtered all three out of the traits it rendered and refused a parameter whose
+`view::parameter` filtered all three out of the traits it rendered and refused a parameter whose
 bool and marker disagreed.
 
 `traits` now holds only what was written. `is_invocant` is the one invocant flag, `implicit_invocant`
@@ -2337,15 +2337,15 @@ sites in the parser, runtime, VM and compiler); `mark_params_as_invocant` sets t
 read `traits.is_empty()` as "nothing special about this parameter" counted a does target through the
 marker, so those ask `ParamDef::no_traits()` / `has_traits()`, which count it.
 
-Deleted: `IMPLICIT_INVOCANT_TRAIT`, `DOES_TARGET_TRAIT`, the trait filters in `convert::parameter` and
-`convert::parameter_traits`, the bool/marker disagreement refusal, the `invocant` / `implicit-invocant`
+Deleted: `IMPLICIT_INVOCANT_TRAIT`, `DOES_TARGET_TRAIT`, the trait filters in `view::parameter` and
+`view::parameter_traits`, the bool/marker disagreement refusal, the `invocant` / `implicit-invocant`
 / `does-target` entries of `is_builtin_param_trait` (an `is invocant` written by a program is now an
 ordinary custom trait), and the marker pushes in the parser and `lower`.
 
 ### 6.115 Signatures: an anonymous `$` / `@` / `%` parameter records its sigil (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
 
 Step 3 of the §6.113 plan. An anonymous scalar, array or hash parameter is bound under a placeholder
-name (`__ANON_STATE#`, `@__ANON_ARRAY__`, `%__ANON_HASH__`); `convert::parameter` and
+name (`__ANON_STATE#`, `@__ANON_ARRAY__`, `%__ANON_HASH__`); `view::parameter` and
 `named_param::named_parameter` recognized the name to find the bare sigil. `ParamTarget` gains
 `Anonymous(sigil)`, derived once where a `ParamDef` is built (`ParamDef::blank`, the one constructor
 `make_param` now delegates to, `lower::positional_param`, `named_param::bare_level`), and the two
@@ -2366,7 +2366,7 @@ What stays: the placeholder names themselves. They are also the names of *variab
 layer declares (`for` unpacking declares `__subsig__` / `__for_unpack*` lexicals; the signature display
 helpers `is_anonymous_param_name` and `is_plain_scalar_param_name` take a bare name that may come from a
 `VarDecl`), so a parameter keeps binding under them. The named-alias chain (step 4 of the plan) also
-stays: it is a bijection with RakuAST's `names` list, so `convert::flatten` / `lower::wrap_aliases` are a
+stays: it is a bijection with RakuAST's `names` list, so `view::flatten` / `lower::wrap_aliases` are a
 structural view, not a reconstruction of lost information. Replacing the chain would be a binder redesign
 with no `convert` code to delete.
 
@@ -2378,7 +2378,7 @@ parser nodes, the way §6.48-§6.116 did for the others. A coverage run over `t/
 reaches except error refusals, so the remaining reverse paths are exactly the shape recognizers:
 
 - `done VALUE` was `SyntheticBlock([Call emit VALUE, ReactDone])`, recognized by
-  `convert::done_value_expansion` and rendered as two statements. It is now `ParsedStmt::DoneValue(value)`,
+  `view::done_value_expansion` and rendered as two statements. It is now `ParsedStmt::DoneValue(value)`,
   lowered by `conditional_lower` to the same block. Rendering it as two statements was also wrong:
   rakudo 2026.09 keeps `done VALUE` as one `Call::Name::WithoutParentheses(done, args => ArgList(VALUE))`
   (`RakuAST::StatementPrefix::Supply` body measured), also under a statement modifier, where the old
@@ -2389,7 +2389,7 @@ reaches except error refusals, so the remaining reverse paths are exactly the sh
   `ParsedStmt::CallAssignList { head, items }`. Other `my $x = 1, 2` lists stay plain blocks (their
   tail re-reads the variable and is `DeclTail`).
 
-Deleted: `convert::done_value_expansion` and its statement-list branch, the `SyntheticBlock` arm for the
+Deleted: `view::done_value_expansion` and its statement-list branch, the `SyntheticBlock` arm for the
 call-assign list in `convert_stmt_node`, `decl_tail::convert_call_assign_list`'s block-shape matcher.
 
 The same measurement found two whitelisted roast files that failed only under `MUTSU_RAKUAST=1`
@@ -2424,7 +2424,7 @@ After §6.110 and §6.113-§6.116 the `SubDecl` / `MethodDecl` arms of `convert`
 the declaration is already its own typed node (§4), the traits come from the written record, the
 signature from `ParamDef`. What they still read were three `__`-prefixed marker traits on
 `custom_traits`. `__our_scoped` and `__anon_decl` are the scope of a `sub`, and the one place `convert`
-recovered it from was a scan of the trait list (`convert::sub_scope`).
+recovered it from was a scan of the trait list (`view::sub_scope`).
 
 `Stmt::SubDecl` gains `scope: SubScope { My, Our, Anon }` (`CompiledSubDeclPlan` carries it to the
 registrar, `register_sub_decl*` take it as a parameter). The parser sets it where it used to push
@@ -2435,7 +2435,7 @@ registrar and the parser's module-export scan now match on the field instead of 
 `custom_traits` for the string. `ANON_DECL_TRAIT` stays for packages (`anon class`), where it has the
 same job; moving it is the same change for `ClassDecl` / `RoleDecl`.
 
-Deleted: `convert::{sub_scope, OUR_SCOPED}`, the two exemptions in the "internal trait" deferral of
+Deleted: `view::{sub_scope, OUR_SCOPED}`, the two exemptions in the "internal trait" deferral of
 the `Sub` arm, the marker pushes in `routine_lower`, `routine_copy::OUR_SCOPED`,
 `module_exports::is_our_scoped`.
 
@@ -2460,7 +2460,7 @@ Second step of the marker-to-field series after §6.119. `Stmt::VarDecl` gains `
 and the `__has_initializer` entry of `custom_traits` is deleted: the parser, the lowering
 (`lower`, `var_does`, `decl_from_cell`, `split_var_decl`) set the field, and the compiler, the BEGIN
 prologue, the TRIR slot allocator and `convert` read it. A "declaration with no user traits" test that
-spelled `all(t == "__has_initializer")` is `custom_traits.is_empty()`. `convert::var_decl_statement`
+spelled `all(t == "__has_initializer")` is `custom_traits.is_empty()`. `view::var_decl_statement`
 drops the marker from its internal-trait filter and from the constant-trait check, and
 `does_declaration` sets `VarDeclParts::has_initializer` instead of rebuilding a trait list.
 
@@ -2561,8 +2561,8 @@ implicit anon-state test) had been excluding the marked declarations. They now a
 `marks.is_plain()`, so no behaviour moved.
 
 Deleted: `NAME_COLONPAIRS`, `DYNAMIC_TRAIT_ARGUMENT`, `shaped_decl::SHAPED_DECL`,
-`keyed_hash::IMPLICIT_VALUE_TYPE`, `convert::MY_SCOPED`; the five-name "internal trait" exemption in
-`convert::var_decl_statement` (only the `.=` marker is left in it); the trait-list searches in
+`keyed_hash::IMPLICIT_VALUE_TYPE`, `view::MY_SCOPED`; the five-name "internal trait" exemption in
+`view::var_decl_statement` (only the `.=` marker is left in it); the trait-list searches in
 `name_colonpairs::apply`, `decl_traits::dynamic_trait` and `keyed_hash::split`; and the marker pushes
 of the parser, the scope pass and `lower`.
 
@@ -2636,7 +2636,7 @@ absorbs the rest of the unit into the declaration and puts the header back. Dele
 `__leading_colons` (#15136) and `__mutsu_declare_how` (#15143) are `marks: PackageMarks { anon, colons,
 leading_colons, declarator }`. Deleted with them: the four constants and their builders, the
 `supersede_marker` trait tuple (now `superseded_declarator`), `PackageHead::custom_traits`,
-`convert::{is_anon_package, has_leading_colons, is_colons_package}`, and eleven `custom_traits`
+`view::{is_anon_package, has_leading_colons, is_colons_package}`, and eleven `custom_traits`
 scans/filters in the compiler, VM, runtime scans and `convert`/`role`.
 
 Measured on 2026-10-28 after these three PRs, as §2.4 asks (callgrind Ir of `-c`, `profiling` build,
@@ -2660,3 +2660,23 @@ the module load (caching the lowered tree or bytecode of a bundled module), not 
 Stage 0 and roast did not regress: `scripts/dev gate --full` on `5a30c23e` passes (lint, `make test`
 on every `t/` file under the default frontend, roast whitelist with only the 4 known environment-only
 failures).
+
+### 6.130 Stage 2 and Stage 3 are complete; what moved out (2026-10-31, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+**Stage 3 (flip the default)** was §6.122 (2026-10-27) with its leftovers deleted in §6.123–§6.129.
+**Stage 2 (the parser emits RakuAST)** is complete under the reading the maintainer fixed in
+[ADR-15334](15334-stage-2-parser-builds-typed-rakuast-nodes.md) Amendment 4 (parser-side typing, "reading
+(B)") and closed in its Amendment 5: no `SyntheticBlock` producer in the parser, no `convert` recognizer, no
+`RakuAstNode` built on the executing path, `passthrough` and `ParsedLeaf` deleted, frontend cost within the
+target.
+
+**Reconciling §2.1 "`src/rakuast/view.rs` is retired" with ADR-15334 §2.1.5.** §2.1 predates the typed-node
+decision of §4. It is read as ADR-15334 §2.1.5 says: the reverse paths (the T3 arms, the recognizers, the
+bareword guesses) are retired, and the T1 arms and the T2 view survive as the module's `view` half — "typed
+node in, `RakuAstNode` out". The module is renamed `view` when ADR-15334's issue C1 lands, not deleted.
+
+**What moved out of the campaign** (maintainer decision, 2026-10-31): reading (A) (typed IR instead of the
+compiler-consumed spellings) and Stage 4 (slangs by execution, RakuDoc v2, `.DEPARSE`) are independent carrier
+issues, not #7564 stages. What stays in #7564: user-visible RakuAST bugs and API gaps, C1 (`.AST` corpus gate,
+fold the convert coverage mode, rename to `view`) and C2 (a NameScope ADR, then lowering where the parser
+builds, deleting `unspell`, the second `qualify_type_names` and the spelled executing parse).

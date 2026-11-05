@@ -153,7 +153,7 @@ fn sigilless_loop_tmp(
 /// The `init`/`step` pair a `repeat while/until COND -> $param { }` loop keeps
 /// its pointy parameter in: the parameter starts as Mu; the compiler binds the
 /// raw condition value between passes. Shared with the RakuAST lowerer, which
-/// rebuilds the loop from the `PointyBlock` the converter writes for it.
+/// rebuilds the loop from the `PointyBlock` the view writes for it.
 // Cost: O(|name|).
 pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, Option<Expr>) {
     let init = param.as_ref().map(|name| {

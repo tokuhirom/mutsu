@@ -2,6 +2,7 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
+mod arity_message;
 mod args_matching;
 mod readonly_reflection;
 mod args_matching_simple;
@@ -48,7 +49,7 @@ pub(in crate::runtime) use signature::{
 // like the re-exports above): the light-call fast paths in `crate::vm` reuse
 // it directly (#8686 Phase 0).
 pub(crate) use signature::{
-    decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
+    decode_capture_named_rw_param, decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
     wrap_native_int_for_binding,
 };
 pub(crate) use type_registry::{ROLE_PRETENDS_TO_BE, is_builtin_role_name};
@@ -157,7 +158,7 @@ pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&s
 pub(crate) fn value_is_concrete(value: &Value) -> bool {
     match value.view() {
         ValueView::Slip(items) if items.is_empty() => true,
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => true,
+        ValueView::Instance { class_name, .. } if class_name == crate::symbol::wk::failure_class() => true,
         ValueView::Mixin(inner, _) => value_is_concrete(inner),
         _ => value_is_defined(value),
     }
@@ -167,7 +168,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
     match value.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => false,
         ValueView::Slip(items) if items.is_empty() => false,
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+        ValueView::Instance { class_name, .. } if class_name == crate::symbol::wk::failure_class() => false,
         // An unmaterialized deferred bind token reads as undefined until it is
         // written THROUGH (a later external write to the path does not retro-bind
         // it — see `t/phantom-entry-bind.t`), so do not read through here.
@@ -680,6 +681,20 @@ impl Interpreter {
         Some(elem.deref_container())
     }
 
+    /// The final value of the named argument `name` of the `|c` capture bound
+    /// as `capture_key` in the running env (`capture_named_container`).
+    // Cost: O(1).
+    pub(crate) fn capture_rw_named(&self, capture_key: &str, name: &str) -> Option<Value> {
+        let elem = self.env.get(capture_key).and_then(|v| match v.view() {
+            ValueView::Capture { named, .. } => named.get(name).cloned(),
+            // A `*%h` slurpy hash records its variable-sourced named
+            // arguments the same way (#16181).
+            ValueView::Hash(h) => h.get(name).cloned(),
+            _ => None,
+        })?;
+        Some(elem.deref_container())
+    }
+
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
@@ -690,6 +705,20 @@ impl Interpreter {
             // body-mutated) element from the callee's slurpy array and write it
             // back to its caller source — a scalar (`$a`) or an array element
             // (`@arr[idx]`).
+            if let Some((capture_key, name)) = decode_capture_named_rw_param(param_name) {
+                if let Some(elem) = self.capture_rw_named(capture_key, name) {
+                    if let Some(ValueView::ContainerRef(arc)) =
+                        target_env.get(source_name).map(Value::view)
+                        && !elem.is_container_ref()
+                    {
+                        arc.store(elem.clone());
+                    } else {
+                        target_env.insert(source_name.clone(), elem.clone());
+                    }
+                    Self::mirror_twigil_alias_writeback(target_env, source_name, &elem);
+                }
+                continue;
+            }
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
                 // A `|c` capture records its variable-sourced positionals the
                 // same way (`capture_param_containers`).
@@ -855,6 +884,11 @@ impl Interpreter {
         // attribute yields that List instead of its elements (YAMLish's
         // `Sequence.new(:$elems)`, where `$elems` came out of a list-assignment
         // destructure).
+        let value = if crate::value::attr_twigil_base(name).is_some() {
+            value.deref_container()
+        } else {
+            value
+        };
         let value = if name.starts_with("@!") || name.starts_with("@.") {
             Self::attributive_array_param_value(value)
         } else if name.starts_with('@') {
@@ -1063,6 +1097,7 @@ impl Interpreter {
             return None;
         }
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        note_type_capture_name(name);
         Some((Self::type_capture_marker_key(name), Value::TRUE))
     }
 }
@@ -1070,6 +1105,38 @@ impl Interpreter {
 /// Whether any `::T` type capture has ever been bound (`bind_type_capture`),
 /// process-wide and monotonic. Gates `has_type_capture_binding`.
 static TYPE_CAPTURE_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A bloom filter (256 bits, one hash) over the names a `::T` capture marker
+/// was ever written for. A name whose bit is clear has no marker anywhere, so
+/// `has_type_capture_binding` answers without interning the name and probing
+/// the env (every typed parameter binding asked, several times). Monotonic and
+/// process-global like [`TYPE_CAPTURE_SEEN`].
+static TYPE_CAPTURE_NAME_BITS: [std::sync::atomic::AtomicU64; 4] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
+// Cost: O(n), n = bytes of `name` (FNV-1a).
+fn type_capture_name_bit(name: &str) -> (usize, u64) {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in name.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let bit = (h ^ (h >> 32)) & 255;
+    ((bit >> 6) as usize, 1u64 << (bit & 63))
+}
+
+fn note_type_capture_name(name: &str) {
+    let (word, mask) = type_capture_name_bit(name);
+    TYPE_CAPTURE_NAME_BITS[word].fetch_or(mask, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn type_capture_name_possible(name: &str) -> bool {
+    let (word, mask) = type_capture_name_bit(name);
+    TYPE_CAPTURE_NAME_BITS[word].load(std::sync::atomic::Ordering::Relaxed) & mask != 0
+}
 
 impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
@@ -1092,6 +1159,7 @@ impl Interpreter {
                 captured,
             );
         }
+        note_type_capture_name(name);
         self.env
             .insert(Self::type_capture_marker_key(name), Value::TRUE);
     }
@@ -1112,12 +1180,12 @@ impl Interpreter {
         // base). Monotonic and process-global for the same reason
         // `ENV_TYPE_CONSTRAINT_SEEN` is: a worker interpreter binds captures
         // into the same env family the parent later reads.
-        if !Self::any_type_capture_seen() {
+        if !Self::any_type_capture_seen() || !type_capture_name_possible(name) {
             return false;
         }
         matches!(
             self.env
-                .get(&Self::type_capture_marker_key(name))
+                .get_sym(MetaNs::TypeCaptureBound.key_for_str(name))
                 .map(Value::view),
             Some(ValueView::Bool(true))
         )
@@ -1179,6 +1247,13 @@ impl Interpreter {
             let (base, _) = strip_type_smiley(constraint);
             if native_types::is_native_int_type(base) {
                 return Value::int(0);
+            }
+            // Likewise a native `num` / `str` binds its zero (`0e0` / `""`):
+            // `sub f(num $v?) { $v }; f()` is `0e0`, not the `num` type name.
+            match base {
+                "num" | "num32" | "num64" => return Value::num(0.0),
+                "str" => return Value::str(String::new()),
+                _ => {}
             }
             // A parameterised constraint (`Positional[Int]`, `CArray[int32]`)
             // keeps its type arguments, as `my Positional[Int] $x` does, so
@@ -1330,6 +1405,19 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         let value = self.materialize_default_parametric_role(value)?;
+        // A default is coerced like a supplied argument: `Str() $b = $a` binds
+        // `$a.Str` when the caller passed nothing (IdClass's `t/06-role`).
+        let value = if pd
+            .type_constraint
+            .as_deref()
+            .is_some_and(is_coercion_constraint)
+            && !value.is_nil()
+            && !matches!(value.view(), ValueView::Package(_))
+        {
+            self.check_and_coerce_param_type(pd, value, None, None, false, false)?
+        } else {
+            value
+        };
         if let Some(constraint) = &pd.type_constraint
             && !crate::qualified::is_type_capture(constraint)
             && !self.param_value_matches_constraint(&pd.name, constraint, &value)

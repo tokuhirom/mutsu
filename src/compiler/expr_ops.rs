@@ -276,14 +276,74 @@ impl Compiler {
             return;
         }
         if is_assign_op {
+            let merge_into_array = dwim_left && !dwim_right && matches!(left, Expr::ArrayVar(_));
+            if merge_into_array {
+                // `@a «=« (9, 8)`: the right operand sets the length, and the
+                // assignment writes only the elements it reaches. The target's
+                // current elements go first, then the hyper op's result, and the
+                // store gets the two merged.
+                self.compile_expr(left);
+            }
             self.compile_expr(left);
             self.compile_expr(right);
+            // A compound op (`«+=«`) over a longer right side cycles the array:
+            // the merge re-applies the op to the already-updated slot, so it
+            // needs the right operand again (kept in a temporary).
+            let merge_right_tmp = (merge_into_array && base_op != "=").then(|| {
+                let name = format!("__mutsu_tmp_hyper_rhs_{}", self.code.constants.len());
+                let idx = self.code.add_constant(Value::str(name));
+                self.code.emit(OpCode::Dup);
+                self.code.emit(OpCode::SetGlobal(idx));
+                idx
+            });
             self.emit_lex_import_meta(Symbol::intern(base_op));
             self.code.emit(OpCode::HyperOp {
                 op: Symbol::intern(base_op),
                 dwim_left,
                 dwim_right,
             });
+            if merge_into_array && let Expr::ArrayVar(name) = left {
+                // The expression's value is the hyper op's result (rakudo yields
+                // `(9 8)` for `@a «=« (9, 8)`), the store gets it merged.
+                let tmp_name = format!("__mutsu_tmp_hyper_assign_{}", self.code.constants.len());
+                let tmp_idx = self.code.add_constant(Value::str(tmp_name));
+                self.code.emit(OpCode::Dup);
+                self.code.emit(OpCode::SetGlobal(tmp_idx));
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str("__mutsu_hyper_assign_merge".to_string()));
+                let mut merge_arity = 2;
+                if let Some(rhs_idx) = merge_right_tmp {
+                    self.code.emit(OpCode::GetGlobal(rhs_idx));
+                    let op_idx = self.code.add_constant(Value::str(base_op.to_string()));
+                    self.code.emit(OpCode::LoadConst(op_idx));
+                    merge_arity = 4;
+                }
+                self.code.emit(OpCode::CallFunc {
+                    name_idx,
+                    arity: merge_arity,
+                    arg_sources_idx: None,
+                    literal_native_args: 0,
+                    static_arg_types: false,
+                });
+                self.emit_set_named_var(&format!("@{}", name));
+                // The value is the slots as the assignment left them, cycled to
+                // the result's length (rakudo: `@a «+=« (1, 2, 3)` over `[1, 2]`
+                // yields `(5 4 5)`, the last slot twice).
+                self.compile_expr(left);
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                let view_idx = self
+                    .code
+                    .add_constant(Value::str("__mutsu_hyper_assign_view".to_string()));
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: view_idx,
+                    arity: 2,
+                    arg_sources_idx: None,
+                    literal_native_args: 0,
+                    static_arg_types: false,
+                });
+                return;
+            }
             // Assign the result back to the left-hand side variable. Keep a copy
             // on the stack (via Dup) so the hyper-assignment also yields its
             // value as an expression, e.g. `my @r = @a »+=« (1,2,3)`.

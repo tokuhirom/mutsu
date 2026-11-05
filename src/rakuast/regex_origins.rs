@@ -14,11 +14,12 @@
 use super::infix_origins::{byte_range, leaf_text};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
+use crate::scope::NameScope;
 use crate::value::{Value, ValueView};
 
 /// Place the body of `node`, a `QuotedRegex` with a range, and its adverbs.
 // Cost: O(n), n = length of the regex's source.
-pub(super) fn quoted(node: &mut RakuAstNode) {
+pub(super) fn quoted(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -39,13 +40,13 @@ pub(super) fn quoted(node: &mut RakuAstNode) {
     }
     let body = SrcSpan::new(from + open, to - close.len_utf8());
     place_adverbs(node, &adverbs);
-    super::infix_origins::with_child(node, "body", |regex| walk_body(regex, body));
+    super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
 }
 
 /// Place the body of a `token` / `rule` / `regex` declaration written at its
 /// range: the text between the braces after its name.
 // Cost: O(n), n = length of the declaration's source.
-pub(super) fn declaration(node: &mut RakuAstNode) {
+pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -73,13 +74,13 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
     });
     if let Some((name_at, body)) = body {
         super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, name_at));
-        super::infix_origins::with_child(node, "body", |regex| walk_body(regex, body));
+        super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
     }
 }
 
 /// Lay `regex` over the body text at `body`.
 // Cost: O(n), n = length of the body.
-fn walk_body(regex: &mut RakuAstNode, body: SrcSpan) {
+fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpan) {
     let Some(text) = super::unit_source::with_text(body, |t| Some(t.to_string())) else {
         return;
     };
@@ -89,7 +90,7 @@ fn walk_body(regex: &mut RakuAstNode, body: SrcSpan) {
         at: 0,
     };
     walk.blank();
-    walk.place(regex);
+    walk.place(names, regex);
 }
 
 /// What a quoted regex's text says before its body.
@@ -202,7 +203,7 @@ impl Walk<'_> {
     /// Lay `node`, which starts at the cursor, over the text, giving it and
     /// the nodes in it their ranges; `None` ends the walk.
     // Cost: O(n), n = length of the node's text.
-    fn place(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn place(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         let start = self.at;
         match node.class {
             RakuAstClass::RegexLiteral => self.literal(&leaf_text(node)?)?,
@@ -213,7 +214,7 @@ impl Walk<'_> {
                     if i > 0 {
                         self.blank();
                     }
-                    self.child_at(node, i)?;
+                    self.child_at(names, node, i)?;
                 }
             }
             RakuAstClass::RegexAlternation | RakuAstClass::RegexSequentialAlternation => {
@@ -232,20 +233,20 @@ impl Walk<'_> {
                         }
                         self.blank();
                     }
-                    self.child_at(node, i)?;
+                    self.child_at(names, node, i)?;
                 }
             }
             RakuAstClass::RegexWithWhitespace => {
-                self.child_at(node, 0)?;
+                self.child_at(names, node, 0)?;
                 self.blank();
                 // A comment would be part of the whitespace.
                 if self.text[self.at..].starts_with('#') {
                     return None;
                 }
             }
-            RakuAstClass::RegexGroup => self.bracketed(node, "[", "]")?,
-            RakuAstClass::RegexCapturingGroup => self.bracketed(node, "(", ")")?,
-            RakuAstClass::RegexQuantifiedAtom => self.quantified(node)?,
+            RakuAstClass::RegexGroup => self.bracketed(names, node, "[", "]")?,
+            RakuAstClass::RegexCapturingGroup => self.bracketed(names, node, "(", ")")?,
+            RakuAstClass::RegexQuantifiedAtom => self.quantified(names, node)?,
             RakuAstClass::RegexCharClass(_) => {
                 self.eat(&super::regex_char_class::written(node)?)?
             }
@@ -253,9 +254,13 @@ impl Walk<'_> {
             RakuAstClass::RegexAnchorEndOfString => self.eat("$")?,
             RakuAstClass::RegexAnchorBeginningOfLine => self.eat("^^")?,
             RakuAstClass::RegexAnchorEndOfLine => self.eat("$$")?,
-            RakuAstClass::RegexNamedCapture => self.named_capture(node)?,
+            RakuAstClass::RegexNamedCapture => self.named_capture(names, node)?,
             RakuAstClass::RegexAssertionCharClass => self.char_class(node)?,
-            RakuAstClass::RegexAssertionNamed => self.named_assertion(node)?,
+            RakuAstClass::RegexInterpolation => self.interpolation(node, false)?,
+            RakuAstClass::RegexAssertionInterpolatedVar => self.interpolation(node, true)?,
+            RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
+                self.named_assertion(names, node)?
+            }
             _ => return None,
         }
         // `^` must not have been the first half of `^^`, a literal the start
@@ -273,20 +278,20 @@ impl Walk<'_> {
 
     /// Place the `index`-th field of `node`, a node.
     // Cost: O(n), n = length of the child's text.
-    fn child_at(&mut self, node: &mut RakuAstNode, index: usize) -> Option<()> {
+    fn child_at(&mut self, names: &NameScope, node: &mut RakuAstNode, index: usize) -> Option<()> {
         let field = node.fields.get_mut(index)?;
-        self.held(&mut field.value)
+        self.held(names, &mut field.value)
     }
 
     /// Place the node held by the field `name` of `node`.
     // Cost: O(n), n = length of the child's text.
-    fn child(&mut self, node: &mut RakuAstNode, name: &str) -> Option<()> {
+    fn child(&mut self, names: &NameScope, node: &mut RakuAstNode, name: &str) -> Option<()> {
         let field = node.fields.iter_mut().find(|f| f.name == Some(name))?;
-        self.held(&mut field.value)
+        self.held(names, &mut field.value)
     }
 
     // Cost: O(n), n = length of the node's text.
-    fn held(&mut self, value: &mut RakuAstFieldValue) -> Option<()> {
+    fn held(&mut self, names: &NameScope, value: &mut RakuAstFieldValue) -> Option<()> {
         let RakuAstFieldValue::Node(held) = value else {
             return None;
         };
@@ -294,17 +299,23 @@ impl Walk<'_> {
             return None;
         };
         let mut inner = RakuAstNode::clone(inner);
-        let placed = self.place(&mut inner);
+        let placed = self.place(names, &mut inner);
         *held = Value::rakuast(Box::new(inner));
         placed
     }
 
     /// `[ ... ]` / `( ... )`.
     // Cost: O(n), n = length of the group's text.
-    fn bracketed(&mut self, node: &mut RakuAstNode, open: &str, close: &str) -> Option<()> {
+    fn bracketed(
+        &mut self,
+        names: &NameScope,
+        node: &mut RakuAstNode,
+        open: &str,
+        close: &str,
+    ) -> Option<()> {
         self.eat(open)?;
         self.blank();
-        self.child_at(node, 0)?;
+        self.child_at(names, node, 0)?;
         self.blank();
         self.eat(close)
     }
@@ -312,7 +323,7 @@ impl Walk<'_> {
     /// `atom` then its quantifier (`*`, `+`, `?`, with `?` / `!` / `:` after
     /// it), then a `% separator`.
     // Cost: O(n), n = length of the quantified text.
-    fn quantified(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn quantified(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         // `b ** 1..3`: the atom of a spaced quantifier is a `WithWhitespace`
         // that Rakudo places over the atom alone.
         if super::infix_origins::child(node, "atom")
@@ -327,7 +338,7 @@ impl Walk<'_> {
             };
             let mut spaced = RakuAstNode::clone(spaced);
             let start = self.at;
-            let placed = self.child_at(&mut spaced, 0);
+            let placed = self.child_at(names, &mut spaced, 0);
             if placed.is_some() {
                 super::origin::set_span(
                     &mut spaced,
@@ -338,10 +349,10 @@ impl Walk<'_> {
             placed?;
             self.blank();
         } else {
-            self.child(node, "atom")?;
+            self.child(names, node, "atom")?;
         }
         let quantifier = super::infix_origins::child(node, "quantifier")?;
-        let lowered = super::regex_quantifier::lower_quantifier(quantifier)?;
+        let lowered = super::regex_quantifier::lower_quantifier(names, quantifier)?;
         let range;
         let spelling = match lowered.kind {
             crate::regex_tree::QuantifierKind::ZeroOrMore => "*",
@@ -379,7 +390,7 @@ impl Walk<'_> {
                 return None;
             }
             self.blank();
-            self.child(node, "separator")?;
+            self.child(names, node, "separator")?;
         }
         Some(())
     }
@@ -421,32 +432,95 @@ impl Walk<'_> {
 
     /// `<name>` / `<.name>`: the `Name` is the identifier inside.
     // Cost: O(n), n = length of the assertion.
-    fn named_assertion(&mut self, node: &mut RakuAstNode) -> Option<()> {
-        if node
-            .fields
-            .iter()
-            .any(|f| !matches!(f.name, Some("name" | "capturing")))
-        {
+    fn named_assertion(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
+        let call = node.class == RakuAstClass::RegexAssertionNamedArgs;
+        if node.fields.iter().any(|f| {
+            !(matches!(f.name, Some("name" | "capturing")) || call && f.name == Some("args"))
+        }) {
             return None;
         }
         let capturing = node.fields.iter().any(|f| f.name == Some("capturing"));
         let name_node = super::infix_origins::child(node, "name")?;
         let name = match super::name_parts::name_shape(name_node)? {
             super::name_parts::NameShape::Identifier(name) => name,
+            super::name_parts::NameShape::Indirect {
+                tail,
+                trailing: false,
+                ..
+            } if tail.is_empty() && !call => return self.symbolic_assertion(node, capturing),
             _ => return None,
         };
         self.eat(if capturing { "<" } else { "<." })?;
         let name_at = self.at;
         self.eat(&name)?;
+        if call {
+            // `<name(ARGS)>`
+            self.eat("(")?;
+            let text: &str = self.text;
+            let len = super::regex_call_origins::args_len(&text[self.at..])?;
+            let inner = &text[self.at..self.at + len];
+            super::regex_call_origins::place(names, node, inner, self.base + self.at)?;
+            self.at += len;
+            self.eat(")")?;
+        }
         self.eat(">")?;
         let at = SrcSpan::new(self.base + name_at, self.base + name_at + name.len());
         super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, at));
         Some(())
     }
 
+    /// `<::("name")>` / `<.::('name')>`: the `Name` runs from the `::` to the
+    /// closing `)`, and the string inside has its own ranges.
+    // Cost: O(n), n = length of the assertion's text.
+    fn symbolic_assertion(&mut self, node: &mut RakuAstNode, capturing: bool) -> Option<()> {
+        self.eat(if capturing { "<" } else { "<." })?;
+        let name_at = self.at;
+        self.eat("::(")?;
+        let text: &str = self.text;
+        let len = super::regex_symbolic_origins::plain_string_len(&text[self.at..])?;
+        let string_at = self.base + self.at;
+        self.at += len;
+        self.eat(")")?;
+        let name_end = self.at;
+        self.eat(">")?;
+        super::infix_origins::with_child(node, "name", |name| {
+            super::origin::set_span(
+                name,
+                SrcSpan::new(self.base + name_at, self.base + name_end),
+            );
+            super::regex_symbolic_origins::place_string(name, string_at, len);
+        });
+        Some(())
+    }
+
+    /// `$var` / `@var` (`<$var>` / `<@var>` when `bracketed`): the variable
+    /// is the name inside the brackets.
+    // Cost: O(n), n = length of the variable's name.
+    fn interpolation(&mut self, node: &mut RakuAstNode, bracketed: bool) -> Option<()> {
+        let var = super::infix_origins::child(node, "var").and_then(leaf_text)?;
+        if bracketed {
+            self.eat("<")?;
+        }
+        let at = self.at;
+        self.eat(&var)?;
+        let end = self.at;
+        // Not the start of a longer name, nor of a subscript or call.
+        if self.text[end..].starts_with(|c: char| {
+            c.is_alphanumeric() || matches!(c, '_' | '-' | '[' | '{' | '(' | '.' | ':')
+        }) {
+            return None;
+        }
+        if bracketed {
+            self.eat(">")?;
+        }
+        let span = SrcSpan::new(self.base + at, self.base + end);
+        super::infix_origins::with_child(node, "var", |v| super::origin::set_span(v, span));
+        Some(())
+    }
+
     /// `$<name>=atom` / `@<name>=atom`.
     // Cost: O(n), n = length of the capture's text.
-    fn named_capture(&mut self, node: &mut RakuAstNode) -> Option<()> {
+    fn named_capture(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         let name = node.fields.iter().find_map(|f| match &f.value {
             RakuAstFieldValue::Node(v) if f.name == Some("name") => match v.view() {
                 ValueView::Str(s) => Some(s.to_string()),
@@ -464,7 +538,7 @@ impl Walk<'_> {
         };
         self.eat(&format!("{sigil}<{name}>="))?;
         self.blank();
-        self.child(node, "regex")
+        self.child(names, node, "regex")
     }
 
     /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`: each enumeration runs from

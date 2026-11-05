@@ -15,6 +15,10 @@
 
 use super::*;
 
+/// The hidden attribute holding the native value of a BOOT scalar box
+/// (`runtime::boot_scalar`).
+pub(crate) const BOOT_SCALAR_VALUE_ATTR: &str = "__mutsu_boot_value";
+
 impl Value {
     /// A fresh raw `VMArray` holding `items` (`nqp::list`).
     // Cost: O(1) beyond moving `items`.
@@ -92,6 +96,86 @@ impl Value {
     #[inline]
     pub(crate) fn is_vm_collection(&self) -> bool {
         self.0.is_vm_array() || self.0.is_vm_hash()
+    }
+
+    /// Whether this is a `BOOTInt` / `BOOTNum` / `BOOTStr` box. A tag probe and
+    /// up to three symbol compares.
+    #[inline]
+    pub(crate) fn is_boot_scalar_box(&self) -> bool {
+        self.0.is_boot_scalar_box()
+    }
+
+    /// The native value inside a BOOT scalar box (`None` for any other value).
+    // Cost: O(1).
+    pub(crate) fn boot_scalar_payload(&self) -> Option<Value> {
+        if !self.is_boot_scalar_box() {
+            return None;
+        }
+        let ValueView::Instance { attributes, .. } = self.view() else {
+            return None;
+        };
+        attributes.as_map().get(BOOT_SCALAR_VALUE_ATTR).cloned()
+    }
+
+    /// Whether binding this value to a Raku parameter changes it: a raw
+    /// `VMArray` / `VMHash` or a BOOT scalar box (see
+    /// [`Self::hllize_for_binding`]).
+    #[inline]
+    pub(crate) fn needs_hllize_for_binding(&self) -> bool {
+        self.is_vm_collection()
+            || self.is_boot_scalar_box()
+            || self.boot_scalar_type_object().is_some()
+    }
+
+    /// This value as an operator operand: a raw BOOT scalar box is its
+    /// high-level value (rakudo hllizes it at the operator's binder, #12881),
+    /// anything else is returned unchanged.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn hllize_operand(self) -> Value {
+        if self.is_boot_scalar_box() {
+            self.hllize_for_binding()
+        } else {
+            self
+        }
+    }
+
+    /// The high-level type object (`Int` / `Num` / `Str`) a `BOOTInt` /
+    /// `BOOTNum` / `BOOTStr` type object hllizes to; `None` for any other value.
+    // Cost: O(1).
+    pub(crate) fn boot_scalar_type_object(&self) -> Option<Value> {
+        if !self.0.is_package() {
+            return None;
+        }
+        let ValueView::Package(name) = self.view() else {
+            return None;
+        };
+        let hll = if name == crate::symbol::wk::boot_int() {
+            "Int"
+        } else if name == crate::symbol::wk::boot_num() {
+            "Num"
+        } else if name == crate::symbol::wk::boot_str() {
+            "Str"
+        } else {
+            return None;
+        };
+        Some(Value::package(crate::symbol::Symbol::intern(hll)))
+    }
+
+    /// What a Raku parameter sees of an argument. Rakudo's binder hllizes
+    /// every argument: a raw collection becomes the `List` / `Hash` over the
+    /// same storage and a `BOOTInt` / `BOOTNum` / `BOOTStr` box becomes the
+    /// `Int` / `Num` / `Str` it holds. Assignment and returning a value leave
+    /// a box raw, so only the binder calls this (#12881).
+    // Cost: O(1).
+    pub(crate) fn hllize_for_binding(self) -> Value {
+        if let Some(payload) = self.boot_scalar_payload() {
+            return payload;
+        }
+        if let Some(ty) = self.boot_scalar_type_object() {
+            return ty;
+        }
+        self.hllize_vm_collection()
     }
 
     /// The `BOOT*` type a raw VM collection is an instance of, by its element

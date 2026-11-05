@@ -28,7 +28,6 @@ $b.callable_for_phaser("FIRST")();
 is @log.join(","), "first", "a single phaser is answered directly";
 
 $b.callable_for_phaser("LAST")();
-todo "a phaser's write to a captured scalar is not written through yet (#15473)", 1;
 is $x, 11, "a phaser writes the block's captured lexicals";
 
 nok $b.callable_for_phaser("KEEP").defined, "no such phaser: undefined";

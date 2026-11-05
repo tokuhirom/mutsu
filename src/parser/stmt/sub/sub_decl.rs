@@ -290,6 +290,10 @@ pub(crate) fn sub_decl_body(
         }
         // Validate circumfix/postcircumfix operator part count
         validate_categorical_parts(&name)?;
+        // `sub meow:sym<bar> {}` (6.d+): the `:sym<>` colonpair is reserved.
+        if let Some(err) = super::sub_name::reserved_sym_colonpair_error(&name) {
+            return Err(err);
+        }
         // Register user-declared sub so it can be called without parens later
         super::super::simple::register_user_sub(&name);
         super::super::simple::register_user_callable_term_symbol(&name);
@@ -426,7 +430,11 @@ pub(crate) fn sub_decl_body(
                 "sub",
             ));
         }
-        if name == "MAIN" && !allow_main_semicolon_decl {
+        // Only `sub MAIN(...);` (the unit-scoped form) may end in a semicolon:
+        // rakudo rejects every other bodiless `sub f(...);` as
+        // X::UnitScope::Invalid, a forward declaration being spelled
+        // `sub f(...) {...}` (#16210).
+        if !(name == "MAIN" && allow_main_semicolon_decl) {
             return Err(PError::raw_with_what(
                 "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
                  Please use the block form. If you did not mean to declare a unit-scoped sub, \

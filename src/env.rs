@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use crate::env_capture_view::CaptureView;
@@ -315,17 +315,6 @@ pub(crate) fn is_dynamic_var_env_key(key: &str) -> bool {
         .starts_with('*')
 }
 
-/// Whether `key` names the match state a regex operation publishes into the
-/// calling scope: `$/` and the positional captures `$0`, `$1`, ... (stored
-/// sigil-less). A closure a native routine runs against a fresh match (`trans`
-/// with `/(\W)/ => { ord($0) }`) reads these from its caller, never from the
-/// copy it captured when it was created.
-// Cost: O(k), k = key.len().
-#[inline]
-pub(crate) fn is_match_var_env_key(key: &str) -> bool {
-    key == "/" || (!key.is_empty() && key.bytes().all(|b| b.is_ascii_digit()))
-}
-
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,
@@ -420,6 +409,33 @@ pub(crate) fn closure_meta_keys_possible() -> bool {
     CLOSURE_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
+/// Words of [`SIGILLESS_READONLY_NAME_BITS`]: 1024 x 64 = 65536 bits.
+const SIGILLESS_READONLY_NAME_WORDS: usize = 1024;
+
+/// A bit set over the NAMES that have a `__mutsu_sigilless_readonly::<name>`
+/// marker, indexed by the low 16 bits of the name's symbol id (two names may
+/// share a bit; a collision only makes the correct probe run). Raised beside
+/// [`SIGILLESS_READONLY_KEY_SEEN`] by [`note_env_key`], so it is exactly as
+/// sound as that latch, and lock-free like it: the probe it gates runs on every
+/// whole-variable assignment.
+static SIGILLESS_READONLY_NAME_BITS: [AtomicU64; SIGILLESS_READONLY_NAME_WORDS] =
+    [const { AtomicU64::new(0) }; SIGILLESS_READONLY_NAME_WORDS];
+
+/// True if a `__mutsu_sigilless_readonly::<name>` marker may exist in some env
+/// for `name` (the variable's own name, not the marker key). `false` proves the
+/// probe for that marker would miss, so the caller skips building the key and
+/// hashing it into the env. A program that bound one sigilless name (a loaded
+/// module's `my \x`) no longer makes every other assignment pay for the probe.
+// Cost: O(1).
+#[inline]
+pub(crate) fn sigilless_readonly_key_possible_for(name: Symbol) -> bool {
+    if !SIGILLESS_READONLY_KEY_SEEN.load(Ordering::Relaxed) {
+        return false;
+    }
+    let bit = name.raw_id() as usize & (SIGILLESS_READONLY_NAME_WORDS * 64 - 1);
+    SIGILLESS_READONLY_NAME_BITS[bit >> 6].load(Ordering::Relaxed) & (1 << (bit & 63)) != 0
+}
+
 /// True if any `__mutsu_sigilless_*` key may exist in some env. Strictly
 /// narrower than [`closure_meta_keys_possible`]. See [`SIGILLESS_META_KEY_SEEN`].
 #[inline]
@@ -460,7 +476,12 @@ pub(crate) fn note_env_key(key: &str) {
         if key.starts_with("__mutsu_sigilless_") {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
             SIGILLESS_META_KEY_SEEN.store(true, Ordering::Relaxed);
-            if key.starts_with("__mutsu_sigilless_readonly::") {
+            if let Some(name) = key.strip_prefix("__mutsu_sigilless_readonly::") {
+                // The name's bit first, then the general latch: a reader that
+                // sees the latch never sees an empty name set.
+                let bit = Symbol::intern(name).raw_id() as usize
+                    & (SIGILLESS_READONLY_NAME_WORDS * 64 - 1);
+                SIGILLESS_READONLY_NAME_BITS[bit >> 6].fetch_or(1 << (bit & 63), Ordering::Relaxed);
                 SIGILLESS_READONLY_KEY_SEEN.store(true, Ordering::Relaxed);
             }
         } else if key.starts_with("__mutsu_state_key::")
@@ -822,9 +843,29 @@ fn file_key() -> Symbol {
 #[inline]
 fn file_sym_of(v: &Value) -> Option<Symbol> {
     match v.view() {
-        crate::value::ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+        crate::value::ValueView::Str(s) => Some(intern_file(s.as_str())),
         _ => None,
     }
+}
+
+/// `Symbol::intern` of a `?FILE` value, remembering the last answer: every
+/// closure capture re-derives its env's file symbol, and nearly always from the
+/// same file, so the repeat costs a string compare instead of a hash probe.
+/// Symbols are process-global, so a per-thread memo is sound.
+// Cost: O(|s|), the compare; the first sight of a file also interns it.
+#[inline]
+fn intern_file(s: &str) -> Symbol {
+    thread_local! {
+        static LAST_FILE: std::cell::Cell<Option<Symbol>> = const { std::cell::Cell::new(None) };
+    }
+    if let Some(sym) = LAST_FILE.with(std::cell::Cell::get)
+        && sym.as_str() == s
+    {
+        return sym;
+    }
+    let sym = Symbol::intern(s);
+    LAST_FILE.with(|c| c.set(Some(sym)));
+    sym
 }
 
 /// A pinned overlay tier: the values an [`Env`] overlay held when
@@ -2682,13 +2723,10 @@ impl Env {
     }
 
     /// [`Self::get_sym_with_fallback`]'s walk. With `follow`, `key` is the
-    /// record of the variable `follow` and the walk ends at a caller frame
-    /// that binds that variable (see `env::record_lookup`).
+    /// record of the variable `follow` and the walk ends at the running
+    /// routine's frame root (see `env::record_lookup`).
     fn walk_with_fallback(&self, key: Symbol, follow: Option<Symbol>) -> Option<&Value> {
         let mut cur = self;
-        // The variable `follow`'s binding in the frame the walk is in, once
-        // past the origin frame's root.
-        let mut bound_here: Option<&Value> = None;
         // Tail-most wins, so keep overwriting: a closure created inside another
         // closure's body chains over it, and the outer capture is the enclosing
         // lexical scope of the inner one.
@@ -2717,19 +2755,6 @@ impl Env {
                 }
                 if let Some(v) = fb.get_below_base(&key) {
                     found = Some(v);
-                }
-            }
-            if let Some(subject) = follow
-                && origin_root_seen
-            {
-                if bound_here.is_none() {
-                    bound_here = cur.inner.get(&subject);
-                }
-                if cur.frame_root
-                    && let Some(mine) = bound_here.take()
-                    && record_lookup::leaves_variable(cur, subject, mine)
-                {
-                    return found;
                 }
             }
             if cur.frame_root && !origin_root_seen {
@@ -2772,6 +2797,17 @@ impl Env {
                     cur = outer;
                     continue;
                 }
+                // A routine's record is the variable's own, and the variable is
+                // not reached through the frames that called it (ADR-13757
+                // step 4): a caller's `my Int @x` says nothing about this
+                // code's `@x`. A sigilless alias parameter carries its
+                // source's record under its own name (the binder writes it,
+                // `alias_param_declared_type`). A frame with no outer of its
+                // own is a block or closure running inside the frame below it,
+                // whose records are its scope, so those keep the walk.
+                if follow.is_some() && cur.has_static_outer() {
+                    return found;
+                }
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
@@ -2779,6 +2815,16 @@ impl Env {
             }
         }
         cur.base_get(key).or(found)
+    }
+
+    /// Whether this frame root has a lexical outer of its own (a static link
+    /// or the program scope) that its caller frames are not part of. A frame
+    /// without one is a closure or block whose lexical outer IS the frame that
+    /// ran it, so the frames below it are its scope, not unrelated callers.
+    // Cost: O(1).
+    #[inline]
+    fn has_static_outer(&self) -> bool {
+        self.outer_is_unit || self.inner.static_link().is_some()
     }
 
     #[inline]
@@ -3179,6 +3225,35 @@ impl Env {
         self.iter_tier().keys()
     }
 
+    /// An upper bound on [`Self::len`] that does not fold a capture fallback
+    /// into one map first (a name hidden or shadowed in the capture is counted
+    /// once per layer holding it).
+    // Cost: O(l), l = layers of the capture fallback.
+    pub(crate) fn len_upper_bound(&self) -> usize {
+        match &self.fallback {
+            Some(fb) if self.parent.is_none() => self.inner.len() + fb.len_upper_bound(),
+            _ => self.len(),
+        }
+    }
+
+    /// The names a closure that ran in this (captured) env may have written,
+    /// as a superset of its variables: the keys of the env's own tier and of
+    /// the capture's non-shared layers, plus the dynamic variables of the
+    /// shared system-name layers. What [`Self::keys`] yields without the
+    /// types, constants and `__mutsu_*` metadata of the shared layers, which
+    /// no closure body assigns (and without folding the layers into one map).
+    // Cost: O(e + l * d), e = own entries, l = layers, d = dynamic keys per shared layer.
+    pub(crate) fn written_name_candidates(&self) -> Vec<Symbol> {
+        match &self.fallback {
+            Some(fb) if self.parent.is_none() => {
+                let mut out: Vec<Symbol> = self.inner.keys().copied().collect();
+                fb.extend_written_name_candidates(&mut out);
+                out
+            }
+            _ => self.keys().copied().collect(),
+        }
+    }
+
     /// The value [`Self::iter`] yields for `key`, if it yields one: a probe of
     /// the same tier, for a caller that visits a few known keys instead of
     /// iterating all of them.
@@ -3362,7 +3437,7 @@ impl Env {
         let mut keys: HashSet<Symbol> = HashSet::new();
         let mut cur = self;
         loop {
-            keys.extend(cur.inner.keys().filter(|k| k.is_dynamic_var_env_key()));
+            keys.extend(cur.inner.dynamic_keys().iter().copied());
             if let Some(fb) = &cur.fallback {
                 keys.extend(fb.keys().filter(|k| k.is_dynamic_var_env_key()));
             }

@@ -502,6 +502,28 @@ pub(crate) fn with_buf_elems_mut<R>(
     Some(out)
 }
 
+/// Replace a live buffer's contents with `elems` through its shared attribute
+/// cell, visible to every alias (`Buf.STORE`: what `$obj.buffer = $other` does
+/// to the `Buf` an accessor hands back).
+// Cost: O(e + n), e = old elements (decoded when the storage exists), n = new.
+pub(crate) fn replace_buf_elems(attrs: &InstanceAttrs, class_name: Symbol, elems: Vec<Value>) {
+    let mut elems = Some(elems);
+    if with_buf_elems_mut(attrs, |old| {
+        if let Some(new) = elems.take() {
+            *old = new;
+        }
+    })
+    .is_none()
+        && let Some(new) = elems.take()
+    {
+        let (width, kind) = elem_type(&class_name.resolve());
+        attrs.insert(
+            elems_key(),
+            storage_value(encode_elems(&new, width, kind), width, kind),
+        );
+    }
+}
+
 /// Where [`extend_buf_elems`] puts the new elements.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BufEnd {

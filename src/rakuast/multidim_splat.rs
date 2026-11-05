@@ -1,7 +1,7 @@
 //! `@a[|| @i]` (6.e): a list spread over the subscript's dimensions. Rakudo
 //! 2026.09 spells it `SemiList(ApplyPrefix(Prefix::Multislice, @i))`; the
 //! parser keeps it as an `Expr::MultiDimIndex` whose one dimension is `@i`
-//! (`convert::splat_dimensions` is the read side).
+//! (`view::splat_dimensions` is the read side).
 
 use super::lower::named_child;
 use super::{RakuAstClass, RakuAstNode};

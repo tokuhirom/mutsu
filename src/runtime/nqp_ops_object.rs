@@ -17,6 +17,7 @@ impl Interpreter {
             "findmethod" => false,
             "tryfindmethod" => true,
             "rebless" => return Some(self.nqp_rebless(args)),
+            "setwho" => return Some(self.nqp_set_who(args)),
             "setparameterizer" => return Some(self.nqp_set_parameterizer(args.to_vec())),
             "parameterizetype" => return Some(self.nqp_parameterize_type(args.to_vec())),
             "typeparameterized" | "typeparameters" | "typeparameterat" => {
@@ -38,6 +39,36 @@ impl Interpreter {
                 crate::runtime::utils::value_type_name(&obj)
             ))),
         })
+    }
+
+    /// `nqp::setwho($type, $stash)`: `$type`'s `.WHO` answers `$stash` from now
+    /// on (the very object, so `$type.WHO === $stash`), as Rakudo's type
+    /// stash is replaced. Answers `$type`.
+    // Cost: O(1), one registry table write.
+    fn nqp_set_who(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let operand = |i: usize| {
+            crate::runtime::types::unwrap_varref_value(args.get(i).cloned().unwrap_or(Value::NIL))
+                .deref_container()
+        };
+        let (ty, stash) = (operand(0), operand(1));
+        let Some(key) = Self::who_override_key(&ty) else {
+            return Err(RuntimeError::new(
+                "nqp::setwho needs a type object as its first operand",
+            ));
+        };
+        self.registry_mut().who_overrides.insert(key, stash);
+        Ok(ty)
+    }
+
+    /// The key a type object's `.WHO` replacement is filed under: a package by
+    /// name, a `create_type` type object by its identity.
+    // Cost: O(1).
+    pub(crate) fn who_override_key(ty: &Value) -> Option<String> {
+        match ty.view() {
+            ValueView::Package(name) => Some(name.resolve().to_string()),
+            ValueView::CustomType(c) => Some(format!("\u{0}custom-type#{}", c.id)),
+            _ => None,
+        }
     }
 
     /// `typeparameterized` / `typeparameters` / `typeparameterat`: what the

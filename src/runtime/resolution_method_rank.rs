@@ -67,7 +67,7 @@ impl Interpreter {
             {
                 rank.2 += 1;
             }
-            if !p.is_invocant && p.traits.iter().any(|t| t == "rw" || t == "raw") {
+            if !p.is_invocant && p.traits.iter().any(|t| t == "rw") {
                 rank.3 += 1;
             }
         }
@@ -119,6 +119,7 @@ impl Interpreter {
             tiered: false,
             tier_bind_check: false,
             arity_fits: true,
+            is_default: def.is_default,
         }
     }
 
@@ -143,6 +144,26 @@ impl Interpreter {
                 .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':' | '\''))
             && !constraint.starts_with(':');
         plain.then(|| Symbol::intern(constraint))
+    }
+
+    /// Whether the MRO of `class_name` reaches a built-in method named
+    /// `method_name` (`builtin_method_level(..).is_some()`), memoized per
+    /// `(class, method)` for one registry generation.
+    // Cost: O(1) amortized; O(m) on a miss, m = MRO depth.
+    pub(crate) fn class_reaches_builtin_method(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        self.refresh_method_caches_for_generation();
+        let key = (Symbol::intern(class_name), Symbol::intern(method_name));
+        if let Some(&reached) = self.caches.builtin_method_reached.get(&key) {
+            return reached;
+        }
+        let mro = self.class_mro(class_name);
+        let reached = Self::builtin_method_level(&mro, method_name).is_some();
+        self.caches.builtin_method_reached.insert(key, reached);
+        reached
     }
 
     /// The MRO index of the most-derived level with a built-in method

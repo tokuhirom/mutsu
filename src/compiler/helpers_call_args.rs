@@ -450,7 +450,18 @@ impl Compiler {
     /// [`Self::method_escapes_closure_args`]).
     /// The name of a plain scalar `my $x ...` declaration written directly as
     /// a call argument (the shape that wants its own lexical slot).
-    fn method_arg_decl_slot_name(arg: &Expr) -> Option<String> {
+    pub(super) fn method_arg_decl_slot_name(arg: &Expr) -> Option<String> {
+        // `:key(my $x)` declares the same variable as the bare argument, and
+        // a closure passed beside it (`f :deps(my $d), { ... $d ... }`) must
+        // share its slot's cell with the callee's writes (#16121).
+        let arg = match arg {
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+                ..
+            } => right.as_ref(),
+            other => other,
+        };
         if let Expr::DoStmt(stmt) = arg
             && let Stmt::VarDecl {
                 name,
@@ -506,10 +517,10 @@ impl Compiler {
         // (`@a.push: "k$i" => $i`) parses to `PositionalPair` — it is *data*,
         // not a named argument, so the Pair it builds keeps its value's
         // container exactly like the standalone literal `my $p = ("k" => $v)`
-        // does (S02:1704). `suppress_pair_capture` exists for the named-argument
-        // case only (see its field doc); suppressing it here made every pushed
-        // pair snapshot its value instead of aliasing it.
-        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
+        // does (S02:1704). A syntactic named argument also retains its
+        // container: a raw binder or bound attribute may need that location.
+        let suppress_pairs =
+            !matches!(arg, Expr::PositionalPair(_)) && !Self::is_named_arg_expr(arg);
         self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(suppress_pairs, |s| {
                 // An `AssignExpr` in argument position is always a real
@@ -841,26 +852,13 @@ impl Compiler {
         // when the initial value is the Any type object (`h(my $z)`). Keep the
         // request scoped to this argument; other expression declarations use
         // their existing env-only path.
-        let call_arg_decl = if let Expr::DoStmt(stmt) = arg
-            && let Stmt::VarDecl {
-                name,
-                is_our: false,
-                constant,
-                ..
-            } = stmt.as_ref()
-            && !name.starts_with(['@', '%', '&'])
-            && !name.starts_with("__ANON")
-            && !constant.is_some()
-            && !self.promoted_expr_decl_names.contains(name)
-        {
-            Some(name.clone())
-        } else {
-            None
-        };
+        let call_arg_decl = Self::method_arg_decl_slot_name(arg)
+            .filter(|name| !self.promoted_expr_decl_names.contains(name));
         let inserted = call_arg_decl
             .as_ref()
             .is_some_and(|name| self.call_arg_decl_slots.insert(name.clone()));
-        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
+        let suppress_pairs =
+            !matches!(arg, Expr::PositionalPair(_)) && !Self::is_named_arg_expr(arg);
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });

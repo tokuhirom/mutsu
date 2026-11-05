@@ -132,7 +132,7 @@ pub(crate) const CURSOR_NOT_STARTED: i64 = -1;
 /// The cursor-protocol methods mutsu answers for. `.^lookup` / `.^find_method`
 /// consult this so `Match.^lookup("!cursor_init")` returns a callable instead
 /// of `Nil`.
-pub(crate) const CURSOR_PROTOCOL_METHODS: &[&str] = &["!cursor_init", "CURSOR_MORE"];
+pub(crate) const CURSOR_PROTOCOL_METHODS: &[&str] = &["!cursor_init", "CURSOR_MORE", "MATCH"];
 
 /// Is `method_name` one of them? The receiver's own `Match`-ness is the
 /// caller's check — `Match` itself, or any grammar, since a grammar IS a
@@ -156,6 +156,9 @@ impl Interpreter {
             // `CURSOR_MORE` is an instance method on the cursor itself, so a
             // receiver that is not a Match is somebody else's `CURSOR_MORE`.
             "CURSOR_MORE" if target.is_match_instance() => Some(self.cursor_more(target)),
+            // `Cursor.MATCH` is the Match of a cursor; mutsu's cursor already is
+            // one (Grammar::Tracer::Compact calls `$result.MATCH`).
+            "MATCH" if target.is_match_instance() && args.is_empty() => Some(Ok(target.clone())),
             _ => None,
         }
     }

@@ -279,10 +279,9 @@ fn name_and_version(target: &Value, _: &[Value]) -> Answer {
         ValueView::Instance { attributes, .. } => attributes
             .as_map()
             .get("version")
-            .map(|v| match v.view() {
-                ValueView::Version { parts, .. } => Value::version_parts_to_string(parts),
-                _ => v.to_string_value(),
-            })
+            // `Version.Str`: keeps the source spelling of each part
+            // (`24.04.5`, not the parts' `24.4.5`).
+            .map(Value::to_string_value)
             .unwrap_or_default(),
         _ => String::new(),
     };

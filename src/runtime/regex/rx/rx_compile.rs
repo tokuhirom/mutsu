@@ -92,6 +92,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_call: c.has_call,
         markless: false,
         ascii: std::sync::OnceLock::new(),
+        derived: std::sync::Arc::clone(&pattern.derived),
     })
 }
 
@@ -253,6 +254,7 @@ pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
                 | RegexAtom::ClosureInterpolation { .. }
                 | RegexAtom::CodeInterp { .. }
                 | RegexAtom::VarInterp(_)
+                | RegexAtom::VarInterpMarkless(_)
                 | RegexAtom::VarAssertion(_) => true,
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => {
                     pattern_reads_enclosing_state(p)
@@ -614,7 +616,9 @@ impl Compiler {
                 self.has_code = true;
             }
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
-            RegexAtom::VarInterp(_) | RegexAtom::VarAssertion(_) => {
+            RegexAtom::VarInterp(_)
+            | RegexAtom::VarInterpMarkless(_)
+            | RegexAtom::VarAssertion(_) => {
                 // `$x` of an in-regex `:my` lexical, a rule's runtime parameter
                 // or an outer variable: the value is read when the atom is
                 // matched, and matched as a literal — or, for a `Regex` value,
@@ -939,16 +943,6 @@ impl Compiler {
                     max,
                 },
             });
-        }
-        // The walk runs a committed `*` / `+` iteration's subrule action here
-        // when a `$*` variable it may write is read (`grow_one_iter`); `**`
-        // does not.
-        if matches!(token.atom, RegexAtom::Named(_))
-            && matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore)
-        {
-            let tok = self.toks.len() as u32;
-            self.toks.push(token.clone());
-            self.ops.push(RxOp::ReduceAction { tok });
         }
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));

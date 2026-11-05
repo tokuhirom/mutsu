@@ -136,7 +136,10 @@ pub(super) fn parse(mut rest: &str) -> PResult<'_, Header> {
                         &trait_name,
                         Some(TraitArgument::Words(arg.clone())),
                     );
-                    custom_traits.push((trait_name.clone(), Some(Expr::Literal(Value::str(arg)))));
+                    custom_traits.push((
+                        trait_name.clone(),
+                        Some(crate::parser::helpers::trait_angle_arg_expr(&arg)),
+                    ));
                     let (r2, _) = ws(r2)?;
                     rest = r2;
                     continue;

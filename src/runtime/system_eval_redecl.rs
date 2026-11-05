@@ -10,14 +10,20 @@ impl Interpreter {
         if let Some(e) = super::eval_decl_scans::find_our_routine_redeclaration(stmts) {
             return Err(e);
         }
+        // A routine declared twice among the siblings of one scope, at any
+        // depth; a nested scope may shadow an outer routine (#15909).
+        if let Some(e) = super::eval_scope_redecl::find_scope_routine_redeclaration(stmts) {
+            return Err(e);
+        }
         // Type-like declarations (class/role/subset/enum) share one symbol
         // namespace; a non-stub declaration cannot be redeclared by another
         // type declaration of the same name (regardless of kind).
         // `bool` value records whether the existing declaration is a forward stub.
         let mut seen_types: HashMap<String, bool> = HashMap::new();
-        // Routine declarations (`sub`) share a separate namespace; a routine may
-        // only be redeclared if every declaration of that name is `multi`.
-        let mut seen_routines: HashMap<String, bool> = HashMap::new();
+        // Keys of `seen_types` that a role declared: roles of one name are the
+        // candidates of one role group (rakudo reports an ambiguity when the
+        // group is used, never a redeclaration at the declaration).
+        let mut role_keys: HashSet<String> = HashSet::new();
         // Nested type names declared directly inside each top-level class body,
         // so that `augment class C { class Nested {} }` can detect redeclaring a
         // nested type that the original `class C { class Nested {} }` declared.
@@ -95,7 +101,16 @@ impl Interpreter {
         // covered by `dup_scoped_method`; this covers plain `sub`/`token`.)
         let dup_routine_in_body = |type_name: &str, body: &[Stmt]| -> Option<RuntimeError> {
             let mut seen_subs: HashMap<String, bool> = HashMap::new();
-            let mut seen_tokens: HashSet<String> = HashSet::new();
+            // Per regex name: `Multi` while only `multi` candidates were seen,
+            // `Proto` once a `proto` claimed it (candidates still follow), `Plain`
+            // for a plain declaration (nothing may follow).
+            #[derive(Clone, Copy, PartialEq)]
+            enum Claim {
+                Multi,
+                Proto,
+                Plain,
+            }
+            let mut seen_tokens: HashMap<String, Claim> = HashMap::new();
             for s in body {
                 match s {
                     Stmt::SubDecl { name, multi, .. } => {
@@ -140,24 +155,38 @@ impl Interpreter {
                         if n.is_empty() {
                             continue;
                         }
-                        if !seen_tokens.insert(n.clone()) {
-                            let mut attrs = ValueMap::default();
-                            attrs.insert("symbol".to_string(), Value::str(n.clone()));
-                            attrs.insert("what".to_string(), Value::str("regex".to_string()));
-                            // Rakudo phrases a token/regex redeclaration inside a
-                            // package as "Package 'X' already has a regex 'a' ...",
-                            // distinct from the plain "Redeclaration of ..." form.
-                            let msg = if type_name.is_empty() {
-                                format!("Redeclaration of regex '{}'", n)
-                            } else {
-                                format!(
-                                    "Package '{}' already has a regex '{}' (did you mean to declare a multi method?)",
-                                    type_name, n
-                                )
-                            };
-                            attrs.insert("message".to_string(), Value::str(msg));
-                            return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                        let claim = match s {
+                            Stmt::ProtoToken { .. } => Claim::Proto,
+                            Stmt::TokenDecl { multi: true, .. }
+                            | Stmt::RuleDecl { multi: true, .. } => Claim::Multi,
+                            _ => Claim::Plain,
+                        };
+                        // A `multi` candidate may follow a `proto` or other
+                        // candidates; anything else claims the name once.
+                        let dup = match seen_tokens.get(&n) {
+                            None => false,
+                            Some(prev) => !(claim == Claim::Multi && *prev != Claim::Plain),
+                        };
+                        if !dup {
+                            seen_tokens.entry(n).or_insert(claim);
+                            continue;
                         }
+                        let mut attrs = ValueMap::default();
+                        attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                        attrs.insert("what".to_string(), Value::str("regex".to_string()));
+                        // Rakudo phrases a token/regex redeclaration inside a
+                        // package as "Package 'X' already has a regex 'a' ...",
+                        // distinct from the plain "Redeclaration of ..." form.
+                        let msg = if type_name.is_empty() {
+                            format!("Redeclaration of regex '{}'", n)
+                        } else {
+                            format!(
+                                "Package '{}' already has a regex '{}' (did you mean to declare a multi method?)",
+                                type_name, n
+                            )
+                        };
+                        attrs.insert("message".to_string(), Value::str(msg));
+                        return Some(RuntimeError::typed("X::Redeclaration", attrs));
                     }
                     _ => {}
                 }
@@ -166,6 +195,9 @@ impl Interpreter {
         };
 
         let type_redeclaration = |name: &str| -> RuntimeError {
+            // A role's key carries its parameter shape (`R[Int]`); the error
+            // names the role.
+            let name = name.split_once('[').map_or(name, |(base, _)| base);
             let mut attrs = ValueMap::default();
             attrs.insert("symbol".to_string(), Value::str(name.to_string()));
             attrs.insert(
@@ -190,55 +222,12 @@ impl Interpreter {
             }
         };
 
-        // mutsu currently mis-parses `anon sub foo {}` as a bare `anon` term
-        // followed by a normal named SubDecl; an anonymous routine installs no
-        // symbol, so skip the SubDecl that immediately follows a bare `anon`.
-        // TODO: parse `anon sub`/`anon multi` into a genuinely anonymous routine
-        // so this textual heuristic is unnecessary.
-        let mut prev_was_anon = false;
         for stmt in stmts {
             // SetLine markers are interleaved between real statements; they must
             // not reset the "previous statement was `anon`" tracking.
             if stmt.is_marker() {
                 continue;
             }
-            let was_anon = prev_was_anon;
-            prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
-
-            // Routine redeclaration (sub a {}; sub a {} / sub a {}; multi sub a {}).
-            if let Stmt::SubDecl { name, multi, .. } = stmt {
-                if was_anon {
-                    continue;
-                }
-                let name = name.resolve().to_string();
-                if name.is_empty() {
-                    continue;
-                }
-                match seen_routines.get(&name) {
-                    None => {
-                        seen_routines.insert(name, *multi);
-                    }
-                    Some(prev_all_multi) => {
-                        if *prev_all_multi && *multi {
-                            // still all-multi, allowed
-                        } else {
-                            let mut attrs = ValueMap::default();
-                            attrs.insert("symbol".to_string(), Value::str(name.clone()));
-                            attrs.insert("what".to_string(), Value::str("routine".to_string()));
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(format!(
-                                    "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
-                                    name
-                                )),
-                            );
-                            return Err(RuntimeError::typed("X::Redeclaration", attrs));
-                        }
-                    }
-                }
-                continue;
-            }
-
             // `augment class C { class Nested {} }` redeclares a nested type that
             // the original declaration of C already declared.
             if let Stmt::AugmentClass { name, body, .. } = stmt {
@@ -318,14 +307,31 @@ impl Interpreter {
                     }
                     (name, is_stub)
                 }
-                Stmt::RoleDecl { name, body, .. } => {
+                Stmt::RoleDecl {
+                    name,
+                    body,
+                    type_param_defs,
+                    ..
+                } => {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
                     if let Some(err) = dup_routine_in_body(&name.resolve(), body) {
                         return Err(err);
                     }
-                    (name.resolve().to_string(), body_is_stub(body))
+                    // Roles of one name with different parameter lists are the
+                    // candidates of one role group, not redeclarations of each
+                    // other; only the same parameter shape is.
+                    let shape: Vec<String> = type_param_defs
+                        .iter()
+                        .map(|d| d.type_constraint.clone().unwrap_or_default())
+                        .collect();
+                    let key = if shape.is_empty() {
+                        name.resolve().to_string()
+                    } else {
+                        format!("{}[{}]", name.resolve(), shape.join(","))
+                    };
+                    (key, body_is_stub(body))
                 }
                 Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
                 Stmt::EnumDecl { name, variants, .. } => {
@@ -360,6 +366,9 @@ impl Interpreter {
             };
 
             if name.is_empty() {
+                continue;
+            }
+            if matches!(stmt, Stmt::RoleDecl { .. }) && !role_keys.insert(name.clone()) {
                 continue;
             }
 

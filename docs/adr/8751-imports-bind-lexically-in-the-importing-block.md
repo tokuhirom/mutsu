@@ -501,6 +501,16 @@ Consequences that pin the design:
     Left: `GLOBAL::` still lists the program's own `EXPORT` (rakudo keeps it
     in `OUR::` only), and a package the program declares later in the file
     is not listed before its declaration runs.
+  - A loaded module's routine does not read the program's type-only key
+    (2026-11-02). `push_bare_word_value_in` took the program's
+    `lexical_type_key` as the running frame's own declaration when the frame
+    hid the block's imported names; for a module routine a block's `use`
+    imported (`{ use M; make-widget() }` beside the program's `my class
+    Widget`) that built the program's class instead of the module's. The
+    rule now applies to the program's own routines only
+    (`code_is_loaded_module_code`). The earlier "hook module's `my class Hk`
+    clobbers the program's" remainder no longer reproduces on `main`. Left
+    for the stage 1 exit: the `ImportScope` class-table rollback itself.
 
 ## 5. Acceptance
 

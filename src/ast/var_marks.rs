@@ -47,6 +47,12 @@ pub(crate) struct VarMarks {
     /// The static half of a `:D` scalar, which holds its nominal type object until the
     /// run-time assignment.
     pub(crate) begin_static_definite: bool,
+    /// The declaration-only half of a binding declaration (`my &f := ...`) that the BEGIN
+    /// prologue split off (`begin_prologue::static_bind_decl`): the whole binding declaration
+    /// stays in the run-time remainder and binds the name there. Until it does, the name is
+    /// declared but not bound, so a closure compiled in the remainder before it must not
+    /// capture the name (#16351).
+    pub(crate) static_bind_half: bool,
     /// A `:=` declaration that aliases the container its initializer names
     /// (`my @a := @b`, `my $x := $y`, a pointy parameter): the compiler binds
     /// instead of storing a copy, so the bound container keeps its type (a
@@ -99,6 +105,7 @@ impl VarMarks {
             && !self.method_assign_decl
             && !self.begin_static
             && !self.begin_static_definite
+            && !self.static_bind_half
             && self.term == TermMark::No
     }
 }

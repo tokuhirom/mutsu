@@ -166,6 +166,7 @@ fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value
     let ValueView::Instance {
         class_name,
         attributes,
+        id,
         ..
     } = target.view()
     else {
@@ -185,6 +186,21 @@ fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value
             };
             // Only the new elements are encoded; the existing ones are carried
             // across without being decoded to boxed `Value`s (#7680).
+            //
+            // A receiver that is a stored object -- an accessor's result
+            // (`$obj.buffer.append(..)`), a hash or array element -- is the
+            // very `Buf` its container holds, and rakudo mutates that object.
+            // The buffer's storage is shared by every alias of it (the named
+            // path above extends the same cell), so grow it in place. A
+            // `Blob` is immutable and keeps the copy.
+            if !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) {
+                crate::value::value_buf::extend_buf_elems(&attributes, class_name, &new_items, end);
+                return Some(Ok(Value::instance_sharing_cell(
+                    &attributes,
+                    class_name,
+                    id,
+                )));
+            }
             let attrs = buf_attrs_extended(&attributes, class_name, &new_items, end);
             Ok(Value::make_instance(class_name, attrs))
         }
@@ -209,8 +225,21 @@ fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value
             bytes.truncate(new_size);
             Ok(make_buf(class_name, bytes))
         }
-        // A `splice` of a temporary has nothing to remove from; the cascade
-        // answers it.
+        // A `splice` of a receiver with no binding (`write-uint32(...).splice(1)`,
+        // an accessor's `Buf`): the removed elements are the answer, and a mutable
+        // `Buf` loses them through its shared storage, as `append` above does. A
+        // `Blob` is immutable and has no `splice`.
+        "splice" if !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) => {
+            let mut bytes = buf_elems_or_empty(&attributes);
+            let removed = Interpreter::splice_buf_bytes(&mut bytes, args);
+            Value::write_back_sharing(
+                &attributes,
+                class_name,
+                crate::value::value_buf::buf_attrs(class_name, bytes),
+                id,
+            );
+            Ok(make_buf(class_name, removed))
+        }
         _ => return None,
     })
 }

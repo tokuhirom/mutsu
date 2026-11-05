@@ -619,10 +619,24 @@ impl Interpreter {
             // subs share `MAINLINE_UNIT_KEY`, while sibling blocks are distinct
             // scopes that may each declare the same name — so a block-declared
             // sub gets its own `UNIT<block ...>` bucket.
-            let capture_bucket: Option<String> = if self
+            let capture_bucket: Option<String> = if self.at_eval_unit_top_level()
+                && !self.module_load_active()
+                && !self.is_thread_clone()
+                && self.current_package_sym() == crate::symbol::wk::global_package()
+                && let Some(key) = self.module.eval_unit_capture_key.clone()
+            {
+                // An EVAL unit's own top level is a scope of its own: its
+                // named subs capture the unit's variables in a bucket per run,
+                // not through whichever caller chain they are called from.
+                Some(key.to_string())
+            } else if (self
                 .env()
                 .get("__mutsu_in_eval")
                 .is_none_or(|v| !v.truthy())
+                // A bare block of an `EVAL` unit run from the program's own
+                // top level declares its subs like a block of the program:
+                // the unit's top level has its bucket (above), the block its own.
+                || self.in_block_of_eval_unit())
                 && self.current_package_sym() == crate::symbol::wk::global_package()
                 && !self.module_load_active()
                 && !self.is_thread_clone()
@@ -666,6 +680,11 @@ impl Interpreter {
                 None
             };
             if let Some(unit_key) = capture_bucket {
+                // A scope no sibling shares: the program's mainline and an EVAL
+                // unit's own top level (one bucket per run), as against a bare
+                // block, whose siblings may declare the same names.
+                let is_whole_unit_scope = unit_key == crate::runtime::MAINLINE_UNIT_KEY
+                    || unit_key.starts_with(crate::runtime::EVAL_UNIT_CAPTURE_PREFIX);
                 // Union `free_var_syms` (read) AND `free_var_writes` (a
                 // write-only free var, e.g. a setter `sub set-v($x) { $v = $x
                 // }`, never appears in `free_var_syms` — see
@@ -776,7 +795,7 @@ impl Interpreter {
                         .filter(|slot| code.locals.get(*slot).is_some_and(|n| *n == name));
                     let slot_idx = if let Some(slot) = baked {
                         slot
-                    } else if unit_key != crate::runtime::MAINLINE_UNIT_KEY {
+                    } else if !is_whole_unit_scope {
                         continue;
                     } else {
                         let candidates: Vec<usize> = code
@@ -837,7 +856,7 @@ impl Interpreter {
                     // 23). See `CompiledCode::multi_scope_slots`.
                     if seeded.is_none()
                         && (is_hoisted_pass || !own_scope_decl_slots.contains(&(slot_idx as u32)))
-                        && unit_key != crate::runtime::MAINLINE_UNIT_KEY
+                        && !is_whole_unit_scope
                         && code.multi_scope_slots.contains(&(slot_idx as u32))
                     {
                         continue;
@@ -935,10 +954,7 @@ impl Interpreter {
             // that unit and must NOT stay callable afterwards
             // (`EVAL q|sub zzz9 {…}|; zzz9()` dies in raku —
             // `t/undeclared-routine-compile-time.t`).
-            let in_eval = self
-                .env()
-                .get("__mutsu_in_eval")
-                .is_some_and(|v| v.truthy());
+            let in_eval = self.at_eval_unit_top_level();
             if (self.block_scope_depth() > 0 || self.inside_routine())
                 && !in_eval
                 // An exported sub is part of its module's interface, installed
@@ -981,6 +997,21 @@ impl Interpreter {
                         Symbol::intern(&resolved_name),
                     ))
                     .cloned();
+                // A real routine, not merely a block frame: a `sub` declared in
+                // a mainline block is lexical to that block, which the
+                // unit-scoped subs defined in it can see.
+                if self.enclosing_routine_exists()
+                    && let Some(def) = &installed
+                {
+                    let depth = self.routine_stack().len();
+                    self.registry_mut().routine_local_subs.insert(
+                        crate::qualified::qualified(
+                            self.current_package_sym(),
+                            Symbol::intern(&resolved_name),
+                        ),
+                        (def.decl_order, depth),
+                    );
+                }
                 let sub_val = if let Some(def) = installed {
                     // Captured as any closure created here would be: the
                     // memoized layers of the enclosing tiers and the sub's own

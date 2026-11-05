@@ -25,10 +25,10 @@
 //! behind a live `Weak` — the in-place append path (`str_appended_nfc`) uses
 //! `Arc::get_mut`, which refuses when a `Weak` exists and copies instead.
 
+use crate::grapheme_break::{GraphemeIndices, UnicodeSegmentation};
 use crate::value::{StrBody, Value, ValueView};
 use std::cell::RefCell;
 use std::sync::{Arc, Weak};
-use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 
 /// Graphemes between two stored checkpoints.
 const STRIDE: usize = 32;
@@ -51,52 +51,23 @@ pub(crate) struct GraphemeIndex {
     marks: Vec<usize>,
 }
 
-fn is_utf8_c8_payload(g: &str) -> bool {
-    g == "x"
-}
-
-fn is_hex_digit(g: &str) -> bool {
-    g.len() == 1 && g.as_bytes()[0].is_ascii_hexdigit()
-}
-
 /// The units a positional string method indexes, from a grapheme boundary on:
-/// extended grapheme clusters, except that a utf8-c8 synthetic
-/// (`SYNTHETIC_MARKER x H H`) is one unit. Yields `(byte offset, unit)` with
-/// offsets relative to the full string the iterator was started in.
+/// extended grapheme clusters, in which a utf8-c8 synthetic
+/// (`SYNTHETIC_MARKER x H H`) is one cluster that breaks on both sides (see
+/// [`crate::grapheme_break`]). Yields `(byte offset, unit)` with offsets
+/// relative to the full string the iterator was started in.
 pub(crate) struct Units<'a> {
-    s: &'a str,
     inner: GraphemeIndices<'a>,
     base: usize,
-    peeked: [Option<(usize, &'a str)>; 3],
 }
 
 impl<'a> Units<'a> {
     /// Units of `s` starting at byte `from`, which must be a unit boundary.
     pub(crate) fn from(s: &'a str, from: usize) -> Self {
         Units {
-            s,
             inner: s[from..].grapheme_indices(true),
             base: from,
-            peeked: [None, None, None],
         }
-    }
-
-    fn pull(&mut self) -> Option<(usize, &'a str)> {
-        if let Some(g) = self.peeked[0].take() {
-            self.peeked.rotate_left(1);
-            return Some(g);
-        }
-        self.inner.next().map(|(i, g)| (i + self.base, g))
-    }
-
-    fn peek(&mut self, k: usize) -> Option<(usize, &'a str)> {
-        for slot in 0..=k {
-            if self.peeked[slot].is_none() {
-                self.peeked[slot] = self.inner.next().map(|(i, g)| (i + self.base, g));
-                self.peeked[slot]?;
-            }
-        }
-        self.peeked[k]
     }
 }
 
@@ -104,19 +75,7 @@ impl<'a> Iterator for Units<'a> {
     type Item = (usize, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (start, g) = self.pull()?;
-        if g == crate::runtime::utf8_c8::SYNTHETIC_MARKER_STR
-            && self.peek(0).is_some_and(|(_, x)| is_utf8_c8_payload(x))
-            && self.peek(1).is_some_and(|(_, h)| is_hex_digit(h))
-            && let Some((last, h2)) = self.peek(2)
-            && is_hex_digit(h2)
-        {
-            self.pull();
-            self.pull();
-            self.pull();
-            return Some((start, &self.s[start..last + h2.len()]));
-        }
-        Some((start, g))
+        self.inner.next().map(|(i, g)| (i + self.base, g))
     }
 }
 
@@ -443,7 +402,7 @@ mod tests {
 
     #[test]
     fn utf8_c8_synthetic_is_one_unit() {
-        let syn = format!("{}xFE", crate::runtime::utf8_c8::SYNTHETIC_MARKER_STR);
+        let syn = format!("{}xFE", crate::runtime::utf8_c8::SYNTHETIC_MARKER);
         let s = format!("a{syn}b").repeat(20);
         check_against_units(&s);
         assert_eq!(GraphemeIndex::build(&s).len(), 60);

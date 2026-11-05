@@ -329,7 +329,7 @@ impl Interpreter {
                     let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                     let (mut config, _) = Self::parse_pod_config(rest_after);
                     if numbered {
-                        config.insert("numbered".to_string(), Value::TRUE);
+                        config.insert("numbered".to_string(), Value::int(1));
                     }
                     let (headers, rows, next_idx) =
                         Self::collect_table_rows_with_headers(lines, idx + 1);
@@ -373,7 +373,7 @@ impl Interpreter {
                         let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                         let (mut config, _) = Self::parse_pod_config(inline_after);
                         if numbered {
-                            config.insert("numbered".to_string(), Value::TRUE);
+                            config.insert("numbered".to_string(), Value::int(1));
                         }
                         let (headers, rows, next_idx) =
                             Self::collect_table_rows_with_headers(lines, idx + 1);
@@ -387,7 +387,7 @@ impl Interpreter {
                         let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                         let (mut config, leftover) = Self::parse_pod_config(inline_after);
                         if numbered {
-                            config.insert("numbered".to_string(), Value::TRUE);
+                            config.insert("numbered".to_string(), Value::int(1));
                         }
                         let (code_lines, next_idx) =
                             Self::collect_pod_code_paragraph(lines, idx + 1, leftover, end_target);
@@ -398,7 +398,7 @@ impl Interpreter {
                     let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                     let (mut config, leftover) = Self::parse_pod_config(inline_after);
                     if numbered {
-                        config.insert("numbered".to_string(), Value::TRUE);
+                        config.insert("numbered".to_string(), Value::int(1));
                     }
                     let mut cont_idx = idx + 1;
                     while cont_idx < lines.len() {
@@ -530,13 +530,24 @@ impl Interpreter {
                     continue;
                 }
                 if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
+                    // `=item # text`: the `#` alias is `:numbered(1)` and is not
+                    // part of the item's text.
+                    let (numbered, inline) = Self::extract_numbered_alias(inline);
                     let (para, next_idx) =
                         Self::collect_pod_para_with_inline(lines, idx + 1, inline, end_target);
                     let mut item_contents = Vec::new();
                     if let Some(para) = para {
                         item_contents.push(para);
                     }
-                    entries.push(Self::make_pod_item(level, item_contents));
+                    let mut item_config = ValueMap::default();
+                    if numbered {
+                        item_config.insert("numbered".to_string(), Value::int(1));
+                    }
+                    entries.push(Self::make_pod_item_with_config(
+                        level,
+                        item_contents,
+                        item_config,
+                    ));
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
@@ -558,7 +569,7 @@ impl Interpreter {
                     let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                     let (mut config, leftover) = Self::parse_pod_config(rest_after);
                     if numbered {
-                        config.insert("numbered".to_string(), Value::TRUE);
+                        config.insert("numbered".to_string(), Value::int(1));
                     }
                     let (code_lines, next_idx) =
                         Self::collect_pod_code_paragraph(lines, idx + 1, leftover, end_target);
@@ -570,7 +581,7 @@ impl Interpreter {
                 let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                 let mut config = ValueMap::default();
                 if numbered {
-                    config.insert("numbered".to_string(), Value::TRUE);
+                    config.insert("numbered".to_string(), Value::int(1));
                 }
                 let (para, next_idx) =
                     Self::collect_pod_para_with_inline(lines, idx + 1, rest_after, end_target);

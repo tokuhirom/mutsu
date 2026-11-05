@@ -11,6 +11,12 @@ thread_local! {
     /// Thread-local storage for regex security errors that need to propagate
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
     pub(crate) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
+    /// The first error a grammar action raised at its subrule's reduction
+    /// (`dispatch_reduced_subrule`). Unlike a recorded subrule argument-binding
+    /// error in [`PENDING_REGEX_ERROR`] it is the program's own `die`, so a
+    /// later regex parse does not clear it and a parse that still matched
+    /// raises it, as rakudo's action call does.
+    pub(crate) static PENDING_ACTION_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
 
     /// Compile-sorrow accumulator for regex parsing. Some malformed patterns
     /// produce several diagnostics before the parser gives up — e.g.
@@ -760,14 +766,25 @@ pub(super) fn skip_opaque_var_ref(chars: &mut std::iter::Peekable<std::str::Char
                 chars.next();
             }
         }
-        Some(c) if c.is_alphabetic() || c == '_' => {
+        Some(c) if c.is_alphabetic() || c == '_' => loop {
             while chars
                 .peek()
                 .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
             {
                 chars.next();
             }
-        }
+            // `$Pkg::var`: a package-qualified name continues past `::`.
+            let mut ahead = chars.clone();
+            if ahead.next() == Some(':')
+                && ahead.next() == Some(':')
+                && ahead.peek().is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+            {
+                chars.next();
+                chars.next();
+            } else {
+                break;
+            }
+        },
         _ => {}
     }
     // After a variable ref, a trailing `=` is capture aliasing (e.g. `$<x>=(...)`).

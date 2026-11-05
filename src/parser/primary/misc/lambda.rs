@@ -217,6 +217,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             }
             r = r2;
         }
+        crate::parser::stmt::sub::validate_signature_params(&param_defs)?;
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body_with_sigilless(&param_defs, r)?;
         if arrow_is_original {
@@ -249,6 +250,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         if is_rw_block {
             inject_rw_trait(std::slice::from_mut(&mut first));
         }
+        crate::parser::stmt::sub::validate_signature_params(std::slice::from_ref(&first))?;
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body_with_sigilless(std::slice::from_ref(&first), r)?;
         if arrow_is_original {

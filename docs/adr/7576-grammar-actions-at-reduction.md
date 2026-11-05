@@ -1,6 +1,6 @@
 # ADR-7576: Dispatch grammar actions at subrule reductions
 
-- **Status**: Proposed
+- **Status**: Accepted (dispatch landed 2026-11-03; the performance claim is still unmeasured)
 - **Issue**: [#7576](https://github.com/tokuhirom/mutsu/issues/7576).
 - **Relates to**: [ADR-0009](0009-regex-code-assertion-execution-model.md)
   (observable code runs only in the real match),
@@ -98,6 +98,82 @@ the same call site and span. The caller continuation also must see each path
 the logical reduction event without collapsing those paths or dispatching internal matcher retries.
 Keep this ADR Proposed until a focused trace explains the repeated calls and action counts and order
 match Rakudo on both focused cases and the YAMLish workload.
+
+## Measurement of the reduction events the matcher already logs (2026-11-03)
+
+`record_reduced_subrule` (`regex_helpers.rs`), called from `file_named_candidate`
+right after a subrule's capture node is built, is the one place that already
+asks "did this subrule reduce in the real match": it is skipped under
+`LTM_DECLARATIVE_MODE` and `CODE_ATOMS_INERT` and de-duplicates by node
+identity. Counting it against the post-parse walk on the YAMLish benchmark
+(`benchmarks/bench-yaml-parse.raku`, debug build, same binary):
+
+| input | `record_reduced_subrule` calls | of which new nodes | `invoke_grammar_actions` entries (walk) |
+|---|---|---|---|
+| 2 sections x 3 rows | 403 | 403 | 393 |
+| 2 sections x 60 rows | 7,585 | 7,585 | 7,347 |
+
+Every call recorded a new node, so no candidate was revisited, and the event
+count tracks the size of the final tree (the walk's entries are 3% fewer: it
+skips the few reductions the surviving tree no longer holds, which the failure
+replay covers). The prototype above reached 69,867 entries into
+`dispatch_reduced_subrule` for a comparable parse, roughly nine times as many.
+The difference is most likely the gate: the prototype dispatched from
+`file_named_candidate` itself, which also runs for the LTM measurement and
+failure-position passes, while the log site is already closed to them. That is a
+hypothesis to confirm with the same counter on the prototype, not a result.
+
+What this changes in the plan:
+
+- The reduction event is the *real-match* filing of a subrule candidate, not a
+  compiled frame return. Step 1 of the plan above reduces to confirming that
+  the prototype's extra entries came from the ungated passes.
+- Two hazards remain that the counts do not touch. `build_named_candidates_from_inner`
+  files every end of a non-ratchet subrule eagerly, so a dispatch there would run
+  actions for ends Rakudo only reaches by backtracking into the subrule; the
+  dispatch has to follow the caller's lazy enumeration (the rx VM files one
+  candidate at a time through `build_named_candidate_from_inner`). And a filed
+  `CapNode` is later cloned by `Arc::make_mut` when a parent assembles its view, so
+  `.made` (a `MadeCell`) and a "dispatched" mark need one identity that survives
+  the clone, or the walk would dispatch the clone again.
+- `run_reduce_time_action` already builds the lazy `Match` for a node mid-match
+  (`make_match_object_full` over the live `MatchTarget`); the dispatch can reuse
+  it, but it runs on a deep copy of the actions object, so the real dispatch must
+  write the action's attribute changes back to `current_grammar_actions`.
+
+## Implementation (2026-11-03)
+
+The reduction event is the real-match filing of a subrule candidate, and the
+dispatch is there (`regex_reduce_dispatch.rs`, called from
+`file_named_candidate` for both the named and the silent-marker branch). It
+follows the shape the measurement above proposed:
+
+- Gate: an action-driven `Grammar.parse` armed `REDUCE_DISPATCH`
+  (`ReduceDispatchGuard`), and the matcher is neither in `LTM_DECLARATIVE_MODE`
+  nor `CODE_ATOMS_INERT`. A node whose rule has no action method is left alone.
+- The action runs on the real actions object (taken out of
+  `regex_state.current_grammar_actions` for the call and put back, so attribute
+  writes accumulate), through `invoke_grammar_actions` on the node's lazy
+  `Match`. `$/`, `$_` and `made` are restored afterwards; a caller lexical the
+  action rebound is reported through `pending_local_updates`, as an embedded
+  `{ ... }` block does. An exception is parked in `PENDING_REGEX_ERROR`.
+- Identity: `CapNode::reduced` (a flag a clone copies) marks a node whose
+  action ran. `invoke_grammar_actions` returns a marked node untouched and marks
+  every node it dispatches, so the walk, an assertion's `.made` probe and a
+  later clone of the node never run an action twice. An alias files one node
+  under both names and so dispatches once.
+- Removed, because the dispatch makes them redundant: the `ReducedSubruleLog`
+  and its failure/repeat replay, `methods_grammar_deferred_repeats`, the
+  surviving-span bookkeeping, the `RxOp::ReduceAction` copy-run of an action for
+  `$*` writes and the dyn-var overlay it fed (the action's `$*` write now lands
+  in the live env, which pattern interpolation reads).
+
+Left for the post-parse walk: the start rule's own action and nodes that are not
+filed as subrules (positional groups). Not yet done: the hazard of
+`build_named_candidates_from_inner` filing every end of a non-ratchet subrule
+eagerly measured benign on `regex w { a+ }` and `<w> <w>` probes (action counts
+and order equal `raku`), but is not proved for every shape; and the performance
+re-profile of plan step 3.
 
 ## Semantics that the prototype must preserve
 

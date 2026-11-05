@@ -142,19 +142,23 @@ impl Interpreter {
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        self.push_bare_word_value_in(name_sym, compiled_fns, false)
+        self.push_bare_word_value_in(name_sym, compiled_fns, false, false)
     }
 
     /// [`Self::push_bare_word_value`], told whether the name also spells a
     /// `$`-scalar of the reading scope (`over_scalar`, from
     /// [`OpCode::GetBareWordOverScalar`]): the `env[name]` entry is then that
     /// scalar and is no term, and a name nothing else claims is undeclared.
+    /// `foreign_unit` says the reading code is a loaded module's own
+    /// ([`Self::code_is_loaded_module_code`]): the program's type-only keys
+    /// are no declaration of its frame.
     // Cost: as `push_bare_word_value`.
     pub(crate) fn push_bare_word_value_in(
         &mut self,
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
         over_scalar: bool,
+        foreign_unit: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
         if self
@@ -176,9 +180,13 @@ impl Interpreter {
         let lexical_type = if let Some(binding) = self.lexical_type_binding_sym(name_sym) {
             // A bare binding this frame hides (a block-scoped `use`'s import
             // of the same name, ADR-8751) is no binding of the frame's: the
-            // type-only key is the frame's own declaration.
+            // type-only key is the frame's own declaration. That holds for
+            // the program's own top-level routine only; a loaded module's
+            // routine (`foreign_unit`) reads the program's key through its
+            // caller's env, and a type of the same name the module exports
+            // is what it means (its own `Pkg::Name` resolves below).
             let taken_over = over_scalar
-                || self.env().frame_hides_unit_name(name_sym)
+                || (!foreign_unit && self.env().frame_hides_unit_name(name_sym))
                 || !matches!(
                     self.env().get(name).map(Value::view),
                     None | Some(ValueView::Package(_))
@@ -262,7 +270,12 @@ impl Interpreter {
         }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
         // on first use (runtime::repl_compiler), like `nqp::getcomp` does.
-        if matches!(name, "REPL" | "Perl6::Compiler") && !self.has_class(name) {
+        // A program's own `role REPL` (the REPL distribution declares one) is
+        // that name already: registering the core class too would redeclare it.
+        if matches!(name, "REPL" | "Perl6::Compiler")
+            && !self.has_class(name)
+            && !self.registry().roles.contains_key(name)
+        {
             self.ensure_repl_compiler_prelude()?;
         }
         // #7797: a package-qualified bareword (a constant, enum value/type,
@@ -304,7 +317,39 @@ impl Interpreter {
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.
         if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
-            return self.push_bare_word_value_in(Symbol::intern(&real), compiled_fns, false);
+            // A qualified name that is itself a declared class (`class
+            // Plugin::Registry is export` in a unit that imported another
+            // `Plugin`) is that class when the head's package has no such
+            // member: the rewrite would only produce "Could not find symbol".
+            if !self.has_type(&real)
+                && !self.is_known_package(&real)
+                && crate::qualified::is_qualified(name_sym)
+            {
+                let declared = if self.registry().classes.contains_key(name) {
+                    Some(name_sym)
+                } else {
+                    // Or the class a `use` bound under that spelling
+                    // (`P2::Plugin::Registry` exported as `Plugin::Registry`).
+                    self.env().get(name).and_then(|v| match v.view() {
+                        ValueView::Package(target)
+                            if self.registry().classes.contains_key(target.as_str()) =>
+                        {
+                            Some(target)
+                        }
+                        _ => None,
+                    })
+                };
+                if let Some(class) = declared {
+                    self.stack.push(Value::package(class));
+                    return Ok(());
+                }
+            }
+            return self.push_bare_word_value_in(
+                Symbol::intern(&real),
+                compiled_fns,
+                false,
+                foreign_unit,
+            );
         }
         // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
         // one whose block has exited), which is stored under its term key rather
@@ -335,7 +380,7 @@ impl Interpreter {
             let real =
                 crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
             if self.get_our_var(real.as_str()).is_some() {
-                return self.push_bare_word_value_in(real, compiled_fns, false);
+                return self.push_bare_word_value_in(real, compiled_fns, false, foreign_unit);
             }
         }
         // An imported routine may share its short spelling with a type
@@ -585,17 +630,30 @@ impl Interpreter {
             // nested package owners. Cache the result for the module arm
             // below; local terms were handled by the current-tier probe above.
             let term_key = crate::runtime::term_names::term_key_sym(name_sym);
-            let active_package_term = self
+            let frame_package = self
                 .routine_stack()
                 .last()
-                .and_then(|frame| frame.lexical_package)
-                .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
-                .and_then(|lexicals| {
-                    lexicals
-                        .get(term_key.as_str())
-                        .or_else(|| lexicals.get(name))
-                })
+                .and_then(|frame| frame.lexical_package);
+            // A role body's `my constant` as its composition bound it
+            // (`persist_role_body_lexicals`) is the one binding every method of
+            // the composed role reads. The module table holds the instance the
+            // declaring unit evaluated; preferring it here gave a method with a
+            // `use` (which runs in a module frame) another object than its
+            // siblings (#16255).
+            let composed_role_term = frame_package
+                .and_then(|package| self.lexicals.package_lexicals.get(package.as_str()))
+                .and_then(|lexicals| lexicals.get(term_key.as_str()))
                 .cloned();
+            let active_package_term = composed_role_term.or_else(|| {
+                frame_package
+                    .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
+                    .and_then(|lexicals| {
+                        lexicals
+                            .get(term_key.as_str())
+                            .or_else(|| lexicals.get(name))
+                    })
+                    .cloned()
+            });
             preferred_module_bareword =
                 active_package_term.or_else(|| self.running_module_bareword(name));
             // A term the caller bound is no meaning for a module's own type
@@ -931,6 +989,14 @@ impl Interpreter {
                 && let Some(our_val) = self.get_our_var(name).cloned()
             {
                 our_val
+            // `Foo::Bar::zape` naming a package's `our &zape` code variable: the
+            // bare qualified name is a call of the stored Callable, as it is
+            // for an `our sub` (#16482). The stash keys it `&Foo::Bar::zape`.
+            } else if !self.has_type(name)
+                && let Some(code) = self.get_our_var(&format!("&{name}")).cloned()
+                && matches!(code.deref_container().view(), ValueView::Sub(..))
+            {
+                self.vm_call_on_value(code.deref_container(), Vec::new(), Some(compiled_fns))?
             // `Fac::make` where `Fac` is the short name a `use` of
             // `unit module A::B::Fac is export` installed: the sub lives under
             // the full package name.
@@ -1007,11 +1073,22 @@ impl Interpreter {
                     || self.export_namespace_exists(name)
                     || Self::is_builtin_type(name)
                     || crate::core_type_names::contains(name)
+                    // `Proc::Async::Pipe:D`: a core type with a definedness smiley.
+                    || crate::core_type_names::contains(
+                        crate::runtime::types::strip_type_smiley(name).0,
+                    )
                     || crate::rakuast::is_registered_type_object(
                         crate::runtime::types::strip_type_smiley(name).0,
                     )
                 {
                     Value::package(Symbol::intern(name))
+                // `MY::ENOENT`: the pseudo-package selects the scope, the bare
+                // name is a term the scope holds (an enum value or constant a
+                // `use` imported), read as the bare word is (#16562).
+                } else if bare != name
+                    && let Some(term) = self.imported_term(bare)
+                {
+                    term
                 } else {
                     return Err(self.no_such_qualified_symbol(pkg, sym));
                 }

@@ -4,21 +4,20 @@
 //! name *is*: a type object renders as `Type::Simple`, a constant or other
 //! defined term as `Term::Name`, a setting enum value as `Term::Enum`, and a
 //! routine called without arguments as `Call::Name::WithoutParentheses`.
-//! mutsu's parser leaves all of these as `Expr::BareWord`, so the converter
+//! mutsu's parser leaves all of these as `Expr::BareWord`, so the view
 //! re-derives which is which from the setting (the generated name lists) and
 //! from the compilation unit's own declarations. A bareword none of those
 //! resolves stays the conversion boundary: guessing would render a wrong node.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
-use super::convert::{leaf_field, name_from_identifier, node_field};
+use super::view::{leaf_field, name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
+use crate::known_types::is_known_type_constraint;
 use crate::qualified::qualified;
-use crate::runtime::utils::is_known_type_constraint;
 
 /// Setting types and the finite RakuAST model registry share one classifier.
 // Cost: O(k + c), k = name length, c = number of registered model classes.
@@ -33,10 +32,7 @@ fn setting_type(name: &str) -> bool {
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-mod caller_names;
 mod package_alias;
-
-pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 
 /// What a bareword naming something the same compilation unit declared means.
 ///
@@ -44,53 +40,45 @@ pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 /// as a `Type::Simple` — exactly like a builtin type — and
 /// `constant X = 5; X` renders `X` as a `Term::Name`. Both measured against
 /// rakudo 2026.07.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DeclaredKind {
-    /// A `class` / `role` / `grammar` / `enum` name.
-    Type,
-    /// A `constant` name, an enum value the unit declares (`Red`,
-    /// `Color::Red`), or a sigilless parameter (`\x`): all render as
-    /// `Term::Name` (measured on rakudo 2026.09).
-    Term,
-    /// An `our sub` of a package, reached by its qualified name (`M::foo`):
-    /// rakudo renders the bare reference as an argument-less `Call::Name`.
-    Routine,
-}
-
-thread_local! {
-    /// The names the compilation unit currently being converted declares.
-    /// Empty outside a conversion, so a nested/re-entrant conversion that never
-    /// ran `statement_list` simply sees no declarations and keeps the old
-    /// bareword boundary.
-    static DECLARED_NAMES: RefCell<HashMap<String, DeclaredKind>> =
-        RefCell::new(HashMap::new());
-}
+use crate::scope::{DeclaredKind, NameScope};
 
 /// RAII guard installing the unit's declared names for the duration of a
 /// conversion, restoring whatever was there before (so a nested conversion
 /// cannot leak its names into the outer one).
-pub(super) struct DeclaredNames(HashMap<String, DeclaredKind>);
+pub(super) struct DeclaredNames<'s> {
+    names: &'s NameScope,
+    previous: HashMap<String, DeclaredKind>,
+}
 
-impl DeclaredNames {
+impl<'s> DeclaredNames<'s> {
     // Cost: O(n), n = size of the unit's AST (one `collect_declared_names` scan).
-    pub(super) fn collect(stmts: &[Stmt]) -> Self {
-        let mut names = HashMap::new();
-        names.extend(
+    pub(super) fn collect(names: &'s NameScope, stmts: &[Stmt]) -> Self {
+        let mut found = HashMap::new();
+        found.extend(
             crate::parser::imported_value_term_names()
                 .into_iter()
                 .map(|name| (name, DeclaredKind::Term)),
         );
-        collect_declared_names(stmts, &mut names);
-        Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
+        collect_declared_names(names, stmts, &mut found);
+        Self {
+            names,
+            previous: names.replace_declared(found),
+        }
     }
 }
 
-impl Drop for DeclaredNames {
+impl Drop for DeclaredNames<'_> {
     fn drop(&mut self) {
-        DECLARED_NAMES.with(|d| {
-            *d.borrow_mut() = std::mem::take(&mut self.0);
-        });
+        self.names
+            .replace_declared(std::mem::take(&mut self.previous));
     }
+}
+
+/// Whether the calling scope of the `EVAL` being lowered declares the operator
+/// routine `routine` (`infix:<…>`).
+// Cost: O(k), k = length of `routine`.
+pub(super) fn caller_declares_operator(names: &NameScope, routine: &str) -> bool {
+    names.caller_declares_operator(routine)
 }
 
 /// What a `constant` renders as when named later. Rakudo evaluates the
@@ -98,11 +86,11 @@ impl Drop for DeclaredNames {
 /// (`my constant E = Metamodel::EnumHOW.new_type(...)`, `constant T = Int`) and
 /// any other constant a term. Only the initializers whose value is visibly a
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
-fn constant_kind(init: &Expr) -> DeclaredKind {
+fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
     let type_valued = match init {
         // A type the unit declares too (`constant E = Outer::Inner`); while
         // the unit's own scan runs, `package_alias` settles those instead.
-        Expr::BareWord(n) => setting_type(n) || declared_kind(n) == Some(DeclaredKind::Type),
+        Expr::BareWord(n) => setting_type(n) || declared_kind(names, n) == Some(DeclaredKind::Type),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -117,23 +105,12 @@ fn constant_kind(init: &Expr) -> DeclaredKind {
     }
 }
 
-/// The declarations of the blocks being converted, innermost last. Each holds
-/// only the names its own statement list declares: a lexical enum variable
-/// shadows a class of the same name declared further out, which the unit-wide
-/// [`DECLARED_NAMES`] (one entry per name) cannot express.
-#[derive(Default)]
-struct Scopes(Vec<HashMap<String, DeclaredKind>>);
+/// RAII guard for one block's own declarations ([`NameScope::push_block`]).
+pub(super) struct BlockScope<'s>(&'s NameScope);
 
-thread_local! {
-    static SCOPES: RefCell<Scopes> = RefCell::new(Scopes::default());
-}
-
-/// RAII guard for one block's own declarations (see [`SCOPES`]).
-pub(super) struct BlockScope;
-
-impl BlockScope {
+impl<'s> BlockScope<'s> {
     // Cost: O(m), m = number of statements in the list (direct children only).
-    pub(super) fn enter(stmts: &[Stmt]) -> Self {
+    pub(super) fn enter(names: &'s NameScope, stmts: &[Stmt]) -> Self {
         let mut own = HashMap::new();
         for stmt in stmts {
             match stmt {
@@ -156,52 +133,48 @@ impl BlockScope {
                     expr,
                     ..
                 } if constant.is_some() => {
-                    own.insert(name.clone(), constant_kind(expr));
+                    own.insert(name.clone(), constant_kind(names, expr));
                 }
                 _ => {}
             }
         }
-        SCOPES.with(|s| s.borrow_mut().0.push(own));
-        Self
+        names.push_block(own);
+        Self(names)
     }
 }
 
-impl Drop for BlockScope {
+impl Drop for BlockScope<'_> {
     fn drop(&mut self) {
-        SCOPES.with(|s| {
-            s.borrow_mut().0.pop();
-        });
+        self.0.pop_block();
     }
 }
 
-fn scoped_kind(name: &str) -> Option<DeclaredKind> {
-    SCOPES.with(|s| s.borrow().0.iter().rev().find_map(|m| m.get(name).copied()))
+fn scoped_kind(names: &NameScope, name: &str) -> Option<DeclaredKind> {
+    names.block_kind(name)
 }
 
-fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    scoped_kind(name)
-        .or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
-        .or_else(|| caller_names::kind(name))
+fn declared_kind(names: &NameScope, name: &str) -> Option<DeclaredKind> {
+    scoped_kind(names, name).or_else(|| names.kind(name))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
 /// declares or imports (the parser's user-type registry). Rakudo's `is NAME` trait takes
 /// this test to choose between a container type (`Trait::Is(type => …)`) and a named trait.
 // Cost: O(k), k = length of `name`.
-pub(super) fn names_type(name: &str) -> bool {
+pub(super) fn names_type(names: &NameScope, name: &str) -> bool {
     setting_type(name)
-        || declared_kind(name) == Some(DeclaredKind::Type)
+        || declared_kind(names, name) == Some(DeclaredKind::Type)
         || crate::parser::is_user_declared_type(name)
-        || caller_names::declares_trait_type(name)
+        || names.declares_trait_type(name)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of
 /// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
 /// declares (including the stub `A` a `class A::B { }` creates).
-pub(super) fn package_resolves(stem: &str) -> bool {
+pub(super) fn package_resolves(names: &NameScope, stem: &str) -> bool {
     name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
         || setting_type(stem)
-        || declared_kind(stem) == Some(DeclaredKind::Type)
+        || declared_kind(names, stem) == Some(DeclaredKind::Type)
 }
 
 /// Record a declared type name, together with the stub packages a qualified
@@ -237,7 +210,11 @@ fn insert_term(out: &mut HashMap<String, DeclaredKind>, name: String) {
 /// every child -- a declaration in an `if` or loop body, a closure or a `do`
 /// block counts as well as one in a class, routine or bare block.
 // Cost: O(n), n = size of the AST.
-fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind>) {
+fn collect_declared_names(
+    names: &NameScope,
+    stmts: &[Stmt],
+    out: &mut HashMap<String, DeclaredKind>,
+) {
     /// The names collected so far, and the packages whose body is being scanned
     /// (outermost first): a declaration nested in `class Outer { class Inner }`
     /// is also `Outer::Inner`.
@@ -245,6 +222,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         &'o mut HashMap<String, DeclaredKind>,
         Vec<Symbol>,
         Vec<package_alias::PackageAlias>,
+        &'o NameScope,
     );
 
     impl Scan<'_> {
@@ -352,7 +330,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     expr,
                     ..
                 } if constant.is_some() => {
-                    self.0.insert(name.clone(), constant_kind(expr));
+                    self.0.insert(name.clone(), constant_kind(self.3, expr));
                     if let Expr::BareWord(target) = expr {
                         self.2.push(package_alias::PackageAlias {
                             spellings: self.compositions(Symbol::intern(name)),
@@ -450,14 +428,14 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
             }
             // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
             // renders `T` as a `Type::Simple`, measured on 2026.09).
-            if let Some(name) = super::convert::type_capture_name(param) {
+            if let Some(name) = super::view::type_capture_name(param) {
                 insert_declared_type(Symbol::intern(name), self.0);
             }
             walk_param(self, param);
         }
     }
 
-    let mut scan = Scan(out, Vec::new(), Vec::new());
+    let mut scan = Scan(out, Vec::new(), Vec::new(), names);
     walk_stmts(&mut scan, stmts);
     package_alias::apply(&scan.2, scan.0);
 }
@@ -471,7 +449,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
 // Cost: O(k + d), k = length of `name`, d = parser scope depth.
-pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
+pub(super) fn view_node(names: &NameScope, name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
@@ -481,7 +459,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         });
     }
     // The innermost block's own declaration wins over everything outside it.
-    match scoped_kind(name) {
+    match scoped_kind(names, name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
         Some(DeclaredKind::Routine) | None => {}
@@ -491,7 +469,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         return Some(simple_type_node(name));
     }
     // A name the same compilation unit declared shadows a setting one.
-    match declared_kind(name) {
+    match declared_kind(names, name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
         Some(DeclaredKind::Routine) => return Some(call_name(name)),
@@ -501,8 +479,8 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     // name and referenced by the bare symbol; rakudo renders the reference as
     // `Term::Name` of the declared name.
     let term = format!("term:<{name}>");
-    if scoped_kind(&term) == Some(DeclaredKind::Term)
-        || declared_kind(&term) == Some(DeclaredKind::Term)
+    if scoped_kind(names, &term) == Some(DeclaredKind::Term)
+        || declared_kind(names, &term) == Some(DeclaredKind::Term)
     {
         return Some(term_name(&term));
     }
@@ -516,14 +494,14 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         .strip_suffix(":D")
         .or_else(|| name.strip_suffix(":U"))
         .or_else(|| name.strip_suffix(":_"))
-        && convert(base).is_some_and(|node| {
+        && view_node(names, base).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
             )
         })
     {
-        return super::convert::build_type_node(name).ok();
+        return super::view::build_type_node(names, name).ok();
     }
     // `GLOBAL` and a pseudo-package prefix on a name that resolves
     // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
@@ -534,7 +512,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("GLOBAL::")
         .or_else(|| name.strip_prefix("CORE::"))
-        && let Some(node) = convert(rest)
+        && let Some(node) = view_node(names, rest)
     {
         match node.class {
             RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
@@ -547,7 +525,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     if let Some(rest) = name
         .strip_prefix("OUR::")
         .or_else(|| name.strip_prefix("MY::"))
-        && convert(rest).is_some_and(|node| {
+        && view_node(names, rest).is_some_and(|node| {
             matches!(
                 node.class,
                 RakuAstClass::TypeSimple | RakuAstClass::TermName
@@ -592,7 +570,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
             fields: vec![leaf_field(None, Value::str(constant.to_string()))],
         });
     }
-    if let Some(op) = super::convert::nqp_op(name) {
+    if let Some(op) = super::view::nqp_op(name) {
         return Some(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Nqp,
@@ -607,6 +585,154 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         });
     }
     None
+}
+
+/// The expression an `nqp::` bareword lowers to, when the classifier resolves it
+/// to the `Nqp` / `Nqp::Const` node: the same result as converting the word and
+/// lowering the node back (`nqp::op` is the argument-less op call, an
+/// `nqp::const::NAME` stays the word), without building the node tree. `None`
+/// leaves the word to the conversion.
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn nqp_term(names: &NameScope, name: &str) -> Option<Expr> {
+    if !name.starts_with("nqp::") {
+        return None;
+    }
+    match view_node(names, name)?.class {
+        RakuAstClass::Nqp => Some(Expr::Call {
+            name: Symbol::intern(name),
+            args: Vec::new(),
+            listop: false,
+        }),
+        RakuAstClass::NqpConst => Some(Expr::BareWord(name.to_string())),
+        _ => None,
+    }
+}
+
+/// A core bare call word (`callsame`, `nextsame`, `lastcall`, `nextcallee`,
+/// `done`) the classifier leaves a call: converting it marks the node as a source
+/// bareword, so the lowering hands back the word itself. `None` when a
+/// declaration of the unit shadows it (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn core_bare_call(names: &NameScope, name: &str) -> Option<Expr> {
+    if !CORE_BARE_CALLS.contains(&name) {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::CallNameWithoutParentheses)
+        .then(|| Expr::BareWord(name.to_string()))
+}
+
+/// A plain-identifier word the classifier resolves to an argument-less call (a
+/// routine the unit declares, an imported function): the conversion marks the
+/// node as a source bareword and `lower_named_call` hands back the word itself,
+/// so the answer is the word, with no node tree built. `None` for any other
+/// classification or a qualified or decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn call_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::CallNameWithoutParentheses)
+        .then(|| Expr::BareWord(name.to_string()))
+}
+
+/// The expression a plain-identifier term the classifier resolves to `Term::Name`
+/// (a sigilless declaration, a `constant`, an imported value) lowers to:
+/// `term_identifier_expr`, the one function the lowering of the node uses, so no
+/// node tree is built. `None` for any other classification or a qualified or
+/// otherwise decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn term_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    if node.class != RakuAstClass::TermName
+        || node
+            .fields
+            .iter()
+            .any(super::declared_routines::is_bareword_field)
+    {
+        return None;
+    }
+    if super::label_context::lookup(name).is_some() {
+        return None;
+    }
+    Some(super::lower::term_identifier_expr(name))
+}
+
+/// A plain-identifier type word (a native type such as `uint8`, a setting or
+/// unit type) the classifier resolves to `Type::Simple`: the word itself, as the
+/// lowering of the node hands it back (`Nil` is its own literal unless the unit
+/// declares a package of that name). `None` for any other classification or a
+/// qualified or decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain || name == "Nil" {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    if node.class != RakuAstClass::TypeSimple
+        || node
+            .fields
+            .iter()
+            .any(super::declared_routines::is_bareword_field)
+    {
+        return None;
+    }
+    Some(Expr::BareWord(name.to_string()))
+}
+
+/// A plain-identifier word the parser spelled as an imported term
+/// (`Spelling::ImportedTerm`): the conversion keeps the parse's decision as a
+/// source bareword (`term_name::imported`), which lowers to the word itself, and
+/// a type the classifier resolves (`uint16`) lowers to the word as well. `None`
+/// for any other classification or a decorated name (the conversion decides).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn imported_term_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    if let Some(ty) = type_word_expr(names, name) {
+        return Some(ty);
+    }
+    let plain = name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+    if !plain {
+        return None;
+    }
+    let node = view_node(names, name)?;
+    (node.class == RakuAstClass::TermName).then(|| Expr::BareWord(name.to_string()))
+}
+
+/// A native type word with a definiteness smiley (`int:D`, `array:U`, `num:_`): the
+/// classifier resolves the base word to `Type::Simple`, and the smiley makes the whole a
+/// definite type whose lowering is the word itself. `None` for anything else.
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn smiley_type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let base = name
+        .strip_suffix(":D")
+        .or_else(|| name.strip_suffix(":U"))
+        .or_else(|| name.strip_suffix(":_"))?;
+    type_word_expr(names, base)?;
+    let node = view_node(names, name)?;
+    matches!(
+        node.class,
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
+    )
+    .then(|| Expr::BareWord(name.to_string()))
 }
 
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain

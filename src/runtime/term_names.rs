@@ -96,6 +96,19 @@ impl Interpreter {
             .or_else(|| self.env().get_sym(name_sym).cloned())
     }
 
+    /// Whether the bare `name` written where a type goes is a `constant` term
+    /// bound to a definite value (`constant G = Point.new(..); multi f(G)`).
+    /// The term shadows a same-named type declared elsewhere (a `class G` in
+    /// the importing script), as the lexical scope the signature was written
+    /// in decides in Rakudo.
+    // Cost: O(1) expected, see `term_binding_sym`.
+    pub(crate) fn names_value_constant(&self, name: &str) -> bool {
+        !crate::runtime::utils::is_known_type_constraint(name)
+            && self
+                .type_name_binding(name)
+                .is_some_and(|v| !matches!(v.view(), crate::value::ValueView::Package(_)))
+    }
+
     /// A lexical declaration's type identity, independent of a same-named scalar.
     // Cost: O(1) expected after the type-namespace key's first memoized lookup.
     pub(crate) fn lexical_type_binding_sym(&self, name: Symbol) -> Option<Value> {

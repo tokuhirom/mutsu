@@ -316,6 +316,7 @@ pub(crate) use stmt::simple::is_user_declared_enum_value;
 /// `subset` (or class/role/grammar/enum) as a type constraint rather than a
 /// definite return value, independent of runtime sub-hoisting order (#8657).
 pub(crate) use stmt::simple::is_user_declared_type;
+pub(crate) use stmt::simple::module_declared_types;
 pub(crate) use stmt::simple::{DeclaredNameKind, declared_name_kind, term_keywords_shadowable};
 
 /// Snapshot parse-time type facts that affect compiling a module's cached AST.
@@ -372,7 +373,9 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
 }
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
-pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
+pub(crate) use stmt::simple::{
+    fold_use_lib_path, register_module_exports_with_tags, try_add_parse_time_lib_path, use_lib_args,
+};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
@@ -469,6 +472,7 @@ pub(crate) fn parse_nested_block_fragment(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     if let Some(offset) = unit_offset {
         primary::fragment_attempts::lend_attempts(offset);
+        primary::lend_line_base(offset);
     }
     // The body is a copy of the unit's text: its positions are the unit's,
     // or, where the copy's place is not known, not recorded.
@@ -488,6 +492,7 @@ pub(crate) fn parse_nested_block_fragment(
     if unit_offset.is_some() {
         primary::fragment_attempts::clear_lent_attempts();
     }
+    primary::clear_line_base();
     primary::clear_span_base();
     result
 }

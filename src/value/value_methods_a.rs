@@ -15,6 +15,7 @@ impl Value {
                 storer,
                 subclass,
                 decontainerized: true,
+                var_object: true,
             }),
             other => Value::from_repr(other),
         }
@@ -949,6 +950,9 @@ impl Value {
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
             | ValueView::GenericRange { .. } => self.item(),
+            // A raw BOOT scalar box is its high-level value once it is an
+            // element (#12881).
+            ValueView::Instance { .. } if self.is_boot_scalar_box() => self.hllize_for_binding(),
             _ => self,
         }
     }
@@ -1227,11 +1231,42 @@ impl Value {
     /// collapsed to the value at its end, for the reason [`Value::with_deref`]
     /// gives.
     pub fn into_deref(self) -> Value {
+        if self.is_container_ref() {
+            self.deref_clone()
+        } else {
+            self
+        }
+    }
+
+    /// [`Value::into_deref`] of a clone of `self`, without cloning a cell
+    /// handle that is only read through: the owned read of a closure's
+    /// captured container.
+    // Cost: O(c), c = the cells in the chain; O(1) for a plain value or one cell.
+    pub fn deref_clone(&self) -> Value {
         if let ValueView::ContainerRef(arc) = self.view() {
             // The flavour that counts is the LAST holder's: an attribute's own
             // Scalar cell around an itemized value-share cell (Slice 2e) reads
             // as that itemized share, exactly as `with_deref` recurses into it.
             let mut itemized = self.container_ref_is_itemized();
+            // The common read: the cell holds a value, not another cell. It is
+            // read through the borrowed `arc`, without the `Gc` clone (and its
+            // drop) the walk below needs only to follow a chain.
+            let first = {
+                let _cross_thread =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
+                // A poisoned cell still holds its value: read it, as the
+                // stripe lock does after a panic elsewhere.
+                let guard = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                guard.clone()
+            };
+            if !matches!(first.view(), ValueView::ContainerRef(_)) {
+                return if itemized {
+                    first.itemize_for_element_store()
+                } else {
+                    first
+                };
+            }
+            drop(first);
             let mut cell = arc.clone();
             let inner = loop {
                 // See `with_deref`: the cell lock alone does not exclude the store.
@@ -1259,7 +1294,7 @@ impl Value {
                 inner
             };
         }
-        self
+        self.clone()
     }
 
     /// Store `val` through a `ContainerRef` cell. If the cell currently holds a
@@ -1369,6 +1404,23 @@ impl Value {
             None => {
                 map.insert(key, val.itemize_for_hash_element());
             }
+        }
+    }
+
+    /// The native `of`-type of the container this value is (`byte` for a
+    /// `my byte` variable's cell), `None` for any other value or a cell that is
+    /// not native. The multi dispatcher reads it for a container argument
+    /// (ADR-15309).
+    // Cost: O(1) for a non-native cell (one atomic load); one lock and clone
+    // for a native one.
+    pub(crate) fn native_container_type(&self) -> Option<String> {
+        // Tag probe first: `view()` on a lazy Match would materialize it.
+        if !self.is_container_ref() {
+            return None;
+        }
+        match self.view() {
+            ValueView::ContainerRef(cell) => cell.native_type_name(),
+            _ => None,
         }
     }
 

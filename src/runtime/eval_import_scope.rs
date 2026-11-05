@@ -75,11 +75,29 @@ impl Interpreter {
                 *self.env_mut() = restored;
             }
             Err(replaced) => {
-                // The env was replaced wholesale while the region ran: no
-                // layer to drop. Keep what is there; the mismatch is a bug
-                // elsewhere (no test or whitelisted roast file reaches it).
-                debug_assert!(false, "an import region's env was replaced wholesale");
-                *self.env_mut() = replaced;
+                // The env was replaced while the region ran. Spawning a thread
+                // (`start`, `Thread.start`) flattens a scoped env
+                // ([`Interpreter::clone_for_thread`]), which folds the import
+                // layer into the one flat tier: the region is gone, its imports
+                // are plain by-name writes now, and the unit's own bookkeeping
+                // (`unit_env_imports`, the alias removal of
+                // `with_eval_import_scope`) takes them out again when the unit
+                // ends. That is the expected end of a region whose env was
+                // flattened.
+                //
+                // A block that bound a name in the region's layer while its own
+                // tier sat above it (`try { require Foo::Bar }` declares a
+                // lexical stub there) copied the tiers between the two, and
+                // the block's exit then took the whole env back as it stood
+                // (`close_block_env_tier`'s fallback): the block's tier is
+                // still above the region's. Those tiers hold by-name writes
+                // that outlive their block, so the end of the region folds the
+                // chain into one flat tier, the same end as a flattened env.
+                *self.env_mut() = if replaced.has_import_layer(region.id) {
+                    replaced.flattened()
+                } else {
+                    replaced
+                };
             }
         }
     }
@@ -94,7 +112,19 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         self.push_import_scope();
+        // The unit's scope is a region the unit's own routines are compiled
+        // inside (`compile_block_value_opts_under`).
+        static EVAL_REGIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let region = Symbol::intern(&format!(
+            "EVAL-unit\u{1}{}",
+            EVAL_REGIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        if let Some(scope) = self.module.import_scope_stack.last_mut() {
+            scope.region = Some(region);
+        }
+        let saved_region = self.module.eval_unit_region.replace(region);
         let result = body(self);
+        self.module.eval_unit_region = saved_region;
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let ImportScopeSnapshot {
                 unit_env_imports,

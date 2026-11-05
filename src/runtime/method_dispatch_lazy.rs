@@ -90,12 +90,60 @@ impl Interpreter {
         method_name: &str,
         args: &[Value],
         invocant: Value,
-        chosen: Option<(&str, &MethodDef)>,
+        chosen: Option<(Symbol, &MethodDef)>,
     ) -> bool {
+        self.push_method_dispatch_frame_named(
+            Symbol::intern(receiver_class),
+            Symbol::intern(method_name),
+            std::borrow::Cow::Owned(method_name.to_string()),
+            args,
+            invocant,
+            chosen,
+        )
+    }
+
+    /// [`Self::push_method_dispatch_frame`] for a caller holding the receiver
+    /// class's and the method's interned [`Symbol`]s: the samewith context
+    /// borrows the method symbol's string instead of copying it (one
+    /// allocation per call), and the memo and pending entry below reuse both
+    /// symbols instead of interning the names again (five `Symbol::intern` per
+    /// call in a program that mentions a deferral builtin, ~160 Ir each).
+    // Cost: as `push_method_dispatch_frame`, minus the name's allocation and
+    // the re-interning.
+    pub(crate) fn push_method_dispatch_frame_sym(
+        &mut self,
+        receiver_sym: Symbol,
+        method_sym: Symbol,
+        args: &[Value],
+        invocant: Value,
+        chosen: Option<(Symbol, &MethodDef)>,
+    ) -> bool {
+        let method_name = method_sym.as_str();
+        self.push_method_dispatch_frame_named(
+            receiver_sym,
+            method_sym,
+            std::borrow::Cow::Borrowed(method_name),
+            args,
+            invocant,
+            chosen,
+        )
+    }
+
+    fn push_method_dispatch_frame_named(
+        &mut self,
+        receiver_sym: Symbol,
+        method_sym: Symbol,
+        name: std::borrow::Cow<'static, str>,
+        args: &[Value],
+        invocant: Value,
+        chosen: Option<(Symbol, &MethodDef)>,
+    ) -> bool {
+        let receiver_class = receiver_sym.as_str();
+        let method_name = method_sym.as_str();
         // Always push samewith context so samewith() can find the method name/invocant
-        self.push_method_samewith_context(
+        self.push_method_samewith_context_named(
             receiver_class,
-            method_name,
+            name,
             args,
             Some(invocant.clone()),
         );
@@ -109,11 +157,16 @@ impl Interpreter {
         // The resolver already tested this exact winner. Keep its identity and
         // writeback metadata so building a frame cannot run its predicates again.
         let winner = chosen.map(|(owner, def)| MethodDispatchWinner {
-            owner: Symbol::intern(owner),
+            owner,
             fingerprint: self.method_def_fingerprint(def),
             rw_params: super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs),
         });
-        if !self.deferral_build_is_context_free(receiver_class, method_name) {
+        if !self.deferral_build_is_context_free_sym(
+            receiver_sym,
+            method_sym,
+            receiver_class,
+            method_name,
+        ) {
             let frame = self.build_method_dispatch_frame(
                 receiver_class,
                 method_name,
@@ -130,8 +183,8 @@ impl Interpreter {
             .push(PendingMethodDispatch {
                 dispatch_token,
                 call: PendingMethodCall {
-                    receiver_class: Symbol::intern(receiver_class),
-                    method_name: Symbol::intern(method_name),
+                    receiver_class: receiver_sym,
+                    method_name: method_sym,
                     invocant,
                     args: args.to_vec(),
                     winner,
@@ -188,13 +241,31 @@ impl Interpreter {
     // write generation); a miss is O(c * p) over the deferral expansion's
     // candidates and their parameters.
     pub(super) fn deferral_build_is_context_free(&mut self, receiver_class: &str, method_name: &str) -> bool {
+        self.deferral_build_is_context_free_sym(
+            Symbol::intern(receiver_class),
+            Symbol::intern(method_name),
+            receiver_class,
+            method_name,
+        )
+    }
+
+    /// [`Self::deferral_build_is_context_free`] for a caller that already holds
+    /// both names' [`Symbol`]s.
+    // Cost: as `deferral_build_is_context_free`, minus two interns.
+    fn deferral_build_is_context_free_sym(
+        &mut self,
+        receiver_sym: Symbol,
+        method_sym: Symbol,
+        receiver_class: &str,
+        method_name: &str,
+    ) -> bool {
         self.refresh_method_caches_for_generation();
-        let key = (Symbol::intern(receiver_class), Symbol::intern(method_name));
+        let key = (receiver_sym, method_sym);
         if let Some(&free) = self.caches.deferral_build_context_free.get(&key) {
             return free;
         }
         let free = self
-            .resolve_deferral_expansion(receiver_class, method_name)
+            .deferral_expansion_shared(receiver_class, method_name)
             .iter()
             .all(|(_, def)| def.param_defs.iter().all(param_match_is_context_free));
         self.caches.deferral_build_context_free.insert(key, free);

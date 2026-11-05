@@ -263,7 +263,8 @@ impl Interpreter {
             && let Some(word) = name
                 .strip_prefix("infix:<")
                 .and_then(|rest| rest.strip_suffix('>'))
-            && !word.is_empty()
+            // A word, not the symbolic `-`: at least one letter.
+            && word.chars().any(|c| c.is_ascii_lowercase())
             && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
             && !crate::parser::is_known_word_infix(word)
             && !self.env().contains_key(&format!("&{name}"))
@@ -763,11 +764,15 @@ impl Interpreter {
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let val = if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view)
+        let val = if let Some(ValueView::Hash(env_hash)) =
+            self.process_env_hash().as_ref().map(Value::view)
         {
             // `%*ENV` is authoritative once it exists: a key deleted from it
             // must not reappear from the process environment (#11241).
-            env_hash.get(key).cloned().unwrap_or(Value::NIL)
+            env_hash
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| Value::package(crate::symbol::wk::any()))
         } else if let Some(value) = std::env::var_os(key) {
             crate::runtime::builtins_collection::builtin_val(&[Value::str(
                 value.to_string_lossy().to_string(),
@@ -780,12 +785,13 @@ impl Interpreter {
 
     pub(super) fn exec_exists_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let exists =
-            if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view) {
-                env_hash.contains_key(key)
-            } else {
-                std::env::var_os(key).is_some()
-            };
+        let exists = if let Some(ValueView::Hash(env_hash)) =
+            self.process_env_hash().as_ref().map(Value::view)
+        {
+            env_hash.contains_key(key)
+        } else {
+            std::env::var_os(key).is_some()
+        };
         self.stack.push(Value::truth(exists));
     }
 

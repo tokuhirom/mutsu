@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 
 /// The built-in classes whose `Instance`s have a shape that is not an opaque
 /// one (those are found by their type name, `opaque.rs`).
-const INSTANCE_CLASSES: [(&str, DispatchShape); 41] = [
+const INSTANCE_CLASSES: [(&str, DispatchShape); 42] = [
     ("Date", DispatchShape::Date),
     ("Label", DispatchShape::Label),
     ("Collation", DispatchShape::Collation),
@@ -28,6 +28,9 @@ const INSTANCE_CLASSES: [(&str, DispatchShape); 41] = [
     ("Duration", DispatchShape::Duration),
     ("Match", DispatchShape::Match),
     ("IO::Path", DispatchShape::IoPath),
+    // `%?RESOURCES` entries share the path rows but are not an `IO::Path`
+    // (#15818).
+    ("Distribution::Resource", DispatchShape::IoPath),
     ("IO::Path::Unix", DispatchShape::IoPath),
     ("IO::Path::Win32", DispatchShape::IoPath),
     ("IO::Path::Cygwin", DispatchShape::IoPath),
@@ -84,4 +87,32 @@ pub(super) fn type_shapes() -> &'static FxHashMap<Symbol, DispatchShape> {
             .map(|shape| (Symbol::intern(shape.type_name()), shape))
             .collect()
     })
+}
+
+/// The classes [`DispatchShape::from_instance_class`] last answered `None` for,
+/// by `symbol id % len`, holding `id + 1` (`0` is an empty slot).
+static SHAPELESS_CLASSES: [std::sync::atomic::AtomicU32; 256] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; 256];
+
+/// Whether `class` was just answered shapeless. The answer is a pure function
+/// of the symbol, and a user class is asked on every call of its methods and
+/// never has a shape; this table of last answers makes the repeat ask one load
+/// instead of a hash lookup and a prefix compare. A racing store only
+/// overwrites a slot, which at worst sends a later ask down the slow path.
+// Cost: O(1), one relaxed load.
+#[inline]
+pub(super) fn is_known_shapeless(class: Symbol) -> bool {
+    let slot = &SHAPELESS_CLASSES[class.id() as usize % SHAPELESS_CLASSES.len()];
+    slot.load(std::sync::atomic::Ordering::Relaxed) == class.id().wrapping_add(1)
+}
+
+/// Remember that `class` has no instance shape.
+// Cost: O(1), one relaxed store.
+#[inline]
+pub(super) fn note_shapeless(class: Symbol) {
+    let slot = &SHAPELESS_CLASSES[class.id() as usize % SHAPELESS_CLASSES.len()];
+    slot.store(
+        class.id().wrapping_add(1),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }

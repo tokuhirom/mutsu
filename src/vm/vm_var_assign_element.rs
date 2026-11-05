@@ -25,6 +25,12 @@ impl Interpreter {
         if !var_name.starts_with('%') {
             return None;
         }
+        // A routine's own `our %h` lives in the package mirror, which every read
+        // resolves before the name-keyed lanes; the lane commit would write a
+        // copy nothing reads back (#16221). The slow path writes the mirror.
+        if self.our_package_container_key(var_name).is_some() {
+            return None;
+        }
         let stack_len = self.stack.len();
         if stack_len < 2 {
             return None;
@@ -122,6 +128,11 @@ impl Interpreter {
         }
         let var_name = Self::const_str(code, name_idx);
         if !var_name.starts_with('@') {
+            return None;
+        }
+        // See `try_shared_hash_element_assign`: an `our @a` is read from the
+        // package mirror, not the lane.
+        if self.our_package_container_key(var_name).is_some() {
             return None;
         }
         let stack_len = self.stack.len();
@@ -576,7 +587,11 @@ impl Interpreter {
         // reached from here can run user code under the guard.
         let _struct_guard =
             self.named_root_struct_guard(code, target_slot, Self::const_str(code, name_idx));
-        self.with_package_lexical_seeded(code, name_idx, |vm| {
+        // `%*ENV<K> = v` in a sub lands in the frame overlay's copy of the
+        // base-tier hash and would die with the frame; publish it to the
+        // process stash, as a whole `%*ENV = ...` is (#16559).
+        let process_env = self.process_hash_store_begin(Self::const_str(code, name_idx));
+        let result = self.with_package_lexical_seeded(code, name_idx, |vm| {
             vm.with_own_container_seeded(code, name_idx, target_slot, |vm| {
                 vm.exec_index_assign_expr_named_op_unseeded(
                     code,
@@ -586,7 +601,11 @@ impl Interpreter {
                     element_share,
                 )
             })
-        })
+        });
+        if process_env && result.is_ok() {
+            self.publish_process_hash_store();
+        }
+        result
     }
 
     /// Whether `value` is an instance of a user class inheriting `Map` (its
@@ -613,6 +632,8 @@ impl Interpreter {
         target_slot: Option<u32>,
         element_share: bool,
     ) -> Result<(), RuntimeError> {
+        // A user `postcircumfix` candidate decides which element is addressed.
+        self.remap_index_through_user_postcircumfix(code, name_idx, is_positional, target_slot)?;
         // A user object key of a `Str`-keyed hash is stored under its `.Str`
         // (#13293), the key the read side looks up.
         if !is_positional
@@ -882,8 +903,19 @@ impl Interpreter {
             // A store path that already wrote through the cell re-installs
             // the cell itself under the name; storing that into the cell
             // would make it contain itself.
+            // A store that went through the cross-thread atomic lane
+            // (`shared_hash_elem_set`) wrote the result into the cell itself
+            // and left the seeded env copy untouched; storing that stale copy
+            // back would undo the write (#16221).
+            let lane_wrote_cell = seeded_inner.as_ref().is_some_and(|inner| {
+                !crate::vm::vm_method_dispatch::cheaply_unchanged(inner, &cell.load())
+            });
             if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned())
                 && !matches!(mutated.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell))
+                && !(lane_wrote_cell
+                    && seeded_inner.as_ref().is_some_and(|inner| {
+                        crate::vm::vm_method_dispatch::cheaply_unchanged(inner, &mutated)
+                    }))
             {
                 cell.store(mutated);
             }
@@ -1126,7 +1158,14 @@ impl Interpreter {
                 // ADR-0040's store boundary, Proxy half: an element is a
                 // `Scalar` container, so a `Proxy` rvalue is FETCHed here and
                 // the plain value is what lands (`@a[0] = Proxy.new(...)`).
-                let old = self.fetch_proxy_for_store(old)?;
+                // Rakudo keeps the Proxy object `.VAR` hands back in a HASH
+                // value (`%h<k> = $q.VAR`) but FETCHes it into an array
+                // element (#15893).
+                let old = if is_positional {
+                    self.fetch_proxy_for_store(old)?
+                } else {
+                    self.fetch_proxy_for_scalar_store(old)?
+                };
                 // An element ASSIGNMENT stores a COPY; only a `:=` bind (which
                 // arrives wrapped in a bind marker, so it is
                 // untouched here) aliases. The RHS can BE a first-class element

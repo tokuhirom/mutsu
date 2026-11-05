@@ -87,6 +87,22 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
     f()
 }
 
+/// Run `f` with static links honoured even inside a
+/// [`with_static_links_suppressed`] region (the argument binder reads the
+/// caller's env through the whole chain, but needs ONE read that follows the
+/// caller's own lexical scope, #16177). Restores the depth on unwind.
+pub(crate) fn with_static_links_honoured<R>(f: impl FnOnce() -> R) -> R {
+    struct Guard(u32);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            SUPPRESSED.with(|c| c.set(self.0));
+        }
+    }
+    let saved = SUPPRESSED.with(|c| c.replace(0));
+    let _guard = Guard(saved);
+    f()
+}
+
 /// Whether two bindings of one name hold the same variable: the same value,
 /// or the same container seen through a shared cell (a store into a
 /// captured variable seeds the cell's container under the name).
@@ -121,6 +137,19 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
         || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
+        // A sigil-less term (`my constant SECRET`, `my \Thing`) is a lexical
+        // like any other; the lowercase spelling is a plain user lexical
+        // already, the uppercase-initial one is not.
+        || key.with_str(|s| {
+            s.strip_prefix(crate::term_names::TERM_PREFIX).is_some_and(|name| {
+                name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            })
+        })
+        // An enum key read by its bare spelling (`my enum Col <Red>`).
+        || key.with_str(|s| s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX))
 }
 
 /// Whether a frame running a loaded module's routine
@@ -614,6 +643,34 @@ impl Env {
                         None => seg,
                     };
                 }
+            }
+        }
+    }
+
+    /// A block-scoped `sub`'s code object (`BLOCK_LEXICAL_SUB_PREFIX` key) as
+    /// the running code sees it: the frame's own tiers, then -- for a frame
+    /// root with a static link, a routine declared at the top of a compunit --
+    /// only its own capture, never the frames that called it. The sub is the
+    /// declaring body's lexical, so a callee reading `&name` reflectively
+    /// (`EVAL q[&helper]`) must not find the caller's. A frame without a
+    /// static link (a block or closure running inside its lexical outer)
+    /// walks the whole chain, as [`Self::get_sym`] does.
+    // Cost: O(d + l), d = the frame's tiers, l = the capture's layers.
+    pub(crate) fn get_block_sub_sym(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            if cur.frame_root {
+                if cur.has_static_outer() && !suppressed() {
+                    return cur.fallback.as_deref()?.get(&key);
+                }
+                return self.get_sym(key);
+            }
+            match cur.parent.as_deref() {
+                Some(parent) => cur = parent,
+                None => return self.get_sym(key),
             }
         }
     }

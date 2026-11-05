@@ -9,10 +9,11 @@ use crate::value::{Value, ValueView};
 
 /// The names [`call`] answers for `class`, for `.^can` / `.^methods`.
 // Cost: O(1).
-pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
+#[cfg(test)]
+pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
     use RakuAstClass::*;
-    if default_scope_rule(class).is_some() {
-        return match class {
+    let mut names = if default_scope_rule(class).is_some() {
+        let scope: &[&'static str] = match class {
             Class | Role | Grammar | Module | Package | Native => &[
                 "default-scope",
                 "scope",
@@ -24,8 +25,11 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
             ],
             _ => &["default-scope", "scope"],
         };
-    }
-    match class {
+        scope.to_vec()
+    } else {
+        Vec::new()
+    };
+    let specific: &[&'static str] = match class {
         Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
         CallMethod => &["dispatch", "dispatcher", "macroish"],
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
@@ -63,17 +67,16 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         | ColonPairNumber => &["named-arg-name", "named-arg-value"],
         QuotedString => &["has-variables"],
         TypeSubset => &["of"],
+        DocBlock => &["delimited", "Str"],
+        DocParagraph | DocMarkup | DocLegacyRow => &["Str"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
-        _ if class
-            .printed_name()
-            .starts_with("RakuAST::StatementPrefix::Phaser::") =>
-        {
-            &["type", "original-blorst"]
-        }
+        StatementPrefixPhaserFirst | StatementPrefixPhaserPost => &["type", "original-blorst"],
         _ if statement_prefix_type(class).is_some() => &["type"],
         _ => &[],
-    }
+    };
+    names.extend(specific);
+    names
 }
 
 /// The keyword of a statement prefix or phaser (`.type`): rakudo answers the
@@ -100,6 +103,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
     match (node.class, method) {
         // rakudo answers these through nqp integer comparisons: `0`/`1`, and
         // `True` for an anonymous name (the last part's `is-empty`).
+        (DocBlock | DocParagraph | DocMarkup | DocLegacyRow, "Str") => {
+            Some(Value::str(super::doc_str::text(node)))
+        }
         (Name, "is-empty") => {
             let parts = name_parts(node);
             let empty = parts.is_empty() || (parts.len() == 1 && is_empty_part(&parts[0]));
@@ -251,12 +257,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (_, "type") => statement_prefix_type(node.class).map(Value::str),
         // The blorst as written (rakudo keeps it apart once a block made
         // around it takes its place; mutsu never replaces it).
-        (_, "original-blorst")
-            if node
-                .class
-                .printed_name()
-                .starts_with("RakuAST::StatementPrefix::Phaser::") =>
-        {
+        (StatementPrefixPhaserFirst | StatementPrefixPhaserPost, "original-blorst") => {
             node_accessor(node, "blorst")
         }
         // nqp `eqaddr` answers: `1` when `optional` was written as that Bool.

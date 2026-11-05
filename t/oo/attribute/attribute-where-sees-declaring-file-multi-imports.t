@@ -30,7 +30,7 @@ sub out-of(Str $code) {
 
 is out-of('use AwPeer; say AwPeer.new(:ip("1.2.3.4")).ip'), "1.2.3.4\n",
     'a valid address passes the attribute where';
-like out-of('use AwPeer; AwPeer.new(:ip("nope"))'), /'where constraint failed'/,
+like out-of('use AwPeer; AwPeer.new(:ip("nope"))'), /'Type check failed in assignment to $!ip; expected <anon> but got Str'/,
     'an invalid address still fails it';
 is out-of('use AwPeer; say AwPeer.new(:ip("1.2.3.4"), :alt("5.6.7.8")).alt'), "5.6.7.8\n",
     'a non-required attribute where';

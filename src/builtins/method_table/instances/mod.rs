@@ -47,7 +47,16 @@ pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
 pub(crate) mod label;
+pub(crate) mod parameter;
+pub(crate) mod rakuast_accessors;
+mod rakuast_apply_queries;
+mod rakuast_arg_list_queries;
+mod rakuast_block_queries;
+mod rakuast_locate;
+mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
+mod rakuast_parameter_queries;
+mod rakuast_rakudoc;
 mod rakuast_visit;
 mod rakuast_walk;
 pub(crate) mod rakudo_internals;
@@ -98,12 +107,21 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     routine::ROWS,
     failure::ROWS,
     signature::ROWS,
+    parameter::ROWS,
     stash::ROWS,
     wrapper_role::ROWS,
     supply::ROWS,
     rakuast_node::ROWS,
+    &rakuast_accessors::ROWS,
     rakuast_visit::ROWS,
+    rakuast_locate::ROWS,
+    rakuast_rakudoc::ROWS,
     rakuast_walk::ROWS,
+    rakuast_name_queries::ROWS,
+    rakuast_apply_queries::ROWS,
+    rakuast_arg_list_queries::ROWS,
+    rakuast_block_queries::ROWS,
+    rakuast_parameter_queries::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,

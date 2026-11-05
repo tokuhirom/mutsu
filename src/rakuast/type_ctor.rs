@@ -1,7 +1,7 @@
 //! Hand-built `Type::Definedness`, `Type::AnyDefinedness`, `Type::Coercion` and
 //! `Type::Parameterized`.
 //!
-//! The read direction (`convert::build_type_node`) already renders `Int:D`,
+//! The read direction (`view::build_type_node`) already renders `Int:D`,
 //! `Int:_` and `Int(Str)` as these nodes; this is the matching `.new`:
 //!
 //! ```text

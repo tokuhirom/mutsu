@@ -22,11 +22,19 @@ impl Value {
         if !matches!(self.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return self;
         }
+        // `sub f($a is copy)` copies the Scalar `$a`, not the aggregate it
+        // holds: `$a` is the caller's very `Array` / `Hash` (`$a.push(3)`
+        // reaches `@x`, `$a === @x`), as in rakudo (#15429).
+        // (A scalar parameter's name carries no sigil, so anything that is not
+        // `@` or `%` is a scalar.)
+        if !matches!(sigil, '@' | '%') {
+            return self;
+        }
         let mut copy = self.copy_for_list_assignment();
         if sigil == '%' {
             copy.with_hash_mut(|data| Gc::make_mut(data).value_type = None);
         }
-        if sigil != '@' {
+        if sigil == '%' {
             return copy;
         }
         if let ValueView::Array(gc, kind) = copy.view() {

@@ -84,6 +84,17 @@ impl Interpreter {
         // through its persisted shared cell FIRST (see `escaping_our_read`), ignoring
         // the upvalue slot entirely. Gated on a non-empty name set so ordinary
         // closures pay only an `is_empty` check on this hot path.
+        // A captured container's cell is read through (one `deref_clone`),
+        // not cloned and then consumed.
+        if self.lexicals.escaping_our_lexical_names.is_empty()
+            && let Some(Some(v)) = self.upvalues.get(index as usize)
+            && v.is_container_ref()
+        {
+            let val = v.deref_clone();
+            self.stack.push(val);
+            *ip += 1;
+            return Ok(());
+        }
         let val = if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(v) = self.escaping_our_read(Self::const_str(code, name_idx))
         {
@@ -337,26 +348,35 @@ impl Interpreter {
         // `my %h; await (^3).map: -> $i { start { %h{$i} = $i } }` case the
         // gate exists for. The condition that holds is the identity one below:
         // the slot's cell is still what this frame's `env` names.
-        let slot_cell_is_env_binding = (name.starts_with('@') || name.starts_with('%'))
-            && match self.locals[idx].view() {
-                ValueView::ContainerRef(slot_cell) => {
-                    // Probe via the pre-interned Symbol when this chunk has
-                    // one (see `code.locals_sym.get(idx)` ~40 lines below) —
-                    // this read runs on every GetLocal of a celled `@`/`%`
-                    // local, and a by-name `Env::get` would re-intern `name`
-                    // on every single one.
-                    let key_sym = code.locals_sym.get(idx).copied();
-                    matches!(
-                        self.env().get_for(name, key_sym).map(Value::view),
-                        Some(ValueView::ContainerRef(env_cell))
-                            if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
-                    )
-                }
-                _ => false,
-            };
-        let skip_name_keyed_store =
-            slot_cell_is_env_binding || self.container_name_is_redeclared(name);
-        if skip_name_keyed_store || !crate::runtime::shared_store::atomic_lane_entries_exist() {
+        // The answer is read by exactly two things below: the atomic-lane probe
+        // (only when a lane entry exists anywhere in the process) and the
+        // thread-clone branch. In every other program it decides nothing, and
+        // computing it walks the env chain for a celled `@`/`%` local -- more
+        // the more names a loaded module has put in scope (#7817) -- so it is
+        // asked only when one of the two can use it.
+        let aggregate_name = name.starts_with('@') || name.starts_with('%');
+        let lane_probe = crate::runtime::shared_store::atomic_lane_entries_exist();
+        let clone_probe = aggregate_name && self.is_thread_clone();
+        let skip_name_keyed_store = (lane_probe || clone_probe) && {
+            let slot_cell_is_env_binding = aggregate_name
+                && match self.locals[idx].view() {
+                    ValueView::ContainerRef(slot_cell) => {
+                        // Probe via the pre-interned Symbol when this chunk has
+                        // one (see `code.locals_sym.get(idx)` ~40 lines below)
+                        // -- a by-name `Env::get` would re-intern `name` on
+                        // every single one.
+                        let key_sym = code.locals_sym.get(idx).copied();
+                        matches!(
+                            self.env().get_for(name, key_sym).map(Value::view),
+                            Some(ValueView::ContainerRef(env_cell))
+                                if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
+                        )
+                    }
+                    _ => false,
+                };
+            slot_cell_is_env_binding || !self.container_lane_applies(name)
+        };
+        if skip_name_keyed_store || !lane_probe {
             // fall through to the local/env read
         } else if name.starts_with('@') {
             let atomic_key = atomic_lane_str_key(name, false);
@@ -757,7 +777,7 @@ impl Interpreter {
     /// and `GetArrayVar`/`GetHashVar` `into_deref()` the cell on read.
     ///
     /// `unvouched_capture` marks the ADR-0055 unvouched-escaping-capture trigger
-    /// (`CompiledCode::needs_cell_unvouched_containers`). There the cell is not
+    /// (`CompiledCode::needs_cell_captured_containers`). There the cell is not
     /// an optimisation but the only thing that distinguishes the closure's
     /// binding from a same-named container in whatever frame happens to be
     /// calling it, so an already-celled slot is REBOUND to a fresh cell instead
@@ -781,7 +801,7 @@ impl Interpreter {
     /// But those traits never reached this check at all. `is BagHash` is
     /// invisible to `var_type_constraint` — which is exactly why
     /// `CompiledCode::compute_free_vars` carries its own `ApplyVarTrait` name
-    /// scan, subtracting those names from `needs_cell_unvouched_containers`
+    /// scan, subtracting those names from `needs_cell_captured_containers`
     /// before this function is ever called. The check therefore only ever
     /// caught the ELEMENT-constraint case (`my Int @a`, `my Str %h`), which
     /// ADR-0042 made a property of the container: a write reaching the array

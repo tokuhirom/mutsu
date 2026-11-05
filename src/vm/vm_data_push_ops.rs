@@ -106,6 +106,13 @@ impl Interpreter {
         // `Scalar` container, so a `Proxy` is FETCHed on the way in exactly as
         // `@a[0] = $p` is. Done before the branches below, each of which pops
         // the value for its own store path.
+        // A raw BOOT scalar box pushed as an element is its high-level value
+        // (#12881).
+        if let Some(top) = self.stack.last_mut()
+            && top.is_boot_scalar_box()
+        {
+            *top = top.clone().hllize_for_binding();
+        }
         if self.stack.last().is_some_and(Value::is_proxy_value) {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let val = self.fetch_proxy_for_store(val)?;
@@ -221,7 +228,7 @@ impl Interpreter {
             // `my @a` would otherwise be the parent's `@a`.
             if matches!(target.view(), ValueView::Array(..) | ValueView::Nil)
                 && Self::is_plain_lexical_array_name(target_name)
-                && !self.container_name_is_redeclared(target_name)
+                && self.container_lane_applies(target_name)
                 && (self.is_thread_clone() || self.array_name_is_shared(target_name))
             {
                 // ADR-0040 slice 1: itemize per element, after Slip expansion.

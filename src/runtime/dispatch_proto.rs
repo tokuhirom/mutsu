@@ -1,6 +1,21 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether any `trait_mod:<is>` candidate is registered anywhere, visible
+    /// to the running code or not. A class declared inside a module loaded
+    /// later than the module that exports the trait does not see the
+    /// candidate through the bare-name search (the import lands in the
+    /// exporter's own set), yet `is Foo` on an unknown name is still the
+    /// named trait argument there (`class X is Singleton` in a module that
+    /// `use`s the trait's provider, Pop); the dispatch that follows
+    /// resolves the candidates through the normal path and falls back to
+    /// X::Inheritance::UnknownParent when none matches.
+    // Cost: O(1) with the base-name key index filled, O(n) once to fill it,
+    // n = registered routines.
+    pub(crate) fn has_any_trait_mod_is(&mut self) -> bool {
+        !self.fn_keys_for_base("trait_mod:<is>").is_empty()
+    }
+
     pub(crate) fn has_proto(&self, name: &str) -> bool {
         // Same gate `resolve_proto_function` applies: a `my`-scoped (non-`our`)
         // proto is not in the package stash, so a package-qualified call must
@@ -26,12 +41,43 @@ impl Interpreter {
     /// (`fn_keys_for_base`), which fills lazily — the probe itself reads only
     /// the registry and the package context.
     pub(crate) fn has_multi_candidates(&mut self, name: &str) -> bool {
-        let base_keys = self.fn_keys_for_base(name);
-        let packages = self.bare_name_packages_syms();
-        self.registry()
-            .has_multi_candidates(Some(&base_keys), &packages, name)
-            && (!self.operator_has_import_scope(name)
-                || self.any_visible_candidate_of(Some(&base_keys), &packages, name))
+        // The registry half is memoised like `has_multi_function`'s, in the
+        // family-generation cache `has_multi_candidates_cached_sym` shares (it
+        // stores exactly this half for an unscoped name); only the compunit
+        // visibility half runs per call.
+        let sym = Symbol::intern(name);
+        let generation = self.caches.fn_resolve_gen;
+        let key = self.bare_name_ctx_key(sym);
+        let cached = self
+            .caches
+            .multi_candidates_cache
+            .get(generation, &key, || self.dispatch.fn_family_gens.of_name(sym));
+        let mut base_keys = None;
+        let in_registry = match cached {
+            Some(known) => known,
+            None => {
+                let keys = self.fn_keys_for_base(name);
+                let packages = self.bare_name_packages_syms();
+                let found = self
+                    .registry()
+                    .has_multi_candidates(Some(&keys), &packages, name);
+                self.caches.multi_candidates_cache.insert(
+                    generation,
+                    self.caches.fn_resolve_gen,
+                    || self.dispatch.fn_family_gens.of_name(sym),
+                    key,
+                    found,
+                );
+                base_keys = Some(keys);
+                found
+            }
+        };
+        in_registry
+            && (!self.operator_has_import_scope(name) || {
+                let keys = base_keys.unwrap_or_else(|| self.fn_keys_for_base(name));
+                let packages = self.bare_name_packages_syms();
+                self.any_visible_candidate_of(Some(&keys), &packages, name)
+            })
     }
 
     /// [`Self::has_multi_candidates`] for a `&self` caller — see
@@ -45,12 +91,26 @@ impl Interpreter {
     // Cost: O(k) with the index filled, k = registered keys sharing `name`'s
     // base; else O(n), n = registered routines.
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
+        // The registry half is the memo the `&mut` probes fill (see
+        // `has_multi_candidates`): read it, so `resolve_function` -- ~250 of
+        // these per Red model create -- does not walk the family again.
+        // `Symbol::lookup`: a name never interned has no memo.
+        let memo = Symbol::lookup(name).and_then(|sym| {
+            self.caches.multi_candidates_cache.peek(
+                self.caches.fn_resolve_gen,
+                &self.bare_name_ctx_key(sym),
+                || self.dispatch.fn_family_gens.of_name(sym),
+            )
+        });
         let packages = self.bare_name_packages_syms();
         let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
             .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
         let base_keys = base_keys.as_deref();
-        self.registry()
-            .has_multi_candidates(base_keys, &packages, name)
+        let in_registry = memo.unwrap_or_else(|| {
+            self.registry()
+                .has_multi_candidates(base_keys, &packages, name)
+        });
+        in_registry
             && (!self.operator_has_import_scope(name)
                 || self.any_visible_candidate_of(base_keys, &packages, name))
     }
@@ -119,8 +179,9 @@ impl Interpreter {
         // Rakudo still rejects a call whose arguments are ALL literals at
         // compile time (`proto f(Int $x) {*}; multi f($) {...}; f 'foo'`);
         // mutsu has no compile-time check, so it gates those calls here.
-        let all_literal = self.literal_native_args != 0
-            && self.literal_native_args.count_ones() as usize == args.len();
+        let marked = (self.literal_native_args | self.literal_native_args >> super::LITERAL_MASK_SHIFT)
+            & ((1 << super::LITERAL_MASK_SHIFT) - 1);
+        let all_literal = marked != 0 && marked.count_ones() as usize == args.len();
         let only_star = !all_literal
             && (def.body.is_empty()
                 || super::dispatch_proto_rewrite::is_only_star_block(&def.body));
@@ -241,6 +302,8 @@ impl Interpreter {
             callable_id: 0,
             code: 0,
             fixtures: 0,
+            unit_scoped: false,
+            fixtures_floor: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -280,11 +343,15 @@ impl Interpreter {
             return None;
         }
         let method_sym = Symbol::intern(method_name);
-        let registry = self.registry();
-        if !registry.has_proto_method_named(method_sym) {
+        if !self.registry().has_proto_method_named(method_sym) {
             return None;
         }
+        // Resolve the MRO before taking the read guard the lookup below holds:
+        // `class_mro` writes the registry to cache an uncached MRO, and a write
+        // acquired under a held read guard is a read -> write upgrade (a
+        // deadlock; Log::Dispatch hung on its first `$logger.add: ...`).
         let mro = self.class_mro(class_name);
+        let registry = self.registry();
         mro.iter().find_map(|owner| {
             registry
                 .method_entry_proto_sym(*owner, method_sym)
@@ -379,6 +446,7 @@ impl Interpreter {
             nested_capture_index: None,
             captured_readonly: None,
             routine_cell: Default::default(),
+            augment_epoch: 0,
         };
         // ADR-0019 D3-8 never compiled proto method bodies at plan-lowering
         // time (`todo/tickets/adr0019-method-body-compile-dedup-remnants.md`

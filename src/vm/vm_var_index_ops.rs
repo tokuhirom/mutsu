@@ -408,7 +408,17 @@ impl Interpreter {
         // container mode (#10044): only the run-time value can tell.
         if Self::lazy_index_selects_many(&index) {
             let resolved = target.deref_container().descalarize().clone();
-            if !matches!(resolved.view(), ValueView::Array(..)) {
+            // An Array carrying a `postcircumfix:<[ ]>` candidate that accepts
+            // this slice (an imported `CArray` one) is subscripted by that
+            // routine, as the plain read does, not bound cell by cell (#16546).
+            if !matches!(resolved.view(), ValueView::Array(..))
+                || (is_positional
+                    && self.lexical_postcircumfix_in_scope()
+                    && !matches!(
+                        crate::runtime::utils::value_type_name(&resolved),
+                        "Array" | "List"
+                    ))
+            {
                 self.stack.push(resolved);
                 self.stack.push(index);
                 return self.exec_index_op_with_positional(is_positional);
@@ -632,6 +642,20 @@ impl Interpreter {
             }
             _ => false,
         }
+    }
+
+    /// Whether a `postcircumfix:<[ ]>` family is lexically imported here (a
+    /// `LexImportBuiltinOp` scope is active), so an Array receiver may be
+    /// subscripted by one of its candidates rather than natively.
+    // Cost: O(s), s = active lexical operator scopes.
+    fn lexical_postcircumfix_in_scope(&self) -> bool {
+        let op_name = crate::symbol::Symbol::intern(
+            crate::lexical_builtin_op::postcircumfix_of_subscript(true),
+        );
+        self.dispatch
+            .lexical_operator_scopes
+            .iter()
+            .any(|scope| scope.name == op_name)
     }
 
     /// Whether `target` is an instance whose class declares its own `AT-POS`.
@@ -1204,6 +1228,13 @@ impl Interpreter {
                 // A punned role instance is a mixin over an `Instance`.
                 || matches!(target.view(), ValueView::Mixin(inner, _)
                     if matches!(inner.view(), ValueView::Instance { .. })))
+            // No user routine named so in scope (the three places below look):
+            // skip the argument vectors and the resolution of every plain
+            // `@a[$i]` read (#15394).
+            && self.user_subscript_candidate_possible(
+                crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional),
+                is_positional,
+            )
         {
             let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
             let args = vec![target.clone(), index.clone()];
@@ -1457,10 +1488,15 @@ impl Interpreter {
         // `Doc[$doc]` compiles to this same op), and `Instance`/`Mixin` are left
         // to their own subscript protocol.
         if is_positional
-            && !matches!(
-                target.view(),
-                ValueView::Package(..) | ValueView::Instance { .. } | ValueView::Mixin(..)
-            )
+            && (match target.view() {
+                ValueView::Package(..) | ValueView::Mixin(..) => false,
+                // An instance of an `is Array` subclass is a positional
+                // container: its `AT-POS` takes an `Int`.
+                ValueView::Instance { class_name, .. } => {
+                    self.class_inherits_array(&class_name.resolve())
+                }
+                _ => true,
+            })
             && let ValueView::Str(s) = index.view()
         {
             match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
@@ -1944,7 +1980,8 @@ impl Interpreter {
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -2041,7 +2078,8 @@ impl Interpreter {
             // Treat hash as a list of pairs with elems = hash.len()
             (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 match idx.view() {
                     ValueView::Int(i) if i < 0 => Self::make_out_of_range_failure(i),
                     ValueView::Int(i) => {
@@ -3083,7 +3121,8 @@ impl Interpreter {
             (_, ValueView::Sub(data)) if target.is_range() => {
                 let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 // A block returning a Range or a list of indices (e.g. `{0,1}`)
                 // slices the range's materialized elements.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -3262,7 +3301,11 @@ impl Interpreter {
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (ValueView::Array(items, is_arr), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                // The closure's own exception (`@a[-> $n { die }]`) and a Failure
+                // it returns (`@a[$i % *]` over an empty array) propagate, as in
+                // rakudo, instead of reading as `Nil`.
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 // If the block returned a Range or a list of indices (e.g. `{0,1}`
                 // returns the List `(0,1)`), use every element as a slice index.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -3327,7 +3370,8 @@ impl Interpreter {
                 } else {
                     0
                 };
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -3405,7 +3449,8 @@ impl Interpreter {
             (ValueView::Uni(u), ValueView::Sub(data)) => {
                 let chars: Vec<char> = u.text().chars().collect();
                 let len = chars.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),

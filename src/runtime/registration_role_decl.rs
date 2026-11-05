@@ -322,6 +322,14 @@ impl Interpreter {
             if role_def.methods.contains_key("WRITE") || role_def.methods.contains_key("READ") {
                 crate::vm::note_io_handle_user_method_declared();
             }
+            // A role's methods are called on a `but`-mixed value without ever
+            // entering the class method table; a raw invocant parameter among
+            // them (`method m(\SELF:)`) must still arm ADR-0067's arrival
+            // channel, whose gate reads the flag the table's writers raise.
+            for (method_name, defs) in role_def.methods.iter() {
+                self.registry_mut()
+                    .note_raw_invocant_methods(Symbol::intern(method_name), defs);
+            }
             self.registry_mut().roles.insert(name.to_string(), role_def);
             self.registry_mut()
                 .user_declared_roles

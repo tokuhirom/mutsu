@@ -20,7 +20,19 @@
 //! records reuses this routine (`runtime::call_capture`).
 
 use super::*;
-use crate::runtime::types::signature::{encode_slurpy_rw_param, indexed_varref_from_value};
+use crate::runtime::types::signature::{
+    encode_capture_named_rw_param, encode_slurpy_rw_param, indexed_varref_from_value,
+};
+
+/// Which lane of a `|c` capture an argument lands in.
+enum CapturePosition {
+    /// The `n`th positional element.
+    Positional(usize),
+    /// A named argument whose call-site source is a variable by construction
+    /// (`:key($var)`): an undefined `$var` reads as a type object, but it is
+    /// not a bare type name.
+    Named,
+}
 
 impl Interpreter {
     /// The value a `|c` capture stores for positional argument `raw_arg`
@@ -41,6 +53,33 @@ impl Interpreter {
         rw_bindings: &mut Vec<(String, String)>,
         callee_params: &[ParamDef],
     ) -> Value {
+        self.capture_container_impl(
+            raw_arg,
+            arg_source,
+            capture_key,
+            CapturePosition::Positional(elem_idx),
+            rw_bindings,
+            callee_params,
+        )
+    }
+
+    /// [`Self::capture_positional_container`] for either lane. For a
+    /// [`CapturePosition::Named`] argument the call site already said
+    /// `arg_source` is a variable (`:key($var)`), so an undefined `$var` --
+    /// which reads as a type object -- is not mistaken for a bare type name.
+    fn capture_container_impl(
+        &mut self,
+        raw_arg: &Value,
+        arg_source: Option<&String>,
+        capture_key: Option<&str>,
+        position: CapturePosition,
+        rw_bindings: &mut Vec<(String, String)>,
+        callee_params: &[ParamDef],
+    ) -> Value {
+        let (elem_idx, source_is_variable) = match position {
+            CapturePosition::Positional(idx) => (idx, false),
+            CapturePosition::Named => (0, true),
+        };
         let value = unwrap_varref_value(raw_arg.clone());
         // A cell the caller already handed over (a forwarded capture's element,
         // a `deepmap` leaf) is kept as is: it already is the caller's container.
@@ -79,7 +118,12 @@ impl Interpreter {
         // A type object read through a name that is not a local (`f(Int)`,
         // `f(C1)`) is a value, not a variable; nor is a readonly / sigilless
         // value binding (`my \t = Person`) or a Proxy the caller holds.
-        if matches!(value.view(), ValueView::Package(_))
+        // A name the calling frame declares as a local is a variable, whatever
+        // it holds (an undefined one reads as a type object); a bare type name
+        // is not a local.
+        let source_is_variable = source_is_variable || self.caller_declares_local(&source);
+        if !source_is_variable
+            && matches!(value.view(), ValueView::Package(_))
             && raw_arg.varref_slot().is_none_or(|slot| slot == u32::MAX)
         {
             return value;
@@ -92,6 +136,22 @@ impl Interpreter {
         // its slot only, and the callee's env no longer sees the caller's
         // names): that cell is the caller's container (#13921).
         if let Some(cell) = self.caller_slot_cell(&source, raw_arg.varref_slot()) {
+            return cell;
+        }
+        // A by-name caller lexical (`wrap :deps(my $d), { ... $d ... }`, a
+        // mainline declaration made inside an argument) that an escaping
+        // closure shares lives as a cell in the CALLER's env, which a callee
+        // frame of its own (a pointy block) does not see: use that cell, or the
+        // block would read a snapshot while the call runs (#16121).
+        if self.env.get(&source).is_none()
+            && let Some(cell) = self
+                .caller_env_stack
+                .last()
+                .and_then(|env| env.get(&source).cloned())
+                .filter(|cell| matches!(cell.view(), ValueView::ContainerRef(_)))
+        {
+            crate::value::name_container_cell(&cell, &source);
+            rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));
             return cell;
         }
         let cell = match self.env.get(&source).cloned() {
@@ -117,6 +177,64 @@ impl Interpreter {
         crate::value::name_container_cell(&cell, &source);
         rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));
         cell
+    }
+
+    /// The value a `|c` capture stores for the named argument `key` => `val`.
+    /// `arg_source` is the call's source descriptor for it (`key=var` for
+    /// `:key($var)`); a plain scalar caller variable becomes the same shared
+    /// cell a positional one does, with its writeback keyed by the name, so
+    /// `sub f(|c) { g(|c) }; f(:p($a))` lets an `is raw` / `is rw` named
+    /// parameter of `g` write `$a` (#16121, Deps' `deps-root :deps(my $root)`).
+    // Cost: O(1).
+    pub(in crate::runtime) fn capture_named_container(
+        &mut self,
+        key: &str,
+        val: &Value,
+        arg_source: Option<&String>,
+        capture_key: Option<&str>,
+        rw_bindings: &mut Vec<(String, String)>,
+        callee_params: &[ParamDef],
+    ) -> Value {
+        let (Some(capture_key), Some(var)) = (
+            capture_key,
+            arg_source
+                .and_then(|source| source.split_once('='))
+                .filter(|(k, _)| *k == key)
+                .map(|(_, var)| var.to_string()),
+        ) else {
+            return val.clone();
+        };
+        let mut recorded = Vec::new();
+        let cell = self.capture_container_impl(
+            val,
+            Some(&var),
+            Some(capture_key),
+            CapturePosition::Named,
+            &mut recorded,
+            callee_params,
+        );
+        for (_, source) in recorded {
+            rw_bindings.push((encode_capture_named_rw_param(capture_key, key), source));
+        }
+        cell
+    }
+
+    /// Whether the frame that issued the call being bound declares a local
+    /// named `source`.
+    // Cost: O(l), l = the caller's locals.
+    fn caller_declares_local(&self, source: &str) -> bool {
+        let Some(frame) = self.call_frames.last() else {
+            return false;
+        };
+        if frame.caller_code == 0 {
+            return false;
+        }
+        // SAFETY: `caller_code` is the address of the `CompiledCode` the
+        // caller was running when it pushed this frame; that caller is
+        // suspended until the frame pops, so its code is alive while the
+        // frame is on `call_frames` (as in `caller_slot_cell`).
+        let caller = unsafe { &*(frame.caller_code as *const crate::opcode::CompiledCode) };
+        caller.locals.iter().any(|name| name == source)
     }
 
     /// The shared cell the calling frame's slot of its local `source` holds:

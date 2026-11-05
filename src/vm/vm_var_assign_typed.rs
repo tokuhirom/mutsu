@@ -657,7 +657,7 @@ impl Interpreter {
         RuntimeError::typed("X::OutOfRange", attrs)
     }
 
-    pub(crate) fn exec_string_concat_op(
+    pub(super) fn exec_string_concat_plain(
         &mut self,
         n: u32,
         part_names: &[Option<crate::symbol::Symbol>],
@@ -741,6 +741,7 @@ impl Interpreter {
             } else {
                 v
             };
+            let v = self.fetch_nested_proxies_for_str(v)?;
             // A container is transparent to interpolation: `"{ $x }"` renders
             // what it holds. Without this the user-`Str` dispatch below never
             // saw the `Instance` inside a `ContainerRef` and rendered the pure
@@ -1017,6 +1018,9 @@ impl Interpreter {
                 | ValueView::ContainerRef(_)
                 | ValueView::Array(..)
                 | ValueView::Hash(_)
+                // A `but`-mixed value may carry a user `succ`/`pred` (a boxed
+                // `Pointer`): the generic step below would drop the mixin.
+                | ValueView::Mixin(..)
         ) {
             return Ok(false);
         }

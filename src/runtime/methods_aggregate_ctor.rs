@@ -76,6 +76,13 @@ impl Interpreter {
                 ));
             }
             if let Some(data_val) = data {
+                // `my @a[2;2] = $rows`: a scalar container holding the List is
+                // the List (PDF::Grammar's `xref-section`).
+                let data_val = data_val.deref_container();
+                let data_val = match data_val.view() {
+                    ValueView::Scalar(inner) => inner.clone(),
+                    _ => data_val,
+                };
                 // Populate the shaped array with data
                 let data_items = match data_val.view() {
                     ValueView::Array(items, ..) => items.to_vec(),
@@ -151,9 +158,10 @@ impl Interpreter {
                             .iter()
                             .any(|v| !matches!(v.view(), ValueView::Array(..) | ValueView::Nil))
                     {
-                        return Err(RuntimeError::new(
-                            "X::Assignment::ToShaped: Cannot assign a flat list to a shaped array",
-                        ));
+                        return Err(RuntimeError::new(format!(
+                            "X::Assignment::ToShaped: Assignment to array with shape {} must provide structured data",
+                            dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(" ")
+                        )));
                     }
                     if data_items.len() > dim_size {
                         return Err(RuntimeError::new(format!(

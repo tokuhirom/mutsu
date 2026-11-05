@@ -13,8 +13,8 @@
 //! exactly that field: conversion renders it, lowering hands it back, and
 //! registration resolves the HOW from the keyword as for a parsed declaration.
 
-use super::convert::leaf_field;
 use super::lower::leaf_str;
+use super::view::leaf_field;
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::value::{RuntimeError, Value};
 

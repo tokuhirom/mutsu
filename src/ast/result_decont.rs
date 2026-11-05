@@ -7,6 +7,7 @@ use crate::ast::scope_scan::{is_code_object, is_scope_declaration};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
+use crate::token_kind::TokenKind;
 
 /// Finds an explicit `return` anywhere the routine's own return can come
 /// from: a nested block or branch returns from the routine too, a nested
@@ -16,12 +17,34 @@ struct ReturnScan {
     found: bool,
 }
 
+/// Whether `return EXPR` hands back a fresh value rather than a container:
+/// a method call (`S.new`, `$v.clone`), or a `does`/`but` mixin, possibly
+/// parenthesized. Rakudo sinks these (`return S.new; ` runs `S.sink`), while
+/// `return $v`, a subscript, an assignment or a list stays a container or a
+/// list and is not sunk.
+fn return_value_is_fresh(expr: &Expr) -> bool {
+    // Parentheses are peeled off in a loop: this is a one-node question, not a
+    // walk over the subtree.
+    let mut expr = expr;
+    while let Expr::Grouped(inner) = expr {
+        expr = inner;
+    }
+    match expr {
+        Expr::MethodCall { .. } => true,
+        Expr::Binary { op, .. } => {
+            matches!(op, TokenKind::Ident(name) if name == "does" || name == "but")
+        }
+        _ => false,
+    }
+}
+
 impl<'ast> Visit<'ast> for ReturnScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
         match stmt {
+            Stmt::Return(expr) if return_value_is_fresh(expr) => {}
             Stmt::Return(_) => self.found = true,
             Stmt::Call { name, .. } if name == "return" => self.found = true,
             Stmt::Phaser { .. } | Stmt::DocPhaser(_) => {}
@@ -60,6 +83,23 @@ pub(crate) fn result_is_decontainerized(param_defs: &[ParamDef], stmts: &[Stmt])
     let mut scan = ReturnScan::default();
     walk_stmts(&mut scan, stmts);
     !scan.found && !tail_is_readonly_param(param_defs, stmts)
+}
+
+/// Whether an `is raw` routine's result is a fresh value rather than a
+/// container: its last statement is a call (`nqp::create(T)`,
+/// `nqp::p6bindattrinvres(...)`) and no explicit `return` is involved. A raw
+/// routine hands its result back undecontainerized, so a variable, a subscript
+/// or a method call may yield a container; the value of a plain call is the
+/// object itself, which its caller sinks (#16331).
+// Cost: O(n), n = size of the body outside nested code objects.
+pub(crate) fn raw_result_is_fresh_call(stmts: &[Stmt]) -> bool {
+    let mut scan = ReturnScan::default();
+    walk_stmts(&mut scan, stmts);
+    !scan.found
+        && matches!(
+            super::last_value_stmt(stmts, super::TailSkip::Markers),
+            Some(Stmt::Expr(Expr::Call { .. }))
+        )
 }
 
 /// Whether the value of `stmts` can be a readonly `$` parameter of the

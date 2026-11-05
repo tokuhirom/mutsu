@@ -94,8 +94,13 @@ impl Interpreter {
                 // unconstrained param (raku: unconstrained IS Any) — counting
                 // it made `(Any:D $j, Mu)` outrank `($j, @x)` wholesale
                 // (JSON::Unmarshal's fallback swallowing the Positional
-                // candidate). A smiley (`Any:D`) still counts.
-                let meaningful_type = tc.is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
+                // candidate). A smiley is no narrowness either: rakudo ties
+                // `multi f(Any $x)` with `multi f(Any:D $x)` (ambiguous, or
+                // declaration order once a named parameter is in play), so
+                // `Any:D`/`Mu:U` do not count (#16081).
+                let meaningful_type = tc.is_some_and(|tc| {
+                    !matches!(Self::constraint_base_name(tc), "Mu" | "Any")
+                });
                 meaningful_type
                     // An optional param (`&c = &say`, `@a?`) takes no part in
                     // rakudo's narrowness comparison, so its implied
@@ -117,7 +122,7 @@ impl Interpreter {
         // `multi chomp()` that dies vs `multi chomp(*@a is raw)`).
         let writable_trait_count = params
             .iter()
-            .filter(|p| !p.is_variadic() && p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
+            .filter(|p| !p.is_variadic() && p.traits.iter().any(|t| t == "rw"))
             .count();
         (
             // NOMINAL tier. A literal parameter is not merely a refinement:
@@ -176,6 +181,30 @@ impl Interpreter {
         let mut pos_idx = 0usize;
         // The next positional argument (named-argument Pairs are skipped),
         // unwrapped for dispatch, with the source variable's declared type.
+        // A two-argument call holding a native argument binds its boxed `Int`
+        // to an `int` parameter too (see `native_dispatch_arg_matches`), so
+        // the boxed argument ranks as that native type.
+        let pair_native: Option<(usize, String)> = (args.len() == 2)
+            .then(|| {
+                let unwrapped: Vec<(Value, Option<String>)> =
+                    args.iter().map(|a| self.unwrap_arg_for_dispatch(a)).collect();
+                match (&unwrapped[0], &unwrapped[1]) {
+                    ((_, None), (arg, Some(native)))
+                        if matches!(unwrapped[0].0.view(), ValueView::Int(_))
+                            && matches!(arg.view(), ValueView::Int(_)) =>
+                    {
+                        Some((0, native.clone()))
+                    }
+                    ((arg, Some(native)), (_, None))
+                        if matches!(unwrapped[1].0.view(), ValueView::Int(_))
+                            && matches!(arg.view(), ValueView::Int(_)) =>
+                    {
+                        Some((1, native.clone()))
+                    }
+                    _ => None,
+                }
+            })
+            .flatten();
         let next_positional = |pos_idx: &mut usize| -> Option<(Value, Option<String>)> {
             while *pos_idx < args.len() && matches!(args[*pos_idx].view(), ValueView::Pair(..)) {
                 *pos_idx += 1;
@@ -183,7 +212,11 @@ impl Interpreter {
             let idx = *pos_idx;
             let value = args.get(idx)?;
             *pos_idx += 1;
-            Some(self.unwrap_arg_for_dispatch(value))
+            let (arg, var_type) = self.unwrap_arg_for_dispatch(value);
+            match &pair_native {
+                Some((boxed, native)) if *boxed == idx => Some((arg, Some(native.clone()))),
+                _ => Some((arg, var_type)),
+            }
         };
         for pd in params.iter() {
             // A named parameter does not contribute to narrowness (see
@@ -309,6 +342,16 @@ impl Interpreter {
                     Some(distance) => distance,
                     None => self.arg_type_distance(implicit, &arg, var_type.as_deref()),
                 };
+                if distance >= UNRELATED_DISTANCE && pd.onearg {
+                    // The single-argument rule wraps a non-Positional argument
+                    // (`f("x")` for `+@w`) into a one-element list, so the
+                    // candidate binds it and is no unrelated candidate: it
+                    // ranks like any positional slurpy that swallows an
+                    // argument (the flat 1000 above), and stays in rakudo's
+                    // narrowness relation.
+                    total += 1000;
+                    continue;
+                }
                 if distance >= UNRELATED_DISTANCE {
                     profile.mark_unrelated();
                 }
@@ -331,9 +374,15 @@ impl Interpreter {
             } else {
                 "Any"
             }));
-            // An untyped `&` parameter has no ranked type.
+            // An untyped `&` parameter is an implicit `Callable` constraint:
+            // it out-narrows an `Any:D` candidate for a Block, as in rakudo
+            // (#16058).
             if pd.name.starts_with('&') {
-                total += 1000;
+                let distance = self.arg_type_distance("Callable", &arg, var_type.as_deref());
+                if distance >= UNRELATED_DISTANCE {
+                    profile.mark_unrelated();
+                }
+                total += distance;
                 continue;
             }
             // An unconstrained positional `$`-param is an implicit `Any`
@@ -468,8 +517,13 @@ impl Interpreter {
     /// variable declared `int` / `num` / `str` ranks as native.
     // Cost: O(1) plus one variable-type lookup for a varref.
     fn unwrap_arg_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
-        let (mut arg, var_type) = self.unwrap_varref_for_dispatch(value);
+        let (mut arg, mut var_type) = self.unwrap_varref_for_dispatch(value);
         if arg.is_container_ref() {
+            // A native cell ranks as the native variable it is the container
+            // of (ADR-15309).
+            if var_type.is_none() {
+                var_type = arg.native_container_type();
+            }
             arg = arg.deref_container();
         }
         (arg, var_type)

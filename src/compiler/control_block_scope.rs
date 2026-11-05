@@ -42,6 +42,7 @@ impl Compiler {
             post_start: 0,
             end: 0,
             is_bare_block: is_bare,
+            decont_result: false,
         });
         self.code.patch_block_pre_end(idx);
         self.code.patch_block_enter_end(idx);

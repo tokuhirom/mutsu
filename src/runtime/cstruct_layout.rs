@@ -1045,10 +1045,15 @@ impl crate::runtime::Interpreter {
     pub(crate) fn declared_class_repr(&self, name: &str) -> Option<&'static str> {
         let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
         let reg = self.registry();
+        // A lexical class (`my class NS::CProb is repr('CStruct')`) is stored
+        // under `Name\0<decl-id>`; the spelling a signature, a type object
+        // built from one, or an importer's alias uses is the source name
+        // (#15812).
         let holds = |set: &rustc_hash::FxHashSet<String>| {
             set.contains(name)
                 || set.iter().any(|c| {
-                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                    let source = c.split('\u{0}').next().unwrap_or(c);
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(source)).as_str()
                         == short
                 })
         };

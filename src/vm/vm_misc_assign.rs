@@ -45,7 +45,44 @@ impl Interpreter {
         // by name) can even see a bind here; the others are gated to plain
         // `=`/AssignExpr forms already.
         let tc = self.self_attr_type_constraint(name);
-        self.apply_attr_container_element_type_with(name, val, is_bind, tc)
+        let val = self.apply_attr_container_element_type_with(name, val, is_bind, tc)?;
+        Ok(self.keep_attr_container_default(name, val, is_bind))
+    }
+
+    /// Carry an `@`/`%` attribute's declared `is default(...)` element default
+    /// onto the container an assignment just stored in it: the incoming value
+    /// is a fresh container without it, so `%!h = %x` would otherwise forget
+    /// `has %!h is default(7)` (#15547). A `:=` bind installs the source
+    /// container itself and keeps its own default.
+    // Cost: O(1) when the attribute has no default (two registry probes).
+    pub(super) fn keep_attr_container_default(
+        &mut self,
+        name: &str,
+        val: Value,
+        is_bind: bool,
+    ) -> Value {
+        if is_bind
+            || !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_))
+            || !(name.starts_with('@') || name.starts_with('%'))
+        {
+            return val;
+        }
+        let Some((bare, _)) = crate::value::attr_twigil_base(name) else {
+            return val;
+        };
+        let Some(class) = self.self_instance_class() else {
+            return val;
+        };
+        // The default is registered under the class that declares the
+        // attribute, which may be a base of the invocant's class.
+        let def = self
+            .class_mro(class.as_str())
+            .iter()
+            .find_map(|cn| self.class_attribute_default(cn.as_str(), bare));
+        match def {
+            Some(def) => self.tag_container_default(val, def),
+            None => val,
+        }
     }
 
     /// [`Self::apply_attr_container_element_type`] for a caller that already
@@ -147,10 +184,17 @@ impl Interpreter {
     /// defeat the assignment), so it hits the raw accessor return and dies.
     /// Returns `true` when the caller must SKIP its store and leave the computed
     /// value alone.
+    ///
+    /// `rhs` is the value a simple `$.attr = rhs` stores. When the attribute
+    /// holds an object that has a STORE (an `Array`, `Hash` or `Buf`), the
+    /// assignment replaces that object's contents in place -- rakudo's
+    /// `infix:<=>` calls STORE on the accessor's result -- and the caller skips
+    /// its own store.
     pub(crate) fn check_dot_twigil_accessor_writable(
         &mut self,
         name: &str,
         rmw: bool,
+        rhs: Option<&Value>,
     ) -> Result<bool, RuntimeError> {
         let Some(attr) = name.strip_prefix('.') else {
             return Ok(false);
@@ -196,6 +240,13 @@ impl Interpreter {
             }
             _ => Value::NIL,
         };
+        if let Some(rhs) = rhs
+            && self
+                .store_into_aggregate_lvalue(&current, rhs.clone())
+                .is_some()
+        {
+            return Ok(true);
+        }
         Err(RuntimeError::assignment_ro_typename(
             &crate::value::what_type_name(&current),
             &current.to_string_value(),
@@ -298,7 +349,15 @@ impl Interpreter {
         let store_sym = crate::symbol::Symbol::intern(&store_name);
         self.check_bareword_store(&store_name, store_sym, &name, false)?;
         self.check_readonly_for_modify(&name)?;
-        if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw)? {
+        let rhs = if dot_twigil_rmw {
+            None
+        } else {
+            self.stack.last().map(|top| match top.view() {
+                ValueView::VarRef { value, .. } => value.clone(),
+                _ => top.deref_container(),
+            })
+        };
+        if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw, rhs.as_ref())? {
             // The write went to the throwaway itemization; the computed value is
             // already the stack top, which is this expression's result.
             return Ok(());
@@ -412,7 +471,23 @@ impl Interpreter {
         } else {
             None
         };
-        let mut val = if name.starts_with('%') {
+        // `%!a ∪= %x` on an `is SetHash`/`is BagHash`/`is MixHash` attribute:
+        // the assignment writes INTO the QuantHash, which keeps its own type,
+        // exactly as the statement-position store does (CRDT's LWW-Hash).
+        let quanthash_store = if name.starts_with("%!") || name.starts_with("%.") {
+            let stored =
+                self.coerce_typed_container_assignment(None, &name, raw_val.clone(), false)?;
+            matches!(
+                stored.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
+            .then_some(stored)
+        } else {
+            None
+        };
+        let mut val = if let Some(stored) = quanthash_store {
+            stored
+        } else if name.starts_with('%') {
             self.coerce_object_to_hash(raw_val)
         } else if name.starts_with('@') {
             // A by-name aggregate assignment (for example the anonymous
@@ -471,7 +546,7 @@ impl Interpreter {
                 if shape.len() == 1 && !assigned_has_own_shape {
                     let items = runtime::value_to_list(&assigned);
                     let item_count = items.len();
-                    let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                    let mut shaped_items: Vec<Value> = Self::shaped_assign_items(items, shape[0])?;
                     if item_count < shape[0] {
                         shaped_items.resize(shape[0], Value::NIL);
                     }
@@ -487,6 +562,22 @@ impl Interpreter {
                         assigned = self.tag_container_metadata(assigned, info);
                     }
                 }
+            }
+            // `@a = list` used as an expression (the tail of an `if` block in a
+            // closure) writes INTO the container `@a` already is, so its
+            // declared/inherited element type (`array[int]`, `Array[Int]`) must
+            // survive, as it does for the statement form (`SetGlobal`).
+            // Shaped arrays keep their shape above; names the statement path
+            // excludes stay excluded.
+            if current_shape.is_none()
+                && name.len() > 1
+                && !name.contains("__")
+                && !name.starts_with("@!")
+                && !name.starts_with("@.")
+                && let Some(old) = self.get_env_with_main_alias(&name)
+                && self.has_container_type_metadata(&old.deref_container())
+            {
+                assigned = self.array_container_writethrough_value(None, &name, assigned, &old)?;
             }
             if let Some(current) = self.get_env_with_main_alias(&name) {
                 let class_name = match current.view() {
@@ -650,6 +741,14 @@ impl Interpreter {
                     self.get_env_with_main_alias(&name)
                         .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                 });
+            // A variable bound to the Proxy object `.VAR` hands back has no
+            // container to assign into (#16299).
+            if current_proxy
+                .as_ref()
+                .is_some_and(Value::is_proxy_var_object)
+            {
+                return Err(RuntimeError::readonly_variable());
+            }
             if let Some(ValueView::Proxy { storer, .. }) = current_proxy.as_ref().map(Value::view)
                 && !storer.is_nil()
             {
@@ -1217,18 +1316,12 @@ impl Interpreter {
         // Unsigned types (uint/uint64) wrap negative values to unsigned range.
         let wrapped = if !native_types::is_in_native_range(type_name, &big_val) {
             if matches!(type_name, "int" | "int64") {
-                return Err(RuntimeError::new(format!(
-                    "Cannot unbox {} bit wide bigint into native integer",
-                    big_val.bits()
-                )));
+                return Err(RuntimeError::cannot_unbox_bigint(big_val.bits()));
             }
             if matches!(type_name, "uint" | "uint64") {
                 // Positive values exceeding u64 range should throw
                 if big_val > NumBigInt::from(0u64) {
-                    return Err(RuntimeError::new(format!(
-                        "Cannot unbox {} bit wide bigint into native integer",
-                        big_val.bits()
-                    )));
+                    return Err(RuntimeError::cannot_unbox_bigint(big_val.bits()));
                 }
             }
             native_types::wrap_native_int(type_name, &big_val)

@@ -268,6 +268,17 @@ impl Interpreter {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
         let mut native_binding_found = false;
+        // `augment`ed candidates the class's own multi dispatcher predates are
+        // not part of it (#16049).
+        let augment_cutoff = {
+            let reg = self.registry();
+            if reg.frozen_dispatchers.is_empty() {
+                None
+            } else {
+                let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
+                reg.augment_cutoff(&mro, name.as_str())
+            }
+        };
                 for (level, owner) in chain.iter().enumerate() {
             let is_ancestor = level > 0;
             let owner_str = owner.as_str();
@@ -291,7 +302,7 @@ impl Interpreter {
                         MethodVisibility::Public => !(def.is_private || (def.is_my && is_ancestor)),
                         MethodVisibility::Private => def.is_private,
                     };
-                    if !visible {
+                    if !visible || augment_cutoff.is_some_and(|c| c.hides(level, def)) {
                         continue;
                     }
                     candidates.push(ResolvedCandidate::User {

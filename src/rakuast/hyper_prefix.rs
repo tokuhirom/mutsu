@@ -5,11 +5,12 @@
 //! [`node`] is its view and [`lower_hyper_prefix`] the one lowering to the call
 //! the runtime executes, shared by the parser's node and a hand-built tree.
 
-use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
+use super::view::{leaf_field, node_field, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::parsed::{HyperPrefix, ParsedExpr};
+use crate::scope::NameScope;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -29,7 +30,7 @@ pub(crate) fn hyper_prefix_expr(symbol: impl ToString, operand: Expr) -> Expr {
 /// not a prefix the parser itself hypers.
 // Cost: O(1).
 pub(crate) fn lower_hyper_prefix(symbol: &str, operand: Expr) -> Option<Expr> {
-    crate::compiler::helpers_ops::prefix_op_name_to_token_kind(symbol)?;
+    crate::op_names::prefix_op_name_to_token_kind(symbol)?;
     Some(Expr::Call {
         name: Symbol::intern(HYPER_PREFIX),
         args: vec![Expr::Literal(Value::str(symbol.to_string())), operand],
@@ -39,7 +40,11 @@ pub(crate) fn lower_hyper_prefix(symbol: &str, operand: Expr) -> Option<Expr> {
 
 /// The `ApplyPrefix` of a hyper prefix `symbol` over `operand`.
 // Cost: O(n), n = size of the operand.
-pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn node(
+    names: &NameScope,
+    symbol: &str,
+    operand: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let prefix = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Prefix,
@@ -57,7 +62,7 @@ pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeE
                     fields: vec![node_field(None, prefix)],
                 },
             ),
-            node_field(Some("operand"), convert_expr(operand)?),
+            node_field(Some("operand"), view_expr(names, operand)?),
         ],
     })
 }
@@ -65,7 +70,7 @@ pub(super) fn node(symbol: &str, operand: &Expr) -> Result<RakuAstNode, RuntimeE
 /// The call for an `ApplyPrefix` over a `MetaPrefix::Hyper`, or `None` for any
 /// other prefix.
 // Cost: O(n), n = size of the operand.
-pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     let prefix = named_child(node, "prefix").ok()?;
     if prefix.class != RakuAstClass::MetaPrefixHyper {
         return None;
@@ -77,7 +82,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
             _ => return Err(super::lower::unsupported(prefix)),
         };
         // Only the prefixes the parser itself hypers have a runtime form.
-        lower_hyper_prefix(&symbol, lower_expr(named_child(node, "operand")?)?)
+        lower_hyper_prefix(&symbol, lower_expr(names, named_child(node, "operand")?)?)
             .ok_or_else(|| super::lower::unsupported(prefix))
     })())
 }

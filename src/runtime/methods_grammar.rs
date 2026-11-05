@@ -1,4 +1,3 @@
-use super::methods_grammar_replay_spans::maximal_span_indices;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
@@ -11,6 +10,11 @@ pub(crate) struct GrammarDynvarFrame {
     keys: Vec<String>,
     scope: super::regex::regex_helpers::GrammarDynvarScopeGuard,
 }
+
+/// Prefix of a grammar rule dynamic-variable declaration that sits inside a
+/// group of the rule: the frame binds it uninitialised at entry and the
+/// declaration atom runs the initializer when the group is reached (#16307).
+pub(crate) const DEFERRED_DYNVAR_INIT: &str = "\u{1}";
 
 impl Interpreter {
     /// A rule/token body may declare a *dynamic* variable inline
@@ -113,6 +117,22 @@ impl Interpreter {
         keys
     }
 
+    /// Whether some rule of the grammar being parsed declares the dynamic
+    /// variable `name` inside a group, so that its `VarDecl` atom owns the
+    /// initializer (see [`DEFERRED_DYNVAR_INIT`]).
+    // Cost: O(d), d = the dynamic declarations of the grammar; only asked when a
+    // declaration atom is reached inside a live rule frame.
+    pub(crate) fn grammar_dynvar_is_deferred(&self, name: &str) -> bool {
+        let key = Self::grammar_dynvar_env_keys(name).remove(0);
+        self.regex_state
+            .grammar_rule_dynvar_decls
+            .values()
+            .flatten()
+            .filter(|decl| decl.starts_with(DEFERRED_DYNVAR_INIT))
+            .filter_map(|decl| Self::dynamic_decl_var_key(decl))
+            .any(|declared| Self::grammar_dynvar_env_keys(&declared)[0] == key)
+    }
+
     /// Enter one grammar rule's dynamic-variable frame. Initializers are run
     /// only for a real match, never during LTM measurement or the diagnostic
     /// failure probe. The frame marker makes the corresponding `VarDecl` atom
@@ -138,6 +158,14 @@ impl Interpreter {
             let Some(raw_key) = Self::dynamic_decl_var_key(decl) else {
                 continue;
             };
+            // A declaration nested in a group is bound uninitialised here (its
+            // key is still owned by this frame, so what the group's atom
+            // installs stays until the frame ends) and initialised by its
+            // `VarDecl` atom when the group is reached.
+            let decl = decl
+                .strip_prefix(DEFERRED_DYNVAR_INIT)
+                .map_or_else(|| decl.clone(), str::to_string);
+            let decl = &decl;
             let env_keys = Self::grammar_dynvar_env_keys(&raw_key);
             for key in &env_keys {
                 if !saved.iter().any(|(saved_key, _)| saved_key == key) {
@@ -292,6 +320,50 @@ impl Interpreter {
         saved
     }
 
+    /// How many `[ … ]` / `( … )` groups of `pattern` are open at byte offset
+    /// `at`. Quoted strings, `\x` escapes, `{ … }` code blocks and `< … >`
+    /// assertions (which hold character classes of their own) are skipped whole.
+    // Cost: O(at), at = the offset.
+    fn pattern_group_depth_at(pattern: &str, at: usize) -> usize {
+        let bytes = pattern.as_bytes();
+        let mut depth = 0usize;
+        let mut i = 0usize;
+        while i < at {
+            match bytes[i] {
+                b'\\' => i += 1,
+                quote @ (b'\'' | b'"') => {
+                    i += 1;
+                    while i < at && bytes[i] != quote {
+                        if bytes[i] == b'\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                }
+                open @ (b'{' | b'<') => {
+                    let close = if open == b'{' { b'}' } else { b'>' };
+                    let mut nested = 1usize;
+                    i += 1;
+                    while i < at && nested > 0 {
+                        match bytes[i] {
+                            b'\\' => i += 1,
+                            c if c == open => nested += 1,
+                            c if c == close => nested -= 1,
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    continue;
+                }
+                b'[' | b'(' => depth += 1,
+                b']' | b')' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            i += 1;
+        }
+        depth
+    }
+
     /// Collect `:my $*/%*/@*… = …;` declaration substrings (main-slang code
     /// between `:my ` and the terminating `;`) from a rule pattern.
     ///
@@ -322,7 +394,19 @@ impl Interpreter {
                 // Collect `my … ` up to the `;`.
                 let decl = &at[1..];
                 let decl = decl.split(';').next().unwrap_or(decl);
-                out.push(decl.trim().to_string());
+                // A declaration inside a group (`[ ';' :my $*x = 1; <b> ]?`)
+                // is visible from the rule's entry (as the uninitialised `Any`,
+                // so the rules it calls and the rule's own code find it) but
+                // its initializer runs when the group is reached, not at entry:
+                // running it up front set the variable even when the group
+                // never matched (#16307). Such a declaration is recorded bare,
+                // behind `DEFERRED_DYNVAR_INIT`.
+                if Self::pattern_group_depth_at(pattern, pattern.len() - at.len()) == 0 {
+                    out.push(decl.trim().to_string());
+                } else {
+                    let bare = decl.split_once('=').map_or(decl, |(name, _)| name);
+                    out.push(format!("{DEFERRED_DYNVAR_INIT}{}", bare.trim()));
+                }
             }
         }
     }
@@ -331,6 +415,7 @@ impl Interpreter {
     /// `$*/%*/@*NAME …`
     /// declaration string, or `None` if it is not a simple dynamic declaration.
     pub(crate) fn dynamic_decl_var_key(decl: &str) -> Option<String> {
+        let decl = decl.strip_prefix(DEFERRED_DYNVAR_INIT).unwrap_or(decl);
         let rest = decl
             .strip_prefix("my ")
             .or_else(|| decl.strip_prefix("our "))
@@ -478,7 +563,8 @@ impl Interpreter {
             let atom_end = i;
             let (next, had_ws_rule) = Self::skip_regex_separators(&chars, i);
             i = next;
-            let mut goal: String = chars[start..atom_end].iter().collect();
+            let atom: String = chars[start..atom_end].iter().collect();
+            let mut goal = Self::deparse_goal_atom(&atom);
             if had_ws_rule {
                 // The separator was compiled away into `<.ws>`; the source it
                 // stands for was a single run of whitespace.
@@ -496,13 +582,71 @@ impl Interpreter {
     /// text — a goal that failed inside some *other* rule's pattern is not
     /// findable in the start rule's source.
     fn refine_goal_text_from_source(pattern: Option<&str>, recorded: String) -> String {
+        let recorded = Self::deparse_goal_atom(&recorded);
         let Some(pattern) = pattern else {
             return recorded;
         };
-        Self::tilde_goal_texts_from_source(pattern)
-            .into_iter()
+        let candidates = Self::tilde_goal_texts_from_source(pattern);
+        if let Some(found) = candidates
+            .iter()
             .find(|candidate| candidate.trim_end() == recorded)
-            .unwrap_or(recorded)
+        {
+            return found.clone();
+        }
+        // The matcher only records a single-character or `<name>` goal as text;
+        // a longer literal (`'ab'`) arrives as the placeholder `goal`. With one
+        // `~` in the pattern the source names it unambiguously.
+        if recorded == "goal"
+            && let [only] = candidates.as_slice()
+            && !only.starts_with(['[', '<', '\\'])
+        {
+            return only.clone();
+        }
+        recorded
+    }
+
+    /// A quoted literal goal as rakudo's RakuAST deparse spells it: bare when
+    /// it is all word characters (`'ab'` is `ab`), otherwise double-quoted with
+    /// `\` and `"` escaped (`']'` is `"]"`). Anything that is not a quoted
+    /// literal (`<b>`, `[ ... ]`, `\)`) is kept as written.
+    // Cost: O(n), n = the atom's length.
+    fn deparse_goal_atom(atom: &str) -> String {
+        let mut chars = atom.chars();
+        let (Some(open), Some(close)) = (chars.next(), atom.chars().next_back()) else {
+            return atom.to_string();
+        };
+        if atom.chars().count() < 2 || open != close || !matches!(open, '\'' | '"') {
+            return atom.to_string();
+        }
+        let inner: Vec<char> = atom.chars().skip(1).take(atom.chars().count() - 2).collect();
+        let mut content = String::new();
+        let mut it = inner.iter().copied();
+        while let Some(c) = it.next() {
+            if c == '\\'
+                && let Some(next) = it.next()
+            {
+                if next == open || next == '\\' {
+                    content.push(next);
+                } else {
+                    content.push(c);
+                    content.push(next);
+                }
+            } else {
+                content.push(c);
+            }
+        }
+        if !content.is_empty() && content.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return content;
+        }
+        let mut out = String::from("\"");
+        for c in content.chars() {
+            if c == '\\' || c == '"' {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out.push('"');
+        out
     }
 
     /// A `~` goal-matching conjunction whose opener matched but whose closer was
@@ -571,9 +715,18 @@ impl Interpreter {
         // A parse that answered (a Match, or a failed Match) is over: a subrule
         // argument-binding error it recorded without raising belongs to that
         // parse alone and must not surface from the next unrelated `~~` or
-        // `.parse` (YAMLish's failed `load-yaml`).
+        // `.parse` (YAMLish's failed `load-yaml`). An action's own `die` is the
+        // exception: rakudo calls the action as the rule reduces, so the error
+        // leaves `.parse` even though the match went on to succeed
+        // (Config::TOML's duplicate-key checks).
+        let action_error =
+            crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| slot.borrow_mut().take());
         if parsed.is_ok() {
-            let _ = Self::take_pending_regex_error();
+            let _ = crate::runtime::regex_parse::PENDING_REGEX_ERROR
+                .with(|slot| slot.borrow_mut().take());
+            if let Some(error) = action_error {
+                return Err(error);
+            }
         }
         parsed
     }
@@ -588,6 +741,7 @@ impl Interpreter {
         // subrule binding error from the thread-local slot. Each parse starts
         // with its own error state, so that failure cannot poison the next one.
         let _ = Self::take_pending_regex_error();
+        crate::runtime::regex_parse::PENDING_ACTION_ERROR.with(|slot| *slot.borrow_mut() = None);
         let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
@@ -647,7 +801,7 @@ impl Interpreter {
                         }
                     }
                 } else if key == "actions" {
-                    actions_obj = Some(value.clone());
+                    actions_obj = Some(value.deref_container());
                 }
                 continue;
             }
@@ -711,8 +865,9 @@ impl Interpreter {
         // must see the call `.parse` makes into it, just as a wrapped subrule
         // does (#9190). Run the wrapper here; its `callsame` re-enters this
         // function with the wrap check bypassed.
+        let start_bypass = super::methods_grammar_wrapped_start::take_start_rule_wrap_bypass();
         if !is_method_start_rule
-            && !super::methods_grammar_wrapped_start::take_start_rule_wrap_bypass()
+            && !start_bypass
             && let Some(chain) = self.token_method_wrap_chain(package_name, &start_rule)
         {
             self.set_current_package(saved_package);
@@ -727,6 +882,40 @@ impl Interpreter {
                 Self::token_wrap_cursor(&text, pos),
                 &chain,
             );
+        }
+        // A custom HOW's `find_method` wrapper around the start rule, as for
+        // every subrule (Grammar::Profiler::Simple counts `TOP` too).
+        if !is_method_start_rule
+            && !start_bypass
+            && !self.registry().grammar_custom_how.is_empty()
+        {
+            let pos = start_pos.or(continue_pos).unwrap_or(0);
+            // The wrapper's own call of the original rule (`$meth($cursor)`)
+            // arrives here as a call of the start rule on the cursor: it is
+            // the `.parse` the wrapper stands for.
+            let result = if let Some(start_call) =
+                super::methods_grammar_wrapped_start::take_custom_how_start(package_name)
+            {
+                Some(self.run_wrapped_start_rule_terminal(
+                    &start_call.package,
+                    &start_call.method,
+                    &start_call.args,
+                ))
+            } else if matches!(method, "parse" | "parsefile") {
+                // TODO: `.subparse` is not wrapped: a rule called on a cursor
+                // (a subrule reached through the custom HOW) enters here as an
+                // internal `subparse` too, and cannot be told apart.
+                self.call_custom_how_start_rule(package_name, &start_rule, (method, args), &text, pos)
+            } else {
+                None
+            };
+            if let Some(result) = result {
+                self.set_current_package(saved_package);
+                if let Some(made) = saved_made {
+                    self.env.insert("made".to_string(), made);
+                }
+                return result;
+            }
         }
         self.env.insert("_".to_string(), Value::str(text.clone()));
         Self::clear_pending_goal_failure();
@@ -743,22 +932,13 @@ impl Interpreter {
             &mut self.regex_state.current_grammar_actions,
             actions_obj.clone(),
         );
-        // Activate the reduce-time dyn-var overlay for action-driven parses so an
-        // action that writes a `$*` dynamic var mid-parse (e.g. a delimiter
-        // finalizer) affects subsequent subrule matching. No-op overlay cost
-        // until a pattern actually interpolates a `$*` var (see the SEEN gate in
-        // `interpolate_regex_scalars`). Dropped at scope end, restoring any outer
-        // parse's overlay.
-        let _dynvar_overlay_guard = actions_obj
+        // Each subrule's action runs the moment it reduces and is never undone
+        // by backtracking or by a failed parse, as in Rakudo (ADR-7576). The
+        // start rule's own action, and any node the matcher did not file as a
+        // subrule, is the post-parse walk's.
+        let _reduce_dispatch_guard = actions_obj
             .is_some()
-            .then(super::regex::regex_helpers::RegexDynvarOverlayGuard::activate);
-        // Log every subrule reduce so that a parse which fails overall can still
-        // dispatch the actions of the subrules that DID match — Rakudo dispatches
-        // at reduce time and does not undo it on backtracking, whereas mutsu's
-        // post-pass walks the (nonexistent) final tree. See `REDUCED_SUBRULES`.
-        let _reduced_subrule_guard = actions_obj
-            .is_some()
-            .then(super::regex::regex_helpers::ReducedSubruleGuard::activate);
+            .then(super::regex::regex_helpers::ReduceDispatchGuard::arm);
         // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
         // declare, so action methods run during the match share them (`%*PLAYED`).
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
@@ -833,7 +1013,7 @@ impl Interpreter {
                 Ok(Some(candidates)) => candidates,
                 Ok(None) => {
                     // Check for pending regex error (e.g., <sym> used outside proto regex)
-                    if let Some(err) = Self::take_pending_regex_error() {
+                    if let Some(err) = Self::take_pending_regex_or_action_error() {
                         return Err(err);
                     }
                     // No candidate reaches the main match below; a `~`
@@ -885,11 +1065,6 @@ impl Interpreter {
             let mut matched: Option<(RegexCaptures, Option<String>)> = None;
             for (pattern, sym) in candidates {
                 let candidate_dynvars = self.enter_grammar_rule_dynvars(&start_rule);
-                // Candidate selection above may have run a preliminary match that
-                // evolved the reduce-time dyn-var overlay (e.g. fired a delimiter
-                // finalizer). Each real candidate match must begin from the initial
-                // dynamic-var state in `self.env`, just as a backtracking retry does.
-                super::regex::regex_helpers::dynvar_overlay_reset_scan();
                 let mut candidate_partial = None;
                 let captures = if method == "parse" || method == "parsefile" {
                     self.regex_match_with_captures_full_from_start_tracking_partial(
@@ -907,7 +1082,7 @@ impl Interpreter {
                     self.regex_match_with_captures(&pattern, &text)
                 };
                 // Check for pending regex error (e.g., <sym> used outside proto regex)
-                if let Some(err) = Self::take_pending_regex_error() {
+                if let Some(err) = Self::take_pending_regex_or_action_error() {
                     return Err(err);
                 }
                 let had_partial = candidate_partial.is_some();
@@ -941,30 +1116,17 @@ impl Interpreter {
                 //
                 // The parse failed, but subrules reduced along the way — raku
                 // already ran their actions. Dispatch the longest partial tree
-                // (which includes the start rule's own action) when there is one,
-                // then replay whatever reduced outside it.
+                // (which includes the start rule's own action) when there is one.
                 let partial_end = partial_match.as_ref().map_or(0, |caps| caps.to);
-                if let Some(ref mut actions) = actions_obj {
-                    match partial_match.take() {
-                        Some(mut caps) => {
-                            if let Some(frame) = active_start_dynvars.as_ref() {
-                                self.record_live_grammar_rule_dynvars(frame, &mut caps);
-                            }
-                            let pt = caps.target_or_new(&text);
-                            self.reduce_regex_captures_made_for_rule(
-                                &mut caps,
-                                Some(&pt),
-                                Some(&start_rule),
-                            );
-                            self.dispatch_partial_parse_actions(
-                                &caps,
-                                actions,
-                                &start_rule,
-                                &text,
-                            )?;
-                        }
-                        None => self.replay_backtracked_reduce_actions(actions, None, &text)?,
+                if let Some(ref mut actions) = actions_obj
+                    && let Some(mut caps) = partial_match.take()
+                {
+                    if let Some(frame) = active_start_dynvars.as_ref() {
+                        self.record_live_grammar_rule_dynvars(frame, &mut caps);
                     }
+                    let pt = caps.target_or_new(&text);
+                    self.reduce_regex_captures_made_for_rule(&mut caps, Some(&pt), Some(&start_rule));
+                    self.dispatch_partial_parse_actions(&caps, actions, &start_rule, &text)?;
                 }
                 if let Some(outcome) =
                     self.goal_failure_outcome(package_name, failure_pattern.as_deref(), &text)
@@ -1010,9 +1172,6 @@ impl Interpreter {
             if let Some(want) = required_from
                 && captures.cursor_from() != want
             {
-                if let Some(ref mut actions) = actions_obj {
-                    self.replay_backtracked_reduce_actions(actions, None, &text)?;
-                }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
                     return Ok(self.parse_failure_for_pattern(&text, failure_pattern.as_deref()));
@@ -1086,27 +1245,13 @@ impl Interpreter {
             self.env.assign_match_var(match_obj.clone());
 
             // Invoke action methods if :actions was provided
-            let deferred_repeats = if actions_obj.is_some() {
-                Some(self.replay_repeated_reduce_actions(&text, &captures))
-            } else {
-                None
-            };
             let match_obj = if let Some(ref mut actions) = actions_obj {
                 // Action methods run with `self` bound to the actions object.
                 // Restore the caller's `self` afterwards so a nested sub in the
                 // caller (which resolves `self` from env via `GetSelfOrNoSelf`)
                 // doesn't see the actions object leaked in. (Same hazard the
                 // stringify path fixes for `try_compiled_method_or_interpret`.)
-                let result = self
-                    .invoke_grammar_actions(match_obj, actions, &start_rule)
-                    .and_then(|walked| {
-                        self.flush_all_deferred_repeats(actions)?;
-                        Ok(walked)
-                    });
-                if let Some(saved) = deferred_repeats {
-                    self.restore_deferred_repeats(saved);
-                }
-                let result = result?;
+                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule)?;
                 // Update the actions attribute on the final Match to reflect
                 // any mutations that occurred during action method dispatch.
                 if let ValueView::Instance {
@@ -1211,20 +1356,6 @@ impl Interpreter {
         )
     }
 
-    /// [`Self::match_object_from_captures`] for a stored capture node.
-    fn match_object_from_cap_node(node: &CapNode, target: &MatchTarget) -> Value {
-        let kids = node.kids();
-        Value::make_match_object_full_with_regex_vars(
-            node.from as i64,
-            node.to as i64,
-            &kids.positional,
-            &kids.named,
-            &kids.regex_vars,
-            kids.cursor.clone(),
-            target.clone(),
-        )
-    }
-
     /// Run the actions over the match tree of a parse that FAILED because the
     /// start rule covered only part of the input: Rakudo dispatched every one of
     /// them at reduce time, including the start rule's own. Anything that reduced
@@ -1237,90 +1368,9 @@ impl Interpreter {
         start_rule: &str,
         text: &str,
     ) -> Result<(), RuntimeError> {
-        let covered = (caps.from, caps.to);
         let partial = Self::match_object_from_captures(caps, text);
         self.invoke_grammar_actions(partial, actions, start_rule)?;
-        self.replay_backtracked_reduce_actions(actions, Some(covered), text)
-    }
-
-    /// Dispatch the action methods of subrules that reduced during a parse whose
-    /// OVERALL verdict is failure.
-    ///
-    /// Rakudo calls an action the moment its rule matches and never un-calls it
-    /// when the enclosing pattern backtracks past it, so a failed `.parse` still
-    /// leaves every matched subrule's action effects behind. mutsu instead walks
-    /// the finished match tree, which on a failed parse is either absent or covers
-    /// only a prefix — so those actions were never run at all. `REDUCED_SUBRULES`
-    /// logs each reduce during matching and this replays the ones the surviving
-    /// tree does not already account for.
-    ///
-    /// `covered` is the span of the surviving (partial) match: its own action walk
-    /// handles everything inside, so entries there are skipped. Of the rest only
-    /// the *maximal* spans are dispatched — a nested subrule is reached by its
-    /// parent's `invoke_grammar_actions` walk, which also gives it the bottom-up
-    /// order and `.made` propagation Rakudo has.
-    pub(crate) fn replay_backtracked_reduce_actions(
-        &mut self,
-        actions: &mut Value,
-        covered: Option<(usize, usize)>,
-        text: &str,
-    ) -> Result<(), RuntimeError> {
-        let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_entries();
-        self.replay_reduce_action_entries(entries, actions, covered, text, false)
-    }
-
-    /// Park the reductions of backtracked alternatives that a later node
-    /// superseded, to be dispatched from inside the successful match tree's
-    /// action walk at their chronological position (see
-    /// `methods_grammar_deferred_repeats`).  Raku runs those actions as soon as
-    /// each branch reduces, so their effects interleave with the surviving
-    /// branch's own.
-    pub(crate) fn replay_repeated_reduce_actions(
-        &mut self,
-        text: &str,
-        captures: &crate::value::regex_caps::RegexCaptures,
-    ) -> super::methods_grammar_deferred_repeats::DeferredSlot {
-        let entries =
-            super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries(captures);
-        self.defer_repeated_reduce_actions(entries, text)
-    }
-
-    pub(super) fn replay_reduce_action_entries(
-        &mut self,
-        entries: Vec<(String, std::sync::Arc<CapNode>)>,
-        actions: &mut Value,
-        covered: Option<(usize, usize)>,
-        text: &str,
-        ignore_action_errors: bool,
-    ) -> Result<(), RuntimeError> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-        let outside: Vec<(String, std::sync::Arc<CapNode>)> = entries
-            .into_iter()
-            .filter(|(_, caps)| {
-                !covered.is_some_and(|(from, to)| caps.from >= from && caps.to <= to)
-            })
-            .collect();
-        let maximal: Vec<&(String, std::sync::Arc<CapNode>)> = maximal_span_indices(&outside)
-            .into_iter()
-            .map(|i| &outside[i])
-            .collect();
-        let mut result = Ok(());
-        let rtarget = MatchTarget::new(text);
-        for (rule, caps) in maximal {
-            let mut caps = (**caps).clone();
-            self.reduce_cap_node_for_rule(&mut caps, Some(&rtarget), None);
-            let match_obj = Self::match_object_from_cap_node(&caps, &rtarget);
-            let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
-            if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch)
-                && !ignore_action_errors
-            {
-                result = Err(e);
-                break;
-            }
-        }
-        result
+        Ok(())
     }
 
     /// Extract `action_name` from a Match object (set for aliased captures).
@@ -1568,6 +1618,23 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<Value, RuntimeError> {
+        let result = self.invoke_grammar_actions_unmarked(match_obj.clone(), actions, rule_name);
+        // Whoever dispatched this node (the walk, an assertion's `.made` probe),
+        // no later pass runs its action again.
+        match_obj.mark_match_node_reduced();
+        result
+    }
+
+    fn invoke_grammar_actions_unmarked(
+        &mut self,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        // Already dispatched at its reduction (ADR-7576): its subtree was too.
+        if match_obj.match_node_reduced() {
+            return Ok(match_obj);
+        }
         // Fast path: a childless leaf whose rule has no action method — the
         // overwhelming majority of nodes in a leaf-heavy parse (one node per
         // matched character in a quoted-scalar run). Returning it untouched
@@ -1734,11 +1801,6 @@ impl Interpreter {
             // `.made` it writes is the node's, so both slots read it.
             let mut seen: Vec<usize> = Vec::new();
             for (child_name, child_match) in children {
-                if let Some(child_from) = child_match.match_from() {
-                    restore_on_error!(
-                        self.flush_deferred_repeats(actions, |from, _| from as i64 <= child_from)
-                    );
-                }
                 let Some(child_name) = child_name else {
                     let dispatch_name = Self::get_action_name(&child_match).unwrap_or_default();
                     restore_on_error!(self.invoke_grammar_actions(
@@ -1794,12 +1856,6 @@ impl Interpreter {
         // with the captured children. Silent results have no public slot.
         if named_hash.is_none() {
             restore_on_error!(self.dispatch_silent_action_caps(silent_v.as_ref(), actions));
-        }
-
-        // Backtracked reductions inside this node's span ran before its own
-        // action, which fires once the whole node has reduced.
-        if let Some(node_to) = match_obj.match_to() {
-            restore_on_error!(self.flush_deferred_repeats(actions, |_, to| to as i64 <= node_to));
         }
 
         // Interior node with no action method of its own: the children (and

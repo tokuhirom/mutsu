@@ -58,6 +58,12 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("Q string"));
     }
 
+    // `Qa::B` is the package-qualified name `Qa::B`, not `Q` with the fused
+    // adverb `a` and `:` as its delimiter: `::` is never a delimiter.
+    if rest.starts_with("::") {
+        return Err(PError::expected("Q string"));
+    }
+
     if let Some((open, close)) = quote_delimiters(rest) {
         flags.quote_open = Some(open);
         flags.quote_close = Some(close);
@@ -295,6 +301,12 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // `q-a-b` is the routine `q-a-b`, not `q` with a `-` delimiter: `-`/`'`
     // continue an identifier when an alphabetic follows.
     if crate::parser::helpers::delim_is_identifier_continuation(after_q) {
+        return Err(PError::expected("q string"));
+    }
+
+    // `qw::B` / `qa::B` are package-qualified names, not `q` with a fused
+    // adverb and `:` as the delimiter: `::` is never a delimiter.
+    if after_q.starts_with("::") {
         return Err(PError::expected("q string"));
     }
 

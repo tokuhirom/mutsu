@@ -669,6 +669,12 @@ pub fn call_native_with_out_args(
         }
     }
 
+    // An empty reference array that was given one slot for the call keeps it
+    // only if C wrote through it.
+    for owner in &owners {
+        settle_grown_slot(owner);
+    }
+
     // Copy each numeric CArray's (possibly callee-modified) C buffer back into
     // the caller's Raku array, element by element, through the shared backing
     // node so the mutation is visible at the call site.
@@ -827,6 +833,23 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
     }
 }
 
+/// Whether `v` is a value that can never carry a C address: a `Str`, `Num`,
+/// `Bool`, rational or a `Failure`. `nqp::unbox_i` refuses these instead of
+/// answering the address 0 (#16420).
+// Cost: O(1).
+pub(crate) fn is_non_address_value(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Str(_)
+        | ValueView::Num(_)
+        | ValueView::Bool(_)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..)
+        | ValueView::BigRat(..) => true,
+        ValueView::Instance { class_name, .. } => class_name.resolve() == "Failure",
+        _ => false,
+    }
+}
+
 /// Read the C address carried by a NativeCall argument. (An `is rw` argument
 /// arrives as a `VarRef` carrying the bound variable's current value, which
 /// [`value_c_address`] unwraps along with `Scalar` / `ContainerRef`.)
@@ -946,6 +969,10 @@ enum ArgOwner {
         #[allow(dead_code)]
         buf: Vec<u8>,
         data_ptr: *const std::ffi::c_void,
+        /// The storage was empty and got one zeroed reference slot for this
+        /// call (an out-parameter, #15985): after the call the slot stays only
+        /// if C wrote an address through it.
+        grown_slot: bool,
     },
     /// A `CArray[Str]` (`char**`): `strings` keeps the NUL-terminated buffers
     /// alive, `ptrs` is the NULL-terminated `char*` array, `data_ptr` is the
@@ -1041,6 +1068,13 @@ fn carray_value_elem_type(v: &Value) -> Option<CType> {
 }
 
 /// The size in bytes of one `CArray[T]` element for a scalar C element type.
+/// Whether a `CArray` element is a pointer to something (a nested `CArray`, a
+/// `Pointer`) rather than a number.
+#[cfg(feature = "libffi")]
+fn is_reference_elem(elem: CType) -> bool {
+    matches!(elem, CType::CArray | CType::Pointer)
+}
+
 #[cfg(feature = "libffi")]
 fn carray_elem_size(elem: CType) -> usize {
     match elem {
@@ -1243,6 +1277,44 @@ fn storage_arg(node: crate::gc::Gc<crate::value::BufData>) -> ArgOwner {
         node: Some(node),
         buf: Vec::new(),
         data_ptr: data_ptr as *const std::ffi::c_void,
+        grown_slot: false,
+    }
+}
+
+/// The owner for an EMPTY array of references (`CArray[CArray[uint8]].new`)
+/// handed to C: its storage gets one zeroed pointer slot C can write through,
+/// as Rakudo's reference-element storage has (a NULL here crashed the callee,
+/// #15985). [`settle_grown_slot`] takes the slot back after the call if C left
+/// it zero.
+#[cfg(feature = "libffi")]
+fn grown_slot_arg(node: crate::gc::Gc<crate::value::BufData>) -> ArgOwner {
+    // SAFETY: audited aliased in-place container write (see
+    // `value::aliased_mut`); the `node` held in the owner keeps the allocation
+    // alive for the call and no Rust borrow into the buffer is live across it.
+    let data = unsafe { crate::value::gc_contents_mut(&node) };
+    data.bytes.resize(std::mem::size_of::<usize>(), 0);
+    let data_ptr = data.bytes.as_mut_ptr();
+    ArgOwner::BufBytes {
+        node: Some(node),
+        buf: Vec::new(),
+        data_ptr: data_ptr as *const std::ffi::c_void,
+        grown_slot: true,
+    }
+}
+
+/// After the call: an empty reference array whose one slot C never wrote is
+/// empty again (`elems` stays 0); a written slot is the array's element.
+#[cfg(feature = "libffi")]
+fn settle_grown_slot(owner: &ArgOwner) {
+    if let ArgOwner::BufBytes {
+        node: Some(node),
+        grown_slot: true,
+        ..
+    } = owner
+        && node.bytes.iter().all(|b| *b == 0)
+    {
+        // SAFETY: as `grown_slot_arg`; the call has returned.
+        unsafe { crate::value::gc_contents_mut(node) }.bytes.clear();
     }
 }
 
@@ -1333,6 +1405,11 @@ fn marshal_carray_arg(
     // its storage is equally right — the copy path could not see one at all and
     // passed an empty buffer.
     if let Some(node) = buf_storage_node(&resolve_arg(raw)) {
+        // An EMPTY array of references (`CArray[CArray[uint8]].new`) has no
+        // memory C could write through: it gets one slot (#15985).
+        if node.bytes.is_empty() && ps.elem.is_some_and(is_reference_elem) {
+            return Ok((Type::pointer(), grown_slot_arg(node)));
+        }
         return Ok((Type::pointer(), storage_arg(node)));
     }
     // Anything else that is defined is not an array C can be handed: refuse it
@@ -1390,7 +1467,8 @@ fn marshal_carray_arg(
     }
 
     let sz = carray_elem_size(elem);
-    let mut buf = vec![0u8; list.len() * sz];
+    let slots = list.len();
+    let mut buf = vec![0u8; slots * sz];
     for (i, item) in list.iter().enumerate() {
         encode_carray_elem(elem, item, &mut buf[i * sz..(i + 1) * sz]);
     }

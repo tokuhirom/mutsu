@@ -280,13 +280,6 @@ pub(super) enum RxOp {
     /// walk's LTM key and enter them best first, each lower-ranked one only
     /// when everything above it has failed (ADR-0135 D4).
     LtmAlt(u32),
-    /// An iteration of the `*` / `+` over the `<subrule>` `toks[tok]` committed:
-    /// run its action now when an action-driven parse reads a `$*` variable that
-    /// action may write (`maybe_run_reduce_time_dynvar_action`, the walk's own;
-    /// a no-op for every other grammar).
-    ReduceAction {
-        tok: u32,
-    },
     /// The end of one `||` branch: pad the alternation `alts[alt]`'s
     /// positional slot space past what the branch took since `regs[pos_base]`
     /// (unless `suppress_padding`), and mark its list-valued names quantified.
@@ -402,6 +395,22 @@ pub(crate) struct RxProgram {
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
     pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+    /// The pattern's derived slots, read for [`Self::declared_ratchet`] when a
+    /// call enters this program as a frame. Shared, not copied: the flag is set
+    /// when the body is parsed for a subrule call, which can come after the
+    /// program was first compiled from the same pattern.
+    pub(super) derived: std::sync::Arc<crate::runtime::regex_types::PatternDerived>,
+}
+
+impl RxProgram {
+    /// Whether the program is the body of a `rule` or `token`, whose result a
+    /// call commits to whatever the call site's own ratchet.
+    // Cost: O(1).
+    pub(super) fn declared_ratchet(&self) -> bool {
+        self.derived
+            .declared_ratchet
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// What the empty arm of a `?` writes, computed when the pattern compiles.

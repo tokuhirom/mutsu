@@ -59,6 +59,13 @@ fn text(node: &RakuAstNode, name: &str) -> Option<String> {
         })
 }
 
+/// The leading and trailing docs `node` carries, if it carries any.
+// Cost: O(1).
+pub(crate) fn docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
+    let (leading, trailing) = (text(node, LEADING), text(node, TRAILING));
+    (leading.is_some() || trailing.is_some()).then_some((leading, trailing))
+}
+
 /// A filled documentation slot for the docs `node` carries, if any.
 // Cost: O(1).
 pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {

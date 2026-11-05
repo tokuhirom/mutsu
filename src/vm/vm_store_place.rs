@@ -421,6 +421,13 @@ impl Interpreter {
             let top = self.stack.len() - 1;
             self.stack.swap(top, top - 1);
         }
+        // A raw BOOT scalar box stored as an element is its high-level value
+        // (#12881). Only the value and the subscript sit on top of the stack.
+        for slot in self.stack.iter_mut().rev().take(2) {
+            if slot.is_boot_scalar_box() {
+                *slot = slot.clone().hllize_for_binding();
+            }
+        }
         let pre = self.attr_elem_env_snapshot(code, name_idx);
         let depth = self.stack.len();
         if let Err(err) = self.exec_index_assign_expr_named_op(

@@ -167,6 +167,34 @@ impl Interpreter {
         let is_inc = label.contains("++");
         let is_prefix = label.starts_with("prefix");
 
+        // `nqp::atposref_*` answers the element's reference (a shared cell or a
+        // native `IntPosRef`): step what it holds and write through it, calling
+        // the op once.
+        if name.starts_with("nqp::atposref_") {
+            let reference = self.call_function(&name, call_args)?;
+            let current = if reference.is_proxy_value() {
+                self.auto_fetch_proxy(&reference)?
+            } else {
+                reference.clone().deref_container()
+            };
+            let new = if is_inc {
+                self.increment_value_smart(&current)?
+            } else {
+                self.decrement_value_smart(&current)?
+            };
+            match reference.view() {
+                _ if reference.is_proxy_value() => {
+                    self.assign_proxy_lvalue(reference, new.clone())?;
+                }
+                ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+                    let new = self.coerce_container_cell_store(&cell, new.clone())?;
+                    cell.store(new);
+                }
+                _ => return self.builtin_incdec_nomatch(&[op_label, current]),
+            }
+            return Ok(if is_prefix { new } else { current });
+        }
+
         if !self.named_sub_is_rw_capable(&name, &call_args) {
             let Some(callable) = self.rw_capable_callable_var(&name) else {
                 // Raku calls the routine, then finds no container in what

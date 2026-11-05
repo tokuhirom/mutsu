@@ -18,20 +18,23 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_trait_types(
+        let scope = crate::rakuast::frontend::str_ast_scope(
+            self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
-            || {
-                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-                    if compunit {
-                        crate::rakuast::str_dot_ast_compunit(source)
-                    } else {
-                        crate::rakuast::str_dot_ast(source)
-                    }
-                })
-            },
         );
+        let result = if compunit {
+            crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
+        } else {
+            crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
+        };
         crate::parser::clear_parser_lib_paths();
         result
+    }
+
+    /// What `Str.AST` checks on the parsed unit beyond the frontend's own
+    /// checks: a term used before its declaration (ADR-15760 Amendment 1, 1c).
+    fn str_ast_unit_check(stmts: &[crate::ast::Stmt]) -> Result<(), RuntimeError> {
+        crate::runtime::undeclared_routines::check_terms_in_source_order(stmts)
     }
 
     /// `Str.AST($slang)`: parse `source` under the localized surface syntax of
@@ -50,13 +53,15 @@ impl Interpreter {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_trait_types(
+        let scope = crate::rakuast::frontend::str_ast_scope(
+            self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
-            || {
-                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-                    crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
-                })
-            },
+        );
+        let result = crate::rakuast::str_dot_ast_with_slang(
+            &scope,
+            source,
+            slang.as_deref(),
+            &Self::str_ast_unit_check,
         );
         crate::parser::clear_parser_lib_paths();
         result

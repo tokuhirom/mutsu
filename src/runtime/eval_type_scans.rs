@@ -159,8 +159,10 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
                 insert_declared_name(&mut out.types, &name.resolve());
                 // Enum values are valid value-params (`sub f(SomeEnumValue)`),
                 // and serve as suggestions for a mistyped one.
-                for (vname, _) in variants {
-                    out.types.insert(vname.clone());
+                // A computed body (`(:30SLA, slip <SLB>)`) holds its values in the
+                // `__DYNAMIC__` entry: the shared helper reads them out.
+                for vname in crate::parser::enum_value_names(variants) {
+                    out.types.insert(vname);
                 }
             }
             Stmt::Package { name, kind, .. } => {

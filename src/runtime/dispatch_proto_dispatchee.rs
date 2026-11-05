@@ -212,7 +212,23 @@ impl Interpreter {
         family: &str,
         candidates: &[Value],
         args: &[Value],
-    ) -> Result<Option<(Value, super::MultiRemaining)>, RuntimeError> {
+    ) -> Result<Option<(Value, super::MultiRemaining, bool)>, RuntimeError> {
+        // A keyable call is answered from a plan cached per candidate set and
+        // argument types (`captured_multi_plan_winner`); the walk below is the
+        // miss tail for calls that cannot be keyed.
+        if let Some(answer) = self.captured_multi_plan_winner(family, candidates, args) {
+            let Some((winner, remaining, key_decided)) = answer? else {
+                return Ok(None);
+            };
+            let Some(code) = winner.dispatchee.clone() else {
+                return Ok(None);
+            };
+            return Ok(Some((
+                code,
+                super::MultiRemaining::from_vec(remaining, Some(winner.body_fingerprint())),
+                key_decided,
+            )));
+        }
         // One declared `multi` can be captured more than once (it sits under
         // several registry keys), each copy a distinct Sub value: keep the
         // first copy of each declaration, as the by-name gather's dedup does.
@@ -252,6 +268,7 @@ impl Interpreter {
         Ok(Some((
             code,
             super::MultiRemaining::from_vec(remaining, Some(winner.body_fingerprint())),
+            false,
         )))
     }
 
@@ -269,6 +286,7 @@ impl Interpreter {
         remaining: super::MultiRemaining,
         args: Vec<Value>,
         dispatcher: Value,
+        key_decided: bool,
     ) -> Result<Value, RuntimeError> {
         // #13183: the winner's `where` clauses and subset predicates already
         // ran against these exact arguments to make it the winner, so its
@@ -288,7 +306,27 @@ impl Interpreter {
             ),
             _ => (Vec::new(), false),
         };
-        if trust_constraints {
+        // A winner a keyed stage program picked had every nominal parameter
+        // check answered by the argument-type key: its bind need not repeat
+        // them (`nominal_verified_candidate`). Only for the plain shape the
+        // program's per-argument verdict covers -- one positional parameter
+        // per argument, no named or slurpy parameter, no pair argument -- and
+        // an unwrapped candidate (a wrapper would bind first).
+        let nominal_verified_id = match candidate.view() {
+            ValueView::Sub(data)
+                if key_decided
+                    && data.param_defs.len() == args.len()
+                    && data.param_defs.iter().all(|pd| {
+                        !pd.named && !pd.slurpy && !pd.double_slurpy && !pd.is_variadic()
+                    })
+                    && !args.iter().any(|a| a.unwrap_varref().is_any_pair_value())
+                    && !self.dispatch.wrap_chains.contains_key(&data.id) =>
+            {
+                Some(data.id)
+            }
+            _ => None,
+        };
+        if trust_constraints || nominal_verified_id.is_some() {
             self.reify_map_grep_seq_args(&args)?;
         }
         let dispatch_token = self.next_dispatch_token();
@@ -301,6 +339,7 @@ impl Interpreter {
         ));
         self.push_samewith_callable_context(dispatcher);
         self.pending_skip_constraint_recheck = trust_constraints;
+        self.dispatch.nominal_verified_candidate = nominal_verified_id;
         // A module routine's own `my` statics are its whole scope for those
         // names: a same-named lexical of the calling frame (a class static its
         // method injected) must not answer for them. The named-call entry
@@ -324,6 +363,7 @@ impl Interpreter {
         // Not consumed (the call took a path with no general bind): never let
         // it reach an unrelated later bind.
         self.pending_skip_constraint_recheck = false;
+        self.dispatch.nominal_verified_candidate = None;
         self.pop_samewith_context();
         self.dispatch.multi_dispatch_stack.pop();
         result

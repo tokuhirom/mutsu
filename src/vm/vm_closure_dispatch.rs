@@ -134,7 +134,11 @@ impl Interpreter {
                     );
                     // For coercion types like `Bool(Mu)`, the nominal type is the
                     // inner type (Mu) — autothreading is based on the nominal type.
-                    let constraint = Self::nominal_type_for_closure(constraint_raw);
+                    // `Junction:D` / `Mu:U` bind a Junction whole like the bare type.
+                    let constraint = crate::runtime::types::strip_type_smiley(
+                        Self::nominal_type_for_closure(constraint_raw),
+                    )
+                    .0;
                     // Mu and Junction accept junctions directly
                     if constraint == "Mu" || constraint == "Junction" {
                         // No auto-threading needed
@@ -312,6 +316,15 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // Taken at entry, whichever path the call then takes (light or full),
+        // so a nested call in the body can never find it still armed. Only a
+        // bind of exactly the verified winner may use it
+        // (`DispatchState::nominal_verified_candidate`).
+        let nominal_verified = self
+            .dispatch
+            .nominal_verified_candidate
+            .is_some_and(|id| id == data.id)
+            && self.dispatch.nominal_verified_candidate.take().is_some();
         // A body that can observe nothing below runs light (#8335).
         if explicit_topic.is_none()
             && !capture_rw_topic
@@ -660,11 +673,8 @@ impl Interpreter {
         // binding of the caller (not for a closure whose outer is the live
         // program scope, which reads names through the static link).
         if !(cc.static_name_lookup && data.env.is_program_scope_capture()) {
-            let keys: Vec<(Symbol, Value)> = capture_tier
-                .iter()
-                .filter(|(k, _)| k.with_str(crate::env::is_plain_user_lexical))
-                .map(|(k, v)| (*k, v.clone()))
-                .collect();
+            let keys: Vec<(Symbol, Value)> =
+                capture_tier.collect_unshared(|k| k.with_str(crate::env::is_plain_user_lexical));
             for (k, v) in keys {
                 if cc.is_routine && k.is_routine_owned() {
                     continue;
@@ -854,6 +864,8 @@ impl Interpreter {
             let _default_package_guard = (cc.is_routine
                 && !crate::qualified::is_global_package(data.package))
             .then(|| self.enter_package_guarded_sym(data.package));
+            // Armed right before the bind, which takes it at its entry.
+            self.dispatch.pending_nominal_verified = nominal_verified;
             match loan_env!(
                 self,
                 // `param_name_syms.params` is `data.params` interned once per
@@ -1998,30 +2010,31 @@ impl Interpreter {
         // The last two fall back to the whole capture, as does a frame whose
         // env is not a scoped overlay at all (then `keys()` is the whole env,
         // so the narrowing would cost more than it saves).
-        let end_refresh_keys: Vec<Symbol> = if self.has_end_phasers() && !data.env.is_empty() {
-            if self.pending_runtime_name_writes.is_empty()
-                && self.inline_control_env_writes.len() == inline_control_writes_at_entry
-                && self.env().len() < data.env.len()
-            {
-                let captured = data.env.inner();
-                // Sized up front: the `filter` hides the exact size hint the
-                // two iterators have, so `collect` would otherwise walk
-                // hashbrown's growth ladder for a handful of names.
-                let mut keys = Vec::with_capacity(self.env().len() + cc.free_var_syms.len());
-                keys.extend(
-                    self.env()
-                        .keys()
-                        .copied()
-                        .chain(cc.free_var_syms.iter().copied())
-                        .filter(|k| captured.contains_key(k)),
-                );
-                keys
+        let end_refresh_keys: Vec<Symbol> =
+            if self.has_end_phasers() && data.env.len_upper_bound() > 0 {
+                if self.pending_runtime_name_writes.is_empty()
+                    && self.inline_control_env_writes.len() == inline_control_writes_at_entry
+                    && self.env().len() < data.env.len_upper_bound()
+                {
+                    let captured = data.env.inner();
+                    // Sized up front: the `filter` hides the exact size hint the
+                    // two iterators have, so `collect` would otherwise walk
+                    // hashbrown's growth ladder for a handful of names.
+                    let mut keys = Vec::with_capacity(self.env().len() + cc.free_var_syms.len());
+                    keys.extend(
+                        self.env()
+                            .keys()
+                            .copied()
+                            .chain(cc.free_var_syms.iter().copied())
+                            .filter(|k| captured.contains_key(k)),
+                    );
+                    keys
+                } else {
+                    data.env.written_name_candidates()
+                }
             } else {
-                data.env.keys().copied().collect()
-            }
-        } else {
-            Vec::new()
-        };
+                Vec::new()
+            };
 
         *self.env_mut() = restored_env;
 

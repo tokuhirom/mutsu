@@ -11,8 +11,7 @@
 //! emitted as standard UTF-8.
 
 /// Marker codepoint for Raku's invalid-byte grapheme representation.
-pub(crate) const SYNTHETIC_MARKER: char = '\u{10FFFD}';
-pub(crate) const SYNTHETIC_MARKER_STR: &str = "\u{10FFFD}";
+pub(crate) use crate::grapheme_break::SYNTHETIC_MARKER;
 
 fn append_invalid_byte(result: &mut String, byte: u8) {
     result.push(SYNTHETIC_MARKER);

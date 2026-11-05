@@ -145,6 +145,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             custom_traits,
             is_unit: _,
             is_my: _,
+            spans: _,
         } => {
             traits_mut(v, custom_traits);
             v.visit_stmts_mut(body);
@@ -396,7 +397,11 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             value,
             is_attribute: _,
             type_invocant: _,
+            invocant_expr,
         } => {
+            if let Some(e) = invocant_expr {
+                v.visit_expr_mut(e);
+            }
             exprs_mut(v, method_args);
             v.visit_expr_mut(value);
         }

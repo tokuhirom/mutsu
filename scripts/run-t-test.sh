@@ -50,6 +50,19 @@ per_file_timeout_scale() {
       # The work is the point of the test, so the budget scales (x3).
       echo 3
       ;;
+    t/concurrency/cro-client-repeated-await-response-lexical.t)
+      # Pins a real Cro::HTTP client/server round trip, so the file first has
+      # to load the vendored Cro::HTTP stack. Measured on an opt-level-0 debug
+      # binary, alone on an idle box: 72s for the file, of which 53s is just
+      # `use Cro::HTTP::Router; use Cro::HTTP::Server; use Cro::HTTP::Client`
+      # (module compilation, not the test's own work). Under the nightly jit
+      # stress job's `prove -j4` with a 90s base it ran out of budget (exit
+      # 124, no plan) with every other file green and no crash report (#15723).
+      # The file passes 3/3 runs with the JIT forced hot, so this is budget,
+      # not a JIT defect. The scale is a stopgap for debug-build module load
+      # cost.
+      echo 3
+      ;;
     *)
       echo 1
       ;;

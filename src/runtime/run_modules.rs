@@ -651,6 +651,7 @@ impl Interpreter {
         Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
+        Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_hash_ordered_prelude(&code, &mut stmts);
@@ -673,7 +674,14 @@ impl Interpreter {
     /// in `stmts`, if any. Used by `load_module` to track which unit module
     /// is currently loading so exports can be mirrored under the module name.
     pub(crate) fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
-        for s in stmts {
+        // `unit module Widgets:ver<0.1>:auth<...>;` lowers to a synthetic block
+        // holding the version/auth metadata call and the package itself: look
+        // one level into it (it is never nested further).
+        let flat = stmts.iter().flat_map(|s| match s {
+            crate::ast::Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        });
+        for s in flat {
             match s {
                 crate::ast::Stmt::Package {
                     name,
@@ -1023,6 +1031,9 @@ impl Interpreter {
             None => {
                 let (mut stmts, precompiled, effects) =
                     self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
+                // A term used before its declaration, judged in source order,
+                // before the BEGIN-time effects move to the head.
+                crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts)?;
                 // The module's BEGIN-time effects run first, in source order (ADR-0134).
                 let order = |stmts: &mut Vec<crate::ast::Stmt>| {
                     crate::runtime::begin_prologue::order_unit(stmts)
@@ -1049,6 +1060,9 @@ impl Interpreter {
                 // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
                 // An entry is written only for a unit that got past this.
                 Self::validate_exporthow_directives(&stmts)?;
+                // A type used before the statement that declares it is a compile
+                // error of the module, as of any unit (ADR-15760 Amendment 1, 1a).
+                crate::rakuast::post_declared::check(&stmts, &crate::scope::NameScope::default())?;
                 let ast = super::module_load_facts::ModuleAst::loaded(stmts, prologue_len, path_text);
                 (ast, facts, effects, precompiled)
             }
@@ -1371,6 +1385,11 @@ impl Interpreter {
                 module_docs,
             ) {
                 Ok(()) => self.run_compunit(|interp| {
+                    // The unit's own `$=pod` is a compunit lexical from the
+                    // start of its mainline: without it the mainline read
+                    // climbs to an already-loaded ancestor package's document
+                    // (`unit module Sway::Config::CLI` after `use Sway::Config`).
+                    interp.register_unit_pod_before_mainline(unit_name.as_deref());
                     interp.run_module_mainline(|interp| {
                         interp.run_module_block(&module_ast, facts.has_block_phasers, code_slot)
                     })
@@ -1422,6 +1441,15 @@ impl Interpreter {
             let export_terms =
                 std::mem::replace(&mut self.module.module_export_terms, saved_export_terms);
             module_scope_names.extend(export_terms);
+            // Qualified terms a hook module handed to this one (`importer_export_terms`).
+            if !self.module.importer_export_terms.is_empty() {
+                let (mine, others): (Vec<_>, Vec<_>) =
+                    std::mem::take(&mut self.module.importer_export_terms)
+                        .into_iter()
+                        .partition(|(importer, ..)| importer == module);
+                self.module.importer_export_terms = others;
+                module_scope_names.extend(mine.into_iter().map(|(_, key, value)| (key, value)));
+            }
             // `module_imported_names` records the ENV KEY the import landed under,
             // because the restore loop below has to undo that exact key. The two
             // scope tables it feeds are keyed by the same text: an enum key stays
@@ -1505,6 +1533,36 @@ impl Interpreter {
                 .cloned()
                 .collect();
             let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
+            // A type a `package EXPORT::<tag>` block declared is imported under
+            // its short name: bind it where the importer reads it (#16332).
+            for (short, stash_name) in &facts.export_stash_types {
+                // Nested in a `unit module M;` the stash is `M::EXPORT::<tag>`.
+                let registered = unit_name
+                    .as_deref()
+                    .map(|unit| {
+                        crate::qualified::qualified_text(unit, stash_name)
+                            .as_str()
+                            .to_string()
+                    })
+                    .into_iter()
+                    .chain(std::iter::once(stash_name.clone()))
+                    .find(|candidate| {
+                        let reg = self.registry();
+                        reg.classes.contains_key(candidate)
+                            || reg.roles.contains_key(candidate)
+                            || reg.enum_types.contains_key(candidate)
+                    });
+                let Some(registered) = registered else {
+                    continue;
+                };
+                let bound_to_type = self.env.get(short).is_some_and(
+                    |v| matches!(v.view(), ValueView::Package(p) if p.resolve() == registered),
+                );
+                if !bound_to_type {
+                    self.env
+                        .insert(short.clone(), Value::package(Symbol::intern(&registered)));
+                }
+            }
             let leaked_packages: Vec<String> = module_scope_names
                 .iter()
                 .filter(|(name, value)| {
@@ -1659,6 +1717,13 @@ impl Interpreter {
                 && !unit_lex_names.is_empty()
             {
                 for name in &unit_lex_names {
+                    // A package-qualified name here is a term a hook's import bound
+                    // (`'Graph::Grid' => Graph::Grid`, via its term key), not a
+                    // file-scope variable: it stays in the module's scope table, which
+                    // the module's routines read it from.
+                    if crate::qualified::is_qualified_str(name) {
+                        continue;
+                    }
                     module_scope_names.remove(name);
                     let value = self.env.get(name).cloned().unwrap_or(Value::NIL);
                     let cell = if value.is_container_ref() {
@@ -1822,6 +1887,17 @@ impl Interpreter {
             // install the symbols it returns into the caller's scope. The
             // enclosing compunit's hook comes back either way -- an aborted
             // load must not leave it hidden.
+            // Keep what this compunit's own `sub EXPORT` is before `apply_module_export`
+            // consumes it: `CompUnit::Handle.export-sub` reads it.
+            let own_hooks: Vec<Arc<FunctionDef>> = self
+                .export_routine_candidates()
+                .into_iter()
+                .map(|(_, def)| def)
+                .collect();
+            if !own_hooks.is_empty() {
+                crate::runtime::cow_table_mut(&mut self.module.module_export_hooks)
+                    .insert(module.to_string(), own_hooks);
+            }
             let export_result = match result {
                 Ok(()) => {
                     // `$*CU` in the module's `sub EXPORT` is the importing unit.
@@ -2580,7 +2656,12 @@ impl Interpreter {
         if !Self::module_has_state_sub(stmts) {
             return;
         }
-        let (_code, compiled_fns) = self.compile_block_raw(stmts);
+        // Compiled as the module's own mainline is (a module unit, whose
+        // top-level `use`s fill lexical import sets): a `state`-declaring sub's
+        // shared body is what a qualified call (`Mod::sub(...)`) runs, and
+        // without the sets its calls to imported routines (`LexImportCall`)
+        // would resolve by bare name in the caller's scope instead.
+        let (_code, compiled_fns) = self.compile_module_mainline_uncached(stmts);
         for cf in compiled_fns.into_values() {
             self.module
                 .imported_compiled_fns

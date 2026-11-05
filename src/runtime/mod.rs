@@ -8,7 +8,7 @@ mod published_outer_package;
 mod rw_writeback_slots;
 mod supply_interval;
 mod synth_closure;
-pub(crate) use synth_closure::synthesized_closure_code;
+pub(crate) use synth_closure::{install_value_layer_compiler, synthesized_closure_code};
 mod tolerance;
 mod unmerged_package_vars;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying
@@ -36,10 +36,19 @@ pub(crate) type PlainMethodLaneKey = (Symbol, Symbol, Vec<Symbol>);
 /// `is export`-ed regex declarator bodies, keyed by the module that declared
 /// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
 type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
-/// `(name, current package, frame lexical package) -> candidate list`: see
-/// `Interpreter::multi_dispatch_candidates_memo`.
-pub(crate) type MultiDispatchCandidatesMemo =
-    rustc_hash::FxHashMap<(Symbol, Symbol, Option<Symbol>), MultiCandidateList>;
+/// `(name, current package, frame lexical package, units) -> candidate list`:
+/// see `Interpreter::multi_dispatch_candidates_memo`. `units` is
+/// `(current unit, executing unit, import-table generation)` for a family with
+/// import records, whose list depends on the asking unit (#11004), else `None`.
+pub(crate) type MultiDispatchCandidatesMemo = rustc_hash::FxHashMap<
+    (
+        Symbol,
+        Symbol,
+        Option<Symbol>,
+        Option<(Symbol, Symbol, u64)>,
+    ),
+    MultiCandidateList,
+>;
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -390,14 +399,27 @@ pub(crate) fn local_timezone_offset_secs() -> i64 {
     sys_resources::local_offset_at(crate::builtins::epoch_nanos() / 1_000_000_000).0
 }
 
-type ProtectBlockCacheEntry = (
-    Arc<CompiledCode>,
-    Arc<CompiledFns>,
-    Arc<Vec<(usize, String)>>,
-    Arc<Vec<(usize, String)>>,
-    Arc<Vec<String>>,
-);
-type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
+/// What a `protect` block's bytecode says about the names it touches, which does
+/// not depend on the closure's captured env: the local slots it assigns and the
+/// global names it reads or writes, in first-use order. Keyed by the compiled
+/// body (`Arc` identity), so every closure instance of one literal shares it --
+/// the old per-instance cache (`data.id`, fresh for each closure creation) missed
+/// on every call and never evicted.
+pub(crate) struct ProtectBlockOps {
+    pub(crate) assigned_slots: std::collections::HashSet<usize>,
+    pub(crate) global_names: Vec<String>,
+}
+
+/// The env-dependent half of a `protect` block's analysis: which locals and
+/// global names the closure's captured env holds. A function of the compiled
+/// body and of that set of names alone, so one result serves every closure
+/// instance of a block literal whose capture holds the same names.
+#[derive(Clone)]
+pub(crate) struct ProtectBlockBindings {
+    pub(crate) captured: std::sync::Arc<Vec<(usize, String)>>,
+    pub(crate) writeback: std::sync::Arc<Vec<(usize, String)>>,
+    pub(crate) names: std::sync::Arc<Vec<String>>,
+}
 
 /// ADR-0037 §2.3: how `EVAL ..., context => $ctx`'s `return` classifies,
 /// derived once at EVAL entry from the routine identity `CALLER::` stamped
@@ -620,6 +642,9 @@ pub(crate) use self::methods_subscript_protocol::{refuse_map_assignment, refuse_
 pub(crate) use self::output_sink::OutputSink;
 pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::{ClassDeclModifiers, HoistedShell};
+
+/// Where the literal half of `Interpreter::literal_native_args` starts.
+pub(crate) const LITERAL_MASK_SHIFT: u32 = 16;
 pub(crate) use self::registry::Registry;
 pub(crate) use self::scope_stack::ScopeStack;
 pub(crate) use self::tap_state::TapState;
@@ -1199,6 +1224,12 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) type_constraints: Arc<HashMap<String, String>>,
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
+    /// Whether the default `.new` of this class skips `BUILD`/`TWEAK`: the
+    /// class derives from a built-in container (`Hash`, `Map`, `Array`,
+    /// `List`, `Set`, `Bag`, `Mix`, ...) whose `new` builds the object
+    /// without `bless`, so Rakudo never runs the submethods for it (only an
+    /// explicit `self.bless` does). `bless` ignores this.
+    pub(crate) new_skips_phases: bool,
     pub(crate) has_smiley: bool,
     /// True when some attribute is typed with a user `subset`, whose predicate
     /// is checked at construction (defaults included) like a `where` clause.
@@ -1277,6 +1308,8 @@ pub(crate) struct NativeCtorPlan {
     /// Pure class shape; re-derived per named argument it was a registry
     /// probe plus an attribute scan per MRO level.
     pub(crate) attr_buildable: Arc<[bool]>,
+    /// Object attributes whose construction binds the supplied container.
+    pub(crate) attr_binds: Arc<[bool]>,
     /// Which user-defined whole-object build hook this class's MRO declares —
     /// `Some("BUILDALL")`, `Some("POPULATE")`, or `None` (the overwhelmingly
     /// common case). `run_user_buildall_hook` probed this per construction with
@@ -1633,6 +1666,16 @@ pub(crate) struct RoutineFrame {
     /// for a frame without one. Valid only while the frame is on the stack:
     /// a view that outlives it must clone the record (ADR-14633 §2.1).
     pub fixtures: u32,
+    /// Whether this named-sub frame's routine is declared outside every
+    /// routine and closure body (`CompiledCode::outer_is_unit`): it cannot
+    /// lexically see a method's `self` / `$?CLASS` / `$?ROLE`, so it must not
+    /// continue its CALLER's fixture record (#16099).
+    pub unit_scoped: bool,
+    /// How many fixture records were live when this frame was pushed. A record
+    /// above that count was pushed AFTER the frame (a scoped one: an attribute
+    /// default, a role body) and belongs to code the frame runs, so a
+    /// `unit_scoped` frame does not hide it.
+    pub fixtures_floor: u32,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.
@@ -2018,6 +2061,10 @@ pub struct Interpreter {
     /// `multi d(int)` / `multi d(Int)` called as `d(5)` picks `int` as rakudo
     /// does. Zero for every call site with no literal argument, which is the
     /// common case and costs one `u32` store per call.
+    ///
+    /// Layout: bit `i` (`i < 16`) marks argument `i` as genuinely native (a
+    /// declared native variable); bit `16 + i` marks it as written as a
+    /// literal, which is boxed for dispatch ([`LITERAL_MASK_SHIFT`]).
     pub(crate) literal_native_args: u32,
     /// The CURRENT call site's `OpCode::CallFunc::static_arg_types`, published
     /// by `exec_call_func_op` and restored when that call returns. The callee's
@@ -2910,6 +2957,12 @@ pub(crate) struct LetSaveEntry {
     /// element in place, so the rest of the container -- and every other name
     /// bound to it -- is untouched (#9434).
     pub(crate) elem: Option<(Value, Value)>,
+    /// A method-attribute save (`temp $obj.attr = v`): the invocant object
+    /// (the shared instance, not a copy), the method name and its arguments.
+    /// The restore assigns `value` back through the same rw accessor, so the
+    /// object keeps its identity and every holder of it sees the old value
+    /// again (#16144).
+    pub(crate) method_attr: Option<Box<(Value, String, Vec<Value>)>>,
 }
 
 pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
@@ -2922,6 +2975,12 @@ pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
 /// that captures it are two different bindings, and a single bucket would fuse
 /// them. Contains `<`/`>` for the same reason [`MAINLINE_UNIT_KEY`] does.
 pub(crate) const BLOCK_LEXICAL_UNIT_PREFIX: &str = "UNIT<block ";
+
+/// Prefix of the capture bucket key of one `EVAL` run: the named subs at the
+/// unit's top level capture the unit's variables there, one bucket per run
+/// (the `EVAL` unit is not the program's mainline, which owns
+/// [`MAINLINE_UNIT_KEY`]).
+pub(crate) const EVAL_UNIT_CAPTURE_PREFIX: &str = "UNIT<eval ";
 
 /// Immutable process-constant magic/dynamic variables hoisted into the shared
 /// env base tier (see `Interpreter::new`). These hold the same value for the
@@ -3232,7 +3291,7 @@ mod tests {
     fn forward_decl_uses_later_top_level_definition() {
         let mut interp = Interpreter::new();
         let output = interp
-            .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
+            .run("sub foo($a, $b) {...}; say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
     }
@@ -3290,7 +3349,6 @@ mod tests {
             compiled_fns: None,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            deprecated_message: None,
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
@@ -3300,7 +3358,7 @@ mod tests {
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
+            _state_scope_guard: None,
             captured_readonly: None,
             routine_cell: Default::default(),
         });

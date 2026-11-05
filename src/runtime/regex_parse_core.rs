@@ -3102,6 +3102,21 @@ impl Interpreter {
                         RegexAtom::RightWordBoundary
                     }
                     '<' => {
+                        // `<.[b]>`, `<.:Lu>`, `<.+:N>`: a leading `.` before a
+                        // character-class form is the implicit positive half
+                        // of the class (rakudo gives the same tree as without
+                        // it), not a non-capturing subrule call.
+                        if chars.peek() == Some(&'.') && {
+                            let mut la = chars.clone();
+                            la.next();
+                            match la.next() {
+                                Some('[' | '+' | '-') => true,
+                                Some(':') => la.next() != Some(':'),
+                                _ => false,
+                            }
+                        } {
+                            chars.next();
+                        }
                         if chars.peek() == Some(&'(') {
                             chars.next();
                             RegexAtom::CaptureStartMarker

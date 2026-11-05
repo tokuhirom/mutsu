@@ -152,6 +152,43 @@ impl Interpreter {
         if crate::builtin_types::catalog::builtin_type_has_role(class_name, role) {
             return true;
         }
+        // The walk below reads the registry only, so its answer holds until the
+        // registry is next written; this sits on the method-call path (the
+        // `Sequence` delegate asks it three times per call). Names are looked
+        // up first (a name seen before costs no intern call, which the
+        // `named_call_intern_budget` test counts per Test assertion); a name no
+        // symbol exists for yet is interned once, so its later asks are hits.
+        let class_sym = Symbol::lookup(class_name).unwrap_or_else(|| Symbol::intern(class_name));
+        let role_sym = Symbol::lookup(role).unwrap_or_else(|| Symbol::intern(role));
+        let generation = self.registry_write_generation();
+        let key = (class_sym, role_sym);
+        {
+            let mut memo = self.types.class_does_role_memo.borrow_mut();
+            if memo.generation != Some(generation) {
+                memo.answers.clear();
+                memo.generation = Some(generation);
+            } else if let Some(hit) = memo.answers.get(&key) {
+                debug_assert_eq!(
+                    *hit,
+                    self.class_does_role_uncached(class_name, role),
+                    "stale class_does_role for {class_name} / {role}"
+                );
+                return *hit;
+            }
+        }
+        let answer = self.class_does_role_uncached(class_name, role);
+        if self.registry_write_generation() == generation {
+            self.types
+                .class_does_role_memo
+                .borrow_mut()
+                .answers
+                .insert(key, answer);
+        }
+        answer
+    }
+
+    // Cost: O(c * r), c = classes in the MRO, r = roles composed per class.
+    fn class_does_role_uncached(&self, class_name: &str, role: &str) -> bool {
         self.collect_roles_for_class(class_name, false, false, false)
             .iter()
             .any(|r| r.split_once('[').map(|(b, _)| b).unwrap_or(r) == role)

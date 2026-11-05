@@ -599,6 +599,11 @@ impl Interpreter {
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
         predicate_verified: bool,
+        // The argument-type key already decided every nominal check of this
+        // parameter (a keyed stage program picked the routine): the plain
+        // `type_matches_value` below is not repeated. The coercion, `@`/`%`,
+        // `&` and capture arms are unaffected.
+        nominal_verified: bool,
     ) -> Result<Value, RuntimeError> {
         // A non-slurpy `@`-sigil parameter binds directly to a Positional
         // argument, ignoring any `$`-itemization the caller's variable
@@ -713,7 +718,8 @@ impl Interpreter {
         if let Some(constraint) = &pd.type_constraint
             && (!pd.is_type_only()
                 || (self.is_resolvable_type(constraint)
-                    && !self.type_only_enum_value_shadows_alias(pd, constraint)))
+                    && !self.type_only_enum_value_shadows_alias(pd, constraint)
+                    && !self.names_value_constant(constraint)))
         {
             let resolved_constraint = self.resolved_type_capture_name(constraint);
             // For &-sigil parameters, the type constraint specifies the
@@ -789,6 +795,7 @@ impl Interpreter {
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
             } else if !(predicate_verified && self.constraint_is_user_subset(&resolved_constraint))
+                && !nominal_verified
                 && !self.type_matches_value(&resolved_constraint, &value)
             {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
@@ -807,7 +814,7 @@ impl Interpreter {
                         .dispatch
                         .samewith_context_stack
                         .last()
-                        .map(|ctx| ctx.name.as_str())
+                        .map(|ctx| &*ctx.name)
                         .unwrap_or("<anon>");
                     return Err(RuntimeError::parameter_invalid_concreteness(
                         base_type,
@@ -925,46 +932,6 @@ impl Interpreter {
             &[],
             &[],
         )
-    }
-
-    /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
-    /// when it cannot be told.
-    ///
-    /// A COMPILED routine carries the answer on its `CompiledCode`; its
-    /// `SubData::body` is empty, because the AST is gone once the bytecode
-    /// exists, so asking the body there would answer a confident and wrong
-    /// "no". An interpreted one still has its body and is asked directly.
-    pub(crate) fn routine_reads_args_array(data: &crate::value::SubData) -> Option<bool> {
-        if let Some(cc) = data.compiled_code.as_ref() {
-            return Some(cc.reads_args_array);
-        }
-        if data.body.is_empty() {
-            return None;
-        }
-        Some(crate::ast::body_reads_args_array(&data.body))
-    }
-
-    /// Whether a routine reads its implicit named argument hash `%_`.
-    /// Compiled closures need the flag because their AST body is empty.
-    pub(crate) fn routine_reads_args_hash(
-        data: &crate::value::SubData,
-        args: &[Value],
-    ) -> Option<bool> {
-        if !data.param_defs.is_empty()
-            || data.params.is_empty()
-            || !args
-                .iter()
-                .any(|arg| matches!(unwrap_varref_value(arg.clone()).view(), ValueView::Pair(..)))
-        {
-            return Some(false);
-        }
-        if let Some(cc) = data.compiled_code.as_ref() {
-            return Some(cc.reads_args_hash);
-        }
-        if data.body.is_empty() {
-            return None;
-        }
-        Some(crate::ast::body_reads_args_hash(&data.body))
     }
 
     /// [`Interpreter::bind_function_args_values`] plus whether the routine
@@ -1122,8 +1089,8 @@ impl Interpreter {
         // Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` argument
         // into the `List`/`Hash` over the same storage (ADR-12666).
         let hllized: Vec<Value>;
-        let args = if args.iter().any(Value::is_vm_collection) {
-            hllized = args.iter().cloned().map(Value::hllize_vm_collection).collect();
+        let args = if args.iter().any(Value::needs_hllize_for_binding) {
+            hllized = args.iter().cloned().map(Value::hllize_for_binding).collect();
             hllized.as_slice()
         } else {
             args
@@ -1134,6 +1101,9 @@ impl Interpreter {
         // `false`, exactly like the other `pending_*` one-shot signals this
         // struct carries (see its doc comment on `pending_skip_constraint_recheck`).
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
+        // Same discipline: taken at entry, armed only by the winner's own call
+        // (`call_compiled_closure_in_unit`).
+        let nominal_verified = std::mem::take(&mut self.dispatch.pending_nominal_verified);
         let FunctionBindingOptions {
             reads_args_array,
             reads_args_hash,
@@ -2017,7 +1987,19 @@ impl Interpreter {
                         let arg = unwrap_varref_value(raw_arg.clone());
                         if let ValueView::Pair(key, val) = arg.view() {
                             if !explicit_named_keys.contains(key) {
-                                named.insert(key.clone(), val.clone());
+                                let arg_source = arg_sources
+                                    .as_ref()
+                                    .and_then(|names| names.get(arg_idx))
+                                    .and_then(|n| n.as_ref());
+                                let kept = self.capture_named_container(
+                                    key,
+                                    val,
+                                    arg_source,
+                                    capture_key,
+                                    &mut rw_bindings,
+                                    param_defs,
+                                );
+                                named.insert(key.clone(), kept);
                             }
                         } else {
                             let arg_source = arg_sources
@@ -2104,12 +2086,29 @@ impl Interpreter {
                     // *%hash -- collect Pair arguments into a hash,
                     // excluding args already bound to explicit named parameters.
                     let mut hash_items = ValueMap::default();
-                    for arg in args.iter() {
+                    // A named argument read from a caller variable (`:k($v)`)
+                    // keeps that variable's container, so `|%h` hands an
+                    // `is raw` / `is rw` named parameter the caller's own
+                    // cell (#16181; same mechanism as the `|c` capture).
+                    let capture_key = (!pd.name.is_empty()).then_some(binding_name);
+                    for (arg_idx, arg) in args.iter().enumerate() {
                         let arg = unwrap_varref_value(arg.clone());
                         if let ValueView::Pair(k, v) = arg.view()
                             && !explicit_named_keys.contains(k)
                         {
-                            hash_items.insert(k.clone(), v.clone());
+                            let arg_source = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref());
+                            let kept = self.capture_named_container(
+                                k,
+                                v,
+                                arg_source,
+                                capture_key,
+                                &mut rw_bindings,
+                                param_defs,
+                            );
+                            hash_items.insert(k.clone(), kept);
                         }
                     }
                     let slurpy_value = Value::hash_bare_values(hash_items);
@@ -2680,6 +2679,7 @@ impl Interpreter {
                                 None,
                                 None,
                                 skip_constraint_recheck,
+                                false,
                             )?;
                             // An untyped `:@x` is implicitly `Positional`, as its
                             // positional counterpart is: `f(:x(Mu))` and `f(:x(5))`
@@ -2911,6 +2911,7 @@ impl Interpreter {
                                         None,
                                         None,
                                         false,
+                                        false,
                                     )?;
                                 }
                                 return Err(crate::runtime::utils::parameter_rw_not_container(
@@ -3002,6 +3003,7 @@ impl Interpreter {
                                         None,
                                         None,
                                         skip_constraint_recheck,
+                                        false,
                                     )?
                                 } else {
                                     inner_val.clone()
@@ -3508,6 +3510,7 @@ impl Interpreter {
                                     None,
                                     None,
                                     false,
+                                    false,
                                 )?;
                             }
                             return Err(crate::runtime::utils::parameter_rw_not_container(
@@ -3564,6 +3567,7 @@ impl Interpreter {
                         && !is_rw
                         && !is_raw
                         && !is_copy
+                        && !alias_plain_container
                         && let Some(source_name) = &source_name
                     {
                         rw_bindings.push((storage_name.to_string(), source_name.clone()));
@@ -3693,12 +3697,13 @@ impl Interpreter {
                     // binds to an `@` parameter as the Array, so `for @p` and
                     // `@p.elems` iterate its elements (plain itemized Arrays
                     // are decontainerized on read; the mixin wrapper hides
-                    // the itemization from that read).
-                    if pd.name.starts_with('@')
-                        && !pd.slurpy
-                        && !pd.double_slurpy
-                        && matches!(value.view(), ValueView::Mixin(..))
-                    {
+                    // the itemization from that read). The same holds for an
+                    // itemized Array handed over without a variable holder (a
+                    // method result such as `%h.AT-KEY('a')`, or an element of
+                    // a Map subclass built over shared storage): its elements
+                    // become the parameter's elements, not one element holding
+                    // the Array (#16357).
+                    if pd.name.starts_with('@') && !pd.slurpy && !pd.double_slurpy {
                         value = value.deitemize_for_sigil_bind();
                     }
                     // Check the argument before `is copy` removes its container type.
@@ -3708,6 +3713,7 @@ impl Interpreter {
                         source_name.as_deref(),
                         source_type_constraint.as_deref(),
                         skip_constraint_recheck,
+                        nominal_verified,
                     )?;
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
@@ -3746,7 +3752,12 @@ impl Interpreter {
                         }
                         // A `@`-sigil copy is a fresh, mutable, untyped Array
                         // whatever the argument was (`Value::into_param_copy`).
-                        value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
+                        // A `$` copy gets a fresh Scalar around the SAME Array or
+                        // Hash, as rakudo does: `sub f($x is copy) { $x.push(9) }`
+                        // reaches the caller's array (#15649).
+                        if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
+                        }
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
                         // detach clone inherited (`sub f(:@kh is copy)` bound to
@@ -3834,6 +3845,15 @@ impl Interpreter {
                         } else if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
+                            if let Some(crate::value::VarRefDeclared::Resolved(Some(declared))) =
+                                raw_arg.varref_declared()
+                            {
+                                self.alias_param_declared_type(
+                                    &storage_name,
+                                    &resolved_source,
+                                    &declared,
+                                );
+                            }
                             value = inner;
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(resolved_source));
@@ -4116,9 +4136,13 @@ impl Interpreter {
                             // Deciding this here — from the container the
                             // parameter binds — is what the callee-name-keyed
                             // `skip_proxy_fetch` list at the call site cannot do.
+                            // The caller's binding of the name lives in the caller's
+                            // own frame: a same-named cell of an OLDER frame on the
+                            // chain is another variable (ADR-12529, #16177).
+                            let cell_key_sym = Symbol::intern(&cell_key);
                             if let Some(proxy) = self
                                 .env
-                                .get(&cell_key)
+                                .get_sym_in_caller_frame(cell_key_sym)
                                 .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                                 .cloned()
                             {
@@ -4126,7 +4150,7 @@ impl Interpreter {
                             } else {
                                 let existing = self
                                     .env
-                                    .get(&cell_key)
+                                    .get_sym_in_caller_frame(cell_key_sym)
                                     .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                                     .cloned();
                                 value = match existing {
@@ -4274,11 +4298,27 @@ impl Interpreter {
                         .count();
                     // A method's count includes its invocant (#14565).
                     let invocant = usize::from(bind_self_lexical);
-                    return Err(RuntimeError::new(format!(
-                        "Too few positionals passed; expected {} argument{} but got {}",
-                        total_positional + invocant,
-                        if total_positional + invocant == 1 { "" } else { "s" },
-                        positional_arg_count + invocant
+                    let required = param_defs
+                        .iter()
+                        .filter(|p| {
+                            !p.named
+                                && !p.slurpy
+                                && !p.double_slurpy
+                                && !p.onearg
+                                && !p.name.starts_with(':')
+                                && p.default.is_none()
+                                && !p.optional_marker
+                        })
+                        .count();
+                    // A positional slurpy lifts the upper bound.
+                    let max = (!param_defs.iter().any(|p| {
+                        p.onearg || (p.slurpy && (!p.name.starts_with('%') || p.sigilless))
+                    }))
+                    .then_some(total_positional + invocant);
+                    return Err(RuntimeError::new(super::arity_message::too_few_positionals(
+                        required + invocant,
+                        max,
+                        positional_arg_count + invocant,
                     )));
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
@@ -4500,10 +4540,19 @@ fn surplus_positional_error(
         // A method's count includes its invocant (#14565).
         let invocant = usize::from(is_method);
         let expected = positional_param_count + invocant;
-        RuntimeError::new(format!(
-            // Rakudo says "1 argument", not "1 arguments".
-            "Too many positionals passed; expected {expected} argument{} but got {}",
-            if expected == 1 { "" } else { "s" },
+        let required = param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.named
+                    && !pd.slurpy
+                    && !pd.onearg
+                    && pd.default.is_none()
+                    && !pd.optional_marker
+            })
+            .count();
+        RuntimeError::new(super::arity_message::too_many_positionals(
+            required + invocant,
+            expected,
             positional_arg_count + invocant,
         ))
     })

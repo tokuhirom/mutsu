@@ -20,6 +20,10 @@ pub(crate) struct RegexClosureBinding {
     /// This binding is a `"..."` qq thunk's result, active (see
     /// [`Interpreter::eval_regex_qq_thunk`]) while it is installed.
     qq_result: bool,
+    /// This binding is the regex's defining compunit (#16512): the unit that
+    /// was current before the install, restored on uninstall. It is no env
+    /// entry.
+    restores_unit: Option<Option<Symbol>>,
 }
 
 impl Interpreter {
@@ -98,6 +102,20 @@ impl Interpreter {
         Value::str(String::new())
     }
 
+    /// Whether the implicit topic of a bare `/regex/` is an undefined type
+    /// object (and no user `.Str` stands in for it). Rakudo does not even start
+    /// such a match: `{ say so /x*/ }` is `False` with `$_` unset (the empty
+    /// string would match), and the regex's code blocks never run. An explicit
+    /// `$_ ~~ /x*/` is a different, matching, form.
+    // Cost: O(1) plus one `has_user_method` probe for a type object.
+    pub(crate) fn implicit_topic_is_undefined(&mut self, topic: &Value) -> bool {
+        match topic.view() {
+            ValueView::Package(name) => !self.has_user_method(&name.resolve(), "Str"),
+            ValueView::Nil => true,
+            _ => false,
+        }
+    }
+
     fn regex_match_text(&mut self, left: &Value) -> String {
         if let ValueView::Package(name) = left.view() {
             let cn = name.resolve();
@@ -165,6 +183,7 @@ impl Interpreter {
                 installed: topic.clone(),
                 pins_topic: true,
                 qq_result: false,
+                restores_unit: None,
             });
             self.env.insert("_".to_string(), topic);
             self.topic_state.regex_topic_pinned += 1;
@@ -182,9 +201,22 @@ impl Interpreter {
         let qq_prefix = MetaNs::RegexQq.prefix();
         let mut saved: Vec<RegexClosureBinding> = Vec::with_capacity(scope.len());
         let mut qq_thunks: Vec<(&String, &Value)> = Vec::new();
+        let unit_key = MetaNs::Pragma.key_for_str(Self::REGEX_UNIT_KEY);
         for (k, v) in scope.iter() {
             if k.starts_with(qq_prefix) {
                 qq_thunks.push((k, v));
+                continue;
+            }
+            if k.as_str() == unit_key.as_str() {
+                let unit = Symbol::intern(&v.to_string_value());
+                saved.push(RegexClosureBinding {
+                    name: k.clone(),
+                    shadowed: None,
+                    installed: v.clone(),
+                    pins_topic: false,
+                    qq_result: false,
+                    restores_unit: Some(crate::runtime::regex::regex_helpers::replace_defining_unit(Some(unit))),
+                });
                 continue;
             }
             saved.push(RegexClosureBinding {
@@ -193,6 +225,7 @@ impl Interpreter {
                 installed: v.clone(),
                 pins_topic: false,
                 qq_result: false,
+                restores_unit: None,
             });
             self.env.insert(k.clone(), v.clone());
         }
@@ -210,6 +243,7 @@ impl Interpreter {
                 installed: result.clone(),
                 pins_topic: false,
                 qq_result: true,
+                restores_unit: None,
             });
             self.env.insert(k.clone(), result);
         }
@@ -227,6 +261,10 @@ impl Interpreter {
     ) {
         let Some(saved) = saved else { return };
         for b in saved {
+            if let Some(previous) = b.restores_unit {
+                crate::runtime::regex::regex_helpers::replace_defining_unit(previous);
+                continue;
+            }
             if b.pins_topic {
                 self.topic_state.regex_topic_pinned =
                     self.topic_state.regex_topic_pinned.saturating_sub(1);
@@ -713,6 +751,8 @@ impl Interpreter {
                         callable_id: 0,
                         code: 0,
                         fixtures: 0,
+                        unit_scoped: false,
+                        fixtures_floor: 0,
                     };
                     self.record_profile_routine_frame(&frame);
                     self.routine_stack.push(frame);
@@ -2212,6 +2252,20 @@ impl Interpreter {
                 if matches!(cn.resolve().as_ref(), "Date" | "DateTime" | "CompUnit") =>
             {
                 left.to_string_value() == right.to_string_value()
+            }
+            // The `Systemic` objects (`$*KERNEL ~~ 'linux'`, `$*DISTRO ~~
+            // 'ubuntu'`, `$*VM ~~ 'moar'`): `Str.ACCEPTS(Any:D)` compares their
+            // stringification, which is their name. The documented idiom for
+            // picking a platform.
+            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s))
+                if matches!(
+                    cn.resolve().as_ref(),
+                    "Kernel" | "Distro" | "VM" | "Raku" | "Perl" | "Compiler"
+                ) =>
+            {
+                let s = s.clone();
+                self.call_method_with_values(left.clone(), "Str", vec![])
+                    .is_ok_and(|v| *s == v.to_string_value())
             }
             // Blob/Buf (and Array) ~~ Numeric compares the element count.
             (ValueView::Array(..) | ValueView::Instance { .. }, _)

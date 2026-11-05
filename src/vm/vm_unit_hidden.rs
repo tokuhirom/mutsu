@@ -30,6 +30,13 @@ impl Interpreter {
         scope
             .region
             .is_some_and(|region| code.enclosing_import_regions.contains(&region))
+            // An `EVAL` unit's own import scope has no region (no routine is
+            // written in a block of it), but a routine the unit declares is
+            // written in the unit: what the unit's `use` imported is in its
+            // lexical outer (`EVAL 'use NativeCall; sub f { Pointer }'`).
+            || (scope.region.is_none()
+                && crate::runtime::eval_unit_parent(scope.unit).is_some()
+                && code.source_file.is_some_and(|file| file == scope.unit))
     }
 
     /// Mark the running frame root, just made for `code` (a routine declared
@@ -71,8 +78,17 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(crate) fn code_is_foreign_unit(&self, code: &CompiledCode) -> bool {
-        code.static_name_lookup
-            && self.module.module_load_stack.is_empty()
+        code.static_name_lookup && self.code_is_loaded_module_code(code)
+    }
+
+    /// [`Self::code_is_foreign_unit`] without the `static_name_lookup`
+    /// requirement: `code` was compiled from a loaded module's file while no
+    /// module body runs. A bareword type read by such code never means a
+    /// type-only key the program declared (ADR-8751).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn code_is_loaded_module_code(&self, code: &CompiledCode) -> bool {
+        self.module.module_load_stack.is_empty()
             && self.module.module_scope_runs == 0
             && code.source_file.is_some_and(|file| {
                 self.module

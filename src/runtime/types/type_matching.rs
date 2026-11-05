@@ -679,6 +679,37 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        if self.type_matches_value_why_core(constraint, value, why) {
+            return true;
+        }
+        // A user type imported under a core type's short name (`role Variable`
+        // exported by a module) is that name lexically, so a value that is not
+        // the core type may still satisfy it through the import alias (#16497,
+        // #16579). Tried only after the core meaning failed, so `42 ~~ Any`
+        // and friends never reach the alias.
+        if crate::runtime::utils::is_known_type_constraint(constraint)
+            && !constraint.contains(['[', ':'])
+            && let Some(bound_val) = self.type_name_binding(constraint)
+            && let ValueView::Package(bound) = bound_val.view()
+            && bound != *constraint
+            && crate::qualified::unqualified_part(bound).as_str() == constraint
+            && self.has_type(&bound.resolve())
+        {
+            return self.type_matches_value_why_core(&bound.resolve(), value, why);
+        }
+        false
+    }
+
+    // Cost: as `type_matches_value`.
+    fn type_matches_value_why_core(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
+        if core_scalar_satisfies(constraint, value) {
+            return true;
+        }
         // The check recurses through subset bases, parameterizations and type
         // aliases without crossing a Raku call boundary, so the VM's stack
         // guard never sees a cycle among them. Bound the nesting of the check
@@ -897,12 +928,26 @@ impl Interpreter {
     ) -> bool {
         // A parameterized role's named arguments are no part of the type
         // (#15504).
-        let constraint = &*crate::value::constraint_without_named_args(constraint);
+        //
+        // A pun class of a role with named parameters is registered under the
+        // spelling that carries them (`R\0default[Any,:c(5)]`, the `::?CLASS`
+        // of its methods), so that very spelling is the type, not a
+        // parameterization to be trimmed.
+        let constraint = if self.registry().classes.contains_key(
+            crate::runtime::types::strip_type_smiley(constraint).0,
+        ) {
+            constraint
+        } else {
+            &*crate::value::constraint_without_named_args(constraint)
+        };
         // A type object spelled the same way (an attribute's `NT[Int,
         // :coerce(&cf)]` default) is named without them too.
         if let ValueView::Package(name) = value.view() {
             let spelled = name.resolve();
-            if let std::borrow::Cow::Owned(plain) = crate::value::constraint_without_named_args(&spelled) {
+            if !self.registry().classes.contains_key(&*spelled)
+                && let std::borrow::Cow::Owned(plain) =
+                    crate::value::constraint_without_named_args(&spelled)
+            {
                 let plain = Value::package(crate::symbol::Symbol::intern(&plain));
                 return self.type_matches_value_unviewed_why(constraint, &plain, why);
             }
@@ -928,6 +973,17 @@ impl Interpreter {
             if let Some(subset) = subset {
                 return self.check_registered_subset(constraint, &subset, value, why);
             }
+        }
+        // The `stdout`/`stderr` of a `Proc::Async` are `Proc::Async::Pipe`s, a
+        // `Supply` subclass mutsu models as a `Supply` instance carrying the
+        // `proc_pipe` attribute (#15647).
+        if let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint)
+            && base == "Proc::Async::Pipe"
+            && let ValueView::Instance { class_name, attributes, .. } = value.view()
+            && class_name == "Supply"
+            && attributes.as_map().contains_key("proc_pipe")
+        {
+            return smiley != Some(":U");
         }
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
@@ -960,15 +1016,6 @@ impl Interpreter {
         {
             return matched;
         }
-        // `%?RESOURCES{...}` entries are `Distribution::Resource` objects in
-        // raku; mutsu models them as `IO::Path` instances carrying a hidden
-        // `resource` marker (`make_resource_instance`).
-        if constraint == "Distribution::Resource"
-            && matches!(value.view(), ValueView::Instance { class_name, attributes, .. }
-                if class_name == "IO::Path" && attributes.contains_key("resource"))
-        {
-            return true;
-        }
         // A short name of a type the running package declares (`Foo` in
         // `unit module M` for `M::Foo`). Its bare binding is in the scope the
         // package was declared in, which a loaded module's routine does not
@@ -999,6 +1046,30 @@ impl Interpreter {
             Some(key) => self.type_matches_value_resolved_why(&key, value, why),
             None => false,
         }
+    }
+
+    /// Whether the core class `class` composes no role beyond its catalog
+    /// roles and the catalog says it does not do `target`. Any composition
+    /// the catalog does not list (an `augment`, `.^add_role`) answers `false`,
+    /// so the caller runs the full checker.
+    // Cost: O(r * c), r = roles composed into the class, c = catalog roles of it.
+    fn only_core_roles_composed(&self, class: &str, target: &str) -> bool {
+        let Some(info) = crate::builtin_types::catalog::builtin_type_info(class) else {
+            return false;
+        };
+        if crate::builtin_types::catalog::builtin_type_has_role(class, target)
+            || info.mro.contains(&target)
+        {
+            return false;
+        }
+        let registry = self.registry();
+        let Some(composed) = registry.class_composed_roles.get(class) else {
+            return true;
+        };
+        composed.iter().all(|role| {
+            let base = role.split_once('[').map(|(b, _)| b).unwrap_or(role);
+            info.roles.contains(&base)
+        })
     }
 
     /// Whether `value` is a plain `Int`, `Num`, `Str` or `Rat` and `constraint`
@@ -1181,6 +1252,29 @@ impl Interpreter {
         // every non-matching candidate of a multi (#12942).
         if Self::core_scalar_classes_are_disjoint(value_for_tag, constraint)
             && !self.is_subset_type_name(constraint)
+        {
+            return false;
+        }
+        // A plain `Int`/`Num`/`Str`/`Rat` value is none of the collection roles
+        // (`Int ~~ Iterable`, `Str ~~ Positional`, `Num ~~ Associative` are all
+        // False in raku), and the general checker reaches that only after its
+        // whole role-key / MRO gauntlet (~9k instructions per miss: the
+        // `nqp::istype($pos, Iterable)` a `CArray` read runs on every index).
+        // Sound unless the program gave that class a role (`augment class Int
+        // does Iterable`, `Int.^add_role`): those record the composition, and
+        // `only_core_roles_composed` refuses any composition it cannot place.
+        //
+        // Cost: O(1).
+        if matches!(constraint, "Iterable" | "Positional" | "Associative")
+            && let Some(own) = match value_for_tag.view() {
+                ValueView::Int(_) | ValueView::BigInt(_) => Some("Int"),
+                ValueView::Num(_) => Some("Num"),
+                ValueView::Str(_) => Some("Str"),
+                ValueView::Rat(..) => Some("Rat"),
+                _ => None,
+            }
+            && !self.is_subset_type_name(constraint)
+            && self.only_core_roles_composed(own, constraint)
         {
             return false;
         }
@@ -1613,7 +1707,10 @@ impl Interpreter {
                                 || inner_base == "Mu"
                                 || inner_base == "Any";
                         }
-                        return items.iter().all(|v| self.type_matches_value(inner, v));
+                        // An untyped Array/List is a distinct type from
+                        // `Array[Int]`, however well its elements fit (#15336).
+                        let _ = items;
+                        return false;
                     }
                     // `Positional[Int]` / `Associative[Int]` are builtin roles:
                     // their type object is a `ParametricRole`, compared with the
@@ -1701,9 +1798,12 @@ impl Interpreter {
                             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                         )
                     {
-                        let return_type = self
-                            .callable_return_type(value)
-                            .unwrap_or_else(|| "Mu".to_string());
+                        // Only a routine that declares a return type composes
+                        // `Callable[T]`; a plain `sub {}` is no `Callable[Mu]`
+                        // either (rakudo, #16461).
+                        let Some(return_type) = self.callable_return_type(value) else {
+                            return false;
+                        };
                         return Self::type_matches(&return_type, inner)
                             || self.type_matches_value(
                                 inner,
@@ -2516,5 +2616,30 @@ impl Interpreter {
                         .iter()
                         .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
             })
+    }
+}
+
+/// Whether `value`, a plain `Int` / `Num` / `Str` / `Bool`, trivially satisfies
+/// `constraint` because the constraint names one of the value's own core types
+/// (optionally `:D`): `Int:D` / `Any:D` / `Cool` for an `Int` argument, the
+/// check a CArray element store makes three times per call. Only ever answers
+/// yes -- every other shape goes through the full check.
+// Cost: O(1), a match on the value's kind and the constraint's length.
+#[inline]
+fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
+    let name = constraint.strip_suffix(":D").unwrap_or(constraint);
+    match value.view() {
+        // `int` / `num` are the 64-bit native types: every `Int` view is an
+        // `i64`, and a `Num` is a double.
+        ValueView::Int(_) => matches!(
+            name,
+            "Int" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "int"
+        ),
+        ValueView::Num(_) => matches!(
+            name,
+            "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "num"
+        ),
+        ValueView::Str(_) => matches!(name, "Str" | "Cool" | "Any" | "Mu"),
+        _ => false,
     }
 }

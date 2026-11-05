@@ -82,6 +82,19 @@ impl Interpreter {
         if self.class_does_baggy_or_setty(cn_resolved) {
             return false;
         }
+        // `Mu.new` is `self.bless(|%attrinit)`: a class declaring (or
+        // composing) its own `bless` must run it for `.new`, which only the
+        // full constructor does (`dispatch_new_unallocated`).
+        {
+            let registry = self.registry();
+            if self
+                .mro_readonly(cn_resolved)
+                .iter()
+                .any(|cls| registry.user_method_overloads(cls, "bless").is_some())
+            {
+                return false;
+            }
+        }
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Exception" {
                 is_exception = true;
@@ -553,6 +566,10 @@ impl Interpreter {
             .iter()
             .map(|a| self.is_attribute_buildable(cn_resolved, &a.name))
             .collect();
+        let attr_binds = class_attrs
+            .iter()
+            .map(|attr| self.attribute_binds_in_mro(cn_resolved, attr))
+            .collect();
         let probe_skeleton = std::sync::Arc::new(
             attr_syms
                 .iter()
@@ -607,6 +624,13 @@ impl Interpreter {
         let has_subset_attr = type_constraints
             .values()
             .any(|tc| self.constraint_is_user_subset(tc));
+        let new_skips_phases = (has_build || has_tweak)
+            && self.class_mro(cn_resolved).iter().any(|c| {
+                matches!(
+                    c.as_str(),
+                    "Hash" | "Map" | "Array" | "List" | "Set" | "Bag" | "Mix" | "SetHash" | "BagHash" | "MixHash"
+                )
+            });
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             alias_attributes,
@@ -622,6 +646,7 @@ impl Interpreter {
             type_constraints,
             has_build,
             has_tweak,
+            new_skips_phases,
             has_smiley,
             has_subset_attr,
             attrs_fully_known,
@@ -632,6 +657,7 @@ impl Interpreter {
             attr_seeds,
             attr_constraints,
             attr_buildable,
+            attr_binds,
             build_steps,
             tweak_steps,
             probe_skeleton,
@@ -727,7 +753,7 @@ impl Interpreter {
         // Scalar (ADR-0040 §9); the builder reads plain values.
         let fetched;
         let args = if args.iter().any(Self::arg_carries_store_proxy) {
-            match self.fetch_proxy_ctor_args(args) {
+            match self.fetch_bound_ctor_proxy_args(args, &plan) {
                 Ok(v) => {
                     fetched = v;
                     &fetched[..]

@@ -508,10 +508,18 @@ impl Interpreter {
                     if matches!(chars[j], '*' | '?' | '^' | '.') {
                         j += 1;
                     }
-                    while j < chars.len()
-                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
-                    {
-                        j += 1;
+                    while j < chars.len() {
+                        if chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-' {
+                            j += 1;
+                        } else if chars[j] == ':'
+                            && chars.get(j + 1) == Some(&':')
+                            && chars.get(j + 2).is_some_and(|c| c.is_alphabetic() || *c == '_')
+                        {
+                            // `$Pkg::var`: a package-qualified scalar.
+                            j += 2;
+                        } else {
+                            break;
+                        }
                     }
                     // Inside single-quoted regex literals, $ is not interpolated
                     if inside_sq {
@@ -545,27 +553,11 @@ impl Interpreter {
                         i = j;
                         continue;
                     }
-                    // Reduce-time dyn-var overlay: a `$*` var written by a grammar
-                    // action mid-parse takes precedence over `self.env` so the next
-                    // subrule matches with the updated value (see REGEX_DYNVAR_OVERLAY).
-                    let overlay_value = if name.starts_with('*')
-                        && super::regex::regex_helpers::dynvar_overlay_active()
-                    {
-                        super::regex::regex_helpers::dynvar_mark_seen();
-                        super::regex::regex_helpers::dynvar_overlay_get(&name)
-                    } else {
-                        None
-                    };
-                    // A `$*` dynamic var resolved from the overlay is always
-                    // runtime-only, regardless of any stale `constant`
-                    // marker of the same bare name.
-                    let is_overlay = overlay_value.is_some();
-                    let value = overlay_value
-                        // A `<$re>` reference re-resolving `$re`'s OWN
-                        // pattern text (issue #8951) must see `$re`'s
-                        // defining scope before this call's ambient
-                        // `self.env` — see `REGEX_INTERP_CLOSURE_SCOPE`.
-                        .or_else(|| super::regex::regex_helpers::interp_closure_scope_get(&name))
+                    // A `<$re>` reference re-resolving `$re`'s OWN
+                    // pattern text (issue #8951) must see `$re`'s
+                    // defining scope before this call's ambient
+                    // `self.env` — see `REGEX_INTERP_CLOSURE_SCOPE`.
+                    let value = super::regex::regex_helpers::interp_closure_scope_get(&name)
                         .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .or_else(|| self.regex_package_chain_var_fallback(&format!("${name}")))
@@ -573,7 +565,7 @@ impl Interpreter {
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
                     let inside_qq = quotes.inside_double(&chars, i);
-                    let is_const = !is_overlay && self.is_compile_time_constant_scalar(&name);
+                    let is_const = self.is_compile_time_constant_scalar(&name);
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }
@@ -581,11 +573,8 @@ impl Interpreter {
                     // its captures get isolated (see the `${name}` arm above and
                     // `RegexAtom::CaptureIsolatedGroup`'s doc comment). Skipped inside a
                     // double-quoted regex literal (same reason as the `${name}`
-                    // arm) and for an overlay-resolved `$*` dyn-var, whose value
-                    // lives in `REGEX_DYNVAR_OVERLAY` — a store the `<$var>`
-                    // tokenizer arm cannot see, only `self.env`.
+                    // arm).
                     if !inside_qq
-                        && !is_overlay
                         && matches!(
                             value.view(),
                             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
@@ -808,11 +797,17 @@ impl Interpreter {
         while i < chars.len() {
             if chars[i] == '$' {
                 let mut j = i + 1;
+                // `$?LINE` & co. are compile-time constants of the code that
+                // mentions them, never variables to look up (#16603).
+                let compile_time_const = chars.get(j) == Some(&'?');
                 // Skip twigil if present
                 if j < chars.len() && matches!(chars[j], '*' | '?' | '^' | '.') {
                     j += 1;
                 }
-                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                if !compile_time_const
+                    && j < chars.len()
+                    && (chars[j].is_alphabetic() || chars[j] == '_')
+                {
                     let name_start = i + 1; // include twigil in name
                     let mut end = j;
                     while end < chars.len()

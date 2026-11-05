@@ -234,7 +234,7 @@ impl Interpreter {
                 // If `foo-bar` has explicit empty signature `:()`, retry zero-arg dispatch.
                 let is_empty_sig_rejection = err
                     .message
-                    .starts_with("Too many positionals passed; expected 0 arguments but got more")
+                    .starts_with("Too many positionals passed; expected 0 arguments but got")
                     || err.message.starts_with("Unexpected named argument '");
                 if is_empty_sig_rejection {
                     if let Ok(v) = self.call_function_compiled_first(name, Vec::new(), compiled_fns)

@@ -311,16 +311,92 @@ multi sub trait_mod:<is>(Attribute:D $attr, :$default!) is export {
 /// demand and keyed by the type's name, so asking for the type's `.WHO` is the
 /// creation step; the method still has to answer `$type_obj`, since the
 /// documented HOW ends `new_type` with it.
-pub(super) const METAMODEL_ROLE_PRELUDE: &str = r#"
+pub(super) const METAMODEL_ROLE_PRELUDE: &[(&str, &str)] = &[
+    (
+        "Naming",
+        r#"
 role GLOBAL::Metamodel::Naming {
     has $!name;
     method name(Mu $obj) { $!name // '' }
     method set_name(Mu $obj, $new_name) { $!name = $new_name }
 }
+"#,
+    ),
+    (
+        "Stashing",
+        r#"
 role GLOBAL::Metamodel::Stashing {
     method add_stash(Mu $type_obj) { $type_obj.WHO; $type_obj }
 }
-"#;
+"#,
+    ),
+    // `DefaultParent`: the type a class gets as its parent when it names none.
+    // Rakudo's methods take the type alone (no `$obj`), and an unset parent
+    // answers `Mu` / `0` (measured on rakudo 2026.09).
+    (
+        "DefaultParent",
+        r#"
+role GLOBAL::Metamodel::DefaultParent {
+    has Mu $!default_parent_type;
+    has $!default_parent_set;
+    method set_default_parent_type(Mu $type) { $!default_parent_set = 1; $!default_parent_type := $type }
+    method get_default_parent_type() { $!default_parent_type }
+    method has_default_parent_type() { $!default_parent_set ?? 1 !! 0 }
+}
+"#,
+    ),
+    // `Mixins`: the flag and attribute a mixin type records. `mixin` itself is
+    // the native HOW's. Arities as rakudo's NQP methods answer them (measured:
+    // `set_is_mixin` takes none, the readers take an optional `$obj`).
+    (
+        "Mixins",
+        r#"
+role GLOBAL::Metamodel::Mixins {
+    has $!is_mixin;
+    has $!mixin_attribute;
+    has $!mixin_cache;
+    method set_is_mixin() { $!is_mixin = 1 }
+    method is_mixin(Mu $obj?) { $!is_mixin ?? 1 !! 0 }
+    method set_mixin_attribute($attr) { $!mixin_attribute = $attr }
+    method mixin_attribute(Mu $obj?) { $!mixin_attribute }
+    method setup_mixin_cache(Mu $obj) { $!mixin_cache := {}; Nil }
+    method flush_cache(Mu $obj?) { $!mixin_cache := {}; Nil }
+    method generate_mixin(Mu $obj, @roles) { $obj.^mixin(|@roles) }
+}
+"#,
+    ),
+    // `MultipleInheritance`'s `hidden` flag (`add_parent`, `parents` and the rest
+    // are the native HOW's).
+    (
+        "MultipleInheritance",
+        r#"
+role GLOBAL::Metamodel::MultipleInheritance {
+    has $!hidden;
+    has Mu $!hides;
+    has @!excluded;
+    method set_hidden(Mu $obj?) { $!hidden = 1 }
+    method hidden(Mu $obj?) { $!hidden ?? 1 !! 0 }
+    method hides(Mu $obj?) { $!hides }
+    method hides_parent(Mu $obj, Mu $parent) {
+        return 0 unless $!hides.defined;
+        for @$!hides -> $h { return 1 if $h === $parent }
+        0
+    }
+    method exclude_parent(Mu $parent) { @!excluded.push($parent); Nil }
+}
+"#,
+    ),
+    // The containers and the method dispatch below are composed into the native
+    // `Metamodel::ClassHOW` already: its `add_method`, `add_role`,
+    // `add_attribute`, `find_method`, ... are the roles' methods. A custom HOW
+    // that composes them again gets the role (`.^does`, the name in `does`)
+    // and keeps the inherited behaviour, which re-declaring them here would
+    // shadow.
+    ("MROBasedMethodDispatch", "role GLOBAL::Metamodel::MROBasedMethodDispatch { }\n"),
+    ("RoleContainer", "role GLOBAL::Metamodel::RoleContainer { }\n"),
+    ("AttributeContainer", "role GLOBAL::Metamodel::AttributeContainer { }\n"),
+    ("MethodContainer", "role GLOBAL::Metamodel::MethodContainer { }\n"),
+];
 
 /// Builtin `X::Wrapper` role (Rakudo core since ~2023.10; see
 /// `AttrX::Mooish`'s own `AttrX::Mooish::X::Wrapper` bundled polyfill for
@@ -546,24 +622,7 @@ impl Interpreter {
         // Gated on the PROSE-FREE view of the source: a module named only in a
         // comment or a Pod block must not switch a prelude on (GH #7611).
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
-        Self::inject_prelude_roles(&code, &mut stmts);
-        Self::inject_iosocket_prelude(&code, &mut stmts);
-        Self::inject_repository_spec_prelude(&code, &mut stmts);
-        Self::inject_distribution_locally_prelude(&code, &mut stmts);
-        Self::inject_trait_mod_does_prelude(&code, &mut stmts);
-        Self::inject_trait_mod_of_prelude(&code, &mut stmts);
-        Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
-        Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
-        Self::inject_metamodel_role_prelude(&code, &mut stmts);
-        Self::inject_enumeration_prelude(&code, &mut stmts);
-        Self::inject_iterator_role_prelude(&code, &mut stmts);
-        Self::inject_hash_ordered_prelude(&code, &mut stmts);
-        Self::inject_x_wrapper_prelude(&code, &mut stmts);
-        Self::inject_x_comp_prelude(&code, &mut stmts);
-        Self::inject_precomp_api_prelude(&code, &mut stmts);
-        Self::inject_formatter_syntax_prelude(&code, &mut stmts);
-        Self::inject_deparse_prelude(&code, &mut stmts);
-        Self::inject_container_descriptor_prelude(&code, &mut stmts);
+        Self::inject_unit_preludes(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
         // statement, in source order. That is what rakudo does (it installs at
@@ -579,6 +638,21 @@ impl Interpreter {
         crate::runtime::begin_prologue::lift_package_var_traits(&mut stmts);
         crate::runtime::begin_prologue::lift_unit_var_traits(&mut stmts);
         crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
+        // A type used before the statement that declares it: judged on the
+        // statements in source order, before the phasers move (a CHECK block
+        // that names a class declared above it is not a use before it).
+        let post_declared = crate::rakuast::post_declared::check(
+            &stmts,
+            &crate::scope::NameScope::default(),
+        );
+        // A term used before its declaration, judged in source order for the
+        // same reason (ADR-15760 Amendment 1, 1b).
+        let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
+        // `my $x will leave { ... }` expands to a scopeless `SyntheticBlock`
+        // holding the declaration and its exit phasers. Those phasers belong to
+        // the unit's scope, so lift them out where `split_block_phasers` sees
+        // them (it only looks at the top-level statements).
+        let stmts = Self::lift_will_exit_phasers(stmts);
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // A top-level END is dropped from the body outright: it is installed
@@ -680,6 +754,8 @@ impl Interpreter {
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
+                post_declared?;
+                premature_term?;
                 forward_vars?;
                 Ok(guards)
             });

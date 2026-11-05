@@ -90,6 +90,7 @@ pub(in crate::value) struct ProxyBox {
     pub(in crate::value) storer: Box<Value>,
     pub(in crate::value) subclass: Option<(Symbol, ProxySubclassAttrs)>,
     pub(in crate::value) decontainerized: bool,
+    pub(in crate::value) var_object: bool,
 }
 
 #[derive(Debug, Clone)]

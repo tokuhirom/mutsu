@@ -419,14 +419,10 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     index,
                     is_positional,
                     spelling,
-                } if matches!(
-                    target.as_ref(),
-                    // A pseudo-stash target is the `Pkg::<@a> := v` spelling
-                    // of a package-variable bind (#10546).
-                    Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_) | Expr::PseudoStash(_)
-                ) && !matches!(
-                    index.as_ref(),
-                    Expr::ArrayLiteral(_)
+                } if is_bindable_index_target(target.as_ref())
+                    && !matches!(
+                        index.as_ref(),
+                        Expr::ArrayLiteral(_)
                         | Expr::Whatever
                         // ADR-0033 Phase 1: a Whatever-index (`@a[*-1] := ...`) is
                         // still an un-expanded `WhateverCurry` marker at this
@@ -442,7 +438,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                             is_whatever_code: true,
                             ..
                         }
-                ) =>
+                    ) =>
                 {
                     // Indexed bind RHSs are values too: preserve a compound
                     // `*` expression as WhateverCode instead of evaluating it
@@ -544,4 +540,20 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         r,
         Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node))),
     ))
+}
+
+/// Whether an expression-context `TARGET[INDEX] := v` may bind into `target`:
+/// a sigil variable, a pseudo-stash (`Pkg::<@a> := v`, #10546) or the result
+/// of a method call (`type.WHO<R> := v` binds into the stash that `.WHO`
+/// hands back, as the statement form already does, #15948).
+// Cost: O(1).
+fn is_bindable_index_target(target: &Expr) -> bool {
+    matches!(
+        target,
+        Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::Var(_)
+            | Expr::PseudoStash(_)
+            | Expr::MethodCall { .. }
+    )
 }

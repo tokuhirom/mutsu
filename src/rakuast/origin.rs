@@ -6,7 +6,7 @@
 //! `warn` or a backtrace reports came out wrong, and a `return` raised in an
 //! `EVAL` string escaped the routine that called it.
 //!
-//! Rakudo keeps an `origin` on every node. The statement nodes `convert`
+//! Rakudo keeps an `origin` on every node. The statement nodes `view`
 //! builds carry the line their statement began on as a hidden `origin` field,
 //! and `lower` puts the `SetLine` back in front of the statement it lowers. A
 //! hand-built node has none, so a hand-built tree lowers without markers, as
@@ -15,6 +15,7 @@
 //! The field is part of the model (an accessor answers it) but not of the
 //! node's constructor form: Rakudo's `.raku` shows no origin either.
 
+use crate::scope::NameScope;
 use std::cell::Cell;
 
 use super::{RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -73,7 +74,7 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 /// Give `node`, a statement that began on `line` and occupies `span` of the
 /// unit's source, its origin.
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
-pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
+pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     // The lowering reads only the line; the ranges are for `.AST`.
     if super::finalize::executing() {
         node.origin.0 = Some(Value::int(line));
@@ -96,7 +97,9 @@ pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) 
     {
         let mut expression = RakuAstNode::clone(expression);
         set_span(&mut expression, span);
-        super::infix_origins::derive(&mut expression);
+        super::call_origins::dotty_assign(&mut expression, span);
+        super::call_origins::postfix_call(&mut expression, span);
+        super::infix_origins::derive(names, &mut expression);
         *held = Value::rakuast(Box::new(expression));
     }
 }
@@ -217,7 +220,11 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
     let Some(first) = spans.next() else {
         return crate::ast::SrcSpan::NONE;
     };
-    let last = spans.next_back().unwrap_or(first);
+    let mut last = spans.next_back().unwrap_or(first);
+    // A `unit class` holds the rest of the unit: it ends the list.
+    if let Some(unit) = stmts.last() {
+        last = super::unit_span::widen_statement(last, unit);
+    }
     let (from, end) = (first.from as usize, last.to as usize);
     match crate::source_comments::statement_list_end(source, from, end) {
         Some(to) => crate::ast::SrcSpan::new(from, to),
@@ -251,6 +258,13 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if text.class != super::RakuAstClass::StrLiteral || text.origin.0.is_some() {
         return;
     }
+    if !words
+        && let Some(value) = super::infix_origins::leaf_text(text)
+        && let Some(split) = super::quote_nesting::segments(&value, span)
+    {
+        *items = split;
+        return;
+    }
     let inside = super::unit_source::with_text(span, |written| {
         if words {
             // A word quote keeps the raw text between its brackets.
@@ -266,8 +280,21 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         let (open, delimiter) = written
             .char_indices()
             .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, ':' | '_')))?;
-        let start = open + delimiter.len_utf8();
-        let (close, _) = written.char_indices().last()?;
+        let mut start = open + delimiter.len_utf8();
+        let (mut close, _) = written.char_indices().last()?;
+        // A doubled bracket delimiter (`Q[[a]]`) holds its text between the
+        // inner pair.
+        let doubled = written[start..]
+            .chars()
+            .take_while(|c| *c == delimiter && matches!(delimiter, '[' | '{' | '<' | '('))
+            .count();
+        if doubled > 0
+            && let Some(inner) = written.get(start + doubled..close.checked_sub(doubled)?)
+            && super::infix_origins::leaf_text(text).as_deref() == Some(inner)
+        {
+            start += doubled;
+            close -= doubled;
+        }
         (close >= start).then(|| {
             crate::ast::SrcSpan::new(span.from as usize + start, span.from as usize + close)
         })
@@ -277,6 +304,32 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         set_span(&mut text, inside);
         *only = Value::rakuast(Box::new(text));
     }
+}
+
+/// A type or term written as just its name (`Int`, `RakuAST::Class`, `True`)
+/// holds a `Name` that spans the same text as the term itself, in Rakudo. The
+/// range is given only when the text at `span` is exactly the name.
+// Cost: O(k), k = length of the name.
+pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    use super::name_parts::{NameShape, name_shape};
+    if !matches!(
+        node.class,
+        super::RakuAstClass::TypeSimple | super::RakuAstClass::TermName
+    ) {
+        return;
+    }
+    super::infix_origins::with_child_at(node, 0, |name| {
+        if name.class != super::RakuAstClass::Name || name.origin.0.is_some() {
+            return;
+        }
+        let Some(NameShape::Identifier(written)) = name_shape(name) else {
+            return;
+        };
+        let exact = super::unit_source::with_text(span, |text| (text == written).then_some(()));
+        if exact.is_some() {
+            set_span(name, span);
+        }
+    });
 }
 
 /// The byte length of the opening bracket of a word subscript written

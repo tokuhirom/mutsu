@@ -264,6 +264,7 @@ impl Parser {
                 self.pos += 1;
                 return Some(elements);
             }
+            let mut from_surrogate = false;
             let element = if ch == '\\'
                 && let Some(space) = self
                     .chars
@@ -276,7 +277,19 @@ impl Parser {
                 self.pos += 2;
                 EnumerationElement::Character(space)
             } else if ch == '\\' {
-                self.parse_enumeration_escape()?
+                if self.parse_surrogate_escape().is_some() {
+                    // `\xD800..\xE000`: the range starts at the first scalar
+                    // value above the surrogates; a lone surrogate is no
+                    // element (the caller keeps the pattern as text).
+                    self.skip_plain_whitespace();
+                    if !self.chars[self.pos..].starts_with(&['.', '.']) {
+                        return None;
+                    }
+                    from_surrogate = true;
+                    EnumerationElement::Character('\u{E000}')
+                } else {
+                    self.parse_enumeration_escape()?
+                }
             } else {
                 // `-` is literal only at an edge: `a-z` is rakudo's
                 // "Unsupported use of - as character range".
@@ -302,20 +315,66 @@ impl Parser {
                 self.pos += 2;
                 self.skip_plain_whitespace();
                 let from = single_char(&element)?;
+                let mut to_surrogate = false;
                 let to = match self.chars.get(self.pos).copied()? {
-                    '\\' => single_char(&self.parse_enumeration_escape()?)?,
+                    '\\' => match self.parse_surrogate_escape() {
+                        // `..\xD8FF`: no string holds a surrogate, so the
+                        // range ends at the last scalar value below them.
+                        Some(_) => {
+                            to_surrogate = true;
+                            '\u{D7FF}'
+                        }
+                        None => single_char(&self.parse_enumeration_escape()?)?,
+                    },
                     ']' => return None,
                     ch => {
                         self.pos += 1;
                         ch
                     }
                 };
+                if from_surrogate && to_surrogate {
+                    // `\xD800..\xDBFF`: both ends are surrogates, so no scalar
+                    // value is in the range; rakudo accepts it as empty.
+                    continue;
+                }
+                if from > to {
+                    return None;
+                }
                 elements.push(EnumerationElement::Range(from, to));
             } else {
                 self.pos = before_range;
                 elements.push(element);
             }
         }
+    }
+
+    /// A `\xHHHH` / `\x[HHHH]` escape at the cursor naming a surrogate
+    /// (U+D800..U+DFFF), which a Rust `char` cannot hold. Consumes it and
+    /// returns `Some(())` only then; any other text leaves the cursor alone.
+    // Cost: O(k), k = length of the escape.
+    fn parse_surrogate_escape(&mut self) -> Option<()> {
+        let rest = self.chars.get(self.pos..)?;
+        if !matches!(rest, ['\\', 'x' | 'X', ..]) {
+            return None;
+        }
+        let (digits_at, bracketed) = match rest.get(2) {
+            Some('[') => (3, true),
+            _ => (2, false),
+        };
+        let digits: String = rest[digits_at..]
+            .iter()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .collect();
+        let end = digits_at + digits.len() + usize::from(bracketed);
+        if bracketed && rest.get(end - 1) != Some(&']') {
+            return None;
+        }
+        let value = u32::from_str_radix(&digits, 16).ok()?;
+        if !(0xD800..=0xDFFF).contains(&value) || rest[0] == 'X' {
+            return None;
+        }
+        self.pos += end;
+        Some(())
     }
 
     /// An escape inside `[...]`: a class (`\w`, `\x41`) or an escaped

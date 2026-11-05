@@ -51,16 +51,21 @@ pub(crate) mod carried_state;
 mod collections;
 mod ctors_mop;
 mod dispatch;
+pub(crate) mod distribution_resource;
 mod implicit_named;
 pub(crate) mod index_arg;
 mod instances;
+pub(crate) use instances::exception::formatted as exception_formatted_message;
+pub(crate) use instances::exception::no_message_text as exception_no_message_text;
 mod io_concurrency;
 pub(crate) mod lazy_pull;
 mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
 pub(crate) mod native_array_result;
+mod owner_pure;
 mod place;
+pub(crate) mod rakuast_reflection;
 pub(crate) mod receiver_step;
 mod row;
 pub(crate) mod scalars;
@@ -74,6 +79,7 @@ pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
+pub(crate) use collections::list_transform::flat_plain as flat_list;
 pub(crate) use collections::positional::is_native_array;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
@@ -85,6 +91,7 @@ pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_i
 pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
+pub(crate) use instances::rakuast_accessors;
 pub(crate) use instances::{code, exception, failure, regex_match, supply};
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,
@@ -119,6 +126,7 @@ pub(crate) use dispatch::{shapeless_row, try_dispatch};
 pub(crate) use implicit_named::strip_undeclared_nameds;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use mutating::type_object_owners as mut_type_object_owners;
+pub(crate) use owner_pure::invoke_owner_pure;
 pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 #[cfg(test)]

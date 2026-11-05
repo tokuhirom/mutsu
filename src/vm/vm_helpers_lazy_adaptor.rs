@@ -49,7 +49,7 @@ pub(crate) fn is_unbounded_operand(v: &Value) -> bool {
 /// cross product reads it as one element (`$s Z 1` is `((($s) 1))`), as it
 /// does an itemized Array.
 // Cost: O(1).
-fn is_item_seq(v: &Value) -> bool {
+pub(super) fn is_item_seq(v: &Value) -> bool {
     v.is_seq_value()
         && matches!(v.view(), ValueView::Seq(body) if matches!(body.view(), crate::value::SeqView::ItemSeq))
 }

@@ -38,6 +38,7 @@ pub(super) struct LexicalScopeSnapshot {
     provably_bare_receiver_vars: std::collections::HashSet<String>,
     constant_vars_in_scope: std::collections::HashSet<String>,
     lexical_type_shadows: std::collections::HashSet<String>,
+    use_declared_names: std::collections::HashSet<String>,
     lexical_types_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
     constant_values: ValueMap,
@@ -89,6 +90,7 @@ impl Compiler {
             provably_bare_receiver_vars: self.provably_bare_receiver_vars.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
             lexical_type_shadows: self.lexical_type_shadows.clone(),
+            use_declared_names: self.use_declared_names.clone(),
             lexical_types_in_scope: self.lexical_types_in_scope.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
             // Inlinable constant values follow the same lifecycle: one declared
@@ -149,6 +151,7 @@ impl Compiler {
         // then resolves them via GetBareWord (package/global lookup).
         self.constant_vars_in_scope = saved.constant_vars_in_scope;
         self.lexical_type_shadows = saved.lexical_type_shadows;
+        self.use_declared_names = saved.use_declared_names;
         self.lexical_types_in_scope = saved.lexical_types_in_scope;
         self.constant_vars_current_scope = saved.constant_vars_current_scope;
         self.constant_values = saved.constant_values;

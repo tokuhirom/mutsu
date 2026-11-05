@@ -44,6 +44,14 @@ impl Interpreter {
             .or_else(|| {
                 self.get_env_with_main_alias(name)
                     .and_then(|v| Self::mixin_container(&v))
+            })
+            // An `@`/`%` attribute (`%!h does R` in a TWEAK) lives in `self`'s
+            // attribute cell, not in `env` (#16014).
+            .or_else(|| {
+                Self::is_array_hash_attr_twigil(name)
+                    .then(|| self.read_self_attr_cell(name))
+                    .flatten()
+                    .and_then(|v| Self::mixin_container(&v))
             });
         let Some(container) = held else {
             return Ok(None);

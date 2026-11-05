@@ -84,7 +84,41 @@ impl Interpreter {
         }
     }
 
+    /// Run `MAIN`. From language version 6.d on, `$*ARGFILES` is `$*IN` for
+    /// the duration of the call: the mainline has already read the files named
+    /// on the command line (`lines` / `get` at file scope), and `MAIN` receives
+    /// them as arguments, so a read inside it is a read of standard input.
+    // Cost: O(1) plus the MAIN call.
     pub(super) fn dispatch_main(
+        &mut self,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let swap = !crate::parser::current_language_version_starts_with("6.c");
+        let saved: Vec<(&str, Option<Value>)> = if swap {
+            let stdin = self.get_dynamic_handle("$*IN");
+            ["$*ARGFILES", "*ARGFILES"]
+                .into_iter()
+                .map(|key| {
+                    let old = self.env.get(key).cloned();
+                    if let Some(stdin) = &stdin {
+                        self.env.insert(key.to_string(), stdin.clone());
+                    }
+                    (key, old)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let result = self.dispatch_main_inner(compiled_fns);
+        for (key, old) in saved {
+            if let Some(old) = old {
+                self.env.insert(key.to_string(), old);
+            }
+        }
+        result
+    }
+
+    fn dispatch_main_inner(
         &mut self,
         _compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {

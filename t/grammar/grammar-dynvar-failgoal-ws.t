@@ -199,7 +199,7 @@ my $goal-err = '';
     Goal.parse('[bad');
     CATCH { default { $goal-err = .Str } }
 }
-is $goal-err, "Cannot find ']'  near position 4",
+is $goal-err, 'Cannot find "]"  near position 4',
    'FAILGOAL is invoked with the goal source text and the cursor position';
 
 # The goal text is the source form, so it differs when no space separates the
@@ -213,7 +213,7 @@ my $tight-err = '';
     GoalTight.parse('[bad');
     CATCH { default { $tight-err = .Str } }
 }
-is $tight-err, 'goal="\']\'"', 'a goal with no trailing space reports none';
+is $tight-err, 'goal="\"]\""', 'a goal with no trailing space reports none';
 
 # The innermost failing goal wins.
 grammar GoalNested {
@@ -225,7 +225,7 @@ my $nested-err = '';
     GoalNested.parse('[(bad]');
     CATCH { default { $nested-err = .Str } }
 }
-is $nested-err, 'goal="\')\' " pos=5', 'the inner goal is the one reported';
+is $nested-err, 'goal="\")\" " pos=5', 'the inner goal is the one reported';
 
 # A grammar with no FAILGOAL just fails to parse.
 grammar NoGoal {

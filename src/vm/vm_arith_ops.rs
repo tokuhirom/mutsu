@@ -420,7 +420,7 @@ impl Interpreter {
     /// family gets that one.
     // Cost: O(1) hash probes, plus O(e) over the recorded EXPORT imports when
     // the executing unit imported none of the name, e = their count.
-    fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
+    pub(super) fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
         let env_value = self
             .env()
             .get_sym(crate::runtime::dispatch_key::amp_sym(op_sym))
@@ -764,7 +764,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap().hllize_operand();
         let val = self.fetch_proxy_operand(val)?;
         // Type objects: `Mu` has no `prefix:<->` candidate (hard error). A class
         // with a user `Numeric` method dispatches even on the bare type object,

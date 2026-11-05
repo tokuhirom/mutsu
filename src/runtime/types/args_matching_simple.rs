@@ -97,7 +97,7 @@ impl Interpreter {
             match pd.type_constraint.as_deref() {
                 Some(tc) => {
                     if multi_dispatch
-                        && !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
+                        && !self.native_dispatch_arg_matches(tc, args, Some(idx))
                     {
                         return Some(false);
                     }

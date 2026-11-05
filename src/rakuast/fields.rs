@@ -25,6 +25,7 @@
 //! undefined; a `Bool` flag answers `False`; an `int` flag answers `0`).
 
 use super::RakuAstClass;
+pub(super) use super::positional_fields::positional_accessor;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -37,6 +38,8 @@ pub(super) enum Absent {
     /// An empty list. A `List`-typed field is never undefined in rakudo: an
     /// `if` with no `elsif` answers `()`, not a type object.
     EmptyList,
+    /// An empty `Map`, for a `Map`-typed field (`Doc::Block.config`).
+    EmptyMap,
     /// `False`, for a `Bool` flag the renderer elides when it is false.
     False,
     /// `0`, for an `int` flag (rakudo's `Pragma.off`).
@@ -62,6 +65,7 @@ impl Absent {
         Some(match self {
             Absent::TypeObject(name) => Value::package(Symbol::intern(name)),
             Absent::EmptyList => Value::array(Vec::new()),
+            Absent::EmptyMap => Value::hash(crate::value::ValueMap::default()),
             Absent::False => Value::truth(false),
             Absent::Zero => Value::int(0),
             Absent::Str(s) => Value::str(s.to_string()),
@@ -146,7 +150,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
             &[("value", Absent::Required)]
         }
-        VarLexical | VarDynamic => &[("name", Absent::Required)],
+        VarLexical | VarDynamic | VarDoc => &[("name", Absent::Required)],
         VarCompilerLookup => &[("name", Absent::Required)],
         VarCompilerFile => &[("file", Absent::Required)],
         VarCompilerLine => &[("line", Absent::Required)],
@@ -168,7 +172,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         | CallNameWithoutParentheses
         | CallMethod
         | CallPrivateMethod
-        | CallNameAsMethod => &[
+        | CallNameAsMethod
+        | CallMetaMethod => &[
             ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
@@ -193,16 +198,28 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         FunctionInfix => &[("function", Absent::Required)],
         ApplyPrefix => &[("prefix", Absent::Required), ("operand", Absent::Required)],
         ApplyPostfix => &[("operand", Absent::Required), ("postfix", Absent::Required)],
-        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex | PostcircumfixHashIndex => &[
+        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex => &[
             ("index", Absent::Required),
             ("colonpairs", Absent::EmptyList),
             ("assignee", EXPRESSION),
         ],
+        PostcircumfixHashIndex => &[
+            ("index", Absent::Required),
+            ("colonpairs", Absent::EmptyList),
+        ],
         Postfix => &[("operator", Absent::Required)],
-        Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
+        Block => &[
+            ("body", Absent::TypeObject("RakuAST::Blockoid")),
+            ("implicit-topic", Absent::TypeObject("Bool")),
+            ("required-topic", Absent::TypeObject("Bool")),
+            ("exception", Absent::TypeObject("Bool")),
+        ],
         PointyBlock => &[
             ("signature", Absent::EmptyNode(Signature)),
             ("body", Absent::TypeObject("RakuAST::Blockoid")),
+            ("implicit-topic", Absent::TypeObject("Bool")),
+            ("required-topic", Absent::TypeObject("Bool")),
+            ("exception", Absent::TypeObject("Bool")),
         ],
         Blockoid => &[("statement-list", Absent::Required)],
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => {
@@ -367,6 +384,34 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("block", Absent::Required), ("sequential", Absent::False)]
         }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
+        DocMarkup => &[
+            ("letter", Absent::Required),
+            ("opener", Absent::Str("<")),
+            ("closer", Absent::Str(">")),
+            ("atoms", Absent::EmptyList),
+            ("meta", Absent::EmptyList),
+        ],
+        DocParagraph => &[("atoms", Absent::EmptyList)],
+        DocLegacyRow => &[
+            ("column-dividers", Absent::Required),
+            ("column-offsets", Absent::EmptyList),
+            ("cells", Absent::EmptyList),
+        ],
+        DocDeclarator => &[
+            ("WHEREFORE", Absent::Required),
+            ("leading", Absent::EmptyList),
+            ("trailing", Absent::EmptyList),
+        ],
+        DocBlock => &[
+            ("margin", Absent::Str("")),
+            ("type", Absent::Required),
+            ("level", Absent::Str("")),
+            ("directive", Absent::False),
+            ("abbreviated", Absent::False),
+            ("for", Absent::False),
+            ("config", Absent::EmptyMap),
+            ("paragraphs", Absent::EmptyList),
+        ],
         ColonPairVariable | ColonPairValue | ColonPairNumber => {
             &[("key", Absent::Required), ("value", Absent::Required)]
         }
@@ -460,6 +505,22 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("elsifs", Absent::EmptyList),
             ("else", BLOCK),
         ],
+        // A loop's `setup`, `condition` and `increment` are optional
+        // `RakuAST::Expression` attributes (measured on 2026.09); the
+        // `while` / `until` / `repeat` forms always carry a `condition`.
+        StatementLoop => &[
+            ("setup", EXPRESSION),
+            ("condition", EXPRESSION),
+            ("increment", EXPRESSION),
+        ],
+        StatementLoopWhile
+        | StatementLoopUntil
+        | StatementLoopRepeatWhile
+        | StatementLoopRepeatUntil => &[
+            ("setup", EXPRESSION),
+            ("condition", Absent::Required),
+            ("increment", EXPRESSION),
+        ],
         StatementUnless | StatementWithout => {
             &[("condition", Absent::Required), ("body", Absent::Required)]
         }
@@ -480,104 +541,4 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         | StatementModifierWithout => &[("expression", Absent::Required)],
         _ => &[],
     }
-}
-
-/// The accessor a class exposes over its single positional field. The named
-/// lookup runs first, so a class with a *named* field of the same name (e.g.
-/// `Call::Name.name`) is unaffected.
-pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
-    use RakuAstClass::*;
-    Some(match class {
-        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
-            "value"
-        }
-        FunctionInfix => "function",
-        FakeSignature => "signature",
-        Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
-        VarAttribute => "name",
-        VarLexical | VarDynamic => "name",
-        VarCompilerLookup => "name",
-        VarCompilerFile => "file",
-        VarCompilerLine => "line",
-        Label => "name",
-        NamePartSimple => "name",
-        NamePartExpression => "expr",
-        TermName | TermNamed | ParameterTargetTerm => "name",
-        TermTopicCall => "call",
-        Blockoid => "statement-list",
-        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
-        InitializerAssign | InitializerBind => "expression",
-        InitializerCallAssign => "postfixish",
-        MetaInfixAssign => "infix",
-        MetaInfixNegate | BracketedInfix => "infix",
-        RegexSequentialConjunction => "branches",
-        RegexConjunction => "branches",
-        RegexBackReferencePositional => "index",
-        RegexBackReferenceNamed => "name",
-        RegexStatement => "statement",
-        VarPositionalCapture => "index",
-        VarNamedCapture => "index",
-        MetaPostfixHyper => "postfix",
-        MetaPrefixHyper => "prefix",
-        TermCapture => "source",
-        QuoteWordsAtom => "atom",
-        MetaInfixReverse => "infix",
-        MetaInfixCross => "infix",
-        MetaInfixZip => "infix",
-        TypeSimple | TypeSetting | TypeCapture => "name",
-        TraitReturns | TraitOf | TraitDoes | TraitHides => "type",
-        TraitHandles => "term",
-        RegexLiteral => "text",
-        RegexQuote => "quoted",
-        RegexSequence => "terms",
-        RegexAssertionCharClass => "elements",
-        RegexCharClassEnumerationElementCharacter => "character",
-        RegexAlternation | RegexSequentialAlternation => "branches",
-        RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
-        RegexBlock => "block",
-        StatementLanguageVersion => "version",
-        StatementPrefixReact | StatementPrefixSupply => "blorst",
-        CircumfixHashComposer => "expression",
-        CircumfixArrayComposer | CircumfixParentheses => "semilist",
-        ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
-        ColonPairTrue | ColonPairFalse => "key",
-        StatementModifierFor
-        | StatementModifierWhile
-        | StatementModifierUntil
-        | StatementModifierGiven
-        | StatementModifierIf
-        | StatementModifierUnless
-        | StatementModifierWith
-        | StatementModifierWhen
-        | StatementModifierWithout => "expression",
-        // Every statement prefix wraps its block-or-statement ("blorst")
-        // positionally, and rakudo names it `.blorst` (#9761).
-        StatementPrefixDo
-        | StatementPrefixTry
-        | StatementPrefixGather
-        | StatementPrefixEager
-        | StatementPrefixOnce
-        | StatementPrefixStart
-        | StatementPrefixQuietly
-        | StatementPrefixSink
-        | StatementPrefixLazy
-        | StatementPrefixHyper
-        | StatementPrefixRace
-        | StatementPrefixPhaserBegin
-        | StatementPrefixPhaserCheck
-        | StatementPrefixPhaserClose
-        | StatementPrefixPhaserEnd
-        | StatementPrefixPhaserEnter
-        | StatementPrefixPhaserFirst
-        | StatementPrefixPhaserInit
-        | StatementPrefixPhaserKeep
-        | StatementPrefixPhaserLast
-        | StatementPrefixPhaserLeave
-        | StatementPrefixPhaserNext
-        | StatementPrefixPhaserPost
-        | StatementPrefixPhaserPre
-        | StatementPrefixPhaserQuit
-        | StatementPrefixPhaserUndo => "blorst",
-        _ => return None,
-    })
 }

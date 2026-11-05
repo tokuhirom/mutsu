@@ -71,18 +71,41 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
     "Scalar",
 ];
 
+/// A top-level `use lib` whose argument is a literal (or a flat list of
+/// literals): evaluating it ahead of the unit has no effect but the search
+/// path, which the unit's own run then leaves unchanged.
+// Cost: O(a), a = size of the argument list.
+fn is_literal_use_lib(stmt: &Stmt) -> bool {
+    matches!(stmt, Stmt::Use { module, arg: Some(arg), .. }
+        if module == "lib" && super::eval_nested_hook_uses::is_literal_arg(arg))
+}
+
 impl Interpreter {
     pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.validate_eval_source_with(stmts, false)
+    }
+
+    /// [`Self::validate_eval_source`]; `imports_unseen` skips the two checks that
+    /// judge a bareword against the unit's imports, for a unit whose imports
+    /// are not known before it runs ([`undeclared_routines::imports_follow_use_lib`]).
+    fn validate_eval_source_with(
+        &self,
+        stmts: &[Stmt],
+        imports_unseen: bool,
+    ) -> Result<(), RuntimeError> {
         self.check_eval_mainline_placeholders(stmts)?;
         self.check_eval_class_redeclarations(stmts)?;
         self.check_eval_undeclared_trusts(stmts)?;
         self.check_eval_undeclared_type_args(stmts)?;
         self.check_eval_undeclared_vars(stmts)?;
         self.check_eval_outer_binds(stmts)?;
-        self.check_eval_undeclared_names(stmts)?;
-        self.check_eval_undeclared_routines(stmts)?;
+        if !imports_unseen {
+            self.check_eval_undeclared_names(stmts)?;
+            self.check_eval_undeclared_routines(stmts)?;
+            self.check_eval_terms_in_source_order(stmts)?;
+        }
         Self::check_eval_routine_magicals(stmts)?;
-        self.check_eval_post_declared_types(stmts)?;
+        crate::rakuast::post_declared::check(stmts, &crate::scope::NameScope::default())?;
         self.check_eval_begin_forward_calls(stmts)?;
         self.check_eval_param_type_constraints(stmts)?;
         self.check_type_capture_inheritance(stmts)
@@ -107,15 +130,23 @@ impl Interpreter {
     /// out-of-unit run has no id for.
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
-    fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    pub(super) fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
         // A `use` nested in a block runs here too, ahead of the unit (its
         // import is then not confined to the block).
         let mut lifted = 0;
         let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
-        let positional = stmts.iter().any(|stmt| {
-            matches!(stmt, Stmt::Use { module, .. } if module == "lib")
-                || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
-        });
+        // TODO: a unit that `use`s Test loses the candidates of a hook module's
+        // exported `&trait_mod:<is>` dispatcher when the hook is pre-run
+        // (`EVAL 'use Test; use ExportSubTraitDispatcher; ...'` finds none,
+        // with or without a `use lib`): until that is fixed such a unit keeps
+        // stopping the pre-run at its `use lib`.
+        let uses_test = stmts
+            .iter()
+            .any(|stmt| matches!(stmt, Stmt::Use { module, .. } if module == "Test"));
+        let positional = super::undeclared_routines::contains_use_lib(&stmts)
+            || stmts.iter().any(|stmt| {
+                matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+            });
         if !positional {
             let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts);
             lifted = nested.len();
@@ -128,8 +159,9 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                matches!(stmt, Stmt::Use { module, .. } if module == "lib")
-                    || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+                !(is_literal_use_lib(stmt) && !uses_test)
+                    && (super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
+                        || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. }))
             })
             .unwrap_or(stmts.len());
         #[derive(Clone, Copy, PartialEq)]
@@ -148,6 +180,7 @@ impl Interpreter {
         // An `import` is pre-run only for a module an earlier pre-run `use`
         // loaded: one the unit declares itself does not exist yet.
         let mut loaded: HashSet<&str> = HashSet::new();
+        let mut after_use_lib = false;
         let mut plan: Vec<Prerun> = Vec::with_capacity(stmts.len());
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
@@ -160,6 +193,17 @@ impl Interpreter {
                     Prerun::Drop
                 }
                 Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
+                // Adds its path now so the loads after it resolve; the unit's
+                // own run finds the path at the front and adds nothing.
+                // The search path is in place before the `use` statements after
+                // it are probed for a `sub EXPORT` hook; the unit's own run then
+                // finds the path already at the front.
+                Stmt::Use { arg: Some(arg), .. } if is_literal_use_lib(stmt) && !uses_test => {
+                    let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
+                    self.add_lib_paths(&value)?;
+                    after_use_lib = true;
+                    Prerun::Keep
+                }
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
@@ -169,8 +213,12 @@ impl Interpreter {
                             Prerun::Drop
                         }
                     }
-                    // Its arguments would be evaluated twice.
-                    Some(module) if arg.is_none() => {
+                    // Its arguments would be evaluated twice. After a `use lib`
+                    // only a hook module runs ahead (above): a plain module's
+                    // names are known without running it, and loading it
+                    // before the unit registers its own declarations lets the
+                    // module's `trait_mod` candidates outrank the unit's.
+                    Some(module) if arg.is_none() && !after_use_lib => {
                         loaded.insert(module);
                         Prerun::Keep
                     }
@@ -200,6 +248,8 @@ impl Interpreter {
                     self.import_module(module, tags)
                         .map_err(|err| self.in_place_use_error(module, err))?;
                 }
+                // A literal `use lib` was applied while planning.
+                (Stmt::Use { module, .. }, _) if module == "lib" => {}
                 (Stmt::Use { module, arg, tags, .. }, _) => {
                     preran.insert(module.clone());
                     // The `use` arguments are what the module's `sub EXPORT`
@@ -291,9 +341,7 @@ impl Interpreter {
                 let (types, terms) = caller_names;
                 let stmts = match crate::rakuast::frontend::round_trip_eval(
                     &stmts,
-                    || types,
-                    || terms,
-                    op_names,
+                    crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 ) {
                     Ok(lowered) => lowered,
                     Err(refusal) => {
@@ -301,18 +349,7 @@ impl Interpreter {
                         return Err(refusal);
                     }
                 };
-                // The hook maps the pre-run recorded are replayed by the
-                // unit's own `use`s and end with the unit.
-                let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
-                let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
-                    let validated = self.validate_eval_source(&stmts);
-                    self.module.eval_prerun_modules.clear();
-                    self.module.eval_prerun_sets.clear();
-                    validated?;
-                    self.run_eval_unit_stmts(stmts)
-                });
-                self.module.eval_hook_results = outer_hook_results;
-                ran
+                self.validate_and_run_eval_unit(stmts, false)
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
@@ -324,6 +361,45 @@ impl Interpreter {
                 Err(parse_err)
             }
         }
+    }
+
+    /// Validate and run the statements of an EVAL'd unit: its `use`s run first
+    /// (as rakudo does at BEGIN time) so the CHECK-time checks read what they
+    /// really import, then the unit runs. String `EVAL` and a lowered
+    /// `RakuAST::Node.EVAL` share it, so a tree holding a `use` sees its
+    /// imports the way the same source text does (#15868).
+    // Cost: O(u) static checks plus the load of each pre-run `use`, then the
+    // unit itself.
+    pub(super) fn validate_and_run_eval_unit(
+        &mut self,
+        stmts: Vec<Stmt>,
+        lowered: bool,
+    ) -> Result<Value, RuntimeError> {
+        // A lowered tree was not parsed here: when its imports follow a
+        // `use lib` they are unknown until it runs.
+        let imports_unseen = lowered && super::undeclared_routines::imports_follow_use_lib(&stmts);
+        // The hook maps the pre-run recorded are replayed by the
+        // unit's own `use`s and end with the unit.
+        let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
+        // The pre-run's imports (a `sub EXPORT` hook's terms, whose
+        // `use` is dropped from the unit and so leaves the unit no
+        // region of its own) are the EVAL's own: they bind in an env
+        // import region that ends with it, or the next EVAL would
+        // read them (`Logic::Ternary`'s `True`, #15770).
+        let prerun_region =
+            crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
+        let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+            let validated = self.validate_eval_source_with(&stmts, imports_unseen);
+            self.module.eval_prerun_modules.clear();
+            self.module.eval_prerun_sets.clear();
+            validated?;
+            self.run_eval_unit_stmts(stmts)
+        });
+        if let Some(region) = prerun_region {
+            self.close_import_region(region);
+        }
+        self.module.eval_hook_results = outer_hook_results;
+        ran
     }
 
     /// Run the parsed (or RakuAST-lowered) statements of an EVAL'd unit:
@@ -347,6 +423,13 @@ impl Interpreter {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
+        Self::inject_deparse_prelude_for_unit(&mut stmts);
+        // The unit has no source text of its own (it may be a tree): the
+        // preludes it needs are asked of the names its tree uses (#16203).
+        Self::inject_unit_preludes(
+            &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
+            &mut stmts,
+        );
         // Reorder so the top-level BEGINs run first, in the EVAL unit's
         // prologue (ADR-0134): a read textually preceding a BEGIN sees
         // its side effects and a later initializer still clobbers it,
@@ -354,6 +437,9 @@ impl Interpreter {
         // CHECK runs at compile time and INIT once before the main body,
         // matching the top-level pipeline. The EVAL-specific variant also
         // lifts BEGIN from closure bodies in the EVAL'd code.
+        // A unit with a BEGIN prologue keeps its per-run capture bucket
+        // (`eval_unit_capture_key`): the declaring frame's reads of the bucket
+        // name the running unit's key (`eval_unit_declaring_key`, #16476).
         crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
@@ -643,6 +729,7 @@ impl Interpreter {
                     nested_capture_index: None,
                     captured_readonly: None,
                     routine_cell: Default::default(),
+                    augment_epoch: 0,
                 };
                 let owner = crate::symbol::Symbol::intern(&class_name);
                 let method_sym = crate::symbol::Symbol::intern(&resolved_method_name);

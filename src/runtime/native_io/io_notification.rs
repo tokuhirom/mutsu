@@ -390,8 +390,13 @@ fn spawn_watcher(watched: PathBuf, display: String, sink: WatchSink) -> Result<(
     // Registered spawn (emits `Value`s into a channel); the poll sleep is a
     // quiescent safe region — see `try_spawn_gc_helper_thread`. A refused
     // thread is a catchable X::AdHoc (#9401).
+    // The baseline is the state AT THE `.watch` CALL, not whenever the helper
+    // thread gets scheduled: a file created in between (a loaded runner starts
+    // the thread late) would be part of a late baseline and never reported
+    // (#16198).
+    let initial = WatchState::snapshot(&watched);
     crate::runtime::builtins_system::try_spawn_gc_helper_thread("io-notification", move || {
-        let mut last = WatchState::snapshot(&watched);
+        let mut last = initial;
         if last == WatchState::File(None) {
             sink.missing();
             return;

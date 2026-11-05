@@ -222,7 +222,7 @@ pub(crate) struct LexicalState {
     /// bodies registered with a bucket ([`MainlineLexicalOwner`]), and a
     /// lookup takes the bucket of the body that is running.
     pub(crate) mainline_lexical_subs:
-        std::sync::Arc<std::collections::HashMap<String, Vec<MainlineLexicalOwner>>>,
+        std::sync::Arc<rustc_hash::FxHashMap<String, Vec<MainlineLexicalOwner>>>,
     /// mutsu#9111: a sub declared inside a ROUTINE maps to its free variables
     /// and the hidden local of the declaring frame each is aliased to. A
     /// free-variable access from such a sub's frame reads the alias from env

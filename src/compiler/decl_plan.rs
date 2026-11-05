@@ -234,6 +234,7 @@ impl Compiler {
         }
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
+        self.bubble_trait_arg_writes(trait_args.iter().flatten());
         match self.with_param_type_aliases_resolved(stmt) {
             Some(resolved) => self
                 .code
@@ -241,6 +242,37 @@ impl Compiler {
             None => self
                 .code
                 .add_sub_decl_plan(stmt, name_chunk, trait_args, pass),
+        }
+    }
+
+    /// Box the outer lexicals a routine's custom-trait argument closures write
+    /// into shared cells at their declaration, as a nested named sub's writes
+    /// are: the closure (`is mm({ ++$seen })`) outlives the registration and
+    /// must update the lexical itself, not a copy of it (#16326).
+    // Cost: O(n), n = names the trait arguments write.
+    fn bubble_trait_arg_writes<'a>(
+        &mut self,
+        args: impl Iterator<Item = &'a crate::opcode::DeclTraitArg>,
+    ) {
+        let mut writes: Vec<Symbol> = Vec::new();
+        for arg in args {
+            let crate::opcode::DeclTraitArg::Compiled(chunk) = arg else {
+                continue;
+            };
+            let code = &chunk.code;
+            for sym in code
+                .free_var_writes
+                .iter()
+                .chain(code.free_var_container_writes.iter())
+                .chain(code.needs_cell_named_sub_free.iter())
+            {
+                if sym.with_str(crate::env::is_plain_user_lexical) && !writes.contains(sym) {
+                    writes.push(*sym);
+                }
+            }
+        }
+        if !writes.is_empty() {
+            self.code.named_sub_captures.push((writes, Vec::new()));
         }
     }
 
@@ -649,6 +681,21 @@ impl Compiler {
                     return_type.as_ref(),
                     decl_line,
                 );
+                continue;
+            }
+            // A `sub` / `my sub` of the type body is installed at run time like a
+            // method, with no closure-creation op: the frame lexicals it writes
+            // must be boxed at their declaration like a method's (#15782).
+            if let Stmt::SubDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } = stmt
+            {
+                if !is_hoisted_shell {
+                    self.record_type_body_captures_uncompiled(params, param_defs, body);
+                }
                 continue;
             }
             let Stmt::MethodDecl {

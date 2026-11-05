@@ -33,7 +33,7 @@
 //! keeps those, as rakudo does.
 
 use super::*;
-use crate::runtime::repl_compiler_prelude::REPL_COMPILER_PRELUDE;
+use crate::runtime::repl_compiler_prelude::{REPL_CLASS_PRELUDE, REPL_COMPILER_PRELUDE};
 
 /// Class name of the Raku-visible handle on an [`EvalContext`] (rakudo's
 /// `nqp::ctx` answers a `BOOTContext` too).
@@ -124,13 +124,23 @@ impl Interpreter {
         if self.has_class("Perl6::Compiler") {
             return Ok(());
         }
-        let (stmts, _) =
-            crate::runtime::prelude_source::parse_prelude_source(REPL_COMPILER_PRELUDE)?;
-        let saved_package = self.current_package();
-        self.set_current_package("GLOBAL".to_string());
-        let result = self.eval_block_value(&stmts);
-        self.set_current_package(saved_package);
-        result.map(|_| ())
+        // The core `REPL` class is skipped when the program declared its own
+        // `REPL` (a `role REPL` in the REPL distribution): that name is theirs.
+        let own_repl = self.has_class("REPL") || self.registry().roles.contains_key("REPL");
+        let sources: &[&str] = if own_repl {
+            &[REPL_COMPILER_PRELUDE]
+        } else {
+            &[REPL_COMPILER_PRELUDE, REPL_CLASS_PRELUDE]
+        };
+        for source in sources {
+            let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(source)?;
+            let saved_package = self.current_package();
+            self.set_current_package("GLOBAL".to_string());
+            let result = self.eval_block_value(&stmts);
+            self.set_current_package(saved_package);
+            result.map(|_| ())?;
+        }
+        Ok(())
     }
 
     /// `nqp::bindcomp($name, $compiler)`: register `$compiler` as the

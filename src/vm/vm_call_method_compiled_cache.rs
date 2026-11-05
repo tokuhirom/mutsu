@@ -118,6 +118,7 @@ impl Interpreter {
         self.caches.dispatch_multi_candidate.clear();
         self.caches.classhow_lookup_cache.clear();
         self.caches.deferral_build_context_free.clear();
+        self.caches.builtin_method_reached.clear();
         self.clear_private_zeroarg_method_cache();
     }
 
@@ -241,6 +242,13 @@ impl Interpreter {
             // Refusing to key it made a Text::CSV field push (`$!csv-row.push:
             // $f` with `$f` captured by the parser's `keep` closure) re-run the
             // whole candidate walk on every call (#9494).
+            // A native-typed cell dispatches as the native variable it is the
+            // container of (ADR-15309), so it is keyed behind the same
+            // declared-type marker a native `VarRef` gets.
+            if let Some(native) = a.native_container_type() {
+                keys.push(key_syms::declared_type());
+                keys.push(crate::symbol::Symbol::intern(&native));
+            }
             let contents: Option<Value> = a.is_container_ref().then(|| a.deref_container());
             let a: &Value = contents.as_ref().unwrap_or(a);
             // The call-site mask also describes declared-native variables.
@@ -342,8 +350,16 @@ impl Interpreter {
                     }
                     continue;
                 }
+                // A role mixed into a class instance or type object (a typed
+                // `CArray`) dispatches on its class and the roles composed in:
+                // one symbol per composition node names both (#16373).
+                ValueView::Mixin(inner, mixins) => {
+                    match self.mixin_composition_key_sym(inner, mixins) {
+                        Some(sym) => sym,
+                        None => return false,
+                    }
+                }
                 ValueView::Junction { .. }
-                | ValueView::Mixin(..)
                 | ValueView::Scalar(_)
                 | ValueView::ContainerRef(_)
                 | ValueView::Pair(..)
@@ -891,7 +907,7 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn dispatch_compiled_method(
         &mut self,
-        cn: &str,
+        class_sym: crate::symbol::Symbol,
         owner_class: crate::symbol::Symbol,
         method_sym: crate::symbol::Symbol,
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
@@ -901,6 +917,7 @@ impl Interpreter {
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        let cn: &str = class_sym.as_str();
         // A `Proxy` subclass instance (`class AP is Proxy { has $!x }`) is
         // `self` itself, while its attributes live in the cell the Proxy
         // carries: run the method against that cell (#14259).
@@ -942,12 +959,12 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(
-                    cn,
-                    method,
+                push_method_dispatch_frame_sym(
+                    class_sym,
+                    method_sym,
                     &args,
                     invocant_for_dispatch,
-                    Some((owner_class.as_str(), method_def))
+                    Some((owner_class, method_def))
                 )
             );
             let result = self.call_compiled_method_fast(
@@ -972,12 +989,12 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(
-                    cn,
-                    method,
+                push_method_dispatch_frame_sym(
+                    class_sym,
+                    method_sym,
                     &args,
                     invocant_for_dispatch,
-                    Some((owner_class.as_str(), method_def))
+                    Some((owner_class, method_def))
                 )
             );
             let invocant = Some(target);
@@ -1066,7 +1083,7 @@ impl Interpreter {
                 method,
                 &args,
                 target.clone(),
-                Some((owner_class, method_def))
+                Some((crate::symbol::Symbol::intern(owner_class), method_def))
             )
         );
         let invocant = Some(target);

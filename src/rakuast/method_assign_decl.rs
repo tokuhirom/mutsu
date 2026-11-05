@@ -1,19 +1,23 @@
 //! RakuAST conversion of method-assignment declarations and calls.
 
-use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
+use super::view::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
 use crate::ast::method_assign_decl::MethodAssignDecl;
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::{Expr, Stmt};
+use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
-pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_node(
+    names: &NameScope,
+    form: &MethodAssignDecl,
+) -> Result<RakuAstNode, RuntimeError> {
     if form.where_constraint.is_some()
         || form
             .custom_traits
             .iter()
-            .any(|(name, arg)| !decl_traits::is_rendered(name, arg))
+            .any(|(name, arg)| !decl_traits::is_rendered(names, name, arg))
     {
         return Err(unsupported("method-assignment declaration with traits"));
     }
@@ -32,22 +36,25 @@ pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeErr
         (form.name.as_str(), None)
     };
     let mut decl = var_declaration(
+        names,
         name,
         Some(Initializer::CallAssign(form)),
         scope,
-        form.type_constraint.as_deref(),
-        twigil,
+        (form.type_constraint.as_deref(), twigil),
         None,
         form.anonymous,
     )?;
-    decl_traits::insert(&mut decl, decl_traits::convert(&form.custom_traits)?);
+    decl_traits::insert(
+        &mut decl,
+        decl_traits::view_node(names, &form.custom_traits)?,
+    );
     if let Some(dims) = &form.shape {
-        super::keyed_hash::insert_dimensions(&mut decl, dims)?;
+        super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }
     match &form.chain {
         // `my $o .= $m.uc`: the declaration is the operand of the chain
         // (`ApplyPostfix(operand => VarDeclaration, …)`, rakudo 2026.09).
-        Some(chain) => with_innermost_operand(&super::convert::convert_expr(chain)?, decl),
+        Some(chain) => with_innermost_operand(&super::view::view_expr(names, chain)?, decl),
         None => Ok(decl),
     }
 }
@@ -108,12 +115,12 @@ pub(super) fn is_chained_declaration(node: &RakuAstNode) -> bool {
 /// The parser's statement for `my $o .= $m.uc`: the declaration's source
 /// form, now carrying the chain, applied over the declared variable.
 // Cost: O(n), n = size of the declaration and the chain.
-pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_chained(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut declaration = node.clone();
     while declaration.class == RakuAstClass::ApplyPostfix {
         declaration = super::lower::named_child(&declaration, "operand")?.clone();
     }
-    let Stmt::Ast(kept) = super::lower::lower_var_decl_kept(&declaration)? else {
+    let Stmt::Ast(kept) = super::lower::lower_var_decl_kept(names, &declaration)? else {
         return Err(unsupported("a `.=` declaration chain"));
     };
     let ParsedStmt::MethodAssignDecl(form) = kept.as_ref() else {
@@ -122,8 +129,8 @@ pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if form.name.starts_with(['@', '%', '&']) {
         return Err(unsupported("a `.=` declaration chain"));
     }
-    let variable = super::convert::var_lexical("$", &form.name);
-    let chain = super::lower::lower_expr(&with_innermost_operand(node, variable)?)?;
+    let variable = super::view::var_lexical("$", &form.name);
+    let chain = super::lower::lower_expr(names, &with_innermost_operand(node, variable)?)?;
     let mut form = form.clone();
     form.chain = Some(Box::new(chain));
     super::lower_parsed_stmt(ParsedStmt::MethodAssignDecl(form))
@@ -131,15 +138,16 @@ pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
 pub(super) fn call_method(
+    names: &NameScope,
     name: &str,
     args: &[Expr],
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = super::convert::name_from_identifier(name);
+    let name_node = super::view::name_from_identifier(name);
     // Field order matches raku: name, args, dispatch.
     let mut fields = vec![node_field(Some("name"), name_node)];
     if !args.is_empty() {
-        fields.push(node_field(Some("args"), arg_list(args)?));
+        fields.push(node_field(Some("args"), arg_list(names, args)?));
     }
     // `self!priv(...)`: raku has a class of its own for the private call, and
     // no `dispatch` string.

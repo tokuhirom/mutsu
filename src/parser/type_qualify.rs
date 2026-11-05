@@ -182,6 +182,11 @@ struct PackageTypes<'a> {
     /// DateTime`), so type positions before it must keep the core meaning.
     shadows_core: bool,
     depth: usize,
+    /// Routine bodies being walked. An `enum` or `subset` written inside one
+    /// is that routine's lexical (the run time registers it under its bare
+    /// name), whatever package the routine is in (TAP: `method m { enum
+    /// Mode <Normal Yaml>; my Mode $m }` inside a class).
+    routine_depth: usize,
 }
 
 impl<'a> Visit<'a> for PackageTypes<'a> {
@@ -189,12 +194,18 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
         // A compound name (`class Type::Blob` in `unit module PP`) lives in the
         // stash of `PP::Type` but binds no lexical `Blob` inside the package
         // `PP::Type` (a `role Type` writing `Blob:D` means the core `Blob`).
-        if let Some(prefix) = prefix(&self.packages)
+        let routine_local = self.routine_depth > 0
+            && matches!(stmt, Stmt::EnumDecl { .. } | Stmt::SubsetDecl { .. });
+        if routine_local && let Some(name) = declared_type(stmt) {
+            self.local_names.insert(name.to_string());
+        } else if let Some(prefix) = prefix(&self.packages)
             && let Some(name) = declared_type(stmt)
             && !name.contains("::")
         {
             self.declared.insert(format!("{prefix}::{name}"));
         }
+        let is_routine = matches!(stmt, Stmt::SubDecl { .. } | Stmt::MethodDecl { .. });
+        self.routine_depth += usize::from(is_routine);
         if let Some(name) = lexical_type(stmt) {
             self.local_names.insert(name.to_string());
             self.shadows_core |= crate::builtin_types::catalog::builtin_type_info(name).is_some();
@@ -222,6 +233,7 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
             None => walk_stmt(self, stmt),
         }
         self.depth -= 1;
+        self.routine_depth -= usize::from(is_routine);
     }
 }
 

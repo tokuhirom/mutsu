@@ -221,18 +221,15 @@ impl Interpreter {
         &self,
         mixins: &crate::value::MixinOverrides,
         role_name: &str,
-        role: &RoleDef,
+        role_attrs: &[String],
         inner_cell: Option<&crate::gc::Gc<crate::value::InstanceAttrs>>,
         updated: AttrMap,
     ) {
-        let role_attr_names: Vec<Symbol> = role
-            .attributes
-            .iter()
-            .map(|attr| Symbol::intern(&attr.name))
-            .collect();
-        for attr in &role.attributes {
-            if let Some(value) = updated.get(Symbol::intern(&attr.name)) {
-                mixins.set_role_attribute(role_name, &attr.name, value.clone());
+        let role_attr_names: Vec<Symbol> =
+            role_attrs.iter().map(|name| Symbol::intern(name)).collect();
+        for name in role_attrs {
+            if let Some(value) = updated.get(Symbol::intern(name)) {
+                mixins.set_role_attribute(role_name, name, value.clone());
             }
         }
         let Some(inner_cell) = inner_cell else {
@@ -281,6 +278,24 @@ impl Interpreter {
                 crate::builtins::method_table::invoke_unadmitted(self, target, method, &args)
         {
             return Some(result);
+        }
+
+        // A straight-line role method this composition already resolved for
+        // arguments of these types runs without the role walk below (#16215).
+        let front_key = if args.is_empty() || self.caches.mixin_straight_front.is_empty() {
+            None
+        } else {
+            self.mixin_front_key(target, inner, mixins, method, &args)
+        };
+        if let Some(key) = &front_key
+            && self.pending_raw_invocant.is_none()
+            && let Some(entry) = self.caches.mixin_straight_front.get(key)
+            && entry.generation == self.registry_write_generation()
+        {
+            let def = Arc::clone(&entry.def);
+            if let Some(result) = self.run_straight_line_method(&def, target, &args) {
+                return Some(result);
+            }
         }
 
         // `.clone` on a role mixin. A punned role's `__mutsu_attr__*` entries are
@@ -457,18 +472,40 @@ impl Interpreter {
         };
         let mut role_has_method = false;
         for role_name in role_names {
-            let Some(role) = self.role_def_for_mixin_role(mixins, &role_name) else {
-                continue;
-            };
-            let Some(mut overloads) = role.methods.get(lookup_name).cloned() else {
-                continue;
-            };
+            // Only what the call reads, copied out of the borrowed def: the
+            // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
+            // The candidates themselves are cloned only when the winner memo
+            // misses; a hit is looked up by the identity of their bodies.
+            //
             // A `method m {...}` stub only *requires* `m` (checked when the
             // role was composed); it never supplies a body, so the mixed-in
             // value's own method must answer (`$attr does R` where
             // `R` stubs `method package`).
-            overloads.retain(|def| !Self::is_runtime_stub_method_def(def));
-            if overloads.is_empty() {
+            let Some((role_id, role_attrs, bodies, sole_non_multi)) = self
+                .with_mixin_role_def(mixins, &role_name, |role| {
+                    role.methods.get(lookup_name).map(|overloads| {
+                        let live: Vec<&MethodDef> = overloads
+                            .iter()
+                            .filter(|def| !Self::is_runtime_stub_method_def(def))
+                            .collect();
+                        (
+                            role.role_id,
+                            role.attributes
+                                .iter()
+                                .map(|attr| attr.name.clone())
+                                .collect::<Vec<String>>(),
+                            live.iter()
+                                .map(|def| std::sync::Arc::as_ptr(&def.body) as usize)
+                                .collect::<Vec<usize>>(),
+                            live.len() == 1 && !live[0].is_multi,
+                        )
+                    })
+                })
+                .flatten()
+            else {
+                continue;
+            };
+            if bodies.is_empty() {
                 continue;
             }
             role_has_method = true;
@@ -479,14 +516,27 @@ impl Interpreter {
                         .map(|name| (name.to_string(), value.clone()))
                 })
                 .collect();
-            let callable_role_params: rustc_hash::FxHashSet<String> = self
-                .registry()
+            // Only a role parameter whose value is a callable (or the
+            // `Callable` type object of an unsupplied `&cb?`) is ever bound
+            // as a callable, so the candidate's parameter list is read only
+            // then (a CArray's `TValue` is a type: nothing to look up).
+            let any_callable_value = role_param_bindings.iter().any(|(_, value)| {
+                match value.view() {
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+                    ValueView::Package(pkg) => pkg == "Callable",
+                    _ => false,
+                }
+            });
+            let callable_role_params: rustc_hash::FxHashSet<String> = if !any_callable_value {
+                Default::default()
+            } else {
+                self.registry()
                 .role_candidates
                 .get(&role_name)
                 .and_then(|candidates| {
                     candidates
                         .iter()
-                        .find(|candidate| candidate.role_def.role_id == role.role_id)
+                        .find(|candidate| candidate.role_def.role_id == role_id)
                 })
                 .map(|candidate| {
                     candidate
@@ -503,7 +553,8 @@ impl Interpreter {
                         })
                         .collect()
                 })
-                .unwrap_or_default();
+                .unwrap_or_default()
+            };
             let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
             for (name, value) in &role_param_bindings {
                 // The role declaration stores callable parameters under their
@@ -537,44 +588,115 @@ impl Interpreter {
             // run it so a failed parameter bind raises its own
             // `X::TypeCheck::Binding::Parameter`, as rakudo does, rather than
             // a dispatch `X::Multi::NoMatch`.
-            let sole_private = is_private_call && overloads.len() == 1 && !overloads[0].is_multi;
-            // The visible multis that do not bind are kept as rivals: they
-            // still shape the tiers of `pick_method_winner` (#12795).
-            let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads
-                .into_iter()
-                // For private calls, only match private methods; for public calls, skip private.
-                .filter(|def| is_private_call == def.is_private)
-                .partition(|def| {
-                    // Use the invocant-aware matcher (not `method_args_match`) so an
-                    // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
-                    // is told apart by the mixin's definedness, matching the ordinary
-                    // MRO dispatch path (`resolve_method_with_owner_impl`). Without
-                    // this, a punned role's `:D:` candidate never won over `:U:`
-                    // because this filter never looked at the invocant at all.
-                    sole_private
-                        || self.method_args_match_for_invocant(
-                            &role_name,
-                            def,
-                            &args,
-                            None,
-                            Some(target),
-                        )
-                });
-            let owner = Symbol::intern(&role_name);
-            let matching: Vec<(Symbol, MethodDef)> =
-                matching.into_iter().map(|def| (owner, def)).collect();
-            let rivals: Vec<(Symbol, Rival)> = rivals
-                .into_iter()
-                .filter(|def| def.is_multi)
-                .map(|def| (owner, Rival::owned(def)))
-                .collect();
-            let Some((_, def)) = self.pick_method_winner(
-                &[Symbol::intern(&role_name)],
-                &args,
-                Some(target),
-                matching,
-                rivals,
-            ) else {
+            let sole_private = is_private_call && sole_non_multi;
+            // The winner among a role's multi candidates is a function of the
+            // arguments' type keys when every candidate is key-decided: a
+            // CArray element store re-resolved every candidate's parameter
+            // types on each call (505k Ir, #16215).
+            // A hit needs only the body identities: an entry exists only for a
+            // call whose candidates were all key-decided when it was made.
+            let fast_key = if sole_private {
+                None
+            } else {
+                self.mixin_winner_fast_key(
+                    MixinCallSite {
+                        target,
+                        inner,
+                        role_name: &role_name,
+                        role_id,
+                        method: lookup_name,
+                        private: is_private_call,
+                    },
+                    bodies,
+                    &args,
+                )
+            };
+            let memoized = fast_key
+                .as_ref()
+                .and_then(|key| self.caches.mixin_method_winner.get(key).cloned());
+            let mut overloads_miss: Vec<MethodDef> = Vec::new();
+            let mut memo_key = fast_key;
+            if memoized.is_none() {
+                overloads_miss = self
+                    .with_mixin_role_def(mixins, &role_name, |role| {
+                        role.methods.get(lookup_name).cloned().unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                overloads_miss.retain(|def| !Self::is_runtime_stub_method_def(def));
+                // Re-derived from the candidates themselves: only a call whose
+                // candidates are all key-decided may be remembered.
+                memo_key = if sole_private {
+                    None
+                } else {
+                    self.mixin_winner_key(
+                        MixinCallSite {
+                            target,
+                            inner,
+                            role_name: &role_name,
+                            role_id,
+                            method: lookup_name,
+                            private: is_private_call,
+                        },
+                        &overloads_miss,
+                        &role_param_bindings,
+                        &args,
+                    )
+                };
+            }
+            // Every candidate is decided by built-in type keys when a key
+            // exists: the winner's parameters need no role binding.
+            let key_decided = memo_key.is_some();
+            let picked = match memoized {
+                Some(winner) => winner,
+                None => {
+                    // The visible multis that do not bind are kept as rivals: they
+                    // still shape the tiers of `pick_method_winner` (#12795).
+                    let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads_miss
+                        .into_iter()
+                        // For private calls, only match private methods; for public calls, skip private.
+                        .filter(|def| is_private_call == def.is_private)
+                        .partition(|def| {
+                            // Use the invocant-aware matcher (not `method_args_match`) so an
+                            // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
+                            // is told apart by the mixin's definedness, matching the ordinary
+                            // MRO dispatch path (`resolve_method_with_owner_impl`). Without
+                            // this, a punned role's `:D:` candidate never won over `:U:`
+                            // because this filter never looked at the invocant at all.
+                            sole_private
+                                || self.method_args_match_for_invocant(
+                                    &role_name,
+                                    def,
+                                    &args,
+                                    None,
+                                    Some(target),
+                                )
+                        });
+                    let owner = Symbol::intern(&role_name);
+                    let matching: Vec<(Symbol, MethodDef)> =
+                        matching.into_iter().map(|def| (owner, def)).collect();
+                    let rivals: Vec<(Symbol, Rival)> = rivals
+                        .into_iter()
+                        .filter(|def| def.is_multi)
+                        .map(|def| (owner, Rival::owned(def)))
+                        .collect();
+                    let winner = self.pick_method_winner(
+                        &[Symbol::intern(&role_name)],
+                        &args,
+                        Some(target),
+                        matching,
+                        rivals,
+                    );
+                    if let Some(key) = memo_key {
+                        let memo = &mut self.caches.mixin_method_winner;
+                        if memo.len() >= MIXIN_WINNER_MEMO_CAP {
+                            memo.clear();
+                        }
+                        memo.insert(key, winner.clone());
+                    }
+                    winner
+                }
+            };
+            let Some((_, def)) = picked else {
                 for (name, previous) in saved_role_params {
                     if let Some(prev) = previous {
                         self.env.insert(name, prev);
@@ -584,64 +706,108 @@ impl Interpreter {
                 }
                 continue;
             };
-            // Match ordinary signature binding: a callable parameter is
-            // installed under `&name`, while the bare `name` entry is absent
-            // so a bare read follows the compiler's implicit zero-arg call
-            // path instead of returning the callable object.
-            let mut method_role_bindings = Vec::new();
-            for (name, value) in &role_param_bindings {
-                let is_callable = callable_role_params.contains(name)
-                    && matches!(
-                        value.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    );
-                if is_callable && !name.starts_with('&') {
-                    method_role_bindings.push((format!("&{name}"), value.clone()));
-                } else {
-                    method_role_bindings.push((name.clone(), value.clone()));
-                }
-            }
-            // `::?CLASS` in a role method is the class the role is composed
-            // into, here the mixin type (`K+{R[Str]}`), not the role: upstream
-            // NativeCall's `TypedCArray!allocate` reads
-            // `::?CLASS.^array_type` (#11203).
-            let class_type = match inner.as_ref().view() {
-                ValueView::Package(_) => Some(target.clone()),
-                ValueView::Instance { class_name, .. } => Some(Value::mixin_parts(
-                    Arc::new(Value::package(class_name)),
-                    mixins.clone(),
-                )),
-                _ => None,
-            };
-            if let Some(class_type) = class_type {
-                method_role_bindings.push(("?CLASS".to_string(), class_type));
-            }
-            // Role-body lexicals are persisted with the concrete punned role
-            // class during parameterized composition, while the role method's
-            // lexical package remains the enclosing declaration package.
-            // Both stores join the bindings the method installs in its OWN
-            // frame, so bare role lexicals such as `my \\value = T` resolve to
-            // this composition's value rather than to a bareword, and a
-            // closure the method creates captures them. Staged in the caller's
-            // env instead, they sat above the method's frame root, where a
-            // closure's capture never reaches (#12882), and could clobber a
-            // caller closure's own capture (upstream NativeCall, #11203).
-            let mut static_packages = vec![def.lexical_package.resolve()];
-            if let Some(ValueView::Array(type_args, _)) = mixins
-                .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
-                .map(Value::view)
-            {
-                let (_, punned_name) =
-                    Self::parametric_role_pun_name(&role_name, type_args.as_slice());
-                static_packages.push(punned_name);
-            }
-            for package in &static_packages {
-                if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
-                    method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
-                }
-            }
+            // A winner that is key-decided and whose body cannot observe the
+            // role's parameters, statics or `::?CLASS` (`ignores_role_context`)
+            // gets none of them bound: the call can then take the method fast
+            // path (#16215).
             let mut def = def;
-            def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
+            let light = key_decided
+                && def
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|code| code.ignores_role_context());
+            // A straight-line body (local reads and `nqp::` ops) runs without
+            // a method frame: no attribute snapshot, parameter binder or
+            // scoped env (`run_straight_line_method`, #16215).
+            if light
+                && self.pending_raw_invocant.is_none()
+                && let Some(result) = self.run_straight_line_method(&def, target, &args)
+            {
+                if !is_private_call
+                    && let Some(key) = front_key.or_else(|| {
+                        self.mixin_front_key(target, inner, mixins, method, &args)
+                    })
+                {
+                    let memo = &mut self.caches.mixin_straight_front;
+                    if memo.len() >= MIXIN_FRONT_CAP {
+                        memo.clear();
+                    }
+                    let entry = MixinFrontEntry {
+                        generation: self.types.registry_write_gen.load(std::sync::atomic::Ordering::Relaxed),
+                        def: Arc::new(def.clone()),
+                        _node: mixins.clone(),
+                    };
+                    self.caches.mixin_straight_front.insert(key, entry);
+                }
+                // Newest first: a name saved twice gets its oldest value back.
+                for (name, previous) in saved_role_params.iter().rev() {
+                    if let Some(prev) = previous {
+                        self.env.insert(name.clone(), prev.clone());
+                    } else {
+                        self.env.remove(name);
+                    }
+                }
+                return Some(result);
+            }
+            if !light {
+                // Match ordinary signature binding: a callable parameter is
+                // installed under `&name`, while the bare `name` entry is absent
+                // so a bare read follows the compiler's implicit zero-arg call
+                // path instead of returning the callable object.
+                let mut method_role_bindings = Vec::new();
+                for (name, value) in &role_param_bindings {
+                    let is_callable = callable_role_params.contains(name)
+                        && matches!(
+                            value.view(),
+                            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                        );
+                    if is_callable && !name.starts_with('&') {
+                        method_role_bindings.push((format!("&{name}"), value.clone()));
+                    } else {
+                        method_role_bindings.push((name.clone(), value.clone()));
+                    }
+                }
+                // `::?CLASS` in a role method is the class the role is composed
+                // into, here the mixin type (`K+{R[Str]}`), not the role: upstream
+                // NativeCall's `TypedCArray!allocate` reads
+                // `::?CLASS.^array_type` (#11203).
+                let class_type = match inner.as_ref().view() {
+                    ValueView::Package(_) => Some(target.clone()),
+                    ValueView::Instance { class_name, .. } => Some(Value::mixin_parts(
+                        Arc::new(Value::package(class_name)),
+                        mixins.clone(),
+                    )),
+                    _ => None,
+                };
+                if let Some(class_type) = class_type {
+                    method_role_bindings.push(("?CLASS".to_string(), class_type));
+                }
+                // Role-body lexicals are persisted with the concrete punned role
+                // class during parameterized composition, while the role method's
+                // lexical package remains the enclosing declaration package.
+                // Both stores join the bindings the method installs in its OWN
+                // frame, so bare role lexicals such as `my \\value = T` resolve to
+                // this composition's value rather than to a bareword, and a
+                // closure the method creates captures them. Staged in the caller's
+                // env instead, they sat above the method's frame root, where a
+                // closure's capture never reaches (#12882), and could clobber a
+                // caller closure's own capture (upstream NativeCall, #11203).
+                let mut static_packages = vec![def.lexical_package.resolve()];
+                if let Some(ValueView::Array(type_args, _)) = mixins
+                    .get(MetaNs::RoleTypeargs.str_key_for_str(&role_name))
+                    .map(Value::view)
+                {
+                    let (_, punned_name) =
+                        Self::parametric_role_pun_name(&role_name, type_args.as_slice());
+                    static_packages.push(punned_name);
+                }
+                for package in &static_packages {
+                    if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
+                        method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                }
+                def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
+            }
             // Build the attribute set visible to the role method body.
             // Start with the inner instance's own attributes (e.g. class
             // attributes like `@.order`) so that `$.attr` accessors inside
@@ -663,9 +829,9 @@ impl Interpreter {
                 }
                 _ => (None, AttrMap::new()),
             };
-            for attr in &role.attributes {
-                if let Some(value) = mixins.role_attribute(&role_name, &attr.name) {
-                    method_attrs.insert(attr.name.clone(), value);
+            for attr_name in &role_attrs {
+                if let Some(value) = mixins.role_attribute(&role_name, attr_name) {
+                    method_attrs.insert(attr_name.clone(), value);
                 }
             }
             for (key, value) in mixins.iter() {
@@ -684,8 +850,15 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
-            let native_base = base_class.is_none();
-            let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
+            // A body that is a straight line of local reads and `nqp::` ops
+            // (`light`) cannot defer to the base object's method, so the
+            // ranked deferral expansion and the dispatch frame are not built
+            // for it (`matched_deferral_candidates` was ~10 interns and a
+            // candidate walk per CArray access, #16215).
+            let native_base = !light && base_class.is_none();
+            let base_remaining: Vec<super::DeferralEntry> = if light {
+                Vec::new()
+            } else if let Some(bc) = &base_class {
                 // The ranked deferral expansion every other method frame uses,
                 // not declaration order: the most specific of the class's multis
                 // is the next candidate (`callsame` out of a mixed-in role's
@@ -706,6 +879,39 @@ impl Interpreter {
                     name: lookup_name.to_string(),
                     base: super::NativeBase::Value,
                 }]
+            };
+            // An open handle (`$*ARGFILES does R[:reset]`) is a native class
+            // instance with no `MethodDef`s either: the native `IO::Handle`
+            // method on the wrapped handle is the one candidate behind the
+            // role's method.
+            let base_remaining = if !light
+                && base_remaining.is_empty()
+                && base_class.as_deref() == Some("IO::Handle")
+            {
+                vec![super::DeferralEntry::Native {
+                    name: lookup_name.to_string(),
+                    base: super::NativeBase::Value,
+                }]
+            } else {
+                base_remaining
+            };
+            // The mixed-in class's own attribute accessor has no `MethodDef`, but
+            // it is the next candidate behind the role's method of the same name
+            // (`$obj but role { method output { callsame } }` over `has $.output`).
+            let base_remaining = if !light
+                && base_remaining.is_empty()
+                && !is_private_call
+                && let Some(bc) = &base_class
+                && let Some(owner) = super::user_method_probe_memo::probe_key(lookup_name)
+                    .and_then(|key| self.first_public_accessor_owner(bc, key))
+            {
+                vec![super::DeferralEntry::Accessor {
+                    owner,
+                    name: lookup_name.to_string(),
+                    want_container: false,
+                }]
+            } else {
+                base_remaining
             };
             let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
             if pushed_base_dispatch {
@@ -730,7 +936,13 @@ impl Interpreter {
             let invocant = self
                 .pending_raw_invocant
                 .as_ref()
-                .filter(|pending| pending.implicit_self && pending.method == lookup_name)
+                // A raw invocant parameter (`method m(\SELF:)`, ADR-0067 slice 3b)
+                // binds the named receiver's container, as an implicit `self`
+                // of an aggregate does.
+                .filter(|pending| {
+                    (pending.implicit_self || pending.raw_parameter)
+                        && pending.method == lookup_name
+                })
                 .map(|pending| pending.cell.clone())
                 .unwrap_or_else(|| target.clone());
             let method_result = self.run_resolved_method_compiled_or_treewalk(
@@ -766,7 +978,7 @@ impl Interpreter {
                 self.commit_mixin_role_method_attrs(
                     mixins,
                     &role_name,
-                    &role,
+                    &role_attrs,
                     inner_cell.as_ref(),
                     updated,
                 );
@@ -949,5 +1161,193 @@ impl Interpreter {
         }
 
         None
+    }
+}
+
+/// Most remembered winners before the table is dropped.
+const MIXIN_WINNER_MEMO_CAP: usize = 4096;
+
+/// Most remembered straight-line calls before the front table is dropped.
+const MIXIN_FRONT_CAP: usize = 1024;
+
+/// What a straight-line role method call on a mixin is looked up by.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MixinFrontKey {
+    /// Address of the composition node; the entry keeps the node alive.
+    node: usize,
+    method: Symbol,
+    defined: bool,
+    arg_keys: Vec<Symbol>,
+}
+
+/// The resolved straight-line method of a [`MixinFrontKey`].
+#[derive(Clone)]
+pub(crate) struct MixinFrontEntry {
+    /// The registry write generation the entry was made under.
+    generation: u64,
+    def: Arc<MethodDef>,
+    _node: crate::gc::Gc<crate::value::MixinOverrides>,
+}
+
+/// Where a role method is called: the receiver and which role method.
+struct MixinCallSite<'a> {
+    target: &'a Value,
+    inner: &'a Value,
+    role_name: &'a str,
+    role_id: u64,
+    method: &'a str,
+    private: bool,
+}
+
+/// What a mixin receiver's role-method winner is computed from.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MixinWinnerKey {
+    /// The role declaration and the identity of each candidate's body (the
+    /// `Arc`s stay alive in the role while it exists, so an address is not
+    /// reused): a redefinition or an `augment` changes the candidates. Not the
+    /// registry stamp, which a mixin dispatch itself moves on every call.
+    role_id: u64,
+    bodies: Vec<usize>,
+    role: Symbol,
+    method: Symbol,
+    private: bool,
+    /// Whether the receiver is a defined value (`::?CLASS:D:` / `:U:`).
+    defined: bool,
+    arg_keys: Vec<Symbol>,
+}
+
+impl Interpreter {
+    /// The straight-line role method a call on a mixin already resolved to
+    /// (`caches.mixin_straight_front`), run; `None` when the call was not seen
+    /// before, the registry was written since, or the lane declines its
+    /// arguments. Asked at the top of the method-call funnel, ahead of the
+    /// prefix probes that decided nothing for these keys the first time
+    /// (#16215).
+    // Cost: O(a) for the key, plus the lane's call.
+    pub(crate) fn mixin_front_hit(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if args.is_empty()
+            || self.caches.mixin_straight_front.is_empty()
+            || self.pending_raw_invocant.is_some()
+        {
+            return None;
+        }
+        let ValueView::Mixin(inner, mixins) = target.view() else {
+            return None;
+        };
+        let key = self.mixin_front_key(target, inner, mixins, method, args)?;
+        let entry = self.caches.mixin_straight_front.get(&key)?;
+        if entry.generation != self.registry_write_generation() {
+            return None;
+        }
+        let def = Arc::clone(&entry.def);
+        self.run_straight_line_method(&def, target, args)
+    }
+
+    /// The front-table key of a call on a mixin, or `None` when an argument
+    /// has no type key.
+    // Cost: O(a), a = arguments.
+    fn mixin_front_key(
+        &mut self,
+        target: &Value,
+        inner: &Value,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<MixinFrontKey> {
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinFrontKey {
+            node: &**mixins as *const crate::value::MixinOverrides as usize,
+            method: Symbol::intern(method),
+            defined: !matches!(inner.view(), ValueView::Package(_))
+                && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
+    }
+
+    /// [`Self::mixin_winner_key`] without inspecting the candidates: the key a
+    /// remembered call is looked up by, built from the identity of their
+    /// bodies (`bodies`) and the arguments' type keys alone. `None` when an
+    /// argument has no type key.
+    // Cost: O(c + a), c = candidates, a = arguments.
+    fn mixin_winner_fast_key(
+        &mut self,
+        site: MixinCallSite<'_>,
+        bodies: Vec<usize>,
+        args: &[Value],
+    ) -> Option<MixinWinnerKey> {
+        let MixinCallSite { target, inner, role_name, role_id, method, private } = site;
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinWinnerKey {
+            role_id,
+            bodies,
+            role: Symbol::intern(role_name),
+            method: Symbol::intern(method),
+            private,
+            defined: !matches!(inner.view(), ValueView::Package(_))
+                && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
+    }
+
+    /// The memo key for a role method call on a mixin, or `None` when the
+    /// verdict of some candidate reads more than the argument type keys, the
+    /// receiver's definedness and the registry: a `where`, a subset, a type
+    /// capture, a literal, a sub-signature, a role type parameter, a
+    /// constraint that is not a built-in type, or an invocant other than
+    /// `::?CLASS` with a smiley.
+    // Cost: O(c * p + a), c = candidates, p = parameters each, a = arguments.
+    fn mixin_winner_key(
+        &mut self,
+        site: MixinCallSite<'_>,
+        overloads: &[MethodDef],
+        role_params: &[(String, Value)],
+        args: &[Value],
+    ) -> Option<MixinWinnerKey> {
+        let MixinCallSite { target, inner, role_name, role_id, method, private } = site;
+        let key_decided = |def: &MethodDef| {
+            !def.param_defs.is_empty()
+                && def.param_defs.iter().all(|pd| {
+                    pd.where_constraint.is_none()
+                        && pd.literal_value.is_none()
+                        && pd.code_signature.is_none()
+                        && pd.outer_sub_signature.is_none()
+                        && (pd.sub_signature.is_none() || pd.named_alias)
+                        && pd.type_capture.is_none()
+                        && pd.default.is_none()
+                        && match pd.type_constraint.as_deref() {
+                            None => !pd.is_invocant,
+                            Some(tc) if pd.is_invocant => {
+                                matches!(tc, "::?CLASS" | "::?CLASS:D" | "::?CLASS:U")
+                            }
+                            Some(tc) => {
+                                let base = tc.strip_suffix(":D").or_else(|| tc.strip_suffix(":U")).unwrap_or(tc);
+                                crate::runtime::utils::is_known_type_constraint(base)
+                                    && !role_params.iter().any(|(name, _)| name == base)
+                                    && !self.constraint_is_subset(base)
+                            }
+                        }
+                })
+        };
+        if !overloads.iter().all(key_decided) {
+            return None;
+        }
+        let arg_keys = self.multi_arg_type_keys_with_named(args)?;
+        Some(MixinWinnerKey {
+            role_id,
+            bodies: overloads
+                .iter()
+                .map(|def| std::sync::Arc::as_ptr(&def.body) as usize)
+                .collect(),
+            role: Symbol::intern(role_name),
+            method: Symbol::intern(method),
+            private,
+            defined: !matches!(inner.view(), ValueView::Package(_)) && crate::runtime::value_is_definite(target),
+            arg_keys,
+        })
     }
 }

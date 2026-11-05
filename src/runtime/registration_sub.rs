@@ -3,6 +3,7 @@ use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::cell::RefCell;
+use std::sync::Arc;
 use std::collections::HashSet;
 
 /// Outcome of a `register_sub_decl` call, distinguishing a genuine
@@ -210,6 +211,123 @@ fn string_increment(s: &str) -> String {
 }
 
 impl Interpreter {
+    /// Whether an `EVAL` forbids a routine declared here to shadow an outer one
+    /// of the same name: the `EVAL` unit's own top level may not redeclare what
+    /// its caller (or a previous `EVAL`) declared, but a block nested in the unit
+    /// follows the ordinary lexical shadowing rules, as in the unit's source text
+    /// run outside an `EVAL` (#15869).
+    // Cost: O(1).
+    fn eval_blocks_lexical_shadow(&self) -> bool {
+        let flag = |key: &str| {
+            matches!(self.env.get(key).map(Value::view), Some(ValueView::Bool(true)))
+        };
+        (flag("__mutsu_in_eval") || flag("__mutsu_eval_wrapped_decls"))
+            && self.block_scope_depth <= self.module.eval_unit_block_depth
+            && self.routine_stack.len() <= self.module.eval_unit_routine_depth
+            && !self.in_inlined_block_frame()
+    }
+
+    /// A routine-local `my sub` or `my subset` is lexical to the routine that
+    /// declares it, but stays in the flat routine / subset registry while that
+    /// routine's callees run, so a callee's `EVAL` found it by name. When the
+    /// `EVAL` is run by a unit-scoped plain sub (declared outside every
+    /// routine, so it cannot see its callers' scopes), take out of the
+    /// registries the ones registered by its dynamic callers: the subs come
+    /// back with the caller's `restore_routine_registry_eval`, the subsets are
+    /// returned for [`Self::restore_hidden_local_subsets`] (#16099).
+    // Cost: O(s), s = routine-local subs and subsets registered (usually 0).
+    pub(super) fn hide_dynamic_callers_local_subs(&mut self) -> Vec<(String, Arc<SubsetDef>)> {
+        let none = Vec::new();
+        {
+            let registry = self.registry();
+            if registry.routine_local_subs.is_empty() && registry.routine_local_subsets.is_empty()
+            {
+                return none;
+            }
+        }
+        let Some(plain_idx) = self.routine_stack.unit_scoped_sub_index() else {
+            return none;
+        };
+        let (hidden, hidden_subsets): (Vec<Symbol>, Vec<String>) = {
+            let registry = self.registry();
+            (
+                registry
+                    .routine_local_subs
+                    .iter()
+                    .filter(|(key, (order, depth))| {
+                        *depth <= plain_idx
+                            && registry
+                                .functions
+                                .get(key)
+                                .is_some_and(|def| def.decl_order == *order)
+                    })
+                    .map(|(key, _)| *key)
+                    .collect(),
+                registry
+                    .routine_local_subsets
+                    .iter()
+                    .filter(|(name, (def, depth))| {
+                        *depth <= plain_idx
+                            && registry
+                                .subsets
+                                .get(name.as_str())
+                                .is_some_and(|cur| Arc::ptr_eq(cur, def))
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect(),
+            )
+        };
+        if hidden.is_empty() && hidden_subsets.is_empty() {
+            return none;
+        }
+        let mut registry = self.registry_mut();
+        for key in hidden {
+            registry.functions_mut().remove(&key);
+        }
+        hidden_subsets
+            .into_iter()
+            .filter_map(|name| registry.subsets.remove(&name).map(|def| (name, def)))
+            .collect()
+    }
+
+    /// Put back the subsets [`Self::hide_dynamic_callers_local_subs`] took out,
+    /// unless the `EVAL` unit declared one of the same name meanwhile.
+    // Cost: O(h), h = hidden subsets.
+    pub(super) fn restore_hidden_local_subsets(&mut self, hidden: Vec<(String, Arc<SubsetDef>)>) {
+        if hidden.is_empty() {
+            return;
+        }
+        let mut registry = self.registry_mut();
+        for (name, def) in hidden {
+            registry.subsets.entry(name).or_insert(def);
+        }
+    }
+
+    /// Whether the running code is inside bare blocks only (no routine) of an
+    /// `EVAL` unit: a `sub` declared there closes over its block like one in a
+    /// block of the program itself (#16686).
+    // Cost: O(d), d = routine-stack depth.
+    pub(crate) fn in_block_of_eval_unit(&self) -> bool {
+        self.env
+            .get("__mutsu_in_eval")
+            .is_some_and(|v| v.truthy())
+            && !self.routine_stack.is_empty()
+            && self.routine_stack.iter().all(|f| f.is_block)
+    }
+
+    /// Whether the running code is the top level of an `EVAL` unit (not a block
+    /// or routine nested in it): a `sub` declared there is lexical to the unit
+    /// and must not outlive it, whereas a block-scoped `sub` nested in the unit
+    /// closes over its block like one outside any `EVAL` (#16198).
+    // Cost: O(1).
+    pub(crate) fn at_eval_unit_top_level(&self) -> bool {
+        self.env
+            .get("__mutsu_in_eval")
+            .is_some_and(|v| v.truthy())
+            && self.block_scope_depth <= self.module.eval_unit_block_depth
+            && self.routine_stack.len() <= self.module.eval_unit_routine_depth
+    }
+
     /// Insert a multi-overload `def` into the function registry under `base_key`,
     /// falling back to the first free `base_key__m{N}` suffix when `base_key` is
     /// already taken. Uses a SINGLE write guard for all probes — the previous
@@ -693,13 +811,8 @@ impl Interpreter {
             || is_lexical_hoist
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || (!matches!(
-                    self.env.get("__mutsu_in_eval").map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) && !matches!(
-                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                    Some(ValueView::Bool(true))
-                )));
+                || is_lexical_hoist
+                || !self.eval_blocks_lexical_shadow());
         if allow_lexical_shadow {
             return false;
         }
@@ -1411,13 +1524,8 @@ impl Interpreter {
             || in_nested_scope
             || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
-                || (!matches!(
-                    self.env.get("__mutsu_in_eval").map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) && !matches!(
-                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                    Some(ValueView::Bool(true))
-                )));
+                || in_nested_scope
+                || !self.eval_blocks_lexical_shadow());
         let code_var_key = format!("&{}", name);
         // The same declaration re-executing is no redeclaration: a role body's
         // `sub ... is export` runs again every time the role body does (a
@@ -1788,7 +1896,7 @@ impl Interpreter {
             // to every later routine with the same name. Retire it before an
             // EVAL-local redeclaration replaces the registry entry; named
             // call dispatch otherwise finds the stale chain by name.
-            self.clear_wrap_chains_for_name(name);
+            self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
             self.registry_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);
@@ -2328,14 +2436,10 @@ impl Interpreter {
         // shadow exemption must not cover it.
         let allow_lexical_shadow = !is_our
             && (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            // The unit's own top level may not shadow what its caller
+            // declared; a block nested in it shadows as it does outside an
+            // EVAL (#15869).
+            && !self.eval_blocks_lexical_shadow();
         // The CHECK-time inline-package prepass may have installed THIS proto
         // already, so the package's `our multi` candidates could pass their
         // `our`-scope check (`preregister_inline_package_subs`). Its marker

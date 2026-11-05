@@ -79,8 +79,10 @@ impl LazyFn {
 
     /// The body, decoding it on the first call.
     ///
-    /// A cache entry is written by the binary that reads it, so a body that does not
-    /// decode means the file was damaged after the whole entry was accepted.
+    /// A cache entry is written by the binary that reads it and is checked against
+    /// its checksum when it is loaded (`precomp::bytecode::load_code_entry`), so
+    /// damage to the file never reaches this point: a body that still fails to
+    /// decode here is an encoder/decoder disagreement, not a bad file.
     // Cost: O(n) on the first call, n = size of the body; O(1) after.
     pub(crate) fn get(&self) -> &Arc<CompiledFunction> {
         self.cell.get_or_init(|| {
@@ -91,8 +93,8 @@ impl LazyFn {
                 Some(cf) => Arc::new(cf),
                 None => {
                     eprintln!(
-                        "mutsu: the precompilation cache holds a damaged routine body; \
-                         remove the cache directory and run again"
+                        "mutsu: a precompiled routine body does not decode (an encoder/decoder \
+                         mismatch, not a damaged file); remove the cache directory and run again"
                     );
                     std::process::exit(70)
                 }

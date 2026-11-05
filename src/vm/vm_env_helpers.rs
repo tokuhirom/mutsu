@@ -500,6 +500,25 @@ impl Interpreter {
     /// (non-GLOBAL, non-mangled) `current_package`, so a bare reference after the
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
+    /// [`Self::package_scope_lexical`] for a read in `code`, except that a
+    /// name an enclosing routine declares (`code.routine_scoped_free`) is that
+    /// routine's own binding, never the same-named class/package `my`.
+    // Cost: O(f), f = |code.routine_scoped_free| (usually 0).
+    pub(crate) fn package_scope_lexical_in(
+        &self,
+        code: &crate::opcode::CompiledCode,
+        name: &str,
+    ) -> Option<Value> {
+        if code
+            .routine_scoped_free
+            .iter()
+            .any(|sym| sym.with_str(|n| n == name))
+        {
+            return None;
+        }
+        self.package_scope_lexical(name)
+    }
+
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
         let (cur, key) = self.package_scope_lexical_key(name)?;
         self.lexicals
@@ -679,11 +698,16 @@ impl Interpreter {
         if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
+        let eval_key = self.eval_unit_declaring_key();
         if !crate::qualified::is_qualified(Symbol::intern(name))
             && let Some(ValueView::ContainerRef(arc)) = self
                 .lexicals
                 .unit_lexicals
-                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .get(
+                    eval_key
+                        .as_deref()
+                        .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+                )
                 .and_then(|m| m.get(name))
                 .map(Value::view)
         {
@@ -717,6 +741,21 @@ impl Interpreter {
         self.active_unit_lexical_bucket().is_some()
     }
 
+    /// The capture bucket of the EVAL unit whose own top level is running, or
+    /// `None` for the program's mainline (and for any frame below a unit's top
+    /// level). The declaring side of [`Self::active_unit_lexical_bucket`]: the
+    /// statements of a unit adopt the cells its subs captured under this key,
+    /// as the mainline's do under `MAINLINE_UNIT_KEY` (#16476).
+    // Cost: O(1); the common case (no EVAL unit running) is one field test.
+    pub(super) fn eval_unit_declaring_key(&self) -> Option<std::sync::Arc<str>> {
+        let key = self.module.eval_unit_capture_key.as_ref()?;
+        (self.at_eval_unit_top_level()
+            && !self.module_load_active()
+            && !self.is_thread_clone()
+            && self.current_package_sym() == crate::symbol::wk::global_package())
+        .then(|| key.clone())
+    }
+
     /// The `unit_lexicals` bucket the running routine's own captured free
     /// variables live in, or `None` when the running routine captured none.
     ///
@@ -727,6 +766,16 @@ impl Interpreter {
     /// only *which* bucket holds the cells differs, because mainline is one
     /// scope while sibling blocks are many.
     pub(super) fn active_unit_lexical_bucket(&self) -> Option<&str> {
+        self.active_unit_lexical_entry().map(|(key, _)| key)
+    }
+
+    /// [`Self::active_unit_lexical_bucket`] with the bucket's cells, found by
+    /// the one table probe that decided the bucket is non-empty, so a read that
+    /// wants a cell does not probe the bucket table a second time.
+    // Cost: as `active_unit_lexical_bucket`.
+    pub(super) fn active_unit_lexical_entry(
+        &self,
+    ) -> Option<(&str, &rustc_hash::FxHashMap<String, Value>)> {
         if self.lexicals.mainline_lexical_subs.is_empty() {
             return None;
         }
@@ -747,15 +796,11 @@ impl Interpreter {
             owners.iter().find(|owner| owner.runs_code(frame.code))?
         }
         .bucket;
-        if self
-            .lexicals
-            .unit_lexicals
-            .get(key)
-            .is_none_or(|m| m.is_empty())
-        {
+        let cells = self.lexicals.unit_lexicals.get(key)?;
+        if cells.is_empty() {
             return None;
         }
-        Some(key.as_str())
+        Some((key.as_str(), cells))
     }
 
     /// Look up a unit lexical through the running routine's package chain.
@@ -864,7 +909,7 @@ impl Interpreter {
             return None;
         }
         // mutsu#9111: a routine-nested sub's own binding of its free variable.
-        if let Some(found) = self.lexsub_alias_slot(name) {
+        if let Some(found) = self.lexsub_alias_slot_sym(name, name_sym) {
             return Some(found);
         }
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
@@ -900,12 +945,8 @@ impl Interpreter {
         // package IS `GLOBAL` for a mainline sub, so those candidates would
         // never reach a mainline capture on their own.
         if !qualified
-            && let Some(bucket) = self.active_unit_lexical_bucket()
-            && let Some(found) = self
-                .lexicals
-                .unit_lexicals
-                .get(bucket)
-                .and_then(|m| m.get(name))
+            && let Some((_, cells)) = self.active_unit_lexical_entry()
+            && let Some(found) = cells.get(name)
         {
             // A by-name `for` parameter of the running routine shadows the
             // captured cell while its loop runs (#13420): the parameter is
@@ -1213,10 +1254,15 @@ impl Interpreter {
         {
             return Some(arc.clone());
         }
+        let eval_key = self.eval_unit_declaring_key();
         match self
             .lexicals
             .unit_lexicals
-            .get(crate::runtime::MAINLINE_UNIT_KEY)?
+            .get(
+                eval_key
+                    .as_deref()
+                    .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
+            )?
             .get(name)?
             .view()
         {
@@ -1738,7 +1784,7 @@ impl Interpreter {
     // Cost: O(1) when no atomic lane was ever created; else one key build and
     // one shared-store probe.
     fn atomic_lane_value(&self, name: &str) -> Option<Value> {
-        if self.container_name_is_redeclared(name)
+        if !self.container_lane_applies(name)
             || !crate::runtime::shared_store::atomic_lane_entries_exist()
         {
             return None;
@@ -1769,7 +1815,7 @@ impl Interpreter {
         // from building a `format!` key and walking the store chain for an entry
         // that cannot exist. That probe was ~1 heap allocation + 1 chained hash
         // lookup on every array/hash variable read.
-        let redeclared = self.container_name_is_redeclared(name);
+        let redeclared = !self.container_lane_applies(name);
         if redeclared || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the env read below
         } else if name.starts_with('@') {
@@ -2453,6 +2499,9 @@ impl Interpreter {
     /// an rw-arg-sink target such as `cas` — `needs_env_sync` covers all
     /// three) keeps publishing exactly as before.
     pub(super) fn sync_env_from_locals_needed(&mut self, code: &CompiledCode) {
+        // ADR-12204 S1 oracle: this publishes the spawner's locals just before a
+        // `start`; it is part of the spawn, not a use of the names.
+        let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
         for (i, name) in code.locals.iter().enumerate() {
             if code.dup_named_locals.get(i).copied().unwrap_or(false) {
                 continue;
@@ -2518,6 +2567,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         names: &[String],
+        publish_set_slots: bool,
     ) {
         let saved_suppress = self.threads.suppress_shared_publish;
         self.threads.suppress_shared_publish = true;
@@ -2526,7 +2576,7 @@ impl Interpreter {
                 continue;
             };
             for &slot in code.local_slots_of(sym) {
-                self.sync_regex_interpolation_slot(code, slot as usize);
+                self.sync_regex_interpolation_slot(code, slot as usize, publish_set_slots);
             }
         }
         self.threads.suppress_shared_publish = saved_suppress;
@@ -2535,7 +2585,12 @@ impl Interpreter {
     /// Publish local slot `i` into env for a by-name reader in the regex
     /// engine, unless it is match state or must not be broadcast by name.
     // Cost: O(1).
-    fn sync_regex_interpolation_slot(&mut self, code: &CompiledCode, i: usize) {
+    fn sync_regex_interpolation_slot(
+        &mut self,
+        code: &CompiledCode,
+        i: usize,
+        publish_set_slots: bool,
+    ) {
         let Some(name) = code.locals.get(i) else {
             return;
         };
@@ -2558,7 +2613,13 @@ impl Interpreter {
         // block scopes) from being prematurely introduced into the env,
         // which would cause bare-word class name resolution to fail when
         // a later block declares `my $x` and the class is named `x`.
-        if !self.env().contains_key(name) {
+        // A slot that already holds a value is the exception for a regex WITH
+        // ADVERBS (`publish_set_slots`): a slot-only lexical (`my $re = "met"`)
+        // that `m:i/$re/` names has no `env` entry yet, and that pattern text is
+        // resolved by name, so skipping it left the variable undeclared (`<!>`,
+        // never matching) until some other match published it. Only a still-unset
+        // slot (`Nil`) is a later scope's.
+        if !self.env().contains_key(name) && !(publish_set_slots && !self.locals[i].is_nil()) {
             return;
         }
         // Never clobber a name that is currently bound as a readonly param
@@ -2605,13 +2666,16 @@ impl Interpreter {
     /// GetLocal, e.g. `fib`'s `$n`) never reaches env.
     #[inline]
     pub(super) fn flush_local_to_env(&mut self, code: &CompiledCode, idx: usize) {
-        // Slot-only locals (no name-based reader) never need to reach env.
-        if !code.needs_env_sync.get(idx).copied().unwrap_or(true) {
-            return;
-        }
         let Some(name) = code.locals.get(idx) else {
             return;
         };
+        // Slot-only locals (no name-based reader) never need to reach env. A
+        // dynamic (`my $*OUT`) always has one: `say` / `put` / `print` and every
+        // callee read it by name, so an assignment after the declaration must
+        // reach the env (and its `$*OUT` twin) too (#15647).
+        if !code.needs_env_sync.get(idx).copied().unwrap_or(true) && !name.starts_with('*') {
+            return;
+        }
         let sym = code.locals_sym.get(idx).copied();
         // A plain lexical (the overwhelmingly common local: `my $x`, a scalar
         // param) has no aliases to maintain, so it takes the cheap writer. The

@@ -368,6 +368,9 @@ pub(crate) struct MultiRank {
     /// arity; a candidate that cannot take the call is not in the pool a tier
     /// is trial-bound from ([`Self::tier_bind_check`]).
     pub(crate) arity_fits: bool,
+    /// The candidate carries `is default`: rakudo's tie-breaker among the
+    /// candidates of one tier that it would otherwise call ambiguous.
+    pub(crate) is_default: bool,
 }
 
 impl MultiRank {
@@ -491,6 +494,15 @@ impl MultiRank {
             (false, false)
         };
         if decl_other && !decl_self {
+            return false;
+        }
+        // Each candidate narrower on a different DECLARED type is rakudo's
+        // incomparable pair (`multi f(Any:D $a, Real:D $b)` against
+        // `multi f(@a, Mu $b)` for `f((1,2), 3)`: `Positional` is narrower
+        // than `Any` on the first, `Real:D` than `Mu` on the second), whatever
+        // their typed-parameter counts say; the tier order then reports the
+        // ambiguity, which `is default` settles.
+        if self.profile.declared_wins(&other.profile, conforms) == (true, true) {
             return false;
         }
         match self.rank_cmp(other) {
@@ -823,7 +835,16 @@ pub(crate) fn prune_to_maximal<T>(
         return (maximal, false);
     }
     let survivors: Vec<MultiRank> = maximal.iter().map(|(k, _)| *k).collect();
-    if split_ambiguous(&survivors, conforms) {
+    // `is default` settles an incomparable split when exactly one survivor
+    // carries it (rakudo calls the split ambiguous, and `is default` is what
+    // resolves it).
+    let defaults = maximal.iter().filter(|(k, _)| k.is_default).count();
+    if defaults == 1
+        && let Some(i) = maximal.iter().position(|(k, _)| k.is_default)
+    {
+        return (vec![maximal.swap_remove(i)], false);
+    }
+    if split_ambiguous(&survivors, conforms) || declared_split_ambiguous(&survivors, conforms) {
         return (maximal, true);
     }
     // Incomparable survivors: declaration order decides.
@@ -861,6 +882,27 @@ fn split_ambiguous(survivors: &[MultiRank], conforms: &dyn Fn(Symbol, Symbol) ->
                     (a.arity_mismatch(b) && a.non_slurpy == b.non_slurpy)
                         || a.profile.unreached_wins(&b.profile, conforms) != (false, false)
                 })
+        })
+}
+
+/// Whether `survivors` are split purely by declared types: each pair has a
+/// parameter on which one is narrower and another on which the other is, and
+/// no survivor needs a bind-time check (no `where`, `subset`, literal or named
+/// parameter). Rakudo reports such a pair as `X::Multi::Ambiguous`; with a
+/// bind check it trial-binds in declaration order instead.
+// Cost: O(s^2 * r), s = survivors, r = the cost of one `conforms` call.
+fn declared_split_ambiguous(
+    survivors: &[MultiRank],
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
+) -> bool {
+    survivors.len() > 1
+        && survivors
+            .iter()
+            .all(|k| k.tiered && !k.bind_check && !k.profile.refined && k.refinement[0] == 0)
+        && survivors.iter().enumerate().all(|(i, a)| {
+            survivors[i + 1..]
+                .iter()
+                .all(|b| a.profile.declared_wins(&b.profile, conforms) == (true, true))
         })
 }
 

@@ -479,6 +479,9 @@ impl Interpreter {
             return Err(crate::value::render_guard::render_overflow_error());
         }
         if let Some(handle) = self.get_dynamic_handle(name) {
+            // `$*OUT = $handle` leaves the handle in a Scalar cell; the
+            // dispatch below is on the handle itself (#15647).
+            let handle = handle.into_deref();
             // `print` is `$*OUT.print(...)`, so a wrapped `IO::Handle.print`
             // sees it (the `say`/`put`/`note` routines have methods of their own).
             if !newline
@@ -853,19 +856,28 @@ impl Interpreter {
         self.make_io_path_instance_with(path, false)
     }
 
-    /// A `%?RESOURCES` entry: an `IO::Path` carrying the hidden `resource`
-    /// marker, which makes it a `Distribution::Resource` for type checks and
-    /// makes its `split`/`comb` operate on the file CONTENT (raku's
-    /// `Distribution::Resource` is not an `IO::Path`).
+    /// A `%?RESOURCES` entry: a `Distribution::Resource` instance that shares
+    /// the `IO::Path` rows (through its dispatch shape) but is not an
+    /// `IO::Path` (`~~ IO::Path` is False, as in raku); its `split` operates
+    /// on the file CONTENT.
     pub(crate) fn make_resource_instance(&self, path: &str) -> Value {
         self.make_io_path_instance_with(path, true)
     }
 
+    /// The `Distribution::Resource` a `%?RESOURCES` key the distribution does
+    /// not declare answers: rakudo's `Distribution::Resources.AT-KEY` makes one
+    /// for every key, path-less when unknown, so the value is a defined,
+    /// truthy object whose `.IO` is `Empty` and whose `.Str` is `""`.
+    // Cost: O(1).
+    pub(crate) fn make_pathless_resource_instance(&self) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("pathless".to_string(), Value::TRUE);
+        attrs.insert("path".to_string(), Value::str(String::new()));
+        Value::make_instance(Symbol::intern("Distribution::Resource"), attrs)
+    }
+
     fn make_io_path_instance_with(&self, path: &str, resource: bool) -> Value {
         let mut attrs = HashMap::new();
-        if resource {
-            attrs.insert("resource".to_string(), Value::TRUE);
-        }
         attrs.insert("path".to_string(), Value::str(path.to_string()));
         // Inherit $*SPEC if set (check both env lookup styles)
         let spec = self
@@ -883,6 +895,11 @@ impl Interpreter {
         if let Some(cwd) = self.get_dynamic_string("$*CWD") {
             attrs.insert("cwd".to_string(), Value::str(cwd));
         }
-        Value::make_instance(Symbol::intern("IO::Path"), attrs)
+        let class = if resource {
+            "Distribution::Resource"
+        } else {
+            "IO::Path"
+        };
+        Value::make_instance(Symbol::intern(class), attrs)
     }
 }

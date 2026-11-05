@@ -510,7 +510,7 @@ impl RuntimeError {
         } else {
             format!("{} {}", got_type, repr)
         };
-        let msg = if let Some(sym) = symbol {
+        let mut msg = if let Some(sym) = symbol {
             format!(
                 "Type check failed in assignment to {}; expected {} but got {}",
                 sym, shown_expected, got
@@ -521,6 +521,9 @@ impl RuntimeError {
                 shown_expected, got
             )
         };
+        if is_nominal_type_object_of(expected, got_value) {
+            msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
+        }
         let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got_value.clone());
@@ -552,22 +555,20 @@ impl RuntimeError {
         } else {
             format!("${}", param)
         };
-        // Rakudo renders the invocant form through `naive-word-wrapper`
-        // (72 columns), so where the line breaks depends on the names.
-        let msg = if param_is_invocant {
-            crate::word_wrap::naive_word_wrap(
-                &format!(
-                    "Invocant of method '{routine}' must be {kind} of type '{expected}', not \
-                     {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
-                ),
-                72,
+        // Rakudo renders both forms through `naive-word-wrapper` (72 columns),
+        // so where the line breaks depends on the names.
+        let text = if param_is_invocant {
+            format!(
+                "Invocant of method '{routine}' must be {kind} of type '{expected}', not \
+                 {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
             )
         } else {
             format!(
-                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a\n'{}'?",
-                display_param, routine, kind, expected, actual_kind, got, hint
+                "Parameter '{display_param}' of routine '{routine}' must be {kind} of type \
+                 '{expected}', not {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
             )
         };
+        let msg = crate::word_wrap::naive_word_wrap(&text, 72);
         let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
@@ -601,6 +602,17 @@ impl RuntimeError {
         attrs.insert("target".to_string(), Value::str(target.to_string()));
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Bind", attrs)
+    }
+
+    /// The error rakudo raises when an `Int` too wide for 64 bits is unboxed
+    /// into a native integer (`my int $x = 2**100`, an `int` parameter, a
+    /// native array element, a NativeCall argument). One message for every
+    /// site that unboxes: a per-site copy had already dropped the hint.
+    // Cost: O(1).
+    pub(crate) fn cannot_unbox_bigint(bits: u64) -> Self {
+        Self::new(format!(
+            "Cannot unbox {bits} bit wide bigint into native integer. Did you mix int and Int or literals?"
+        ))
     }
 
     /// X::IllegalDimensionInShape - Illegal dimension in shaped array declaration
@@ -899,4 +911,21 @@ fn json_value(v: &Value) -> String {
         }
         _ => json_string(&v.to_string_value()),
     }
+}
+
+/// True when `val` is the type object of the constraint's own nominal type --
+/// the shape rakudo appends its "perhaps Nil" hint to. `my Str:D $x = Nil`
+/// resets the container to `Str`, so the reported `got` is `Str` and the hint
+/// applies; `my Str:D $x = Int` reports `Int` and gets no hint. Only a
+/// `:D`-constrained slot can hold such a value, so a constraint without the
+/// smiley never matches.
+// Cost: O(1).
+pub(crate) fn is_nominal_type_object_of(constraint: &str, val: &Value) -> bool {
+    let ValueView::Package(sym) = val.view() else {
+        return false;
+    };
+    let Some((nominal, smiley)) = constraint.split_once(':') else {
+        return false;
+    };
+    smiley == "D" && sym.resolve() == nominal
 }

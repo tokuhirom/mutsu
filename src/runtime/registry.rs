@@ -146,8 +146,92 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 
 /// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
 /// `Debug`, and nothing needs to format the registry.
+/// A memo of the lexical-type-key scan (see [`Registry::lexical_key_scans`]).
+/// Cloning a registry starts the copy with an empty memo.
+#[derive(Default)]
+pub(crate) struct LexicalKeyScans(
+    std::sync::Mutex<rustc_hash::FxHashMap<Box<str>, Option<String>>>,
+);
+
+impl Clone for LexicalKeyScans {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl LexicalKeyScans {
+    // Cost: O(1) expected.
+    pub(crate) fn get(&self, qualified: &str) -> Option<Option<String>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(qualified)
+            .cloned()
+    }
+
+    // Cost: O(1) expected.
+    pub(crate) fn insert(&self, qualified: &str, answer: Option<String>) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(qualified.into(), answer);
+    }
+
+    // Cost: O(entries).
+    fn clear(&mut self) {
+        self.0
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
+/// The `augment`ed candidates a class's own multi dispatcher does not see
+/// (#16049): the MRO level of the nearest class declaring `multi` candidates
+/// of the method, and the stamp from which `augment`ed candidates of the
+/// levels beyond it are hidden.
+#[derive(Clone, Copy)]
+pub(crate) struct AugmentCutoff {
+    level: usize,
+    epoch: u64,
+}
+
+impl AugmentCutoff {
+    /// Whether `def`, found at MRO level `level`, is hidden from the class.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn hides(&self, level: usize, def: &MethodDef) -> bool {
+        def.augment_epoch != 0 && level > self.level && def.augment_epoch >= self.epoch
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
+    /// its `.WHO` answers that very object.
+    pub(crate) who_overrides: std::collections::HashMap<String, crate::value::Value>,
+    /// `(class, method)` -> the stamp of the first `augment` that added a
+    /// `multi` candidate of `method` to an ancestor after `class` had composed
+    /// its own multi dispatcher for it. Rakudo derives a subclass's dispatcher
+    /// from its parent's when the subclass is composed, so candidates stamped
+    /// at or after that point (`MethodDef::augment_epoch`) do not join it
+    /// (#16049).
+    pub(crate) frozen_dispatchers:
+        std::collections::HashMap<(crate::symbol::Symbol, crate::symbol::Symbol), u64>,
+    /// Registry keys of `my sub`s declared inside a routine body that stayed
+    /// registry-resolved (not frame lexicals), each with the definition's
+    /// `decl_order` and the routine-stack depth it was registered at. An
+    /// `EVAL` run by a unit-scoped plain sub hides the ones registered by its
+    /// dynamic callers (#16099). An entry is stale once `decl_order` differs
+    /// from the registered definition's.
+    pub(crate) routine_local_subs:
+        std::collections::HashMap<crate::symbol::Symbol, (u64, usize)>,
+    /// The same for a `my subset` declared inside a routine body: its bare
+    /// name sits in the global [`Registry::subsets`] with the routine-stack
+    /// depth it was declared at. Stale once the registered definition is no
+    /// longer the recorded `Arc`.
+    pub(crate) routine_local_subsets:
+        std::collections::HashMap<String, (std::sync::Arc<SubsetDef>, usize)>,
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
     /// MONKEY`). A routine of such a unit keeps the pragma when it is called
     /// from another unit, whose env (the one the call runs in) does not carry
@@ -603,6 +687,13 @@ pub(crate) struct Registry {
     /// `proto sub f(|) {*}` declares one routine for the role — registering
     /// it again would be a redeclaration.
     pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
+    /// `my constant`s of a non-parametric role body a composition has already
+    /// evaluated: (role, constant name). Rakudo initialises a `my constant`
+    /// once, so a later composition reuses the persisted binding (#16255).
+    /// The value is the env bindings the first evaluation left (the constant's
+    /// own name and its term key), put back for the later compositions.
+    pub(crate) role_evaluated_constants:
+        std::collections::HashMap<(String, String), Vec<(String, Value)>>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
@@ -757,6 +848,10 @@ pub(crate) struct Registry {
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
     class_short_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Box<str>>>,
+    /// `source-facing name -> mangled registry key` answers of the four-map
+    /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
+    /// registry write with the other indexes above.
+    pub(crate) lexical_key_scans: LexicalKeyScans,
     /// A process-unique stamp of this registry's content, replaced on every
     /// write through [`RegistryWriteGuard`]'s `DerefMut` (the only path to a
     /// `&mut Registry`), so a memo tagged with it cannot outlive a change to
@@ -765,6 +860,32 @@ pub(crate) struct Registry {
 }
 
 impl Registry {
+    /// [`AugmentCutoff`] for `method` on a class whose MRO is `mro`; `None`
+    /// (the overwhelmingly common answer) when no `augment` froze a dispatcher.
+    // Cost: O(1) when nothing is frozen; else O(l), l = MRO levels up to the dispatcher level.
+    pub(crate) fn augment_cutoff(
+        &self,
+        mro: &[crate::symbol::Symbol],
+        method: &str,
+    ) -> Option<AugmentCutoff> {
+        if self.frozen_dispatchers.is_empty() {
+            return None;
+        }
+        let method = crate::symbol::Symbol::intern(method);
+        for (level, cn) in mro.iter().enumerate() {
+            let declares_multi = self
+                .get_method_overloads_with_role_fallback(cn.as_str(), method.as_str())
+                .is_some_and(|defs| defs.iter().any(|d| d.is_multi && !d.is_private));
+            if declares_multi {
+                return self
+                    .frozen_dispatchers
+                    .get(&(*cn, method))
+                    .map(|&epoch| AugmentCutoff { level, epoch });
+            }
+        }
+        None
+    }
+
     /// The stamp of this registry's content. Two reads that return the same
     /// value saw the same classes, roles, enums and subsets, whichever thread
     /// or copy-on-write clone they went through.
@@ -862,6 +983,7 @@ impl Registry {
     fn invalidate_lexical_type_names(&mut self) {
         self.lexical_type_names.take();
         self.class_short_names.take();
+        self.lexical_key_scans.clear();
         static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -900,11 +1022,20 @@ impl Registry {
         class_name: &str,
         method_name: &str,
     ) -> Option<MethodOverloads> {
+        self.user_method_overloads_sym(Symbol::intern(class_name), Symbol::intern(method_name))
+    }
+
+    /// [`Self::user_method_overloads`] for a caller that already holds both
+    /// names as `Symbol`s (an MRO entry, a method name interned once outside a
+    /// loop), so a per-level probe does not re-intern the same two names.
+    // Cost: O(1) hash probe plus an O(overload count) `Arc` clone.
+    pub(crate) fn user_method_overloads_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<MethodOverloads> {
         self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
+            .get(&MethodEntryKey { owner, name })
             .filter(|entry| !entry.user_candidates.is_empty())
             .map(|entry| entry.user_candidates.clone())
     }
@@ -1355,7 +1486,22 @@ impl Registry {
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
         {
-            return Ok(class_def.mro.iter().map(|s| s.resolve()).collect());
+            let mut mro: Vec<String> = class_def.mro.iter().map(|s| s.resolve()).collect();
+            // A built-in class registered at start-up carries a truncated
+            // linearization (`Exception`, `X::AdHoc`, ... stop at the class
+            // itself; `.^mro` appends `Any`/`Mu` on display). As a parent
+            // inside a C3 merge that tail must be present, or a sibling
+            // parent's `Any, Mu` sorts ahead of it: `class C is A is
+            // Exception` listed `Exception` after `Mu`.
+            // Only a chain that never reached `Mu` is truncated: a class that
+            // `is Mu` (and its subclasses) is deliberately not an `Any`.
+            if !mro.iter().any(|n| n == "Mu") {
+                if !mro.iter().any(|n| n == "Any") {
+                    mro.push("Any".to_string());
+                }
+                mro.push("Mu".to_string());
+            }
+            return Ok(mro);
         }
         stack.push(class_name.to_string());
         let explicit_parents = self
@@ -1850,6 +1996,20 @@ impl Registry {
             .or_else(|| self.role_method_overloads(class_name, method_name).map(MethodOverloads::from))
     }
 
+    /// [`Self::get_method_overloads_with_role_fallback`] with both names already
+    /// interned; the role-table fallback still reads the `&str` forms.
+    // Cost: O(1) on a hit; a miss adds the role-table probe.
+    pub(crate) fn get_method_overloads_with_role_fallback_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<MethodOverloads> {
+        self.user_method_overloads_sym(owner, name).or_else(|| {
+            self.role_method_overloads(owner.as_str(), name.as_str())
+                .map(MethodOverloads::from)
+        })
+    }
+
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map
     /// of a `class C does R[Int]`). Owned clone.
     pub(crate) fn get_role_param_bindings(
@@ -2138,6 +2298,8 @@ impl Registry {
             "Setty" | "Baggy" => &["QuantHash", "Associative"],
             "Mixy" => &["Baggy"],
             "Sequence" => &["PositionalBindFailover"],
+            // `PredictiveIterator` is declared `role PredictiveIterator does Iterator`.
+            "PredictiveIterator" => &["Iterator"],
             "Blob" => &["Positional[T]", "Stringy"],
             "Buf" => &["Blob[T]", "Positional[T]", "Stringy"],
             _ => &[],
@@ -2305,6 +2467,63 @@ impl RegistryWriteGuard<'_> {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
         Arc::make_mut(arc)
+    }
+
+    // The routine-table writers below SHADOW the `Registry` methods of the same
+    // name (an inherent method of the guard wins over the one found through
+    // `Deref`), so a call written `self.registry_mut().functions_mut()` takes the
+    // index-keeping path without the call site changing. Each one writes only
+    // `functions`, `proto_functions` or `proto_subs` (and their generations),
+    // none of the four type maps the lexical-type-name index summarises. A
+    // `use` of a module installs hundreds of routines this way, and through
+    // `DerefMut` each write dropped the index: the next bare type-name lookup
+    // rebuilt it from every key of all four maps, ~120K instructions per
+    // executed `use` (#15981).
+
+    /// [`Registry::functions_mut`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn functions_mut(
+        &mut self,
+    ) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        self.routine_tables_mut().functions_mut()
+    }
+
+    /// [`Registry::proto_functions_mut`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_functions_mut(
+        &mut self,
+    ) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        self.routine_tables_mut().proto_functions_mut()
+    }
+
+    /// [`Registry::proto_subs_insert`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_subs_insert(&mut self, key: String) {
+        self.routine_tables_mut().proto_subs_insert(key);
+    }
+
+    /// [`Registry::proto_subs_retain`] without dropping the type-name caches.
+    // Cost: O(p), p = proto markers.
+    #[inline]
+    pub(crate) fn proto_subs_retain<F: FnMut(&String) -> bool>(&mut self, f: F) {
+        self.routine_tables_mut().proto_subs_retain(f);
+    }
+
+    /// [`Registry::proto_subs_restore`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn proto_subs_restore(&mut self, set: std::sync::Arc<HashSet<String>>) {
+        self.routine_tables_mut().proto_subs_restore(set);
+    }
+
+    /// [`Registry::renew_functions_version`] without dropping the type-name caches.
+    // Cost: O(1) (copy-on-write share aside).
+    #[inline]
+    pub(crate) fn renew_functions_version(&mut self) {
+        self.routine_tables_mut().renew_functions_version();
     }
 }
 
@@ -2497,6 +2716,7 @@ mod tests {
             nested_capture_index: None,
             captured_readonly: None,
             routine_cell: Default::default(),
+            augment_epoch: 0,
         };
         registry
             .classes

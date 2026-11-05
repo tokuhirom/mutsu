@@ -88,7 +88,7 @@ pub(crate) struct ModuleVisibility {
     /// `our sub` (`GLOBAL::name`), by bare name.
     pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
-    pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    pub(crate) module_units: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The values of `module_units`: the compunits of the modules whose body
     /// has run. A routine compiled from one of them links its frame to its
     /// own compunit, not to the program scope
@@ -97,16 +97,18 @@ pub(crate) struct ModuleVisibility {
     /// ADR-11136: the modules a compunit merged at its top level. A
     /// block-level merge lives in the block's env tier instead
     /// (`MetaNs::ModuleMerge`).
-    pub(crate) unit_merged_modules: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
+    pub(crate) unit_merged_modules:
+        std::sync::Arc<rustc_hash::FxHashMap<Symbol, rustc_hash::FxHashSet<Symbol>>>,
     /// ADR-11136: the modules whose load granted each package
     /// (`module_granted_packages` inverted), so the #7797 qualified gate
     /// can honour a block-level merge.
-    pub(crate) package_granting_modules: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    pub(crate) package_granting_modules:
+        std::sync::Arc<rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<Symbol>>>,
     /// #11156: the compunit that declared each `my package` (by its
     /// declared name). The package is lexical to that compunit: another
     /// compunit's `$P::x` names a GLOBAL package of its own
     /// (`runtime::unmerged_package_vars`).
-    pub(crate) lexical_package_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    pub(crate) lexical_package_units: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// #11351: the error (message, exception) of a BEGIN-time preload whose
     /// module body died, by module name, for the in-place `use` to report
     /// (`runtime::module_preload_failure`).
@@ -540,7 +542,7 @@ impl Interpreter {
     /// once instead of once per module (a package granted by a hundred
     /// modules, such as `Red`, paid a hundred chain walks per variable read).
     // Cost: O(m + d), m = modules in the set, d = EVAL nesting of the anchor units.
-    pub(crate) fn any_module_merged_here(&self, modules: &HashSet<Symbol>) -> bool {
+    pub(crate) fn any_module_merged_here(&self, modules: &rustc_hash::FxHashSet<Symbol>) -> bool {
         let units = self.merge_anchor_units();
         modules.iter().any(|&module| {
             self.env.contains_key_sym(MetaNs::ModuleMerge.key(module))

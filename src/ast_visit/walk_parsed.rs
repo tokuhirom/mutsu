@@ -3,7 +3,7 @@
 //! passes, so every child is visited exactly as the lowered statement's would
 //! be.
 
-use super::{Visit, VisitMut, params, params_mut};
+use super::{NameKind, Visit, VisitMut, params, params_mut};
 use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt, WordItem};
 
 /// Visits every child of `node`.
@@ -67,7 +67,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
     | ParsedStmt::AttributeGroup(declarations)
     | ParsedStmt::AttributeColonArglist(declarations) = node
     {
-        super::walk_stmts(v, declarations);
+        v.visit_stmts(declarations);
         return;
     }
     if let ParsedStmt::SignatureDecl(decl) = node {
@@ -107,6 +107,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let ParsedStmt::SigillessDecl(d) = node {
+        v.visit_name(&d.name, NameKind::VarDecl);
         v.visit_expr(&d.expr);
         return;
     }
@@ -123,7 +124,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
     if let ParsedStmt::WillDecl { decl, phasers, .. } = node {
         v.visit_stmt(decl);
         for (_, body) in phasers {
-            super::walk_stmts(v, body);
+            v.visit_stmts(body);
         }
         return;
     }
@@ -164,7 +165,7 @@ fn block<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, b: &'ast ParsedBlock) {
             }
         }
     }
-    super::walk_stmts(v, &b.body);
+    v.visit_stmts(&b.body);
 }
 
 /// Visits every child of `node` mutably.
@@ -311,7 +312,7 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
         }
-        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts(v, body),
+        ParsedExpr::Supply(body) => v.visit_stmts(body),
         ParsedExpr::HyperAssign(a) => {
             v.visit_expr(&a.target);
             v.visit_expr(&a.value);
@@ -358,7 +359,7 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);
         }
-        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => v.visit_stmts_mut(body),
+        ParsedExpr::Supply(body) => v.visit_stmts_mut(body),
         ParsedExpr::HyperAssign(a) => {
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.value);

@@ -39,6 +39,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Str", str_),
     MethodRow {
         owner: "Code",
+        name: "POSITIONS",
+        arity: 1,
+        handler: Handler::Interp(positions),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Code",
         name: "set_name",
         arity: 1,
         handler: Handler::Interp(set_name),
@@ -109,16 +117,12 @@ pub(crate) fn answer(
     crate::builtins::method_table::invoke_owner(interp, owners, method, args, || target.clone())
 }
 
-/// The answer of the pure `Code` row for `method` (`Capture` or `clone`), or
-/// `None` when `target` is not a code object.
-// Cost: O(1).
-pub(crate) fn pure_answer(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    super::code_class::owners_of(target)?;
-    match method {
-        "Capture" => capture(target, &[]),
-        "clone" => clone(target, &[]),
-        _ => None,
-    }
+/// Answer the nearest pure row of the receiver's code class, or decline when
+/// the receiver is not code or its nearest method needs the interpreter.
+// Cost: O(o), o = owners (at most five), plus the handler's own cost.
+pub(crate) fn pure_answer(target: &Value, method: Symbol) -> Option<Result<Value, RuntimeError>> {
+    let owners = super::code_class::owners_of(target)?;
+    crate::builtins::method_table::invoke_owner_pure(owners, target, method)
 }
 
 /// `Code.of` and `Code.returns`: the return type the routine declares, the type
@@ -261,6 +265,26 @@ fn str_(
 /// (#9479, PDF::COS::Tie's `&accessor.set_name($key)`). Answers the name.
 // Cost: O(n), n = chars of the new name (interned), plus
 // `Interpreter::rename_code`'s for a routine.
+/// `Code.POSITIONS(\list)`: the index a `WhateverCode` subscript stands for,
+/// the code called with the element count of `list` (`$carray[*-1]` indexes
+/// `$block.POSITIONS(array)`), #16488.
+// Cost: O(1) plus the arguments' `.elems` and the code's own cost.
+fn positions(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    // `list` can be any `Positional`, including a user-level container (a
+    // `CArray` is a Raku class), so its length is asked by method name, as
+    // `elems($list)` does.
+    let elems = match interp.call_method_with_values(args[0].clone(), "elems", vec![]) {
+        Ok(n) => n,
+        Err(e) => return Some(Err(e)),
+    };
+    Some(interp.call_sub_value(target.clone(), vec![elems]))
+}
+
 fn set_name(
     interp: &mut Interpreter,
     target: &Value,
@@ -313,6 +337,13 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
             let mut new_data = (**data).clone();
             new_data.id = crate::value::next_instance_id();
             new_data.routine_cell = new_data.routine_cell.forked();
+            // The copy owns a new state scope, so its disposal is its own to
+            // report (the guard it cloned would reap the ORIGINAL's scope).
+            if new_data._state_scope_guard.is_some() {
+                new_data._state_scope_guard = Some(
+                    crate::value::state_scope_reaper::StateScopeGuard::new(new_data.id),
+                );
+            }
             Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data))))
         }
         _ => Some(Ok(target.clone())),

@@ -575,6 +575,7 @@ mod attr_site;
 mod attr_store_kind;
 mod bareword_site;
 pub(crate) mod buf_class_names;
+pub(crate) mod call_args;
 pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
@@ -597,6 +598,7 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+pub(crate) use error_typed::is_nominal_type_object_of;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
 pub(crate) mod frame_fixtures;
@@ -610,6 +612,7 @@ mod identity_hash;
 pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
+mod lex_import_site;
 mod method_site;
 mod regex_source;
 mod type_decl_site;
@@ -656,6 +659,7 @@ mod serde_support;
 pub(crate) use serde_support::PortableValue;
 pub(crate) mod attribute_class;
 pub(crate) mod param_trait_meta;
+pub(crate) mod sig_elem_flags;
 pub(crate) mod signature;
 mod signature_smartmatch;
 pub(crate) mod split_lines;
@@ -693,6 +697,7 @@ mod vm_collection;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
+pub(crate) use vm_collection::BOOT_SCALAR_VALUE_ATTR;
 pub(crate) mod list_gen;
 pub(crate) mod list_gen_rotor;
 mod map_grep_items;
@@ -733,6 +738,7 @@ pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
 pub(crate) use entry_path::is_container_hole;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
+pub(crate) use lex_import_site::LexImportSiteCaches;
 pub(crate) use method_site::MethodSiteCaches;
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
@@ -1062,6 +1068,12 @@ pub struct ContainerCell {
     /// variable's cell and a native variable's cell both look like. Only the
     /// integer atomics read it ([`ContainerCell::is_declared_untyped`]).
     declared_untyped: std::sync::atomic::AtomicBool,
+    /// Set when the cell's `of`-type is a native one (`byte`, `int`, `num`,
+    /// `str`, ...): a native variable's container is distinguishable from a
+    /// boxed one for multi dispatch (ADR-15309). Read without taking the
+    /// `constraint` lock, so the dispatcher's per-argument probe is one relaxed
+    /// atomic load for every cell that is not native.
+    native_typed: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1120,6 +1132,7 @@ impl ContainerCell {
             default: Mutex::new(None),
             name: std::sync::OnceLock::new(),
             declared_untyped: std::sync::atomic::AtomicBool::new(false),
+            native_typed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -1137,6 +1150,34 @@ impl ContainerCell {
     pub fn is_declared_untyped(&self) -> bool {
         self.declared_untyped
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether this cell's `of`-type is a native type (ADR-15309).
+    // Cost: O(1), one relaxed atomic load.
+    #[inline]
+    pub fn is_native_typed(&self) -> bool {
+        self.native_typed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The native `of`-type name of this cell, `None` unless it is native.
+    // Cost: O(1) for a non-native cell; one lock and a clone otherwise.
+    pub fn native_type_name(&self) -> Option<String> {
+        if !self.is_native_typed() {
+            return None;
+        }
+        self.constraint
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.ty.clone())
+    }
+
+    /// Record the native marker for the `of`-type just stored on this cell.
+    fn note_constraint_type(&self, type_name: &str) {
+        self.native_typed.store(
+            crate::native_types::native_family(type_name).is_some(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     /// Record the declared name of the variable this cell is the container of,
@@ -1327,6 +1368,7 @@ pub fn register_container_constraint(
     type_name: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1344,6 +1386,7 @@ pub fn register_container_where(
     check: CellWhere,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1360,6 +1403,7 @@ pub fn register_container_constraint_named(
     name: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1377,6 +1421,7 @@ pub fn register_element_constraint(
     owner: &str,
 ) {
     CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    cell.note_constraint_type(type_name);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),
@@ -1404,6 +1449,18 @@ pub fn lookup_container_constraint(
         .unwrap()
         .as_ref()
         .map(|c| c.ty.clone())
+}
+
+/// The class `.VAR` reports for a reflected cell: `Scalar`, or the native
+/// reference class of a cell declared with a native type (`UIntLexRef` for a
+/// `byte` cell, #15853).
+// Cost: O(1); one lock for a cell that carries a native type.
+pub(crate) fn container_view_class(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+) -> &'static str {
+    cell.native_type_name()
+        .and_then(|ty| crate::native_types::native_lex_ref_class(&ty))
+        .unwrap_or("Scalar")
 }
 
 /// Look up the full constraint record — the `of`-type together with the
@@ -1696,8 +1753,6 @@ pub struct SubData {
     /// bind its (possibly typed) parameters — an early `t/exception-types.t`
     /// regression from trusting that signal caught this.
     pub(crate) is_decl_expr_thunk: bool,
-    /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
-    pub(crate) deprecated_message: Option<String>,
     /// Source line number (1-based) where this block/sub was defined.
     pub(crate) source_line: Option<u32>,
     /// Source file path where this block/sub was defined.
@@ -1768,7 +1823,7 @@ pub struct SubData {
     /// guard (shared by every Rust-level copy of this `SubData`) reports the
     /// id as dead when the last copy is dropped, so the store can release the
     /// clone's entries instead of keeping one per clone forever (#9504).
-    pub(crate) state_scope_guard: Option<Arc<crate::value::state_scope_reaper::StateScopeGuard>>,
+    pub(crate) _state_scope_guard: Option<Arc<crate::value::state_scope_reaper::StateScopeGuard>>,
     /// The readonly state, at creation, of the scalar free variables this code
     /// object WRITES: `Some` holds exactly those marked readonly then (a
     /// non-`is rw` parameter of the creating routine, a `:=`-bound alias) with
@@ -2828,6 +2883,9 @@ pub(in crate::value) enum ValueRepr {
         subclass: Option<(Symbol, ProxySubclassAttrs)>,
         /// When true, this Proxy has been decontainerized via .VAR and should not auto-FETCH
         decontainerized: bool,
+        /// Set only by `.VAR`: the Proxy is its own container *object*, so a
+        /// store boundary lands it as a value (no FETCH) instead of reading it.
+        var_object: bool,
     },
     /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
     /// `base_name` is the role name, `type_args` are the type arguments.
@@ -4368,6 +4426,13 @@ pub(crate) fn name_container_cell(cell: &Value, name: &str) {
     {
         let sigiled = if name.starts_with(['$', '@', '%', '&']) {
             crate::symbol::Symbol::intern(name)
+        } else if name.len() < 63 {
+            // A stack buffer: this runs once per captured container.
+            let mut buf = [0u8; 64];
+            buf[0] = b'$';
+            buf[1..=name.len()].copy_from_slice(name.as_bytes());
+            // `$` + a `&str` is valid UTF-8.
+            crate::symbol::Symbol::intern(std::str::from_utf8(&buf[..=name.len()]).unwrap_or("$"))
         } else {
             crate::symbol::Symbol::intern(&format!("${name}"))
         };

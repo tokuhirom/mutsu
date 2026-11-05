@@ -163,7 +163,7 @@ impl Interpreter {
 
     /// Read every remaining line/word from a file handle (formerly
     /// `force_if_lazy_io_lines`'s body).
-    fn pull_io_lines_to_vec(
+    pub(crate) fn pull_io_lines_to_vec(
         &mut self,
         handle: Value,
         words: bool,
@@ -193,7 +193,7 @@ impl Interpreter {
     /// read on a not-yet-reified `IO::Handle.lines`/`.words` Seq
     /// (`vm_var_index_ops.rs`) so a partial slice (`words($fh, :close)[1,
     /// 2]`) does not trigger `:close`'s close-on-exhaust.
-    fn pull_io_lines_prefix_to_vec(
+    pub(crate) fn pull_io_lines_prefix_to_vec(
         &mut self,
         handle: &Value,
         words: bool,
@@ -466,11 +466,12 @@ impl Interpreter {
             self.reify_closure_seq_endpoint(arg)?;
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
-                    self.reify_map_grep_seq(v)?;
+                    let v = v.deref_container();
+                    self.reify_map_grep_seq(&v)?;
                     // A named argument's gather fills what it is bound to
                     // (`C.new(c => gather {...})`, ADR-11678).
-                    self.reify_gather_seq(v)?;
-                    self.reify_closure_seq_endpoint(v)?;
+                    self.reify_gather_seq(&v)?;
+                    self.reify_closure_seq_endpoint(&v)?;
                 }
                 _ => {}
             }
@@ -644,7 +645,25 @@ impl Interpreter {
         // source (`MapGrepItems::Chain`, #11176) instead of running the
         // upstream callback over everything first: `dispatch_map_method` /
         // `dispatch_grep` steal the source themselves.
-        if matches!(method, "map" | "grep") && body.has_map_grep_stream_source() {
+        if matches!(method, "map" | "grep")
+            && (body.has_map_grep_stream_source() || body.has_io_lines_pipe_source())
+        {
+            return Ok(target);
+        }
+        // `.pairs` / `.rotor` / ... on an untouched `IO::Handle.lines` Seq are
+        // lazy stages over it (`lazy_stream`, #16065): the stage takes the
+        // handle, so the receiver is left alone here.
+        if body.has_io_lines_pipe_source()
+            && crate::builtins::method_table::lazy_stream::stream_of(&target, method).is_some()
+        {
+            return Ok(target);
+        }
+        // `.pairs` / `.antipairs` / `.rotor` / ... on a `Seq.new($iterator)`
+        // nothing has pulled are lazy stages over it as well (#16132): the
+        // iterator is pulled by the stage's consumer, not by the call.
+        if body.unpulled_iterator().is_some()
+            && crate::builtins::method_table::lazy_stream::stream_of(&target, method).is_some()
+        {
             return Ok(target);
         }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
@@ -768,6 +787,11 @@ impl Interpreter {
             // different notions of "first touch" between this layer and the
             // authoritative one for no benefit, since this layer's own
             // result is discarded once the chain reaches the real one.
+            return Ok(target);
+        }
+        // `Seq.Seq` is the receiver itself: converting a Seq to a Seq runs and
+        // consumes nothing, so an unpulled map/grep/gather stays unpulled.
+        if method == "Seq" {
             return Ok(target);
         }
         if method == "iterator" {
@@ -1247,16 +1271,14 @@ impl Interpreter {
     /// A gather body runs in the dynamic scope of whoever pulls it, not of
     /// whoever created it: the dynamic variables (`$*DB`) the pulling frame
     /// sees replace the captured ones in the body's env (#15112).
-    // Cost: O(e), e = entries of the pulling frame's env (a flatten and one scan).
+    // Cost: O(1) while no env tier holds a dynamic variable; otherwise O(e), e = entries in the
+    // pulling frame's env tiers (a key scan, no value copies).
     pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
-        for (key, value) in puller.flattened().iter() {
-            // `$*x` is keyed `*x`; the other sigils keep theirs (`&*x`).
-            if key.with_str(|name| {
-                name.starts_with('*')
-                    || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')
-            }) {
-                self.env_mut().insert_sym(*key, value.clone());
-            }
+        if !crate::symbol::dynamic_tier_key_seen() {
+            return;
+        }
+        for (key, value) in puller.tier_dynamic_entries() {
+            self.env_mut().insert_sym(key, value);
         }
     }
 

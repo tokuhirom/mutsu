@@ -243,6 +243,13 @@ if [ "${1:-}" = --self-test ]; then
     exit
 fi
 
+# --alloc-awk: print the allocator-edge extractor so scripts/call-path-ab.sh
+# reads allocation counts with this one implementation instead of a copy.
+if [ "${1:-}" = --alloc-awk ]; then
+    printf '%s\n' "$CG_ALLOC_AWK"
+    exit
+fi
+
 WARMUP_ONLY=0
 if [ "${1:-}" = --warmup ]; then
     WARMUP_ONLY=1

@@ -173,10 +173,101 @@ impl Interpreter {
         args: &[Value],
         def: &FunctionDef,
     ) -> bool {
+        if self.candidate_shape_excludes(args, &def.param_defs) {
+            return false;
+        }
         let package = def.package;
         self.with_candidate_scope(def, |this| {
             this.args_match_param_types_inner(args, &def.param_defs, true, Some(package))
         })
+    }
+
+    /// Whether `param_defs` cannot take `args` by SHAPE alone -- the positional
+    /// arity, a required named parameter nobody supplied, a named argument no
+    /// parameter consumes -- so the candidate can be refused before its scope
+    /// is entered and before the matcher allocates its working vectors and
+    /// snapshots the env. Each test is the one `args_match_param_types_inner`
+    /// makes (same counting of variadics, captures and `%`-slurpies); it only
+    /// moves them first. A refusal there happens before any argument value is
+    /// looked at, so nothing is skipped that could have run user code, except
+    /// for the named-argument tests, which in the matcher follow the positional
+    /// type checks: those are applied only when no `subset` exists and no
+    /// parameter carries a `where` or a sub-signature, i.e. when the checks
+    /// they would have followed cannot run user code.
+    // Cost: O(p + a * p), p = parameters of the candidate, a = arguments.
+    fn candidate_shape_excludes(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        if param_defs.is_empty() {
+            return false;
+        }
+        let mut required = 0usize;
+        let mut max_positional = 0usize;
+        let mut variadic = false;
+        for pd in param_defs {
+            if pd.named || (pd.slurpy && pd.name.starts_with('%')) {
+                continue;
+            }
+            if pd.is_variadic()
+                || pd.name == "_capture"
+                || (pd.slurpy && pd.sigilless)
+                || pd.is_capture_subsignature()
+            {
+                variadic = true;
+                continue;
+            }
+            max_positional += 1;
+            if pd.default.is_none() && !pd.optional_marker {
+                required += 1;
+            }
+        }
+        let positional = args
+            .iter()
+            .filter(|arg| !arg.unwrap_varref().is_string_pair_value())
+            .count();
+        if positional < required || (!variadic && positional > max_positional) {
+            return true;
+        }
+        if !self.registry().subsets.is_empty()
+            || param_defs.iter().any(|pd| {
+                pd.where_constraint.is_some()
+                    || pd.code_signature.is_some()
+                    || (pd.sub_signature.is_some() && !pd.named_alias)
+            })
+        {
+            return false;
+        }
+        let has_named_slurpy = param_defs.iter().any(|pd| {
+            pd.is_capture_subsignature() || (pd.slurpy && (pd.name.starts_with('%') || pd.sigilless))
+        });
+        if !has_named_slurpy {
+            for arg in args {
+                let arg = arg.unwrap_varref();
+                if let ValueView::Pair(key, _) = arg.view() {
+                    let consumed = param_defs.iter().any(|pd| {
+                        if pd.named {
+                            pd.answers_named_key(key)
+                        } else {
+                            pd.name.strip_prefix(':') == Some(key.as_str())
+                        }
+                    });
+                    if !consumed {
+                        return true;
+                    }
+                }
+            }
+        }
+        for pd in param_defs.iter().filter(|pd| pd.named) {
+            if pd.required && pd.default.is_none() {
+                let supplied = args.iter().any(|a| {
+                    let a = a.unwrap_varref();
+                    a.is_string_pair_value()
+                        && matches!(a.view(), ValueView::Pair(key, _) if pd.answers_named_key(key))
+                });
+                if !supplied {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Run `f` in candidate `def`'s declaring package and compilation unit:
@@ -764,7 +855,8 @@ impl Interpreter {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
                         // never a nominal check.
                     } else if pd.is_type_only()
-                        && !self.is_resolvable_type(&resolved_constraint)
+                        && (!self.is_resolvable_type(&resolved_constraint)
+                            || self.names_value_constant(&resolved_constraint))
                     {
                         // Bare identifier param (e.g., enum value) -- resolve from env and compare.
                         // An enum key's bare spelling lives in the enum-key namespace
@@ -818,7 +910,6 @@ impl Interpreter {
                             &resolved_constraint,
                             args,
                             arg_idx,
-                            &dispatch_arg,
                         ))
                         || !self.param_constraint_accepts(&resolved_constraint, &dispatch_arg)
                     {
@@ -1086,12 +1177,23 @@ impl Interpreter {
                             .is_some_and(|encoded| encoded.contains('='))
                             || varref_from_value(a).is_some()
                             || varref_from_value(val).is_some()
-                            || matches!(
-                                val.view(),
-                                ValueView::ContainerRef(_)
-                                    | ValueView::HashEntryRef { .. }
-                                    | ValueView::Proxy { .. }
-                            )
+                            || match val.view() {
+                                // `:$x` forwarding a read-only parameter
+                                // (`sub f(Str :$x!)`) carries that parameter's
+                                // cell, flagged as a read-only binding alias:
+                                // no writable lvalue, so the `is rw` candidate
+                                // yields to its `is copy` sibling (PDF::COS
+                                // `coerce`).
+                                ValueView::ContainerRef(cell) => !matches!(
+                                    cell.readonly_kind(),
+                                    Some(
+                                        crate::ast::ReadonlyKind::Alias
+                                            | crate::ast::ReadonlyKind::Immutable
+                                    )
+                                ),
+                                ValueView::HashEntryRef { .. } | ValueView::Proxy { .. } => true,
+                                _ => false,
+                            }
                     });
                     if !writable {
                         return false;
@@ -1232,7 +1334,7 @@ impl Interpreter {
                     // An `@` parameter binds a Seq through its cached List view
                     // (see `bind_param_value`), so the `where` clause must see
                     // the List, not the Seq (`:@d! where @d ~~ List:D`).
-                    let val = match val.view() {
+                    let val = match val.deref_container().view() {
                         ValueView::Seq(body) if pd.name.starts_with('@') => {
                             let body = std::sync::Arc::clone(&body);
                             body.mark_cache_requested();
@@ -1359,16 +1461,40 @@ impl Interpreter {
 
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
-    /// come from the source VarRef metadata or the call-site literal mask.
+    /// come from the source VarRef metadata; a literal is always boxed.
     pub(crate) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],
         arg_idx: Option<usize>,
-        value: &Value,
     ) -> bool {
         let base = Self::constraint_base_name(constraint);
         if crate::runtime::native_types::native_family(base).is_none() {
+            return true;
+        }
+        if self.native_source_arg(args, arg_idx) {
+            return true;
+        }
+        // rakudo 2026.09 dispatches a two-argument call that holds a native
+        // argument through the full bind check, where a boxed `Int` binds an
+        // `int` parameter: `multi f(int, int); f 42, my int $y` works, while
+        // `f 42, 7` and a three-argument call with one native do not.
+        args.len() == 2
+            && arg_idx.is_some_and(|idx| idx < 2 && self.native_source_arg(args, Some(1 - idx)))
+    }
+
+    /// Whether the argument at `arg_idx` is a native source: a container with
+    /// a native cell, a variable declared `int` / `num` / `str`, or an
+    /// anonymous native declaration the call site marked.
+    // Cost: O(1) plus the source variable's constraint lookup.
+    fn native_source_arg(&self, args: &[Value], arg_idx: Option<usize>) -> bool {
+        // A container argument whose cell is native (a `my byte` variable's
+        // cell reached through a List item, ADR-15309) is a native source just
+        // as a `VarRef` to that variable is.
+        if arg_idx
+            .and_then(|idx| args.get(idx))
+            .is_some_and(|arg| arg.native_container_type().is_some())
+        {
             return true;
         }
 
@@ -1405,16 +1531,12 @@ impl Interpreter {
             }
         }
 
-        // A literal has no VarRef, but the compiler records its source shape
-        // separately so `multi f(int)` can outrank `multi f(Int)` for `f(5)`.
-        arg_idx.is_some_and(|idx| {
-            idx < 32
-                && self.literal_native_args & (1 << idx) != 0
-                && matches!(
-                    value.view(),
-                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
-                )
-        })
+        // The call site marks a genuinely native argument (a declared native
+        // variable or anonymous declaration) in the low half of the mask. A
+        // literal is in the high half and is a boxed value (rakudo 2026.09,
+        // #13065): `multi n(byte $a)` does not accept `n(1)` ("will never
+        // work"), and beside a boxed candidate the boxed one wins.
+        arg_idx.is_some_and(|idx| idx < 16 && self.literal_native_args & (1 << idx) != 0)
     }
 
     /// [`Self::resolved_type_capture_name`] for a parameter's constraint, except
@@ -1427,6 +1549,24 @@ impl Interpreter {
             return constraint.to_string();
         }
         self.resolved_type_capture_name(constraint)
+    }
+
+    /// [`Self::resolved_param_constraint`] that borrows `constraint` when
+    /// nothing resolves it (the common `Point $other` / `Int $n` case), so a
+    /// typed parameter's bind does not allocate a `String` per call.
+    // Cost: O(1) lookups.
+    pub(crate) fn resolved_param_constraint_cow<'a>(
+        &self,
+        pd: &ParamDef,
+        constraint: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        if self.type_only_enum_value_shadows_alias(pd, constraint) {
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        match self.try_resolved_type_capture_name(constraint) {
+            Some(resolved) => std::borrow::Cow::Owned(resolved),
+            None => std::borrow::Cow::Borrowed(constraint),
+        }
     }
 
     /// Whether `pd` is a type-only parameter whose bare name is an enum value
@@ -1617,9 +1757,12 @@ impl Interpreter {
         }) {
             return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
         }
-        RuntimeError::new(
-            "Too many positionals passed; expected 0 arguments but got more".to_string(),
-        )
+        // The positionals the call passed (a named `Pair` was dealt with above).
+        let passed = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .count();
+        RuntimeError::new(super::arity_message::too_many_positionals(0, 0, passed))
     }
 }
 

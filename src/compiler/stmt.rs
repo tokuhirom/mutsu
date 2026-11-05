@@ -332,7 +332,7 @@ impl Compiler {
 
     /// Whether `name` is one of mutsu's internal desugaring temps rather than a
     /// variable the source wrote. The same rule
-    /// `rakuast::convert::is_desugar_marker` uses, and for the same reason: an
+    /// `rakuast::view::is_desugar_marker` uses, and for the same reason: an
     /// internal name has none of the container semantics a user variable has.
     fn is_desugar_temp_name(name: &str) -> bool {
         name.starts_with("__")
@@ -791,14 +791,16 @@ impl Compiler {
             // a fresh value, sunk like a method call's (Shell::DSL's pipeline
             // runs from its `sink` method).
             Expr::InfixFunc { .. } => true,
-            // `$x but R` / `$x does R` freshly composes a new mixin value, so
-            // it is an rvalue by construction — never a container return the
-            // exclusion above is guarding against. Raku sinks it, and the
-            // documented "increment on sink, copy on assignment" idiom
-            // (`($b + 1) does role { method sink { $b++ } }` as the body of a
-            // `multi`) depends on exactly this.
+            // `$x but R` freshly composes a new mixin value, so it is an
+            // rvalue by construction — never a container return the exclusion
+            // above is guarding against. Raku sinks it as a statement.
+            // `$x does R` as a statement is not sunk (measured on rakudo
+            // 2026.09: it mixes into its target); the documented "increment on
+            // sink, copy on assignment" idiom (`($b + 1) does role { method
+            // sink { $b++ } }` as the body of a routine) runs through the
+            // routine's result, which `SinkPopCall` sinks.
             Expr::Binary { op, .. } => {
-                matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
+                matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but")
             }
             Expr::Grouped(inner) => Self::stmt_value_may_user_sink(inner),
             Expr::DoStmt(inner) => match inner.as_ref() {
@@ -1025,6 +1027,7 @@ impl Compiler {
                 self.code.emit(OpCode::ThrowUndeclaredRoutine(call.clone()));
             }
             Stmt::BeginPrologueEnd => {
+                self.prologue_ended = true;
                 self.code.emit(OpCode::EndBeginPrologue);
             }
             Stmt::RunCheckCode => {
@@ -1056,7 +1059,21 @@ impl Compiler {
                 if Self::is_list_assign_call(expr) {
                     self.sunk_list_assign_result = true;
                 }
+                // A sunk list of plain scalar variables (`($a, $b);`, and the
+                // collector that ends a `my ($a, $b) = ...` declaration) never
+                // exposes its element containers, so skip the `WrapVarRef`
+                // boxing that would otherwise turn each variable's slot into a
+                // shared `ContainerRef` cell for good (and push every later
+                // plain store to it off the scalar-store fast lane).
+                let sunk_var_list = matches!(
+                    expr,
+                    Expr::ArrayLiteral(items)
+                        if !items.is_empty() && items.iter().all(|e| matches!(e, Expr::Var(_)))
+                );
+                let saved_suppress = self.suppress_list_var_alias;
+                self.suppress_list_var_alias |= sunk_var_list;
                 self.with_stmt_root(|c| c.compile_condition_expr(expr));
+                self.suppress_list_var_alias = saved_suppress;
                 self.sunk_list_assign_result = false;
                 if Self::is_start_call(expr) {
                     self.code.emit(OpCode::MarkPromiseSink);
@@ -1317,15 +1334,16 @@ impl Compiler {
                     _ => type_constraint.clone(),
                 };
                 // A `::T` type-capture constraint (`my ::a $a`) introduces a
-                // fresh type variable rather than naming an existing type. With
-                // no value to capture from, the captured type is unconstrained
-                // (Mu), so we drop the constraint instead of trying to resolve
-                // `::a` as a real type (which would die "Type '::a' is not
-                // declared").
+                // fresh type variable rather than naming an existing type. Outside
+                // a signature nothing binds the capture, and rakudo types the
+                // variable `NQPMu` (no Mu methods, so `say $x` dies with
+                // X::Method::NotFound, and any assignment fails the type check).
+                // The variable keeps the constraint, not a resolution of `::a` as
+                // a real type (which would die "Type '::a' is not declared").
                 // TODO: bind the capture name (`a`) as a type alias for the
                 // declared/inferred type so `::a` is usable as a type later.
                 let owned_type_constraint = match owned_type_constraint {
-                    Some(tc) if tc.starts_with("::") => None,
+                    Some(tc) if tc.starts_with("::") => Some("NQPMu".to_string()),
                     // A constraint naming a `constant` type alias is its
                     // target, settled here as rakudo settles it at compile
                     // time (#13728).
@@ -1453,6 +1471,16 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
+                // The BEGIN prologue's declaration-only half of `my &f := ...`
+                // declares the name early; the whole binding declaration later
+                // in the remainder is what binds it (#16351).
+                if name.starts_with('&') {
+                    if marks.static_bind_half {
+                        self.static_half_amp.insert(name.clone());
+                    } else {
+                        self.static_half_amp.remove(name.as_str());
+                    }
+                }
                 // The parser marks a declaration whose initializer reads the
                 // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
                 let init_sees_self =
@@ -1520,7 +1548,16 @@ impl Compiler {
                 // no constraint, whatever a same-named variable elsewhere
                 // recorded (ADR-13757).
                 if type_constraint.is_none() && !*is_our {
-                    self.note_untyped_local_declaration(name);
+                    if (bind_vardecl || bind.is_some())
+                        && (name.starts_with('@') || name.starts_with('%'))
+                    {
+                        // `my @a := <typed container>`: the binding carries
+                        // the container's constraint by name, so the slot is
+                        // declared but not untyped.
+                        self.note_declared_local(name);
+                    } else {
+                        self.note_untyped_local_declaration(name);
+                    }
                 }
                 // Record type constraint for compile-time literal type checks
                 if let Some(tc) = type_constraint {
@@ -1795,7 +1832,21 @@ impl Compiler {
                             .and_then(|tc| self.native_default_expr_for_constraint(tc))
                     })
                     .flatten();
-                    let rhs_expr = if has_default_trait
+                    // `my Int &f;` / `my Callable[Int] $x;` hold the `Callable[Int]` type
+                    // object, which keeps its parameter for `.of` (#16449).
+                    let parametric_callable_default = (!name.starts_with(['@', '%'])
+                        && !has_explicit_initializer
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil()))
+                    .then(|| {
+                        type_constraint
+                            .as_deref()
+                            .filter(|tc| tc.starts_with("Callable[") && !tc.ends_with(":D"))
+                    })
+                    .flatten()
+                    .map(|tc| Expr::Literal(Value::package(crate::symbol::Symbol::intern(tc))));
+                    let rhs_expr = if let Some(default) = parametric_callable_default.as_ref() {
+                        default
+                    } else if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && matches!(expr, Expr::Literal(lit) if lit.is_nil())
@@ -2189,7 +2240,10 @@ impl Compiler {
                                 // marks the var readonly as the bind signal; re-mark the
                                 // bind context so the global store skips the readonly
                                 // check (the mark is a bind signal, not a real RO).
-                                if is_bound_container_vardecl {
+                                // A scalar `:=` bind (`our $k := cglobal(...)`) re-marks
+                                // it as well: the global store must install the bound
+                                // `Proxy` itself, not FETCH it and STORE the value back.
+                                if is_bound_container_vardecl || scalar_bind_decont {
                                     self.code.emit(OpCode::MarkBindContext);
                                 }
                                 self.code.emit(OpCode::SetGlobal(idx));
@@ -3108,10 +3162,13 @@ impl Compiler {
                     // Sink context: a bare call statement sinks its value, so a
                     // returned unhandled Failure throws (e.g. `pop @a;` /
                     // `shift @a;` on an empty array — Raku's X::Cannot::Empty).
-                    // `false` = a function-call return is not auto-`sink`ed
-                    // (Raku keeps it container-wrapped); only Failure/lazy
-                    // handling applies. Matches the method form `@a.pop;`.
-                    self.code.emit(OpCode::SinkPop(false, true));
+                    // A function-call return is not auto-`sink`ed unless the
+                    // callee hands back a decontainerized value (Raku keeps
+                    // `pop @a` container-wrapped): `SinkPopCall` asks the
+                    // callee, an imported routine included (`slack { Foo.new }`
+                    // from Object::Delayed, #16331); only Failure/lazy handling
+                    // applies to a builtin. Matches the method form `@a.pop;`.
+                    self.emit_sink_pop_call(*name);
                     return;
                 }
 
@@ -3817,6 +3874,7 @@ impl Compiler {
                 custom_traits,
                 is_unit,
                 is_my,
+                ..
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
                 // Detect stub body: `module Foo { ... }` — body is a stub operator
@@ -4079,7 +4137,34 @@ impl Compiler {
                     condition_idx,
                 });
             }
-            Stmt::Phaser { .. } => {}
+            Stmt::Phaser { body, .. } => {
+                // A phaser the block's loop runs from outside (`LAST`, `FIRST`,
+                // `NEXT`, ...) is no part of this chunk, so nothing here would
+                // capture the enclosing variables it names: probe-compile its
+                // body and force the capture of each free variable, written ones
+                // as written (#15473).
+                let mut probe = super::Compiler::new();
+                let probed = probe.compile_closure_body(&[], &[], body);
+                let written: std::collections::HashSet<_> = probed
+                    .free_var_writes
+                    .iter()
+                    .chain(probed.forced_free_var_writes.iter())
+                    .chain(probed.free_var_container_writes.iter())
+                    .copied()
+                    .collect();
+                let free: Vec<_> = probed
+                    .free_var_syms
+                    .iter()
+                    .chain(probed.forced_free_var_syms.iter())
+                    .copied()
+                    .collect();
+                for sym in free {
+                    let name = sym.resolve();
+                    if !self.local_map.contains_key(name.as_str()) {
+                        self.note_forced_outer_scalar_capture(&name, written.contains(&sym));
+                    }
+                }
+            }
 
             // --- SubDecl: delegate to interpreter AND compile body ---
             Stmt::SubDecl {
@@ -4553,6 +4638,21 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str("attributes".to_string()));
                 self.code.emit(OpCode::SetPragma(name_idx));
             }
+            // `use experimental :pack` lets this file call `pack` / `unpack`
+            // (#13346): recorded when the `use` runs, see `experimental_pragma`.
+            Stmt::Use { module, tags, .. }
+                if module == "experimental" && tags.iter().any(|t| t == "pack") =>
+            {
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
+                let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                let tags_idx = Some(self.code.add_constant(Value::array(entries)));
+                self.code.emit(OpCode::UseModule {
+                    name_idx,
+                    tags_idx,
+                    arg_count: 0,
+                    lexical_set_idx: None,
+                });
+            }
             Stmt::Use { module, .. }
                 if module == "v6"
                     || module == "customtrait"
@@ -4679,6 +4779,16 @@ impl Compiler {
                     arg.as_ref(),
                 ) {
                     self.unit_use_ctx.note_use(name);
+                }
+                // `use X` declares the package `X` in this scope: a bareword `X`
+                // after it names that package, not a sigilless `\X` of an
+                // outer scope (#15806). Only where such a binding is visible
+                // does it need to say so; every other `X` keeps `GetBareWord`.
+                if condition.is_none()
+                    && !module.contains("::")
+                    && (self.names_sigilless_binding(module) || self.in_eval_unit)
+                {
+                    self.use_declared_names.insert(module.clone());
                 }
                 // A `use` below the unit's top level binds its routines in the
                 // enclosing block (ADR-8751): the call sites the block encloses
@@ -4825,7 +4935,12 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = marks.anon;
+                // The parser mints a globally-unique `__ANON_CLASS_<n>__` for a
+                // nameless `class :: { ... }` / `class { ... }` declaration; it can
+                // never be a real redeclaration, but an expression that compiles
+                // its operand more than once (`class :: {...}.new xx 2`, Test::Selector)
+                // reaches this site twice in one scope.
+                let is_anon_decl = marks.anon || name.as_str().starts_with("__ANON_CLASS_");
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the
@@ -5050,23 +5165,48 @@ impl Compiler {
                 method_name,
                 method_args,
                 value,
-                is_attribute: _,
-                type_invocant: _,
+                is_attribute,
+                type_invocant,
+                invocant_expr,
             } => {
-                let slot = self.local_map.get(var_name).copied();
-                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                self.code.emit(OpCode::LetSave {
-                    name_idx,
-                    is_temp: true,
-                    slot,
-                });
                 // `self` is a term, not a variable (`temp self.x = v`,
                 // `temp $.x ~= v`).
-                let invocant = if var_name == "self" {
+                let invocant = if let Some(e) = invocant_expr {
+                    (**e).clone()
+                } else if var_name == "self" {
                     Expr::BareWord(var_name.clone())
                 } else {
                     Expr::Var(var_name.clone())
                 };
+                // `temp $obj.attr = v` temporizes the ATTRIBUTE: its old value
+                // goes back through the same rw accessor, so `$obj` stays the
+                // one shared object. Saving the variable instead restored it to
+                // a detached copy that no other holder of the object saw
+                // (#16144). `self`, `$.x` and a type invocant keep the variable
+                // save: they restore through the frame's invocant / a write-back.
+                if (var_name != "self" && !*is_attribute && !*type_invocant)
+                    || invocant_expr.is_some()
+                {
+                    let save = Expr::Call {
+                        name: Symbol::intern("__mutsu_temp_method_save"),
+                        args: vec![
+                            invocant.clone(),
+                            Expr::Literal(Value::str(method_name.clone())),
+                            Expr::ArrayLiteral(method_args.clone()),
+                        ],
+                        listop: false,
+                    };
+                    self.compile_expr(&save);
+                    self.code.emit(OpCode::Pop);
+                } else {
+                    let slot = self.local_map.get(var_name).copied();
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::LetSave {
+                        name_idx,
+                        is_temp: true,
+                        slot,
+                    });
+                }
                 let value = match value {
                     Expr::Unary {
                         op: TokenKind::Pipe,
@@ -5081,7 +5221,13 @@ impl Compiler {
                         Expr::Literal(Value::str(method_name.clone())),
                         Expr::ArrayLiteral(method_args.clone()),
                         value,
-                        Expr::Literal(Value::str(var_name.clone())),
+                        // No variable to write the result back to for an
+                        // element invocant.
+                        if invocant_expr.is_some() {
+                            Expr::Literal(Value::NIL)
+                        } else {
+                            Expr::Literal(Value::str(var_name.clone()))
+                        },
                     ],
                     listop: false,
                 };

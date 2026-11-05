@@ -509,6 +509,12 @@ impl Interpreter {
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
+        // A `[ ]` subscript addresses the element its `Int` names, and an object
+        // with its own `ASSIGN-POS`/`BIND-POS` is handed that `Int`
+        // (`@o[2.9] = v` calls `ASSIGN-POS(2, v)`, #15996).
+        if is_positional {
+            idx = Self::positional_index_as_int(idx);
+        }
         // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
         // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).
         // Every reader below walks it purely, so an unpulled body would
@@ -585,6 +591,27 @@ impl Interpreter {
             && !self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
+            // A key-list slice store (`%h<a b c> = 1, 2, 3`) is one `ASSIGN-KEY` call
+            // per key, each taking the next value (Nil past the end), as rakudo's
+            // slice assignment is. Hash::LRU's `is LRU` hashes override `ASSIGN-KEY`.
+            if !is_positional
+                && let ValueView::Array(items, _) = idx.view()
+                && items.len() > 1
+            {
+                let keys: Vec<Value> = items.iter().cloned().collect();
+                let values = self.assignment_rhs_values(&val)?;
+                for (offset, key) in keys.into_iter().enumerate() {
+                    let value = values.get(offset).cloned().unwrap_or(Value::NIL);
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        assign_method,
+                        vec![key, Self::itemize_value(value)],
+                    )?;
+                }
+                self.apply_pending_rw_writeback(code);
+                self.stack.push(val);
+                return Ok(());
+            }
             let idx_arg = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
                 _ => idx.clone(),
@@ -664,6 +691,20 @@ impl Interpreter {
                 };
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                // A role accessor that binds its invocant raw
+                // (`method AT-POS(\SELF: $i) is raw { SELF.substr-rw(...) }`)
+                // works on the variable's own container, so what it hands
+                // back writes through to the variable (ADR-0067 slice 3).
+                let target = if self.method_returns_raw_invocant(
+                    &target,
+                    at_method,
+                    std::slice::from_ref(&idx_arg),
+                ) {
+                    self.capture_lvalue_invocant_cell(code, &var_name, target.clone(), None)
+                        .unwrap_or(target)
+                } else {
+                    target
+                };
                 let assigned = self.assign_method_lvalue_with_values(
                     Some(&var_name),
                     target,
@@ -6300,30 +6341,27 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 if !package.is_empty() {
-                    let key_name = if key.starts_with('$')
-                        || key.starts_with('@')
-                        || key.starts_with('%')
-                        || key.starts_with('&')
-                    {
-                        key.clone()
+                    if key.starts_with(['$', '@', '%', '&']) {
+                        let pkg = Symbol::intern(package.trim_end_matches("::"));
+                        let fq = if crate::qualified::is_global_package(pkg) {
+                            key.clone()
+                        } else {
+                            crate::qualified::qualified(pkg, Symbol::intern(&key))
+                                .as_str()
+                                .to_string()
+                        };
+                        self.env_mut().insert(fq, val.clone());
                     } else {
-                        format!("${key}")
-                    };
-                    let pkg = Symbol::intern(package.trim_end_matches("::"));
-                    let fq = if crate::qualified::is_global_package(pkg) {
-                        key_name
-                    } else {
-                        crate::qualified::qualified(pkg, Symbol::intern(&key_name))
-                            .as_str()
-                            .to_string()
-                    };
-                    self.env_mut().insert(fq, val.clone());
-                    // An unsigiled key (`Pkg::{$k} = v`) is the package variable
-                    // `$Pkg::k`, as `bind_stash_key` installs it: keep it in the
-                    // `our` store too so another frame (a sub, a method) reads it.
-                    if !key.starts_with(['$', '@', '%', '&']) {
+                        // An unsigiled key (`Pkg::{$k} = v`) is the stash entry
+                        // `k` itself, as `bind_stash_key` installs it: kept in
+                        // the `our` store too so another frame (a sub, a
+                        // method) reads it. It is not also a `$k` scalar
+                        // (`Foo.WHO.keys` is `(k)`, #15965).
                         let pkg = Self::normalize_stash_package(&package);
                         let qualified = Self::qualify_stash_name(&pkg, &key);
+                        self.lexicals
+                            .our_term_keys
+                            .insert(Symbol::intern(&qualified));
                         self.env_mut().insert(qualified.clone(), val.clone());
                         self.set_our_var(qualified, val.clone());
                     }

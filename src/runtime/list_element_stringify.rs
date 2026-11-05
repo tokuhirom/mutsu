@@ -55,6 +55,23 @@ impl crate::Interpreter {
         }
     }
 
+    /// A string context renders a `Pair` or `Hash` value through its
+    /// elements, and a `Proxy` among them owes its FETCH (ADR-0040 §9.2):
+    /// `"{a => @buf[0]}"` with a bound Proxy is the fetched value, not
+    /// `Proxy`. Anything else comes back untouched.
+    // Cost: O(1) for a non-Pair/Hash value (a tag probe); O(n) scan for a
+    // Pair/Hash, n = its elements, plus the FETCH calls when one holds a Proxy.
+    pub(crate) fn fetch_nested_proxies_for_str(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if value.is_pair_or_hash_value() && Self::holds_nested_proxy(&value) {
+            self.resolve_proxies_in_value(&value)
+        } else {
+            Ok(value)
+        }
+    }
+
     fn element_needs_interpreter(item: &Value) -> bool {
         let item = item.deref_container();
         // An element assigned from a scalar arrives ITEMIZED (`my @h = $x`
@@ -71,6 +88,9 @@ impl crate::Interpreter {
         ) || (matches!(item.view(), ValueView::Package(_))
             && crate::runtime::find_method_intercept::any_user_find_method())
             || Self::list_str_needs_interpreter(item)
+            // A `Pair`/`Hash` element holding a `Proxy` renders its FETCHed
+            // value (#15772).
+            || (item.is_pair_or_hash_value() && Self::value_has_proxy(item))
     }
 
     /// Replace every `Instance` element with the string its class's `Str`
@@ -145,6 +165,8 @@ impl crate::Interpreter {
                 out.push(Value::str(crate::runtime::unbox_str_answer(&s)?));
             } else if Self::list_str_needs_interpreter(&item) {
                 out.push(self.resolve_list_element_stringifiers(&item)?);
+            } else if item.is_pair_or_hash_value() && Self::holds_nested_proxy(&item) {
+                out.push(self.resolve_proxies_in_value(&item)?);
             } else {
                 out.push(item);
             }

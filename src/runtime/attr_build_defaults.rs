@@ -192,6 +192,14 @@ impl Interpreter {
             } else {
                 continue;
             };
+            if !d.default_is_seed
+                && class_attrs.iter().find(|attr| attr.name == d.name && attr.sigil == d.sigil)
+                    .is_some_and(|attr| self.attribute_binds_in_mro(class_key, attr))
+            {
+                self.check_attr_store_type(class_key, &d.name, d.sigil, val.deref_container())?;
+                cell.with_map_mut(|attrs| Self::bind_constructor_attribute(attrs, key, &d.name, val));
+                continue;
+            }
             let val = if d.sigil == '$'
                 && let Some(tc) = attr_type_constraints.get(&d.name)
                 && crate::runtime::types::is_coercion_constraint(tc)
@@ -266,7 +274,7 @@ impl Interpreter {
         sigil: char,
         attr_type_constraints: &std::collections::HashMap<String, String>,
     ) -> Value {
-        let class_attrs = self.collect_class_attributes(class_key);
+        let class_attrs = self.class_attributes_shared(class_key);
         let declared_type = class_attrs
             .iter()
             .find(|attr| attr.name == attr_name && attr.sigil == sigil)

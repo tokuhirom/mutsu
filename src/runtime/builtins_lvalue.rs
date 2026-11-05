@@ -59,7 +59,23 @@ impl Interpreter {
         // Tag probe first: a `view()` on a lazy Match would materialize it
         // just to see it is not a Proxy.
         if !value.is_proxy_value() {
+            // A `Proxy` returned from a `raw` routine arrives wrapped in the
+            // call's container (`+get()` over `sub get() is raw { $proxy }`):
+            // read through it and FETCH.
+            if value.is_container_ref() {
+                let inner = value.deref_container();
+                if inner.is_proxy_value() {
+                    return self.auto_fetch_proxy(&inner);
+                }
+            }
             return Ok(value.clone());
+        }
+        // A native positional reference (`nqp::atposref_*` on native storage,
+        // what a typed `CArray`'s `AT-POS` answers) reads its element
+        // directly: its FETCH is a built-in routine, and the closure-call
+        // machinery below cost ~7.7k Ir per element of `CArray.list` (#16215).
+        if let Some(element) = crate::runtime::native_pos_ref::fetch_native_pos_ref(value) {
+            return Ok(element);
         }
         // A FETCH may itself answer a container: the documented `AT-KEY`
         // override idiom is a `Proxy` whose FETCH defers to the next candidate,
@@ -289,7 +305,23 @@ impl Interpreter {
                     .iter()
                     .map(|v| self.resolve_proxies_in_value(v))
                     .collect();
-                Ok(Value::seq(resolved?))
+                let rebuilt = Value::seq(resolved?);
+                // The rebuilt Seq keeps the handle tag of the one it replaces:
+                // a `$`-held Seq (`my $s = $c[1,3]`) still renders as
+                // `$(...)`, and a `.cache` List view as a List.
+                let view = items.view();
+                match rebuilt.view() {
+                    ValueView::Seq(body) if view == crate::value::SeqView::ItemSeq => {
+                        Ok(Value::seq_body(body.as_item_seq_view()))
+                    }
+                    ValueView::Seq(body) if view == crate::value::SeqView::ItemList => {
+                        Ok(Value::seq_body(body.as_list_view().as_item_list_view()))
+                    }
+                    ValueView::Seq(body) if view == crate::value::SeqView::List => {
+                        Ok(Value::seq_body(body.as_list_view()))
+                    }
+                    _ => Ok(rebuilt),
+                }
             }
             ValueView::Slip(items) => {
                 let resolved: Result<Vec<Value>, RuntimeError> = items
@@ -462,6 +494,22 @@ impl Interpreter {
                 result
                     .replace_container_contents(&coerced)
                     .then(|| result.clone())
+            }
+            // `Buf.STORE`: assigning to the `Buf` an accessor hands back
+            // (`self.buffer = buf8.new` on a `has buf8 $.buffer`) replaces its
+            // contents in place. A `Blob` is immutable and has no STORE.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::value::value_buf::has_buf_elems(&attributes)
+                && !crate::runtime::utils::is_blob_like_class(&class_name.resolve()) =>
+            {
+                // The source is another Buf, a list of elements or one element
+                // (`Buf.STORE(Blob)`, `(Iterable)`, `(Any:D)`).
+                let elems = Self::flatten_buf_args(vec![value]);
+                crate::value::value_buf::replace_buf_elems(&attributes, class_name, elems);
+                Some(result.clone())
             }
             _ => None,
         }

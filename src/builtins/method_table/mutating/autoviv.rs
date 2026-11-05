@@ -45,6 +45,22 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Any", "prepend", any_prepend),
     MethodRow {
         owner: "Any",
+        name: "ASSIGN-POS",
+        arity: 2,
+        handler: Handler::Mut(any_assign_pos),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Any",
+        name: "DELETE-POS",
+        arity: 1,
+        handler: Handler::Mut(any_delete_pos),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Any",
         name: "ASSIGN-KEY",
         arity: 2,
         handler: Handler::Mut(any_assign_key),
@@ -107,6 +123,14 @@ fn grow(
     array_row: Grow,
 ) -> Answer {
     let value = place.value().descalarize();
+    // A type object of a class that defines the method itself (`Cls.ASSIGN-POS(0,
+    // 1)` with a user `multi method ASSIGN-POS`) is not an undefined invocant to
+    // vivify: the class's method runs.
+    if let ValueView::Package(name) = value.view()
+        && interp.has_user_method(&name.resolve(), method)
+    {
+        return None;
+    }
     // An `Array` type object in a named binding (`my Array $a; $a.push(1)`)
     // vivifies as an undefined `Any` does.
     let array_type = matches!(value.view(), ValueView::Package(name) if name == "Array");
@@ -303,6 +327,37 @@ fn vivify_hash_then(
         };
     let mut hash = place.rebound(&vivified)?;
     hash_row(interp, &mut hash, args, named)
+}
+
+/// `Any.ASSIGN-POS($index, $value)` on an undefined invocant: vivify it to an
+/// `Array` and store through `Array`'s row (#16093).
+// Cost: as `Array`'s row, O(1) amortized, plus one env write to vivify a binding.
+fn any_assign_pos(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    named: Named<'_>,
+) -> Answer {
+    grow(
+        interp,
+        place,
+        "ASSIGN-POS",
+        args,
+        named,
+        super::subscript_pos::assign_pos,
+    )
+}
+
+/// `Any.DELETE-POS($index)` on an undefined invocant: nothing to delete, so
+/// `Nil` (rakudo's `Any.DELETE-POS` answers `Nil` and vivifies nothing).
+// Cost: O(1).
+fn any_delete_pos(
+    _interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    undefined_hash_receiver(place.value()).then(|| Ok(Value::NIL))
 }
 
 // Cost: see `vivify_hash_then`.

@@ -52,21 +52,37 @@ macro_rules! row1 {
     };
 }
 
+/// A `Cool` native integer coercion row: the same conversion as the `Int`
+/// owner's, but an undefined receiver raises the resumable
+/// "uninitialized value in numeric context" warning first.
+macro_rules! cool_int_row {
+    ($name:literal, $handler:ident) => {
+        MethodRow {
+            owner: "Cool",
+            name: $name,
+            arity: 0,
+            handler: Handler::Interp($handler),
+            flags: RowFlags::TYPE_OBJECT_OK,
+            named: &[],
+        }
+    };
+}
+
 /// The native integer coercions `Cool` and `Int` both declare.
 macro_rules! native_int_rows {
     ($owner:literal) => {
         &[
-            row!($owner, "int", int),
-            row!($owner, "int8", int8),
-            row!($owner, "int16", int16),
-            row!($owner, "int32", int32),
-            row!($owner, "int64", int64),
-            row!($owner, "uint", uint),
-            row!($owner, "uint8", uint8),
-            row!($owner, "uint16", uint16),
-            row!($owner, "uint32", uint32),
-            row!($owner, "uint64", uint64),
-            row!($owner, "byte", byte),
+            row!($owner, "int", int, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int8", int8, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int16", int16, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int32", int32, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "int64", int64, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint", uint, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint8", uint8, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint16", uint16, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint32", uint32, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "uint64", uint64, RowFlags::TYPE_OBJECT_OK),
+            row!($owner, "byte", byte, RowFlags::TYPE_OBJECT_OK),
         ]
     };
 }
@@ -110,7 +126,19 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
     row!("Cool", "chr", chr, RowFlags::DEFINITE_MULTI),
     row!("Cool", "rand", rand, RowFlags::RANDOM),
 ];
-pub(super) static COOL_NATIVE_INT_ROWS: &[MethodRow] = native_int_rows!("Cool");
+pub(super) static COOL_NATIVE_INT_ROWS: &[MethodRow] = &[
+    cool_int_row!("int", cool_int),
+    cool_int_row!("int8", cool_int8),
+    cool_int_row!("int16", cool_int16),
+    cool_int_row!("int32", cool_int32),
+    cool_int_row!("int64", cool_int64),
+    cool_int_row!("uint", cool_uint),
+    cool_int_row!("uint8", cool_uint8),
+    cool_int_row!("uint16", cool_uint16),
+    cool_int_row!("uint32", cool_uint32),
+    cool_int_row!("uint64", cool_uint64),
+    cool_int_row!("byte", cool_byte),
+];
 pub(super) static INT_NATIVE_INT_ROWS: &[MethodRow] = native_int_rows!("Int");
 
 /// `.is-prime`: the primality of the receiver's integer value (`false` for a
@@ -154,6 +182,13 @@ fn narrow(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
         ValueView::Int(i) => Value::int(i),
         ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 && n % d == 0 => Value::int(n / d),
         ValueView::Rat(n, d) => Value::rat_raw(n, d),
+        // A big-numerator rational with a unit quotient narrows to an Int too
+        // (`(5**33 / 5).narrow` is an Int), as the word-sized one does.
+        ValueView::BigRat(n, d)
+            if !num_traits::Zero::is_zero(d) && num_traits::Zero::is_zero(&(n % d)) =>
+        {
+            Value::from_bigint(n / d)
+        }
         ValueView::Num(f) if f.is_finite() => {
             let rounded = f.round();
             if approx(f, rounded) {
@@ -383,6 +418,50 @@ native_int_handlers! {
     uint32: "uint32";
     uint64: "uint64";
     byte: "byte";
+}
+
+/// The `Cool` handlers of the native integer coercions. `Cool.int8` is
+/// `self.Numeric.int8`, and a type object's `Numeric` warns and resumes with
+/// zero, so the coercion then sees `0`. An `Int` type object keeps the
+/// "concrete objects" refusal of the shared primitive.
+macro_rules! cool_native_int_handlers {
+    ($($handler:ident => $pure:ident;)*) => {
+        $(
+            // Cost: as the pure handler, plus one warning for a type object.
+            fn $handler(
+                interp: &mut crate::runtime::Interpreter,
+                target: &Value,
+                args: &[Value],
+                _named: super::Named<'_>,
+            ) -> Option<Result<Value, RuntimeError>> {
+                if let ValueView::Package(name) = target.view()
+                    && !target.isa_check("Int")
+                {
+                    let type_name = name.resolve();
+                    return Some(
+                        interp
+                            .warn_type_object_numeric_context(&type_name)
+                            .and_then(|zero| $pure(&zero, args)),
+                    );
+                }
+                Some($pure(target, args))
+            }
+        )*
+    };
+}
+
+cool_native_int_handlers! {
+    cool_int => int;
+    cool_int8 => int8;
+    cool_int16 => int16;
+    cool_int32 => int32;
+    cool_int64 => int64;
+    cool_uint => uint;
+    cool_uint8 => uint8;
+    cool_uint16 => uint16;
+    cool_uint32 => uint32;
+    cool_uint64 => uint64;
+    cool_byte => byte;
 }
 
 /// `.rand`: a `Num` in `[0, value)`; a `List`, `Array` or `Hash` numifies to
