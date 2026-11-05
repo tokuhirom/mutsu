@@ -4,7 +4,8 @@ use crate::value::{Value, ValueView};
 ///
 /// Pure value assembly: applies the one-arg flattening rule (a single
 /// list/seq/slip/range argument is spread into the junction's elements; with
-/// any other arity each argument becomes one element) then wraps the elements.
+/// any other arity each argument becomes one element, a Slip argument being
+/// spliced) then wraps the elements.
 /// Reads no interpreter state. Shared by the VM-native dispatch
 /// (`native_function`) and the interpreter's `call_function` so there is a
 /// single implementation (ledger §2: builtins lowered out of the tree-walk
@@ -38,7 +39,17 @@ pub(crate) fn build_junction(name: &str, args: Vec<Value>) -> Value {
             vec![arg]
         }
     } else {
-        args
+        // A Slip argument (`Empty`, `slip(3, 4)`) is spliced into the argument
+        // list, so `none(1..42, Empty)` has one eigenstate.
+        let mut flat = Vec::with_capacity(args.len());
+        for arg in args {
+            if let ValueView::Slip(items) = arg.view() {
+                flat.extend(items.iter().cloned());
+            } else {
+                flat.push(arg);
+            }
+        }
+        flat
     };
     Value::junction(kind, elems)
 }
