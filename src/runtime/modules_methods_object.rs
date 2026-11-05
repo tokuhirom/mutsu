@@ -24,6 +24,7 @@ mod methods_regex_routine;
 mod methods_seq_dispatch;
 pub(crate) mod methods_signature;
 mod methods_signature_candidates;
+pub(crate) mod builtin_method_sigs;
 pub(crate) mod methods_signature_errors;
 mod methods_signature_shaped;
 mod native_ctor;

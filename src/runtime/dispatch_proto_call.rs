@@ -436,7 +436,7 @@ impl Interpreter {
     }
 
     /// `name(Type:D, ...)`: the call as an `X::Multi::NoMatch` message spells it.
-    fn multi_call_profile(name: &str, args: &[Value]) -> String {
+    pub(crate) fn multi_call_profile(name: &str, args: &[Value]) -> String {
         let arg_types: Vec<String> = args
             .iter()
             .map(|a| {

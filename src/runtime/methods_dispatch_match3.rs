@@ -198,7 +198,7 @@ impl Interpreter {
         // repeat such as `|(2, 3) xx *` can provide its cached prefix without
         // being mistaken for one numeric argument.
         let mut specs = Vec::new();
-        for arg in args {
+        for arg in args.iter().cloned() {
             match arg.view() {
                 // A lazy (possibly infinite) spec stream (`|(2, 3) xx *`) is
                 // pulled only as far as the invocant can use: every
@@ -223,9 +223,16 @@ impl Interpreter {
         }
 
         if specs.len() > 1 && !crate::parser::current_language_version().starts_with("6.e") {
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
-                "skip",
-            ));
+            let call = Self::multi_call_profile("skip", &args);
+            let profile = call
+                .strip_prefix("skip(")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .unwrap_or("");
+            return Err(
+                super::methods_signature_errors::make_builtin_method_no_match_error(
+                    &target, "skip", profile,
+                ),
+            );
         }
 
         let mut cursor = 0usize;
