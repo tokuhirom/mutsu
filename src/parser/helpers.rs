@@ -28,11 +28,22 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     let mut saw_leading_doc = false;
     // Whether a comment or Pod was consumed, for the statement-end lookup.
     let mut saw_comment = false;
+    // The blanks before the current line's first token: the margin of a Pod
+    // block that starts there.
+    let mut margin = "";
     loop {
         // Try whitespace
         let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
         if !matched.is_empty() {
-            at_line_start = matched.contains('\n');
+            // Blanks before the first token of the input are still at the
+            // start of a line.
+            let was_bol = at_line_start;
+            at_line_start = matched.contains('\n') || was_bol;
+            margin = if matched.contains('\n') || was_bol {
+                matched.rsplit('\n').next().unwrap_or("")
+            } else {
+                ""
+            };
             rest = r;
             continue;
         }
@@ -119,7 +130,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
         }
         // Pod blocks only appear at the start of a line
         if at_line_start {
-            match pod_block(r) {
+            match pod_block(r, margin) {
                 Ok((r, _)) => {
                     rest = r;
                     at_line_start = true;
@@ -204,7 +215,7 @@ fn pod_begin_without_identifier_error(construct: &str) -> PError {
 
 /// Parse and skip a Pod block.
 /// Handles `=begin ... =end`, `=for ...`, `=head ...`, `=item ...`, `=comment ...`, etc.
-fn pod_block(input: &str) -> PResult<'_, &str> {
+fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
     // Must start with `=`
     let rest = input
         .strip_prefix('=')
@@ -323,7 +334,12 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
             // followed by an identifier; any other `=` line is paragraph text
             // -- above all a table's `====|====` header separator (#9329).
             let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
-            if rest.is_empty() || rest.starts_with('\n') || parse_pod_directive_line(line).is_some()
+            // An indented block also ends at a line that is not indented as
+            // far as its directive was.
+            if rest.is_empty()
+                || rest.starts_with('\n')
+                || parse_pod_directive_line(line).is_some()
+                || (!margin.is_empty() && !line.starts_with(margin))
             {
                 break;
             }

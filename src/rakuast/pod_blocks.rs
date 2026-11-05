@@ -13,6 +13,8 @@
 //! tabular ones (`table`, `defn`, ...) and a block a statement starts inside
 //! are left out as before. Exact or absent.
 
+mod margin;
+
 use super::infix_origins::byte_range;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{SrcSpan, Stmt};
@@ -343,6 +345,40 @@ fn parts_in(kind: &str, text: String, first: bool) -> Option<Vec<Part>> {
     Some(vec![part_in(kind, text)?])
 }
 
+/// Whether an indented later line of a paragraph of a delimited block of type
+/// `kind` loses its blanks (`pod`, `item`, `nested`) or keeps them (the
+/// types and custom lowercase names measured); `None` for a type not
+/// measured.
+// Cost: O(1).
+fn continuation_trimmed(kind: &str) -> Option<bool> {
+    match kind {
+        "pod" | "item" | "nested" => Some(true),
+        _ if kind.starts_with(|c: char| c.is_ascii_lowercase())
+            && !matches!(
+                kind,
+                "numitem"
+                    | "numhead"
+                    | "toc"
+                    | "semantic"
+                    | "alias"
+                    | "row"
+                    | "column"
+                    | "cell"
+                    | "config"
+                    | "table"
+                    | "formula"
+                    | "defn"
+                    | "finish"
+                    | "rakudoc"
+                    | "doc"
+            ) =>
+        {
+            Some(false)
+        }
+        _ => None,
+    }
+}
+
 /// A paragraph of plain lines from `i`: the text lines, then the blank ones.
 /// `None` for a line the plain reader does not take.
 // Cost: O(p), p = lines of the paragraph.
@@ -351,6 +387,7 @@ fn paragraph(
     mut i: usize,
     first: Option<&str>,
     inside_delimited: bool,
+    trim_continuation: Option<bool>,
 ) -> Option<(String, usize)> {
     let mut text = String::new();
     if let Some(first) = first {
@@ -363,7 +400,8 @@ fn paragraph(
         if lines.indent(i) > 0 && !inside_delimited {
             return None;
         }
-        text.push_str(if inside_delimited {
+        let indented = lines.indent(i) > 0;
+        text.push_str(if indented && trim_continuation? {
             lines.text[i].trim_start()
         } else {
             lines.text[i]
@@ -381,6 +419,15 @@ fn paragraph(
 /// The block that begins at line `i`, and the line after it.
 // Cost: O(b), b = lines of the block.
 fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
+    if lines.indent(i) > 0 {
+        return margin::block(lines, i);
+    }
+    block_flat(lines, i)
+}
+
+/// [`block`] for a directive at the start of its line.
+// Cost: O(b), b = lines of the block.
+fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
     let (name, rest) = lines.directive(i)?;
     let from = lines.start[i] + lines.indent(i);
     match name {
@@ -402,7 +449,7 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             }
             let (base, level) = split_level(kind);
             if name == "for" {
-                let (text, next) = paragraph(lines, i + 1, None, false)?;
+                let (text, next) = paragraph(lines, i + 1, None, false, None)?;
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
@@ -481,8 +528,13 @@ fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 return None;
             }
             let first = rest.trim();
-            let (text, next) =
-                paragraph(lines, i + 1, (!first.is_empty()).then_some(first), false)?;
+            let (text, next) = paragraph(
+                lines,
+                i + 1,
+                (!first.is_empty()).then_some(first),
+                false,
+                None,
+            )?;
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
@@ -794,7 +846,7 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
                 i = next;
             }
             None => {
-                let (text, next) = paragraph(lines, i, None, true)?;
+                let (text, next) = paragraph(lines, i, None, true, continuation_trimmed(kind))?;
                 let first = parts.is_empty();
                 parts.extend(parts_in(kind, text, first)?);
                 i = next;
@@ -959,7 +1011,7 @@ impl Block {
             fields,
         };
         // Rakudo gives an implicit code block no range.
-        if self.margin.is_none() {
+        if self.kind != "implicit-code" {
             super::origin::set_span(&mut node, SrcSpan::new(self.from, self.to));
         }
         node
@@ -1008,12 +1060,9 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
             continue;
         }
         if inside(at) {
-            // Pod at column 0 inside a block of a statement belongs to that
-            // block's statement list; an indented one has a margin rakudo
-            // computes by a rule not read here.
-            if lines.indent(i) == 0
-                && let Some((block, next)) = block(&lines, i)
-            {
+            // Pod inside a block of a statement belongs to that block's
+            // statement list.
+            if let Some((block, next)) = block(&lines, i) {
                 let end = lines.start.get(next).copied().unwrap_or(source.len());
                 nested.push((at, end, block.node()));
                 i = next.max(i + 1);
