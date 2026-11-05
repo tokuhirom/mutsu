@@ -288,7 +288,9 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
         return true;
     }
     if matches!(expr, Expr::CodeVar(_)) {
-        return plain_code_name(name);
+        // `&!code`: a private attribute holding code reads back as itself.
+        return plain_code_name(name)
+            || name.strip_prefix('!').is_some_and(plain_code_name);
     }
     // A positional capture (`$0`) reads back as `Var::PositionalCapture`, whose
     // index is the canonical integer.
