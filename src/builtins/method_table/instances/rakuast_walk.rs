@@ -138,7 +138,8 @@ fn literalize(
         let mut flat = Vec::new();
         for expr in exprs {
             let expr = Value::rakuast(Box::new(expr.clone()));
-            if !matches!(expr.view(), ValueView::RakuAst(n) if crate::rakuast::literalize::is_constant(n)) {
+            if !matches!(expr.view(), ValueView::RakuAst(n) if crate::rakuast::literalize::is_constant(n))
+            {
                 return Some(Ok(cannot));
             }
             match literal_of(interp, &expr) {
