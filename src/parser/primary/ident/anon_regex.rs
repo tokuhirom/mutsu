@@ -40,6 +40,15 @@ pub(super) fn anon_regex_value(
     let declaration_source = source_prefix(declaration_region, after.len()).ok_or_else(|| {
         PError::fatal("Anonymous regex declaration lost its source boundary".to_string())
     })?;
+    // The body's code blocks run when the regex is matched, from this text;
+    // `$?LINE` is a compile-time constant of the place they are written, so it
+    // is folded here, while that place is known (#16603).
+    let body_line = crate::parser::primary::current_line_number(body_region)
+        + body_region
+            .find(raw_body)
+            .map_or(0, |at| body_region[..at].matches('\n').count() as i64);
+    let folded_body = fold_line_in_code_blocks(raw_body, body_line);
+    let raw_body = folded_body.as_str();
     let source = normalize_token_pattern(raw_body);
     let unit_base =
         crate::parser::primary::fragment_attempts::unit_offset_of_copy(body_source, &source);
@@ -54,6 +63,59 @@ pub(super) fn anon_regex_value(
         None => value,
     };
     Ok(value.with_regex_declared_source(declaration_source))
+}
+
+/// `body` with each `$?LINE` inside a `{ ... }` code block replaced by the
+/// line it is written on. `first_line` is the line of the body's opening `{`
+/// (`body` starts right after it). Quoted text and escapes are skipped.
+// Cost: O(n), n = body length.
+fn fold_line_in_code_blocks(body: &str, first_line: i64) -> String {
+    if !body.contains("$?LINE") {
+        return body.to_string();
+    }
+    let mut out = String::with_capacity(body.len());
+    let (mut depth, mut line) = (0usize, first_line);
+    let mut quote: Option<char> = None;
+    let mut chars = body.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '\\' {
+            out.push(c);
+            if let Some((_, n)) = chars.next() {
+                out.push(n);
+            }
+            continue;
+        }
+        if c == '\n' {
+            line += 1;
+        }
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '\'' | '"' if depth == 0 => quote = Some(c),
+                '{' => depth += 1,
+                '}' => depth = depth.saturating_sub(1),
+                '$' if depth > 0 => {
+                    let rest = &body[i..];
+                    if let Some(after) = rest.strip_prefix("$?LINE")
+                        && !after.starts_with(|n: char| n.is_alphanumeric() || n == '_' || n == '-')
+                    {
+                        out.push_str(&line.to_string());
+                        for _ in 0.."$?LINE".len() - 1 {
+                            chars.next();
+                        }
+                        continue;
+                    }
+                }
+                _ => {}
+            },
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKind) -> String {
