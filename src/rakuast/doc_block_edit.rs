@@ -125,10 +125,7 @@ fn list_mut<'a>(node: &'a mut RakuAstNode, name: &'static str) -> &'a mut Vec<Va
 
 /// `set-paragraphs(@paragraphs)`.
 // Cost: O(f + n), f = fields of the node, n = paragraphs given.
-pub(crate) fn set_paragraphs(
-    node: &mut RakuAstNode,
-    value: &Value,
-) -> Result<Value, RuntimeError> {
+pub(crate) fn set_paragraphs(node: &mut RakuAstNode, value: &Value) -> Result<Value, RuntimeError> {
     block(node, "set-paragraphs")?;
     let items = value
         .as_list_items()

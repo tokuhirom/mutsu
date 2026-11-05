@@ -213,4 +213,3 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
 ];
-
