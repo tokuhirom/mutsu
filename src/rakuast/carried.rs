@@ -219,6 +219,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::CaptureLiteral(..)
         | Expr::PseudoStash(_)
         | Expr::MultiDimIndex { .. }
+        // `m:p($pos)/.../`: the adverb expressions are walked where they stand and the regex
+        // value's own tree is finalized by `visit_expr_mut`.
+        | Expr::MatchRegexDynamicAdverbs { .. }
         | Expr::AssignExpr { .. }
         | Expr::HyperMethodCallDynamic { .. }
         | Expr::SymbolicDeref { .. }

@@ -717,6 +717,24 @@ pub(super) fn imported_term_expr(names: &NameScope, name: &str) -> Option<Expr> 
     (node.class == RakuAstClass::TermName).then(|| Expr::BareWord(name.to_string()))
 }
 
+/// A native type word with a definiteness smiley (`int:D`, `array:U`, `num:_`): the
+/// classifier resolves the base word to `Type::Simple`, and the smiley makes the whole a
+/// definite type whose lowering is the word itself. `None` for anything else.
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
+pub(super) fn smiley_type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
+    let base = name
+        .strip_suffix(":D")
+        .or_else(|| name.strip_suffix(":U"))
+        .or_else(|| name.strip_suffix(":_"))?;
+    type_word_expr(names, base)?;
+    let node = view_node(names, name)?;
+    matches!(
+        node.class,
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
+    )
+    .then(|| Expr::BareWord(name.to_string()))
+}
+
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
 /// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
 /// one (`M::foo`).

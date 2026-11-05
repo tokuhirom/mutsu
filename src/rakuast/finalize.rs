@@ -355,6 +355,13 @@ impl VisitMut for Finalize<'_> {
                 *expr = term;
                 return;
             }
+            // A native type with a smiley (`int:D`): see `bareword::smiley_type_word_expr`.
+            if let Expr::BareWord(word) = &*expr
+                && let Some(ty) = super::bareword::smiley_type_word_expr(names, word)
+            {
+                *expr = ty;
+                return;
+            }
             // A routine word (`die-on-fail`, an imported function): see
             // `bareword::call_word_expr`.
             if let Expr::BareWord(word) = &*expr
@@ -477,6 +484,17 @@ impl VisitMut for Finalize<'_> {
                 crate::ast_visit::walk_regex_tree_mut(self, tree);
                 *value = value.with_regex_source_tree(tree.clone());
                 return;
+            }
+            // `m:p($pos)/.../`: the regex lives only in the value; its adverb expressions
+            // are reached by the walk below.
+            Expr::MatchRegexDynamicAdverbs { value, .. } => {
+                if let Some(tree) = value.regex_source_tree()
+                    && carried::has_code(tree)
+                {
+                    let mut tree = tree.clone();
+                    crate::ast_visit::walk_regex_tree_mut(self, &mut tree);
+                    *value = value.with_regex_source_tree(tree);
+                }
             }
             _ => {}
         }
@@ -751,8 +769,10 @@ mod tests {
             "my $s = 'abc'; $s ~~ s:i:x(2)/a/{$s}/; say $s;",
             "my $s = 'abc'; $s ~~ tr/a-c/A-C/; say $s; say $s.trans('A' => 'x');",
             "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
+            "use NativeCall; sub f(int:D $x, num:_ $y) { $x }; say f(2, 1e0); say int:D.^name;",
             "my @a = 1, 2; my $v = 9; @a[0] := $v; my %h; %h<k> := $v; %h{'j'} := 1 => 2; say @a.raku;",
             "use NativeCall; my uint16 $n = 3; sub f(int64 $x) { $x }; say f(2); say int32.^name; say num64 ~~ Num;",
+            "my $t = 'xxabcabc'; my $p = 2; say so $t ~~ m:p($p)/ abc /; say $/.from; $p = 5; say so $t ~~ m:c($p)/ abc /;",
             "sub plus($x, $y) { $x + $y }; my @a = 1, 2; say (@a >>[&plus]<< @a).raku; say (@a >>[&plus]>> 5).raku;",
             "my $w = 'x'; my $t = qq:to/E/;\n  hi $w {1 + 1}\n  E\nsay $t; say \"a\" ~ q:to/F/;\n  b\n  F\n",
         ] {
