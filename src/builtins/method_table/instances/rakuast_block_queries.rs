@@ -33,7 +33,7 @@ fn replace_body(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeE
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
-        owner: "RakuAST::Block",
+        owner: "RakuAST::PlaceholderParameterOwner",
         name: "has-placeholder-parameters",
         arity: 0,
         handler: Handler::Pure(has_placeholder_parameters),
@@ -50,6 +50,33 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "RakuAST::Block",
+        name: "replace-body",
+        arity: 1,
+        handler: Handler::Narrow(replace_body),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    // rakudo declares `replace-body` on each routine class too; the `Block`
+    // row above answers them all (its handler takes every class with a body),
+    // these rows only let `.^can` / `.^methods` report the method.
+    MethodRow {
+        owner: "RakuAST::Sub",
+        name: "replace-body",
+        arity: 1,
+        handler: Handler::Narrow(replace_body),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Method",
+        name: "replace-body",
+        arity: 1,
+        handler: Handler::Narrow(replace_body),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Submethod",
         name: "replace-body",
         arity: 1,
         handler: Handler::Narrow(replace_body),

@@ -116,6 +116,7 @@ pub(super) const fn opaque(
                 "RakuAST::Name",
                 "RakuAST::Block",
                 "RakuAST::Doc::DeclaratorTarget",
+                "RakuAST::PlaceholderParameterOwner",
             ],
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
