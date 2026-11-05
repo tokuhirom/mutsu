@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.37,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 10.14,
+        "secs": 11.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,10 +56,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-03",
+    "date": "2026-11-05",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e4a4fffa",
+    "mutsu_commit": "8e4ad3b0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -68,7 +68,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/I/NJ/INJECTOR/c5d8945aa0ebdfc89690d16f8841360faffe4299.tar.gz"
+    "url": "https://360.zef.pm/I/NJ/INJECTOR/a64c5a894cc53adcad9c17e8c0852cd04a3f6e67.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -78,5 +78,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.0.1"
+  "version": "0.0.3"
 }

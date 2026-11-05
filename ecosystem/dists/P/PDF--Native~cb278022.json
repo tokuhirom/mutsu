@@ -22,7 +22,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.22,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.02,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
       "cmp": "no_baseline",
       "path": "t/buf-pack.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 3.91,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,11 +56,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-array.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 6.88,
+        "secs": 4.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,11 +70,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-cmp.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.36,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -84,11 +84,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-coerce.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.41,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,11 +98,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-content.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 1.27,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,11 +112,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-crypt.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 1.25,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -126,11 +126,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-dict-index.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,11 +140,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-dict.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 1.2,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -154,11 +154,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-hex-string.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.04,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -168,11 +168,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-ind-obj.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 1.13,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -182,11 +182,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-lit-string.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.05,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,11 +196,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-name.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 1.08,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -210,11 +210,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-parse-ind-obj.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.47,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -224,11 +224,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-parse-obj.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 75,
-        "secs": 1.44,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -238,11 +238,11 @@
       "cmp": "no_baseline",
       "path": "t/cos-ref.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.74,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -252,11 +252,11 @@
       "cmp": "no_baseline",
       "path": "t/filter-predictors.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 1,
         "plan": 49,
-        "secs": 3.4,
+        "secs": 1.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,11 +266,11 @@
       "cmp": "no_baseline",
       "path": "t/read.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 2.94,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -280,11 +280,11 @@
       "cmp": "no_baseline",
       "path": "t/threads.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.14,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -294,11 +294,11 @@
       "cmp": "no_baseline",
       "path": "t/write.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4h_kfdkn/d",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/dist/PDF-Native-0.1.14/resources/libraries/pdf.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-p01d897x/d",
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 1.19,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -316,10 +316,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-04",
+    "date": "2026-11-05",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e4a4fffa",
+    "mutsu_commit": "8e4ad3b0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
