@@ -1254,7 +1254,9 @@ impl Value {
             let first = {
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
-                let guard = arc.lock().unwrap();
+                // A poisoned cell still holds its value: read it, as the
+                // stripe lock does after a panic elsewhere.
+                let guard = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 guard.clone()
             };
             if !matches!(first.view(), ValueView::ContainerRef(_)) {
