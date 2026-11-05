@@ -1,5 +1,6 @@
-//! `RakuAST::Block`'s `has-placeholder-parameters`, answered by
-//! [`crate::rakuast::block_queries`]; this file only registers the row.
+//! `RakuAST::Block`'s `has-placeholder-parameters` and `replace-body`,
+//! answered by [`crate::rakuast::block_queries`]; this file only registers the
+//! rows.
 
 use super::super::{Handler, MethodRow, RowFlags};
 use super::rakuast_visit::native_node;
@@ -16,11 +17,26 @@ fn has_placeholder_parameters(target: &Value, _args: &[Value]) -> Result<Value, 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
-pub(super) static ROWS: &[MethodRow] = &[MethodRow {
-    owner: "RakuAST::Block",
-    name: "has-placeholder-parameters",
-    arity: 0,
-    handler: Handler::Pure(has_placeholder_parameters),
-    flags: RowFlags::OWNER_ONLY,
-    named: &[],
-}];
+// Cost: O(f), f = fields of the node.
+fn replace_body(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target.rakuast_replace_body(args[0].clone())
+}
+
+pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "has-placeholder-parameters",
+        arity: 0,
+        handler: Handler::Pure(has_placeholder_parameters),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "replace-body",
+        arity: 1,
+        handler: Handler::Narrow(replace_body),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+];
