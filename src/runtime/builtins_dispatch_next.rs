@@ -470,12 +470,23 @@ impl Interpreter {
                 // explicit `return` by the enclosing routine boundary.
                 self.raise_resumable_warning(&msg, Value::int(0))
             }
-        } else if let (true, ValueView::Instance { class_name, .. }) =
-            (matches!(method, "Numeric" | "Int"), target.view())
+        } else if matches!(method, "Numeric" | "Int" | "Real")
+            && matches!(
+                target.view(),
+                ValueView::Instance { .. }
+                    | ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::Whatever
+                    | ValueView::HyperWhatever
+            )
         {
+            let type_name = match target.view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                _ => crate::runtime::utils::value_type_name(target).to_string(),
+            };
             Err(crate::runtime::mu_coercion_no_match_error(
-                method,
-                &class_name.resolve(),
+                method, &type_name,
             ))
         } else {
             Err(super::methods_signature_errors::method_not_found_for_value(
