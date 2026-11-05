@@ -410,6 +410,7 @@ impl Interpreter {
         // the real key (`Int(1)`, not `"1"`). Populated below only when the key
         // type is a non-`Str` type.
         let mut original_keys: ValueMap = ValueMap::default();
+        let total = flat.len();
         let mut iter = flat.into_iter();
         while let Some(item) = iter.next() {
             match item.view() {
@@ -424,7 +425,13 @@ impl Interpreter {
                 }
                 _ => {
                     let str_key = item.to_string_value();
-                    let value = iter.next().unwrap_or(Value::NIL);
+                    // A key with no value left dies, as in rakudo's `Map.STORE`.
+                    let Some(value) = iter.next() else {
+                        return Err(crate::builtins::map_hash_coerce::odd_number_error(
+                            total,
+                            Some(&item),
+                        ));
+                    };
                     original_keys.insert(str_key.clone(), item.clone());
                     map.insert(str_key, value);
                 }
