@@ -32,7 +32,12 @@ impl Interpreter {
     /// scalar and the merge keeps a single batch's value, so a
     /// `Lock.protect: { $n++ }` in the body lost all but one batch's updates.
     // Cost: O(b + l), b = ops of the loop body, l = locals of the frame.
-    fn box_threaded_body_scalars(&mut self, code: &CompiledCode, body_start: usize, loop_end: usize) {
+    fn box_threaded_body_scalars(
+        &mut self,
+        code: &CompiledCode,
+        body_start: usize,
+        loop_end: usize,
+    ) {
         for idx in code.threaded_body_shared_slots(body_start, loop_end) {
             let Some(name) = code.locals.get(idx).cloned() else {
                 continue;
