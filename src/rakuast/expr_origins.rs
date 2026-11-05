@@ -40,6 +40,12 @@ pub(super) fn current_statement() -> SrcSpan {
     STATEMENT.with(|c| c.get())
 }
 
+/// The range of the statement being converted (`SrcSpan::NONE` outside one).
+// Cost: O(1).
+pub(super) fn current_statement() -> SrcSpan {
+    STATEMENT.with(|c| c.get())
+}
+
 /// While alive, the statement written at the range it was entered with is
 /// the one being converted (see [`of`]).
 pub(super) struct InStatement(Option<SrcSpan>);
@@ -153,14 +159,27 @@ pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
         if table.by_slot.is_empty() && table.by_print.is_empty() {
             return None;
         }
-        let (print, span) = match table.by_slot.remove(&(expr as *const Expr as usize)) {
+        // A slot is an address: a copy the conversion made can sit where a
+        // term of the unit once did, so a hit outside the statement being
+        // converted is not trusted (`$n = $n if $n`: the source's copy
+        // sat at the modifier's slot).
+        let statement = STATEMENT.with(|c| c.get());
+        let slot = expr as *const Expr as usize;
+        let trusted = table.by_slot.get(&slot).is_some_and(|(_, s)| {
+            !statement.is_some() || statement.from <= s.from && s.to <= statement.to
+        });
+        let found = if trusted {
+            table.by_slot.remove(&slot)
+        } else {
+            None
+        };
+        let (print, span) = match found {
             Some(found) => found,
             None => {
                 // A copy takes the range of the one unclaimed term of its
                 // shape in its own statement; with several, which one it
                 // copies cannot be told, and a term written elsewhere in the
                 // unit is never one it copies.
-                let statement = STATEMENT.with(|c| c.get());
                 if !statement.is_some() {
                     return None;
                 }
