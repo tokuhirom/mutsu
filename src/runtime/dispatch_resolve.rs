@@ -423,6 +423,19 @@ impl Interpreter {
             return Ok(Some(def));
         }
         crate::vm::vm_stats::record_function_full_resolve(name);
+        // `X::f(...)` where `X` is a lexical class (`my class X { our sub f }`)
+        // names the sub registered under the class's mangled storage name
+        // (#16653).
+        if let Some((pkg, short)) = crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+            && let Some(storage) = self.resolve_lexical_type_key(pkg.as_str())
+            && storage != pkg.as_str()
+        {
+            let mangled = format!("{storage}::{}", short.as_str());
+            let found = self.resolve_function_with_types_keyed(&mangled, arg_values, arg_keys);
+            if matches!(found, Ok(Some(_))) {
+                return found;
+            }
+        }
         // The full resolution walk is the subsystem a slow Raku line most
         // often turns out to be spending its time in (ADR-0106 D4).
         let _region = crate::profile::enter(crate::profile::Region::CallResolve);
