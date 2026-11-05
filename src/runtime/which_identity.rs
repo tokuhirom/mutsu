@@ -72,7 +72,8 @@ impl Interpreter {
     /// built from its elements, so the comparison walks them itself).
     // Cost: O(1) for a list-shaped operand, scalar or instance (the
     // `has_user_method` probe is memoized per class); O(k) for a Capture,
-    // k = its elements, which the comparison itself walks too.
+    // k = its elements, which the comparison itself walks too; O(e) for a
+    // Junction, e = eigenstates, which the threaded comparison visits anyway.
     pub(crate) fn warm_which_identity_for_identity(&mut self, value: &Value) {
         self.warm_which_identity_shallow(value, 0);
     }
@@ -88,6 +89,13 @@ impl Interpreter {
                 self.warm_which_identity_shallow(&inner, depth + 1);
             }
             ValueView::Mixin(inner, _) => self.warm_which_identity_shallow(inner, depth + 1),
+            // `===` threads over a Junction's eigenstates, each compared by its
+            // own `WHICH`.
+            ValueView::Junction { values, .. } => {
+                for item in values.iter() {
+                    self.warm_which_identity_shallow(item, depth + 1);
+                }
+            }
             ValueView::Pair(_, v) => self.warm_which_identity_shallow(v, depth + 1),
             ValueView::ValuePair(k, v) => {
                 self.warm_which_identity_shallow(k, depth + 1);
