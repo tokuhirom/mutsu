@@ -3467,7 +3467,11 @@ impl Interpreter {
             // `:=` binds the value itself: the stash entry is not a container,
             // so `$*X.VAR` is the value's own type and `my @a = $*X` flattens.
             // The readonly mark is what reflection reads as "no container".
-            self.mark_readonly_with(&env_key, crate::ast::ReadonlyKind::ImmutableValue);
+            // A `Proxy` is a container of its own (it mediates the stores), so
+            // it stays assignable.
+            if !matches!(val.view(), ValueView::Proxy { .. }) {
+                self.mark_readonly_with(&env_key, crate::ast::ReadonlyKind::ImmutableValue);
+            }
             val
         } else if env_key.starts_with('@') {
             runtime::coerce_to_array(val)
