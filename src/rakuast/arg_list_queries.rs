@@ -77,9 +77,3 @@ pub(crate) fn from_comma_list(args: &[Value]) -> Result<Value, RuntimeError> {
     })))
 }
 
-/// `invocant`: an `ArgList` has none, so rakudo answers the `Expression` role
-/// type object.
-// Cost: O(1).
-pub(crate) fn invocant() -> Value {
-    Value::package(crate::symbol::Symbol::intern("RakuAST::Expression"))
-}

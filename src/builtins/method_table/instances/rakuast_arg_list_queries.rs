@@ -30,9 +30,9 @@ fn arg_at_pos(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
     }))
 }
 
-// Cost: O(1).
-fn invocant(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(crate::rakuast::arg_list_queries::invocant())
+// Cost: O(f), f = fields of the list.
+fn invocant(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(with_node(target, crate::rakuast::arg_invocant::invocant))
 }
 
 fn with_node(target: &Value, f: impl FnOnce(&crate::rakuast::RakuAstNode) -> Value) -> Value {
