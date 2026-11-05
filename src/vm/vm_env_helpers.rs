@@ -757,6 +757,16 @@ impl Interpreter {
     /// only *which* bucket holds the cells differs, because mainline is one
     /// scope while sibling blocks are many.
     pub(super) fn active_unit_lexical_bucket(&self) -> Option<&str> {
+        self.active_unit_lexical_entry().map(|(key, _)| key)
+    }
+
+    /// [`Self::active_unit_lexical_bucket`] with the bucket's cells, found by
+    /// the one table probe that decided the bucket is non-empty, so a read that
+    /// wants a cell does not probe the bucket table a second time.
+    // Cost: as `active_unit_lexical_bucket`.
+    pub(super) fn active_unit_lexical_entry(
+        &self,
+    ) -> Option<(&str, &rustc_hash::FxHashMap<String, Value>)> {
         if self.lexicals.mainline_lexical_subs.is_empty() {
             return None;
         }
@@ -777,15 +787,11 @@ impl Interpreter {
             owners.iter().find(|owner| owner.runs_code(frame.code))?
         }
         .bucket;
-        if self
-            .lexicals
-            .unit_lexicals
-            .get(key)
-            .is_none_or(|m| m.is_empty())
-        {
+        let cells = self.lexicals.unit_lexicals.get(key)?;
+        if cells.is_empty() {
             return None;
         }
-        Some(key.as_str())
+        Some((key.as_str(), cells))
     }
 
     /// Look up a unit lexical through the running routine's package chain.
@@ -930,12 +936,8 @@ impl Interpreter {
         // package IS `GLOBAL` for a mainline sub, so those candidates would
         // never reach a mainline capture on their own.
         if !qualified
-            && let Some(bucket) = self.active_unit_lexical_bucket()
-            && let Some(found) = self
-                .lexicals
-                .unit_lexicals
-                .get(bucket)
-                .and_then(|m| m.get(name))
+            && let Some((_, cells)) = self.active_unit_lexical_entry()
+            && let Some(found) = cells.get(name)
         {
             // A by-name `for` parameter of the running routine shadows the
             // captured cell while its loop runs (#13420): the parameter is
