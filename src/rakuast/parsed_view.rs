@@ -499,8 +499,26 @@ fn target_node(names: &NameScope, target: &crate::ast::Expr) -> Result<RakuAstNo
 /// modified expression and each modifier.
 // Cost: O(n), n = size of the statement and its modifiers' operands.
 fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = super::view::view_stmt(names, &m.stmt)?
-        .ok_or_else(|| super::view::unsupported("empty modified statement"))?;
+    // Terms of the modified statement and of each modifier that look alike
+    // (`$n = $n.abs if $n.WHAT`) are told apart by the part they sit in.
+    let mut node = {
+        // The statement itself ends where its first modifier starts; it
+        // starts where `body` says, or where the statement being converted
+        // does.
+        let from = if m.body.is_some() {
+            m.body.from
+        } else {
+            super::expr_origins::current_statement().from
+        };
+        let held = match m.modifiers().map(|modifier| modifier.span.from).min() {
+            Some(end) if end > from => crate::ast::SrcSpan::new(from as usize, end as usize),
+            _ => m.body,
+        };
+        let _strict = super::expr_origins::Strict::enter();
+        let _body = super::expr_origins::InStatement::enter(Some(held));
+        super::view::view_stmt(names, &m.stmt)?
+            .ok_or_else(|| super::view::unsupported("empty modified statement"))?
+    };
     if m.body.is_some()
         && m.body.from < m.body.to
         && let Some(field) = node
@@ -516,10 +534,22 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(expression)));
     }
     for modifier in m.modifiers() {
+        let mut operand = {
+            let _strict = super::expr_origins::Strict::enter();
+            let _modifier = super::expr_origins::InStatement::enter(Some(modifier.span));
+            view_expr(names, &modifier.expr)?
+        };
+        // The operand runs from after the keyword to the end of the modifier;
+        // a term the parser did not place gets that range.
+        if operand.origin.0.is_none()
+            && let Some(span) = operand_span(modifier.span)
+        {
+            super::origin::set_span(&mut operand, span);
+        }
         let mut modifier_node = RakuAstNode {
             origin: Default::default(),
             class: modifier_class(modifier.kind),
-            fields: vec![node_field(None, view_expr(names, &modifier.expr)?)],
+            fields: vec![node_field(None, operand)],
         };
         if modifier.span.is_some() {
             super::origin::set_span(&mut modifier_node, modifier.span);
@@ -532,6 +562,19 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
         node.fields.push(node_field(Some(name), modifier_node));
     }
     Ok(node)
+}
+
+/// The range of a modifier's operand: `span` (keyword to the end of the
+/// operand) without the keyword and the whitespace after it.
+// Cost: O(n), n = length of the modifier's source.
+fn operand_span(span: crate::ast::SrcSpan) -> Option<crate::ast::SrcSpan> {
+    let skipped = super::unit_source::with_text(span, |text| {
+        let keyword = text.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')?;
+        let rest = &text[keyword..];
+        Some(keyword + rest.len() - rest.trim_start().len())
+    })?;
+    let from = span.from as usize + skipped;
+    (from < span.to as usize).then(|| crate::ast::SrcSpan::new(from, span.to as usize))
 }
 
 /// The `StatementModifier::*` class of a modifier.
