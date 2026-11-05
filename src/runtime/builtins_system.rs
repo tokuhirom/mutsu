@@ -298,6 +298,8 @@ pub(super) struct LiveProcState {
     pub(super) child: std::process::Child,
     pub(super) capture_out: bool,
     pub(super) capture_err: bool,
+    /// A binary pipe keeps its bytes; a text one reads CR-LF as LF.
+    pub(super) bin: bool,
 }
 
 type LiveProcMap = std::sync::Mutex<HashMap<i64, LiveProcState>>;
