@@ -207,6 +207,36 @@ impl Interpreter {
         {
             return Ok(());
         }
+        // A `Proxy` among the initializer's elements (`my Str @t = $proxy`, the
+        // body values of a `do while` over a NativeCall `CArray`) lands in an
+        // element container: it is FETCHed on the way in, before the element
+        // type check sees it.
+        if var_name.is_some_and(|name| name.starts_with('@')) {
+            let has_proxy = match value.view() {
+                ValueView::Array(items, _) => items.iter().any(Value::is_proxy_value),
+                ValueView::Seq(items) => items.iter().any(Value::is_proxy_value),
+                _ => false,
+            };
+            if has_proxy {
+                let sources: Vec<Value> = match value.view() {
+                    ValueView::Array(items, _) => items.iter().cloned().collect(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                let mut fetched = Vec::with_capacity(sources.len());
+                for item in sources {
+                    fetched.push(self.fetch_proxy_for_store(item)?);
+                }
+                value = match value.view() {
+                    ValueView::Array(_, kind) => Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(fetched)),
+                        kind,
+                    ),
+                    _ => Value::seq(fetched),
+                };
+                *self.stack.last_mut().unwrap() = value.clone();
+            }
+        }
         if var_name.is_some_and(|name| name.starts_with('@'))
             && matches!(value.view(), ValueView::Array(..) | ValueView::Seq(_))
         {
