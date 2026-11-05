@@ -275,8 +275,9 @@ pub(super) fn regex_pattern_var_names(pattern: &str) -> std::rc::Rc<[String]> {
     if let Some(hit) = NAMES.with(|m| m.borrow().get(pattern).cloned()) {
         return hit;
     }
-    let names: std::rc::Rc<[String]> =
-        scan_source_names(pattern, pattern_has_code(pattern)).0.into();
+    let names: std::rc::Rc<[String]> = scan_source_names(pattern, pattern_has_code(pattern))
+        .0
+        .into();
     NAMES.with(|m| {
         let mut m = m.borrow_mut();
         if m.len() >= MAX_CACHED {
