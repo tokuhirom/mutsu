@@ -112,6 +112,7 @@ pub(super) const fn opaque(
                 "RakuAST::Parameter",
                 "RakuAST::Doc::Paragraph",
                 "RakuAST::Doc::Markup",
+                "RakuAST::Doc::Block",
                 "RakuAST::Name",
                 "RakuAST::Block",
             ],

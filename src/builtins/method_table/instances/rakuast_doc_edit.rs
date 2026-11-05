@@ -4,12 +4,17 @@
 
 use super::super::{Handler, MethodRow, RowFlags};
 use super::rakuast_visit::native_node;
-use crate::rakuast::{RakuAstClass, doc_edit};
+use crate::rakuast::{RakuAstClass, doc_block_edit, doc_edit};
 use crate::value::{RuntimeError, Value, ValueView};
 
+// `leading-whitespace` is declared on both `Doc::Paragraph` and `Doc::Block`;
+// one row answers both (a block's is its first paragraph's).
 // Cost: O(w), w = the leading whitespace.
 fn leading_whitespace(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) if node.class == RakuAstClass::DocBlock => {
+            Some(doc_block_edit::leading_whitespace(node))
+        }
         ValueView::RakuAst(node) => Some(doc_edit::leading_whitespace(node)),
         _ => None,
     });
@@ -69,6 +74,24 @@ macro_rules! edit_row {
     };
 }
 
+// Cost: O(k), k = config pairs.
+fn config_keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(doc_block_edit::config_keys(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(k), k = config pairs.
+fn config_pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(doc_block_edit::config_pairs(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "RakuAST::Doc::Paragraph",
@@ -124,4 +147,69 @@ pub(super) static ROWS: &[MethodRow] = &[
         "set-closer",
         |node, text| doc_edit::markup_set_delimiter(node, "closer", text)
     ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "set-type",
+        |node, text| doc_block_edit::set_type(node, text)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "set-level",
+        |node, level| doc_block_edit::set_level(node, level)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "set-margin",
+        |node, text| doc_block_edit::set_margin(node, text)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "set-paragraphs",
+        |node, list| doc_block_edit::set_paragraphs(node, list)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "add-paragraph",
+        |node, paragraph| doc_block_edit::add_paragraph(node, paragraph)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Block",
+        RakuAstClass::DocBlock,
+        "set-config",
+        |node, config| doc_block_edit::set_config(node, config)
+    ),
+    MethodRow {
+        owner: "RakuAST::Doc::Block",
+        name: "add-config",
+        arity: 2,
+        handler: Handler::Narrow(|target, args| {
+            if !is_class(target, RakuAstClass::DocBlock) {
+                return None;
+            }
+            target.rakuast_edit(|node| doc_block_edit::add_config(node, &args[0], &args[1]))
+        }),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Doc::Block",
+        name: "config-keys",
+        arity: 0,
+        handler: Handler::Pure(config_keys),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Doc::Block",
+        name: "config-pairs",
+        arity: 0,
+        handler: Handler::Pure(config_pairs),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
 ];
