@@ -296,6 +296,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::regex_code::is_source(node, field)
                 || super::regex_variable_alias::is_source_field(node, field)
                 || super::infix_func::is_hidden_adverbs(node, field)
+                || super::block_queries::is_bare_marker(node, field)
                 || super::arg_invocant::is_hidden_invocant(node, field)
                 || super::phaser_condition::is_source(node, field)
                 || node.class == RakuAstClass::PointyBlock

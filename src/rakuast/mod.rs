@@ -3794,6 +3794,7 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 // Cost: O(1).
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
     infix_func::is_hidden_adverbs(node, field)
+        || block_queries::is_bare_marker(node, field)
         || arg_invocant::is_hidden_invocant(node, field)
         || regex_variable_alias::is_source_field(node, field)
 }

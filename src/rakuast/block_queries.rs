@@ -79,3 +79,34 @@ pub(crate) fn replace_body(node: &mut RakuAstNode, new_body: Value) -> Result<()
     }
     Ok(())
 }
+
+/// The hidden field marking a statement-level block. Rakudo's `bare-block` is
+/// parse-time state (`Block.new(:bare-block)` is rejected), `True` for a block
+/// that is a whole statement (`{ 2 };`, also nested ones) and `False` for every
+/// other block, a hand-built one included, so the statement conversion records
+/// it and the row reads it back.
+const BARE_BLOCK: &str = "bare-block";
+
+/// Whether `field` is the hidden statement-level marker of a `Block`.
+// Cost: O(1).
+pub(super) fn is_bare_marker(node: &RakuAstNode, field: &super::RakuAstField) -> bool {
+    node.class == RakuAstClass::Block && field.name == Some(BARE_BLOCK)
+}
+
+/// `node` marked as a statement-level block (a `PointyBlock` is never one).
+// Cost: O(1).
+pub(super) fn bare_block(mut node: RakuAstNode) -> RakuAstNode {
+    if node.class == RakuAstClass::Block {
+        node.fields.push(super::RakuAstField {
+            name: Some(BARE_BLOCK),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        });
+    }
+    node
+}
+
+/// `bare-block`: whether the block is a statement of its own.
+// Cost: O(f), f = fields of the block.
+pub(crate) fn bare_block_flag(node: &RakuAstNode) -> Value {
+    Value::truth(node.fields.iter().any(|f| is_bare_marker(node, f)))
+}
