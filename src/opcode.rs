@@ -11959,6 +11959,35 @@ impl CompiledCode {
                         || self.scalar_bind_locals.contains(sym))
             })
             .collect();
+        // A `hyper for` / `race for` runs its inline body bytecode on worker
+        // threads, not a closure, so the closure scan above never sees the
+        // body's references as captures. Every own lexical the body names is
+        // an escaping capture all the same (ADR-16595 rule 2): it gets the
+        // declaration-site cell, so a worker reaches it through the cell
+        // instead of a name-keyed lane.
+        for (pos, op) in self.ops.iter().enumerate() {
+            let OpCode::ForLoop(spec) = op else { continue };
+            if !spec.threaded {
+                continue;
+            }
+            let (start, end) = (pos + 1, (spec.body_end as usize).min(self.ops.len()));
+            let mut touched = vec![false; self.locals.len()];
+            self.mark_name_access_slots(start, end, &mut touched);
+            self.mark_local_access_slots(start, end, &mut touched);
+            // Names the body declares itself are per-iteration, not shared.
+            let mut declared_in_body: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
+            for body_op in &self.ops[start.min(end)..end] {
+                if let OpCode::SetLocalDecl { slot, .. } = body_op {
+                    declared_in_body.insert(*slot as usize);
+                }
+            }
+            for (slot, hit) in touched.iter().enumerate() {
+                if *hit && !declared_in_body.contains(&slot) {
+                    escaping_captured_own.insert(Symbol::intern(&self.locals[slot]));
+                }
+            }
+        }
         vouched.extend(type_capture_syms);
         // ADR-0055 §7.3 / ADR-0025 slice 2: the dichotomy "an escaping-captured
         // plain scalar is either authoritative or a shared cell" is only
