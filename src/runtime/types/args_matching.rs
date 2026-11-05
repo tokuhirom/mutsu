@@ -1739,9 +1739,12 @@ impl Interpreter {
         }) {
             return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
         }
-        RuntimeError::new(
-            "Too many positionals passed; expected 0 arguments but got more".to_string(),
-        )
+        // The positionals the call passed (a named `Pair` was dealt with above).
+        let passed = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .count();
+        RuntimeError::new(super::arity_message::too_many_positionals(0, 0, passed))
     }
 }
 
