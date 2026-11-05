@@ -89,6 +89,19 @@ pub(super) fn make_method_not_found_error_for(
     private: bool,
     string_invocant: Option<&str>,
 ) -> RuntimeError {
+    make_method_not_found_error_with(method_name, type_name, private, string_invocant, &[])
+}
+
+/// [`make_method_not_found_error_for`] with the method names a user class
+/// declares (`extra`), which the "Did you mean" tip offers beside the
+/// built-in ones.
+pub(super) fn make_method_not_found_error_with(
+    method_name: &str,
+    type_name: &str,
+    private: bool,
+    string_invocant: Option<&str>,
+    extra: &[String],
+) -> RuntimeError {
     // Display the user-facing type name (`<anon|N>` for anonymous
     // class/grammar/role); registry lookups below keep the raw name.
     let display_type = crate::value::user_facing_type_name(type_name);
@@ -98,11 +111,12 @@ pub(super) fn make_method_not_found_error_for(
             method_name, display_type
         )
     } else {
-        super::did_you_mean::method_not_found_message(
+        super::did_you_mean::method_not_found_message_with(
             method_name,
             type_name,
             &display_type,
             string_invocant,
+            extra,
         )
     };
 

@@ -734,6 +734,53 @@ impl Interpreter {
         expanded
     }
 
+    /// The method names a user class `type_name` answers to: its own, its
+    /// parents' and its composed roles'. Empty for a built-in type. Rakudo
+    /// offers these beside the built-in ones in an `X::Method::NotFound` tip.
+    // Cost: O(m), m = methods declared along the MRO and its roles (error path only).
+    pub(crate) fn user_method_names_for_suggestions(&mut self, type_name: &str) -> Vec<String> {
+        if !self.registry().classes.contains_key(type_name) {
+            return Vec::new();
+        }
+        let mut names: Vec<String> = Vec::new();
+        let mro = self.class_mro(type_name);
+        for class in mro.iter() {
+            let class = class.resolve();
+            for name in self.collect_type_method_names(&class) {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            let composed = self
+                .registry()
+                .class_composed_roles
+                .get(class.as_str())
+                .cloned()
+                .unwrap_or_default();
+            for role in composed {
+                for name in self.collect_type_method_names(&role) {
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+        // The accessors of the public attributes (`has $.attr`).
+        for attr in self.collect_class_attributes_display_order(type_name) {
+            if attr.is_public && !names.contains(&attr.name) {
+                names.push(attr.name);
+            }
+        }
+        // A private method (`method !m`) is not callable as `.m`.
+        let private: Vec<String> = self
+            .class_private_method_entries(type_name)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        names.retain(|n| !n.starts_with('!') && !private.contains(n));
+        names
+    }
+
     /// Collect method names from a class or role by name.
     fn collect_type_method_names(&self, type_name: &str) -> Vec<String> {
         let mut names = Vec::new();
