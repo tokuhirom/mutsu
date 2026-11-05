@@ -817,6 +817,12 @@ impl Interpreter {
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };
         self.pending_eval_rw_tail = false;
+        // An `EVAL` unit's `our sub`s close over their block's lexicals like the
+        // program's own: seed the escaping names from the unit's compiled code, as the
+        // mainline does at program start (#16356).
+        if is_eval_unit {
+            self.collect_escaping_our_lexical_names(&code);
+        }
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.
