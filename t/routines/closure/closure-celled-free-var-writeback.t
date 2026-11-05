@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 9;
 
 # A closure's celled free variable is its identity: writes through the cell
 # reach the caller without any writeback, and a rebinding is still seen.
@@ -42,3 +42,9 @@ sub m() {
     "$n:{@a.join(',')}"
 }
 is m(), '3:1,2,3', 'scalar and array captured together stay in step';
+
+# Fold steps build their argument list once: left, right and scan forms.
+is ([+] 1..100), 5050, 'left fold';
+is ([**] 2, 3, 2), 512, 'right-associative fold';
+is ([\+] 1..5).join(','), '1,3,6,10,15', 'scan fold';
+is ([<] 1, 2, 3, 4), True, 'chain fold';
