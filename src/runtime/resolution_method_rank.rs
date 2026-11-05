@@ -119,6 +119,7 @@ impl Interpreter {
             tiered: false,
             tier_bind_check: false,
             arity_fits: true,
+            is_default: def.is_default,
         }
     }
 
