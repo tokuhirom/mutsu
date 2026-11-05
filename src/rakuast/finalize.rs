@@ -743,6 +743,7 @@ mod tests {
             "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
             "my @a = 1, 2; my $v = 9; @a[0] := $v; my %h; %h<k> := $v; %h{'j'} := 1 => 2; say @a.raku;",
             "use NativeCall; my uint16 $n = 3; sub f(int64 $x) { $x }; say f(2); say int32.^name; say num64 ~~ Num;",
+            "my $w = 'x'; my $t = qq:to/E/;\n  hi $w {1 + 1}\n  E\nsay $t; say \"a\" ~ q:to/F/;\n  b\n  F\n",
         ] {
             assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }

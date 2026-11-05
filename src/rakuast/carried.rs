@@ -210,6 +210,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // replacement becomes the thunk in the conversion.
         | Expr::Transliterate { .. }
         | Expr::ZenSlice(_)
+        // The body of an interpolating heredoc is read as a `qq` string when the unit compiles.
+        | Expr::HeredocInterpolation(..)
         | Expr::CaptureVar(_)
         // `True`/`False`/`Empty` in a unit that imported through an `EXPORT` hook: the parser's
         // shadowable keyword, which the lowering gives back unchanged.
