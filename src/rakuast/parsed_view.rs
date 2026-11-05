@@ -514,6 +514,7 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
             Some(end) if end > from => crate::ast::SrcSpan::new(from as usize, end as usize),
             _ => m.body,
         };
+        let _strict = super::expr_origins::Strict::enter();
         let _body = super::expr_origins::InStatement::enter(Some(held));
         super::view::view_stmt(names, &m.stmt)?
             .ok_or_else(|| super::view::unsupported("empty modified statement"))?
@@ -534,6 +535,7 @@ fn modified_node(names: &NameScope, m: &Modified) -> Result<RakuAstNode, Runtime
     }
     for modifier in m.modifiers() {
         let mut operand = {
+            let _strict = super::expr_origins::Strict::enter();
             let _modifier = super::expr_origins::InStatement::enter(Some(modifier.span));
             view_expr(names, &modifier.expr)?
         };

@@ -32,6 +32,26 @@ thread_local! {
     /// The range of the statement being converted: a copy the conversion
     /// made of a term is a copy of a term of that statement.
     static STATEMENT: std::cell::Cell<SrcSpan> = const { std::cell::Cell::new(SrcSpan::NONE) };
+    /// Whether [`STATEMENT`] is exact (a modified statement's part), so a slot
+    /// hit outside it is not trusted.
+    static STRICT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While alive, the range of the statement being converted is exact: a slot
+/// hit outside it is a collision, not a term of the statement.
+pub(super) struct Strict(bool);
+
+impl Strict {
+    // Cost: O(1).
+    pub(super) fn enter() -> Strict {
+        Strict(STRICT.with(|c| c.replace(true)))
+    }
+}
+
+impl Drop for Strict {
+    fn drop(&mut self) {
+        STRICT.with(|c| c.set(self.0));
+    }
 }
 
 /// The range of the statement being converted (`SrcSpan::NONE` outside one).
@@ -160,7 +180,9 @@ pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
         let statement = STATEMENT.with(|c| c.get());
         let slot = expr as *const Expr as usize;
         let trusted = table.by_slot.get(&slot).is_some_and(|(_, s)| {
-            !statement.is_some() || statement.from <= s.from && s.to <= statement.to
+            !statement.is_some()
+                || !STRICT.with(|c| c.get())
+                || statement.from <= s.from && s.to <= statement.to
         });
         let found = if trusted {
             table.by_slot.remove(&slot)
