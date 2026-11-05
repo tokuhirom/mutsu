@@ -8,6 +8,37 @@ use super::*;
 /// type objects (Any, Str, Cool, Numeric, Complex, ...) instead fall through to a
 /// generic candidate that warns and coerces to 0, so they must NOT be caught here.
 pub(crate) fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
+    check_code_in_numeric_comparison(v, "Numeric")?;
+    check_type_object_in_numeric_context_inner(v)
+}
+
+/// The ordering operators (`<`, `<=`, `>`, `>=`, `<=>`) coerce through `.Real`
+/// where `==` coerces through `.Numeric`; the type-object rules are shared.
+pub(crate) fn check_type_object_in_ordering_context(v: &Value) -> Result<(), RuntimeError> {
+    check_code_in_numeric_comparison(v, "Real")?;
+    check_type_object_in_numeric_context_inner(v)
+}
+
+/// A `Sub`/`Block`/`Method` has no `.Numeric` (nor `.Real`) candidate, so a
+/// numeric comparison with one fails the dispatch as rakudo's does (#9791 did
+/// this for the arithmetic operators). `Whatever` is deliberately not caught:
+/// a chained comparison can reuse a compound Whatever as a shared operand (see
+/// `coerce_numeric_bridge_pair_strict`).
+// Cost: O(1)
+fn check_code_in_numeric_comparison(v: &Value, method: &str) -> Result<(), RuntimeError> {
+    if matches!(
+        v.view(),
+        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+    ) {
+        return Err(crate::runtime::mu_coercion_no_match_error(
+            method,
+            crate::runtime::utils::value_type_name(v),
+        ));
+    }
+    Ok(())
+}
+
+fn check_type_object_in_numeric_context_inner(v: &Value) -> Result<(), RuntimeError> {
     if let ValueView::Package(name) = v.view() {
         let type_name = name.resolve();
         // A built-in type whose `Numeric` is declared `:D:` (currently only
@@ -574,8 +605,8 @@ impl Interpreter {
             if let Some(value) = vm.try_user_infix("infix:<<>", &l, &r)? {
                 return Ok(value);
             }
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
+            check_type_object_in_ordering_context(&l)?;
+            check_type_object_in_ordering_context(&r)?;
             if let Some(failure) = str_numeric_pair_failure(&l, &r) {
                 return Ok(failure);
             }
@@ -609,8 +640,8 @@ impl Interpreter {
             if let Some(value) = vm.try_user_infix("infix:<<=>", &l, &r)? {
                 return Ok(value);
             }
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
+            check_type_object_in_ordering_context(&l)?;
+            check_type_object_in_ordering_context(&r)?;
             if let Some(failure) = str_numeric_pair_failure(&l, &r) {
                 return Ok(failure);
             }
@@ -644,8 +675,8 @@ impl Interpreter {
             if let Some(value) = vm.try_user_infix("infix:<>>", &l, &r)? {
                 return Ok(value);
             }
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
+            check_type_object_in_ordering_context(&l)?;
+            check_type_object_in_ordering_context(&r)?;
             if let Some(failure) = str_numeric_pair_failure(&l, &r) {
                 return Ok(failure);
             }
@@ -679,8 +710,8 @@ impl Interpreter {
             if let Some(value) = vm.try_user_infix("infix:<>=>", &l, &r)? {
                 return Ok(value);
             }
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
+            check_type_object_in_ordering_context(&l)?;
+            check_type_object_in_ordering_context(&r)?;
             if let Some(failure) = str_numeric_pair_failure(&l, &r) {
                 return Ok(failure);
             }
