@@ -1,6 +1,6 @@
 # ADR-12204: A spawned block captures its `@`/`%` lexicals as shared cells
 
-- **Status**: Proposed
+- **Status**: Superseded by [ADR-16595](16595-threads-reach-lexicals-through-their-captured-cells.md) (2026-11-05); S2 steps 1-2 landed and are kept
 - Date: 2026-11-04
 - Refines: ADR-0010 (alternative B, "share captured lexicals as cells", the stated destination)
   and ADR-0129 (retired lane bindings follow their live children)
