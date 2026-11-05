@@ -303,6 +303,18 @@ impl Interpreter {
         }
     }
 
+    /// Whether the running code is inside bare blocks only (no routine) of an
+    /// `EVAL` unit: a `sub` declared there closes over its block like one in a
+    /// block of the program itself (#16686).
+    // Cost: O(d), d = routine-stack depth.
+    pub(crate) fn in_block_of_eval_unit(&self) -> bool {
+        self.env
+            .get("__mutsu_in_eval")
+            .is_some_and(|v| v.truthy())
+            && !self.routine_stack.is_empty()
+            && self.routine_stack.iter().all(|f| f.is_block)
+    }
+
     /// Whether the running code is the top level of an `EVAL` unit (not a block
     /// or routine nested in it): a `sub` declared there is lexical to the unit
     /// and must not outlive it, whereas a block-scoped `sub` nested in the unit
