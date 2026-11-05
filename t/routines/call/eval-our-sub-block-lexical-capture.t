@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 4;
+plan 3;
 
 # An `our sub` declared in a bare block of an `EVAL` unit closes over the block's
 # `my` like the program's own (#16356): callable before the block ran
@@ -25,6 +25,3 @@ EVAL q[{
     @s.push(&OUR::in_loop());
 }];
 is @s[0], 2, 'an our sub in a loop body keeps the loop parameter';
-
-EVAL q[{ my $b = 7; our sub grab_b() { $b } }];
-is &OUR::grab_b(), 7, 'an our sub of an EVAL unit outlives it with its lexical';

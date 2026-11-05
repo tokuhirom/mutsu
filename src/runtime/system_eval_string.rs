@@ -77,6 +77,10 @@ impl Interpreter {
             crate::runtime::EVAL_UNIT_CAPTURE_PREFIX,
             self.module.eval_unit_counter
         ));
+        // The names an `our sub` of this unit needs cells for (`resolution_eval`) are the unit's
+        // own: a later unit's same-named `our`/`my` must not resolve through them.
+        let saved_escaping_names = self.lexicals.escaping_our_lexical_names.clone();
+        let saved_escaping_params = self.lexicals.escaping_our_env_param_names.clone();
         let saved_unit_capture_key = self
             .module
             .eval_unit_capture_key
@@ -232,6 +236,8 @@ impl Interpreter {
         self.module.eval_unit_block_depth = saved_unit_depth;
         self.module.eval_unit_routine_depth = saved_unit_routine_depth;
         self.module.eval_unit_capture_key = saved_unit_capture_key;
+        self.lexicals.escaping_our_lexical_names = saved_escaping_names;
+        self.lexicals.escaping_our_env_param_names = saved_escaping_params;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;
