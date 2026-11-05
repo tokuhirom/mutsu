@@ -65,7 +65,13 @@ pub(super) fn statement_list_inner(
                 if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
-                if let Some((n, span)) = line.take() {
+                if let Some((n, mut span)) = line.take() {
+                    // The declaration runs over the rest of the unit it holds.
+                    if let Some(rest) = super::view::unit_rest_span(&stmts[at + 1..])
+                        && span.is_some()
+                    {
+                        span = crate::ast::SrcSpan::new(span.from as usize, rest.to as usize);
+                    }
                     origin::set(names, &mut node, n, span);
                 }
                 fields.push(node_field(None, node));

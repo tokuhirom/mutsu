@@ -571,7 +571,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("'module' or 'package' after 'unit'"));
     };
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     check_pseudo_package_in_decl(&name)?;
     // Consume optional type adverbs (:ver<...>, :auth<...>, :api<...>) on the
     // unit package name, e.g. `unit module Foo:ver<0.0.12>:auth<zef:bar>;`.
@@ -591,7 +593,18 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         custom_traits: traits.custom,
         is_unit: true,
         is_my: false,
-        spans: None,
+        // Only the name is known here; the body is the rest of the unit,
+        // whose range the RakuAST conversion fills in.
+        spans: name_span.is_some().then(|| {
+            Box::new(crate::ast::parsed::PackageSpans {
+                name: name_span,
+                block: crate::ast::parsed::BlockSpans {
+                    span: crate::ast::SrcSpan::NONE,
+                    blockoid: crate::ast::SrcSpan::NONE,
+                    list: crate::ast::SrcSpan::NONE,
+                },
+            })
+        }),
     };
     // `unit module A::B::C is export;` publishes the short name `C` (the
     // package itself), as rakudo does for a qualified declarator name.
