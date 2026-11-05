@@ -344,9 +344,9 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         right: Box::new(right),
                         form: Default::default(),
                     };
-                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
+                    return Ok((r, Expr::curry(sm_expr)));
                 }
-                left = Expr::WhateverCurry(Box::new(left));
+                left = Expr::curry(left);
             }
             // Bare `* ~~ Type` curries to WhateverCode `{ $_ ~~ Type }`.
             // Only a TRUE bare `*` operand curries here: `(*) ~~ Type` is a
@@ -368,7 +368,7 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         right: Box::new(right),
                         form: Default::default(),
                     };
-                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
+                    return Ok((r, Expr::curry(sm_expr)));
                 }
             }
             // Bare `X ~~ *` autoprimes to a WhateverCode `-> $a { X ~~ $a }`.
@@ -387,7 +387,7 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         right: Box::new(right),
                         form: Default::default(),
                     };
-                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
+                    return Ok((r, Expr::curry(sm_expr)));
                 }
             }
         }

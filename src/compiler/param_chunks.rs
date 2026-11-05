@@ -143,7 +143,7 @@ impl Compiler {
     fn inline_where_predicate_body(where_expr: &Expr) -> Option<Vec<Stmt>> {
         let built;
         let lambda = match where_expr {
-            Expr::WhateverCurry(curried) => {
+            Expr::WhateverCurry(curried, ..) => {
                 built = crate::whatever_curry::build_closure(curried);
                 &built
             }

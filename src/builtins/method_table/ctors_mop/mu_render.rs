@@ -203,13 +203,9 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for
         // `.gist`/`.raku`/`.perl`, not the generic closure form.
         ValueView::Sub(data)
-            if (method == "raku" || method == "gist")
-                && matches!(
-                    data.env.get("__mutsu_callable_type").map(Value::view),
-                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-                ) =>
+            if (method == "raku" || method == "gist") && data.whatever_code_repr().is_some() =>
         {
-            Some(Ok(Value::str_from("WhateverCode.new")))
+            data.whatever_code_repr().map(|text| Ok(Value::str(text)))
         }
         // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str
         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => None,

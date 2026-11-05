@@ -802,13 +802,15 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
         };
         // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
         if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
-            compound_expr = Expr::WhateverCurry(Box::new(compound_expr));
+            compound_expr = Expr::curry(compound_expr);
         }
         return Ok((r, CallArg::Positional(compound_expr)));
     }
     Ok((
         rest,
-        CallArg::Positional(crate::parser::expr::wrap_finished_expr(expr)),
+        CallArg::Positional(crate::parser::expr::wrap_finished_expr_at(
+            expr, input, rest,
+        )),
     ))
 }
 

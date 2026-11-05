@@ -211,6 +211,8 @@ impl Compiler {
         is_whatever_code: bool,
         param_sigilless: bool,
     ) {
+        // Taken first: compiling the body may compile other WhateverCodes.
+        let wc_source = self.pending_wc_source.take().filter(|_| is_whatever_code);
         // A sigilless pointy parameter (`-> \x { }`) binds its term key
         // (ADR-12441).
         let params: Vec<String> = if param.is_empty() {
@@ -337,6 +339,7 @@ impl Compiler {
             compiled.is_pointy_block = true;
         }
         compiled.is_whatever_code = is_whatever_code;
+        compiled.whatever_source = wc_source.map(Into::into);
         compiled.pointy_alias_param = pointy_alias_param;
         // `supply { … }` lowers to `Supply.on-demand(-> $__mutsu_supply_emitter_N
         // { … })`, so the generated emitter parameter identifies the supply body.
@@ -762,7 +765,7 @@ impl Compiler {
                 // directly rather than the built closure the parser used to
                 // produce eagerly. (The `Lambda` arm is kept as a
                 // belt-and-suspenders match; only reachable pre-ADR-0033.)
-                Expr::WhateverCurry(_)
+                Expr::WhateverCurry(..)
                     | Expr::Lambda {
                         is_whatever_code: true,
                         ..

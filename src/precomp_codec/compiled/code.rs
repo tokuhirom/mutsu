@@ -63,6 +63,7 @@ impl Encode for CompiledCode {
             source_line,
             is_pointy_block,
             is_whatever_code,
+            whatever_source,
             is_hidden_from_backtrace,
             pointy_alias_param,
             immutable_topic,
@@ -227,6 +228,7 @@ impl Encode for CompiledCode {
         source_line.encode(encoder)?;
         is_pointy_block.encode(encoder)?;
         is_whatever_code.encode(encoder)?;
+        whatever_source.encode(encoder)?;
         is_hidden_from_backtrace.encode(encoder)?;
         pointy_alias_param.encode(encoder)?;
         immutable_topic.encode(encoder)?;
@@ -379,6 +381,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             source_line: Decode::decode(decoder)?,
             is_pointy_block: Decode::decode(decoder)?,
             is_whatever_code: Decode::decode(decoder)?,
+            whatever_source: Decode::decode(decoder)?,
             is_hidden_from_backtrace: Decode::decode(decoder)?,
             pointy_alias_param: Decode::decode(decoder)?,
             immutable_topic: Decode::decode(decoder)?,

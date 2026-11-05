@@ -62,6 +62,8 @@ impl Compiler {
         routine_name: Symbol,
         prototype: Option<Symbol>,
     ) {
+        // Taken first: compiling the body may compile other WhateverCodes.
+        let wc_source = self.pending_wc_source.take().filter(|_| is_whatever_code);
         // A parameter type naming a `constant` alias is its target, as in a
         // sub's signature (`param_defs_with_type_aliases_resolved`, #13728).
         let resolved_defs = self.param_defs_with_type_aliases_resolved(param_defs);
@@ -265,6 +267,7 @@ impl Compiler {
             compiled.is_pointy_block = true;
         }
         compiled.is_whatever_code = is_whatever_code;
+        compiled.whatever_source = wc_source.map(Into::into);
         // `is hidden-from-backtrace` is written into the body's trait record.
         let compiled_hidden = body.iter().any(|stmt| {
             matches!(stmt, Stmt::Ast(node) if matches!(

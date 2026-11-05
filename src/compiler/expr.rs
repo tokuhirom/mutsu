@@ -98,9 +98,24 @@ impl Compiler {
             // `wrap_whatevercode` used to build eagerly in the parser, then
             // compile that closure exactly as before. No new OpCode, no new
             // runtime path.
-            Expr::WhateverCurry(body) => {
+            Expr::WhateverCurry(body, source) => {
                 let closure = crate::whatever_curry::build_closure(body);
+                // Only a closure built directly from this scope owns the text
+                // (a `CallOn` wrapper compiles its arguments first).
+                if matches!(
+                    &closure,
+                    Expr::Lambda {
+                        is_whatever_code: true,
+                        ..
+                    } | Expr::AnonSubParams {
+                        is_whatever_code: true,
+                        ..
+                    }
+                ) {
+                    self.pending_wc_source = source.clone();
+                }
                 self.compile_expr(&closure);
+                self.pending_wc_source = None;
             }
             // `todo/tickets/chained-compare-ast-node.md`: expand the marker
             // into the same `&&`-conjunction shape the parser used to build
@@ -740,11 +755,11 @@ impl Compiler {
                 if name.with_str(|n| n == "__mutsu_subscript_adverb")
                     && matches!(args.first(), Some(Expr::WhateverArg)) =>
             {
-                self.compile_expr(&Expr::WhateverCurry(Box::new(Expr::Call {
+                self.compile_expr(&Expr::curry(Expr::Call {
                     name: *name,
                     args: args.clone(),
                     listop: *listop,
-                })));
+                }));
             }
             Expr::Call { name, args, .. } => {
                 if name.with_str(|n| n == "EVAL") {
@@ -1191,14 +1206,14 @@ impl Compiler {
                 // `*.<a><b>:exists` is a WhateverCode over the whole subscript
                 // and its adverb; the priming scope the term planted sits
                 // around the subscript only, so move it out around the adverb.
-                if let Expr::WhateverCurry(inner) = target.as_ref() {
-                    let primed = Expr::WhateverCurry(Box::new(Expr::Exists {
+                if let Expr::WhateverCurry(inner, ..) = target.as_ref() {
+                    let primed = Expr::curry(Expr::Exists {
                         target: inner.clone(),
                         negated: *negated,
                         delete: *delete,
                         arg: arg.clone(),
                         adverb: *adverb,
-                    }));
+                    });
                     self.compile_expr(&primed);
                 } else {
                     self.compile_expr_exists(target, *negated, *delete, arg, adverb);

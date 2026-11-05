@@ -1278,7 +1278,7 @@ impl Compiler {
             // `Expr::Whatever` leaf plays the role `param` played below,
             // without needing a name to match against.
             if args.len() == 2
-                && let Expr::WhateverCurry(body) = &args[1]
+                && let Expr::WhateverCurry(body, ..) = &args[1]
                 && let Expr::Binary {
                     left, op, right, ..
                 } = body.as_ref()
@@ -1948,7 +1948,7 @@ impl Compiler {
                 // ADR-0033 Phase 1: see the sibling fast path above — a
                 // `cas($var, * + delta)` argument is still an un-expanded
                 // `WhateverCurry` here.
-                if let Expr::WhateverCurry(body) = &args[1]
+                if let Expr::WhateverCurry(body, ..) = &args[1]
                     && let Expr::Binary {
                         left, op, right, ..
                     } = body.as_ref()

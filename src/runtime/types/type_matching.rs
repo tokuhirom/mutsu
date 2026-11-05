@@ -878,7 +878,7 @@ impl Interpreter {
                     Expr::AnonSub { .. }
                         | Expr::AnonSubParams { .. }
                         | Expr::Block(_)
-                        | Expr::WhateverCurry(_)
+                        | Expr::WhateverCurry(..)
                 );
                 if is_callable_expr {
                     // Evaluate to get a callable, then call with the value

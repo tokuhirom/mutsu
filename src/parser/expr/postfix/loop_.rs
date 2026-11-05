@@ -595,7 +595,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             if crate::parser::expr::contains_whatever(&expr)
                 || crate::parser::expr::is_whatever(&expr)
             {
-                node = Expr::WhateverCurry(Box::new(node));
+                node = Expr::curry(node);
             }
             return postfix_expr_continue(rest, node);
         }

@@ -150,11 +150,14 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             };
             // Apply WhateverCode wrapping (e.g., `* *= 2` -> WhateverCode lambda)
             if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
-                compound_expr = Expr::WhateverCurry(Box::new(compound_expr));
+                compound_expr = Expr::curry(compound_expr);
             }
             return Ok((r, compound_expr));
         }
-        Ok((rest, crate::parser::expr::wrap_finished_expr(expr)))
+        Ok((
+            rest,
+            crate::parser::expr::wrap_finished_expr_at(expr, input, rest),
+        ))
     }
 
     if input.starts_with(')') {
