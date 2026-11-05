@@ -728,7 +728,11 @@ pub(super) fn smiley_type_word_expr(names: &NameScope, name: &str) -> Option<Exp
         .or_else(|| name.strip_suffix(":_"))?;
     type_word_expr(names, base)?;
     let node = view_node(names, name)?;
-    matches!(node.class, RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness).then(|| Expr::BareWord(name.to_string()))
+    matches!(
+        node.class,
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness
+    )
+    .then(|| Expr::BareWord(name.to_string()))
 }
 
 /// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
