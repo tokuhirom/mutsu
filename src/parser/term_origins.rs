@@ -344,6 +344,34 @@ impl Walk {
     }
 }
 
+impl Walk {
+    /// Visit the children of `expr`. The plain variable an assignment starts
+    /// with (`$n = ...`) is not a term the parser noted (the conversion places
+    /// it from the text, see `parsed_view::assign_node`), so it is neither
+    /// counted nor given a range: it would take the first note of an equal
+    /// term (`$n = $n.abs if $n.WHAT`).
+    // Cost: O(n), n = size of the subtree.
+    fn walk_children(&mut self, expr: &mut Expr) {
+        if let Expr::Ast(node) = expr
+            && let crate::ast::parsed::ParsedExpr::Assign(a) = node.as_mut()
+            && is_plain_variable(&a.target)
+        {
+            self.visit_expr_mut(&mut a.source);
+            return;
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
+    }
+}
+
+/// A scalar, array or hash variable named by plain word characters.
+// Cost: O(n), n = length of the name.
+fn is_plain_variable(expr: &Expr) -> bool {
+    let (Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name)) = expr else {
+        return false;
+    };
+    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
 impl VisitMut for Walk {
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         if let Stmt::SetLine(_, span) = stmt
@@ -420,12 +448,12 @@ impl VisitMut for Walk {
         if let Expr::Spelled(spelled) = expr
             && matches!(spelled.spelling, Spelling::Origin(_))
         {
-            crate::ast_visit::walk_expr_mut(self, expr);
+            self.walk_children(expr);
             return;
         }
         if self.mode == Mode::Collect {
             self.terms.push((self.statement, fingerprint(expr)));
-            crate::ast_visit::walk_expr_mut(self, expr);
+            self.walk_children(expr);
             return;
         }
         let print = self.terms[self.next].1;
@@ -435,7 +463,7 @@ impl VisitMut for Walk {
         // which Rakudo gives no origin: it takes its note (so the `*`s after
         // it keep theirs) and attaches none.
         let Some(span) = claimed.filter(|_| !matches!(expr, Expr::WhateverArg)) else {
-            crate::ast_visit::walk_expr_mut(self, expr);
+            self.walk_children(expr);
             return;
         };
         let inner = std::mem::replace(expr, Expr::Whatever);
@@ -445,7 +473,7 @@ impl VisitMut for Walk {
         }));
         if let Expr::Spelled(spelled) = expr {
             self.enclosing.push(span);
-            crate::ast_visit::walk_expr_mut(self, &mut spelled.expr);
+            self.walk_children(&mut spelled.expr);
             self.enclosing.pop();
         }
     }
