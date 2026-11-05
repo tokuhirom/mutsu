@@ -9434,6 +9434,40 @@ impl CompiledCode {
             .filter(|d| d.flags.simple_scalar_local())
     }
 
+    /// A `for ... -> $h` whose parameter had no slot when the loop was compiled
+    /// (the same name is declared by a later statement of the unit, so the
+    /// body's reads and stores were compiled by name) still finds that later
+    /// slot at run time, where by-name lookups prefer the slot. Name it as the
+    /// loop's `param_local`, so the loop keeps the slot in step with the
+    /// parameter it binds each iteration and puts it back afterwards, as it
+    /// does for a slot that existed before the loop.
+    // Cost: O(f * l) for f for-loops of the chunk and l locals; run once at finalize.
+    fn bind_for_params_to_later_locals(&mut self) {
+        let mut patches: Vec<(usize, u32)> = Vec::new();
+        for (pos, op) in self.ops.iter().enumerate() {
+            let OpCode::ForLoop(spec) = op else { continue };
+            let Some(idx) = spec.param_idx else { continue };
+            if spec.param_local.is_some() {
+                continue;
+            }
+            let Some(ValueView::Str(name)) = self.constants.get(idx as usize).map(Value::view)
+            else {
+                continue;
+            };
+            if name.starts_with(['@', '%', '&', '^', '\\']) {
+                continue;
+            }
+            if let Some(slot) = self.locals.iter().position(|l| l.as_str() == name.as_str()) {
+                patches.push((pos, slot as u32));
+            }
+        }
+        for (pos, slot) in patches {
+            if let OpCode::ForLoop(spec) = &mut self.ops[pos] {
+                spec.param_local = Some(slot);
+            }
+        }
+    }
+
     /// Computes the five per-local metadata `Symbol`s on every
     /// [`crate::binding_desc::BindingDesc`], plus `locals_sym`.
     ///
@@ -9449,6 +9483,7 @@ impl CompiledCode {
     /// started.
     pub(crate) fn compute_locals_sym(&mut self) {
         self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
+        self.bind_for_params_to_later_locals();
         if self.binding_descs.len() < self.locals.len() {
             self.binding_descs.resize(
                 self.locals.len(),
