@@ -114,6 +114,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         // `x[i] = v` and `x[i] := v`: read back as the parser built them; the bound
         // value's marker (`IndexBindValue`) is the compiler's own.
         Expr::IndexAssign { .. } | Expr::IndexBindValue(_) => true,
+        // `@a >>[&f]<< @b`: the function is the lexical `&f` the conversion names.
+        Expr::HyperFuncOp { func_name, .. } => plain_code_name(func_name),
         Expr::Whatever => true,
         // The `*` of a priming scope (`* + 1`): `WhateverCode::Argument` reads back as it.
         Expr::WhateverArg => true,
@@ -288,7 +290,8 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
         return true;
     }
     if matches!(expr, Expr::CodeVar(_)) {
-        return plain_code_name(name);
+        // `&!code`: a private attribute holding code reads back as itself.
+        return plain_code_name(name) || name.strip_prefix('!').is_some_and(plain_code_name);
     }
     // A positional capture (`$0`) reads back as `Var::PositionalCapture`, whose
     // index is the canonical integer.

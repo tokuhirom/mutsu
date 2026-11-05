@@ -4363,7 +4363,7 @@ fn anon_routine_node(
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
             Some("signature"),
-            signature(names, param_defs, true, returns)?,
+            super::routine_origins::anon_signature(names, param_defs, returns)?,
         ));
     }
     fields.push(node_field(Some("body"), blockoid(names, body)?));
