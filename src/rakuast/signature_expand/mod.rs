@@ -112,7 +112,10 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             Vec::new()
         };
         stmts.push(Stmt::VarDecl {
-            marks: Default::default(),
+            marks: crate::ast::var_marks::VarMarks {
+                signature_element: true,
+                ..Default::default()
+            },
             anonymous: false,
             name: dvar.name.clone(),
             expr,
@@ -449,6 +452,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         let decl = Stmt::VarDecl {
             marks: crate::ast::var_marks::VarMarks {
                 sigilless_decl: binds_element && dvar.sigilless,
+                signature_element: true,
                 // The same marks `my \a := $x` carries
                 // (`rakuast::sigilless_lower::build_sigilless_bind_stmt`): the compiler learns
                 // before compiling the declaration that this bind's target is

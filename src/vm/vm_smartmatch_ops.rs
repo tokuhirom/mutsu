@@ -9,6 +9,7 @@ impl Interpreter {
     fn direct_native_lhs_match(
         &self,
         lhs_var: Option<&String>,
+        boxed_native: bool,
         left: &Value,
         right: &Value,
     ) -> Option<bool> {
@@ -39,6 +40,11 @@ impl Interpreter {
             if left_base == base {
                 return Some(true);
             }
+        }
+        // A plain `my int $x` is read boxed under RakuAST (the compiler flags
+        // it); a native parameter or a destructured declaration is not.
+        if boxed_native {
+            return Some(false);
         }
         let Some(name) = lhs_var else {
             return Some(false);
@@ -76,6 +82,13 @@ impl Interpreter {
             Some(SmartMatchLhs::Var { name, .. }) => Some(name),
             _ => None,
         };
+        let lhs_boxed_native = matches!(
+            lhs,
+            Some(SmartMatchLhs::Var {
+                boxed_native: true,
+                ..
+            })
+        );
         let lhs_slot: Option<u32> = match lhs {
             Some(SmartMatchLhs::Var { slot, .. }) => *slot,
             _ => None,
@@ -223,7 +236,7 @@ impl Interpreter {
         // this frame's locals; publish those before matching against it.
         let value_names = Self::smartmatch_value_sync(&left, &right);
         self.apply_smartmatch_sync(code, &value_names);
-        let native_lhs_match = self.direct_native_lhs_match(lhs_var, &left, &right);
+        let native_lhs_match = self.direct_native_lhs_match(lhs_var, lhs_boxed_native, &left, &right);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is
