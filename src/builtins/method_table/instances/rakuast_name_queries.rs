@@ -34,7 +34,8 @@ macro_rules! name_queries {
                 name: "qualified-with",
                 arity: 1,
                 handler: Handler::Pure(qualified_with),
-                flags: RowFlags::OWNER_ONLY,
+                // The qualifier is a node, not a plain scalar.
+                flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
                 named: &[],
             },
         ];
