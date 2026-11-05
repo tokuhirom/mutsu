@@ -48,6 +48,29 @@ pub(crate) const RULE_PARAMS_MARK: char = '\u{2}';
 /// relaxed load per call and nothing else.
 pub(crate) static ANY_POSITIONAL_TOKEN_PARAM: AtomicBool = AtomicBool::new(false);
 
+/// Set the first time a rule declaring a positional `is rw` parameter is
+/// registered; gates [`Interpreter::mark_rw_regex_args`].
+pub(crate) static ANY_RW_TOKEN_PARAM: AtomicBool = AtomicBool::new(false);
+
+/// Starts the key of a [`SavedDynParams`] entry that is not a shadowed
+/// binding but the write-back of an `is rw` runtime parameter to the caller's
+/// variable ([`rw_alias_key`]).
+const RW_ALIAS_MARK: char = '\u{3}';
+
+/// The [`SavedDynParams`] key that sends the final value of the runtime
+/// parameter `param` back to the caller's variable `caller` when the window is
+/// torn down (`restore_subrule_dynamic_params`).
+// Cost: O(n), n = the names' total length.
+fn rw_alias_key(param: &str, caller: &str) -> String {
+    format!("{RW_ALIAS_MARK}{param}{RW_ALIAS_MARK}{caller}")
+}
+
+/// `(param, caller)` of an [`rw_alias_key`], `None` for an ordinary key.
+// Cost: O(n), n = the key's length.
+pub(crate) fn split_rw_alias_key(key: &str) -> Option<(&str, &str)> {
+    key.strip_prefix(RW_ALIAS_MARK)?.split_once(RW_ALIAS_MARK)
+}
+
 /// `(pkg, rule name) -> its runtime parameter names` under the token
 /// generation the entry was built for; `None` when the rule does not qualify.
 type RuntimeParamsCache =
@@ -113,6 +136,18 @@ pub(crate) fn note_token_def_positional_params(param_defs: &[ParamDef]) {
     if param_defs.iter().any(|pd| !pd.named && !pd.is_invocant) {
         ANY_POSITIONAL_TOKEN_PARAM.store(true, Ordering::Relaxed);
     }
+    if param_defs
+        .iter()
+        .any(|pd| !pd.named && !pd.is_invocant && is_rw_param(pd))
+    {
+        ANY_RW_TOKEN_PARAM.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether `pd` is a positional parameter whose only trait is `rw`.
+// Cost: O(1).
+fn is_rw_param(pd: &ParamDef) -> bool {
+    !pd.is_does_target() && matches!(pd.traits.as_slice(), [t] if t == "rw")
 }
 
 /// Whether `pd` can be bound by position straight into the call's window:
@@ -137,7 +172,7 @@ fn param_binds_positionally(pd: &ParamDef) -> bool {
         && pd.literal_value.is_none()
         && pd.type_capture.is_none()
         && pd.shape_constraints.is_none()
-        && pd.no_traits()
+        && (pd.no_traits() || is_rw_param(pd))
         && pd
             .type_constraint
             .as_deref()
@@ -161,7 +196,7 @@ fn param_binds_positionally(pd: &ParamDef) -> bool {
 /// opaque; such an argument list keeps the spliced-source path.
 // Cost: O(1).
 pub(crate) fn arg_binds_by_identity(value: &Value) -> bool {
-    let value = value.clone().into_deref();
+    let value = value.unwrap_varref().clone().into_deref();
     matches!(
         value.view(),
         ValueView::Int(_)
@@ -268,9 +303,62 @@ impl Interpreter {
         saved.reserve(names.len());
         for (param, value) in names.iter().zip(args) {
             saved.push((param.clone(), self.env.get(param).cloned()));
-            self.env.insert(param.clone(), value.clone().into_deref());
+            self.env.insert(
+                param.clone(),
+                value.unwrap_varref().clone().into_deref(),
+            );
+            // An `is rw` parameter aliases the caller's variable: the rule's
+            // code blocks write the parameter, and the window's end hands the
+            // final value back (`restore_subrule_dynamic_params`).
+            if let Some((caller, _)) = value.as_varref() {
+                saved.push((rw_alias_key(param, &caller.resolve()), None));
+            }
         }
         Some(saved)
+    }
+
+    /// `values` (the evaluated argument list of the call `spec` from `pkg`)
+    /// with each argument bound to an `is rw` parameter and written as a bare
+    /// variable wrapped in the variable's name, the way an ordinary call
+    /// passes an lvalue (`WrapVarRef`). The binder then accepts it for the
+    /// `is rw` parameter, and the call's window knows which variable to write
+    /// the parameter's final value to. Any other argument stays a value, so
+    /// binding it to an `is rw` parameter raises `X::Parameter::RW`, as for a
+    /// routine.
+    // Cost: O(1) when no rule declares an `is rw` positional parameter; else
+    // O(s * m + a), s = enclosing scopes, m = MRO length, a = the arguments.
+    pub(crate) fn mark_rw_regex_args(
+        &self,
+        spec: &super::regex_helpers::NamedRegexLookupSpec,
+        pkg: Symbol,
+        values: Vec<Value>,
+    ) -> Vec<Value> {
+        if !ANY_RW_TOKEN_PARAM.load(Ordering::Relaxed)
+            || values.is_empty()
+            || spec.arg_exprs.len() != values.len()
+        {
+            return values;
+        }
+        let defs = self.resolve_token_defs_in_pkg(&spec.lookup_name, pkg);
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| {
+                let rw_here = defs.iter().any(|def| {
+                    def.param_defs
+                        .iter()
+                        .filter(|pd| !pd.named && !pd.is_invocant)
+                        .nth(i)
+                        .is_some_and(is_rw_param)
+                });
+                match bare_scalar_name(&spec.arg_exprs[i]) {
+                    Some(name) if rw_here => {
+                        Value::varref(Symbol::intern(name), value, None)
+                    }
+                    _ => value,
+                }
+            })
+            .collect()
     }
 
     /// The keys of a call window's bindings `saved` whose final values are
@@ -292,6 +380,7 @@ impl Interpreter {
         saved
             .iter()
             .map(|(key, _)| key)
+            .filter(|key| split_rw_alias_key(key).is_none())
             .filter(|key| runtime.as_ref().is_none_or(|names| !names.contains(key)))
             .cloned()
             .collect()
@@ -337,6 +426,24 @@ impl Interpreter {
         }
         Some(Some((mark_rule_params(&names, text), *sub_pkg)))
     }
+}
+
+/// `name` when `expr` is exactly a plain scalar variable `$name`.
+// Cost: O(n), n = the expression's length.
+fn bare_scalar_name(expr: &str) -> Option<&str> {
+    let name = expr.trim().strip_prefix('$')?;
+    let mut chars = name.chars().peekable();
+    let first = chars.next()?;
+    if !(first.is_alphabetic() || first == '_') {
+        return None;
+    }
+    while let Some(c) = chars.next() {
+        let kebab = c == '-' && chars.peek().is_some_and(|n| n.is_alphabetic() || *n == '_');
+        if !(c.is_alphanumeric() || c == '_' || kebab) {
+            return None;
+        }
+    }
+    Some(name)
 }
 
 /// Whether the body text `text` interpolates a list (`@list`, `@$x`,
