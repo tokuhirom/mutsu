@@ -135,6 +135,14 @@ impl Interpreter {
         // import is then not confined to the block).
         let mut lifted = 0;
         let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
+        // TODO: a unit that `use`s Test loses the candidates of a hook module's
+        // exported `&trait_mod:<is>` dispatcher when the hook is pre-run
+        // (`EVAL 'use Test; use ExportSubTraitDispatcher; ...'` finds none,
+        // with or without a `use lib`): until that is fixed such a unit keeps
+        // stopping the pre-run at its `use lib`.
+        let uses_test = stmts
+            .iter()
+            .any(|stmt| matches!(stmt, Stmt::Use { module, .. } if module == "Test"));
         let positional = super::undeclared_routines::contains_use_lib(&stmts)
             || stmts.iter().any(|stmt| {
                 matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
@@ -151,7 +159,7 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                !is_literal_use_lib(stmt)
+                !(is_literal_use_lib(stmt) && !uses_test)
                     && (super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
                         || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. }))
             })
@@ -190,7 +198,7 @@ impl Interpreter {
                 // The search path is in place before the `use` statements after
                 // it are probed for a `sub EXPORT` hook; the unit's own run then
                 // finds the path already at the front.
-                Stmt::Use { arg: Some(arg), .. } if is_literal_use_lib(stmt) => {
+                Stmt::Use { arg: Some(arg), .. } if is_literal_use_lib(stmt) && !uses_test => {
                     let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
                     self.add_lib_paths(&value)?;
                     after_use_lib = true;
