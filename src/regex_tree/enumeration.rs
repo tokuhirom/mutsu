@@ -264,6 +264,7 @@ impl Parser {
                 self.pos += 1;
                 return Some(elements);
             }
+            let mut from_surrogate = false;
             let element = if ch == '\\'
                 && let Some(space) = self
                     .chars
@@ -284,6 +285,7 @@ impl Parser {
                     if !self.chars[self.pos..].starts_with(&['.', '.']) {
                         return None;
                     }
+                    from_surrogate = true;
                     EnumerationElement::Character('\u{E000}')
                 } else {
                     self.parse_enumeration_escape()?
@@ -313,11 +315,15 @@ impl Parser {
                 self.pos += 2;
                 self.skip_plain_whitespace();
                 let from = single_char(&element)?;
+                let mut to_surrogate = false;
                 let to = match self.chars.get(self.pos).copied()? {
                     '\\' => match self.parse_surrogate_escape() {
                         // `..\xD8FF`: no string holds a surrogate, so the
                         // range ends at the last scalar value below them.
-                        Some(_) => '\u{D7FF}',
+                        Some(_) => {
+                            to_surrogate = true;
+                            '\u{D7FF}'
+                        }
                         None => single_char(&self.parse_enumeration_escape()?)?,
                     },
                     ']' => return None,
@@ -326,9 +332,12 @@ impl Parser {
                         ch
                     }
                 };
+                if from_surrogate && to_surrogate {
+                    // `\xD800..\xDBFF`: both ends are surrogates, so no scalar
+                    // value is in the range; rakudo accepts it as empty.
+                    continue;
+                }
                 if from > to {
-                    // Only reachable by clamping `\xD800..\xDFFF`: no scalar
-                    // value is in it.
                     return None;
                 }
                 elements.push(EnumerationElement::Range(from, to));
