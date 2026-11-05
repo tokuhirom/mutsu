@@ -28,12 +28,12 @@ plan 8;
     ok $!.backtrace.defined, '$!.backtrace is defined';
 }
 
-# A successful try leaves the Any type object in $!. Exception-only methods
-# therefore fail instead of silently returning Nil.
+# A successful try leaves Nil in $! (rakudo's RakuAST frontend; the legacy one
+# left the Any type object), so Exception methods called on it answer Nil.
 {
     try { 1 + 1 };
-    is $!.^name, 'Any', '$! is Any when there was no error';
-    dies-ok { $!.message }, '$!.message dies when there was no error';
+    is $!.^name, 'Nil', '$! is Nil when there was no error';
+    is $!.message, Nil, '$!.message is Nil when there was no error';
 }
 
 done-testing;
