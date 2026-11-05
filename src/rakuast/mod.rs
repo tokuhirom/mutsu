@@ -134,7 +134,7 @@ mod method_assign_decl;
 mod modifier_lower;
 mod multidim_splat;
 mod name_colonpairs;
-mod name_parts;
+pub(crate) mod name_parts;
 mod named_ctor;
 mod named_param;
 mod negated_set;

@@ -29,8 +29,34 @@ macro_rules! name_queries {
                 flags: RowFlags::OWNER_ONLY,
                 named: &[],
             },)*
+            MethodRow {
+                owner: "RakuAST::Name",
+                name: "qualified-with",
+                arity: 1,
+                handler: Handler::Pure(qualified_with),
+                flags: RowFlags::OWNER_ONLY,
+                named: &[],
+            },
         ];
     };
+}
+
+// Cost: O(p + q), p = parts of the name, q = parts of the qualifier.
+fn qualified_with(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    let node_of = |value: &Value| {
+        native_node(value).and_then(|base| match base.view() {
+            ValueView::RakuAst(node) => Some(node.clone()),
+            _ => None,
+        })
+    };
+    match (node_of(target), args.first().and_then(node_of)) {
+        (Some(name), Some(qualifier)) => Ok(crate::rakuast::name_queries::qualified_with(
+            &name, &qualifier,
+        )),
+        _ => Err(RuntimeError::new(
+            "Type check failed in binding to parameter '$qualifier'; expected RakuAST::Name",
+        )),
+    }
 }
 
 name_queries! {
@@ -45,4 +71,8 @@ name_queries! {
     "first-part" => first_part,
     "last-part" => last_part,
     "root-part" => root_part,
+    "simple-identifier" => simple_identifier,
+    "base-name" => base_name,
+    "without-colonpairs" => without_colonpairs,
+    "without-first-part" => without_first_part,
 }

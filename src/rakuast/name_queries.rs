@@ -82,8 +82,39 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .and_then(|v| v.as_list_items().map(|items| !items.is_empty()))
                 .unwrap_or(false),
         )),
+        // The identifier of a one-part simple name, else the Int `0`.
+        "simple-identifier" => match kinds.as_slice() {
+            [Part::Simple(name)] if kinds.len() == 1 => Some(Value::str(name.clone())),
+            _ => Some(Value::int(0)),
+        },
+        // A name over the same parts, the colonpairs left off.
+        "base-name" | "without-colonpairs" => Some(name_value(parts)),
+        "without-first-part" => Some(name_value(parts.get(1..).unwrap_or_default().to_vec())),
         "first-part" | "root-part" => parts.first().cloned(),
         "last-part" => parts.last().cloned(),
         _ => None,
     }
+}
+
+// Cost: O(p), p = parts.
+fn name_value(parts: Vec<Value>) -> Value {
+    Value::rakuast(Box::new(super::name_parts::name_from_parts(parts)))
+}
+
+/// `qualified-with(qualifier)`: the name with the parts of `qualifier` in
+/// front of its own; a name that starts with `GLOBAL` is already absolute and
+/// loses that part instead.
+// Cost: O(p + q), p = parts of the name, q = parts of the qualifier.
+pub(crate) fn qualified_with(node: &RakuAstNode, qualifier: &RakuAstNode) -> Value {
+    let own = parts(node);
+    let global = matches!(
+        own.first().map(classify),
+        Some(Part::Simple(name)) if name == "GLOBAL"
+    );
+    if global {
+        return name_value(own[1..].to_vec());
+    }
+    let mut all = parts(qualifier);
+    all.extend(own);
+    name_value(all)
 }
