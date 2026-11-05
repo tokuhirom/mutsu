@@ -196,6 +196,7 @@ mod type_ctor;
 mod type_lower;
 mod underscore_bindings;
 pub(crate) mod unit_source;
+mod unit_span;
 mod unspell;
 mod use_origins;
 mod use_stmt;

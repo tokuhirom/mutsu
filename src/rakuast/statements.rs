@@ -67,7 +67,7 @@ pub(super) fn statement_list_inner(
                 }
                 if let Some((n, mut span)) = line.take() {
                     // The declaration runs over the rest of the unit it holds.
-                    if let Some(rest) = super::view::unit_rest_span(&stmts[at + 1..])
+                    if let Some(rest) = super::unit_span::rest_span(&stmts[at + 1..])
                         && span.is_some()
                     {
                         span = crate::ast::SrcSpan::new(span.from as usize, rest.to as usize);
