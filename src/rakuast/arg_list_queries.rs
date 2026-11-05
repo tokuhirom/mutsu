@@ -58,7 +58,7 @@ pub(crate) fn from_comma_list(args: &[Value]) -> Result<Value, RuntimeError> {
         }
         _ => {
             return Err(RuntimeError::new(format!(
-                "Type check failed in binding to parameter '$comma-apply'; expected \
+                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '$comma-apply'; expected \
                  RakuAST::ApplyListInfix but got {}",
                 crate::value::type_name::value_type_name(apply)
             )));
