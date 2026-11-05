@@ -578,7 +578,7 @@ fn type_field(node: &RakuAstNode) -> Option<Value> {
 /// `compile-time-value` reads the declared type off it. It is built once, so it
 /// keeps its identity.
 // Cost: O(1).
-fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
+pub(super) fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     let ValueView::RakuAst(held) = target.view() else {
         return;
     };
@@ -590,25 +590,40 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     let (Some(sigil), rest) = (chars.next(), chars.as_str()) else {
         return;
     };
-    let mut fields = vec![
-        super::view::leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-        super::view::leaf_field(
-            Some("desigilname"),
-            Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
-                super::name_parts::simple_part(rest),
-            ]))),
-        ),
-    ];
+    // A twigil (`$*dyn`) sits between the sigil and the name.
+    let (twigil, rest) = match rest.chars().next() {
+        Some(c) if !c.is_alphanumeric() && c != '_' && c != '-' => (Some(c), &rest[c.len_utf8()..]),
+        _ => (None, rest),
+    };
+    let mut fields = vec![super::view::leaf_field(
+        Some("sigil"),
+        Value::str(sigil.to_string()),
+    )];
+    if let Some(twigil) = twigil {
+        fields.push(super::view::leaf_field(
+            Some("twigil"),
+            Value::str(twigil.to_string()),
+        ));
+    }
+    fields.push(super::view::leaf_field(
+        Some("desigilname"),
+        Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
+            super::name_parts::simple_part(rest),
+        ]))),
+    ));
     // The constructor's own order (`type` first), which the field lookups of a
     // declaration read.
     if let Some(ty) = type_node {
         fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
     }
-    node.origin.2 = Some(Value::rakuast(Box::new(RakuAstNode {
+    let mut declaration = RakuAstNode {
         origin: Default::default(),
         class: C::VarDeclarationSimple,
         fields,
-    })));
+    };
+    // The declaration sits where its target does.
+    declaration.origin.0 = node.origin.0.clone();
+    node.origin.2 = Some(Value::rakuast(Box::new(declaration)));
     *target = Value::rakuast(Box::new(node));
 }
 

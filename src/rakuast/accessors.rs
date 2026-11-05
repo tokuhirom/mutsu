@@ -17,6 +17,25 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // A lookup's resolution, added by [`resolve`] to the unit tree `$*CU`
     // answers (and absent from a tree built any other way, which resolves
     // nothing).
+    // The declaration a parameter's target makes is built when the target is
+    // read through its parameter (which knows the declared type), so
+    // `.target.declaration` answers without a resolution pass having run.
+    if method == "target"
+        && node.class == RakuAstClass::Parameter
+        && let Some(field) = node.fields.iter().find(|f| f.name == Some("target"))
+        && let RakuAstFieldValue::Node(target) = &field.value
+        && let ValueView::RakuAst(held) = target.view()
+        && held.class == RakuAstClass::ParameterTargetVar
+        && held.origin.2.is_none()
+    {
+        let type_node = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+            (Some("type"), RakuAstFieldValue::Node(ty)) => Some(ty.clone()),
+            _ => None,
+        });
+        let mut target = target.clone();
+        resolve::embed_declaration(&mut target, type_node.as_ref());
+        return Some(target);
+    }
     if method == "compile-time-value"
         && matches!(
             node.class,
