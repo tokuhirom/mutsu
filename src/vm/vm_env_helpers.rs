@@ -1794,7 +1794,7 @@ impl Interpreter {
         // store is keyed by BARE NAME across the whole process, so its entries
         // under such a name describe the *shadowed* outer binding, and
         // preferring them makes a routine's (or a worker's) own `my @a` read as
-        // the caller's. See `container_name_is_redeclared`.
+        // the caller's.
         //
         // The probe is skipped entirely until some atomic array/hash lane entry
         // has actually been created (`atomic_lane_entries_exist`). A lane can

@@ -284,35 +284,6 @@ impl Interpreter {
         self.threads.shared_vars.get(key)
     }
 
-    /// Whether a `@`/`%` name is currently masked by a re-declaration in this
-    /// lineage (`thread_redeclared_vars`), i.e. the frame's binding is a fresh
-    /// container that merely shares a *name* with whatever the cross-thread
-    /// store holds.
-    ///
-    /// `set_shared_var_sym` and `sync_shared_vars_to_env` consult
-    /// `thread_redeclared_vars` directly for the write and bulk-read sides; the
-    /// container-specific routes (`push_to_shared_var`, the element-assign
-    /// write-throughs, the `GetLocal` shared preference) each decide "is this
-    /// name genuinely shared?" by *presence* in the store, which a masked name
-    /// still satisfies — the entry is simply the outer binding's. They ask here
-    /// instead so a re-declared container stays frame-local on every axis.
-    ///
-    /// A live `@`/`%` **parameter** binding counts too: `clone_for_thread_for_block`
-    /// keeps it off the lane for the same reason (a fresh per-invocation binding
-    /// that merely shares a name), so whatever the store holds under the name
-    /// belongs to some other binding. Without this, a closure's captured
-    /// `@g.push(...)` funnelled into the name-keyed atomic store and merged two
-    /// closures whose `@g` were bound to different caller arrays (#10076).
-    pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
-        self.threads.shared_vars_active
-            && key.starts_with(['@', '%'])
-            && (self.threads.thread_redeclared_vars.borrow().contains(key)
-                || self
-                    .env
-                    .get(key)
-                    .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(key, cur)))
-    }
-
     /// Whether the name-keyed cross-thread lane (`shared_vars`,
     /// `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::`) may stand for the
     /// `@`/`%` binding `key` (ADR-16595 §2 rule 3).
@@ -323,10 +294,10 @@ impl Interpreter {
     /// ADR-0068 lock. The lane keeps the names that are not such a lexical
     /// (attributes `@!x`, dynamics `@*x`, `__mutsu_*` keys) and the opaque ones
     /// ([`Self::lexical_name_is_opaque`]), unless this lineage re-declared the
-    /// name ([`Self::container_name_is_redeclared`]).
+    /// name.
     // Cost: O(1) expected, a prefix check and at most two set probes.
     pub(crate) fn container_lane_applies(&self, key: &str) -> bool {
-        !self.container_name_is_redeclared(key) && !self.lexical_has_own_place(key)
+        !self.lexical_has_own_place(key)
     }
 
     /// Whether `key` is a plain user `@`/`%` lexical that a thread reaches

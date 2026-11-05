@@ -739,7 +739,7 @@ impl Interpreter {
                     // Read when a thread spawns from a block this frame made
                     // (`clone_for_thread_for_block`, even the first spawn,
                     // before any thread exists), and while threads share
-                    // names (`container_name_is_redeclared`). A body that
+                    // names. A body that
                     // makes no closure, outside a threaded run, has no reader
                     // (#12526).
                     if !cf.code.closure_compiled_codes.is_empty() || self.threads.shared_vars_active

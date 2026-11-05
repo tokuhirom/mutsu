@@ -216,7 +216,7 @@ impl ThreadSharing {
             // treatment into the child: the child's env was just cloned from
             // the parent's, so it already holds THIS call's own value under
             // that bare name. Without inheriting the mask here, the child's
-            // read gate (`container_name_is_redeclared`) sees the name as
+            // read gate sees the name as
             // unmasked and falls through to the shared-store fallback, which
             // may hold a DIFFERENT, now-stale value seeded by an earlier
             // sequential call to the same routine (the mask itself is lifted
