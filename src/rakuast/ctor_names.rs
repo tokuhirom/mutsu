@@ -58,3 +58,12 @@ pub(super) fn check_new(class_name: &str, args: &[Value]) -> Result<(), RuntimeE
 fn is_named(arg: &Value) -> bool {
     matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
 }
+
+/// Whether `class_name.new` declares the named parameter `name`.
+// Cost: O(n), n = named parameters of the class.
+pub(super) fn declares(class_name: &str, name: &str) -> bool {
+    class_name.starts_with("RakuAST::")
+        && TABLE
+            .get(class_name)
+            .is_some_and(|declared| declared.contains(&name))
+}

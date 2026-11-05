@@ -81,12 +81,49 @@ pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {
     Some(slot)
 }
 
+/// The lines of one documentation text: the hidden field of a parsed node, or
+/// the `leading`/`trailing` list of the `Doc::Declarator` a node was given as
+/// its `WHY`.
+// Cost: O(f + l), f = fields of the node, l = lines of the text.
+fn lines_of(node: &RakuAstNode, label: &str, key: &str) -> Vec<String> {
+    if let Some(text) = text(node, key) {
+        return vec![text];
+    }
+    let Some(why) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+        (Some("WHY"), RakuAstFieldValue::Node(v)) => Some(v),
+        _ => None,
+    }) else {
+        return Vec::new();
+    };
+    let ValueView::RakuAst(doc) = why.view() else {
+        return Vec::new();
+    };
+    doc.fields
+        .iter()
+        .filter(|f| f.name == Some(label_name(label)))
+        .flat_map(|f| match &f.value {
+            RakuAstFieldValue::List(items) => items.iter().collect::<Vec<_>>(),
+            RakuAstFieldValue::Node(item) => vec![item],
+            RakuAstFieldValue::Adverb(_) => Vec::new(),
+        })
+        .filter_map(|item| match item.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn label_name(label: &str) -> &'static str {
+    if label == "leading" { "leading" } else { "trailing" }
+}
+
 /// The `.declarator-docs(...)` call printed after a node rendered at `indent`.
-// Cost: O(1).
+// Cost: O(f + l), f = fields of the node, l = lines of its documentation.
 pub(super) fn suffix(node: &RakuAstNode, indent: usize) -> String {
-    let parts: Vec<(&str, String)> = [("leading", LEADING), ("trailing", TRAILING)]
+    let parts: Vec<(&str, Vec<String>)> = [("leading", LEADING), ("trailing", TRAILING)]
         .into_iter()
-        .filter_map(|(label, key)| text(node, key).map(|t| (label, t)))
+        .map(|(label, key)| (label, lines_of(node, label, key)))
+        .filter(|(_, lines)| !lines.is_empty())
         .collect();
     if parts.is_empty() {
         return String::new();
@@ -96,11 +133,12 @@ pub(super) fn suffix(node: &RakuAstNode, indent: usize) -> String {
     let inner = " ".repeat(indent + 4);
     let lines = parts
         .iter()
-        .map(|(label, t)| {
-            format!(
-                "{pad}{label:<width$} => (\n{inner}{},\n{pad})",
-                super::render::render_str_literal(t)
-            )
+        .map(|(label, texts)| {
+            let body = texts
+                .iter()
+                .map(|t| format!("{inner}{},\n", super::render::render_str_literal(t)))
+                .collect::<String>();
+            format!("{pad}{label:<width$} => (\n{body}{pad})")
         })
         .collect::<Vec<_>>()
         .join(",\n");
