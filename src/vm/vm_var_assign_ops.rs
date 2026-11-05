@@ -76,6 +76,24 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The items a whole-array assignment gives a one-dimensional shaped array
+    /// of `len` slots: rakudo refuses more items than slots, naming the first
+    /// index past the end, instead of dropping the extras.
+    // Cost: O(1) (a length comparison); the items are moved, not copied.
+    pub(crate) fn shaped_assign_items(
+        items: Vec<Value>,
+        len: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if items.len() > len {
+            return Err(RuntimeError::new(format!(
+                "Index {} for dimension 1 out of range (must be 0..{})",
+                len,
+                len.saturating_sub(1)
+            )));
+        }
+        Ok(items)
+    }
+
     pub(super) fn delegated_mixin_attr_key(
         &self,
         mixins: &crate::value::MixinOverrides,

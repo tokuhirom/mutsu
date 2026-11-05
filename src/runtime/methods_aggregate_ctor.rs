@@ -158,9 +158,10 @@ impl Interpreter {
                             .iter()
                             .any(|v| !matches!(v.view(), ValueView::Array(..) | ValueView::Nil))
                     {
-                        return Err(RuntimeError::new(
-                            "X::Assignment::ToShaped: Cannot assign a flat list to a shaped array",
-                        ));
+                        return Err(RuntimeError::new(format!(
+                            "X::Assignment::ToShaped: Assignment to array with shape {} must provide structured data",
+                            dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(" ")
+                        )));
                     }
                     if data_items.len() > dim_size {
                         return Err(RuntimeError::new(format!(

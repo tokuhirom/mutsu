@@ -546,7 +546,7 @@ impl Interpreter {
                 if shape.len() == 1 && !assigned_has_own_shape {
                     let items = runtime::value_to_list(&assigned);
                     let item_count = items.len();
-                    let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                    let mut shaped_items: Vec<Value> = Self::shaped_assign_items(items, shape[0])?;
                     if item_count < shape[0] {
                         shaped_items.resize(shape[0], Value::NIL);
                     }
