@@ -94,13 +94,34 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    edit_row!("RakuAST::Doc::Markup", RakuAstClass::DocMarkup, "add-meta", |node, item| doc_edit::markup_add(node, "meta", item)),
-    edit_row!("RakuAST::Doc::Markup", RakuAstClass::DocMarkup, "set-atoms", |node, list| doc_edit::markup_set_list(node, "atoms", list)),
-    edit_row!("RakuAST::Doc::Markup", RakuAstClass::DocMarkup, "set-meta", |node, list| doc_edit::markup_set_list(node, "meta", list)),
-    edit_row!("RakuAST::Doc::Markup", RakuAstClass::DocMarkup, "set-opener", |node, text| doc_edit::markup_set_delimiter(
-        node, "opener", text
-    )),
-    edit_row!("RakuAST::Doc::Markup", RakuAstClass::DocMarkup, "set-closer", |node, text| doc_edit::markup_set_delimiter(
-        node, "closer", text
-    )),
+    edit_row!(
+        "RakuAST::Doc::Markup",
+        RakuAstClass::DocMarkup,
+        "add-meta",
+        |node, item| doc_edit::markup_add(node, "meta", item)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Markup",
+        RakuAstClass::DocMarkup,
+        "set-atoms",
+        |node, list| doc_edit::markup_set_list(node, "atoms", list)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Markup",
+        RakuAstClass::DocMarkup,
+        "set-meta",
+        |node, list| doc_edit::markup_set_list(node, "meta", list)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Markup",
+        RakuAstClass::DocMarkup,
+        "set-opener",
+        |node, text| doc_edit::markup_set_delimiter(node, "opener", text)
+    ),
+    edit_row!(
+        "RakuAST::Doc::Markup",
+        RakuAstClass::DocMarkup,
+        "set-closer",
+        |node, text| doc_edit::markup_set_delimiter(node, "closer", text)
+    ),
 ];

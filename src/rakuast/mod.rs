@@ -92,12 +92,12 @@ pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, 
 mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_list_queries;
-pub(crate) mod doc_edit;
 pub(crate) mod block_queries;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod derived_methods;
+pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
 mod doc_str;
