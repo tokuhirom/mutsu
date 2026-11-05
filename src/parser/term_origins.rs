@@ -248,14 +248,7 @@ fn matched_ranges(
         .filter_map(|(k, mut spans)| {
             spans.sort_by_key(|s| (s.from, s.to));
             spans.dedup();
-            let terms = wanted.get(&k).copied().unwrap_or(0);
-            // The variable an assignment starts with (`$n = $n.abs if $n`) is
-            // held by name, not as a term: the one note more than there are
-            // terms that sits at the statement's start is its.
-            if spans.len() == terms + 1 && spans.first().is_some_and(|s| s.from == k.0) {
-                spans.remove(0);
-            }
-            (spans.len() <= terms).then(|| (k, spans.into()))
+            (spans.len() <= wanted.get(&k).copied().unwrap_or(0)).then(|| (k, spans.into()))
         })
         .collect()
 }
@@ -339,15 +332,20 @@ impl Walk {
     /// lies inside the nearest attached enclosing term.
     // Cost: O(1).
     fn claim(&mut self, print: u64) -> Option<SrcSpan> {
-        let span = self
-            .ranges
-            .get_mut(&key(self.statement, print))?
-            .pop_front()?;
-        let inside = self
-            .enclosing
-            .last()
-            .is_none_or(|outer| outer.from <= span.from && span.to <= outer.to);
-        inside.then_some(span)
+        let queue = self.ranges.get_mut(&key(self.statement, print))?;
+        // A range that lies outside the enclosing term is one of a term the
+        // tree does not hold as an expression (the variable an assignment
+        // starts with, `$n = $n.abs if $n.WHAT`): it is passed over.
+        while let Some(span) = queue.pop_front() {
+            let inside = self
+                .enclosing
+                .last()
+                .is_none_or(|outer| outer.from <= span.from && span.to <= outer.to);
+            if inside {
+                return Some(span);
+            }
+        }
+        None
     }
 }
 
