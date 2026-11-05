@@ -134,7 +134,11 @@ impl Interpreter {
                     );
                     // For coercion types like `Bool(Mu)`, the nominal type is the
                     // inner type (Mu) — autothreading is based on the nominal type.
-                    let constraint = Self::nominal_type_for_closure(constraint_raw);
+                    // `Junction:D` / `Mu:U` bind a Junction whole like the bare type.
+                    let constraint = crate::runtime::types::strip_type_smiley(
+                        Self::nominal_type_for_closure(constraint_raw),
+                    )
+                    .0;
                     // Mu and Junction accept junctions directly
                     if constraint == "Mu" || constraint == "Junction" {
                         // No auto-threading needed
