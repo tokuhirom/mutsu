@@ -43,6 +43,19 @@ pub(super) fn anon_signature(
 ) -> Result<RakuAstNode, crate::value::RuntimeError> {
     let mut signature = super::view::signature(names, params, true, returns)?;
     parameters(&mut signature, params);
+    // The signature runs from the first parameter to the end of the last.
+    if let (Some(first), Some(last)) = (params.first(), params.last())
+        && first.spans.param.is_some()
+        && last.spans.param.is_some()
+    {
+        super::origin::set_span(
+            &mut signature,
+            crate::ast::SrcSpan::new(
+                first.spans.param.from as usize,
+                last.spans.param.to as usize,
+            ),
+        );
+    }
     Ok(signature)
 }
 
