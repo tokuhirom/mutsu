@@ -766,6 +766,9 @@ impl Interpreter {
                         } else if !name.is_empty()
                             && !name.starts_with(['@', '%', '&', '*', '?', '!'])
                             && name != "/"
+                            // The match cursor `$¢` is `Nil` outside a match,
+                            // like `$/` (rakudo).
+                            && name != "\u{a2}"
                             && !name.bytes().all(|b| b.is_ascii_digit())
                         {
                             // A genuinely undeclared scalar reaches here either
