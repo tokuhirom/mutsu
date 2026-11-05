@@ -1331,7 +1331,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // or the constrained type) so that values from an outer scope
             // don't leak into recursive calls.
             if !sub_pd.name.is_empty() {
-                let default_val = Interpreter::missing_optional_param_value(sub_pd);
+                let default_val = interpreter.omitted_optional_param_value(sub_pd);
                 bind_sub_param_name(interpreter, &sub_pd.storage_name(), default_val.clone());
                 // An unsupplied `:outer(:$inner)` alias must still declare the
                 // inner names the body actually reads.
