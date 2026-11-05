@@ -33,7 +33,8 @@ pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
     };
     super::infix_origins::with_child(node, "body", |blockoid| {
         super::origin::set_span(blockoid, SrcSpan::new(open, span.to as usize));
-        if let Some(field) = blockoid.fields.first_mut()
+        if list.1 > 0
+            && let Some(field) = blockoid.fields.first_mut()
             && let super::RakuAstFieldValue::Node(held) = &mut field.value
             && let crate::value::ValueView::RakuAst(inner) = held.view()
         {
@@ -92,6 +93,14 @@ fn body_ranges(span: SrcSpan, items: Option<(usize, usize)>) -> Option<(usize, (
                     None => open,
                 };
                 let inside = &text[open + 1..text.len() - 1];
+                // Exact or absent: a `#` may start a comment the statements'
+                // end must not include.
+                if inside.contains('#') {
+                    return Some((from + open, (0, 0)));
+                }
+                if inside.trim().is_empty() {
+                    return Some((from + open, (from + open + 1, from + open + 1)));
+                }
                 let lead = inside.len() - inside.trim_start().len();
                 let list_from = from + open + 1 + lead;
                 let list_to = from + open + 1 + inside.trim_end().len();
