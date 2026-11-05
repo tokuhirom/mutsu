@@ -111,8 +111,18 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Rakudo::Internals", "FILETEST-RW", 1, filetest_rw),
     row!("Rakudo::Internals", "FILETEST-RWX", 1, filetest_rwx),
     row!("Rakudo::Internals", "FILETEST-MODE", 1, filetest_mode),
-    row!("Rakudo::Internals", "FILETEST-MODIFIED", 1, filetest_modified),
-    row!("Rakudo::Internals", "FILETEST-ACCESSED", 1, filetest_accessed),
+    row!(
+        "Rakudo::Internals",
+        "FILETEST-MODIFIED",
+        1,
+        filetest_modified
+    ),
+    row!(
+        "Rakudo::Internals",
+        "FILETEST-ACCESSED",
+        1,
+        filetest_accessed
+    ),
     row!("Rakudo::Internals", "FILETEST-CHANGED", 1, filetest_changed),
     row!("Rakudo::Internals", "FILETEST-CREATED", 1, filetest_created),
     // `Rakudo::Iterator.Empty` / `.OneValue($v)`: the iterators of no value and
@@ -355,7 +365,6 @@ fn register_dynamic(
 ) -> Answer {
     Some(interp.register_dynamic(&all_args(args, named)))
 }
-
 
 /// `Rakudo::Internals.FILETEST-<name>($path)`: one handler per test, all
 /// answered by [`crate::runtime::native_io::rakudo_filetest::rakudo_filetest`].
