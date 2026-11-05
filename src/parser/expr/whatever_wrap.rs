@@ -178,9 +178,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                 {
                     Some(Expr::MethodCall {
                         target: Box::new(Expr::CallOn {
-                            target: Box::new(Expr::curry(
-                                (**inner_target).clone(),
-                            )),
+                            target: Box::new(Expr::curry((**inner_target).clone())),
                             args: call_args.clone(),
                         }),
                         name: *name,
