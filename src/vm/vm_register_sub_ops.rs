@@ -523,7 +523,18 @@ impl Interpreter {
             // an unrelated sibling-block `my $a` cannot pollute the map; the hoisted
             // top-of-block registration runs before the box and finds no cell, so it
             // correctly persists nothing (a call before the block reads undefined).
+            // An `EVAL` unit's `module`/`class` body is not a bare block: its `my`
+            // lexicals are the package's own, which the program proper never
+            // persists as escaping cells either (the unit's names are seeded from
+            // its compiled code, #16356), so a rebind by one of its `our sub`s
+            // keeps going through the package-scope store.
+            let in_eval_package_body = self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_some_and(|v| v.truthy())
+                && self.current_package_sym() != crate::symbol::wk::global_package();
             if *scope == crate::ast::SubScope::Our
+                && !in_eval_package_body
                 && !self.lexicals.escaping_our_lexical_names.is_empty()
             {
                 // Record the sub itself: the cell resolution
