@@ -26,6 +26,43 @@ impl Interpreter {
         n.min(cores)
     }
 
+    /// Give every plain scalar lexical the body of a threaded `for` names a
+    /// shared cell before the batch threads copy the frame's locals
+    /// (ADR-16595 rule 2). Without one each batch writes its own copy of the
+    /// scalar and the merge keeps a single batch's value, so a
+    /// `Lock.protect: { $n++ }` in the body lost all but one batch's updates.
+    // Cost: O(b + l), b = ops of the loop body, l = locals of the frame.
+    fn box_threaded_body_scalars(&mut self, code: &CompiledCode, body_start: usize, loop_end: usize) {
+        for idx in code.threaded_body_shared_slots(body_start, loop_end) {
+            let Some(name) = code.locals.get(idx).cloned() else {
+                continue;
+            };
+            if name.starts_with(['@', '%', '&']) || !crate::env::is_plain_user_lexical(&name) {
+                continue;
+            }
+            let cur = &self.locals[idx];
+            if cur.is_container_ref()
+                || (!cur.is_any_type_object()
+                    && matches!(
+                        cur.view(),
+                        ValueView::Sub(..)
+                            | ValueView::Proxy { .. }
+                            | ValueView::Seq(..)
+                            | ValueView::HyperSeq(..)
+                            | ValueView::RaceSeq(..)
+                            | ValueView::Slip(..)
+                    ))
+            {
+                continue;
+            }
+            let container = cur.clone().into_container_ref();
+            self.register_container_cell_constraint_for_name(&container, &name);
+            self.mark_fresh_cell_declared_untyped(&container, &name);
+            self.locals[idx] = container.clone();
+            self.env_mut().insert(name, container);
+        }
+    }
+
     /// Parallel `hyper for` / `race for`: split the item list into batches,
     /// run the compiled body on a cloned interpreter per batch, concatenate
     /// collected results in input order.
@@ -88,6 +125,7 @@ impl Interpreter {
             .map(|chunk| chunk.to_vec())
             .collect();
         let pre_shared_keys = self.shared_var_keys_snapshot();
+        self.box_threaded_body_scalars(code, body_start, loop_end);
         let locals_snapshot = self.locals.to_vec();
         type ThreadResult = (Result<Vec<Value>, RuntimeError>, Vec<Value>, String, String);
         let mut batch_results: Vec<ThreadResult> = Vec::with_capacity(batches.len());
