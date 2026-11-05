@@ -5516,6 +5516,11 @@ impl Interpreter {
                 bare_args,
             } => {
                 self.sync_source_line(code, *ip);
+                // This call site has just set the current line; a pending
+                // call-site line left by an earlier call (`try { g }` records
+                // the line of `g`'s call) is that call's, and would overwrite
+                // the line the closure's frame is entered from.
+                loan_env!(self, set_pending_callsite_line(None));
                 // `use fatal`: see the comment on the `CallFunc` arm above. The
                 // target is a `Value` here, not a static name, so `require`'s
                 // exemption can never apply -- pass "".
