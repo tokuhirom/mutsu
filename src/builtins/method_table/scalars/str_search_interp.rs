@@ -100,7 +100,11 @@ fn contains(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) ->
     if one_plain_needle(args, named) {
         return Some(super::str_search::contains(t, args));
     }
-    Some(i.dispatch_contains(t.clone(), &joined(args, named)))
+    // A regex needle built in a sub from its lexicals reads them through the
+    // scope it closed over, as `.match` does.
+    Some(i.with_regex_closure_scope(args.first().cloned(), |me| {
+        me.dispatch_contains(t.clone(), &joined(args, named))
+    }))
 }
 
 /// `starts-with($needle, :i, :m)`.
