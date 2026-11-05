@@ -121,5 +121,14 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     if let Some(count) = known_count {
         attrs.insert("known_count".to_string(), count);
     }
+    // Rakudo's `Hash.iterator` is not a `PredictiveIterator` (the elements are
+    // produced on demand from the hash's buckets); a list, array, range or
+    // buffer iterator is.
+    if matches!(target.view(), ValueView::Hash(..)) {
+        attrs.insert(
+            crate::value::NOT_PREDICTIVE_ITERATOR_ATTR.to_string(),
+            Value::TRUE,
+        );
+    }
     Value::make_instance(Symbol::intern("Iterator"), attrs)
 }

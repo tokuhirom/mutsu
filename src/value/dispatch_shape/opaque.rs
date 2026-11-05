@@ -111,6 +111,7 @@ pub(super) const fn opaque(
                 "RakuAST::Routine",
                 "RakuAST::Parameter",
                 "RakuAST::Name",
+                "RakuAST::Block",
             ],
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
