@@ -333,6 +333,18 @@ impl VisitMut for Finalize<'_> {
                 *expr = term;
                 return;
             }
+            // An imported term (`Spelling::ImportedTerm`): see `bareword::imported_term_expr`.
+            if let Expr::Spelled(spelled) = &*expr
+                && matches!(
+                    spelled.spelling,
+                    crate::ast::spelled::Spelling::ImportedTerm
+                )
+                && let Expr::BareWord(word) = &spelled.expr
+                && let Some(term) = super::bareword::imported_term_expr(names, word)
+            {
+                *expr = term;
+                return;
+            }
             // A routine word (`die-on-fail`, an imported function): see
             // `bareword::call_word_expr`.
             if let Expr::BareWord(word) = &*expr
@@ -730,6 +742,7 @@ mod tests {
             "my $s = 'abc'; $s ~~ tr/a-c/A-C/; say $s; say $s.trans('A' => 'x');",
             "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
             "my @a = 1, 2; my $v = 9; @a[0] := $v; my %h; %h<k> := $v; %h{'j'} := 1 => 2; say @a.raku;",
+            "use NativeCall; my uint16 $n = 3; sub f(int64 $x) { $x }; say f(2); say int32.^name; say num64 ~~ Num;",
         ] {
             assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }
