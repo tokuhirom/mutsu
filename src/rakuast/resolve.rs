@@ -578,7 +578,7 @@ fn type_field(node: &RakuAstNode) -> Option<Value> {
 /// `compile-time-value` reads the declared type off it. It is built once, so it
 /// keeps its identity.
 // Cost: O(1).
-fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
+pub(super) fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     let ValueView::RakuAst(held) = target.view() else {
         return;
     };
@@ -590,50 +590,8 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     let (Some(sigil), rest) = (chars.next(), chars.as_str()) else {
         return;
     };
-    let mut fields = vec![
-        super::view::leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-        super::view::leaf_field(
-            Some("desigilname"),
-            Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
-                super::name_parts::simple_part(rest),
-            ]))),
-        ),
-    ];
-    // The constructor's own order (`type` first), which the field lookups of a
-    // declaration read.
-    if let Some(ty) = type_node {
-        fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
-    }
-    node.origin.2 = Some(Value::rakuast(Box::new(RakuAstNode {
-        origin: Default::default(),
-        class: C::VarDeclarationSimple,
-        fields,
-    })));
-    *target = Value::rakuast(Box::new(node));
-}
-
-/// The `VarDeclaration::Simple` of a `ParameterTarget::Var` ([`embed_declaration`]).
-// Cost: O(1).
-pub(super) fn target_declaration(node: &RakuAstNode) -> Option<Value> {
-    if node.class != C::ParameterTargetVar {
-        return None;
-    }
-    // Embedded by a resolution pass, else built from the target's own name:
-    // the declaration a parameter target makes sits where the target does.
-    node.origin.2.clone().or_else(|| declaration_of_name(node))
-}
-
-/// The `VarDeclaration::Simple` a `ParameterTarget::Var` named `$a`, `@a`,
-/// `$*dyn` declares, with the target's range. `None` for a target without a
-/// sigiled name.
-// Cost: O(n), n = length of the name.
-fn declaration_of_name(node: &RakuAstNode) -> Option<Value> {
-    let name = leaf(node, "name")?;
-    let mut chars = name.chars();
-    let sigil = chars.next()?;
-    let rest = chars.as_str();
-    // A twigil (`*`, `!`, `.`, ...) sits between the sigil and the name.
-    let (twigil, ident) = match rest.chars().next() {
+    // A twigil (`$*dyn`) sits between the sigil and the name.
+    let (twigil, rest) = match rest.chars().next() {
         Some(c) if !c.is_alphanumeric() && c != '_' && c != '-' => (Some(c), &rest[c.len_utf8()..]),
         _ => (None, rest),
     };
@@ -650,16 +608,31 @@ fn declaration_of_name(node: &RakuAstNode) -> Option<Value> {
     fields.push(super::view::leaf_field(
         Some("desigilname"),
         Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
-            super::name_parts::simple_part(ident),
+            super::name_parts::simple_part(rest),
         ]))),
     ));
+    // The constructor's own order (`type` first), which the field lookups of a
+    // declaration read.
+    if let Some(ty) = type_node {
+        fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
+    }
     let mut declaration = RakuAstNode {
         origin: Default::default(),
         class: C::VarDeclarationSimple,
         fields,
     };
+    // The declaration sits where its target does.
     declaration.origin.0 = node.origin.0.clone();
-    Some(Value::rakuast(Box::new(declaration)))
+    node.origin.2 = Some(Value::rakuast(Box::new(declaration)));
+    *target = Value::rakuast(Box::new(node));
+}
+
+/// The `VarDeclaration::Simple` of a `ParameterTarget::Var` ([`embed_declaration`]).
+// Cost: O(1).
+pub(super) fn target_declaration(node: &RakuAstNode) -> Option<Value> {
+    (node.class == C::ParameterTargetVar)
+        .then(|| node.origin.2.clone())
+        .flatten()
 }
 
 /// `compile-time-value` of a variable declaration: the type of its container

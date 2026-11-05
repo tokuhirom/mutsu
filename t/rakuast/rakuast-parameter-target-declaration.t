@@ -25,7 +25,7 @@ is target('sub f($*dyn) { 1 }').declaration.desigilname.canonicalize, 'dyn', 'an
 
 is target('sub f($a, $b) { 1 }', 1).declaration.desigilname.canonicalize, 'b', 'the second parameter';
 is rng(target('sub f($a, $b) { 1 }', 1).declaration), '10-12', 'and its range';
-is target('sub f(Int $a = 3) { 1 }').declaration.raku.lines.join('|'),
+is target('sub f($a = 3) { 1 }').declaration.raku.lines.join('|'),
     'RakuAST::VarDeclaration::Simple.new(|  sigil       => "\$",|  desigilname => RakuAST::Name.from-identifier("a")|)',
     'the declaration prints as a constructor call';
 
