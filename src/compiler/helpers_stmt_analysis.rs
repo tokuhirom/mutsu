@@ -299,7 +299,7 @@ impl Compiler {
 
     /// The lexical import set id of `stmt` when it is a `use` that binds
     /// routines lexically in its block (ADR-8751 stage 1): a module `use`
-    /// with no `:if` condition. The id names the import list, not the
+    /// (an `:if` condition does not matter). The id names the import list, not the
     /// statement, so a recompile of the block finds the same set and every
     /// `use` importing the same list shares it.
     // Cost: O(n), n = size of the `use`'s argument expression.
@@ -318,15 +318,14 @@ impl Compiler {
     // Cost: O(n), n = size of the `use`'s argument expression.
     fn use_set_id(stmt: &Stmt, in_block: bool) -> Option<Symbol> {
         let Stmt::Use {
-            module,
-            tags,
-            arg,
-            condition: None,
-            ..
+            module, tags, arg, ..
         } = stmt
         else {
             return None;
         };
+        // A `use X:if(COND)` opens its set like an unconditional one: the
+        // routines it imports are lexical to the scope either way, and a set
+        // the false branch never fills is simply empty (#16583).
         if in_block {
             super::begin_use::lexically_importable_module_name(module, tags)?;
         } else {
