@@ -3778,8 +3778,11 @@ fn multi_field_schema(
 }
 
 /// Find a named (`key => value`) constructor argument, returning its value.
+/// A repeated name keeps the last one, as a Raku call does (`.new(:a(1), :a(2))`
+/// binds `2`; the idiom `.new(|%defaults, |%overrides)` relies on it).
+// Cost: O(a), a = arguments.
 fn named_arg(args: &[Value], name: &str) -> Option<Value> {
-    args.iter().find_map(|a| match a.view() {
+    args.iter().rev().find_map(|a| match a.view() {
         ValueView::Pair(k, v) => (k.as_str() == name).then(|| v.clone()),
         ValueView::ValuePair(k, v) => (k.to_string_value() == name).then(|| v.clone()),
         _ => None,
