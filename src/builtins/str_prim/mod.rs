@@ -358,6 +358,24 @@ pub(crate) fn graphemes(v: &Value) -> Vec<Value> {
     })
 }
 
+/// `v` split at each occurrence of the non-empty `sep` that starts and ends on
+/// grapheme boundaries (`nqp::split`). MoarVM splits a grapheme array, so
+/// `"a\r\n".split("\n")` is one piece: `\r\n` is a single grapheme.
+///
+/// Cost: O(n * m) worst case, n = chars of `v`, m = chars of `sep`; plus O(k) pieces produced.
+pub(crate) fn split(v: &Value, sep: &str) -> Vec<Value> {
+    with_str_index(v, |text, idx| {
+        let mut parts = Vec::new();
+        let mut from = 0;
+        while let Some(b) = crate::builtins::grapheme_index::find_graphemes(text, idx, from, sep) {
+            parts.push(Value::str(text[from..b].to_string()));
+            from = b + sep.len();
+        }
+        parts.push(Value::str(text[from..].to_string()));
+        parts
+    })
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

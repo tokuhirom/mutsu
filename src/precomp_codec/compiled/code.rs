@@ -123,7 +123,7 @@ impl Encode for CompiledCode {
             captured_mutated_locals,
             needs_cell_locals,
             needs_cell_unvouched_locals,
-            needs_cell_unvouched_containers,
+            needs_cell_captured_containers,
             needs_cell_regex,
             type_body_written_lexicals,
             authoritative_free_vars,
@@ -290,7 +290,7 @@ impl Encode for CompiledCode {
         captured_mutated_locals.encode(encoder)?;
         needs_cell_locals.encode(encoder)?;
         needs_cell_unvouched_locals.encode(encoder)?;
-        needs_cell_unvouched_containers.encode(encoder)?;
+        needs_cell_captured_containers.encode(encoder)?;
         needs_cell_regex.encode(encoder)?;
         type_body_written_lexicals.encode(encoder)?;
         authoritative_free_vars.encode(encoder)?;
@@ -444,7 +444,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             captured_mutated_locals: Decode::decode(decoder)?,
             needs_cell_locals: Decode::decode(decoder)?,
             needs_cell_unvouched_locals: Decode::decode(decoder)?,
-            needs_cell_unvouched_containers: Decode::decode(decoder)?,
+            needs_cell_captured_containers: Decode::decode(decoder)?,
             needs_cell_regex: Decode::decode(decoder)?,
             type_body_written_lexicals: Decode::decode(decoder)?,
             authoritative_free_vars: Decode::decode(decoder)?,

@@ -766,7 +766,7 @@ impl Interpreter {
     /// and `GetArrayVar`/`GetHashVar` `into_deref()` the cell on read.
     ///
     /// `unvouched_capture` marks the ADR-0055 unvouched-escaping-capture trigger
-    /// (`CompiledCode::needs_cell_unvouched_containers`). There the cell is not
+    /// (`CompiledCode::needs_cell_captured_containers`). There the cell is not
     /// an optimisation but the only thing that distinguishes the closure's
     /// binding from a same-named container in whatever frame happens to be
     /// calling it, so an already-celled slot is REBOUND to a fresh cell instead
@@ -790,7 +790,7 @@ impl Interpreter {
     /// But those traits never reached this check at all. `is BagHash` is
     /// invisible to `var_type_constraint` — which is exactly why
     /// `CompiledCode::compute_free_vars` carries its own `ApplyVarTrait` name
-    /// scan, subtracting those names from `needs_cell_unvouched_containers`
+    /// scan, subtracting those names from `needs_cell_captured_containers`
     /// before this function is ever called. The check therefore only ever
     /// caught the ELEMENT-constraint case (`my Int @a`, `my Str %h`), which
     /// ADR-0042 made a property of the container: a write reaching the array

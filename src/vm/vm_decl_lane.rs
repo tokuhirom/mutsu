@@ -63,7 +63,7 @@ impl Interpreter {
         let sym = code.locals_sym.get(idx).copied()?;
         if code.needs_cell_named_sub.contains(&sym)
             || code.needs_cell_ref_capture_slots.contains(&(idx as u32))
-            || code.needs_cell_unvouched_containers.contains(&sym)
+            || code.needs_cell_captured_containers.contains(&sym)
             || code.needs_cell_escaping_our_sub.contains(&sym)
             || code.self_capture_decl_locals.contains(&sym)
         {

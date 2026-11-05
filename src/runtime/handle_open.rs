@@ -134,9 +134,7 @@ impl IoHandleState {
             2 => SeekFrom::End(pos),
             _ => {
                 if pos < 0 {
-                    return Err(RuntimeError::new(
-                        "X::IO::Seek: Cannot seek to a negative position",
-                    ));
+                    return Err(seek_failed(libc_einval()));
                 }
                 SeekFrom::Start(pos as u64)
             }
@@ -144,28 +142,26 @@ impl IoHandleState {
         if mode == 1 || mode == 2 {
             let current = file
                 .stream_position()
-                .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                .map_err(|err| seek_failed(err.raw_os_error().unwrap_or(0)))?;
             let target_pos = match mode {
                 1 => current as i64 + pos,
                 2 => {
                     let end = file
                         .seek(SeekFrom::End(0))
-                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                        .map_err(|err| seek_failed(err.raw_os_error().unwrap_or(0)))?;
                     file.seek(SeekFrom::Start(current))
-                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                        .map_err(|err| seek_failed(err.raw_os_error().unwrap_or(0)))?;
                     end as i64 + pos
                 }
                 _ => unreachable!(),
             };
             if target_pos < 0 {
-                return Err(RuntimeError::new(
-                    "X::IO::Seek: Cannot seek to a negative position",
-                ));
+                return Err(seek_failed(libc_einval()));
             }
         }
         let new_pos = file
             .seek(seek_from)
-            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+            .map_err(|err| seek_failed(err.raw_os_error().unwrap_or(0)))?;
         self.pending_words.clear();
         Ok(new_pos as i64)
     }
@@ -702,4 +698,15 @@ impl Interpreter {
         let id = self.insert_handle_state(state);
         Ok(self.make_handle_instance_with_bin(id, bin))
     }
+}
+
+/// errno of an invalid argument (a negative target position), as `lseek` reports it.
+const fn libc_einval() -> i32 {
+    22
+}
+
+/// MoarVM's `Failed to seek in filehandle: <errno>` (an `X::AdHoc`).
+// Cost: O(1).
+fn seek_failed(errno: i32) -> RuntimeError {
+    RuntimeError::new(format!("Failed to seek in filehandle: {errno}"))
 }

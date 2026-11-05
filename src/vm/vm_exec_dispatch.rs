@@ -2011,6 +2011,14 @@ impl Interpreter {
                         // (`say (my @b = @a).raku`) compiles to this store
                         // rather than SetLocal, and had none of its rule.
                         decomposed
+                    } else if let Some(refilled) = {
+                        let current = self.env().get(&name).cloned();
+                        match current {
+                            Some(cur) => self.refill_shaped_array(&cur, &raw_val)?,
+                            None => None,
+                        }
+                    } {
+                        refilled
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }

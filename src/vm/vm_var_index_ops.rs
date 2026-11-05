@@ -1980,7 +1980,8 @@ impl Interpreter {
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -2077,7 +2078,8 @@ impl Interpreter {
             // Treat hash as a list of pairs with elems = hash.len()
             (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 match idx.view() {
                     ValueView::Int(i) if i < 0 => Self::make_out_of_range_failure(i),
                     ValueView::Int(i) => {
@@ -3119,7 +3121,8 @@ impl Interpreter {
             (_, ValueView::Sub(data)) if target.is_range() => {
                 let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 // A block returning a Range or a list of indices (e.g. `{0,1}`)
                 // slices the range's materialized elements.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -3298,7 +3301,11 @@ impl Interpreter {
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (ValueView::Array(items, is_arr), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                // The closure's own exception (`@a[-> $n { die }]`) and a Failure
+                // it returns (`@a[$i % *]` over an empty array) propagate, as in
+                // rakudo, instead of reading as `Nil`.
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 // If the block returned a Range or a list of indices (e.g. `{0,1}`
                 // returns the List `(0,1)`), use every element as a slice index.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -3363,7 +3370,8 @@ impl Interpreter {
                 } else {
                     0
                 };
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -3441,7 +3449,8 @@ impl Interpreter {
             (ValueView::Uni(u), ValueView::Sub(data)) => {
                 let chars: Vec<char> = u.text().chars().collect();
                 let len = chars.len() as i64;
-                let idx = self.call_subscript_code(&data, len);
+                let idx = self.call_subscript_code_checked(&data, len)?;
+                Self::throw_if_failure(&idx)?;
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),

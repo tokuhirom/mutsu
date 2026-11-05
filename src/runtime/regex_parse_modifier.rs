@@ -797,11 +797,17 @@ impl Interpreter {
         while i < chars.len() {
             if chars[i] == '$' {
                 let mut j = i + 1;
+                // `$?LINE` & co. are compile-time constants of the code that
+                // mentions them, never variables to look up (#16603).
+                let compile_time_const = chars.get(j) == Some(&'?');
                 // Skip twigil if present
                 if j < chars.len() && matches!(chars[j], '*' | '?' | '^' | '.') {
                     j += 1;
                 }
-                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                if !compile_time_const
+                    && j < chars.len()
+                    && (chars[j].is_alphabetic() || chars[j] == '_')
+                {
                     let name_start = i + 1; // include twigil in name
                     let mut end = j;
                     while end < chars.len()

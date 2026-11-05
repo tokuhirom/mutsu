@@ -102,6 +102,14 @@ fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
     if super::helpers::is_anonymous_sigil_param(p) || is_anonymous_name(&p.name) {
         return anonymous_target_offset(text, &p.name);
     }
+    // `|c`: a sigilless capture, whose target is the name after the `|`.
+    if p.sigilless && p.slurpy && text.starts_with('|') {
+        let after = &text[1..];
+        let at = 1 + after.len() - after.trim_start().len();
+        return (text[at..].starts_with(p.name.as_str())
+            && !text[at + p.name.len()..].starts_with(is_ident))
+        .then_some((at, p.name.len()));
+    }
     let (needle, skip) = if p.sigilless {
         (format!("\\{}", p.name), 1)
     } else if p.name.starts_with(['$', '@', '%', '&']) {

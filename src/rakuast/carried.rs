@@ -274,7 +274,7 @@ fn plain_code_name(name: &str) -> bool {
 }
 
 /// A variable the lowering hands back unchanged whatever the unit declares:
-/// the match and error variables (`$/`, `$!`), an attribute (`$!x`), a
+/// the match and error variables (`$/`, `$!`), an attribute (`$!x`, `$.x`), a
 /// placeholder (`$^a`) and a positional capture (`$0`). A code variable is carried when
 /// it is a plain identifier (`&f`); a qualified or operator name is still read
 /// by the conversion.
@@ -311,7 +311,8 @@ fn context_free_name(expr: &Expr, name: &str) -> bool {
     }
     match name {
         "/" | "!" => true,
-        _ => name.strip_prefix('!').is_some_and(|rest| {
+        // An attribute: private (`$!x`) or public (`$.x`, `@.a`, `%.h`).
+        _ => name.strip_prefix(['!', '.']).is_some_and(|rest| {
             rest.chars()
                 .next()
                 .is_some_and(|c| c.is_alphabetic() || c == '_')

@@ -58,14 +58,32 @@ pub(super) fn statement_list_inner(
         }
         // `unit module M;` / `unit package P;`: rakudo holds the rest of the
         // unit in the declaration's body; the parser leaves it beside it.
-        let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| span));
-        if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
+        // A `unit` declaration's statement runs over the rest of the unit: a
+        // term of the rest (a `;` that ends no statement) belongs to it.
+        let unit = unit_package_taking(stmt, &stmts[at + 1..]);
+        let held = unit
+            .as_ref()
+            .and(super::unit_span::rest_span(&stmts[at + 1..]));
+        let _statement =
+            super::expr_origins::InStatement::enter(line.map(|(_, span)| match held {
+                Some(rest) if span.is_some() => {
+                    crate::ast::SrcSpan::new(span.from as usize, rest.to as usize)
+                }
+                _ => super::unit_span::widen_statement(span, stmt),
+            }));
+        if let Some(unit) = unit {
             if let Some(mut node) = view_stmt(names, &unit)? {
                 super::routine_origins::package_origins(&mut node, &unit);
                 if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
-                if let Some((n, span)) = line.take() {
+                if let Some((n, mut span)) = line.take() {
+                    // The declaration runs over the rest of the unit it holds.
+                    if let Some(rest) = super::unit_span::rest_span(&stmts[at + 1..])
+                        && span.is_some()
+                    {
+                        span = crate::ast::SrcSpan::new(span.from as usize, rest.to as usize);
+                    }
                     origin::set(names, &mut node, n, span);
                 }
                 fields.push(node_field(None, node));
@@ -83,6 +101,7 @@ pub(super) fn statement_list_inner(
                 node.fields.push(field);
             }
             if let Some((n, span)) = line.take() {
+                let span = super::unit_span::widen_statement(span, stmt);
                 origin::set(names, &mut node, n, span);
             }
             fields.push(node_field(None, node));

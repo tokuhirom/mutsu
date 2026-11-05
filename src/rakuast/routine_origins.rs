@@ -97,6 +97,10 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
     let Some(spans) = spans.as_deref() else {
         return;
     };
+    // `unit class C;` holds the rest of the unit as its body.
+    let unit = super::unit_span::unit_body(stmt)
+        .and_then(|body| super::unit_span::package_spans(Some(spans), body));
+    let spans = unit.as_deref().unwrap_or(spans);
     let mut block = spans.block;
     // A role's body is the block its type parameters belong to, and Rakudo
     // starts it at the role's name (`R[::T] { }`).

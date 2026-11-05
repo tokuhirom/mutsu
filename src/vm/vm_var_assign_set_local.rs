@@ -690,15 +690,22 @@ impl Interpreter {
             }
         }
         // The one probe the full path would run anyway: a shared cell or Proxy
-        // parked in env under this name, which the slot adopts and then writes
-        // through. Rare, but not latched by any flag, so it is asked for real.
+        // parked in THIS frame's env overlay under this name, which the slot
+        // adopts and then writes through. Rare, but not latched by any flag, so
+        // it is asked for real -- of the frame's own overlay, as the `GetLocal`
+        // read asks it (`local_cell_adoption_target`, ADR-0097 §15): a slot is
+        // this frame's own variable, and a same-named container in a CALLER's
+        // tier is another variable. Asking the whole chain made the question
+        // cost the length of the chain (every name a loaded module puts in
+        // scope) on each scalar store, to decline a fast path for a caller's
+        // container the store must not touch anyway (#7817).
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
-        if self
-            .env()
-            .get_for(name, name_sym)
-            .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
-        {
+        let overlay_hit = match name_sym {
+            Some(sym) => self.env().overlay_get_sym(sym),
+            None => self.env().overlay_get(name),
+        };
+        if overlay_hit.is_some_and(|v| v.is_container_ref() || v.is_proxy_value()) {
             return false;
         }
         // -- committed: from here the store cannot fall back --
@@ -830,7 +837,7 @@ impl Interpreter {
         let box_decl = self.vardecl_context().get()
             && (!code.needs_cell_named_sub.is_empty()
                 || !code.needs_cell_ref_capture_slots.is_empty()
-                || !code.needs_cell_unvouched_containers.is_empty()
+                || !code.needs_cell_captured_containers.is_empty()
                 || !code.dynamic_declared_sym.is_empty());
         // An `our sub` declared in a bare block captures this local but outlives the
         // block (it lives in the package registry, with no closure env). Box the
@@ -946,13 +953,13 @@ impl Interpreter {
             // captures and this frame cannot vouch for becomes a shared cell at
             // its DECLARATION, so the closure's binding is distinguishable from a
             // same-named container in whatever frame happens to be calling it.
-            // See `CompiledCode::needs_cell_unvouched_containers` for why the
+            // See `CompiledCode::needs_cell_captured_containers` for why the
             // decl site and not the capture site.
             if box_decl
                 && code
                     .locals_sym
                     .get(idx as usize)
-                    .is_some_and(|sym| code.needs_cell_unvouched_containers.contains(sym))
+                    .is_some_and(|sym| code.needs_cell_captured_containers.contains(sym))
             {
                 self.box_decl_local_container_cell(code, idx as usize, true);
             }
