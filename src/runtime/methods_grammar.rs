@@ -856,9 +856,11 @@ impl Interpreter {
             // whatever `:rule<...>` named), not the outer `.parse`/`.parsefile`
             // call -- raku reports it as a plain missing method on the grammar
             // (#9795).
-            return Err(crate::runtime::did_you_mean::method_not_found(
+            let user_methods = self.user_method_names_for_suggestions(package_name);
+            return Err(crate::runtime::did_you_mean::method_not_found_with(
                 &start_rule,
                 package_name,
+                &user_methods,
             ));
         }
         // A `.wrap` on the start rule itself (`G.^find_method('TOP').wrap(...)`)

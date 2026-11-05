@@ -51,7 +51,7 @@ fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&
 /// (its `.^methods(:all)`). A type the catalog does not list (a user class)
 /// is offered the `Any`/`Mu` names.
 // Cost: O(m + n), m = MRO levels and composed roles, n = names collected (a dedup scan per name; error path only).
-fn candidate_names(type_name: &str) -> Vec<&'static str> {
+pub(crate) fn candidate_names(type_name: &str) -> Vec<&'static str> {
     use crate::builtin_types::catalog::{builtin_type_mro_strs, builtin_type_roles_strs};
     // A type the catalog does not list (a user class, `Any`, `Mu`) answers to
     // what every object does: the `Any` and `Mu` methods.
@@ -232,20 +232,9 @@ pub(crate) fn naive_word_wrap(text: &str, max: usize) -> String {
 /// The text of Rakudo's `X::Method::NotFound.message`: the sentence naming
 /// the invocant, the "Did you mean" tip appended to it, wrapped at 72 columns.
 /// `string_invocant` is the stringified invocant when it is a `Str` (Rakudo
-/// then says `for string 'abc'`).
-// Cost: see `suggestions`.
-pub(crate) fn method_not_found_message(
-    method: &str,
-    type_name: &str,
-    display_type: &str,
-    string_invocant: Option<&str>,
-) -> String {
-    method_not_found_message_with(method, type_name, display_type, string_invocant, &[])
-}
-
-/// [`method_not_found_message`] for a user class: `extra` holds the method
-/// names the class (and its parents and roles) declares, which Rakudo offers
-/// beside the built-in ones (`.^methods(:all)`).
+/// then says `for string 'abc'`). `extra` holds the method names a user class
+/// (and its parents and roles) declares, which Rakudo offers beside the
+/// built-in ones (`.^methods(:all)`).
 // Cost: see `suggestions`.
 pub(crate) fn method_not_found_message_with(
     method: &str,
@@ -275,7 +264,13 @@ pub(crate) fn method_not_found_message_with(
 
 /// X::Method::NotFound - No such method
 pub(crate) fn method_not_found(method: &str, typename: &str) -> RuntimeError {
-    let msg = method_not_found_message(method, typename, typename, None);
+    method_not_found_with(method, typename, &[])
+}
+
+/// [`method_not_found`] for a user class: `extra` holds the method names it
+/// declares (see [`method_not_found_message_with`]).
+pub(crate) fn method_not_found_with(method: &str, typename: &str, extra: &[String]) -> RuntimeError {
+    let msg = method_not_found_message_with(method, typename, typename, None, extra);
 
     let mut attrs = ValueMap::default();
     attrs.insert("method".to_string(), Value::str(method.to_string()));
