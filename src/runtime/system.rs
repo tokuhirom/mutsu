@@ -71,6 +71,15 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
     "Scalar",
 ];
 
+/// A top-level `use lib` whose argument is a literal (or a flat list of
+/// literals): evaluating it ahead of the unit has no effect but the search
+/// path, which the unit's own run then leaves unchanged.
+// Cost: O(a), a = size of the argument list.
+fn is_literal_use_lib(stmt: &Stmt) -> bool {
+    matches!(stmt, Stmt::Use { module, arg: Some(arg), .. }
+        if module == "lib" && super::eval_nested_hook_uses::is_literal_arg(arg))
+}
+
 impl Interpreter {
     pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         self.validate_eval_source_with(stmts, false)
@@ -142,8 +151,9 @@ impl Interpreter {
         let limit = stmts
             .iter()
             .position(|stmt| {
-                super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
-                    || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+                !is_literal_use_lib(stmt)
+                    && (super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
+                        || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. }))
             })
             .unwrap_or(stmts.len());
         #[derive(Clone, Copy, PartialEq)]
@@ -174,6 +184,9 @@ impl Interpreter {
                     Prerun::Drop
                 }
                 Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
+                // Adds its path now so the loads after it resolve; the unit's
+                // own run finds the path at the front and adds nothing.
+                _ if is_literal_use_lib(stmt) => Prerun::Keep,
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
@@ -213,6 +226,10 @@ impl Interpreter {
                 (Stmt::Import { module, tags }, _) => {
                     self.import_module(module, tags)
                         .map_err(|err| self.in_place_use_error(module, err))?;
+                }
+                (Stmt::Use { module, arg: Some(arg), .. }, _) if module == "lib" => {
+                    let value = self.eval_block_value(&[Stmt::Expr(arg.clone())])?;
+                    self.add_lib_paths(&value)?;
                 }
                 (Stmt::Use { module, arg, tags, .. }, _) => {
                     preran.insert(module.clone());
