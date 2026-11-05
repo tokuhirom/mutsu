@@ -615,9 +615,51 @@ fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
 /// The `VarDeclaration::Simple` of a `ParameterTarget::Var` ([`embed_declaration`]).
 // Cost: O(1).
 pub(super) fn target_declaration(node: &RakuAstNode) -> Option<Value> {
-    (node.class == C::ParameterTargetVar)
-        .then(|| node.origin.2.clone())
-        .flatten()
+    if node.class != C::ParameterTargetVar {
+        return None;
+    }
+    // Embedded by a resolution pass, else built from the target's own name:
+    // the declaration a parameter target makes sits where the target does.
+    node.origin.2.clone().or_else(|| declaration_of_name(node))
+}
+
+/// The `VarDeclaration::Simple` a `ParameterTarget::Var` named `$a`, `@a`,
+/// `$*dyn` declares, with the target's range. `None` for a target without a
+/// sigiled name.
+// Cost: O(n), n = length of the name.
+fn declaration_of_name(node: &RakuAstNode) -> Option<Value> {
+    let name = leaf(node, "name")?;
+    let mut chars = name.chars();
+    let sigil = chars.next()?;
+    let rest = chars.as_str();
+    // A twigil (`*`, `!`, `.`, ...) sits between the sigil and the name.
+    let (twigil, ident) = match rest.chars().next() {
+        Some(c) if !c.is_alphanumeric() && c != '_' && c != '-' => (Some(c), &rest[c.len_utf8()..]),
+        _ => (None, rest),
+    };
+    let mut fields = vec![super::view::leaf_field(
+        Some("sigil"),
+        Value::str(sigil.to_string()),
+    )];
+    if let Some(twigil) = twigil {
+        fields.push(super::view::leaf_field(
+            Some("twigil"),
+            Value::str(twigil.to_string()),
+        ));
+    }
+    fields.push(super::view::leaf_field(
+        Some("desigilname"),
+        Value::rakuast(Box::new(super::name_parts::name_from_parts(vec![
+            super::name_parts::simple_part(ident),
+        ]))),
+    ));
+    let mut declaration = RakuAstNode {
+        origin: Default::default(),
+        class: C::VarDeclarationSimple,
+        fields,
+    };
+    declaration.origin.0 = node.origin.0.clone();
+    Some(Value::rakuast(Box::new(declaration)))
 }
 
 /// `compile-time-value` of a variable declaration: the type of its container
