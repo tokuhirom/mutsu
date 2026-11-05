@@ -351,7 +351,9 @@ impl Interpreter {
 
     /// The name of an env variable bound to the array node `needle`, for an
     /// error message that reports the variable (a failed element type check);
-    /// empty when no binding holds it. Only error paths call this.
+    /// empty when no binding holds it. Only error paths call this. A binding
+    /// held in a shared `ContainerRef` cell (every escaping-captured container
+    /// has one, ADR-16595) is matched through the cell.
     // Cost: O(v), v = env bindings.
     pub(crate) fn array_binding_name(
         &self,
@@ -359,7 +361,7 @@ impl Interpreter {
     ) -> String {
         self.env
             .iter()
-            .find_map(|(name, bound)| match bound.view() {
+            .find_map(|(name, bound)| match bound.deref_container().view() {
                 ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(&existing, needle) => {
                     Some(name.resolve().to_string())
                 }
