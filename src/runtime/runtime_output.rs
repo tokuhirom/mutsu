@@ -151,7 +151,7 @@ impl Interpreter {
     /// through this rather than `std::env::var`.
     // Cost: O(1) expected, one hash probe plus the value's stringification.
     pub(crate) fn env_hash_var(&self, name: &str) -> Option<String> {
-        match self.env.get("%*ENV").map(Value::view) {
+        match self.process_env_hash().as_ref().map(Value::view) {
             Some(ValueView::Hash(map)) => map.get(name).map(Value::to_string_value),
             _ => None,
         }
@@ -161,7 +161,7 @@ impl Interpreter {
     /// it reads the process environment, which `%*ENV` is built from.
     // Cost: O(1) expected, one hash probe (or one `getenv`) plus stringification.
     pub(crate) fn env_var_or_process(&self, name: &str) -> Option<String> {
-        match self.env.get("%*ENV").map(Value::view) {
+        match self.process_env_hash().as_ref().map(Value::view) {
             Some(ValueView::Hash(map)) => map.get(name).map(Value::to_string_value),
             _ => std::env::var(name).ok(),
         }

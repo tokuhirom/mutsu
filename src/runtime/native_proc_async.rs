@@ -426,7 +426,7 @@ impl Interpreter {
                 // is never mirrored into the process environment (#11241), as
                 // in rakudo, so it is the child's whole environment.
                 if env.is_none()
-                    && let Some(env_hash) = self.env.get("%*ENV")
+                    && let Some(env_hash) = self.process_env_hash()
                     && let ValueView::Hash(map) = env_hash.view()
                 {
                     env = Some(
