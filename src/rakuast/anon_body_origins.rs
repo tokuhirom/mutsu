@@ -33,9 +33,14 @@ pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
     };
     super::infix_origins::with_child(node, "body", |blockoid| {
         super::origin::set_span(blockoid, SrcSpan::new(open, span.to as usize));
-        super::infix_origins::with_child(blockoid, "statement-list", |statements| {
-            super::origin::set_span(statements, SrcSpan::new(list.0, list.1));
-        });
+        if let Some(field) = blockoid.fields.first_mut()
+            && let super::RakuAstFieldValue::Node(held) = &mut field.value
+            && let crate::value::ValueView::RakuAst(inner) = held.view()
+        {
+            let mut statements = RakuAstNode::clone(inner);
+            super::origin::set_span(&mut statements, SrcSpan::new(list.0, list.1));
+            *held = crate::value::Value::rakuast(Box::new(statements));
+        }
     });
 }
 
