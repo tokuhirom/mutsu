@@ -102,6 +102,20 @@ impl Interpreter {
         Value::str(String::new())
     }
 
+    /// Whether the implicit topic of a bare `/regex/` is an undefined type
+    /// object (and no user `.Str` stands in for it). Rakudo does not even start
+    /// such a match: `{ say so /x*/ }` is `False` with `$_` unset (the empty
+    /// string would match), and the regex's code blocks never run. An explicit
+    /// `$_ ~~ /x*/` is a different, matching, form.
+    // Cost: O(1) plus one `has_user_method` probe for a type object.
+    pub(crate) fn implicit_topic_is_undefined(&mut self, topic: &Value) -> bool {
+        match topic.view() {
+            ValueView::Package(name) => !self.has_user_method(&name.resolve(), "Str"),
+            ValueView::Nil => true,
+            _ => false,
+        }
+    }
+
     fn regex_match_text(&mut self, left: &Value) -> String {
         if let ValueView::Package(name) = left.view() {
             let cn = name.resolve();

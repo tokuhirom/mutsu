@@ -1034,6 +1034,14 @@ impl Compiler {
     }
 
     pub(super) fn compile_match_regex(&mut self, v: &Value) {
+        self.compile_match_regex_topic(v, true);
+    }
+
+    /// `compile_match_regex` for `m/.../` (`bare` false): an explicit match
+    /// operator warns about, and still matches against, an undefined `$_`,
+    /// where a bare `/.../` never starts a match (see
+    /// `Interpreter::implicit_topic_is_undefined`).
+    pub(super) fn compile_match_regex_topic(&mut self, v: &Value, bare: bool) {
         // Load $_ as the LHS
         let name_idx = self
             .code
@@ -1051,7 +1059,7 @@ impl Compiler {
                 name: "_".to_string(),
                 slot: self.local_map.get("_").copied(),
                 // Synthesized topic: this is a bare `/regex/`, not `$_ ~~ /regex/`.
-                implicit_topic: true,
+                implicit_topic: bare,
             })),
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.

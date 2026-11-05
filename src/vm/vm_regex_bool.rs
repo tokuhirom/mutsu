@@ -38,6 +38,9 @@ impl Interpreter {
             .or_else(|| self.env().get("_").cloned())
             .map(|t| t.deref_container())
             .unwrap_or(Value::NIL);
+        if quiet && self.implicit_topic_is_undefined(&topic) {
+            return false;
+        }
         let topic = if quiet {
             self.quiet_topic_for_regex_match(topic)
         } else {
