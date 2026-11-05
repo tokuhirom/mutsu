@@ -113,7 +113,7 @@ pub(crate) fn qualified_with(node: &RakuAstNode, target: &Value) -> Result<Value
         return Err(not_a_name(target));
     }
     let own = parts(node);
-    if matches!(own.first().map(classify), Some(Part::Simple(n)) if n == "GLOBAL") {
+    if matches!(own.first().map(classify), Some(Part::Simple(n)) if matches!(n.as_str(), "GLOBAL")) {
         return Ok(name_value(own[1..].to_vec()));
     }
     let mut all = parts(target_node);
