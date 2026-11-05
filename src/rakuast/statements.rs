@@ -61,15 +61,16 @@ pub(super) fn statement_list_inner(
         // A `unit` declaration's statement runs over the rest of the unit: a
         // term of the rest (a `;` that ends no statement) belongs to it.
         let unit = unit_package_taking(stmt, &stmts[at + 1..]);
-        let held = unit.as_ref().and(super::unit_span::rest_span(&stmts[at + 1..]));
-        let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| {
-            match held {
+        let held = unit
+            .as_ref()
+            .and(super::unit_span::rest_span(&stmts[at + 1..]));
+        let _statement =
+            super::expr_origins::InStatement::enter(line.map(|(_, span)| match held {
                 Some(rest) if span.is_some() => {
                     crate::ast::SrcSpan::new(span.from as usize, rest.to as usize)
                 }
                 _ => super::unit_span::widen_statement(span, stmt),
-            }
-        }));
+            }));
         if let Some(unit) = unit {
             if let Some(mut node) = view_stmt(names, &unit)? {
                 super::routine_origins::package_origins(&mut node, &unit);
