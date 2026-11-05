@@ -94,7 +94,7 @@ fn lift_begin_from_eval_stmt(stmt: &mut Stmt, begin: &mut Vec<Stmt>) {
         return;
     };
     let mut expr = expr;
-    while let Expr::WhateverCurry(inner) = expr {
+    while let Expr::WhateverCurry(inner, ..) = expr {
         expr = inner;
     }
     if let Expr::Block(body)

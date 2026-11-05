@@ -157,14 +157,14 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                     if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
                 {
                     Expr::CallOn {
-                        target: Box::new(Expr::WhateverCurry(target)),
+                        target: Box::new(Expr::WhateverCurry(target, None)),
                         args,
                     }
                 }
                 ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                     try_wrap_whatevercode_call_chain(&expr).unwrap()
                 }
-                other => Expr::WhateverCurry(Box::new(other)),
+                other => curry_sourced(other, input, rest),
             };
         }
         Ok((rest, expr))
@@ -261,14 +261,14 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(Expr::WhateverCurry(target)),
+                    target: Box::new(Expr::WhateverCurry(target, None)),
                     args,
                 }
             }
             ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                 try_wrap_whatevercode_call_chain(&expr).unwrap()
             }
-            other => Expr::WhateverCurry(Box::new(other)),
+            other => curry_sourced(other, input, rest),
         };
     }
     Ok((rest, expr))
@@ -323,14 +323,14 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(Expr::WhateverCurry(target)),
+                    target: Box::new(Expr::WhateverCurry(target, None)),
                     args,
                 }
             }
             ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                 try_wrap_whatevercode_call_chain(&expr).unwrap()
             }
-            other => Expr::WhateverCurry(Box::new(other)),
+            other => curry_sourced(other, input, rest),
         };
     }
     absorb_colonpair_adverbs(input, rest, expr)
@@ -379,11 +379,11 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(Expr::WhateverCurry(target)),
+                    target: Box::new(Expr::WhateverCurry(target, None)),
                     args,
                 }
             }
-            other => Expr::WhateverCurry(Box::new(other)),
+            other => curry_sourced(other, input, rest),
         };
     }
     Ok((rest, expr))
@@ -400,6 +400,25 @@ pub(in crate::parser) fn item_level_expr(input: &str) -> PResult<'_, Expr> {
     precedence::item_expr(input, operators::ExprMode::Full)
 }
 
+/// A priming scope that remembers the source it was written as (`*.not`):
+/// rakudo's `.raku` / `.gist` of the resulting WhateverCode print it back.
+fn curry_sourced(body: Expr, input: &str, rest: &str) -> Expr {
+    let text = consumed_span(input, rest)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    Expr::WhateverCurry(Box::new(body), text)
+}
+
+/// [`wrap_finished_expr`] for an expression parsed from `input` up to `rest`:
+/// a priming scope it creates remembers the source it was written as.
+pub(crate) fn wrap_finished_expr_at(expr: Expr, input: &str, rest: &str) -> Expr {
+    match wrap_finished_expr(expr) {
+        Expr::WhateverCurry(body, None) => curry_sourced(*body, input, rest),
+        other => other,
+    }
+}
+
 pub(crate) fn wrap_finished_expr(expr: Expr) -> Expr {
     let expr = wrap_composition_operands(expr);
     if !should_wrap_whatevercode(&expr) {
@@ -410,14 +429,14 @@ pub(crate) fn wrap_finished_expr(expr: Expr) -> Expr {
             if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
         {
             Expr::CallOn {
-                target: Box::new(Expr::WhateverCurry(target)),
+                target: Box::new(Expr::WhateverCurry(target, None)),
                 args,
             }
         }
         ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
             try_wrap_whatevercode_call_chain(&expr).unwrap()
         }
-        other => Expr::WhateverCurry(Box::new(other)),
+        other => Expr::curry(other),
     }
 }
 
@@ -488,7 +507,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
-    Ok((rest, wrap_finished_expr(expr)))
+    Ok((rest, wrap_finished_expr_at(expr, input, rest)))
 }
 
 /// Parse one colon-method argument (`$obj.meth: HERE, ...`) at listop
@@ -567,11 +586,11 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(Expr::WhateverCurry(target)),
+                    target: Box::new(Expr::WhateverCurry(target, None)),
                     args,
                 }
             }
-            other => Expr::WhateverCurry(Box::new(other)),
+            other => curry_sourced(other, input, rest),
         };
     }
     Ok((rest, expr))
@@ -604,7 +623,7 @@ fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
     if let Expr::Binary { left, right, .. } = &pair
         && fat_arrow_curries(left, right)
     {
-        return Expr::WhateverCurry(Box::new(pair));
+        return Expr::curry(pair);
     }
     Expr::PositionalPair(Box::new(pair))
 }
@@ -749,7 +768,7 @@ fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {
     } else if let Expr::Binary { left, right, .. } = &pair
         && fat_arrow_curries(left, right)
     {
-        Expr::WhateverCurry(Box::new(pair))
+        Expr::curry(pair)
     } else {
         Expr::PositionalPair(Box::new(pair))
     }

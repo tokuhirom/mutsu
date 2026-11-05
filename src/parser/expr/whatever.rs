@@ -27,7 +27,7 @@ pub(crate) fn is_frozen_whatever(expr: &Expr) -> bool {
     matches!(inner.as_ref(), Expr::Grouped(_))
         && matches!(
             inner.peel_parens(),
-            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever | Expr::WhateverCurry(_)
+            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever | Expr::WhateverCurry(..)
         )
 }
 
@@ -199,7 +199,7 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
     // `(* - 1) - 1` composes the inner `WhateverCode` into a larger one, but
     // `((* - 1))` is frozen: an extra layer of parentheses finishes the closure
     // instead of offering it as an operand.
-    !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::WhateverCurry(_))
+    !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::WhateverCurry(..))
 }
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {

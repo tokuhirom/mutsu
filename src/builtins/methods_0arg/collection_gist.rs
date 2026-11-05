@@ -30,12 +30,9 @@ fn leaf_gist(v: &Value) -> String {
         return format!("{}:0x<{}>", form, cps.join(" "));
     }
     if let ValueView::Sub(data) = v.view()
-        && matches!(
-            data.env.get("__mutsu_callable_type").map(Value::view),
-            Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-        )
+        && let Some(text) = data.whatever_code_repr()
     {
-        return "WhateverCode.new".to_string();
+        return text;
     }
     if let ValueView::Promise(p) = v.view() {
         // Promise has no custom gist; its element gist is the `.raku` form.

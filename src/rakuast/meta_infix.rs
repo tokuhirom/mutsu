@@ -472,7 +472,7 @@ fn fold(
     // lowered leaf of such a priming `*` is `WhateverArg`; a `*` that is a value
     // (`1 xx *`, the extender of a list operand) is not one.
     if matches!(meta, "X" | "Z") && primes(&acc) {
-        return Ok(Expr::WhateverCurry(Box::new(acc)));
+        return Ok(Expr::curry(acc));
     }
     Ok(acc)
 }

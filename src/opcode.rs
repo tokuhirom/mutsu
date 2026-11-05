@@ -327,6 +327,11 @@ pub(crate) enum SmartMatchLhs {
         name: String,
         slot: Option<u32>,
         implicit_topic: bool,
+        /// The variable is a plain `my int $x` / `my num $n` / `my str $s`
+        /// declaration. RakuAST reads such a variable boxed, so `$x ~~ int`
+        /// is `False`; a native parameter, a loop parameter and a
+        /// destructured `my int ($p, $q)` keep matching the native type.
+        boxed_native: bool,
     },
     /// `$obj.meth ~~ s///` — the LHS is a zero-arg method call on a variable
     /// (an `is rw` accessor in Raku, whose returned container the substitution
@@ -7047,6 +7052,9 @@ pub(crate) struct CompiledCode {
     /// boundary, but its call frame is named after the code object rather than
     /// the pointy-block marker. Read by the light closure call (#13286).
     pub(crate) is_whatever_code: bool,
+    /// The source a WhateverCode was written as (`*.not`), when the parser
+    /// recorded it; rakudo's `.raku` / `.gist` of the closure print it.
+    pub(crate) whatever_source: Option<std::sync::Arc<str>>,
     /// `sub (...) is hidden-from-backtrace { }`: the closure's call frame is
     /// no line of a backtrace.
     pub(crate) is_hidden_from_backtrace: bool,
@@ -8324,6 +8332,48 @@ impl CompiledCode {
         }
     }
 
+    /// The local slots a threaded `for` body (`ops[start..end]`) reads or
+    /// writes but does not declare itself: the lexicals every worker batch
+    /// shares, as opposed to the per-iteration ones.
+    // Cost: O(b + l), b = ops of the body, l = locals of the frame.
+    pub(crate) fn threaded_body_shared_slots(&self, start: usize, end: usize) -> Vec<usize> {
+        let end = end.min(self.ops.len());
+        let start = start.min(end);
+        let mut touched = vec![false; self.locals.len()];
+        self.mark_name_access_slots(start, end, &mut touched);
+        self.mark_local_access_slots(start, end, &mut touched);
+        // A closure the body creates (`$lock.protect: { $n++ }`) runs on the
+        // worker too, so the frame lexicals it captures are shared as well.
+        for op in &self.ops[start..end] {
+            for cc_idx in Self::op_closure_code_idxs(op) {
+                let Some(nested) = self.closure_compiled_codes.get(cc_idx as usize) else {
+                    continue;
+                };
+                for sym in &nested.free_var_syms {
+                    for (slot, local) in self.locals.iter().enumerate() {
+                        if sym.with_str(|s| s.trim_start_matches('$') == local.as_str()) {
+                            touched[slot] = true;
+                        }
+                    }
+                }
+            }
+        }
+        // Names the body declares itself are per-iteration, not shared.
+        let declared_in_body: std::collections::HashSet<usize> = self.ops[start..end]
+            .iter()
+            .filter_map(|op| match op {
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                _ => None,
+            })
+            .collect();
+        touched
+            .iter()
+            .enumerate()
+            .filter(|(slot, hit)| **hit && !declared_in_body.contains(slot))
+            .map(|(slot, _)| slot)
+            .collect()
+    }
+
     fn mark_name_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
         let end = end.min(self.ops.len());
         for op in &self.ops[start.min(end)..end] {
@@ -8500,6 +8550,7 @@ impl CompiledCode {
             source_line: None,
             is_pointy_block: false,
             is_whatever_code: false,
+            whatever_source: None,
             is_hidden_from_backtrace: false,
             pointy_alias_param: false,
             immutable_topic: false,
@@ -12005,22 +12056,8 @@ impl CompiledCode {
             if !spec.threaded {
                 continue;
             }
-            let (start, end) = (pos + 1, (spec.body_end as usize).min(self.ops.len()));
-            let mut touched = vec![false; self.locals.len()];
-            self.mark_name_access_slots(start, end, &mut touched);
-            self.mark_local_access_slots(start, end, &mut touched);
-            // Names the body declares itself are per-iteration, not shared.
-            let mut declared_in_body: std::collections::HashSet<usize> =
-                std::collections::HashSet::new();
-            for body_op in &self.ops[start.min(end)..end] {
-                if let OpCode::SetLocalDecl { slot, .. } = body_op {
-                    declared_in_body.insert(*slot as usize);
-                }
-            }
-            for (slot, hit) in touched.iter().enumerate() {
-                if *hit && !declared_in_body.contains(&slot) {
-                    escaping_captured_own.insert(Symbol::intern(&self.locals[slot]));
-                }
+            for slot in self.threaded_body_shared_slots(pos + 1, spec.body_end as usize) {
+                escaping_captured_own.insert(Symbol::intern(&self.locals[slot]));
             }
         }
         vouched.extend(type_capture_syms);

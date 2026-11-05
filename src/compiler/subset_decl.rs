@@ -105,7 +105,7 @@ impl Compiler {
             Expr::AnonSub { .. }
                 | Expr::AnonSubParams { .. }
                 | Expr::Lambda { .. }
-                | Expr::WhateverCurry(_)
+                | Expr::WhateverCurry(..)
         )
     }
 }

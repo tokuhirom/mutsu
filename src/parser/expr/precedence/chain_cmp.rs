@@ -32,7 +32,7 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
         } => {
             let value =
                 if contains_whatever(&right) && !crate::parser::expr::is_whatever_operand(&right) {
-                    Expr::WhateverCurry(right)
+                    Expr::WhateverCurry(right, None)
                 } else {
                     *right
                 };
@@ -45,7 +45,7 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
         }
         other => {
             if contains_whatever(&other) && !crate::parser::expr::is_whatever_operand(&other) {
-                Expr::WhateverCurry(Box::new(other))
+                Expr::curry(other)
             } else {
                 other
             }

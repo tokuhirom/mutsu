@@ -388,7 +388,7 @@ pub(crate) fn double_closure_error(stmts: &[crate::ast::Stmt]) -> Option<PError>
     // auto-primed at run time, not curried), which is exactly the shape
     // `roast/S02-types/whatever.t` uses.
     let body_expr = match expr {
-        Expr::WhateverCurry(inner) => inner.as_ref(),
+        Expr::WhateverCurry(inner, ..) => inner.as_ref(),
         other => other,
     };
     let curries = crate::parser::expr::should_wrap_whatevercode(body_expr);

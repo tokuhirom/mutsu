@@ -126,7 +126,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HasMarker {
         if self.0 {
             return;
         }
-        if matches!(expr, Expr::WhateverCurry(_) | Expr::WhateverArg) {
+        if matches!(expr, Expr::WhateverCurry(..) | Expr::WhateverArg) {
             self.0 = true;
             return;
         }
@@ -140,8 +140,8 @@ struct Uncurry;
 
 impl VisitMut for Uncurry {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
-        while matches!(expr, Expr::WhateverCurry(_)) {
-            let Expr::WhateverCurry(inner) = std::mem::replace(expr, Expr::Whatever) else {
+        while matches!(expr, Expr::WhateverCurry(..)) {
+            let Expr::WhateverCurry(inner, ..) = std::mem::replace(expr, Expr::Whatever) else {
                 unreachable!("matched above");
             };
             *expr = *inner;

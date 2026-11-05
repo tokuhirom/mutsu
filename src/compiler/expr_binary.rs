@@ -651,6 +651,7 @@ impl Compiler {
                         name: name.clone(),
                         slot: self.local_map.get(name.as_str()).copied(),
                         implicit_topic: false,
+                        boxed_native: self.boxed_native_scalars.contains(name.as_str()),
                     })),
                     // `$obj.meth ~~ s///`: an rw-accessor LHS whose returned
                     // container Raku's substitution writes through. Only a
@@ -1145,6 +1146,7 @@ impl Compiler {
                 name: val_name.clone(),
                 slot: Some(val_slot),
                 implicit_topic: false,
+                boxed_native: false,
             })),
             rhs_is_match_regex: false,
             lhs_is_literal: false,

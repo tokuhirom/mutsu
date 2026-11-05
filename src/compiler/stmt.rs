@@ -542,7 +542,7 @@ impl Compiler {
         // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into a
         // WhateverCode that yields the range.
         let index = match index {
-            Expr::WhateverCurry(inner) => inner.as_ref(),
+            Expr::WhateverCurry(inner, ..) => inner.as_ref(),
             other => other,
         };
         match index {
@@ -1563,6 +1563,18 @@ impl Compiler {
                 if let Some(tc) = type_constraint {
                     self.local_types
                         .insert(name.clone(), self.resolve_type_alias_constraint(tc));
+                }
+                if !name.starts_with(['@', '%', '&'])
+                    && !marks.signature_element
+                    && !*is_our
+                    && !*is_state
+                    && type_constraint
+                        .as_ref()
+                        .is_some_and(|tc| self.is_native_type_constraint(tc.as_str()))
+                {
+                    self.boxed_native_scalars.insert(name.clone());
+                } else {
+                    self.boxed_native_scalars.remove(name.as_str());
                 }
                 // For state variables, emit a guard that skips the RHS evaluation
                 // when the state is already initialized (avoiding side effects).

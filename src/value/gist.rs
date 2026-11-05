@@ -688,13 +688,8 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         // A WhateverCode (`*+1`, `*.abs`) gists as `WhateverCode.new`, not the
         // empty string its bare closure stringification would yield.
-        ValueView::Sub(data)
-            if matches!(
-                data.env.get("__mutsu_callable_type").map(Value::view),
-                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-            ) =>
-        {
-            "WhateverCode.new".to_string()
+        ValueView::Sub(data) if data.whatever_code_repr().is_some() => {
+            data.whatever_code_repr().unwrap_or_default()
         }
         // A Method/Submethod gists as its bare name, where a Sub gists as
         // `&name` (rakudo: `C.^lookup('m').gist` is `m`). The method objects

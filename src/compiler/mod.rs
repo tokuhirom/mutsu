@@ -1396,6 +1396,10 @@ pub(crate) struct Compiler {
     hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// Names declared by a plain `my <native> $x` scalar declaration, which a
+    /// direct read boxes (`SmartMatchLhs::Var::boxed_native`). A parameter of
+    /// the same name removes the entry.
+    boxed_native_scalars: HashSet<String>,
     /// How the atomic routine being compiled was spelled at its call site, and
     /// whether it is an integer-only `nqp::` op. Set around the lowering of the
     /// call by `with_atomic_spelling`; read by `atomic_target.rs`.
@@ -1766,6 +1770,9 @@ pub(crate) struct Compiler {
     /// entry and stores it on the closure's `CompiledCode`, so a block nested
     /// inside does not inherit it.
     pending_declarator_doc: Option<crate::decl_doc::DeclDoc>,
+    /// The source text of the WhateverCode closure about to be compiled
+    /// (`Expr::WhateverCurry`'s second field); the closure takes it first.
+    pending_wc_source: Option<String>,
     /// The variable the `my` declaration being compiled declares after its
     /// initializer: raku's pad holds it from the start of the statement, so a
     /// `MY::` read in the initializer lists it (`my @n = MY::.keys`, #15607).
@@ -2138,6 +2145,7 @@ impl Compiler {
             enclosing_lexsubs: Vec::new(),
             top_level_is_block_body: false,
             pending_scope_frame: None,
+            pending_wc_source: None,
             retired_loop_param_slots: HashMap::new(),
             static_half_amp: std::collections::HashSet::new(),
             prologue_ended: false,
@@ -2154,6 +2162,7 @@ impl Compiler {
             hoisted_sub_plans: Vec::new(),
             hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
+            boxed_native_scalars: HashSet::new(),
             atomic_spelling: None,
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
@@ -2410,7 +2419,7 @@ impl Compiler {
                 ..
             } => match index.as_ref() {
                 Expr::Literal(v) => matches!(v.view(), crate::value::ValueView::Int(_)),
-                Expr::WhateverCurry(inner) => matches!(
+                Expr::WhateverCurry(inner, ..) => matches!(
                     inner.as_ref(),
                     Expr::Binary { left, op: crate::token_kind::TokenKind::Minus, right, .. }
                         if matches!(left.as_ref(), Expr::WhateverArg)

@@ -283,7 +283,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             // ADR-0033 Phase 1: a curried result is now a `WhateverCurry`
             // marker rather than a built `Lambda`/`AnonSubParams` closure;
             // keep it out of `normalize_chained_zip_meta` just the same.
-            curried @ (Expr::WhateverCurry(_)
+            curried @ (Expr::WhateverCurry(..)
             | Expr::Lambda { .. }
             | Expr::AnonSubParams { .. }) => curried,
             other => normalize_chained_zip_meta(other),

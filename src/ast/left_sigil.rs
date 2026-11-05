@@ -144,7 +144,7 @@ fn step(expr: &Expr) -> Step<'_> {
             cond, else_expr, ..
         } => Step::Operands(Operands::Two(cond, else_expr)),
         Expr::Spelled(spelled) => Step::Operands(Operands::One(&spelled.expr)),
-        Expr::WhateverCurry(inner) | Expr::DeitemizeForBind(inner) => {
+        Expr::WhateverCurry(inner, ..) | Expr::DeitemizeForBind(inner) => {
             Step::Operands(Operands::One(inner))
         }
         Expr::Ast(node) => match node.as_ref() {

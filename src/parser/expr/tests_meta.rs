@@ -260,7 +260,7 @@ fn parse_whatever_with_unicode_set_union_infix() {
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::WhateverCurry(body)
+        Expr::WhateverCurry(body, ..)
             if matches!(
                 body.as_ref(),
                 Expr::Binary { op: TokenKind::Ident(op), left, right, .. }
