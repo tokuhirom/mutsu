@@ -103,7 +103,11 @@ impl Interpreter {
     /// looks). `false` proves that call would find nothing.
     // Cost: O(1) with no operator scope open and an unchanged function table;
     // O(f) once per function-table version, f = registered routines.
-    pub(super) fn user_subscript_candidate_possible(&self, op_name: &str, is_positional: bool) -> bool {
+    pub(super) fn user_subscript_candidate_possible(
+        &self,
+        op_name: &str,
+        is_positional: bool,
+    ) -> bool {
         if self.lexical_operator_in_scope(op_name) {
             return true;
         }
