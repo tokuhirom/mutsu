@@ -9,9 +9,9 @@ use crate::value::{RuntimeError, Value, ValueView};
 // Cost: O(1).
 fn literal_return_type(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
-        ValueView::RakuAst(node) => Some(crate::rakuast::literal_queries::literal_return_type(
-            node,
-        )),
+        ValueView::RakuAst(node) => {
+            Some(crate::rakuast::literal_queries::literal_return_type(node))
+        }
         _ => None,
     });
     Ok(answer.unwrap_or(Value::NIL))

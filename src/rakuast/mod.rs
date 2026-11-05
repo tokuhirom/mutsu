@@ -92,7 +92,6 @@ pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, 
 mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_list_queries;
-pub(crate) mod literal_queries;
 pub(crate) mod block_queries;
 mod declare_how;
 mod declared_routines;
@@ -114,6 +113,7 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
+pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) use infix_func::add_colonpair;

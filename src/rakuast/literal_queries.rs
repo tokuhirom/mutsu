@@ -9,8 +9,9 @@ use crate::value::Value;
 /// `Literal.return-type`: the type object of the node's value.
 // Cost: O(1).
 pub(crate) fn literal_return_type(node: &RakuAstNode) -> Value {
-    let name = node_accessor(node, "value")
-        .map_or("Mu", |value| crate::value::type_name::value_type_name(&value));
+    let name = node_accessor(node, "value").map_or("Mu", |value| {
+        crate::value::type_name::value_type_name(&value)
+    });
     Value::package(crate::symbol::Symbol::intern(name))
 }
 
