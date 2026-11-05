@@ -249,8 +249,13 @@ impl Interpreter {
         // this frame's locals; publish those before matching against it.
         let value_names = Self::smartmatch_value_sync(&left, &right);
         self.apply_smartmatch_sync(code, &value_names);
-        let native_lhs_match =
-            self.direct_native_lhs_match(lhs_var, lhs_boxed_native, lhs_native_declared, &left, &right);
+        let native_lhs_match = self.direct_native_lhs_match(
+            lhs_var,
+            lhs_boxed_native,
+            lhs_native_declared,
+            &left,
+            &right,
+        );
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is

@@ -1192,7 +1192,8 @@ impl Compiler {
             .strip_suffix(":D")
             .or_else(|| constraint.strip_suffix(":U"))
             .unwrap_or(constraint);
-        self.is_native_type_constraint(base).then(|| base.to_string())
+        self.is_native_type_constraint(base)
+            .then(|| base.to_string())
     }
 
     /// If `expr` is a variable reference with a native integer type
