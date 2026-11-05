@@ -12,6 +12,11 @@ but a module being loaded:
   name again although the read path already held its symbol. `unit_lexical_slot`
   now passes the symbol through (`lexsub_alias_slot_sym`).
 
+- `unit_lexical_slot` probed the bucket table twice per read (once inside
+  `active_unit_lexical_bucket` to check the bucket is non-empty, once for the
+  cell). `active_unit_lexical_entry` returns the bucket's cells with its key.
+
 Measured with `use Cro::HTTP2::RequestParser` loaded and a `$s += %h<a>` loop in
 such a sub (profiling build, loop-only callgrind, slope 3,000 -> 9,000
-iterations): 4,413 -> 4,083 Ir/iteration (-7.5%).
+iterations): 4,413 -> 4,083 Ir/iteration (-7.5%) for the first two changes, then
+4,083 -> 4,009 (-1.8%) for the single bucket probe.
