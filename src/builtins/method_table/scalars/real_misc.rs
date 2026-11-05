@@ -182,6 +182,11 @@ fn narrow(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
         ValueView::Int(i) => Value::int(i),
         ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 && n % d == 0 => Value::int(n / d),
         ValueView::Rat(n, d) => Value::rat_raw(n, d),
+        // A big-numerator rational with a unit quotient narrows to an Int too
+        // (`(5**33 / 5).narrow` is an Int), as the word-sized one does.
+        ValueView::BigRat(n, d) if !num_traits::Zero::is_zero(d) && num_traits::Zero::is_zero(&(n % d)) => {
+            Value::from_bigint(n / d)
+        }
         ValueView::Num(f) if f.is_finite() => {
             let rounded = f.round();
             if approx(f, rounded) {
