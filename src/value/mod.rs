@@ -598,6 +598,7 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+pub(crate) use error_typed::is_nominal_type_object_of;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
 pub(crate) mod frame_fixtures;

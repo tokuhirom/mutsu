@@ -123,14 +123,7 @@ pub(crate) fn got_type_name(val: &Value) -> String {
 /// resets the container to `Str`, so the reported `got` is `Str` and the hint
 /// applies; `my Str:D $x = Int` reports `Int` and gets no hint.
 pub(crate) fn is_nominal_type_object_of(constraint: &str, val: &Value) -> bool {
-    let ValueView::Package(sym) = val.view() else {
-        return false;
-    };
-    let nominal = constraint
-        .split_once(':')
-        .map(|(base, _)| base)
-        .unwrap_or(constraint);
-    sym.resolve() == nominal
+    crate::value::is_nominal_type_object_of(constraint, val)
 }
 
 /// The `X::TypeCheck::Assignment` rakudo raises when a `:D`-constrained slot
@@ -143,10 +136,7 @@ pub(crate) fn definite_type_check_assignment_error(
     constraint: &str,
     val: &Value,
 ) -> RuntimeError {
-    let mut msg = type_check_assignment_error(var_name, constraint, val);
-    if is_nominal_type_object_of(constraint, val) {
-        msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
-    }
+    let msg = type_check_assignment_error(var_name, constraint, val);
     assignment_error_with_message(var_name, constraint, val, msg)
 }
 
@@ -266,7 +256,7 @@ pub(crate) fn type_check_assignment_error_with_repr(
         expected
     };
     let got_type = got_type_name(val);
-    if repr.is_empty() {
+    let mut msg = if repr.is_empty() {
         format!(
             "Type check failed in assignment to {}; expected {} but got {}",
             display_name, expected, got_type
@@ -276,7 +266,13 @@ pub(crate) fn type_check_assignment_error_with_repr(
             "Type check failed in assignment to {}; expected {} but got {} {}",
             display_name, expected, got_type, repr
         )
+    };
+    // rakudo's hint when a `:D` slot was handed its own type object (what `Nil`
+    // resets an undefaulted container to).
+    if is_nominal_type_object_of(expected, val) {
+        msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
     }
+    msg
 }
 
 /// Build a structured X::TypeCheck::Binding RuntimeError, for `:=` binds to a

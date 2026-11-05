@@ -767,8 +767,18 @@ impl Interpreter {
         // `.Stringy`, which only `utf8` has (it decodes); any other Blob dies
         // with `X::Buf::AsStr` rather than contributing its bytes.
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
-            let left = Self::concat_operand_stringy(left)?;
-            let right = Self::concat_operand_stringy(right)?;
+            // rakudo reaches the Blob through `.Stringy` when the other side is
+            // a Str (`$blob ~ "a"`) and through `.Str` for anything else
+            // (`$blob ~ 1`, `$blob ~ []`); only the exception's wording shows it.
+            let method = if matches!(left.view(), ValueView::Str(_))
+                || matches!(right.view(), ValueView::Str(_))
+            {
+                "Stringy"
+            } else {
+                "Str"
+            };
+            let left = Self::concat_operand_stringy_via(left, method)?;
+            let right = Self::concat_operand_stringy_via(right, method)?;
             return Ok(crate::builtins::str_prim::concat(left, &right));
         }
         Ok(crate::builtins::str_prim::concat(left, &right))
@@ -792,6 +802,16 @@ impl Interpreter {
     /// Only `utf8` stringifies (it decodes); any other Blob dies with
     /// `X::Buf::AsStr` (method `Stringy`).
     pub(crate) fn concat_operand_stringy(v: Value) -> Result<Value, RuntimeError> {
+        Self::concat_operand_stringy_via(v, "Stringy")
+    }
+
+    /// [`Self::concat_operand_stringy`] naming `method` (`Stringy` or `Str`) in
+    /// the `X::Buf::AsStr` it throws for a non-`utf8` Blob.
+    // Cost: O(1) for a non-Blob value, O(n) to decode a `utf8` Blob, n = its bytes.
+    pub(crate) fn concat_operand_stringy_via(
+        v: Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
         if !Self::is_buf_value(&v) {
             return Ok(Value::str(crate::runtime::utils::coerce_to_str(&v)));
         }
@@ -800,7 +820,7 @@ impl Interpreter {
         {
             return decoded;
         }
-        Err(Self::buf_as_str_error(&v, "Stringy"))
+        Err(Self::buf_as_str_error(&v, method))
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
