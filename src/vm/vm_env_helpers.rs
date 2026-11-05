@@ -430,12 +430,17 @@ impl Interpreter {
             return None;
         }
         let cur = self.current_package_sym();
-        if crate::qualified::is_global_package(cur)
+        // A sub running under GLOBAL (or a routine-scoped package) has no
+        // inherited definitions to walk, but a `constant` its module imported
+        // still lives in the module-scope table (last resort below).
+        let mro = if crate::qualified::is_global_package(cur)
             || crate::qualified::is_routine_scoped_package(cur)
         {
-            return None;
-        }
-        for mro_pkg in self.mro_readonly(cur.as_str()) {
+            Vec::new()
+        } else {
+            self.mro_readonly(cur.as_str())
+        };
+        for mro_pkg in mro {
             for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(&mro_pkg))
             {
                 if pkg.as_str() != cur.as_str() {
@@ -477,6 +482,10 @@ impl Interpreter {
         self.module_scope_lexical(name)
             .or_else(|| self.module_scope_lexical(bare))
             .cloned()
+            // A `use` at a compunit's top level binds its imports into the
+            // unit pad rather than the module-scope table.
+            .or_else(|| self.unit_scope_lexical(name, None))
+            .or_else(|| self.unit_scope_lexical(bare, None))
     }
 
     /// Return the value of a bare package-block `my` lexical (`package P { my $x;
