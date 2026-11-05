@@ -192,7 +192,9 @@ pub(super) fn resolve(t: &Table) -> Vec<DocComment> {
                 entry.wherefore_name = sigiled.clone();
                 entry.kind = DocDeclKind::Param;
             }
-            SiteIdent::Variable => continue,
+            SiteIdent::Variable => {
+                entry.kind = DocDeclKind::Variable;
+            }
             SiteIdent::Anon {
                 block,
                 callable,

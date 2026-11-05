@@ -126,6 +126,10 @@ pub(crate) enum DocDeclKind {
     Param,
     /// a block used as a value (`my $b = {; ... }`)
     Block,
+    /// a `my`/`our`/`state` variable. Nothing at run time reads a variable's
+    /// documentation: the table the runtime installs leaves these out, and
+    /// only the RakuAST model (`Str.AST`, `named_docs`) uses them.
+    Variable,
 }
 
 /// One documented declaration of a compilation unit.
