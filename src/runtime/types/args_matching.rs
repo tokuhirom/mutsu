@@ -1377,6 +1377,17 @@ impl Interpreter {
                     if !pd.name.is_empty() {
                         self.env.insert(pd.storage_name().into_owned(), val.clone());
                     }
+                    // A renamed named parameter (`:op(@case) where @case[0] eq
+                    // 'case'`) binds the value to its inner variable; the
+                    // `where` reads that name, so bind it for the match too.
+                    if pd.named_alias
+                        && let Some([inner]) = pd.sub_signature.as_deref()
+                        && !inner.name.is_empty()
+                        && !inner.named
+                        && inner.sub_signature.is_none()
+                    {
+                        self.env.insert(inner.storage_name().into_owned(), val.clone());
+                    }
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { .. } => {
                             let ev =
