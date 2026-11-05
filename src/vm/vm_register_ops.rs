@@ -1970,28 +1970,7 @@ impl Interpreter {
             // which a parameter never needed: it cannot have been snapshotted by
             // an earlier `start` before it existed.
             if self.threads.shared_vars_active && !code.param_locals.contains(sym) {
-                // The cell now OWNS this binding, which is exactly what the
-                // re-declaration mask was standing in for, so the mask must not
-                // block the replacement below: leaving the stale plain snapshot
-                // in place lets `sync_shared_vars_to_env` write it back over the
-                // cell after the next await and disconnect the parent.
-                let was_redeclared = {
-                    let mut masked = self.threads.thread_redeclared_vars.borrow_mut();
-                    let a = masked.remove(&s);
-                    let b = masked.remove(s.trim_start_matches('$'));
-                    a || b
-                };
-                // A name this thread re-declared (`my $guard = self` inside a
-                // worker) whose entry lives only in an ANCESTOR lineage is a
-                // fresh binding: `set` would write the cell through to the
-                // spawning thread's same-named lexical (Red's `Guard.!invoke`
-                // clobbered the caller's `my $guard` after `await`). Shadow it
-                // in this lineage instead.
-                if was_redeclared && !self.threads.shared_vars.owns_key(&s) {
-                    self.threads.shared_vars.declare(&s, container.clone());
-                } else {
-                    loan_env!(self, set_shared_var(&s, container.clone()));
-                }
+                loan_env!(self, set_shared_var(&s, container.clone()));
             }
         }
     }

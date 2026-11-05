@@ -3,48 +3,6 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::value::ValueView;
 
-/// The bare scalar names [`Interpreter::mask_thread_redeclared_params`] newly
-/// added to `thread_redeclared_vars` / `thread_param_shadow_vars` for one
-/// call, so [`ThreadParamMask::unmask`] can remove exactly those entries —
-/// from each set independently — on return, without disturbing a still-active
-/// ancestor frame's own mask. See the doc comment on
-/// `mask_thread_redeclared_params` for why the two sets are tracked apart.
-///
-/// Removal is exposed as [`unmask`](Self::unmask), taking the two backing
-/// `RefCell`s directly rather than `&mut Interpreter` (an ordinary
-/// `Interpreter` method) — that is what lets
-/// `vm::vm_call_state_guard::ThreadParamMaskGuard` call it from `Drop` using
-/// only the raw pointers it captured at construction, without ever forming a
-/// reference to `Interpreter` itself. See that guard's doc comment.
-#[derive(Default)]
-pub(crate) struct ThreadParamMask {
-    redeclared: Vec<String>,
-    shadowed: Vec<String>,
-}
-
-impl ThreadParamMask {
-    /// Remove exactly the names this mask added from each set. Safe to call
-    /// with only the two `RefCell`s in hand (no `&Interpreter` needed) so
-    /// `ThreadParamMaskGuard::drop` can call it through a raw pointer during a
-    /// panic unwind.
-    pub(crate) fn unmask(
-        &self,
-        redeclared_vars: &std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-        shadow_vars: &std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-    ) {
-        {
-            let mut redeclared_vars = redeclared_vars.borrow_mut();
-            for name in &self.redeclared {
-                redeclared_vars.remove(name);
-            }
-        }
-        let mut shadow_vars = shadow_vars.borrow_mut();
-        for name in &self.shadowed {
-            shadow_vars.remove(name);
-        }
-    }
-}
-
 impl Interpreter {
     /// Track C: assign a single hash element (`%h{$k} = $v`) through the shared
     /// cell so concurrent `start { %h{...} = ... }` blocks all land instead of
@@ -321,83 +279,6 @@ impl Interpreter {
             || self.lexicals.type_body_written_lexicals.contains(key)
     }
 
-    /// Mask each scalar and aggregate parameter (`&` parameters are excluded)
-    /// as a fresh per-invocation binding while the cross-thread shared store is
-    /// active — the call-site
-    /// analogue of the `my` declaration mask `exec_set_var_dynamic_op` applies
-    /// (see its comment). A plain `thread_redeclared_vars` mask alone is not
-    /// enough for a *parameter*: unlike a `my` in the current block, the
-    /// parameter's shadow is scoped to exactly this call, but
-    /// `clone_for_thread_excluding` cannot tell the difference and would
-    /// force-`declare` the parameter's (shadowed) value into the shared store
-    /// on any nested spawn during the call body, clobbering an unrelated
-    /// caller's live entry for the same bare name (e.g. `Cro::HTTP::Client`'s
-    /// `request`/`!get-pipeline` methods each have their own `$url` parameter;
-    /// a `Promise.in(...)` spawned inside `!get-pipeline`'s body force-published
-    /// its `Cro::Uri $url` over the awaiting `start { ... }` block's own
-    /// `my $url`). Recording the name in
-    /// [`thread_param_shadow_vars`](crate::runtime::thread_sharing::ThreadSharing::thread_param_shadow_vars) routes such
-    /// a nested spawn through `clone_for_thread_excluding`'s `seed_if_absent`
-    /// branch instead — a no-op when the name is already visible, which is
-    /// exactly the outer binding's case.
-    ///
-    /// `thread_redeclared_vars` and `thread_param_shadow_vars` are tracked
-    /// **independently**: a name can already be in `thread_redeclared_vars`
-    /// for an unrelated, possibly-stale reason (an ancestor frame's `my`
-    /// declaration whose mask nothing has cleared yet — the mask is not scoped
-    /// per declaration site). If this call deferred to that pre-existing mask
-    /// and skipped adding its own `thread_param_shadow_vars` entry, the stale
-    /// mask's "genuine `my`, safe to force-declare" semantics would apply to
-    /// THIS call's parameter too, re-opening the same clobbering hole. So this
-    /// call always ensures ITS OWN membership in `thread_param_shadow_vars`
-    /// while it runs, regardless of whether `thread_redeclared_vars` already
-    /// held the name, and tracks separately (per name) whether IT was the one
-    /// that added each entry — so
-    /// `unmask_thread_redeclared_params`
-    /// removes exactly what this call added, from each set independently,
-    /// without disturbing a still-active ancestor's own mask.
-    pub(crate) fn mask_thread_redeclared_params<'a>(
-        &mut self,
-        param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
-    ) -> ThreadParamMask {
-        let mut mask = ThreadParamMask::default();
-        if !self.threads.shared_vars_active {
-            return mask;
-        }
-        for pd in param_defs {
-            let name = pd.name.as_str();
-            // `&`-sigil parameters are routines, not shared mutable variables
-            // — never masked here. Every `@`/`%` parameter is a fresh binding
-            // in the callee, including a plain non-slurpy parameter: `sub
-            // f(@list) { ... }` copies its argument list, so a same-named
-            // aggregate in the worker's shared-name store must not hijack the
-            // callee's parameter. The caller's shared container remains
-            // available through the bound value itself (and `is rw` writeback),
-            // while the name lane is reserved for unrelated outer bindings.
-            if name.is_empty() || name == "_" || name == "self" || name.starts_with('&') {
-                continue;
-            }
-            let bare = name.trim_start_matches('$').to_string();
-            if self
-                .threads
-                .thread_redeclared_vars
-                .borrow_mut()
-                .insert(bare.clone())
-            {
-                mask.redeclared.push(bare.clone());
-            }
-            if self
-                .threads
-                .thread_param_shadow_vars
-                .borrow_mut()
-                .insert(bare.clone())
-            {
-                mask.shadowed.push(bare);
-            }
-        }
-        mask
-    }
-
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the
     /// synchronous hyper/race parallel path to record the pre-op shared state so
     /// its ephemeral env->shared migrations can be rolled back after all batch
@@ -515,15 +396,6 @@ impl Interpreter {
             if self.threads.shared_vars.is_seed_or_own_write(&key) {
                 continue;
             }
-            // A name this thread re-declared, or captured from its spawn (the
-            // child's `thread_redeclared_vars`), is its own binding: the store's
-            // entry under the bare name belongs to another binding of it (an
-            // earlier call's `$guard` in Red's `Guard.start`, whose worker
-            // then ran with that stale guard), the same exclusion
-            // `sync_shared_vars_to_env` applies.
-            if self.threads.thread_redeclared_vars.borrow().contains(&key) {
-                continue;
-            }
             if let Some(val) = self.threads.shared_vars.get(&key) {
                 self.env.insert(key, val);
             }
@@ -591,20 +463,11 @@ impl Interpreter {
                 self.env.insert(key.to_string(), value.clone());
             }
         }
-        // The `thread_redeclared_vars` gate is NOT subsumed by ADR-0010's
-        // lineage scoping: lineage scoping isolates *sibling* threads, but a
-        // child's `my` re-declaration of a name its PARENT lineage owns would
-        // still write through the chain to the parent (`SharedStore::set`
-        // resolves to the nearest ancestor that has the name). A re-declared
-        // name is a fresh binding shadowing the captured outer lexical, so its
-        // writes stay env-local; the next `clone_for_thread` binds the current
-        // value into this lineage (`declare`) and clears the mask.
         // A blanket locals -> env mirror is a coherence pass over THIS frame's
         // slots, not an assignment: the bare-name lane must not be republished
         // from it (see `suppress_shared_publish`).
         if self.threads.shared_vars_active
             && !self.threads.suppress_shared_publish
-            && !self.threads.thread_redeclared_vars.borrow().contains(key)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
@@ -715,9 +578,6 @@ impl Interpreter {
             let dirty = self.threads.shared_vars_dirty.read().unwrap();
             dirty
                 .iter()
-                // A name re-declared in this thread is a fresh local binding;
-                // pulling the shared (outer) value in would clobber it.
-                .filter(|k| !self.threads.thread_redeclared_vars.borrow().contains(*k))
                 // `self` and `?`-pseudo-lexicals are per-invocation/per-scope
                 // bindings, never shared variables — a store polluted by an
                 // older seed must not overwrite the live frame's invocant
@@ -855,23 +715,14 @@ impl Interpreter {
         if !self.threads.shared_vars_active {
             return;
         }
-        // A name this lineage re-declared is a fresh binding that merely shares
-        // a bare name with the store's entry (the shadowed binding, or an
-        // earlier call's), exactly as `sync_shared_vars_to_env` treats it:
-        // pulling that entry in made a `$lock.protect: { @a ... }` block read
-        // a previous invocation's `@a` (#8380: `Test::Scheduler.run-due`
-        // re-queued a cancelled event forever).
-        let redeclared = self.threads.thread_redeclared_vars.borrow();
         let entries: Vec<(String, Value)> = names
             .into_iter()
-            .filter(|n| !redeclared.contains(*n))
             // A sigilless binding (`\x`) is bound once and never assigned, so
             // no thread can have updated it: the store's entry is only ever a
             // snapshot of whichever frame last bound that bare name (#14867).
             .filter(|n| !n.starts_with(crate::term_names::TERM_PREFIX))
             .filter_map(|n| self.threads.shared_vars.get(n).map(|v| (n.to_string(), v)))
             .collect();
-        drop(redeclared);
         for (name, val) in entries {
             if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 self.env.remove(&name);

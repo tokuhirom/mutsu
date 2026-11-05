@@ -203,26 +203,19 @@ impl Interpreter {
     /// a private snapshot is what let a stale-spawned thread publish an
     /// arbitrarily old value as authoritative.
     ///
-    /// The two gates are exactly the ones `set_shared_var_sym` and the blanket
-    /// reconcile already use to decide whether the store speaks for a name:
-    ///
-    /// - **dirty** — `clone_for_thread`'s spawn-time seeding deliberately does
-    ///   *not* mark a key dirty, so an entry that is merely seeded carries no
-    ///   more information than the thread's own `env` and must not displace it.
-    ///   Only an explicit `set_shared_var` write marks the name dirty, and that
-    ///   is precisely "some thread published a value here".
-    /// - **not thread-redeclared** — a re-declared name is a fresh frame-local
-    ///   binding that merely shares a spelling with the store's entry (the same
-    ///   exclusion `sync_shared_vars_to_env` applies to its dirty-key list).
+    /// The gate is the one `set_shared_var_sym` and the blanket reconcile
+    /// already use to decide whether the store speaks for a name: **dirty** —
+    /// `clone_for_thread`'s spawn-time seeding deliberately does *not* mark a
+    /// key dirty, so an entry that is merely seeded carries no more
+    /// information than the thread's own `env` and must not displace it. Only
+    /// an explicit `set_shared_var` write marks the name dirty, and that is
+    /// precisely "some thread published a value here".
     ///
     /// Read with no `shared_vars` lock held: `SharedStore::get` walks the
     /// lineage chain and would re-enter the root lock the caller is about to
     /// take.
     fn published_atomic_seed(&self, name: &str) -> Option<Value> {
         if !self.threads.shared_vars_active {
-            return None;
-        }
-        if self.threads.thread_redeclared_vars.borrow().contains(name) {
             return None;
         }
         if !self.is_shared_var_dirty(name) {

@@ -270,94 +270,10 @@ impl Drop for MarkContextGuard {
     }
 }
 
-/// RAII guard undoing the per-call masking
-/// [`Interpreter::mask_thread_redeclared_params`] applies to
-/// `thread_redeclared_vars`/`thread_param_shadow_vars` on drop -- including
-/// when a Rust panic unwinds through the guarded call. See
-/// `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md` for the bug this
-/// closes and `runtime::runtime_shared_vars::mask_thread_redeclared_params`
-/// for what the mask records and why the two sets are tracked independently.
-///
-/// Unlike [`StateScopeGuard`]/[`WhenMatchedGuard`] (a single scalar field),
-/// unmasking removes a SPECIFIC SET of names (recorded in the
-/// [`ThreadParamMask`](crate::runtime::runtime_shared_vars::ThreadParamMask)
-/// returned by `mask_thread_redeclared_params`) from two shared
-/// `HashSet<String>` fields -- not a depth to truncate back to. The v3
-/// disjoint-heap-allocation trick this module documents still applies, with
-/// `thread_redeclared_vars`/`thread_param_shadow_vars` boxed as
-/// `Box<RefCell<HashSet<String>>>` (see their field docs on `Interpreter`)
-/// instead of `Box<Cell<T>>`: a `HashSet` isn't `Copy`, so `Cell`'s get/set
-/// API is awkward for it, while `RefCell` keeps the same disjoint-allocation
-/// property and ordinary `insert`/`remove`/`contains` via `borrow`/`borrow_mut`.
-pub(crate) struct ThreadParamMaskGuard {
-    /// Raw pointer into `thread_redeclared_vars`'s OWN `Box` allocation --
-    /// never a pointer to `Interpreter` itself.
-    redeclared_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-    /// Raw pointer into `thread_param_shadow_vars`'s OWN `Box` allocation.
-    shadow_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-    /// Raw pointer into `frame_remask_armed`'s OWN `Box` allocation.
-    armed_cell: *const std::cell::Cell<bool>,
-    /// The routine's compiled locals (`CompiledCode::locals`), re-masked on
-    /// return when a thread has spawned. SAFETY of the pointer: the code is
-    /// kept alive by the caller for the whole call, which outlives the guard.
-    locals: *const [String],
-    mask: crate::runtime::runtime_shared_vars::ThreadParamMask,
-}
-
-impl ThreadParamMaskGuard {
-    /// Masks `param_defs` (via `mask_thread_redeclared_params`) and returns a
-    /// guard that undoes exactly that masking on drop.
-    pub(crate) fn new<'a>(
-        interp: &mut Interpreter,
-        param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
-        locals: &[String],
-    ) -> Self {
-        let mask = interp.mask_thread_redeclared_params(param_defs);
-        ThreadParamMaskGuard {
-            armed_cell: &*interp.threads.frame_remask_armed as *const std::cell::Cell<bool>,
-            locals: locals as *const [String],
-            redeclared_cell: &*interp.threads.thread_redeclared_vars
-                as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-            shadow_cell: &*interp.threads.thread_param_shadow_vars
-                as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-            mask,
-        }
-    }
-}
-
-impl Drop for ThreadParamMaskGuard {
-    fn drop(&mut self) {
-        // SAFETY: `redeclared_cell`/`shadow_cell` were taken from those
-        // fields' own `Box` allocations at construction (see module doc);
-        // those allocations outlive the guard and never move (the `Box`es are
-        // not reassigned while the guard is alive). This never forms a
-        // reference to `Interpreter` itself, so it is unaffected by any
-        // `&mut self` calls made elsewhere while the guard was alive.
-        unsafe {
-            self.mask.unmask(&*self.redeclared_cell, &*self.shadow_cell);
-            // The routine's own `@`/`%` lexicals stop being the live binding of
-            // their names here, but a spawn in the body published them under
-            // the bare name; re-mask them so the caller's same-named binding
-            // is not answered with the callee's lane entry (#15020).
-            // SAFETY: see the `locals` field.
-            if (*self.armed_cell).get() {
-                let mut redeclared = (*self.redeclared_cell).borrow_mut();
-                for name in &*self.locals {
-                    if crate::runtime::Interpreter::is_plain_lexical_name(name)
-                        && !redeclared.contains(name.as_str())
-                    {
-                        redeclared.insert(name.clone());
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// RAII guard restoring [`Interpreter`]'s readonly-parameter marking on drop
 /// -- including when a Rust panic unwinds through the guarded call. See
 /// `news/2026-08/readonly-param-mark-panic-unwind-raii-guard.md` for the bug
-/// this closes (the sibling of `ThreadParamMaskGuard`'s fix, for a
+/// this closes (for a
 /// completely separate backing mechanism) and
 /// `Interpreter::enter_readonly_frame`/`exit_readonly_frame` for the
 /// journal/scope-sentinel design this guard makes panic-safe.
@@ -375,7 +291,7 @@ impl Drop for ThreadParamMaskGuard {
 /// leaving the parameter's bare name marked readonly in `Interpreter::readonly_vars`
 /// -- corrupting any later, completely unrelated same-named lexical.
 ///
-/// Like [`ThreadParamMaskGuard`], the readonly journal's rollback (see
+/// The readonly journal's rollback (see
 /// [`crate::runtime::replay_readonly_undo`]) mutates a whole journal/set, not
 /// a single scalar, so this guard follows the same two-`RefCell`-plus-`Cell`
 /// shape: `readonly_vars`/`readonly_undo` are boxed as `RefCell` (not `Copy`,

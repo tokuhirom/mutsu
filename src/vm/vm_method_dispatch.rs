@@ -997,30 +997,6 @@ impl Interpreter {
         // dispatch hands a `$` parameter's argument over decontainerized.
         self.request_call_capture(cc.uses_capture, Some(&base));
         self.finish_call_capture(&args);
-        // A method parameter is a fresh per-invocation binding, exactly like a
-        // sub parameter (see the matching mark in
-        // `call_compiled_function_named_inner`): while the cross-thread shared
-        // store is active, its writes must stay thread-local instead of leaking
-        // to an unrelated caller's same-named lexical through the name-keyed
-        // store. Without this, a method whose own parameter happens to share a
-        // name with a lexical live in the awaiting frame (e.g.
-        // `Cro::HTTP::Client.request(Str $method, $url, ...)` called from a
-        // `start { ... await ... }` block that has its own `my $url`) clobbers
-        // the caller's variable once `await` syncs shared vars back — the
-        // callee's `$url` parameter is mistaken for a write to the caller's
-        // `$url`. See `mask_thread_redeclared_params` for why a bare
-        // `thread_redeclared_vars` mask alone is not sufficient and the
-        // `thread_param_shadow_vars` companion is also needed.
-        // RAII (`ThreadParamMaskGuard`,
-        // `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md`): restores
-        // the mask on drop -- including on a Rust panic unwind through the
-        // body below -- rather than the manual `unmask_thread_redeclared_params`
-        // call this replaced, which a panic unwind would skip entirely.
-        let thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
-            self,
-            bind_param_defs.iter(),
-            &cc.locals,
-        );
 
         // Initialize locals from env. The parameters are bound, so a linked
         // frame is marked first: a local is never a caller's variable, and
@@ -1520,14 +1496,6 @@ impl Interpreter {
             *self.env_mut() = frame.saved_env;
         }
 
-        // Restore bare-name shared-store visibility for this call's own
-        // parameter names now that the call is over (see
-        // `mask_thread_redeclared_params`). Explicit drop (not left to fall
-        // out of scope) so it happens at exactly the point the old manual
-        // `unmask_thread_redeclared_params` call ran; on a Rust panic mid-loop
-        // above, the guard's `Drop` still runs during unwind even though this
-        // line is never reached.
-        drop(thread_param_mask_guard);
 
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),
@@ -2177,16 +2145,6 @@ impl Interpreter {
         }
 
         self.push_light_call_frame();
-        // The same thread-lane mask as the general method path
-        // (`call_compiled_method`): once the body has spawned a thread, the
-        // method's own `@`/`%` lexicals are published under their bare names,
-        // and on return they must stop answering the caller's same-named
-        // variable (#15020). Dropped, and so undone, on every exit path.
-        let _thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
-            self,
-            method_def.param_defs.iter(),
-            &cc.locals,
-        );
         // See `call_compiled_function_named_inner`: an END registered inside this
         // method closes over a frame that dies on return.
         let end_phaser_mark_before = self.end_phaser_capture_mark();

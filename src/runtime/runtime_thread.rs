@@ -450,48 +450,6 @@ impl Interpreter {
             self.seed_unmigrated_state_vars(&shared);
         }
         self.threads.shared_vars_active = true;
-        self.threads.frame_remask_armed.set(true);
-        // The child captures the parent's CURRENT bindings — including any
-        // name the parent re-declared since an earlier spawn (its current
-        // value was force-seeded above). From this spawn on, writes to those
-        // names must flow both ways again, so drop the parent-side masks.
-        //
-        // EXCEPT the names excluded from seeding above: their premise ("its
-        // current value was force-seeded") does not hold, so the mask must
-        // survive. The store can hold a STALE entry under such a name — the
-        // blanket `sync_env_from_locals` mirror writes a frame's declared-but-
-        // not-yet-initialized slots (Nil) into the store, and the re-declaration
-        // mask then blocks the post-assignment refresh. The old force-seed
-        // repaired that bomb at every spawn; without it, dropping the mask lets
-        // the next `await`'s `sync_shared_vars_to_env` pull the stale Nil back
-        // over the live binding (`$port` in roast S17-promise/
-        // nonblocking-await.t's socket server went Nil → connect to port 0).
-        //
-        // A name whose declaration is still IN FLIGHT is excluded for the same
-        // reason from the other direction: the seed above took the value of the
-        // binding this `my` is about to SHADOW, because the initializer that
-        // produced this very spawn has not stored anything yet. Unmasking would
-        // let the next `sync_shared_vars_to_env` pull that outer value back over
-        // the new binding — `my $tap = IO::Socket::Async.listen(...).tap({...})`
-        // in a loop reverted to the previous iteration's `Tap`, which is what
-        // made a restarted `Cro::HTTP::Server` keep answering from the old one.
-        //
-        // A parameter-binding mask (`thread_param_shadow_vars`) survives this
-        // pass unconditionally for the same reason as an in-flight `my`: the
-        // shadow is scoped to the still-executing call, not to "since the last
-        // spawn", so dropping it here (because the call didn't happen to be the
-        // very first spawn) would let the next `sync_shared_vars_to_env` pull
-        // the caller's unrelated value back over the parameter for the
-        // remainder of the call. Explicit `unmask_thread_redeclared_params` at
-        // the call's return is the only thing that ever clears it.
-        self.threads
-            .thread_redeclared_vars
-            .borrow_mut()
-            .retain(|n| {
-                captured_scalars.contains(n.trim_start_matches('$'))
-                    || self.threads.thread_decl_in_flight.contains(n)
-                    || self.threads.thread_param_shadow_vars.borrow().contains(n)
-            });
         let mut cloned = Self {
             types: self.types.fork_for_thread(),
             literal_native_args: 0,
@@ -542,7 +500,7 @@ impl Interpreter {
             pending_supply_authoritative_free_vars: Vec::new(),
             last_block_my_declared: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
-            threads: self.threads.fork_for_thread(captured_scalars),
+            threads: self.threads.fork_for_thread(),
             lexicals: self.lexicals.fork_for_thread(),
             in_lvalue_assignment: false,
             rw_return_context: false,

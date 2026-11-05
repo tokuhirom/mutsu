@@ -18,72 +18,6 @@ pub(crate) struct ThreadSharing {
     /// Held here (rather than in a thread-local) so the queued `Value`s are
     /// enumerated by `visit_roots` while they wait.
     pub(crate) lock_async_deferred: Vec<(u64, Value, crate::value::SharedPromise)>,
-    /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
-    /// cross-thread shared store is active. A re-declaration is a fresh
-    /// binding shadowing the captured outer lexical, so subsequent writes to
-    /// the name must stay thread-local: `set_shared_var_sym` skips the shared
-    /// write and `sync_shared_vars_to_env` skips the pull for these names.
-    /// Reset to empty in `clone_for_thread` (a child thread captures the
-    /// parent's *current* bindings). Only populated while
-    /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
-    /// Boxed and wrapped in `RefCell` (not a plain `HashSet<String>` field) so
-    /// `ThreadParamMaskGuard` (`vm::vm_call_state_guard`) can hold a raw
-    /// pointer into this field's OWN heap allocation -- disjoint from
-    /// `Interpreter`'s own allocation -- and mutate it on `Drop` (including
-    /// during a Rust panic unwind) without ever needing a reference to
-    /// `Interpreter` itself. See that module's doc comment ("v3") for why a
-    /// pointer taken directly into a field embedded in `Interpreter`'s own
-    /// struct is unsound. `RefCell` (not `Cell`, unlike `state_scope_id`/
-    /// `when_matched`) because `HashSet` isn't `Copy`, so `Cell`'s get/set API
-    /// is awkward for it; `RefCell` gives the same disjoint-allocation
-    /// property while keeping ordinary `insert`/`remove`/`contains` methods
-    /// available through `borrow`/`borrow_mut`.
-    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
-    /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
-    /// *in flight*: the `my` has run but its initializer has not stored a value
-    /// yet, so neither the slot nor `env` holds the new binding — both still
-    /// carry the shadowed OUTER value.
-    ///
-    /// `clone_for_thread` normally drops a re-declaration mask because it
-    /// force-seeds the name's *current* value into the child lineage first. That
-    /// premise fails for a name in this set: a spawn that happens **inside the
-    /// initializer** (`my $tap = Supply.tap(...)`, whose `.tap` starts a worker)
-    /// would seed the outer binding's value and then unmask the name, so the
-    /// next `sync_shared_vars_to_env` pulls that stale value back over the
-    /// binding the initializer is about to create. Keeping the mask for the
-    /// in-flight window closes that hole; the store is republished normally once
-    /// the initializer's value lands. Empty for single-threaded programs.
-    pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
-    /// Bare scalar names currently masked in [`Self::thread_redeclared_vars`]
-    /// because of a **parameter binding** (`mask_thread_redeclared_params`),
-    /// not a `my` declaration. `clone_for_thread_excluding` must treat the two
-    /// differently: a `my` re-declaration's mask means "this spawn should see
-    /// MY new value as authoritative for the rest of the block", so it force-
-    /// `declare`s the value into the shared lineage. A parameter's shadow is
-    /// scoped to exactly this call and must never overwrite an unrelated
-    /// caller's live entry for the same bare name — it should always take the
-    /// `seed_if_absent` (no-op-if-already-visible) branch instead, even for a
-    /// nested spawn *inside this call's own body*.
-    ///
-    /// `thread_decl_in_flight` looked like the same "always seed_if_absent"
-    /// signal, but it is unsuitable here: `exec_set_local_op` clears an entry
-    /// from it as soon as ANY `SetLocal` targets a same-named slot — which the
-    /// call body's own bytecode does routinely (e.g. a coercion or a
-    /// re-assignment of the parameter), silently un-suppressing the force-
-    /// `declare` behavior partway through the call before any nested spawn.
-    /// A dedicated set, touched only by
-    /// [`mask_thread_redeclared_params`](Interpreter::mask_thread_redeclared_params) /
-    /// `unmask_thread_redeclared_params`,
-    /// has no such interference. Empty for single-threaded programs.
-    /// Same `Box<RefCell<...>>` wrapping and same reason as
-    /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
-    /// stable, `Interpreter`-disjoint pointer into this field too.
-    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
-    /// Set once any thread has spawned (mirrors `shared_vars_active`, but behind
-    /// a `Box` so [`ThreadParamMaskGuard`](crate::vm::vm_call_state_guard::ThreadParamMaskGuard)
-    /// can read it on drop through a raw pointer). A returning routine frame
-    /// re-masks its own `@`/`%` lexicals only when this is set (#15020).
-    pub(crate) frame_remask_armed: Box<std::cell::Cell<bool>>,
     /// Set while an *incidental* locals -> env mirror is running: the regex
     /// interpolation pre-sync before a `~~`. It exists purely so a name-based
     /// reader in THIS interpreter can observe the frame's live slots through
@@ -179,14 +113,6 @@ impl ThreadSharing {
         Self {
             lock_async_recursion: Vec::new(),
             lock_async_deferred: Vec::new(),
-            thread_redeclared_vars: Box::new(std::cell::RefCell::new(
-                rustc_hash::FxHashSet::default(),
-            )),
-            thread_decl_in_flight: std::collections::HashSet::new(),
-            frame_remask_armed: Box::default(),
-            thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
-                rustc_hash::FxHashSet::default(),
-            )),
             suppress_shared_publish: false,
             shared_vars: crate::runtime::shared_store::SharedStore::root(),
             shared_vars_active: false,
@@ -197,55 +123,12 @@ impl ThreadSharing {
         }
     }
 
-    /// The state a spawned thread starts with. `captured_scalars` are the
-    /// spawned block's own captured scalar names.
-    // Cost: O(c + s), c = captured scalars, s = the parent's active parameter
-    // shadows.
-    pub(crate) fn fork_for_thread(&self, captured_scalars: &HashSet<String>) -> Self {
+    /// The state a spawned thread starts with.
+    // Cost: O(1).
+    pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
             lock_async_recursion: Vec::new(),
             lock_async_deferred: Vec::new(),
-            // The spawned block's own captured scalars were NOT seeded into the
-            // store (the closure machinery owns them per binding), so the child
-            // must treat them exactly like re-declared names: reads and writes
-            // stay env-local, and a stale same-named ancestor entry must not be
-            // pulled over the captured copy at a sync point.
-            //
-            // A name the PARENT currently has masked as a slurpy `@`/`%`
-            // parameter (`thread_param_shadow_vars`) must carry the same
-            // treatment into the child: the child's env was just cloned from
-            // the parent's, so it already holds THIS call's own value under
-            // that bare name. Without inheriting the mask here, the child's
-            // read gate sees the name as
-            // unmasked and falls through to the shared-store fallback, which
-            // may hold a DIFFERENT, now-stale value seeded by an earlier
-            // sequential call to the same routine (the mask itself is lifted
-            // on the parent as soon as that call's synchronous body returns,
-            // long before an async `start` block spawned from inside it gets
-            // around to reading the parameter — see
-            // `slurpy-hash-param-in-start-block-reads-stale-value-across-
-            // sequential-calls.md`). The mask must instead survive for as
-            // long as the CHILD's own body runs, independent of the parent's
-            // lifetime.
-            thread_redeclared_vars: Box::new(std::cell::RefCell::new(
-                captured_scalars
-                    .iter()
-                    .cloned()
-                    .chain(self.thread_param_shadow_vars.borrow().iter().cloned())
-                    .collect(),
-            )),
-            // The child starts no declaration of its own; its own `my`s populate
-            // this as they run.
-            thread_decl_in_flight: std::collections::HashSet::new(),
-            // The child starts no call of its own, but it inherits the
-            // parent's currently-active parameter shadows (see the
-            // `thread_redeclared_vars` comment above) — its own subsequent
-            // parameter bindings union in as they run.
-            // The child spawns on its own account: armed only once it does.
-            frame_remask_armed: Box::default(),
-            thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
-                self.thread_param_shadow_vars.borrow().clone(),
-            )),
             suppress_shared_publish: false,
             // ADR-0010: a child lineage, not a share of one process-wide map.
             shared_vars: crate::runtime::shared_store::SharedStore::child_of(&self.shared_vars),
