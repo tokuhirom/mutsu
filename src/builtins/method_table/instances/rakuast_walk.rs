@@ -132,10 +132,56 @@ fn literalize(
         return None;
     };
     let cannot = Value::package(Symbol::intern("RakuAST::Node::CannotLiteralize"));
+    // A block literalizes as the `Map` its statements' literal values build
+    // (`{ 1, 2 }` is `Map.new(("1" => 2))`; an odd count dies as `Map.new` does).
+    if let Some(exprs) = crate::rakuast::literalize::block_expressions(node) {
+        let mut flat = Vec::new();
+        for expr in exprs {
+            let expr = Value::rakuast(Box::new(expr.clone()));
+            if !matches!(expr.view(), ValueView::RakuAst(n) if crate::rakuast::literalize::is_constant(n)) {
+                return Some(Ok(cannot));
+            }
+            match literal_of(interp, &expr) {
+                Some(v) => flatten_literal(v, &mut flat),
+                None => return Some(Ok(cannot)),
+            }
+        }
+        // A key without a value dies as `Map.new` should (a Pair is complete).
+        let mut loose = 0usize;
+        for item in &flat {
+            if !matches!(item.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
+                loose += 1;
+            }
+        }
+        if loose % 2 == 1 {
+            return Some(Err(crate::builtins::map_hash_coerce::odd_number_error(
+                flat.len(),
+                flat.last(),
+            )));
+        }
+        return Some(interp.call_method_with_values(
+            Value::package(Symbol::intern("Map")),
+            "new",
+            flat,
+        ));
+    }
     if !crate::rakuast::literalize::is_constant(node) {
         return Some(Ok(cannot));
     }
     Some(Ok(literal_of(interp, &base).unwrap_or(cannot)))
+}
+
+/// `value` with every nested list spliced in, as `Map.new(|$list)` flattens.
+// Cost: O(n), n = size of the value.
+fn flatten_literal(value: Value, out: &mut Vec<Value>) {
+    match value.view() {
+        ValueView::Array(items, _) => {
+            for item in items.iter() {
+                flatten_literal(item.clone(), out);
+            }
+        }
+        _ => out.push(value),
+    }
 }
 
 /// The literal value of the constant node `base`. Rakudo literalizes a

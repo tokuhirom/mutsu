@@ -41,6 +41,44 @@ pub(crate) fn is_hash_composer(node: &RakuAstNode) -> bool {
     node.class == C::CircumfixHashComposer
 }
 
+/// The expressions of a block's statements when every statement is a plain
+/// expression statement (`{ 1, 2 }`, `-> $x { 1; 2 }`): what rakudo's
+/// `Block.literalize` turns into a `Map`. `None` for any other block shape.
+// Cost: O(n), n = size of the block's body.
+pub(crate) fn block_expressions(node: &RakuAstNode) -> Option<Vec<&RakuAstNode>> {
+    if !matches!(node.class, C::Block | C::PointyBlock) {
+        return None;
+    }
+    fn walk<'a>(node: &'a RakuAstNode, out: &mut Vec<&'a RakuAstNode>) -> bool {
+        match node.class {
+            C::Block | C::PointyBlock | C::Blockoid | C::StatementList | C::StatementSequence => {
+                children(node).into_iter().all(|child| match child.class {
+                    C::StatementExpression => {
+                        if !node_has_only_expression(child) {
+                            return false;
+                        }
+                        named(child, "expression").is_some_and(|e| {
+                            out.push(e);
+                            true
+                        })
+                    }
+                    C::Blockoid | C::StatementList | C::StatementSequence => walk(child, out),
+                    // The parameter list of a pointy block.
+                    C::Signature | C::Parameter => true,
+                    _ => false,
+                })
+            }
+            _ => false,
+        }
+    }
+    let mut out = Vec::new();
+    walk(node, &mut out).then_some(out)
+}
+
+fn node_has_only_expression(node: &RakuAstNode) -> bool {
+    node.fields.iter().all(|f| f.name == Some("expression"))
+}
+
 /// How a constant node is a list of values to literalize one by one.
 pub(crate) enum ListShape {
     /// A comma list, or an empty `[]`: the operands (none for `[]`).
