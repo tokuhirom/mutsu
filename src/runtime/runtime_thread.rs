@@ -79,13 +79,14 @@ impl Interpreter {
                 crate::runtime::shared_store::capture_check::record_cell_captures(&cells);
             }
         }
-        self.clone_for_thread()
+        self.spawn_clone()
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
-    /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
-    /// so that mutations are visible across threads.
+    /// The child reaches the parent's lexicals through the cells and objects its
+    /// env clone carries (ADR-16595); only opaque names and `@*`/`%*` dynamics are
+    /// published into `shared_vars`.
     ///
     /// Most of what this builds is cheap, and deliberately so: the program-global
     /// symbol tables it carries over are `Arc<...>` copy-on-write shares (see the
@@ -96,6 +97,11 @@ impl Interpreter {
     /// `Cro::MessageWithBody.body-blob` builds cost 5x what it costs in a bare
     /// program, purely because there were more modules to copy tables for.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
+        self.spawn_clone()
+    }
+
+    /// The workhorse behind every thread clone.
+    fn spawn_clone(&mut self) -> Self {
         // ADR-12204 S1 oracle: the lane writes below seed the spawner's
         // lexicals; they are not uses of the names.
         let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
