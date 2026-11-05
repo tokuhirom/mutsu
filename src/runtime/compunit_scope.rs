@@ -256,6 +256,16 @@ impl Interpreter {
             return true;
         }
         let executing = self.executing_unit_sym_for_module_load();
+        // A compunit always sees a class it declares itself, whatever package
+        // prefix of the name another module registered first: `Md::Dsr::WXF`'s
+        // own `our constant S = Md::Dsr::WXF::Symbol` runs before its user's
+        // `unit module Md::Dsr` is registered, and a sibling `Md::Ser` already
+        // owns the prefix `Md`.
+        if let Some(&declaring) = self.module.class_declaring_units.get(name)
+            && (declaring == executing || declaring == self.current_unit)
+        {
+            return true;
+        }
         // A qualified name is ALSO visible when the running compunit `use`d
         // ANY package under the same top-level `::`-segment as `name` —
         // coarser than a `use` of `name`'s own exact ancestor, but verified
