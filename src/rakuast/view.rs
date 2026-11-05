@@ -6542,7 +6542,7 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         is_my,
         body,
         custom_traits,
-        ..
+        spans,
     } = declaration
     else {
         return None;
@@ -6557,7 +6557,7 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         kind: *kind,
         is_unit: true,
         is_my: *is_my,
-        spans: None,
+        spans: super::unit_span::package_spans(spans.as_deref(), rest),
     };
     if header.adverbs.is_empty() && header.export_tags.is_none() {
         return Some(package);
