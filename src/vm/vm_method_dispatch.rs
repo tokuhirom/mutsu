@@ -1496,7 +1496,6 @@ impl Interpreter {
             *self.env_mut() = frame.saved_env;
         }
 
-
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),
             Err(e) => Err(e),

@@ -1926,11 +1926,7 @@ impl Interpreter {
             // refusing it reopens the very hole the dichotomy exists to close.
             let refuse_sub = matches!(cur.view(), ValueView::Sub(..)) && !unvouched_escaping;
             if !cur.is_any_type_object()
-                && (refuse_sub
-                    || matches!(
-                        cur.view(),
-                        ValueView::Proxy { .. }
-                    ))
+                && (refuse_sub || matches!(cur.view(), ValueView::Proxy { .. }))
             {
                 continue;
             }

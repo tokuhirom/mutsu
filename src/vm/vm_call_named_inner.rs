@@ -509,7 +509,6 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
-
         // The body is done: what follows carries values back to the caller
         // (state, rw parameters, the return merge), reading them where they
         // are rather than what a name means in this routine's scope, so the
