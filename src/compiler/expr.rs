@@ -174,11 +174,11 @@ impl Compiler {
             }
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_
             Expr::MatchRegex(v) => {
-                self.compile_match_regex(v);
+                self.compile_match_regex_topic(v, false);
             }
             Expr::MatchRegexTree { value, tree } => {
                 let value = value.with_regex_source_tree(tree.clone());
-                self.compile_match_regex(&value);
+                self.compile_match_regex_topic(&value, false);
             }
             Expr::MatchRegexDynamicAdverbs {
                 value,
