@@ -73,7 +73,11 @@ pub(super) fn parsed_node(
             }
         }
         ParsedStmt::BareBlock(block) => {
-            statement_expression(view_block(names, block, BlockKind::Signature)?)
+            statement_expression(super::block_queries::bare_block(view_block(
+                names,
+                block,
+                BlockKind::Signature,
+            )?))
         }
         ParsedStmt::Loop(l) => loop_node(names, l)?,
         ParsedStmt::BindDecl(decl) => {

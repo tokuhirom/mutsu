@@ -3789,7 +3789,9 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 /// needs for the round trip (the atom of a regex alias to a variable).
 // Cost: O(1).
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
-    infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
+    infix_func::is_hidden_adverbs(node, field)
+        || block_queries::is_bare_marker(node, field)
+        || regex_variable_alias::is_source_field(node, field)
 }
 
 /// Whether Rakudo's `visit-children` skips `field` although the accessor
