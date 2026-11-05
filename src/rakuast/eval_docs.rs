@@ -125,11 +125,13 @@ impl Collector {
                 }
             }
             C::VarDeclarationSimple if str_field(node, "scope").as_deref() == Some("has") => {
-                if let (Some(name), Some(doc)) = (resolve::package_name(node).or_else(|| {
-                    // `desigilname` is the attribute's name.
-                    attribute_name(node)
-                }), doc)
-                {
+                if let (Some(name), Some(doc)) = (
+                    resolve::package_name(node).or_else(|| {
+                        // `desigilname` is the attribute's name.
+                        attribute_name(node)
+                    }),
+                    doc,
+                ) {
                     let sigil = str_field(node, "sigil").unwrap_or_default();
                     let key = self.member_key(&format!("{sigil}!{name}"));
                     self.out.push(DocComment {
