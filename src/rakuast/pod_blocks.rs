@@ -998,12 +998,28 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
             .any(|s| (s.from as usize) <= at && at < s.to as usize)
     };
     let mut found: Vec<(usize, RakuAstNode)> = Vec::new();
+    let mut nested: Vec<(usize, usize, RakuAstNode)> = Vec::new();
     let mut last_to = 0usize;
     let mut i = 0;
     while i < lines.text.len() {
         let at = lines.start[i] + lines.indent(i);
-        if lines.directive(i).is_none() || inside(at) {
+        if lines.directive(i).is_none() {
             i += 1;
+            continue;
+        }
+        if inside(at) {
+            // Pod at column 0 inside a block of a statement belongs to that
+            // block's statement list; an indented one has a margin rakudo
+            // computes by a rule not read here.
+            if lines.indent(i) == 0
+                && let Some((block, next)) = block(&lines, i)
+            {
+                let end = lines.start.get(next).copied().unwrap_or(source.len());
+                nested.push((at, end, block.node()));
+                i = next.max(i + 1);
+            } else {
+                i += 1;
+            }
             continue;
         }
         match block(&lines, i) {
@@ -1024,6 +1040,7 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
         }
     }
     if found.is_empty() {
+        super::pod_nested::place_nested(list, nested, source);
         return;
     }
     // Each statement's offset; a statement without one leaves the list alone.
@@ -1074,4 +1091,5 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
         });
     }
     list.fields = fields;
+    super::pod_nested::place_nested(list, nested, source);
 }

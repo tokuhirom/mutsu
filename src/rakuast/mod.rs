@@ -55,6 +55,7 @@ mod package_trait_origins;
 mod parsed_view;
 mod pod_blocks;
 mod pod_entities;
+mod pod_nested;
 mod pod_table;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
