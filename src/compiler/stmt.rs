@@ -4080,6 +4080,7 @@ impl Compiler {
                     condition: None,
                     end_index: *end_index,
                     bare: false,
+                    from_trait: false,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id = super::compile_session::mint();

@@ -327,6 +327,7 @@ impl Mover<'_> {
             condition: None,
             end_index: None,
             bare: false,
+            from_trait: false,
         });
     }
 }

@@ -402,6 +402,7 @@ fn reorder_at_level(
             condition: None,
             end_index: None,
             bare: false,
+            from_trait: false,
         });
     }
     // Extra CHECK from lifted phasers.
@@ -428,6 +429,7 @@ fn reorder_at_level(
             condition: None,
             end_index: None,
             bare: false,
+            from_trait: false,
         });
     }
     stmts.extend(extra_init);

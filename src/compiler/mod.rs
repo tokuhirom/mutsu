@@ -5389,6 +5389,20 @@ impl Compiler {
     /// current frame's topic register rather than getting a fresh one. It is
     /// only safe for a routine's own compiled body, which always runs in its
     /// own fresh call frame (see `news/2026-08/given-if-block-scope-topic-clobber.md`).
+    /// The order a scope's exit phasers run in: every written `LEAVE`/`KEEP`/
+    /// `UNDO` block, last declared first, then the variables' `will leave|keep|
+    /// undo` traits, last declared first (rakudo keeps the traits on the scope
+    /// apart from the blocks).
+    // Cost: O(n), n = statements in the scope.
+    pub(crate) fn exit_phaser_order(stmts: &[Stmt]) -> impl Iterator<Item = &Stmt> {
+        let is_trait = |s: &&Stmt| matches!(s, Stmt::Phaser { from_trait: true, .. });
+        stmts
+            .iter()
+            .rev()
+            .filter(move |s| !is_trait(s))
+            .chain(stmts.iter().rev().filter(move |s| is_trait(s)))
+    }
+
     pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], mode: PhaserBlockResult) {
         let idx = self.code.emit(OpCode::BlockScope {
             pre_end: 0,
@@ -5557,7 +5571,7 @@ impl Compiler {
         self.code.patch_block_keep_start(idx);
         {
             let mut prev_guard: Option<usize> = None;
-            for s in stmts.iter().rev() {
+            for s in Self::exit_phaser_order(stmts) {
                 if let Stmt::Phaser { kind, body, .. } = s
                     && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
                 {
@@ -5587,7 +5601,7 @@ impl Compiler {
         self.code.patch_block_undo_start(idx);
         {
             let mut prev_guard: Option<usize> = None;
-            for s in stmts.iter().rev() {
+            for s in Self::exit_phaser_order(stmts) {
                 if let Stmt::Phaser { kind, body, .. } = s
                     && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                 {

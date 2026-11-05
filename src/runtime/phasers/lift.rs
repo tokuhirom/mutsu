@@ -55,6 +55,7 @@ impl VisitMut for Reorder {
             kind: PhaserKind::First | PhaserKind::Next | PhaserKind::Last,
             body,
             bare: true,
+            from_trait: false,
             ..
         } = stmt
         {

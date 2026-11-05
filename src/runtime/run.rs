@@ -684,6 +684,7 @@ impl Interpreter {
                             condition: None,
                             end_index: None,
                             bare: false,
+                            from_trait: false,
                         }
                     } else {
                         s

@@ -543,6 +543,7 @@ fn type_method_assign(
             end_index: None,
             spans: Default::default(),
             bare: true,
+            from_trait: false,
         },
     ])
 }

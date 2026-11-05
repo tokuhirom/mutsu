@@ -3214,6 +3214,13 @@ pub(crate) enum Stmt {
         /// form shares the enclosing block's lexical scope.
         #[serde(default)]
         bare: bool,
+        /// Expanded from a variable's `will leave|keep|undo { ... }` trait
+        /// rather than written as a phaser block. Rakudo registers those on the
+        /// scope apart from the `LEAVE`/`KEEP`/`UNDO` blocks, so at scope exit
+        /// every block runs first and the traits after, each group last
+        /// declared first.
+        #[serde(default)]
+        from_trait: bool,
     },
     ProtoDecl {
         name: Symbol,

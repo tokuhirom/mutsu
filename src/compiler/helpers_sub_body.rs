@@ -532,7 +532,7 @@ impl Compiler {
             sub_compiler.code.patch_block_keep_start(idx);
             {
                 let mut prev_guard: Option<usize> = None;
-                for stmt in body.iter().rev() {
+                for stmt in Compiler::exit_phaser_order(body) {
                     if let Stmt::Phaser { kind, body, .. } = stmt
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
                     {
@@ -558,7 +558,7 @@ impl Compiler {
             sub_compiler.code.patch_block_undo_start(idx);
             {
                 let mut prev_guard: Option<usize> = None;
-                for stmt in body.iter().rev() {
+                for stmt in Compiler::exit_phaser_order(body) {
                     if let Stmt::Phaser { kind, body, .. } = stmt
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                     {
@@ -1824,7 +1824,7 @@ impl Compiler {
             sub_compiler.code.patch_block_keep_start(idx);
             {
                 let mut prev_guard: Option<usize> = None;
-                for s in body.iter().rev() {
+                for s in Compiler::exit_phaser_order(body) {
                     if let Stmt::Phaser {
                         kind,
                         body: ph_body,
@@ -1853,7 +1853,7 @@ impl Compiler {
             sub_compiler.code.patch_block_undo_start(idx);
             {
                 let mut prev_guard: Option<usize> = None;
-                for s in body.iter().rev() {
+                for s in Compiler::exit_phaser_order(body) {
                     if let Stmt::Phaser {
                         kind,
                         body: ph_body,
