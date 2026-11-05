@@ -33,7 +33,7 @@ macro_rules! name_queries {
                 owner: "RakuAST::Name",
                 name: "qualified-with",
                 arity: 1,
-                handler: Handler::Pure(qualified_with),
+                handler: Handler::Narrow(qualified_with),
                 // The qualifier is a node, not a plain scalar.
                 flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
                 named: &[],
@@ -43,37 +43,20 @@ macro_rules! name_queries {
 }
 
 // Cost: O(p + q), p = parts of the name, q = parts of the qualifier.
-fn qualified_with(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+fn qualified_with(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let node_of = |value: &Value| {
         native_node(value).and_then(|base| match base.view() {
             ValueView::RakuAst(node) => Some(node.clone()),
             _ => None,
         })
     };
-    match (node_of(target), args.first().and_then(node_of)) {
-        (Some(name), Some(qualifier)) => Ok(crate::rakuast::name_queries::qualified_with(
+    let (name, qualifier) = (node_of(target)?, args.first().and_then(node_of));
+    Some(match qualifier {
+        Some(qualifier) => Ok(crate::rakuast::name_queries::qualified_with(
             &name, &qualifier,
         )),
-        _ => Err(RuntimeError::new(
+        None => Err(RuntimeError::new(
             "Type check failed in binding to parameter '$qualifier'; expected RakuAST::Name",
         )),
-    }
-}
-
-name_queries! {
-    "is-identifier" => is_identifier,
-    "is-simple" => is_simple,
-    "is-multi-part" => is_multi_part,
-    "is-global-lookup" => is_global_lookup,
-    "is-package-lookup" => is_package_lookup,
-    "is-pseudo-package" => is_pseudo_package,
-    "is-installable" => is_installable,
-    "has-colonpairs" => has_colonpairs,
-    "first-part" => first_part,
-    "last-part" => last_part,
-    "root-part" => root_part,
-    "simple-identifier" => simple_identifier,
-    "base-name" => base_name,
-    "without-colonpairs" => without_colonpairs,
-    "without-first-part" => without_first_part,
+    })
 }
