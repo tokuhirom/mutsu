@@ -35,7 +35,6 @@ pub(super) fn rest_span(rest: &[Stmt]) -> Option<crate::ast::SrcSpan> {
     let first = spans.next()?;
     let last = spans.next_back().unwrap_or(first);
     let (from, end) = (first.from as usize, last.to as usize);
-    let tail =
-        super::unit_source::with_text_from(end, crate::source_comments::terminators_end)?;
+    let tail = super::unit_source::with_text_from(end, crate::source_comments::terminators_end)?;
     Some(crate::ast::SrcSpan::new(from, end + tail))
 }
