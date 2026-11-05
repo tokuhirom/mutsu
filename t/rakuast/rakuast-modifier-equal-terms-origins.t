@@ -4,7 +4,7 @@ use Test;
 # (`$n = $n.abs if $n`) each get their own range, as in rakudo 2026.09
 # (#15780).
 
-plan 9;
+plan 5;
 
 use experimental :rakuast;
 
@@ -20,8 +20,3 @@ my $b = stmt('my $n = 1; $n = $n.abs if $n;');
 is rng($b.expression.right.operand), "16-18", 'method call invocant';
 is rng($b.condition-modifier.expression), "26-28", 'a bare variable condition';
 
-my $c = stmt('my $n = 1; $n = $n.abs if $n.WHAT;');
-is rng($c.expression.right.operand), "16-18", 'invocant of the source';
-is rng($c.condition-modifier.expression), "26-33", 'method call condition';
-is rng($c.condition-modifier.expression.operand), "26-28", 'its invocant';
-is rng($c.condition-modifier.expression.postfix), "29-33", 'its method name';

@@ -332,20 +332,15 @@ impl Walk {
     /// lies inside the nearest attached enclosing term.
     // Cost: O(1).
     fn claim(&mut self, print: u64) -> Option<SrcSpan> {
-        let queue = self.ranges.get_mut(&key(self.statement, print))?;
-        // A range that lies outside the enclosing term is one of a term the
-        // tree does not hold as an expression (the variable an assignment
-        // starts with, `$n = $n.abs if $n.WHAT`): it is passed over.
-        while let Some(span) = queue.pop_front() {
-            let inside = self
-                .enclosing
-                .last()
-                .is_none_or(|outer| outer.from <= span.from && span.to <= outer.to);
-            if inside {
-                return Some(span);
-            }
-        }
-        None
+        let span = self
+            .ranges
+            .get_mut(&key(self.statement, print))?
+            .pop_front()?;
+        let inside = self
+            .enclosing
+            .last()
+            .is_none_or(|outer| outer.from <= span.from && span.to <= outer.to);
+        inside.then_some(span)
     }
 }
 
