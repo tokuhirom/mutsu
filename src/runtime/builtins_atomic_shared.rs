@@ -303,7 +303,7 @@ impl Interpreter {
     pub(crate) fn array_name_is_shared(&self, arr_name: &str) -> bool {
         // ...unless this lineage re-declared the name: then the store's entry
         // belongs to the shadowed outer binding, not to this frame's array.
-        if self.container_name_is_redeclared(arr_name) {
+        if !self.container_lane_applies(arr_name) {
             return false;
         }
         self.atomic_array_entry_exists(arr_name)

@@ -66,7 +66,7 @@ impl Interpreter {
         }
         // A `my %h` re-declared under the shared lane is a fresh container that
         // only shares a name with the store's entry — write it locally.
-        if self.container_name_is_redeclared(key) {
+        if !self.container_lane_applies(key) {
             return None;
         }
         // A hash already boxed into a shared `ContainerRef` cell (e.g.
@@ -186,7 +186,7 @@ impl Interpreter {
             return None;
         }
         // See `assign_hash_elem_to_shared_var`.
-        if self.container_name_is_redeclared(key) {
+        if !self.container_lane_applies(key) {
             return None;
         }
         // See `assign_hash_elem_to_shared_var`: an array already boxed into a
@@ -311,6 +311,43 @@ impl Interpreter {
                     .env
                     .get(key)
                     .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(key, cur)))
+    }
+
+    /// Whether the name-keyed cross-thread lane (`shared_vars`,
+    /// `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::`) may stand for the
+    /// `@`/`%` binding `key` (ADR-16595 §2 rule 3).
+    ///
+    /// A plain user lexical never does: it lives in its frame's slot or in the
+    /// declaration-site `ContainerRef` cell every escaping closure captured,
+    /// and a thread reaches it through that capture, under the container's
+    /// ADR-0068 lock. The lane keeps the names that are not such a lexical
+    /// (attributes `@!x`, dynamics `@*x`, `__mutsu_*` keys) and the opaque ones
+    /// ([`Self::lexical_name_is_opaque`]), unless this lineage re-declared the
+    /// name ([`Self::container_name_is_redeclared`]).
+    // Cost: O(1) expected, a prefix check and at most two set probes.
+    pub(crate) fn container_lane_applies(&self, key: &str) -> bool {
+        !self.container_name_is_redeclared(key) && !self.lexical_has_own_place(key)
+    }
+
+    /// Whether `key` is a plain user `@`/`%` lexical that a thread reaches
+    /// through its own slot or captured cell rather than through the lane.
+    // Cost: O(1) expected, a prefix check and at most two set probes.
+    pub(crate) fn lexical_has_own_place(&self, key: &str) -> bool {
+        Self::is_plain_lexical_name(key)
+            && !key.contains("__")
+            && !self.lexical_name_is_opaque(key)
+    }
+
+    /// The closed set of lexicals that code on another thread reaches without
+    /// a capture, so they keep the lane until ADR-12529 phase 3 (slice 5): a
+    /// name a registered class/role method writes
+    /// (`lexicals.type_body_written_lexicals`).
+    // Cost: O(1) expected, two set probes.
+    pub(crate) fn lexical_name_is_opaque(&self, key: &str) -> bool {
+        self.lexicals
+            .type_body_written_lexicals
+            .contains(key.trim_start_matches(['@', '%']))
+            || self.lexicals.type_body_written_lexicals.contains(key)
     }
 
     /// Mask each scalar and aggregate parameter (`&` parameters are excluded)

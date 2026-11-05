@@ -374,7 +374,7 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-            slot_cell_is_env_binding || self.container_name_is_redeclared(name)
+            slot_cell_is_env_binding || !self.container_lane_applies(name)
         };
         if skip_name_keyed_store || !lane_probe {
             // fall through to the local/env read

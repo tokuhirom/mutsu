@@ -1199,7 +1199,7 @@ impl Interpreter {
         if modifier.is_none()
             && matches!(target.view(), ValueView::Array(..))
             && !args.iter().any(Value::is_junction_value)
-            && !(self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
+            && !(self.threads.shared_vars_active && self.container_lane_applies(target_name))
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)
