@@ -22,6 +22,7 @@ mod io_spec_paths;
 mod io_spec_split;
 mod native_io_path;
 mod path_spec;
+pub(crate) mod rakudo_filetest;
 mod resolve;
 
 pub(crate) use helpers::{
