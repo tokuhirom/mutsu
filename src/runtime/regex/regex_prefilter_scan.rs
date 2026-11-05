@@ -24,6 +24,16 @@ pub(crate) enum ScanPositions<'c> {
         /// Inclusive last viable start.
         last: usize,
     },
+    /// Positions where the value of the pattern's leading `$var` occurs: the
+    /// variable was read once for the whole scan (nothing in a code-free
+    /// pattern can write it) and its text is the required literal prefix.
+    Needle {
+        chars: &'c [char],
+        needle: Box<[char]>,
+        pos: usize,
+        /// Inclusive last viable start.
+        last: usize,
+    },
     /// Positions whose character is in the pattern's first-character set.
     FirstChar {
         chars: &'c [char],
@@ -85,6 +95,7 @@ impl ScanPositions<'_> {
                 }
             }
             ScanPositions::Literal { pos, .. }
+            | ScanPositions::Needle { pos, .. }
             | ScanPositions::FirstChar { pos, .. }
             | ScanPositions::Inner { pos, .. } => *pos = (*pos).max(target),
             ScanPositions::Chained { inner, .. } => inner.advance_to(target),
@@ -105,6 +116,20 @@ impl Iterator for ScanPositions<'_> {
                 last,
             } => {
                 let needle = prefilter.prefix.as_deref().unwrap_or_default();
+                let Some(candidate) = find_literal(chars, needle, *pos, *last) else {
+                    *pos = *last + 1;
+                    return None;
+                };
+                *pos = candidate + 1;
+                crate::vm::vm_stats::record_regex_prefilter_position_hit();
+                Some(candidate)
+            }
+            ScanPositions::Needle {
+                chars,
+                needle,
+                pos,
+                last,
+            } => {
                 let Some(candidate) = find_literal(chars, needle, *pos, *last) else {
                     *pos = *last + 1;
                     return None;
