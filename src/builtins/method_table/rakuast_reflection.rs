@@ -34,6 +34,14 @@ pub(crate) fn inherited_method_names(class_name: &str) -> Option<Vec<&'static st
             names.extend(local);
         }
     }
+    // A role the class does declares its methods too (`WHY` of
+    // `Doc::DeclaratorTarget`, `has-placeholder-parameters` of
+    // `PlaceholderParameterOwner`).
+    if let Some(entry) = crate::rakuast::hierarchy::entry(class_name) {
+        for role in &entry.roles {
+            names.extend(super::owner_row_names(role));
+        }
+    }
     names.sort_unstable();
     names.dedup();
     Some(names)
