@@ -45,6 +45,25 @@ impl Interpreter {
         Some(rest.to_string())
     }
 
+    /// Whether `spec` is `Enum::Key`, a key of a declared enum.
+    // Cost: O(e + v), e = declared enums, v = variants of the named enum.
+    fn qualified_enum_value_spec(&self, spec: &str) -> bool {
+        let Some((enum_name, key)) = crate::qualified::split_qualified(Symbol::intern(spec)) else {
+            return false;
+        };
+        let (enum_name, key) = (enum_name.as_str(), key.as_str());
+        self.resolve_bareword_type_name(enum_name)
+            .filter(|r| self.registry().enum_types.contains_key(r))
+            .or_else(|| self.enum_registry_name(enum_name))
+            .and_then(|resolved| {
+                self.registry()
+                    .enum_types
+                    .get(&resolved)
+                    .map(|variants| variants.iter().any(|(k, _)| k == key))
+            })
+            .unwrap_or(false)
+    }
+
     pub(crate) fn is_definite_return_spec(&self, spec: &str) -> bool {
         let s = spec.trim();
         if s.is_empty() {
@@ -128,6 +147,11 @@ impl Interpreter {
             && !crate::qualified::is_qualified_str(s)
             && self.sole_enum_with_variant(s).is_some()
         {
+            return true;
+        }
+        // A qualified spelling (`--> Precedence::Termlike`) of a value of a
+        // declared enum is the same definite return as the bare key.
+        if self.qualified_enum_value_spec(s) {
             return true;
         }
         // A declared `constant` named by an uppercase identifier (`constant K
