@@ -77,13 +77,20 @@ fn body_ranges(span: SrcSpan, items: Option<(usize, usize)>) -> Option<(usize, (
                 })?;
                 Some((open, (first, last + tail)))
             }
+            // The statements carry no range of their own (a body that is a
+            // single expression): the list is the text between the braces,
+            // without the blanks around it.
             None => {
-                let open = text.rfind('{')?;
+                let open = text.find('{')?;
+                let open = match text[..open].rfind(')') {
+                    Some(close) => close + text[close..].find('{')?,
+                    None => open,
+                };
                 let inside = &text[open + 1..text.len() - 1];
-                inside
-                    .trim()
-                    .is_empty()
-                    .then_some((from + open, (from + open + 1, from + open + 1)))
+                let lead = inside.len() - inside.trim_start().len();
+                let list_from = from + open + 1 + lead;
+                let list_to = from + open + 1 + inside.trim_end().len();
+                Some((from + open, (list_from, list_to.max(list_from))))
             }
         }
     })
