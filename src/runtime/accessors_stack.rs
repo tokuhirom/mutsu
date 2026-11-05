@@ -738,7 +738,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Value> {
         let implicit = match param_defs.first() {
-            Some(pd) => pd.name == "self" && pd.is_implicit_invocant(),
+            Some(pd) => {
+                (pd.name == "self" && pd.is_implicit_invocant())
+                    // `method m { ... }` handed out as an object (`^find_method`)
+                    // keeps its anonymous invocant slot.
+                    || (pd.is_invocant && pd.name.is_empty())
+            }
             None => {
                 params.first().is_some_and(|p| p == "self")
                     && !crate::ast::param_names_declare_self_lexical(params)
