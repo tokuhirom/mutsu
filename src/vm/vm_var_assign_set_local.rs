@@ -2141,7 +2141,7 @@ impl Interpreter {
                 let lhs_current = self.locals[idx].deref_container();
                 let items = runtime::value_to_list(&assigned);
                 let item_count = items.len();
-                let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                let mut shaped_items: Vec<Value> = Self::shaped_assign_items(items, shape[0])?;
                 if item_count < shape[0] {
                     // Pad with the element type's default (native arrays: int->0,
                     // num->0e0, str->""), not Nil, so clearing a shaped num array

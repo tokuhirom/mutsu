@@ -123,8 +123,7 @@ impl Interpreter {
         attrs.insert(
             "message".to_string(),
             Value::str(format!(
-                "Not enough dimensions: got {}, needed {}",
-                got, needed
+                "Cannot {operation} a {needed} dimension array with only {got} dimensions"
             )),
         );
         let mut err = RuntimeError::new("X::NotEnoughDimensions");
@@ -200,7 +199,7 @@ impl Interpreter {
         indices: &[Value],
         val: Value,
     ) -> Result<(), RuntimeError> {
-        Self::array_multidim_store(target, indices, val, false)
+        Self::array_multidim_store(target, indices, val, false, 1)
     }
 
     /// Bind to a shaped array leaf, replacing its slot cell instead of storing
@@ -211,7 +210,7 @@ impl Interpreter {
         indices: &[Value],
         val: Value,
     ) -> Result<(), RuntimeError> {
-        Self::array_multidim_store(target, indices, val, true)
+        Self::array_multidim_store(target, indices, val, true, 1)
     }
 
     // Cost: O(d), d = dimensions.
@@ -220,6 +219,8 @@ impl Interpreter {
         indices: &[Value],
         val: Value,
         bind_leaf: bool,
+        // 1-based dimension `indices[0]` addresses, for the out-of-range message.
+        dim: usize,
     ) -> Result<(), RuntimeError> {
         // Write *through* a `ContainerRef` level (Track B element cell or a
         // `:=`-bound element): mutate the cell's inner value under its lock so
@@ -230,7 +231,7 @@ impl Interpreter {
             let cell = c.clone();
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             let mut inner = guard.clone();
-            Self::array_multidim_store(&mut inner, indices, val, bind_leaf)?;
+            Self::array_multidim_store(&mut inner, indices, val, bind_leaf, dim)?;
             *guard = inner;
             return Ok(());
         }
@@ -254,7 +255,15 @@ impl Interpreter {
         };
         let Some(res) = target.with_array_mut(|items, _| {
             if i >= items.len() {
-                return Err(RuntimeError::new("Index out of bounds"));
+                // A fixed-dimension array names the dimension and its range.
+                return Err(if shape.is_some() {
+                    RuntimeError::new(format!(
+                        "Index {i} for dimension {dim} out of range (must be 0..{})",
+                        items.len().saturating_sub(1)
+                    ))
+                } else {
+                    RuntimeError::new("Index out of bounds")
+                });
             }
             // Container identity (§3): write through a shared backing node.
             let arr = crate::value::gc_data_mut(items);
@@ -272,7 +281,7 @@ impl Interpreter {
                 // write path bypasses entirely.
                 arr.mark_initialized(i);
             } else {
-                Self::array_multidim_store(&mut arr[i], &indices[1..], val, bind_leaf)?;
+                Self::array_multidim_store(&mut arr[i], &indices[1..], val, bind_leaf, dim + 1)?;
             }
             if let Some(shape) = shape.as_deref() {
                 crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
