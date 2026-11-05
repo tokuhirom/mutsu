@@ -416,6 +416,15 @@ fn curry_sourced(body: Expr, input: &str, rest: &str) -> Expr {
     Expr::WhateverCurry(Box::new(body), text)
 }
 
+/// [`wrap_finished_expr`] for an expression parsed from `input` up to `rest`:
+/// a priming scope it creates remembers the source it was written as.
+pub(crate) fn wrap_finished_expr_at(expr: Expr, input: &str, rest: &str) -> Expr {
+    match wrap_finished_expr(expr) {
+        Expr::WhateverCurry(body, None) => curry_sourced(*body, input, rest),
+        other => other,
+    }
+}
+
 pub(crate) fn wrap_finished_expr(expr: Expr) -> Expr {
     let expr = wrap_composition_operands(expr);
     if !should_wrap_whatevercode(&expr) {
@@ -504,7 +513,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
-    Ok((rest, wrap_finished_expr(expr)))
+    Ok((rest, wrap_finished_expr_at(expr, input, rest)))
 }
 
 /// Parse one colon-method argument (`$obj.meth: HERE, ...`) at listop

@@ -4,7 +4,7 @@ use Test;
 # "{$got.raku} is {$exp.raku}"): rakudo (RakuAST) renders a WhateverCode by the
 # source it was written as.
 
-plan 14;
+plan 16;
 
 my $not = *.not;
 is $not.raku, '*.not', '.raku of *.not';
@@ -37,3 +37,12 @@ is [*.not, * + 1].gist, '[*.not * + 1]', 'inside an Array .gist';
 
 is (*.chars ≥ 3).WHAT.gist, '(WhateverCode)', 'the type is unchanged';
 is $not(False), True, 'the closure still works';
+
+# A listop call to a sub the parser has not seen yet (an imported one, as in
+# Testo's `is $got, *.not`) takes its arguments through another parser path.
+my @seen;
+later False, *.not;
+later 1, * + 1;
+is @seen[0], '*.not', 'listop-call argument (sub declared later)';
+is @seen[1], '* + 1', 'listop-call argument with an infix';
+sub later(|c) { @seen.push: c[1].raku }
