@@ -2262,6 +2262,18 @@ impl Interpreter {
             // allocate a fresh `String` on every one of the four uses below, on
             // a path a `Buf.push` loop reaches twice per push (#7696).
             let cn = class_name.as_str();
+            // A built-in `Iterator` is a `PredictiveIterator` when it knows how
+            // many elements it has left (a reified list, array or range, a
+            // finite `comb`); a lazy `map`/`grep` stream, a `squish` scan and
+            // an unending source are plain iterators, as in rakudo. The class
+            // name is the same for both, so the attributes decide
+            // (`dispatch_shape::iterator_kind`).
+            if cn == "Iterator"
+                && constraint == "PredictiveIterator"
+                && value.receiver_shape() == Some(crate::value::DispatchShape::PredictiveIterator)
+            {
+                return true;
+            }
             // ADR-0047: a lexical `my class`/`my grammar` instance's own
             // `class_name` is the unconditionally-mangled storage identity
             // (`Foo\u{0}<decl-id>`), never the bare source-written name. A
