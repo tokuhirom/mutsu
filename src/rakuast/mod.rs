@@ -37,6 +37,7 @@ mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod ctor_names;
 mod decl_origins;
 mod doc_block;
 pub(crate) mod dotty_assign;
@@ -2019,6 +2020,9 @@ fn construct_values(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if method == "new" {
+        ctor_names::check_new(class_name, args)?;
+    }
     if method == "new"
         && let Some(result) = routine_ctor::construct(class_name, args)
     {
