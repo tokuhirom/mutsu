@@ -242,6 +242,7 @@ impl Interpreter {
                                 child,
                                 capture_out: opts.capture_out,
                                 capture_err: opts.capture_err,
+                                bin: opts.bin,
                             },
                         );
                     }
