@@ -197,7 +197,7 @@ fn array(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> 
     }
     let (items, _) = plain_array(target)?;
     Some(Ok(crate::runtime::utils::itemize_real_array_elements(
-        Value::real_array(items.to_vec()),
+        Value::real_array(super::seq::nil_to_any_items(items.iter().cloned())),
     )))
 }
 
