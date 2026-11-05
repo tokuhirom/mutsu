@@ -31,19 +31,15 @@ impl Interpreter {
     /// - **The binding the frame holds** (`container`): the element is promoted
     ///   in place to its `ContainerRef` cell, the way `my $r := @a[1]` does.
     ///
-    /// `exec_get_local_op` deliberately skips the lane for a name this lineage
-    /// re-declared, or one bound to an aggregate parameter
-    /// (`container_name_is_redeclared`): the lane is keyed by bare name
-    /// process-wide, so its entry belongs to some other binding spelled the
-    /// same. A lane write to such a name was therefore never read back —
-    /// `await start { 1 }; my @d = 0, 0, 0; cas(@d[1], 0, 5); say @d` printed
-    /// `[0 0 0]` — and could swap an unrelated outer `@d`'s element. Such a
-    /// name takes the binding instead. A re-declared `my` is frame-local:
-    /// spawning a thread clears its mask (`clone_for_thread_for_block`
-    /// publishes the binding), so from then on the name is shared and back on
-    /// the lane.
-    // Cost: O(1) amortized for a single index/key (one cell lock or store
-    // probe). The lane's first touch of a container boxes its elements once,
+    /// A plain user lexical (`container_lane_applies` is false for it) always
+    /// takes the binding: its place is the frame's slot or the declaration-site
+    /// cell every capture shares (ADR-16595 §2 rule 3), so an element atomic
+    /// on an inner `my @d` can never swap an outer `@d`'s element, and
+    /// `await start { 1 }; my @d = 0, 0, 0; cas(@d[1], 0, 5); say @d` prints
+    /// the swapped array. The lane keeps only the names that are not such a
+    /// lexical (attributes, dynamics, opaque names).
+    // Cost: O(1) amortized for a single index/key (one container lock and
+    // slot probe, or a lane store probe). The lane's first touch of a container boxes its elements once,
     // O(e), e = its elements; growing an array to a far index is O(i - n).
     pub(super) fn atomic_elem_cell(
         &mut self,
@@ -52,7 +48,7 @@ impl Interpreter {
         key: &Value,
     ) -> Result<AtomicElemCell, RuntimeError> {
         let is_hash = name.starts_with('%');
-        if self.container_name_is_redeclared(name) {
+        if !self.container_lane_applies(name) {
             let key = if is_hash {
                 key.clone()
             } else {
@@ -116,14 +112,17 @@ impl Interpreter {
         is_hash: bool,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         let target = container.deref_container();
-        // The lane's write lock serializes the promotion against another
-        // element atomic on the same container: two first touches must not
-        // each mint a cell for one element.
-        let lane_scope = self.threads.shared_vars.atomic_lane_scope(name);
-        let _lane = lane_scope
-            .own_map()
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        // The container's own ADR-0068 lock serializes the promotion against
+        // another element atomic on the same container: two first touches must
+        // not each mint a cell for one element. Keyed on the cell the binding
+        // is held in when there is one (two threads writing a celled container
+        // share the cell, not the node), else on the node.
+        let cell_addr = match container.view() {
+            ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+            _ => None,
+        };
+        let _structure =
+            crate::value::container_lock::ContainerStructGuard::acquire_for(cell_addr, &target);
         let slot = match target.view() {
             ValueView::Hash(h) if is_hash => {
                 let key = key.to_string_value();

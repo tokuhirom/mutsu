@@ -788,7 +788,7 @@ impl Interpreter {
         // absent it is thread-local and falls through to the env path below.
         // A name this lineage re-declared skips BOTH shared branches: the entry
         // under it belongs to the shadowed outer binding.
-        if self.container_name_is_redeclared(key) {
+        if !self.container_lane_applies(key) {
             // fall through to the env path below
         } else if key.starts_with('@')
             && self.threads.shared_vars_active
@@ -954,6 +954,11 @@ impl Interpreter {
         // frame sees, and pushing there rebound the name to that array
         // (#13732).
         if !key.starts_with('@') || !self.threads.shared_vars_active || is_dynamic_array_name(key) {
+            return None;
+        }
+        // A plain user lexical lives in its own place, never on the lane
+        // (ADR-16595 §2 rule 3).
+        if self.lexical_has_own_place(key) {
             return None;
         }
         // A plain lexical `@name` routes through the `__mutsu_atomic_arr::`

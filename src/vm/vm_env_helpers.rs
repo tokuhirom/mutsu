@@ -1773,7 +1773,7 @@ impl Interpreter {
     // Cost: O(1) when no atomic lane was ever created; else one key build and
     // one shared-store probe.
     fn atomic_lane_value(&self, name: &str) -> Option<Value> {
-        if self.container_name_is_redeclared(name)
+        if !self.container_lane_applies(name)
             || !crate::runtime::shared_store::atomic_lane_entries_exist()
         {
             return None;
@@ -1804,7 +1804,7 @@ impl Interpreter {
         // from building a `format!` key and walking the store chain for an entry
         // that cannot exist. That probe was ~1 heap allocation + 1 chained hash
         // lookup on every array/hash variable read.
-        let redeclared = self.container_name_is_redeclared(name);
+        let redeclared = !self.container_lane_applies(name);
         if redeclared || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the env read below
         } else if name.starts_with('@') {
