@@ -322,6 +322,16 @@ impl VisitMut for Finalize<'_> {
             *expr = call;
             return;
         }
+        // An interpolating heredoc: its body is read as a `qq` string here, in the
+        // finalization, where a parse that keeps spellings has none left to read. A
+        // heredoc that closes an enclosing block on its marker line stays converted.
+        if let Expr::HeredocInterpolation(content, false) = inner
+            && let Ok(body) = crate::parser::interpolate_heredoc_content(content)
+        {
+            *expr = body;
+            self.visit_expr_mut(expr);
+            return;
+        }
         if !carried::expr_carried(inner) {
             // A plain term the classifier resolves (`my \x`, a constant): see
             // `bareword::term_expr`. Only a word that is not carried as a type
