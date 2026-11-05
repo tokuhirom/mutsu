@@ -217,12 +217,10 @@ fn where_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
 /// itself, an aggregate or a `Pair` is a shallow copy
 /// (`collection_clone::container_clone`), a lazy array an independent lazy
 /// list over the same generator, a `Seq` a new eager `Seq`, a `Slip` a copy
-/// that keeps its itemization, an instance a new instance of its class over a
-/// copy of its attributes (`InstanceAttrs::to_clone_map`, what the
-/// interpreter's clone with `:attr(v)` twiddles starts from; a call with
-/// twiddles declines to it).
-// Cost: O(1) for a scalar; O(n) for an aggregate, n = elements; O(a) for an
-// instance, a = attributes.
+/// that keeps its itemization; an instance declines to the interpreter's
+/// `native_instance_clone_value` (it needs the class's attribute
+/// declarations).
+// Cost: O(1) for a scalar; O(n) for an aggregate, n = elements.
 fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Package(_) | ValueView::Nil => Some(Ok(target.clone())),
@@ -280,14 +278,10 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         | ValueView::Capture { .. }
         | ValueView::Uni(_)
         | ValueView::Enum { .. } => Some(Ok(target.clone())),
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } => Some(Ok(Value::make_instance(
-            class_name,
-            attributes.to_clone_map(),
-        ))),
+        // An instance's clone needs its class's attribute declarations (an
+        // `@`/`%` attribute with a default initializer is already vivified, so
+        // the clone shares it): the interpreter's
+        // `native_instance_clone_value` owns it.
         _ => None,
     }
 }
