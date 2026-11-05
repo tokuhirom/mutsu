@@ -92,7 +92,40 @@ fn config_pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+// Cost: O(f), f = fields of the node.
+fn check_meta(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(doc_edit::check_meta(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// `splat-letterless` is a mutator of the parse (it replaces a letterless
+// markup by its atoms inside its parent); on a hand-built node it changes
+// nothing and answers `Nil`.
+// Cost: O(1).
+fn splat_letterless(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::NIL)
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "RakuAST::Doc::Markup",
+        name: "check-meta",
+        arity: 0,
+        handler: Handler::Pure(check_meta),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Doc::Markup",
+        name: "splat-letterless",
+        arity: 0,
+        handler: Handler::Pure(splat_letterless),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::Doc::Paragraph",
         name: "leading-whitespace",
