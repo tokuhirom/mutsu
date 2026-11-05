@@ -159,7 +159,10 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
         Stmt::For { body, .. }
         | Stmt::Given { body, .. }
         | Stmt::While { body, .. }
-        | Stmt::Loop { body, .. } => walk_stmts(body, is_modifier_body(body), line),
+        | Stmt::Loop { body, .. } => {
+            let body = loop_sink_body(body);
+            walk_stmts(body, is_modifier_body(body), line)
+        }
         // Conditionals are sunk but do not suggest `Nil`.
         Stmt::If {
             then_branch,
@@ -217,8 +220,14 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
                 }
             }
             other => {
+                let is_loop = matches!(other, ParsedStmt::WhileLoop(_) | ParsedStmt::Loop(_));
                 for block in other.blocks() {
-                    walk_stmts(&block.body, false, line);
+                    let body = if is_loop {
+                        loop_sink_body(&block.body)
+                    } else {
+                        &block.body[..]
+                    };
+                    walk_stmts(body, false, line);
                 }
             }
         },
@@ -255,6 +264,22 @@ fn sunk_prefix(body: &[Stmt]) -> &[Stmt] {
         Some(last) => &body[..last],
         None => body,
     }
+}
+
+/// The part of a loop body that is sunk. A `KEEP` / `UNDO` phaser reads the
+/// iteration's value, so with one the body's last statement is that value, not
+/// sunk (#16616).
+fn loop_sink_body(body: &[Stmt]) -> &[Stmt] {
+    let reads_value = body.iter().any(|s| {
+        matches!(
+            s,
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Keep | crate::ast::PhaserKind::Undo,
+                ..
+            }
+        )
+    });
+    if reads_value { sunk_prefix(body) } else { body }
 }
 
 /// A loop/topicalizer body produced by a statement modifier (`1 while 0`) is a
