@@ -46,7 +46,7 @@ pub(crate) fn operands(node: &RakuAstNode) -> Value {
             .filter_map(|name| node_value(node, name))
             .collect()
     };
-    Value::list(items)
+    Value::array(items)
 }
 
 /// `return-type`: no type is declared, so `Mu`.
