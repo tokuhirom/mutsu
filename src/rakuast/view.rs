@@ -412,9 +412,9 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         Stmt::VarDecl { .. } => var_decl_statement(names, var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::view_node(names, inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
-        Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(
-            names, body,
-        )?))),
+        Stmt::Block(body) => Ok(Some(statement_expression(
+            super::block_queries::bare_block(signature_block_node(names, body)?),
+        ))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
         // `StatementPrefix::Phaser::<Kind>` wrapping the block positionally.
         // raku has one class per kind, which mutsu's single `PhaserKind` maps

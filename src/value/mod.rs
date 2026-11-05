@@ -640,6 +640,7 @@ pub(crate) mod routine_cell;
 pub(crate) use routine_cell::{RoutineCell, RoutinePrototype};
 mod quanthash_store;
 pub(crate) mod raku_repr;
+mod rakuast_arg_list;
 mod rakuast_colonpair;
 mod rakuast_edit;
 mod rakuast_replace_body;

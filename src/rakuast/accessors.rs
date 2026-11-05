@@ -148,7 +148,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         let items = node
             .fields
             .iter()
-            .filter(|f| !origin::is_origin(f))
+            .filter(|f| !origin::is_origin(f) && !is_unvisited_field(node, f))
             .map(|f| field_to_value(&f.value))
             .collect();
         return Some(Value::array(items));

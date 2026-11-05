@@ -3204,6 +3204,7 @@ pub(super) fn arg_list_exprs(
     arglist
         .fields
         .iter()
+        .filter(|af| !super::is_unvisited_field(arglist, af))
         .map(|af| lower_expr(names, child_node(&af.value)?))
         .collect()
 }
