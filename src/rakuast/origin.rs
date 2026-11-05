@@ -220,7 +220,11 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
     let Some(first) = spans.next() else {
         return crate::ast::SrcSpan::NONE;
     };
-    let last = spans.next_back().unwrap_or(first);
+    let mut last = spans.next_back().unwrap_or(first);
+    // A `unit class` holds the rest of the unit: it ends the list.
+    if let Some(unit) = stmts.last() {
+        last = super::unit_span::widen_statement(last, unit);
+    }
     let (from, end) = (first.from as usize, last.to as usize);
     match crate::source_comments::statement_list_end(source, from, end) {
         Some(to) => crate::ast::SrcSpan::new(from, to),
