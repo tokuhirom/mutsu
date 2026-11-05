@@ -54,7 +54,7 @@ impl Interpreter {
             } else {
                 Value::int(self.binding_elem_index(container, key)?)
             };
-            if let Some(cell) = self.binding_elem_cell(name, container, &key, is_hash) {
+            if let Some(cell) = Self::binding_elem_cell(container, &key, is_hash) {
                 return Ok(AtomicElemCell {
                     cell,
                     on_lane: false,
@@ -101,12 +101,10 @@ impl Interpreter {
     /// The element's cell inside `container` itself, promoting the element in
     /// place (and creating it when it is missing: an atomic op needs a cell
     /// before the first write). `None` when `container` is not the array or
-    /// hash `name` says it is.
+    /// hash `is_hash` says it is.
     // Cost: O(1) amortized for an element in range or an existing key;
     // O(i - n) to grow an array of n elements to index i.
     fn binding_elem_cell(
-        &self,
-        name: &str,
         container: &Value,
         key: &Value,
         is_hash: bool,
