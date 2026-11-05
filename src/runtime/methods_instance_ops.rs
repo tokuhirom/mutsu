@@ -2676,9 +2676,14 @@ impl Interpreter {
         else {
             return None;
         };
-        let mut attrs = attributes.to_clone_map();
         // Build sigil map from class attributes to coerce values properly
         let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
+        let initialized: std::collections::HashSet<&str> = class_attrs_info
+            .iter()
+            .filter(|attr| attr.default.is_some() && matches!(attr.sigil, '@' | '%'))
+            .map(|attr| attr.name.as_str())
+            .collect();
+        let mut attrs = attributes.to_clone_map(&|name| initialized.contains(name));
         let sigil_map: HashMap<String, char> = class_attrs_info
             .iter()
             .map(|attr| (attr.name.clone(), attr.sigil))

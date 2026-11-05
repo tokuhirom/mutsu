@@ -336,10 +336,19 @@ impl InstanceAttrs {
     /// clone's attribute stays invisible to the original (Rakudo's clones get
     /// fresh containers). The one copy `Mu.clone`'s row and the interpreter's
     /// clone with `:attr(v)` twiddles share.
+    ///
+    /// `initialized(name)` says the attribute
+    /// `name` has a default initializer (`has @!stack = ( )`). Rakudo binds
+    /// such a container at construction, so an empty one is already vivified
+    /// and the clone shares it, as it shares a filled one.
     // Cost: O(a), a = attributes.
-    pub(crate) fn to_clone_map(&self) -> AttrMap {
+    pub(crate) fn to_clone_map(&self, initialized: &dyn Fn(&str) -> bool) -> AttrMap {
         let mut attrs = self.to_map();
-        for v in attrs.values_mut() {
+        let names: Vec<_> = attrs.keys().copied().collect();
+        for name in names {
+            let Some(v) = attrs.get_mut(name) else {
+                continue;
+            };
             if matches!(v.view(), ValueView::ContainerRef(_)) {
                 let taken = std::mem::replace(v, Value::NIL);
                 *v = taken.deref_container();
@@ -355,7 +364,10 @@ impl InstanceAttrs {
                 ValueView::Hash(arc) => !v.hash_is_itemized() && arc.is_empty(),
                 _ => false,
             };
-            if unfilled && let Some(fresh) = v.detached_container_copy() {
+            if unfilled
+                && !initialized(name.as_str())
+                && let Some(fresh) = v.detached_container_copy()
+            {
                 *v = fresh;
             }
         }

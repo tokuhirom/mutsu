@@ -700,7 +700,6 @@ impl Compiler {
             }
             let Stmt::MethodDecl {
                 name,
-                name_expr,
                 params,
                 param_defs,
                 body,
@@ -712,8 +711,13 @@ impl Compiler {
             else {
                 continue;
             };
-            let key = match (&package_name, name_expr) {
-                (Some(package_name), None) => self.compile_method_body(
+            // A dynamically named method (`method ::('x') { ... }`) is compiled
+            // here too: its body must see the routines the `use`s around the
+            // class bound (`lexical_import_chain`), which the registration-time
+            // compile never learns. The method name only feeds the key text; the
+            // registration finds the key by position.
+            let key = match &package_name {
+                Some(package_name) => self.compile_method_body(
                     package_name,
                     lexical_type_name,
                     lexical_type_short_name,
