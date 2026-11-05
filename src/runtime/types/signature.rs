@@ -781,6 +781,12 @@ fn sub_signature_matches_value_unbound(
         {
             return false;
         }
+        // A literal parameter (`:@op ('in', $x, *@v)`) matches only that value.
+        if let Some(literal) = &pd.literal_value
+            && candidate.deref_container() != *literal
+        {
+            return false;
+        }
         // Sigil-based type constraints: an `@`-param requires a Positional
         // argument and a `%`-param requires an Associative one.  Without this a
         // scalar would wrongly bind to `@x`/`%h` during multi dispatch.
