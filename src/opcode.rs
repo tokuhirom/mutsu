@@ -7553,7 +7553,7 @@ pub(crate) struct CompiledCode {
     /// membership (the whole point is the mutation analysis never saw the write).
     ///
     /// SCALARS and `&` code lexicals. The `@`/`%` half of the same complement is
-    /// `needs_cell_unvouched_containers` — same rule, different delivery site.
+    /// `needs_cell_captured_containers` — same rule, different delivery site.
     ///
     /// `&` used to be in NEITHER set, on the reasoning that "a `Sub` value must
     /// not be boxed, and rebinding `&f` is a name-write the vouch already sees".
@@ -7583,8 +7583,21 @@ pub(crate) struct CompiledCode {
     /// name's process-wide meaning. See
     /// `news/2026-09/a-captured-parameter-gets-the-cell-too.md`.
     pub(crate) needs_cell_unvouched_locals: Vec<Symbol>,
-    /// The `@`/`%` half of `needs_cell_unvouched_locals`: own container lexicals
-    /// an escaping child closure captures that this frame cannot vouch for.
+    /// Own container lexicals (`@`/`%`) an escaping child closure captures, plus
+    /// those a nested closure rebinds. Every one gets a shared `ContainerRef`
+    /// cell at its declaration.
+    ///
+    /// ADR-16595 rule 1: this used to be only the complement of the ADR-0055
+    /// vouch (`needs_cell_unvouched_containers`), on the reasoning that a vouched
+    /// capture already resolves to its own binding. That holds on one thread
+    /// only. A vouched container (the owning frame never writes it) that a
+    /// `tap` or `.then` callback captures and later runs on another thread had
+    /// no cell, so that thread could reach it only through the name-keyed
+    /// `shared_vars` lane, and only because some unrelated spawn had published
+    /// it (`supply-block-nested-whenever-serialize.t`'s `@log`). Thread escape
+    /// cannot be decided at compile time, so every escaping capture gets the
+    /// cell; the vouch keeps only its single-thread read role
+    /// (`authoritative_free_vars`).
     ///
     /// The container lane exists because the hijack `needs_cell_unvouched_locals`
     /// closes is NOT a staleness defect. A container is reference-shared, so the
@@ -7623,7 +7636,7 @@ pub(crate) struct CompiledCode {
     /// A second exclusion, for a name a THREAD-escaping nested closure
     /// captures, was retired once ADR-0068 synchronized the celled store
     /// (`news/2026-09/thread-escaping-container-cell-exclusion-retired.md`).
-    pub(crate) needs_cell_unvouched_containers: Vec<Symbol>,
+    pub(crate) needs_cell_captured_containers: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
     /// literal loaded via `OpCode::LoadRegexClosure` closes over its defining
@@ -8550,7 +8563,7 @@ impl CompiledCode {
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_unvouched_locals: Vec::new(),
-            needs_cell_unvouched_containers: Vec::new(),
+            needs_cell_captured_containers: Vec::new(),
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             authoritative_free_vars: Vec::new(),
@@ -11487,7 +11500,7 @@ impl CompiledCode {
         // that declares the name, which records the name's slots as rebound
         // (see `free_var_rebinds`).
         // The own names a nested closure rebinds (see the container lane of
-        // `needs_cell_unvouched_containers` below).
+        // `needs_cell_captured_containers` below).
         let nested_rebound_own: Vec<Symbol> = self
             .closure_compiled_codes
             .iter()
@@ -11983,7 +11996,7 @@ impl CompiledCode {
                         // `box_captured_lexicals` boxes `$` scalars and, for this
                         // unvouched-escaping case only, `&` code lexicals; an
                         // `@`/`%` lexical takes the decl-site container cell
-                        // instead (`needs_cell_unvouched_containers`, just below).
+                        // instead (`needs_cell_captured_containers`, just below).
                         //
                         // `&` used to be excluded here alongside `@`/`%`, but it has
                         // no decl-site cell to fall back on, so it landed in NEITHER
@@ -11995,9 +12008,12 @@ impl CompiledCode {
                     })
                 }),
         );
-        // The container half of the same complement. It is delivered at the
+        // The container half. Unlike the scalar half above it is NOT limited to
+        // the vouch's complement: a vouched container still needs the cell to be
+        // reachable from another thread without the name-keyed lane (ADR-16595
+        // rule 1; see the field's doc comment). It is delivered at the
         // DECLARATION site rather than at each capture, so the set is computed
-        // here (where the vouch is known) but consumed by `exec_set_local_op`.
+        // here but consumed by `exec_set_local_op`.
         //
         // An `is <Type>` variable trait used to exclude its name here as well.
         // `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain Hash at the
@@ -12019,12 +12035,10 @@ impl CompiledCode {
         // reseats and this frame's slot shares. Without it the rebind landed
         // in the closure's env alone, and only the call's return merge carried
         // it back (ADR-12529 §3, slice 25).
-        let mut decl_cell_containers: std::collections::HashSet<Symbol> = escaping_captured_own
-            .into_iter()
-            .filter(|sym| !vouched.contains(sym))
-            .collect();
+        let mut decl_cell_containers: std::collections::HashSet<Symbol> =
+            escaping_captured_own.into_iter().collect();
         decl_cell_containers.extend(nested_rebound_own);
-        self.needs_cell_unvouched_containers =
+        self.needs_cell_captured_containers =
             sorted_by_name(decl_cell_containers.into_iter().filter(|sym| {
                 sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
             }));
