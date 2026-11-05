@@ -357,7 +357,9 @@ impl Interpreter {
             // No initializer: the value seen is the type's default, and the
             // declaration is what rakudo refuses.
             if !has_explicit_initializer {
-                return Err(RuntimeError::missing_initializer(constraint, "variable", None));
+                return Err(RuntimeError::missing_initializer(
+                    constraint, "variable", None,
+                ));
             }
             return Err(self.typecheck_assignment_failure(constraint, &value, var_name));
         }
