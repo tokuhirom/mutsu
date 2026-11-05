@@ -963,9 +963,14 @@ fn raku_value_node(v: &Value) -> String {
             } else if (n % d) == num_bigint::BigInt::from(0) {
                 format!("{}.0", n / d)
             } else {
-                // A denominator of only 2s and 5s terminates, whatever its
-                // size (rakudo: `(1/2**63).raku` is the decimal); any other
-                // gets the fraction form.
+                // A denominator past uint64 gets the fraction form
+                // (roast S32-num/rat.t: 0.9999999999999999999999), one that
+                // still fits it prints as the decimal when it terminates
+                // (rakudo: `(1/2**63).raku` is the decimal).
+                use num_traits::ToPrimitive;
+                if d.abs().to_u64().is_none() {
+                    return format!("<{}/{}>", n, d);
+                }
                 // Check if denominator is a power of 2 and 5 (terminating decimal)
                 let mut dd = d.abs();
                 while (&dd % 2u8) == num_bigint::BigInt::from(0) {
