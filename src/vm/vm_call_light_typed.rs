@@ -518,6 +518,40 @@ impl Interpreter {
                 idx += 1;
             }
         }
+        // A named argument no parameter answers to is an error, as in the
+        // general binder (eligibility excludes a slurpy hash, which would take
+        // it): `sub f(:$a) {}; f(:b(1))` dies in Rakudo with "Unexpected named
+        // argument 'b' passed". An empty key (`'' => v` out of a hash) binds
+        // nothing and is ignored there too.
+        if bind_err.is_none() {
+            let known = |key: &str| {
+                plan.params.iter().any(|pb| match pb {
+                    crate::opcode::LightParamBind::Named(n) => {
+                        n.match_key == key
+                            || n.alias_keys.iter().any(|k| k == key)
+                            || n.outer_alias_keys.iter().any(|k| k == key)
+                    }
+                    crate::opcode::LightParamBind::Positional(_) => false,
+                })
+            };
+            let unknown = named_spec
+                .into_iter()
+                .flat_map(|s| s.entries.iter().map(|e| e.key.as_ref()))
+                // The call site's own line marker travels out of band as well.
+                .filter(|k| *k != crate::parser::TEST_CALLSITE_LINE_KEY)
+                .chain(args.iter().filter_map(|a| match deref_arg(a).view() {
+                    // The call site's own line marker is a Pair, not an argument.
+                    ValueView::Pair(k, _) if !Self::is_callsite_line_marker(a) => Some(k.as_str()),
+                    _ => None,
+                }))
+                .find(|k| !k.is_empty() && !known(k))
+                .map(str::to_string);
+            if let Some(key) = unknown {
+                bind_err = Some(RuntimeError::new(format!(
+                    "Unexpected named argument '{key}' passed"
+                )));
+            }
+        }
         if let Some(e) = bind_err {
             // Unwind: restore the caller frame exactly as the success path does.
             match caller_env {
