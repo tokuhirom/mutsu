@@ -89,6 +89,7 @@ mod declarator_docs;
 pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
     declarator_docs::docs_of(node)
 }
+mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_list_queries;
 mod declare_how;

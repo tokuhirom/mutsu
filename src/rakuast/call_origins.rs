@@ -63,6 +63,7 @@ fn past_parens(span: crate::ast::SrcSpan, operand_from: usize, end: u32) -> u32 
 // Cost: O(n), n = length of the call's source.
 pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     use super::RakuAstClass;
+    super::anon_body_origins::place(node, span);
     if node.class == RakuAstClass::TermTopicCall && span.is_some() {
         topic_call(node, span);
         return;
