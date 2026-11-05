@@ -156,6 +156,35 @@ impl Interpreter {
         )
     }
 
+    /// The message of a `:=` bind of `value` to a container variable whose
+    /// expected type is `expected` (`Positional`, `Associative[Int]`, ...):
+    /// `Type check failed in binding; expected E but got T (repr)`, plus
+    /// rakudo's beginner hint, word-wrapped as `X::TypeCheck::Binding.message`
+    /// does. An Associative expectation names the argument by its type alone.
+    // Cost: O(1) type-object checks plus one `.raku` of `value`.
+    pub(crate) fn container_binding_message(&mut self, expected: &str, value: &Value) -> String {
+        let kind = self.expected_container_kind(expected);
+        let got_type = crate::runtime::utils::got_type_name(value);
+        let repr = if kind.associative {
+            String::new()
+        } else {
+            self.type_check_got_repr(value)
+        };
+        let mut explain = format!("expected {expected} but got {got_type}");
+        if !repr.is_empty() {
+            explain.push(' ');
+            explain.push_str(&repr);
+        }
+        if let Some(hint) = self.container_binding_hint(expected, kind, value) {
+            explain.push_str(". ");
+            explain.push_str(hint);
+        }
+        format!(
+            "Type check failed in binding; {}",
+            crate::word_wrap::naive_word_wrap(&explain, 72)
+        )
+    }
+
     /// Bind `value` to a native routine's `&`-sigiled parameter `param`
     /// (`&code` of `Promise.start`/`.then`, `&producer` of `Supply.on-demand`):
     /// anything that is not Callable is `X::TypeCheck::Binding::Parameter`, as

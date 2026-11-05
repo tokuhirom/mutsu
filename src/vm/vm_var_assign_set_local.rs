@@ -201,14 +201,7 @@ impl Interpreter {
                 _ => false,
             };
         if !is_positional {
-            let got_type = crate::runtime::utils::value_type_name(raw_popped);
-            // Rakudo names the object by its `.raku` after the type.
-            let repr = self.type_check_got_repr(raw_popped);
-            let got_type = if repr.is_empty() {
-                got_type.to_string()
-            } else {
-                format!("{got_type} {repr}")
-            };
+            let message = self.container_binding_message("Positional", raw_popped);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("got".to_string(), raw_popped.clone());
             attrs.insert(
@@ -218,19 +211,13 @@ impl Interpreter {
             attrs.insert("symbol".to_string(), Value::str_from(name));
             attrs.insert(
                 "message".to_string(),
-                Value::str(format!(
-                    "Type check failed in binding; expected Positional but got {}",
-                    got_type
-                )),
+                Value::str(message.clone()),
             );
             let ex = Value::make_instance(
                 crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
                 attrs,
             );
-            let mut err = RuntimeError::new(format!(
-                "Type check failed in binding; expected Positional but got {}",
-                got_type
-            ));
+            let mut err = RuntimeError::new(message);
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
