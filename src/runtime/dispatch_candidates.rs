@@ -56,29 +56,45 @@ impl Interpreter {
             .map(super::value_type_name)
             .collect::<Vec<_>>()
             .join(", ");
-        let mut err = RuntimeError::new(format!("Ambiguous call to '{}({})'", name, arg_types));
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str(format!(
-                "Ambiguous call to {}({}); these signatures all match: {}",
-                name,
-                arg_types,
-                defs.iter()
-                    .map(|def| {
-                        crate::value::signature::make_signature_value(
-                            crate::value::signature::param_defs_to_sig_info(
-                                &def.param_defs,
-                                def.return_type.clone(),
-                            ),
-                            Some(self),
-                        )
-                        .to_string_value()
+        // rakudo lists one `(signature) from FILE line N` per tied candidate.
+        let main_file = self.env().get("?FILE").map(|v| v.to_string_value());
+        let candidate_lines: String = defs
+            .iter()
+            .map(|def| {
+                let sig = crate::value::signature::signature_gist(
+                    &crate::value::signature::param_defs_to_sig_info(
+                        &def.param_defs,
+                        def.return_type.clone(),
+                    ),
+                );
+                let file = def
+                    .source_file
+                    .clone()
+                    .or_else(|| main_file.clone())
+                    .unwrap_or_else(|| "<unknown file>".to_string());
+                let line = def
+                    .source_line
+                    .or_else(|| {
+                        def.compiled
+                            .as_ref()
+                            .and_then(|body| body.get().code.source_line)
                     })
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
+                    .map_or("<unknown>".to_string(), |l| l.to_string());
+                format!(
+                    "\n  {} from {} line {}",
+                    sig,
+                    file,
+                    line
+                )
+            })
+            .collect();
+        let message = format!(
+            "Ambiguous call to '{}({})'; these signatures all match:{}",
+            name, arg_types, candidate_lines
         );
+        let mut err = RuntimeError::new(message.clone());
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::Multi::Ambiguous"),
             attrs,

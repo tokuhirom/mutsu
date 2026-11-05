@@ -1554,6 +1554,14 @@ pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
     None
 }
 
+/// A signature as rakudo's `.gist` writes it, without the `:` of its code form
+/// (`(Int $i;; Str :$s)`), e.g. for the candidate list of an ambiguity error.
+// Cost: O(p), p = parameters.
+pub(crate) fn signature_gist(info: &SigInfo) -> String {
+    let code = render_signature(info);
+    code.strip_prefix(':').unwrap_or(&code).to_string()
+}
+
 /// Render a signature as Raku code.
 fn render_signature(info: &SigInfo) -> String {
     if info.params.is_empty() && info.return_type.is_none() {
