@@ -34,6 +34,12 @@ thread_local! {
     static STATEMENT: std::cell::Cell<SrcSpan> = const { std::cell::Cell::new(SrcSpan::NONE) };
 }
 
+/// The range of the statement being converted (`SrcSpan::NONE` outside one).
+// Cost: O(1).
+pub(super) fn current_statement() -> SrcSpan {
+    STATEMENT.with(|c| c.get())
+}
+
 /// While alive, the statement written at the range it was entered with is
 /// the one being converted (see [`of`]).
 pub(super) struct InStatement(Option<SrcSpan>);
