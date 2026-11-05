@@ -88,7 +88,7 @@ pub(super) fn split_arg(
     let mut doc = None;
     for arg in args {
         let named_why = match arg.view() {
-            ValueView::Pair(key, value) if &*key == FIELD => Some(value.clone()),
+            ValueView::Pair(key, value) if key == FIELD => Some(value.clone()),
             ValueView::ValuePair(key, value) if key.to_string_value() == FIELD => {
                 Some(value.clone())
             }
