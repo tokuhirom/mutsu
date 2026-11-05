@@ -92,14 +92,18 @@ fn holds_nested_method(stmt: &Stmt) -> bool {
 // Cost: O(1) for the node itself (a regex: O(n), n = its nodes).
 pub(super) fn expr_carried(expr: &Expr) -> bool {
     match expr {
-        Expr::Literal(v) => !matches!(
-            v.view(),
-            ValueView::Regex(_)
-                | ValueView::RegexWithAdverbs(_)
-                | ValueView::Sub(_)
-                | ValueView::WeakSub(_)
-                | ValueView::Instance { .. }
-        ),
+        Expr::Literal(v) => match v.view() {
+            // The regex a `token`/`rule`/`regex` declaration holds: carried when it has
+            // no code, whose copy would keep the spelled parse's annotations.
+            ValueView::Regex(_) => v
+                .regex_source_tree()
+                .is_some_and(|tree| tree.declaration_kind.is_some() && !has_code(tree)),
+            ValueView::RegexWithAdverbs(_)
+            | ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Instance { .. } => false,
+            _ => true,
+        },
         // A desugaring's temporary (`__ANON_ARRAY__`) is the compiler's own
         // name, carried as the parser built it.
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
