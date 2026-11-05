@@ -416,9 +416,9 @@ impl Interpreter {
                 stopped = true;
                 break;
             }
-            // Modulo 1 always yields remainder 0 and quotient = n; for infinite lists
-            // this would loop forever, so push n directly and stop
-            if has_infinite && matches!(d.view(), ValueView::Int(1)) {
+            // Modulo 1 stops the decomposition (rakudo, lazy divisor list or not):
+            // push n directly and stop
+            if matches!(d.view(), ValueView::Int(1)) {
                 result.push(n.clone());
                 stopped = true;
                 break;
@@ -567,15 +567,15 @@ fn polymod_exact_int(target: &Value, divisors: &[Value], has_infinite: bool) -> 
             // Zero divisor: leave the float path's own INFINITY handling in place.
             return None;
         }
-        if has_infinite {
-            if n.is_zero() {
-                return Some(result);
-            }
-            // Every further step would divide by one and never terminate.
-            if d.is_one() {
-                result.push(Value::from_bigint(n));
-                return Some(result);
-            }
+        // An exhausted invocant ends a lazy divisor list.
+        if has_infinite && n.is_zero() {
+            return Some(result);
+        }
+        // A divisor of one stops the decomposition (rakudo: "modulo 1 stops"),
+        // lazy list or not: the rest of the number is the final element.
+        if d.is_one() {
+            result.push(Value::from_bigint(n));
+            return Some(result);
         }
         let (q, r) = (&n / &d, &n % &d);
         result.push(Value::from_bigint(r));
@@ -667,16 +667,14 @@ fn polymod_exact(target: &Value, divisors: &[Value], has_infinite: bool) -> Opti
         if dn == 0 {
             return None; // zero divisor: leave to the float path's own handling
         }
-        if has_infinite {
-            // As in `polymod_exact_int`: an exhausted invocant ends a lazy
-            // divisor list, and a divisor of one would never terminate.
-            if nn == 0 {
-                return Some(result);
-            }
-            if dn == dd {
-                result.push(polymod_rat_value(nn, nd, kind)?);
-                return Some(result);
-            }
+        // As in `polymod_exact_int`: an exhausted invocant ends a lazy divisor
+        // list, and a divisor of one stops the decomposition.
+        if has_infinite && nn == 0 {
+            return Some(result);
+        }
+        if dn == dd {
+            result.push(polymod_rat_value(nn, nd, kind)?);
+            return Some(result);
         }
         // q = floor( (nn/nd) / (dn/dd) ) = floor( (nn*dd) / (nd*dn) ); all terms
         // are non-negative here, so truncating division already floors.
