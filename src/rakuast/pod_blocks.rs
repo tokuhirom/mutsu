@@ -356,8 +356,21 @@ fn continuation_trimmed(kind: &str) -> Option<bool> {
         _ if kind.starts_with(|c: char| c.is_ascii_lowercase())
             && !matches!(
                 kind,
-                "numitem" | "numhead" | "toc" | "semantic" | "alias" | "row" | "column" | "cell"
-                    | "config" | "table" | "formula" | "defn" | "finish" | "rakudoc" | "doc"
+                "numitem"
+                    | "numhead"
+                    | "toc"
+                    | "semantic"
+                    | "alias"
+                    | "row"
+                    | "column"
+                    | "cell"
+                    | "config"
+                    | "table"
+                    | "formula"
+                    | "defn"
+                    | "finish"
+                    | "rakudoc"
+                    | "doc"
             ) =>
         {
             Some(false)
@@ -515,8 +528,13 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 return None;
             }
             let first = rest.trim();
-            let (text, next) =
-                paragraph(lines, i + 1, (!first.is_empty()).then_some(first), false, None)?;
+            let (text, next) = paragraph(
+                lines,
+                i + 1,
+                (!first.is_empty()).then_some(first),
+                false,
+                None,
+            )?;
             let parts = if text.is_empty() {
                 Vec::new()
             } else {
