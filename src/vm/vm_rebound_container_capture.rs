@@ -13,7 +13,7 @@
 //! closure's own env entry, and only the return merge of the call carried
 //! the new binding to the block. The compiler now asks for the
 //! declaration's container cell when a nested closure rebinds the name
-//! (`needs_cell_unvouched_containers`), and the capture turns that cell into
+//! (`needs_cell_captured_containers`), and the capture turns that cell into
 //! a binding cell here; the closure's rebind then reseats it
 //! (`reseat_env_binding_cell`), and the slot that shares it sees the new
 //! binding.

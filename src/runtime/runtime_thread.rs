@@ -887,7 +887,7 @@ impl Interpreter {
         // `env_root_descended_mut` (not a raw `self.env.get`/`get_mut`) is
         // required here for the same reason the `append`/`unshift`/`prepend`
         // arms in `call_method_mut_with_values` already use it: a captured,
-        // escape-boxed `@`/`%` local (ADR-0039's `needs_cell_unvouched_containers`
+        // escape-boxed `@`/`%` local (ADR-0039's `needs_cell_captured_containers`
         // — e.g. `my Str:D @a` captured by a block passed as a `.map`/`.grep`
         // argument) lives in a `ContainerRef` cell, not a plain `Array`, so a
         // raw `self.env.get(key)` never matched `ValueView::Array` and fell

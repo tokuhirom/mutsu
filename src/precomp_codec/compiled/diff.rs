@@ -178,7 +178,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         captured_mutated_locals,
         needs_cell_locals,
         needs_cell_unvouched_locals,
-        needs_cell_unvouched_containers,
+        needs_cell_captured_containers,
         needs_cell_regex,
         type_body_written_lexicals,
         authoritative_free_vars,
