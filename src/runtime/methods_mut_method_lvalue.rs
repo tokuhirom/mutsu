@@ -1210,10 +1210,9 @@ impl Interpreter {
                 if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
                     return Ok(stored);
                 }
-                return Err(RuntimeError::new(format!(
-                    "X::Assignment::RO: cannot assign through .{} on non-instance",
-                    method
-                )));
+                // The method answered a value that is not a container: it is the
+                // immutable thing the assignment names (`Bar.new = 3`).
+                return Err(self.assignment_ro_error_for(result));
             }
             // A role mixed into a builtin aggregate (`my %h is Hash::Ordered`,
             // `self` inside the role is a `Mixin` over a Hash): a user method of

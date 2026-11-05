@@ -514,19 +514,29 @@ impl RuntimeError {
     /// it (`Crane::Set`'s `X::Crane::OpSet::RO.new(:typename(.typename))`) must
     /// see the same thing whichever constructor raised the refusal.
     pub(crate) fn assignment_ro_value(value: Value) -> Self {
-        let typename = crate::value::type_name::value_type_name(&value);
+        let gist = crate::value::gist::gist_value(&value);
+        Self::assignment_ro_value_with_gist(value, &gist)
+    }
+
+    /// [`Self::assignment_ro_value`] with the value's `.gist` text supplied by a
+    /// caller that holds the interpreter: the pure `gist_value` has no
+    /// `Class.new(public attrs)` form for a plain object, `.gist` does.
+    pub(crate) fn assignment_ro_value_with_gist(value: Value, gist: &str) -> Self {
+        // A user class's instance names its own class; the static builtin name
+        // of an object is `Any`.
+        let typename = if matches!(value.view(), super::ValueView::Instance { .. }) {
+            crate::value::types::what_type_name(&value)
+        } else {
+            crate::value::type_name::value_type_name(&value).to_string()
+        };
         let message = if matches!(value.view(), super::ValueView::Nil) {
             "Cannot modify an immutable Nil value".to_string()
         } else {
-            format!(
-                "Cannot modify an immutable {} ({})",
-                typename,
-                crate::value::gist::gist_value(&value)
-            )
+            format!("Cannot modify an immutable {} ({})", typename, gist)
         };
         let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));
-        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+        attrs.insert("typename".to_string(), Value::str(typename));
         attrs.insert("value".to_string(), value);
         Self::typed("X::Assignment::RO", attrs)
     }
