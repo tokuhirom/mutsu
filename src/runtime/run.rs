@@ -648,6 +648,11 @@ impl Interpreter {
         // A term used before its declaration, judged in source order for the
         // same reason (ADR-15760 Amendment 1, 1b).
         let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
+        // `my $x will leave { ... }` expands to a scopeless `SyntheticBlock`
+        // holding the declaration and its exit phasers. Those phasers belong to
+        // the unit's scope, so lift them out where `split_block_phasers` sees
+        // them (it only looks at the top-level statements).
+        let stmts = Self::lift_will_exit_phasers(stmts);
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // A top-level END is dropped from the body outright: it is installed
