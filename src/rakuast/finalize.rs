@@ -729,6 +729,7 @@ mod tests {
             "my $s = 'abc'; $s ~~ s:i:x(2)/a/{$s}/; say $s;",
             "my $s = 'abc'; $s ~~ tr/a-c/A-C/; say $s; say $s.trans('A' => 'x');",
             "my $s = 'abc'; say (S:g:ii/b/Z/ given $s); $s ~~ s[b] += 1;",
+            "my @a = 1, 2; my $v = 9; @a[0] := $v; my %h; %h<k> := $v; %h{'j'} := 1 => 2; say @a.raku;",
         ] {
             assert_eq!(finalized(names, source), ordinary(source), "{source}");
         }
