@@ -295,29 +295,6 @@ pub(crate) struct LexicalState {
     /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
     /// Empty unless a sub is called before a variable it reads is declared.
     pub(crate) hoist_pending_cells: Vec<crate::vm::HoistPendingCell>,
-    /// `@`/`%` names bound as **parameters through the env-level (runtime)
-    /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
-    /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
-    /// { ... }`) — with their sigils, each mapped to every live container a
-    /// binding of that name stored in `env` (held weakly; see
-    /// [`param_bound_aggregates::ParamBoundAggregates`]).
-    ///
-    /// Such a name is a fresh per-invocation binding, never the one shared
-    /// object the name-keyed `shared_vars` lane exists to represent. Left on that
-    /// lane it is seeded once (`seed_if_absent`) and then frozen at the first
-    /// spawn's value, so two `start` blocks created by two iterations of the same
-    /// block both read the same `@K`/`@words`. `clone_for_thread_for_block`
-    /// consults this map — intersected with the spawned block's free variables
-    /// AND checked for container identity against the current env value, so an
-    /// unrelated outer aggregate that merely shares a name (or a later `my`
-    /// re-binding of it) is unaffected — to keep those names off the lane and
-    /// mask them in the child instead.
-    ///
-    /// Populated unconditionally (not gated on `shared_vars_active`): the
-    /// *first* spawn in a process consults it before any thread exists, and a
-    /// gate would leave exactly that spawn's binding to be seeded — and frozen —
-    /// on the lane.
-    pub(crate) param_bound_aggregates: param_bound_aggregates::ParamBoundAggregates,
     /// Union of every executed `CompiledCode::type_body_written_lexicals`:
     /// lexicals written by a registered class/role method body. These keep the
     /// name-keyed `shared_vars` lane even when a spawned block also captures
@@ -469,7 +446,6 @@ impl LexicalState {
             state_vars: rustc_hash::FxHashMap::default(),
             state_vars_unmigrated: Vec::new(),
             hoist_pending_cells: Vec::new(),
-            param_bound_aggregates: Default::default(),
             type_body_written_lexicals: Default::default(),
             var_dynamic_flags: HashMap::new(),
             var_bindings: HashMap::new(),
@@ -536,7 +512,6 @@ impl LexicalState {
             // Pending hoist cells belong to the parent's frames.
             hoist_pending_cells: Vec::new(),
             // The child re-binds its own env-bound parameters if it runs any.
-            param_bound_aggregates: Default::default(),
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
             type_body_written_lexicals: self.type_body_written_lexicals.clone(),

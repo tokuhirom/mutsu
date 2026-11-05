@@ -493,7 +493,6 @@ impl Interpreter {
                 .is_none_or(|name| Self::atomic_name_possible(name))
             || self.slot_has_sigilless_meta(code, idx, desc)
             || self.module.lexical_fatal_mode
-            || !self.threads.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
     }
 
@@ -895,9 +894,6 @@ impl Interpreter {
         } else {
             None
         };
-        if is_vardecl && self.threads.shared_vars_active {
-            self.remask_declaration_store(code, idx as usize);
-        }
         if !self.rw_param_rebinds.is_empty() && self.rebind_context().get() && !is_vardecl {
             self.note_rw_param_rebind(idx);
         }
@@ -915,14 +911,6 @@ impl Interpreter {
             && code.self_capture_decl_locals.contains(sym)
         {
             crate::runtime::decl_gate::declared(*sym);
-        }
-        // The store that ends a declaration's in-flight window: from here the
-        // slot holds the new binding, so a spawn may unmask the name again (see
-        // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
-        if !self.threads.thread_decl_in_flight.is_empty()
-            && let Some(name) = code.locals.get(idx as usize)
-        {
-            self.threads.thread_decl_in_flight.remove(name);
         }
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
@@ -3948,38 +3936,6 @@ impl Interpreter {
         {
             self.env_mut()
                 .insert(MetaNs::LexicalDynamic.owned_key_for_str(name), Value::TRUE);
-        }
-        // While the cross-thread shared store is active, a re-declaration is a
-        // fresh binding shadowing the captured outer lexical: mark the name so
-        // subsequent writes stay thread-local instead of leaking to the parent
-        // through the shared store (`start { my $x ... }` / a pointy-if
-        // binding must not clobber the caller's same-named lexical).
-        //
-        // A plain lexical `my @a` / `my %h` is masked for the same reason: the
-        // store is keyed by BARE NAME and so cannot represent two concurrently
-        // live bindings of one name. Without this, once any thread has run, a
-        // routine's own `my @components` *is* the caller's `@components` —
-        // `box_decl_local_container_cell` publishes the fresh per-binding cell
-        // under the shared name key and every later read prefers it
-        // (`todo/deep/threaded-array-mutation-escapes-to-the-caller.md`, the
-        // top blocker for the vendored Cro::HTTP round-trip suite). The mask is
-        // lifted at the next spawn, which force-`declare`s this binding's
-        // current value into the lineage (`clone_for_thread`), so a genuinely
-        // shared `@a` keeps working. `&` names are routines and `state` sharing
-        // goes through the dedicated shared-state cells — both must keep
-        // propagating. Twigil'd forms (`@!x`, `%*y`) share a name across
-        // instances/dynamic scopes by design and keep the name lane.
-        if self.threads.shared_vars_active && Self::thread_decl_masks_name(code, name) {
-            self.threads
-                .thread_redeclared_vars
-                .borrow_mut()
-                .insert(name.to_string());
-            // The initializer has not run yet, so neither this frame's slot
-            // nor `env` holds the new binding. Mark the window so a spawn
-            // performed BY the initializer cannot unmask the name and let the
-            // shadowed outer value be pulled back over it
-            // (`thread_decl_in_flight`). Cleared by the store that ends it.
-            self.threads.thread_decl_in_flight.insert(name.to_string());
         }
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name. The slot's

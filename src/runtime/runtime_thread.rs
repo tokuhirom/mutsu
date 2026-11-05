@@ -3,197 +3,6 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
-    /// The scalar lexicals a spawned block captures itself, as bare env keys.
-    ///
-    /// These are exactly the names the closure machinery already owns per
-    /// binding, so `clone_for_thread_for_block` keeps them out of the
-    /// name-keyed `shared_vars` lane (PLAN.md §6). A name the block does NOT
-    /// capture is invisible to that analysis — a `submethod DESTROY`, a
-    /// `closing => {...}` handler, or any other separately-registered routine
-    /// that closes over an outer lexical and runs on the worker — so it keeps
-    /// using the name lane.
-    fn block_captured_scalars(&self, block: &Value) -> std::collections::HashSet<String> {
-        let mut out = std::collections::HashSet::new();
-        if let ValueView::Sub(data) = block.view()
-            && let Some(cc) = data.compiled_code.as_ref()
-        {
-            // The block's own free variables, plus those of the closures it
-            // calls through a variable it captures (`my $work = { ... };
-            // start { $work() }`): the call reads `$work`'s free variables on
-            // the worker too, and they are not in this block's code, so
-            // without them a scalar written by that closure (`$done` under a
-            // `Lock.protect`) stayed on the name lane and resolved to another
-            // iteration's binding.
-            let mut free: Vec<crate::symbol::Symbol> = cc.free_var_syms.to_vec();
-            let mut seen_subs: Vec<*const ()> = Vec::new();
-            let mut i = 0;
-            while i < free.len() && free.len() < 512 {
-                let sym = free[i];
-                i += 1;
-                let sname = sym.resolve();
-                let bare = sname.trim_start_matches(['$', '&']);
-                if let Some(v) = self.env.get(bare).or_else(|| self.env.get(&sname))
-                    && let ValueView::Sub(inner) = v.deref_container().view()
-                    && let Some(icc) = inner.compiled_code.as_ref()
-                {
-                    let key = std::sync::Arc::as_ptr(icc) as *const ();
-                    if seen_subs.contains(&key) {
-                        continue;
-                    }
-                    seen_subs.push(key);
-                    for extra in &icc.free_var_syms {
-                        if !free.contains(extra) {
-                            free.push(*extra);
-                        }
-                    }
-                }
-            }
-            for sym in &free {
-                let name = sym.resolve();
-                if name.starts_with('@') || name.starts_with('%') {
-                    // ADR-12204 S2: a plain `@`/`%` lexical that already lives in
-                    // a shared cell is captured by that cell: no lane entry.
-                    if self.aggregate_cell_captured(&name) {
-                        out.insert(name.to_string());
-                    }
-                    continue;
-                }
-                if name.starts_with('&') {
-                    continue;
-                }
-                let bare = name.trim_start_matches('$');
-                // A name a registered class/role method writes keeps the name
-                // lane: that write is invisible to the capture analysis, so the
-                // closure machinery does NOT own the name after all. Applies
-                // whether or not the local got a cell — roast
-                // S12-construction/roles-6e.t's `$order` holds a List, a shape
-                // `box_captured_lexicals` declines to box at all.
-                if self.lexicals.type_body_written_lexicals.contains(bare) {
-                    continue;
-                }
-                // ADR-0023: a name currently bound as a for-loop parameter is a
-                // fresh, readonly, per-iteration binding — the spawn-time env
-                // clone is its correct per-binding home for ANY value type.
-                // Keeping it off the lane is what lets two sibling iterations'
-                // spawns each hold their own value
-                // (todo/deep/concurrent-for-loop-siblings-...).
-                if self
-                    .topic_state
-                    .active_loop_param_names
-                    .iter()
-                    .any(|s| s.contains(bare))
-                {
-                    out.insert(bare.to_string());
-                    continue;
-                }
-                // The same holds for any other readonly binding live in the
-                // spawning frame — a routine, method or pointy-block parameter
-                // (`-> $job { start { await $g; $job.id } }`): it can never be
-                // reassigned, so the spawn-time clone cannot miss a write, and
-                // leaving it on the lane let an unrelated same-named lexical (a
-                // caller's loop `my $job`) be pulled over it at the worker's
-                // next sync point. `mask_thread_redeclared_params` covers this
-                // only once the shared store is active; the first spawn of a
-                // program happens before that, so the mask alone misses it.
-                if self.is_readonly(&name) || self.is_readonly(bare) {
-                    out.insert(bare.to_string());
-                    continue;
-                }
-                // Only a genuinely PLAIN scalar is owned per binding by the
-                // closure machinery — either boxed into a shared cell by
-                // `box_captured_lexicals` or correctly frozen by value. An
-                // ALLOW-list, deliberately: everything else (a Channel, a
-                // Promise, a Lock, an Array/List/Hash, a Sub, a type object, ...)
-                // is a shape `box_captured_lexicals` declines to box, so the name
-                // lane is still the only thing keeping the parent and the worker
-                // on ONE object. Dropping it for those hangs
-                // `my $c = Channel.new; start { $c.send(42) }; $c.receive`
-                // (pin: t/concurrency-threading.t test 4).
-                let plain = self
-                    .env
-                    .get(bare)
-                    .or_else(|| self.env.get(&name))
-                    .is_some_and(|v| {
-                        matches!(
-                            v.view(),
-                            ValueView::Int(_)
-                                | ValueView::BigInt(_)
-                                | ValueView::Num(_)
-                                | ValueView::Str(_)
-                                | ValueView::Bool(_)
-                                | ValueView::Rat(..)
-                                | ValueView::FatRat(..)
-                                | ValueView::BigRat(..)
-                                | ValueView::Complex(..)
-                                | ValueView::ContainerRef(_)
-                        )
-                    });
-                if !plain {
-                    continue;
-                }
-                out.insert(bare.to_string());
-            }
-            // An `@`/`%` free variable that the env-level parameter binding path
-            // bound — a destructuring sub-signature (`-> [$a, @K]`) or a
-            // runtime-invoked callback's plain parameter (`reduce -> $h,
-            // @words`) — is a fresh per-invocation binding, not the one shared
-            // object the name lane represents. Left on the lane it is seeded
-            // once and frozen at the first spawn's value, so
-            // `map -> [$a, @K] { start { @K[0] } }, ...` and
-            // `reduce -> $h, @words { $h + await start { [+] @words } }, ...`
-            // had every worker read the first binding's value.
-            //
-            // What narrows this to exactly that case is that the container
-            // `param_bound_aggregates` recorded for the name must be the SAME
-            // container the env currently holds — so an unrelated outer
-            // aggregate that merely shares the name (or a later `my` re-binding
-            // of it), and its `__mutsu_atomic_*` CAS copies, keep the lane
-            // exactly where `docs/recursive-start-shared-vars.md` requires.
-            //
-            // This deliberately does NOT also require the free variable to
-            // resolve to no parent slot. That extra condition once stood in for
-            // "the env-level binder is the only parameter path that writes
-            // `env` without a local slot behind it", but the property that
-            // matters is being a PARAMETER binding, not how it is stored: a
-            // slot-bound `@`/`%` parameter (`sub f(@P) { start { @P[0] } }`, and
-            // now `-> @P { start { @P[0] } }` too, since a one-parameter pointy
-            // block keeps its sigil and gets a real `ParamDef`) is just as
-            // fresh per invocation, and leaving it on the once-seeded name lane
-            // froze every worker at the first call's argument.
-            //
-            // Nor does it require the block to NAME the parameter (#10031).
-            // A parameter the block never mentions was still seeded, as an
-            // ADR-0039 §8.6 transient entry, and the spawning frame's own later
-            // `%g{$k} = ...` then saw the name in the store and took the atomic
-            // hash lane, which writes a COPY and rebinds `%g` to it — detaching
-            // the parameter from the caller's container it aliases:
-            // `sub mk(%g) { -> $k { %g{$k} = 1; start { 1 } } }` lost every
-            // store after the first spawn. Being a per-invocation binding does
-            // not depend on who names it, and the parameter's own container is
-            // already what every alias holds, so no lane is needed to reach it.
-            // The frame's env may hold the parameter boxed in the closure
-            // machinery's `ContainerRef` cell, so compare through it.
-            //
-            // Every live binding of the name counts, not just the latest one:
-            // two closures made by one routine, each capturing its `%g` bound
-            // to a different caller hash, both hold a parameter binding, and
-            // letting the older one onto the lane merged both closures' stores
-            // into one copy (#10076). `ParamBoundAggregates` records them
-            // weakly, so it neither pins arguments alive nor mistakes a reused
-            // address for a recorded one.
-            for name in self.lexicals.param_bound_aggregates.names() {
-                if self
-                    .env
-                    .get(name)
-                    .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(name, cur))
-                {
-                    out.insert(name.clone());
-                }
-            }
-        }
-        out
-    }
-
     /// ADR-12204 S2: whether the `@`/`%` lexical `name` (with sigil) is held in
     /// a shared `ContainerRef` cell by the spawning frame and may therefore be
     /// captured by that cell instead of the name-keyed lane. Opaque names (a
@@ -217,41 +26,6 @@ impl Interpreter {
                 ValueView::ContainerRef(_)
             ) && matches!(v.deref_container().view(), ValueView::Array(..) | ValueView::Hash(..))
         })
-    }
-
-    /// The plain-lexical `@`/`%` containers a spawned block's compiled subtree
-    /// actually names, or `None` when the spawn has no known block (the
-    /// block-less [`clone_for_thread`](Self::clone_for_thread) entry point,
-    /// used by supply drivers, `.then`, socket and proc readers).
-    ///
-    /// ADR-0039 §8.6 uses this to decide *how long* a container's bare-name
-    /// lane entry is needed, NOT whether to create one. A container the block
-    /// names is genuinely shared and keeps the lane for good. A container it
-    /// never names still gets an entry — a routine the block *calls* may reach
-    /// it, which no analysis over the block's own free variables can see — but
-    /// that entry is marked transient and retired at the next cross-thread
-    /// drain. `free_var_syms` already folds up nested closures
-    /// (`compute_free_vars`, "Fold nested closures"), so
-    /// `start { start { @a.push(1) } }` keeps `@a` permanently.
-    fn block_referenced_containers(block: &Value) -> Option<std::collections::HashSet<String>> {
-        let mut out = std::collections::HashSet::new();
-        if let ValueView::Sub(data) = block.view()
-            && let Some(cc) = data.compiled_code.as_ref()
-        {
-            for sym in cc
-                .free_var_syms
-                .iter()
-                .chain(cc.free_var_writes.iter())
-                .chain(cc.free_var_container_writes.iter())
-            {
-                let name = sym.resolve();
-                if name.starts_with(['@', '%']) {
-                    out.insert(name);
-                }
-            }
-            return Some(out);
-        }
-        None
     }
 
     /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6
@@ -280,34 +54,39 @@ impl Interpreter {
     }
 
     /// [`Self::clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
-    /// `Promise.start`, `Thread.start`): the block's own captured scalars are
-    /// excluded from the name-keyed shared store. See `block_captured_scalars`.
+    /// `Promise.start`, `Thread.start`). The block only feeds the ADR-12204
+    /// capture oracle: no plain user lexical is published by the spawn.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
-        let captured = self.block_captured_scalars(block);
-        // ADR-0039 §8.6: which containers this block names decides whether its
-        // lane entry is durable or transient. See `block_referenced_containers`.
-        let containers = Self::block_referenced_containers(block);
         if crate::runtime::shared_store::capture_check::enabled() {
             // ADR-12204 S1: the aggregates this spawn's block names.
-            crate::runtime::shared_store::capture_check::record_spawn_captures(
-                containers.iter().flatten(),
-            );
+            if let ValueView::Sub(data) = block.view()
+                && let Some(cc) = data.compiled_code.as_ref()
+            {
+                let names: Vec<String> = cc
+                    .free_var_syms
+                    .iter()
+                    .chain(cc.free_var_writes.iter())
+                    .chain(cc.free_var_container_writes.iter())
+                    .map(|sym| sym.resolve())
+                    .filter(|name| name.starts_with(['@', '%']))
+                    .collect();
+                let cells: Vec<String> = names
+                    .iter()
+                    .filter(|name| self.aggregate_cell_captured(name))
+                    .cloned()
+                    .collect();
+                crate::runtime::shared_store::capture_check::record_spawn_captures(&names);
+                crate::runtime::shared_store::capture_check::record_cell_captures(&cells);
+            }
         }
-        if crate::runtime::shared_store::capture_check::enabled() {
-            crate::runtime::shared_store::capture_check::record_cell_captures(&captured);
-        }
-        self.clone_for_thread_excluding(&captured, containers.as_ref())
+        self.spawn_clone()
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
-    /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
-    /// so that mutations are visible across threads.
-    pub(crate) fn clone_for_thread(&mut self) -> Self {
-        self.clone_for_thread_excluding(&std::collections::HashSet::new(), None)
-    }
-
-    /// The workhorse behind every thread clone.
+    /// The child reaches the parent's lexicals through the cells and objects its
+    /// env clone carries (ADR-16595); only opaque names and `@*`/`%*` dynamics are
+    /// published into `shared_vars`.
     ///
     /// Most of what this builds is cheap, and deliberately so: the program-global
     /// symbol tables it carries over are `Arc<...>` copy-on-write shares (see the
@@ -317,11 +96,12 @@ impl Interpreter {
     /// Cro's stack loaded, the identical `Promise(supply { whenever ... })` that
     /// `Cro::MessageWithBody.body-blob` builds cost 5x what it costs in a bare
     /// program, purely because there were more modules to copy tables for.
-    fn clone_for_thread_excluding(
-        &mut self,
-        captured_scalars: &std::collections::HashSet<String>,
-        referenced_containers: Option<&std::collections::HashSet<String>>,
-    ) -> Self {
+    pub(crate) fn clone_for_thread(&mut self) -> Self {
+        self.spawn_clone()
+    }
+
+    /// The workhorse behind every thread clone.
+    fn spawn_clone(&mut self) -> Self {
         // ADR-12204 S1 oracle: the lane writes below seed the spawner's
         // lexicals; they are not uses of the names.
         let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
@@ -390,26 +170,6 @@ impl Interpreter {
             // locally and recorded once per spawn (one atomic add per counter).
             let mut seed_keys_walked: u64 = 0;
             let mut seed_inserts: u64 = 0;
-            // ADR-0039 §8.6 classification, collected while `self.env` is
-            // borrowed by the walk and applied to `self` once it ends.
-            //
-            // Only the top-level interpreter classifies. On a WORKER thread the
-            // lane is not an optional publication channel that a container
-            // might or might not need — it is the storage: `push @a, ...`
-            // routes through `__mutsu_atomic_arr::` unconditionally when
-            // `is_thread_clone()` (`vm/vm_data_push_ops.rs`), precisely so
-            // concurrent appends serialize, and `shared_array_mutate` then
-            // drops the worker's own `env` copy so `make_mut` can work in
-            // place. Retiring an entry there would be withdrawing a deliberate
-            // mechanism's backing store mid-use (measured: it emptied worker A's
-            // accumulator in `t/sibling-thread-array-lane-scope.t`). It also
-            // buys nothing: a worker's lineage store is its own (ADR-0010), so
-            // its entries cannot outlive into an unrelated frame the way a
-            // root-store entry published by the main interpreter does — which
-            // is the collision §8.2 records.
-            let referenced_containers = referenced_containers.filter(|_| !self.is_thread_clone());
-            let mut transient_marks: Vec<String> = Vec::new();
-            let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
                 Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
@@ -472,147 +232,35 @@ impl Interpreter {
                     continue;
                 }
                 let key = key.resolve();
-                // A scalar the spawned block captures itself is NOT shared by
-                // name. `start` compiles its block as escaping
-                // (`compiler/expr_call.rs`), so the closure machinery already
-                // gives such a scalar a per-binding home: a shared
-                // `ContainerRef` cell from `box_captured_lexicals` when it is
-                // mutated, a frozen value when it is read-only. The store is
-                // keyed by the BARE NAME, so it cannot represent two
-                // concurrently-live bindings of the same name — exactly what a
-                // recursive frame chain is (`sub f($n) { start { ... f($n-1)
-                // ... } }`). Seeding those names here ran a second, lossy
-                // mechanism in parallel with the working one and silently
-                // overwrote its correct answer (PLAN.md §6).
-                // `@`/`%` aggregates keep this lane by default: their
-                // `__mutsu_atomic_*` CAS copies are keyed off these entries. The
-                // one exception is an aggregate bound by the env-level parameter
-                // binding path (a destructuring sub-signature, or a
-                // runtime-invoked callback's plain parameter), which
-                // `block_captured_scalars` puts in this set *with* its sigil — a
-                // fresh per-invocation binding the lane cannot represent (it
-                // would freeze at the first spawn's value).
-                if !captured_scalars.is_empty()
-                    && (!key.starts_with('@') && !key.starts_with('%')
-                        || captured_scalars.contains(key.as_str()))
-                    && captured_scalars.contains(key.trim_start_matches('$'))
+                // ADR-16595 slice 4: the spawn publishes no plain user lexical.
+                // A scalar or `@`/`%` the spawned code reaches lives in its
+                // frame's slot or in the declaration-site `ContainerRef` cell
+                // every escaping capture holds, and the child's env clone below
+                // carries that cell (or the shared object itself). What still
+                // rides the name lane is a name code on another thread reaches
+                // WITHOUT a capture ([`Self::lexical_name_is_opaque`]: a name a
+                // registered class/role method writes) and the aggregate
+                // dynamics `@*x` / `%*x`, whose live `.then`-chain propagation
+                // depends on it (the exclusion list above keeps their scalar
+                // siblings off).
+                if !self.lexical_name_is_opaque(&key)
+                    && !(key.starts_with(['@', '%'])
+                        && crate::env::is_dynamic_var_name(&key))
                 {
                     continue;
                 }
                 // Only seed if not already visible — an entry an earlier thread
                 // already updated must not be reset to this env's copy.
-                // EXCEPT names this thread re-declared: their entry (if any)
-                // belongs to the shadowed outer binding, so bind the current one
-                // into this lineage, shadowing the ancestor's.
-                // A declaration still in flight has no "current" value to bind:
-                // `val` is the binding this `my` is about to shadow, so publishing
-                // it would overwrite the lane with a value that is about to be
-                // stale. Seed it only to give the child *something* under the name
-                // (it captured the outer binding), and keep the mask below.
-                //
-                // A name masked because of a *parameter* binding
-                // (`thread_param_shadow_vars`, see `mask_thread_redeclared_params`)
-                // never takes the force-`declare` branch, even outside any
-                // in-flight window: the parameter's shadow is scoped to exactly
-                // the call that bound it, not "the rest of this block", so a
-                // nested spawn inside that call must not overwrite an unrelated
-                // caller's live entry for the same bare name.
-                let published = if self.threads.thread_redeclared_vars.borrow().contains(&key)
-                    && !self.threads.thread_decl_in_flight.contains(&key)
-                    && !self
-                        .threads
-                        .thread_param_shadow_vars
-                        .borrow()
-                        .contains(&key)
-                {
-                    shared.declare(&key, val.clone());
+                if shared.seed_if_absent(&key, || val.clone()) {
                     seed_inserts += 1;
-                    true
-                } else if shared.seed_if_absent(&key, || val.clone()) {
-                    seed_inserts += 1;
-                    true
-                } else {
-                    false
-                };
-                // ADR-0039 §8.6: classify the lane entry. A container this
-                // block NAMES is genuinely shared and keeps its entry for good
-                // — including promoting one an earlier spawn had marked
-                // transient. A container it never names, whose entry THIS spawn
-                // created, was published only because this loop publishes
-                // everything, so mark it for withdrawal at the next cross-thread
-                // drain.
-                //
-                // Marking, rather than declining to seed, is deliberate and
-                // measured: a routine the block CALLS can still reach the
-                // container, which no analysis over the block's own free
-                // variables can see (see §8.6). Only marking entries this spawn
-                // created matters just as much — an entry an earlier, naming
-                // spawn established stays durable no matter how many unrelated
-                // spawns walk past it afterwards.
-                if let Some(refs) = referenced_containers
-                    && Self::transient_lane_candidate(&key)
-                {
-                    if refs.contains(&key) {
-                        transient_unmarks.push(key);
-                    } else if published {
-                        transient_marks.push(key);
-                    }
                 }
             }
             crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
-            for key in transient_unmarks {
-                self.threads.transient_lane_containers.remove(&key);
-            }
-            for key in transient_marks {
-                self.threads.transient_lane_containers.insert(key);
-            }
             // Track C: migrate the parent's `state` variables into shared cells.
             // Incremental: only the keys created since the previous spawn.
             self.seed_unmigrated_state_vars(&shared);
         }
         self.threads.shared_vars_active = true;
-        self.threads.frame_remask_armed.set(true);
-        // The child captures the parent's CURRENT bindings — including any
-        // name the parent re-declared since an earlier spawn (its current
-        // value was force-seeded above). From this spawn on, writes to those
-        // names must flow both ways again, so drop the parent-side masks.
-        //
-        // EXCEPT the names excluded from seeding above: their premise ("its
-        // current value was force-seeded") does not hold, so the mask must
-        // survive. The store can hold a STALE entry under such a name — the
-        // blanket `sync_env_from_locals` mirror writes a frame's declared-but-
-        // not-yet-initialized slots (Nil) into the store, and the re-declaration
-        // mask then blocks the post-assignment refresh. The old force-seed
-        // repaired that bomb at every spawn; without it, dropping the mask lets
-        // the next `await`'s `sync_shared_vars_to_env` pull the stale Nil back
-        // over the live binding (`$port` in roast S17-promise/
-        // nonblocking-await.t's socket server went Nil → connect to port 0).
-        //
-        // A name whose declaration is still IN FLIGHT is excluded for the same
-        // reason from the other direction: the seed above took the value of the
-        // binding this `my` is about to SHADOW, because the initializer that
-        // produced this very spawn has not stored anything yet. Unmasking would
-        // let the next `sync_shared_vars_to_env` pull that outer value back over
-        // the new binding — `my $tap = IO::Socket::Async.listen(...).tap({...})`
-        // in a loop reverted to the previous iteration's `Tap`, which is what
-        // made a restarted `Cro::HTTP::Server` keep answering from the old one.
-        //
-        // A parameter-binding mask (`thread_param_shadow_vars`) survives this
-        // pass unconditionally for the same reason as an in-flight `my`: the
-        // shadow is scoped to the still-executing call, not to "since the last
-        // spawn", so dropping it here (because the call didn't happen to be the
-        // very first spawn) would let the next `sync_shared_vars_to_env` pull
-        // the caller's unrelated value back over the parameter for the
-        // remainder of the call. Explicit `unmask_thread_redeclared_params` at
-        // the call's return is the only thing that ever clears it.
-        self.threads
-            .thread_redeclared_vars
-            .borrow_mut()
-            .retain(|n| {
-                captured_scalars.contains(n.trim_start_matches('$'))
-                    || self.threads.thread_decl_in_flight.contains(n)
-                    || self.threads.thread_param_shadow_vars.borrow().contains(n)
-            });
         let mut cloned = Self {
             types: self.types.fork_for_thread(),
             literal_native_args: 0,
@@ -663,7 +311,7 @@ impl Interpreter {
             pending_supply_authoritative_free_vars: Vec::new(),
             last_block_my_declared: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
-            threads: self.threads.fork_for_thread(captured_scalars),
+            threads: self.threads.fork_for_thread(),
             lexicals: self.lexicals.fork_for_thread(),
             in_lvalue_assignment: false,
             rw_return_context: false,

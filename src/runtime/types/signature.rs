@@ -1152,33 +1152,7 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
 }
 
 /// Bind one destructured sub-parameter into the environment.
-///
-/// A sub-signature parameter is a **fresh per-invocation binding**, exactly like
-/// a `my` declaration, so — while threads are live — it has to mask the
-/// name-keyed `shared_vars` lane the same way `my` does
-/// (`vm_var_assign_set_local.rs`). Without the mask, a `@`/`%` sub-parameter
-/// captured by a spawned block is read out of that lane, which is seeded once
-/// (`seed_if_absent`) and therefore frozen at the *first* spawn's value:
-///
-/// ```raku
-/// await map -> [$a, @K] { start { "$a:{@K[0]}" } }, (1, (100,101)), (2, (200,201))
-/// # was 1:100,2:100 — the second worker read the first iteration's @K
-/// ```
-///
-/// `$` sub-parameters were already correct: the closure machinery owns them per
-/// binding and keeps them off that lane entirely. `&` names are routines and
-/// keep the lane; so do twigil'd forms, which share a name by design.
 fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) {
-    // NOT gated on `shared_vars_active`: the FIRST spawn in a process consults
-    // `param_bound_aggregates` before any thread exists, and gating left exactly
-    // that spawn's binding to be seeded — and frozen — on the name lane
-    // (`todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`).
-    if name.starts_with(['@', '%']) && Interpreter::is_plain_lexical_name(name) {
-        interpreter
-            .lexicals
-            .param_bound_aggregates
-            .note(name, &value);
-    }
     // A sub-parameter spelled `$self` is the reserved lexical, never the
     // invocant (ADR-0061).
     let name = if name == "self" { crate::env::LEX_SELF } else { name };

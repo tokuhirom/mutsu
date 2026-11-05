@@ -15,11 +15,8 @@
 //! - **declare** — always this lineage's `own`, shadowing any ancestor entry.
 
 use crate::value::Value;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
-mod retire;
-use retire::{ChildList, Holder};
 
 pub(crate) mod capture_check;
 
@@ -130,17 +127,6 @@ pub(crate) struct SharedStore {
     parent: Option<Arc<SharedStore>>,
     /// The root of the chain. `None` when this store *is* the root.
     root: Option<Arc<SharedStore>>,
-    /// Retired bindings this lineage still reaches (ADR-0129): name -> the
-    /// binding box holding the entry the spawning lineage had under that name
-    /// when this lineage was created, before a later re-declaration there
-    /// replaced it. Consulted after `own` and before `parent`.
-    redirects: RwLock<HashMap<String, Arc<SharedStore>>>,
-    /// Fast-path guard for `redirects`: almost no lineage ever gets one.
-    has_redirects: AtomicBool,
-    /// The lineages spawned from this one, in spawn order, tagged with their
-    /// spawn sequence number (ADR-0129). Only a *live* child can still be
-    /// holding a binding this lineage is about to replace.
-    children: Mutex<ChildList>,
 }
 
 impl SharedStore {
@@ -156,10 +142,18 @@ impl SharedStore {
             id: NEXT_LINEAGE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             parent,
             root,
-            redirects: RwLock::new(HashMap::default()),
-            has_redirects: AtomicBool::new(false),
-            children: Mutex::new(ChildList::default()),
         }
+    }
+
+    /// A child lineage of `parent`. Spawned threads get one of these, so their
+    /// own declarations stay private to them while the parent's entries stay
+    /// visible and writable through the chain.
+    // Cost: O(1).
+    pub(crate) fn child_of(parent: &Arc<Self>) -> Arc<Self> {
+        Arc::new(Self::detached(
+            Some(Arc::clone(parent)),
+            Some(parent.root_ref()),
+        ))
     }
 
     /// An `Arc` to the root of this chain (self when this is the root).
@@ -171,16 +165,16 @@ impl SharedStore {
     /// base name for an atomic array/hash lane key (falling back to root when
     /// no lineage owns it), the root for any other runtime-internal key, this
     /// lineage for a user lexical.
-    fn scope_for(&self, key: &str) -> Holder<'_> {
+    fn scope_for(&self, key: &str) -> &SharedStore {
         if let Some(base) = atomic_lane_base_name(key) {
             return self
                 .owner_of(base)
-                .unwrap_or_else(|| Holder::Chain(self.root.as_deref().unwrap_or(self)));
+                .unwrap_or_else(|| self.root.as_deref().unwrap_or(self));
         }
         if is_internal_key(key) {
-            Holder::Chain(self.root.as_deref().unwrap_or(self))
+            self.root.as_deref().unwrap_or(self)
         } else {
-            Holder::Chain(self)
+            self
         }
     }
 
@@ -218,10 +212,6 @@ impl SharedStore {
         loop {
             if cur.owns(base_name) {
                 return cur;
-            }
-            // ADR-0129: a retired binding's lane lives in its box.
-            if let Some(bx) = cur.redirect(base_name) {
-                return bx;
             }
             match cur.parent.clone() {
                 Some(p) => cur = p,
@@ -263,12 +253,6 @@ impl SharedStore {
         self.own.read().unwrap().contains_key(key)
     }
 
-    /// [`Self::owns`] for callers outside the store.
-    // Cost: O(1).
-    pub(crate) fn owns_key(&self, key: &str) -> bool {
-        self.owns(key)
-    }
-
     /// Write to the nearest lineage that already has the name, so a child's
     /// mutation of a lexical the parent shared with it reaches the parent.
     /// Falls back to this lineage when the name is new (a first write with no
@@ -287,20 +271,6 @@ impl SharedStore {
             .insert(key.to_string(), self.id);
     }
 
-    /// Bind the name into THIS lineage, shadowing any ancestor entry. Used by
-    /// `my`-declaration seeding: a re-declared name is a fresh binding whose
-    /// writes must not leak to the lineage that shared the old one.
-    ///
-    /// The entry being shadowed is retired first, so a live child that captured
-    /// it keeps resolving it (ADR-0129).
-    pub(crate) fn declare(&self, key: &str, value: Value) {
-        self.retire_binding(key);
-        note_inserted_key(key);
-        let target = self.scope_for(key);
-        target.own.write().unwrap().insert(key.to_string(), value);
-        target.written.lock().unwrap_or_else(|e| e.into_inner()).remove(key);
-    }
-
     /// True when the entry `key` resolves to holds nothing another lineage
     /// published for this one to pull: either a mere seed, the spawning
     /// binding's snapshot that no thread has written since (#12204), or a value
@@ -309,7 +279,7 @@ impl SharedStore {
     // Cost: O(d), d = chain depth (spawn nesting).
     pub(crate) fn is_seed_or_own_write(&self, key: &str) -> bool {
         match self.owner_of(key) {
-            Some(Holder::Chain(h)) => h
+            Some(h) => h
                 .written
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -364,15 +334,15 @@ impl SharedStore {
 
     /// Walk to the lineage that holds `key`, if any.
     /// Cost: O(d), d = chain depth (spawn nesting).
-    fn owner_of(&self, key: &str) -> Option<Holder<'_>> {
+    fn owner_of(&self, key: &str) -> Option<&SharedStore> {
         if is_internal_key(key) {
             let root = self.scope_for(key);
             return root.owns(key).then_some(root);
         }
         let mut cur = self;
         loop {
-            if let Some(h) = cur.holder_here(key) {
-                return Some(h);
+            if cur.owns(key) {
+                return Some(cur);
             }
             cur = cur.parent.as_deref()?;
         }
@@ -410,13 +380,6 @@ impl SharedStore {
     /// Every name visible from this lineage (own entries shadow ancestors').
     pub(crate) fn visible_keys(&self) -> Vec<String> {
         let mut out: Vec<String> = self.own.read().unwrap().keys().cloned().collect();
-        for bx in self.redirect_boxes() {
-            for k in bx.own.read().unwrap().keys() {
-                if !out.contains(k) {
-                    out.push(k.clone());
-                }
-            }
-        }
         if let Some(p) = &self.parent {
             for k in p.visible_keys() {
                 if !out.contains(&k) {
@@ -432,9 +395,6 @@ impl SharedStore {
     /// reachable from the lineage that owns it, so it must be visited.
     pub(crate) fn chain_values(&self) -> Vec<Value> {
         let mut out: Vec<Value> = self.own.read().unwrap().values().cloned().collect();
-        for bx in self.redirect_boxes() {
-            out.extend(bx.own.read().unwrap().values().cloned());
-        }
         if let Some(p) = &self.parent {
             out.extend(p.chain_values());
         }
