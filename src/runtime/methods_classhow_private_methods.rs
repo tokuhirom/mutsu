@@ -14,7 +14,7 @@ impl Interpreter {
     /// (#8836). Inherited private methods are not included, matching Rakudo,
     /// where each class's private-method table is its own.
     // Cost: O(m), m = methods declared directly on the class.
-    fn class_private_method_entries(&self, class_name: &str) -> Vec<(String, Value)> {
+    pub(crate) fn class_private_method_entries(&self, class_name: &str) -> Vec<(String, Value)> {
         let registry = self.registry();
         if !registry.classes.contains_key(class_name) {
             return Vec::new();

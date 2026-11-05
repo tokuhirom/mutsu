@@ -53,9 +53,9 @@ fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&
 // Cost: O(m + n), m = MRO levels and composed roles, n = names collected (a dedup scan per name; error path only).
 fn candidate_names(type_name: &str) -> Vec<&'static str> {
     use crate::builtin_types::catalog::{builtin_type_mro_strs, builtin_type_roles_strs};
-    let mro = builtin_type_mro_strs(type_name)
-        .or_else(|| builtin_type_mro_strs("Any"))
-        .unwrap_or(&[]);
+    // A type the catalog does not list (a user class, `Any`, `Mu`) answers to
+    // what every object does: the `Any` and `Mu` methods.
+    let mro = builtin_type_mro_strs(type_name).unwrap_or(&["Any", "Mu"]);
     let table = declared_by_owner();
     let mut names: Vec<&'static str> = Vec::new();
     let mut push_owner = |owner: &str| {
@@ -98,7 +98,12 @@ thread_local! {
 /// and the edit-distance walk over every candidate was ~1.3M instructions of
 /// it (Red's `$attr.type.?inflator` paid that per column).
 // Cost: O(1) expected on a memo hit; O(c * l^2 + c log c) on a miss, c = candidates, l = longest name.
-fn suggestions(method: &str, type_name: &str) -> Vec<String> {
+fn suggestions(method: &str, type_name: &str, extra: &[String]) -> Vec<String> {
+    // A user class's own method names are not part of the static catalog the
+    // memo is a pure function of: compute those directly (error path only).
+    if !extra.is_empty() {
+        return compute_suggestions(method, type_name, extra);
+    }
     let hit = SUGGESTION_MEMO.with(|memo| {
         memo.borrow()
             .0
@@ -109,7 +114,7 @@ fn suggestions(method: &str, type_name: &str) -> Vec<String> {
     if let Some(found) = hit {
         return found;
     }
-    let found = compute_suggestions(method, type_name);
+    let found = compute_suggestions(method, type_name, &[]);
     SUGGESTION_MEMO.with(|memo| {
         let (table, held) = &mut *memo.borrow_mut();
         if *held >= SUGGESTION_MEMO_LIMIT {
@@ -126,7 +131,7 @@ fn suggestions(method: &str, type_name: &str) -> Vec<String> {
 }
 
 // Cost: O(c * l^2 + c log c), c = candidates, l = longest name.
-fn compute_suggestions(method: &str, type_name: &str) -> Vec<String> {
+fn compute_suggestions(method: &str, type_name: &str, extra: &[String]) -> Vec<String> {
     let max_length = match method.chars().count() {
         0..=3 => 1,
         4..=8 => 2,
@@ -166,6 +171,7 @@ fn compute_suggestions(method: &str, type_name: &str) -> Vec<String> {
         .iter()
         .copied()
         .chain(["HOW", "WHAT", "WHO"])
+        .chain(extra.iter().map(String::as_str))
     {
         if name == method {
             continue;
@@ -234,11 +240,25 @@ pub(crate) fn method_not_found_message(
     display_type: &str,
     string_invocant: Option<&str>,
 ) -> String {
+    method_not_found_message_with(method, type_name, display_type, string_invocant, &[])
+}
+
+/// [`method_not_found_message`] for a user class: `extra` holds the method
+/// names the class (and its parents and roles) declares, which Rakudo offers
+/// beside the built-in ones (`.^methods(:all)`).
+// Cost: see `suggestions`.
+pub(crate) fn method_not_found_message_with(
+    method: &str,
+    type_name: &str,
+    display_type: &str,
+    string_invocant: Option<&str>,
+    extra: &[String],
+) -> String {
     let mut msg = match string_invocant {
         Some(text) => format!("No such method '{method}' for string '{text}'"),
         None => format!("No such method '{method}' for invocant of type '{display_type}'"),
     };
-    let found = suggestions(method, type_name);
+    let found = suggestions(method, type_name, extra);
     match found.as_slice() {
         [] => {}
         [one] => msg.push_str(&format!(". Did you mean '{one}'?")),
@@ -281,10 +301,10 @@ mod tests {
 
     #[test]
     fn test_suggestions_follow_rakudo() {
-        assert_eq!(suggestions("lazy", "Int"), vec!["any", "say"]);
-        assert_eq!(suggestions("elemz", "Int"), vec!["elems"]);
-        assert!(suggestions("sya", "Int").is_empty());
-        assert!(suggestions("xyz", "Str").is_empty());
+        assert_eq!(suggestions("lazy", "Int", &[]), vec!["any", "say"]);
+        assert_eq!(suggestions("elemz", "Int", &[]), vec!["elems"]);
+        assert!(suggestions("sya", "Int", &[]).is_empty());
+        assert!(suggestions("xyz", "Str", &[]).is_empty());
     }
 
     #[test]

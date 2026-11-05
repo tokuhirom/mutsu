@@ -2390,11 +2390,15 @@ impl Interpreter {
                     ValueView::Package(name) if name.resolve() == "Str" => Some(String::new()),
                     _ => None,
                 };
-                Err(super::methods_signature_errors::make_method_not_found_error_for(
+                // A user class offers its own (and its parents' and roles')
+                // method names in the "Did you mean" tip.
+                let user_methods = self.user_method_names_for_suggestions(&type_name);
+                Err(super::methods_signature_errors::make_method_not_found_error_with(
                     method,
                     &type_name,
                     false,
                     text.as_deref(),
+                    &user_methods,
                 ))
             }
         }
