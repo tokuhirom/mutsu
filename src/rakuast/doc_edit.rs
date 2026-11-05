@@ -159,3 +159,31 @@ pub(crate) fn markup_set_delimiter(
 pub(crate) fn flatten(node: &RakuAstNode) -> Value {
     Value::str(super::doc_str::markup_inner(node))
 }
+
+fn str_field(node: &RakuAstNode, name: &str) -> Option<String> {
+    node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+        (Some(n), RakuAstFieldValue::Node(v)) if *n == name => match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// The letters whose `check-meta` ends in a check of their own (rakudo's
+/// `A`lias, `D`efinition, `E`ntity, `F`ootnote, `L`ink, `M`odule, `P`laceholder
+/// and inde`X` handlers) and so answers `Any`; every other letter answers
+/// `Empty`.
+const META_CHECKED: &str = "ADEFLMPX";
+
+/// `Doc::Markup.check-meta`: the report problems rakudo adds at compile time
+/// do not exist for a hand-built node, so the node is left alone and only the
+/// answer is rakudo's (measured over A-Z, `a` and the empty letter).
+// Cost: O(f), f = fields of the node.
+pub(crate) fn check_meta(node: &RakuAstNode) -> Value {
+    let letter = str_field(node, "letter").unwrap_or_default();
+    match letter.chars().next() {
+        Some(c) if letter.len() == 1 && META_CHECKED.contains(c) => Value::NIL,
+        _ => Value::slip(Vec::new()),
+    }
+}
