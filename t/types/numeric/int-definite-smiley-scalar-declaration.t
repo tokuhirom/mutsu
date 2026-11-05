@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 # A definite native type on a scalar declaration refuses the boxed value
 # assigned to it (rakudo's RakuAST frontend); a parameter of that type binds
