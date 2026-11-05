@@ -16,7 +16,9 @@ impl Value {
             return base.rakuast_replace_body(new_body);
         }
         self.0
-            .with_rakuast_inplace(|node| crate::rakuast::block_queries::replace_body(node, new_body))
+            .with_rakuast_inplace(|node| {
+                crate::rakuast::block_queries::replace_body(node, new_body)
+            })
             .map(|done| done.map(|()| Value::NIL))
     }
 }
