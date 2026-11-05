@@ -34,6 +34,19 @@ impl ClosureTopic {
     }
 }
 
+/// A free variable's state at closure entry, for the exit-time change test
+/// (`Interpreter::free_var_changed`). A cell is recorded by address only: it is
+/// the variable's identity, so holding a handle (clone, compare, drop) bought
+/// nothing.
+// TODO: a cell freed and its address reused by a new cell inside one body would
+// read as unchanged; the caller's frame keeps the old cell alive across the
+// call, so the address cannot be reused while the closure runs.
+enum FreeSnap {
+    Absent,
+    Cell(*const crate::value::ContainerCell),
+    Val(Value),
+}
+
 /// What a value-call site (`$b(...)`, `&b(...)`) knows about its arguments,
 /// for a bare block's implicit `$_`. Every other caller passes the default.
 #[derive(Default)]
@@ -174,13 +187,33 @@ impl Interpreter {
     /// A change of *representation* is a change even when the two compare equal,
     /// so the discriminant is checked first. That only ever adds writebacks the
     /// old test missed, and each of them is a genuine mutation.
-    fn free_var_changed(entry: Option<&Value>, now: Option<&Value>) -> bool {
+    fn free_var_changed(entry: &FreeSnap, now: Option<&Value>) -> bool {
         match (entry, now) {
-            (None, None) => false,
-            (Some(a), Some(b)) => {
+            (FreeSnap::Absent, None) => false,
+            (FreeSnap::Cell(p), Some(b)) => match b.view() {
+                // A cell is the variable's identity and its content is read
+                // and written *through* it, so the binding is unchanged for as
+                // long as the same cell is installed (the old by-value compare
+                // of two handles to one cell was `true` by construction).
+                ValueView::ContainerRef(c) => !std::ptr::eq(crate::gc::Gc::as_ptr(&c), *p),
+                _ => true,
+            },
+            (FreeSnap::Val(a), Some(b)) => {
                 std::mem::discriminant(&a.view()) != std::mem::discriminant(&b.view()) || a != b
             }
             _ => true,
+        }
+    }
+
+    /// Snapshot of one free variable at closure entry (see [`FreeSnap`]).
+    fn free_snap(v: Option<&Value>) -> FreeSnap {
+        match v {
+            None => FreeSnap::Absent,
+            Some(v) => match v.view() {
+                // Cost: O(1). No handle clone, no refcount traffic, no drop.
+                ValueView::ContainerRef(c) => FreeSnap::Cell(crate::gc::Gc::as_ptr(&c)),
+                _ => FreeSnap::Val(v.clone()),
+            },
         }
     }
 
@@ -1261,10 +1294,10 @@ impl Interpreter {
         // the variable's value in this frame's env differing from entry. This is
         // a handful of values, and unlike comparing the env Arc it is immune to
         // the per-statement `?LINE` bookkeeping write that always dirties env.
-        let free_at_entry: Vec<Option<Value>> = cc
+        let free_at_entry: Vec<FreeSnap> = cc
             .free_var_syms
             .iter()
-            .map(|k| self.env().get_sym(*k).cloned())
+            .map(|k| Self::free_snap(self.env().get_sym(*k)))
             .collect();
         // A captured variable that lives in a local slot is flushed to env on
         // exit (above) rather than written through env during the body, so its
@@ -1791,7 +1824,7 @@ impl Interpreter {
             .free_var_syms
             .iter()
             .zip(free_at_entry.iter())
-            .any(|(k, old)| Self::free_var_changed(old.as_ref(), self.env().get_sym(*k)));
+            .any(|(k, old)| Self::free_var_changed(old, self.env().get_sym(*k)));
         // A writable parameter (sigilless `\a`, `is rw`, or `is raw`) bound to a
         // caller-provided container writes the mutation into this frame's env
         // under the *source container's* name (e.g. the synthetic `__mutsu_*`
@@ -1847,7 +1880,7 @@ impl Interpreter {
                         && *k != at_underscore_sym
                         && !param_names.contains(k)
                         && restored_env.contains_key_sym_through_callers(*k)
-                        && Self::free_var_changed(old.as_ref(), self.env().get_sym(*k))
+                        && Self::free_var_changed(old, self.env().get_sym(*k))
                     {
                         self.pending_rw_writeback_sources
                             .push(k.resolve().to_string());
