@@ -411,7 +411,8 @@ impl Interpreter {
             let arg_values = if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
-                self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?
+                let values = self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?;
+                self.mark_rw_regex_args(spec, pkg, values)
             };
             // Establish the subrule's `$*`-twigil parameters for the whole
             // resolve-and-match (see `regex_dynparams`); the wrapper restores.
