@@ -218,7 +218,9 @@ impl NanBox {
                 // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
                 let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
                 let class = attrs.class_name();
-                class == "BOOTInt" || class == "BOOTNum" || class == "BOOTStr"
+                class == crate::symbol::wk::boot_int()
+                    || class == crate::symbol::wk::boot_num()
+                    || class == crate::symbol::wk::boot_str()
             }
             _ => false,
         }

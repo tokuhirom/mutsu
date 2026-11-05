@@ -150,11 +150,14 @@ impl Value {
         let ValueView::Package(name) = self.view() else {
             return None;
         };
-        let hll = match name.as_str() {
-            "BOOTInt" => "Int",
-            "BOOTNum" => "Num",
-            "BOOTStr" => "Str",
-            _ => return None,
+        let hll = if name == crate::symbol::wk::boot_int() {
+            "Int"
+        } else if name == crate::symbol::wk::boot_num() {
+            "Num"
+        } else if name == crate::symbol::wk::boot_str() {
+            "Str"
+        } else {
+            return None;
         };
         Some(Value::package(crate::symbol::Symbol::intern(hll)))
     }

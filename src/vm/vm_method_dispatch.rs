@@ -2488,9 +2488,12 @@ impl Interpreter {
                             }
                         }
                     }
-                    let resolved_constraint = match pd {
-                        Some(pd) => self.resolved_param_constraint(pd, constraint),
-                        None => self.resolved_type_capture_name(constraint),
+                    let resolved_constraint: std::borrow::Cow<'_, str> = match pd {
+                        Some(pd) => self.resolved_param_constraint_cow(pd, constraint),
+                        None => match self.try_resolved_type_capture_name(constraint) {
+                            Some(resolved) => std::borrow::Cow::Owned(resolved),
+                            None => std::borrow::Cow::Borrowed(constraint),
+                        },
                     };
                     // A native-int parameter binds the coerced value -- the
                     // same unbox/wrap the sub binders apply (#9533): an
@@ -2552,7 +2555,7 @@ impl Interpreter {
                     let expected = if smiley.is_some() {
                         base_type
                     } else {
-                        resolved_constraint.as_str()
+                        &*resolved_constraint
                     };
                     // Type mismatch — fall back to slow path for proper error
                     unwind_fast_bind!();
