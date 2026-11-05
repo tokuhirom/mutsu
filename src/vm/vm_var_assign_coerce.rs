@@ -1085,6 +1085,7 @@ impl Interpreter {
             };
             if is_container {
                 let key = MetaNs::BoundDecont.key(name_sym);
+                Self::note_bound_decont_name(name_sym);
                 self.env_mut().insert_sym_noting(key, Value::TRUE);
                 self.bound_decont_active().set(true);
                 return;

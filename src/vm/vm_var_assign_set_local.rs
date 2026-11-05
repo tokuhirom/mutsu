@@ -503,8 +503,9 @@ impl Interpreter {
     /// `JSON::Fast` set it for every program), so it is asked first and the
     /// name's own marker second: the full path removes exactly that key, which
     /// is a no-op when it is absent (#14774).
-    // Cost: O(1): one relaxed load; once the latch is set, one memoized key and
-    // one env probe.
+    // Cost: O(1): one relaxed load; once the latch is set, one more for the
+    // name's own bit, and only a name that ever got a marker pays a memoized key
+    // and an env probe.
     #[inline]
     fn slot_has_bound_decont_marker(&self, code: &CompiledCode, idx: usize) -> bool {
         if !self.bound_decont_active().get() {
@@ -513,6 +514,10 @@ impl Interpreter {
         let Some(&sym) = code.locals_sym.get(idx) else {
             return true;
         };
+        // No marker was ever written under this name: nothing to find or clear.
+        if !Self::bound_decont_name_possible(sym) {
+            return false;
+        }
         matches!(
             self.env()
                 .get_sym(crate::meta_ns::MetaNs::BoundDecont.key(sym))
