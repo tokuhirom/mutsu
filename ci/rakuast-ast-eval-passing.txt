@@ -2552,6 +2552,7 @@ t/lang/double-array-sigil-context.t
 t/lang/double-sigil-hash-term.t
 t/lang/eval-angle-list-whitespace.t
 t/lang/eval-assigns-caller-code-variable.t
+t/lang/eval-bare-block-hoisted-sub-cell.t
 t/lang/eval-callee-cannot-see-callers-my-sub-with-local-type.t
 t/lang/eval-callee-ignores-caller-my-sub-beside-type-decl.t
 t/lang/eval-caller-frames.t
@@ -9121,7 +9122,6 @@ t/vm/scope/dynamic-var-write-through-block-persists.t
 t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
-t/vm/scope/eval-bare-block-hoisted-sub-cell.t
 t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t

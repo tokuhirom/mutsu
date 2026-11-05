@@ -6,4 +6,4 @@ got no capture bucket (`exec_register_sub_op` excluded every `EVAL` unit from th
 arm), so its free `my` fell back to the flat env. A block of such a unit now gets its own
 `UNIT<block ...>` bucket like a block of the program (`in_block_of_eval_unit`). About 23 `t/` files
 that failed as `EVAL(slurp($file).AST)` for this reason join the ratchet.
-`t/vm/scope/eval-bare-block-hoisted-sub-cell.t` pins it.
+`t/lang/eval-bare-block-hoisted-sub-cell.t` pins it.
