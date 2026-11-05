@@ -193,7 +193,7 @@ pub(crate) fn add_config(
     };
     let pairs = list_mut(node, "config");
     let key = key.to_string();
-    pairs.retain(|pair| !matches!(pair.view(), ValueView::Pair(k, _) if k.to_string() == key));
+    pairs.retain(|pair| !matches!(pair.view(), ValueView::Pair(k, _) if *k == key));
     pairs.push(Value::pair(key, value.clone()));
     pairs.sort_by_key(|pair| match pair.view() {
         ValueView::Pair(k, _) => k.to_string(),
