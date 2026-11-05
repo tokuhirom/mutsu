@@ -329,7 +329,7 @@ impl VisitMut for Finalize<'_> {
             && let Ok(body) = crate::parser::interpolate_heredoc_content(content)
         {
             *expr = body;
-            self.visit_expr_mut(expr);
+            crate::ast_visit::walk_expr_mut(self, expr);
             return;
         }
         if !carried::expr_carried(inner) {
