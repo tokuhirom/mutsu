@@ -1061,6 +1061,7 @@ impl Compiler {
                 // Synthesized topic: this is a bare `/regex/`, not `$_ ~~ /regex/`.
                 implicit_topic: bare,
                 boxed_native: false,
+                native_declared: None,
             })),
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.
@@ -1111,6 +1112,7 @@ impl Compiler {
                 // An explicit `m:p(...)/.../` match, not a bare regex.
                 implicit_topic: false,
                 boxed_native: false,
+                native_declared: None,
             })),
             rhs_is_match_regex: false,
             lhs_is_literal: false,

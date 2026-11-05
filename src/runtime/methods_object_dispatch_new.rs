@@ -382,7 +382,7 @@ impl Interpreter {
         self.dispatch_new_ex(target, args, true)
     }
 
-    fn dispatch_new_ex(
+    pub(super) fn dispatch_new_ex(
         &mut self,
         target: Value,
         args: Vec<Value>,
@@ -417,6 +417,12 @@ impl Interpreter {
             && let Some(punned) = self.default_parametric_role_pun(&target)?
         {
             return self.dispatch_new(punned, args);
+        }
+        // `Foo[T].new(...)` on a user subclass of Array (`class Foo is Array`).
+        if let ValueView::Package(name) = target.view()
+            && let Some(result) = self.construct_parameterized_array_subclass(name, &args, skip_user_new)
+        {
+            return result;
         }
         // Collation.new — create a Collation instance with default settings
         if let ValueView::Package(name) = target.view()

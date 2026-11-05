@@ -10,6 +10,7 @@ impl Interpreter {
         &self,
         lhs_var: Option<&String>,
         boxed_native: bool,
+        native_declared: Option<&str>,
         left: &Value,
         right: &Value,
     ) -> Option<bool> {
@@ -45,6 +46,11 @@ impl Interpreter {
         // it); a native parameter or a destructured declaration is not.
         if boxed_native {
             return Some(false);
+        }
+        // A loop parameter has no run-time declared type to look up; the
+        // compiler handed over the one it knows.
+        if let Some(declared) = native_declared {
+            return Some(declared == base);
         }
         let Some(name) = lhs_var else {
             return Some(false);
@@ -89,6 +95,13 @@ impl Interpreter {
                 ..
             })
         );
+        let lhs_native_declared: Option<&str> = match lhs {
+            Some(SmartMatchLhs::Var {
+                native_declared: Some(t),
+                ..
+            }) => Some(t.as_str()),
+            _ => None,
+        };
         let lhs_slot: Option<u32> = match lhs {
             Some(SmartMatchLhs::Var { slot, .. }) => *slot,
             _ => None,
@@ -236,8 +249,13 @@ impl Interpreter {
         // this frame's locals; publish those before matching against it.
         let value_names = Self::smartmatch_value_sync(&left, &right);
         self.apply_smartmatch_sync(code, &value_names);
-        let native_lhs_match =
-            self.direct_native_lhs_match(lhs_var, lhs_boxed_native, &left, &right);
+        let native_lhs_match = self.direct_native_lhs_match(
+            lhs_var,
+            lhs_boxed_native,
+            lhs_native_declared,
+            &left,
+            &right,
+        );
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is

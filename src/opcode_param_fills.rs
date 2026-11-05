@@ -124,6 +124,12 @@ impl CompiledFunction {
                 Vec::new(),
                 crate::value::ValueMap::default(),
             )),
+            // `()` is an immutable empty `List` (`push` dies with `X::Immutable`),
+            // so every call can share one; `[]` (`BracketArray`) and `{}`
+            // (`Hash`) are mutable containers and stay a fresh value per call.
+            Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
+                Some(Value::array(Vec::new()))
+            }
             _ => None,
         }
     }
@@ -259,6 +265,14 @@ mod param_fill_tests {
         // A capture with an element is not.
         let mut pd = param("$y");
         pd.default = Some(Expr::CaptureLiteral(vec![Expr::Var("x".to_string())], true));
+        assert!(CompiledFunction::const_fill_for_param(&pd).is_none());
+
+        // `()` is an immutable empty List and is shared; `[]` and `{}` are not.
+        let mut pd = param("$y");
+        pd.default = Some(Expr::Grouped(Box::new(Expr::ArrayLiteral(Vec::new()))));
+        assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
+        let mut pd = param("$y");
+        pd.default = Some(Expr::BracketArray(Vec::new(), false));
         assert!(CompiledFunction::const_fill_for_param(&pd).is_none());
 
         // A mandatory parameter is not fillable at all.

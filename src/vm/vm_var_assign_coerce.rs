@@ -26,17 +26,7 @@ impl Interpreter {
         if self.typed_container_param_matches(name, &constraint, value, None, None) {
             return Ok(());
         }
-        let got = crate::runtime::utils::value_type_name(value);
-        let repr = self.type_check_got_repr(value);
-        let got = if repr.is_empty() {
-            got.to_string()
-        } else {
-            format!("{got} {repr}")
-        };
-        let message = format!(
-            "Type check failed in binding; expected Positional[{}] but got {}",
-            constraint, got
-        );
+        let message = self.container_binding_message(&format!("Positional[{constraint}]"), value);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("got".to_string(), value.clone());
         attrs.insert(
@@ -114,11 +104,7 @@ impl Interpreter {
         if crate::runtime::Interpreter::type_matches(&constraint, &rhs_value_type) {
             return Ok(());
         }
-        let got = crate::runtime::utils::value_type_name(value);
-        let message = format!(
-            "Type check failed in binding; expected Associative[{}] but got {}",
-            constraint, got
-        );
+        let message = self.container_binding_message(&format!("Associative[{constraint}]"), value);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("got".to_string(), value.clone());
         attrs.insert(
@@ -239,11 +225,12 @@ impl Interpreter {
         if is_associative {
             return Ok(());
         }
-        let got_type = crate::runtime::utils::value_type_name(value);
-        let message = format!(
-            "Type check failed in binding; expected Associative but got {}",
-            got_type
-        );
+        // A typed hash (`my Int %h := ...`) is named by its parameterized type.
+        let expected = match loan_env!(self, var_declared_type_constraint(name)) {
+            Some(c) if !matches!(c.as_str(), "" | "Any" | "Mu") => format!("Associative[{c}]"),
+            _ => "Associative".to_string(),
+        };
+        let message = self.container_binding_message(&expected, value);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("got".to_string(), value.clone());
         attrs.insert(

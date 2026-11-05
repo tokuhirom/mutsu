@@ -2055,6 +2055,15 @@ impl Interpreter {
                     && self.is_method_object_class(&class_name.resolve())
                 {
                     let am = attributes.as_map();
+                    // The invocant is the value its variable holds: a variable
+                    // spread through a capture (`sub k(|c) { $m(|c) }`) arrives
+                    // as its container, which the owner-type test below would
+                    // not recognise as an instance.
+                    let decont_args: Vec<Value> = args
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| if i == 0 { a.clone().into_deref() } else { a.clone() })
+                        .collect();
                     // A Method object obtained from a method table carries the
                     // declaring class and method name alongside its callable
                     // payload. Re-enter ordinary method dispatch for that
@@ -2076,7 +2085,7 @@ impl Interpreter {
                             && matches!(
                                 am.get("__mutsu_lookup_class").map(Value::view),
                                 Some(ValueView::Str(owner))
-                                    if args.first().is_some_and(|inv| (matches!(inv.view(), ValueView::Instance { .. })
+                                    if decont_args.first().is_some_and(|inv| (matches!(inv.view(), ValueView::Instance { .. })
                                         // A type object of a user class binds the
                                         // same way; a core owner's type object
                                         // (`Map.^lookup('new')(MyMap)`) re-enters
@@ -2088,9 +2097,9 @@ impl Interpreter {
                         && !is_multi_candidate
                         && let Some(ValueView::Str(method_name)) =
                             am.get("__mutsu_lookup_method").map(Value::view)
-                        && !args.is_empty()
+                        && !decont_args.is_empty()
                     {
-                        let mut args = args;
+                        let mut args = decont_args;
                         let invocant = args.remove(0);
                         let is_private = matches!(
                             am.get("__mutsu_private_method").map(Value::view),
@@ -2676,9 +2685,14 @@ impl Interpreter {
         else {
             return None;
         };
-        let mut attrs = attributes.to_clone_map();
         // Build sigil map from class attributes to coerce values properly
         let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
+        let initialized: std::collections::HashSet<&str> = class_attrs_info
+            .iter()
+            .filter(|attr| attr.default.is_some() && matches!(attr.sigil, '@' | '%'))
+            .map(|attr| attr.name.as_str())
+            .collect();
+        let mut attrs = attributes.to_clone_map(&|name| initialized.contains(name));
         let sigil_map: HashMap<String, char> = class_attrs_info
             .iter()
             .map(|attr| (attr.name.clone(), attr.sigil))
