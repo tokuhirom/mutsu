@@ -80,7 +80,9 @@ pub(crate) fn from_invocant_list(args: &[Value]) -> Result<Value, RuntimeError> 
     };
     let mut operands = operands.into_iter();
     let Some(invocant) = operands.next() else {
-        return Err(RuntimeError::new("MVMArray: Can't shift from an empty array"));
+        return Err(RuntimeError::new(
+            "MVMArray: Can't shift from an empty array",
+        ));
     };
     let mut fields = vec![RakuAstField {
         name: Some(INVOCANT),
