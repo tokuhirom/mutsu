@@ -79,6 +79,47 @@ fn node_has_only_expression(node: &RakuAstNode) -> bool {
     node.fields.iter().all(|f| f.name == Some("expression"))
 }
 
+/// The `key => value-node` entries of a hash composer whose body is a plain
+/// list of fat arrows (`{a => 1, b => [2]}`), so each value can be literalized
+/// as a node (not as an already evaluated value). `None` for any other body.
+// Cost: O(n), n = entries.
+pub(crate) fn hash_composer_entries(node: &RakuAstNode) -> Option<Vec<(String, Value)>> {
+    if node.class != C::CircumfixHashComposer
+        || node.fields.iter().any(|f| f.name == Some("object-hash"))
+    {
+        return None;
+    }
+    let expression = node
+        .fields
+        .iter()
+        .find(|f| f.name.is_none())
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => rakuast_node_of(v),
+            _ => None,
+        })?;
+    let items: Vec<&RakuAstNode> = if expression.class == C::ApplyListInfix {
+        list(expression, "operands")
+    } else {
+        vec![expression]
+    };
+    let mut entries = Vec::new();
+    for item in items {
+        if item.class != C::FatArrow {
+            return None;
+        }
+        let key = item.fields.iter().find(|f| f.name == Some("key"))?;
+        let RakuAstFieldValue::Node(key) = &key.value else {
+            return None;
+        };
+        let value = item.fields.iter().find(|f| f.name == Some("value"))?;
+        let RakuAstFieldValue::Node(value) = &value.value else {
+            return None;
+        };
+        entries.push((key.to_string_value(), value.clone()));
+    }
+    Some(entries)
+}
+
 /// How a constant node is a list of values to literalize one by one.
 pub(crate) enum ListShape {
     /// A comma list, or an empty `[]`: the operands (none for `[]`).
