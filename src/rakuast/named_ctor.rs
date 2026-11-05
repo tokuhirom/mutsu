@@ -42,15 +42,8 @@ type Arg = (&'static str, Kind, Missing);
 
 /// Names rakudo's `new` accepts that mutsu does not keep, so the bind-time
 /// refusal of an unknown name must let them through. `Statement::For`'s
-/// `otherwise` is dropped by rakudo too (`For` has no such attribute); the rest
-/// rakudo keeps (`Type::Subset`'s `WHY`, read back by `.WHY`) and mutsu does
-/// not yet.
-// TODO(#16773): keep `WHY` as a hidden field with its accessor (and drop the
-// `Type::Subset` entry); until then it is accepted and lost.
-const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[
-    ("RakuAST::Statement::For", "otherwise"),
-    ("RakuAST::Type::Subset", "WHY"),
-];
+/// `otherwise` is dropped by rakudo too (`For` has no such attribute).
+const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[("RakuAST::Statement::For", "otherwise")];
 
 // Cost: O(f), f = declared constructor fields.
 #[cfg(test)]

@@ -61,6 +61,7 @@ mod rakuast_parameter_queries;
 mod rakuast_rakudoc;
 mod rakuast_visit;
 mod rakuast_walk;
+mod rakuast_why;
 pub(crate) mod rakudo_internals;
 pub(crate) mod regex_match;
 pub(crate) mod routine;
@@ -126,6 +127,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_apply_queries::ROWS,
     rakuast_arg_list_queries::ROWS,
     rakuast_block_queries::ROWS,
+    rakuast_why::ROWS,
     rakuast_parameter_queries::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,

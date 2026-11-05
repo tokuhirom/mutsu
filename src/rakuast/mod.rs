@@ -68,6 +68,7 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod stmt_call;
 mod trait_is_constructor;
+pub(crate) mod why_doc;
 mod with_branch;
 use constructor_positional::single_positional_class;
 mod core_term_names;
@@ -2020,9 +2021,24 @@ fn construct_values(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
-    if method == "new" {
-        ctor_names::check_new(class_name, args)?;
+    if method != "new" {
+        return construct_class(names, class_name, method, args);
     }
+    ctor_names::check_new(class_name, args)?;
+    let (rest, doc) = why_doc::split_arg(class_name, args)?;
+    let built = construct_class(names, class_name, method, &rest)?;
+    Ok(match (built, doc) {
+        (Some(built), Some(doc)) => Some(why_doc::attach(built, doc)),
+        (built, _) => built,
+    })
+}
+
+fn construct_class(
+    names: &NameScope,
+    class_name: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<Option<Value>, RuntimeError> {
     if method == "new"
         && let Some(result) = routine_ctor::construct(class_name, args)
     {
@@ -3814,6 +3830,7 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
     infix_func::is_hidden_adverbs(node, field)
         || block_queries::is_bare_marker(node, field)
         || arg_invocant::is_hidden_invocant(node, field)
+        || why_doc::is_hidden(node, field)
         || regex_variable_alias::is_source_field(node, field)
 }
 
