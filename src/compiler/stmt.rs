@@ -1568,7 +1568,9 @@ impl Compiler {
                     && !marks.signature_element
                     && !*is_our
                     && !*is_state
-                    && type_constraint.as_ref().is_some_and(|tc| self.is_native_type_constraint(tc.as_str()))
+                    && type_constraint
+                        .as_ref()
+                        .is_some_and(|tc| self.is_native_type_constraint(tc.as_str()))
                 {
                     self.boxed_native_scalars.insert(name.clone());
                 } else {
