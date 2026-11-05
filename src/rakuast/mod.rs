@@ -91,6 +91,7 @@ pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, 
 }
 pub(crate) mod apply_queries;
 pub(crate) mod arg_list_queries;
+pub(crate) mod block_queries;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
