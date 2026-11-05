@@ -1075,7 +1075,12 @@ impl Compiler {
                 self.with_stmt_root(|c| c.compile_condition_expr(expr));
                 self.suppress_list_var_alias = saved_suppress;
                 self.sunk_list_assign_result = false;
-                if Self::is_start_call(expr) {
+                // Rakudo 6.c never reported a sunk `start` whose exception nobody
+                // looked at; the fatal "Unhandled exception in code scheduled"
+                // report is a 6.d feature.
+                if Self::is_start_call(expr)
+                    && !super::compile_inputs::current_language_version_starts_with("6.c")
+                {
                     self.code.emit(OpCode::MarkPromiseSink);
                 }
                 // Assignment statements are wanted, not sunk (rakudo): storing
