@@ -140,7 +140,7 @@ impl Interpreter {
             .or_else(|| caps.regex_vars().get(&*sigiled))
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .or_else(|| self.env.get(&*sigiled).cloned());
+            .or_else(|| self.env.get(&sigiled).cloned());
         let val = val.map(Value::into_deref);
         if assertion {
             return self.var_assertion_target(val, ignore_case);
