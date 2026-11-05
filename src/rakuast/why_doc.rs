@@ -40,9 +40,8 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
     if leading.is_empty() && trailing.is_empty() {
         return doc_type();
     }
-    let list = |lines: Vec<String>| {
-        RakuAstFieldValue::List(lines.into_iter().map(Value::str).collect())
-    };
+    let list =
+        |lines: Vec<String>| RakuAstFieldValue::List(lines.into_iter().map(Value::str).collect());
     // rakudo's `WHEREFORE` is the declaration itself; a node is a value here,
     // so the doc holds a copy of it (#16783).
     Value::rakuast(Box::new(RakuAstNode {
