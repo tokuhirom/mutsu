@@ -99,6 +99,28 @@ impl Interpreter {
     /// `topic` (`Some(slot)`, or `Some(NOT_A_LOCAL)` for `env`) captures the
     /// frame's `$_` onto the value for `Regex.Bool` (`RegexClosure::topic`):
     /// a local slot by value, an env-held `$_` as its container cell.
+    /// The `Pragma` name under which a regex closure's scope records its
+    /// defining compunit ([`Self::regex_pattern_has_code`]).
+    pub(crate) const REGEX_UNIT_KEY: &'static str = "regex-unit";
+
+    /// Whether a regex literal's pattern text holds code that runs at match
+    /// time: `$( )`, `<{ }>` or a `{ }` block that is not a `{n,m}` quantifier.
+    /// Only decides whether the defining unit is worth carrying.
+    // Cost: O(n), n = pattern length.
+    fn regex_pattern_has_code(base: &Value) -> bool {
+        let ValueView::Regex(p) = base.view() else {
+            return false;
+        };
+        p.contains("$(") || p.contains("<{") || {
+            let b = p.as_bytes();
+            b.iter().enumerate().any(|(i, &c)| {
+                c == b'{'
+                    && b.get(i + 1)
+                        .is_some_and(|n| !n.is_ascii_digit() && !matches!(n, b',' | b'}' | b'*'))
+            })
+        }
+    }
+
     pub(super) fn capture_regex_closure(
         &mut self,
         code: &CompiledCode,
@@ -174,6 +196,18 @@ impl Interpreter {
                     .as_str()
                     .to_string(),
                 Value::TRUE,
+            );
+        }
+        // The code of a regex literal (`$(f())`, `{ f() }`, `<{ f() }>`) runs
+        // wherever the regex is matched, but the routines it names are those
+        // of the compunit it was written in: carry that unit along (#16512).
+        if Self::regex_pattern_has_code(base) {
+            scope.insert(
+                crate::meta_ns::MetaNs::Pragma
+                    .key_for_str(Self::REGEX_UNIT_KEY)
+                    .as_str()
+                    .to_string(),
+                Value::str(self.current_unit.resolve().to_string()),
             );
         }
         // The defining frame's `$_` (see `RegexClosure::topic`): a set local
