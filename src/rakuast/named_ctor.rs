@@ -40,6 +40,18 @@ const DEFAULT_SCOPES: &[(&str, &str)] = &[("RakuAST::VarDeclaration::Term", "my"
 
 type Arg = (&'static str, Kind, Missing);
 
+/// Names rakudo's `new` accepts that mutsu does not keep, so the bind-time
+/// refusal of an unknown name must let them through. `Statement::For`'s
+/// `otherwise` is dropped by rakudo too (`For` has no such attribute); the rest
+/// rakudo keeps (`Type::Subset`'s `WHY`, read back by `.WHY`) and mutsu does
+/// not yet.
+// TODO(#16773): keep `WHY` as a hidden field with its accessor (and drop the
+// `Type::Subset` entry); until then it is accepted and lost.
+const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[
+    ("RakuAST::Statement::For", "otherwise"),
+    ("RakuAST::Type::Subset", "WHY"),
+];
+
 // Cost: O(f), f = declared constructor fields.
 #[cfg(test)]
 pub(super) fn field_names(class: RakuAstClass) -> Vec<&'static str> {
@@ -458,6 +470,23 @@ fn build(
         return Err(RuntimeError::new(format!(
             "{class_name}.new takes named arguments only"
         )));
+    }
+    // A name the class does not take is refused, as rakudo's bind does.
+    for arg in args {
+        let name = match arg.view() {
+            ValueView::Pair(key, _) => key.to_string(),
+            ValueView::ValuePair(key, _) => key.to_string_value(),
+            _ => continue,
+        };
+        if !schema.iter().any(|(known, _, _)| *known == name)
+            && !ACCEPTED_AND_DROPPED
+                .iter()
+                .any(|(class, dropped)| *class == class_name && *dropped == name)
+        {
+            return Err(RuntimeError::new(format!(
+                "Unexpected named argument '{name}' passed"
+            )));
+        }
     }
     let mut fields = Vec::with_capacity(schema.len());
     for &(name, kind, missing) in schema {
