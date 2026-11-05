@@ -209,10 +209,7 @@ impl Interpreter {
                 Value::package(crate::symbol::Symbol::intern("Positional")),
             );
             attrs.insert("symbol".to_string(), Value::str_from(name));
-            attrs.insert(
-                "message".to_string(),
-                Value::str(message.clone()),
-            );
+            attrs.insert("message".to_string(), Value::str(message.clone()));
             let ex = Value::make_instance(
                 crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
                 attrs,
