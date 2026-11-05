@@ -529,6 +529,14 @@ pub(crate) fn stmt_list_with_mode(
                 _ => {}
             }
             crate::parser::decl_doc::attach_unit_stmt(r, &decl);
+            // The statement starts at `unit`; the RakuAST conversion widens
+            // its range over the rest of the unit the declaration holds.
+            if emit_setline && crate::parser::primary::is_within_original_source(r) {
+                stmts.push(Stmt::SetLine(
+                    crate::parser::primary::current_line_number(r),
+                    crate::parser::primary::statement_span(r, after_decl),
+                ));
+            }
             stmts.append(&mut meta_stmts);
             stmts.push(match header {
                 Some((name, header)) => {
