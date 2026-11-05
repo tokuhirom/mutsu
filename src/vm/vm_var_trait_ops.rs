@@ -371,8 +371,9 @@ impl Interpreter {
                         | ValueView::RangeExclStart(..)
                         | ValueView::RangeExclBoth(..)
                         | ValueView::GenericRange { .. } => {
-                            let listed = self.call_method_with_values(raw, "list", Vec::new())?;
-                            if let ValueView::Array(items, _) = listed.view() {
+                            if let ValueView::Array(items, _) =
+                                crate::runtime::coerce_to_array(raw.clone()).view()
+                            {
                                 raw_list = Some(Value::array(items.to_vec()));
                             }
                         }

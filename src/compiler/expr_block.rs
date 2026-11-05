@@ -560,9 +560,9 @@ impl Compiler {
                     // initializer as written, so keep the raw value for
                     // `ApplyVarTrait` before `SetLocal` coerces it.
                     if (name.starts_with('@') || name.starts_with('%'))
-                        && custom_traits.iter().any(|(t, _)| {
-                            t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-                        })
+                        && custom_traits
+                            .iter()
+                            .any(|(t, _)| t.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
                     {
                         self.code.emit(OpCode::StashVarDeclInit);
                     }
