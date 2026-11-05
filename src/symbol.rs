@@ -942,6 +942,11 @@ pub(crate) mod wk {
         /// call no captured candidate accepts goes to the built-in operator
         /// instead of failing (ADR-8751 stage 2).
         multi_dispatch_builtin_fallback => "__mutsu_multi_dispatch_builtin_fallback";
+        /// On the same dispatcher when the imported family carries its own
+        /// `proto sub infix:<op>`: the proto shadows the built-in operator
+        /// (rakudo: only its candidates exist), so a call none of them accepts
+        /// is `X::Multi::NoMatch` rather than the built-in's answer.
+        multi_dispatch_proto_shadows_core => "__mutsu_multi_dispatch_proto_shadows_core";
         /// The `Method` object a `.assuming`-primed method callable invokes
         /// (`$type.^lookup('m').assuming($obj)`), so the call binds its
         /// invocant the way the object's own `CALL-ME` does.

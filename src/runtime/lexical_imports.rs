@@ -100,6 +100,9 @@ pub(crate) struct LexicalImportCapture {
     /// The proto of each family in `multi_defs` whose body does more than
     /// dispatch: the family's dispatcher value runs it.
     protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
+    /// Families that carry a `proto` of any body, an only-star one included
+    /// (which `protos` leaves out): such a proto shadows a built-in operator.
+    declared_protos: std::collections::HashSet<Symbol>,
     /// The variables (in their declaration spelling, `x` / `@a`) the importing
     /// block declares itself, bound to the module's package variables: the
     /// import writes no env alias for them.
@@ -157,6 +160,7 @@ impl Interpreter {
             lexical_defs: HashMap::new(),
             multi_defs: HashMap::new(),
             protos: HashMap::new(),
+            declared_protos: std::collections::HashSet::new(),
             hook_values: HashMap::new(),
             hook_routines: HashMap::new(),
             module_unit,
@@ -268,6 +272,9 @@ impl Interpreter {
             entries.iter().map(|(_, def)| std::sync::Arc::clone(def)).collect();
         defs.sort_by_key(|def| def.decl_order);
         capture.multi_defs.insert(Symbol::intern(name), defs);
+        if proto.is_some() {
+            capture.declared_protos.insert(Symbol::intern(name));
+        }
         if let Some(proto) = proto.filter(|proto| !proto_body_only_dispatches(&proto.body)) {
             capture
                 .protos
@@ -411,7 +418,12 @@ impl Interpreter {
                 // a call none of them accepts is the operator's own.
                 let dispatcher = if extends_builtin_operator(&name.resolve()) {
                     self.note_lexical_operator_candidate_defs(&dispatcher, candidates);
-                    Self::with_builtin_operator_fallback(dispatcher)
+                    let dispatcher = Self::with_builtin_operator_fallback(dispatcher);
+                    if capture.declared_protos.contains(&name) {
+                        Self::with_proto_shadowing_core(dispatcher)
+                    } else {
+                        dispatcher
+                    }
                 } else {
                     dispatcher
                 };

@@ -412,6 +412,21 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// `dispatcher` marked as the family of a user `proto sub infix:<op>`,
+    /// which shadows the built-in operator (`multi_dispatch_proto_shadows_core`).
+    // Cost: O(e), e = the dispatcher's captured env.
+    pub(crate) fn with_proto_shadowing_core(dispatcher: Value) -> Value {
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return dispatcher;
+        };
+        let mut next: crate::value::SubData = (**data).clone();
+        next.env.insert_sym(
+            crate::symbol::wk::multi_dispatch_proto_shadows_core(),
+            Value::TRUE,
+        );
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,
