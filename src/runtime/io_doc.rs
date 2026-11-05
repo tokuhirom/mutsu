@@ -11,6 +11,11 @@ impl Interpreter {
     pub(super) fn install_doc_comments(&mut self, docs: Vec<DocComment>) {
         self.declarator_docs.why_cache.clear();
         self.declarator_docs.why_object_cache.clear();
+        // A variable's documentation is read by the RakuAST model only.
+        let docs: Vec<DocComment> = docs
+            .into_iter()
+            .filter(|dc| dc.kind != DocDeclKind::Variable)
+            .collect();
         self.declarator_docs.doc_comments = docs
             .iter()
             .filter(|dc| !dc.is_anonymous)
@@ -78,6 +83,8 @@ impl Interpreter {
                     DocDeclKind::Param => {
                         Value::package(crate::symbol::Symbol::intern("Parameter"))
                     }
+                    // Left out of the installed table (see `install_doc_comments`).
+                    DocDeclKind::Variable => Value::NIL,
                 });
             let object_id = match wherefore.view() {
                 ValueView::Sub(data) => Some(data.id),
