@@ -195,8 +195,25 @@ fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool, mut lifted: L
 /// Flatten SyntheticBlock wrappers (e.g. from `my $x ~= "o"`).
 /// Only flattens blocks that don't contain MarkReadonly, since those
 /// need to stay as atomic units (e.g. `my $x := 42`).
+///
+/// The exit phasers of a variable's `will leave` / `will keep` / `will undo`
+/// traits (a `SyntheticBlock` holding the declaration and the phasers) are not
+/// left where the declaration is: they go to the FRONT of the level's list, in
+/// source order. The compiler queues a block's exit phasers from the back, so
+/// the front ones run last, i.e. after every `LEAVE { }` block, each group last
+/// declared first, as rakudo orders them.
 fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
+    let is_exit = |stmt: &Stmt| {
+        matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                ..
+            }
+        )
+    };
     let old = std::mem::take(stmts);
+    let mut trait_exits: Vec<Stmt> = Vec::new();
     for stmt in old {
         if let Stmt::SyntheticBlock(ref inner) = stmt {
             let has_mark_readonly = inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(..)));
@@ -206,11 +223,25 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
             if has_mark_readonly || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {
-                stmts.extend(inner);
+                // A `will` expansion: the declaration plus its exit phasers.
+                if inner.iter().any(|s| matches!(s, Stmt::VarDecl { .. }))
+                    && inner.iter().any(is_exit)
+                {
+                    let (exits, rest): (Vec<Stmt>, Vec<Stmt>) =
+                        inner.into_iter().partition(is_exit);
+                    trait_exits.extend(exits);
+                    stmts.extend(rest);
+                } else {
+                    stmts.extend(inner);
+                }
             }
         } else {
             stmts.push(stmt);
         }
+    }
+    if !trait_exits.is_empty() {
+        trait_exits.append(stmts);
+        *stmts = trait_exits;
     }
 }
 
