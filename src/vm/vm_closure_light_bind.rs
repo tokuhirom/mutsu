@@ -95,7 +95,7 @@ impl Interpreter {
         // here — a plain positional `$` parameter is a readonly item binding
         // with no caller container behind it — so the fold itself has nothing
         // to record.
-        self.take_pending_call_arg_sources();
+        self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
 
         // `@_` holds the positionals the signature did NOT consume, which at

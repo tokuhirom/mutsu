@@ -132,7 +132,7 @@ impl Interpreter {
         // (see `closure_light_bind`); `pending_skip_constraint_recheck` describes
         // only the bind it was set for, and there is no `where` here to skip.
         self.pending_skip_constraint_recheck = false;
-        self.take_pending_call_arg_sources();
+        self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
 
         // The real path publishes every positional argument as `@_` (the

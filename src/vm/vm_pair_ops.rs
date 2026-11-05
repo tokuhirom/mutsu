@@ -92,7 +92,7 @@ impl Interpreter {
             ..
         } = right.view()
         {
-            let source_name = source_name.resolve();
+            let source_name = source_name.as_str();
             let inner = inner.clone();
             let slot_hint = right.varref_slot();
             // `box_type_objects` is set: an UNINITIALIZED declared scalar
@@ -103,11 +103,11 @@ impl Interpreter {
             // through to, and the write was faked by rebinding `$p`'s own env
             // entry: the Pair printed `k => 5` while `$x` stayed `Int`.
             right = if named {
-                let cell = self.capture_rw_arg_cell(code, &source_name, inner, slot_hint);
-                self.register_container_cell_constraint_for_name(&cell, &source_name);
+                let cell = self.capture_rw_arg_cell(code, source_name, inner, slot_hint);
+                self.register_container_cell_constraint_for_name(&cell, source_name);
                 cell
             } else {
-                self.capture_var_cell_boxing_type_objects(code, &source_name, inner, slot_hint)
+                self.capture_var_cell_boxing_type_objects(code, source_name, inner, slot_hint)
             };
         }
         (left, right)

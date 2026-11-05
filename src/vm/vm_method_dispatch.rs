@@ -2661,7 +2661,7 @@ impl Interpreter {
         // `["off", None]` from `self.rs($off, 1)` matched its two-argument arity
         // and bound `off` as a shared cell in the env, which the caller's slot
         // never adopted (the ADR-0097 §15 divergence, #16037).
-        drop(self.take_pending_call_arg_sources());
+        self.discard_pending_call_arg_sources();
         // A typed scalar `is copy` parameter is the method's own writable
         // variable: a store into it checks its declared type, which the
         // general binder records in the callee frame and this one did not
