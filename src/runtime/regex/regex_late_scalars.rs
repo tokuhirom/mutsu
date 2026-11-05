@@ -129,9 +129,10 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
 
 impl super::super::Interpreter {
     /// Whether a `$name` after a code block should be read at match time: the
-    /// variable is a lexical scalar holding a plain value or a regex, which
-    /// `VarInterp` matches exactly as the splice did. Anything else (a list, a
-    /// callable, a junction, an unbound name) keeps the splice path.
+    /// variable is a lexical scalar holding a plain value, a list (matched as its
+    /// string), a junction (an alternation) or a regex, which `VarInterp`
+    /// matches exactly as the splice did. Anything else (a callable, an unbound
+    /// name) keeps the splice path.
     // Cost: O(1).
     pub(crate) fn late_scalar_reads_at_match_time(&self, name: &str, allow_regex: bool) -> bool {
         use crate::value::ValueView;
@@ -147,6 +148,8 @@ impl super::super::Interpreter {
                 ValueView::Str(_)
                     | ValueView::Int(_)
                     | ValueView::Num(_)
+                    | ValueView::Array(..)
+                    | ValueView::Junction { .. }
                     | ValueView::Nil
             ) || (allow_regex
                 && matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)))
