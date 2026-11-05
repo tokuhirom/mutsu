@@ -14,7 +14,7 @@ pub(crate) fn directives_count_message(fmt: &str, args_used: usize, args_have: u
         n => (n.to_string(), "arguments", "were"),
     };
     let hint = if args_have < args_used {
-        "  Are you using an interpolated '$'?"
+        " Are you using an interpolated '$'?"
     } else {
         ""
     };
