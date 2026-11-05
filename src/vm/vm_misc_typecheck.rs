@@ -341,6 +341,28 @@ impl Interpreter {
         // Native types cannot hold Nil/type objects — reject them.
         // A user subset spelled like a native type shadows it (#12359).
         let shadowed_by_subset = self.constraint_is_user_subset(base_constraint);
+        // A definite native type (`my int:D $n = 3`) takes no value at all:
+        // what is assigned is a boxed `Int`/`Num`/`Str`, which is not the
+        // `int:D` of the declaration (rakudo's RakuAST frontend, the oracle,
+        // reports "expected int:D but got Int (3)"). A native *parameter* of
+        // that type binds the value unboxed, so only the declaration is
+        // refused here.
+        if !bind_mode
+            && !shadowed_by_subset
+            && !value.is_nil()
+            && crate::runtime::types::strip_type_smiley(constraint).1 == Some(":D")
+            && (crate::runtime::native_types::is_native_int_type(base_constraint)
+                || matches!(base_constraint, "num" | "num32" | "num64" | "str"))
+        {
+            // No initializer: the value seen is the type's default, and the
+            // declaration is what rakudo refuses.
+            if !has_explicit_initializer {
+                return Err(RuntimeError::missing_initializer(
+                    constraint, "variable", None,
+                ));
+            }
+            return Err(self.typecheck_assignment_failure(constraint, &value, var_name));
+        }
         if !shadowed_by_subset && crate::runtime::native_types::is_native_int_type(base_constraint)
         {
             if value.is_nil() {
