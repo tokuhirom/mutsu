@@ -544,9 +544,6 @@ impl Interpreter {
         if !key.starts_with('@') {
             return;
         }
-        // ADR-0129: a live child that captured the binding this declaration
-        // replaces keeps it — lane included — before the lane is cleared.
-        self.threads.shared_vars.retire_binding(key);
         let atomic_key = atomic_lane_str_key(key, false);
         self.threads.shared_vars.remove(atomic_key);
     }
@@ -559,8 +556,6 @@ impl Interpreter {
         if !key.starts_with('%') {
             return;
         }
-        // See `clear_atomic_array_state` (ADR-0129).
-        self.threads.shared_vars.retire_binding(key);
         let atomic_key = atomic_lane_str_key(key, true);
         self.threads.shared_vars.remove(atomic_key);
     }

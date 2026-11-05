@@ -260,6 +260,11 @@ rejected). Run `scripts/dev gate --full` before publishing a slice.
 
 ### Slice 4 (#16599) - the spawn seeds nothing user-lexical; delete the masks
 
+Status: landed. Measured findings: a scalar holding a Seq/Slip needed the
+declaration cell (the `box_captured_lexicals` shape refusal was lifted for
+them); Channel/Promise/Lock scalars are shared by the env clone itself; the
+opaque remainder is still seeded as described here.
+
 - `clone_for_thread_excluding`: skip every plain user lexical (all sigils) in
   the seeding loop except names in slice 5's opaque predicate. Delete
   `block_captured_scalars`' exclusion bookkeeping that only served the

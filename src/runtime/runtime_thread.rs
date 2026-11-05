@@ -3,197 +3,6 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
-    /// The scalar lexicals a spawned block captures itself, as bare env keys.
-    ///
-    /// These are exactly the names the closure machinery already owns per
-    /// binding, so `clone_for_thread_for_block` keeps them out of the
-    /// name-keyed `shared_vars` lane (PLAN.md §6). A name the block does NOT
-    /// capture is invisible to that analysis — a `submethod DESTROY`, a
-    /// `closing => {...}` handler, or any other separately-registered routine
-    /// that closes over an outer lexical and runs on the worker — so it keeps
-    /// using the name lane.
-    fn block_captured_scalars(&self, block: &Value) -> std::collections::HashSet<String> {
-        let mut out = std::collections::HashSet::new();
-        if let ValueView::Sub(data) = block.view()
-            && let Some(cc) = data.compiled_code.as_ref()
-        {
-            // The block's own free variables, plus those of the closures it
-            // calls through a variable it captures (`my $work = { ... };
-            // start { $work() }`): the call reads `$work`'s free variables on
-            // the worker too, and they are not in this block's code, so
-            // without them a scalar written by that closure (`$done` under a
-            // `Lock.protect`) stayed on the name lane and resolved to another
-            // iteration's binding.
-            let mut free: Vec<crate::symbol::Symbol> = cc.free_var_syms.to_vec();
-            let mut seen_subs: Vec<*const ()> = Vec::new();
-            let mut i = 0;
-            while i < free.len() && free.len() < 512 {
-                let sym = free[i];
-                i += 1;
-                let sname = sym.resolve();
-                let bare = sname.trim_start_matches(['$', '&']);
-                if let Some(v) = self.env.get(bare).or_else(|| self.env.get(&sname))
-                    && let ValueView::Sub(inner) = v.deref_container().view()
-                    && let Some(icc) = inner.compiled_code.as_ref()
-                {
-                    let key = std::sync::Arc::as_ptr(icc) as *const ();
-                    if seen_subs.contains(&key) {
-                        continue;
-                    }
-                    seen_subs.push(key);
-                    for extra in &icc.free_var_syms {
-                        if !free.contains(extra) {
-                            free.push(*extra);
-                        }
-                    }
-                }
-            }
-            for sym in &free {
-                let name = sym.resolve();
-                if name.starts_with('@') || name.starts_with('%') {
-                    // ADR-12204 S2: a plain `@`/`%` lexical that already lives in
-                    // a shared cell is captured by that cell: no lane entry.
-                    if self.aggregate_cell_captured(&name) {
-                        out.insert(name.to_string());
-                    }
-                    continue;
-                }
-                if name.starts_with('&') {
-                    continue;
-                }
-                let bare = name.trim_start_matches('$');
-                // A name a registered class/role method writes keeps the name
-                // lane: that write is invisible to the capture analysis, so the
-                // closure machinery does NOT own the name after all. Applies
-                // whether or not the local got a cell — roast
-                // S12-construction/roles-6e.t's `$order` holds a List, a shape
-                // `box_captured_lexicals` declines to box at all.
-                if self.lexicals.type_body_written_lexicals.contains(bare) {
-                    continue;
-                }
-                // ADR-0023: a name currently bound as a for-loop parameter is a
-                // fresh, readonly, per-iteration binding — the spawn-time env
-                // clone is its correct per-binding home for ANY value type.
-                // Keeping it off the lane is what lets two sibling iterations'
-                // spawns each hold their own value
-                // (todo/deep/concurrent-for-loop-siblings-...).
-                if self
-                    .topic_state
-                    .active_loop_param_names
-                    .iter()
-                    .any(|s| s.contains(bare))
-                {
-                    out.insert(bare.to_string());
-                    continue;
-                }
-                // The same holds for any other readonly binding live in the
-                // spawning frame — a routine, method or pointy-block parameter
-                // (`-> $job { start { await $g; $job.id } }`): it can never be
-                // reassigned, so the spawn-time clone cannot miss a write, and
-                // leaving it on the lane let an unrelated same-named lexical (a
-                // caller's loop `my $job`) be pulled over it at the worker's
-                // next sync point. `mask_thread_redeclared_params` covers this
-                // only once the shared store is active; the first spawn of a
-                // program happens before that, so the mask alone misses it.
-                if self.is_readonly(&name) || self.is_readonly(bare) {
-                    out.insert(bare.to_string());
-                    continue;
-                }
-                // Only a genuinely PLAIN scalar is owned per binding by the
-                // closure machinery — either boxed into a shared cell by
-                // `box_captured_lexicals` or correctly frozen by value. An
-                // ALLOW-list, deliberately: everything else (a Channel, a
-                // Promise, a Lock, an Array/List/Hash, a Sub, a type object, ...)
-                // is a shape `box_captured_lexicals` declines to box, so the name
-                // lane is still the only thing keeping the parent and the worker
-                // on ONE object. Dropping it for those hangs
-                // `my $c = Channel.new; start { $c.send(42) }; $c.receive`
-                // (pin: t/concurrency-threading.t test 4).
-                let plain = self
-                    .env
-                    .get(bare)
-                    .or_else(|| self.env.get(&name))
-                    .is_some_and(|v| {
-                        matches!(
-                            v.view(),
-                            ValueView::Int(_)
-                                | ValueView::BigInt(_)
-                                | ValueView::Num(_)
-                                | ValueView::Str(_)
-                                | ValueView::Bool(_)
-                                | ValueView::Rat(..)
-                                | ValueView::FatRat(..)
-                                | ValueView::BigRat(..)
-                                | ValueView::Complex(..)
-                                | ValueView::ContainerRef(_)
-                        )
-                    });
-                if !plain {
-                    continue;
-                }
-                out.insert(bare.to_string());
-            }
-            // An `@`/`%` free variable that the env-level parameter binding path
-            // bound — a destructuring sub-signature (`-> [$a, @K]`) or a
-            // runtime-invoked callback's plain parameter (`reduce -> $h,
-            // @words`) — is a fresh per-invocation binding, not the one shared
-            // object the name lane represents. Left on the lane it is seeded
-            // once and frozen at the first spawn's value, so
-            // `map -> [$a, @K] { start { @K[0] } }, ...` and
-            // `reduce -> $h, @words { $h + await start { [+] @words } }, ...`
-            // had every worker read the first binding's value.
-            //
-            // What narrows this to exactly that case is that the container
-            // `param_bound_aggregates` recorded for the name must be the SAME
-            // container the env currently holds — so an unrelated outer
-            // aggregate that merely shares the name (or a later `my` re-binding
-            // of it), and its `__mutsu_atomic_*` CAS copies, keep the lane
-            // exactly where `docs/recursive-start-shared-vars.md` requires.
-            //
-            // This deliberately does NOT also require the free variable to
-            // resolve to no parent slot. That extra condition once stood in for
-            // "the env-level binder is the only parameter path that writes
-            // `env` without a local slot behind it", but the property that
-            // matters is being a PARAMETER binding, not how it is stored: a
-            // slot-bound `@`/`%` parameter (`sub f(@P) { start { @P[0] } }`, and
-            // now `-> @P { start { @P[0] } }` too, since a one-parameter pointy
-            // block keeps its sigil and gets a real `ParamDef`) is just as
-            // fresh per invocation, and leaving it on the once-seeded name lane
-            // froze every worker at the first call's argument.
-            //
-            // Nor does it require the block to NAME the parameter (#10031).
-            // A parameter the block never mentions was still seeded, as an
-            // ADR-0039 §8.6 transient entry, and the spawning frame's own later
-            // `%g{$k} = ...` then saw the name in the store and took the atomic
-            // hash lane, which writes a COPY and rebinds `%g` to it — detaching
-            // the parameter from the caller's container it aliases:
-            // `sub mk(%g) { -> $k { %g{$k} = 1; start { 1 } } }` lost every
-            // store after the first spawn. Being a per-invocation binding does
-            // not depend on who names it, and the parameter's own container is
-            // already what every alias holds, so no lane is needed to reach it.
-            // The frame's env may hold the parameter boxed in the closure
-            // machinery's `ContainerRef` cell, so compare through it.
-            //
-            // Every live binding of the name counts, not just the latest one:
-            // two closures made by one routine, each capturing its `%g` bound
-            // to a different caller hash, both hold a parameter binding, and
-            // letting the older one onto the lane merged both closures' stores
-            // into one copy (#10076). `ParamBoundAggregates` records them
-            // weakly, so it neither pins arguments alive nor mistakes a reused
-            // address for a recorded one.
-            for name in self.lexicals.param_bound_aggregates.names() {
-                if self
-                    .env
-                    .get(name)
-                    .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(name, cur))
-                {
-                    out.insert(name.clone());
-                }
-            }
-        }
-        out
-    }
-
     /// ADR-12204 S2: whether the `@`/`%` lexical `name` (with sigil) is held in
     /// a shared `ContainerRef` cell by the spawning frame and may therefore be
     /// captured by that cell instead of the name-keyed lane. Opaque names (a
@@ -245,10 +54,9 @@ impl Interpreter {
     }
 
     /// [`Self::clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
-    /// `Promise.start`, `Thread.start`): the block's own captured scalars are
-    /// excluded from the name-keyed shared store. See `block_captured_scalars`.
+    /// `Promise.start`, `Thread.start`). The block only feeds the ADR-12204
+    /// capture oracle: no plain user lexical is published by the spawn.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
-        let captured = self.block_captured_scalars(block);
         if crate::runtime::shared_store::capture_check::enabled() {
             // ADR-12204 S1: the aggregates this spawn's block names.
             if let ValueView::Sub(data) = block.view()
@@ -262,22 +70,22 @@ impl Interpreter {
                     .map(|sym| sym.resolve())
                     .filter(|name| name.starts_with(['@', '%']))
                     .collect();
+                let cells: Vec<String> = names
+                    .iter()
+                    .filter(|name| self.aggregate_cell_captured(name))
+                    .cloned()
+                    .collect();
                 crate::runtime::shared_store::capture_check::record_spawn_captures(&names);
+                crate::runtime::shared_store::capture_check::record_cell_captures(&cells);
             }
-            crate::runtime::shared_store::capture_check::record_cell_captures(&captured);
         }
-        self.clone_for_thread_excluding(&captured)
+        self.clone_for_thread()
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
-    pub(crate) fn clone_for_thread(&mut self) -> Self {
-        self.clone_for_thread_excluding(&std::collections::HashSet::new())
-    }
-
-    /// The workhorse behind every thread clone.
     ///
     /// Most of what this builds is cheap, and deliberately so: the program-global
     /// symbol tables it carries over are `Arc<...>` copy-on-write shares (see the
@@ -287,10 +95,7 @@ impl Interpreter {
     /// Cro's stack loaded, the identical `Promise(supply { whenever ... })` that
     /// `Cro::MessageWithBody.body-blob` builds cost 5x what it costs in a bare
     /// program, purely because there were more modules to copy tables for.
-    fn clone_for_thread_excluding(
-        &mut self,
-        captured_scalars: &std::collections::HashSet<String>,
-    ) -> Self {
+    pub(crate) fn clone_for_thread(&mut self) -> Self {
         // ADR-12204 S1 oracle: the lane writes below seed the spawner's
         // lexicals; they are not uses of the names.
         let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();

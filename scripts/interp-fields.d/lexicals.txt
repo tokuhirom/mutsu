@@ -23,7 +23,6 @@ our_scalar_cell_names
 our_var_unqualified
 our_vars
 package_lexicals
-param_bound_aggregates
 pending_nested_state_scope
 process_dynamics
 readonly_frames

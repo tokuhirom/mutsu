@@ -2,197 +2,6 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::Value;
 
-/// Minimal `ParamDef` for a plain scalar parameter (not slurpy, no default,
-/// no traits) -- everything `mask_thread_redeclared_params` and the ordinary
-/// call-binding path actually look at for this test. Mirrors
-/// `parser::stmt::sub_param::helpers::make_param`.
-fn scalar_param(name: &str) -> crate::ast::ParamDef {
-    crate::ast::ParamDef { does_target: Default::default(), implicit_invocant: Default::default(), target: Default::default(), spans: Default::default(), trait_meta: Default::default(),
-        type_capture: None,
-        name: name.to_string(),
-        default: None,
-        multi_invocant: true,
-        required: false,
-        named: false,
-        named_alias: false,
-        slurpy: false,
-        double_slurpy: false,
-        onearg: false,
-        sigilless: false,
-        type_constraint: None,
-        literal_value: None,
-        sub_signature: None,
-        where_constraint: None,
-        traits: Vec::new(),
-        optional_marker: false,
-        outer_sub_signature: None,
-        code_signature: None,
-        is_invocant: false,
-        shape_constraints: None,
-        block_param: false,
-        code: Default::default(),
-        trait_args: Vec::new(),
-    }
-}
-
-/// Pins the fix for
-/// `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md`:
-/// `ThreadParamMaskGuard` (`vm::vm_call_state_guard`) must undo exactly the
-/// masking `mask_thread_redeclared_params` applied, even when a Rust panic
-/// unwinds straight through the guarded call instead of returning normally --
-/// the scenario a plain `unmask_thread_redeclared_params(...)` statement
-/// (skipped entirely by an unwind) could not handle.
-#[test]
-fn thread_param_mask_guard_restores_on_panic_unwind() {
-    let mut interp = Interpreter::new();
-    interp.threads.shared_vars_active = true;
-
-    let param_defs = [scalar_param("$desc")];
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
-            &mut interp,
-            param_defs.iter(),
-            &[],
-        );
-        assert!(
-            interp
-                .threads
-                .thread_redeclared_vars
-                .borrow()
-                .contains("desc"),
-            "the guard's constructor must mask the parameter's bare name"
-        );
-        assert!(
-            interp
-                .threads
-                .thread_param_shadow_vars
-                .borrow()
-                .contains("desc"),
-            "and the parameter-shadow companion set too"
-        );
-        // Simulate a genuine Rust panic raised deep inside the guarded call's
-        // body, e.g. the integer-overflow/index-OOB panics the
-        // t/*panic-boundary*.t suite triggers with `@a[2**64 - 1] = 1`.
-        panic!("simulated panic mid-call, like an integer-overflow op");
-    }));
-    assert!(
-        result.is_err(),
-        "the panic must propagate out of catch_unwind (this test isn't about \
-         swallowing it, only about what state survives)"
-    );
-
-    assert!(
-        !interp
-            .threads
-            .thread_redeclared_vars
-            .borrow()
-            .contains("desc"),
-        "ThreadParamMaskGuard::drop must undo the mask even when the guarded \
-         call unwound via panic instead of returning normally"
-    );
-    assert!(
-        !interp
-            .threads
-            .thread_param_shadow_vars
-            .borrow()
-            .contains("desc"),
-        "same for the parameter-shadow companion set"
-    );
-}
-
-/// The non-panicking case still works exactly as before: a normal drop (at
-/// scope end here) undoes the mask too.
-#[test]
-fn thread_param_mask_guard_restores_on_normal_drop() {
-    let mut interp = Interpreter::new();
-    interp.threads.shared_vars_active = true;
-
-    let param_defs = [scalar_param("$desc")];
-
-    {
-        let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
-            &mut interp,
-            param_defs.iter(),
-            &[],
-        );
-        assert!(
-            interp
-                .threads
-                .thread_redeclared_vars
-                .borrow()
-                .contains("desc")
-        );
-        assert!(
-            interp
-                .threads
-                .thread_param_shadow_vars
-                .borrow()
-                .contains("desc")
-        );
-    }
-
-    assert!(
-        !interp
-            .threads
-            .thread_redeclared_vars
-            .borrow()
-            .contains("desc")
-    );
-    assert!(
-        !interp
-            .threads
-            .thread_param_shadow_vars
-            .borrow()
-            .contains("desc")
-    );
-}
-
-/// An ancestor frame's own mask on the same bare name must survive an inner
-/// guard's drop -- `ThreadParamMask` records only the names THIS mask added
-/// (see its doc comment), so unmasking must not remove a name that was
-/// already masked by someone else.
-#[test]
-fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
-    let mut interp = Interpreter::new();
-    interp.threads.shared_vars_active = true;
-    interp
-        .threads
-        .thread_redeclared_vars
-        .borrow_mut()
-        .insert("desc".to_string());
-    interp
-        .threads
-        .thread_param_shadow_vars
-        .borrow_mut()
-        .insert("desc".to_string());
-
-    let param_defs = [scalar_param("$desc")];
-    {
-        let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
-            &mut interp,
-            param_defs.iter(),
-            &[],
-        );
-    }
-
-    assert!(
-        interp
-            .threads
-            .thread_redeclared_vars
-            .borrow()
-            .contains("desc"),
-        "an ancestor frame's own mask on the same name must survive"
-    );
-    assert!(
-        interp
-            .threads
-            .thread_param_shadow_vars
-            .borrow()
-            .contains("desc"),
-        "same for the parameter-shadow companion set"
-    );
-}
 /// The incidental locals -> env mirrors (the I/O pre-sync before
 /// Say/Put/Print/Note, and the regex interpolation pre-sync) must reach
 /// `env` WITHOUT touching the cross-thread lane. The lane is keyed by bare
@@ -207,7 +16,7 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
     interp
         .threads
         .shared_vars
-        .declare("url", Value::str("lane".to_string()));
+        .set("url", Value::str("lane".to_string()));
 
     interp.threads.suppress_shared_publish = true;
     interp.set_shared_var_sym("url", None, Value::str("frame-local".to_string()));
@@ -247,7 +56,7 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
     interp
         .threads
         .shared_vars
-        .declare("url", Value::str("lane".to_string()));
+        .set("url", Value::str("lane".to_string()));
 
     interp.set_shared_var_sym("url", None, Value::str("assigned".to_string()));
 
@@ -277,7 +86,7 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     interp
         .threads
         .shared_vars
-        .declare("guard", Value::str("seed".to_string()));
+        .set("guard", Value::str("seed".to_string()));
 
     interp.enter_critical_section();
     interp.set_shared_var_sym("guard", None, Value::str("inner".to_string()));
@@ -298,51 +107,6 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     interp.leave_critical_section();
 }
 
-/// A thread's own binding (a name it re-declared, or captured from its spawn)
-/// is not refreshed from a critical-section entry the PARENT lineage committed
-/// under the same bare name: that entry belongs to another binding of the name
-/// (Red's `Guard.start`: the worker's `$guard` became an earlier call's guard
-/// after its first `GuardRecord.^create`, so its `$guard.commit` found a
-/// committed scope). A name it has not made its own is still refreshed.
-#[test]
-fn critical_section_refresh_skips_a_name_the_thread_made_its_own() {
-    let mut interp = Interpreter::new();
-    interp.threads.shared_vars_active = true;
-    let parent_lane = interp.threads.shared_vars.clone();
-    parent_lane.declare("guard", Value::str("seed".to_string()));
-    parent_lane.declare("total", Value::str("seed".to_string()));
-    interp.threads.shared_vars = crate::runtime::shared_store::SharedStore::child_of(&parent_lane);
-
-    // Another lineage commits both names inside a critical section.
-    parent_lane.set("guard", Value::str("stale-binding".to_string()));
-    parent_lane.set("total", Value::str("committed".to_string()));
-    interp.mark_critical_dirty("guard");
-    interp.mark_critical_dirty("total");
-
-    interp.env.insert("guard".to_string(), Value::str("mine".to_string()));
-    interp.env.insert("total".to_string(), Value::str("stale-copy".to_string()));
-    interp
-        .threads
-        .thread_redeclared_vars
-        .borrow_mut()
-        .insert("guard".to_string());
-
-    interp.enter_critical_section();
-
-    let read = |interp: &Interpreter, name: &str| {
-        interp.env.get(name).and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ => None,
-        })
-    };
-    assert_eq!(read(&interp, "guard"), Some("mine".to_string()));
-    assert_eq!(
-        read(&interp, "total"),
-        Some("committed".to_string()),
-        "a shared name another thread committed is still refreshed"
-    );
-    interp.leave_critical_section();
-}
 
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
     interp.mark_atomic_var_seen(name);
@@ -350,8 +114,8 @@ fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str)
     interp
         .threads
         .shared_vars
-        .declare(&name_key, Value::str(value_key.to_string()));
-    interp.threads.shared_vars.declare(value_key, Value::int(1));
+        .set(&name_key, Value::str(value_key.to_string()));
+    interp.threads.shared_vars.set(value_key, Value::int(1));
     interp.mark_shared_var_dirty(name);
     interp.mark_shared_var_dirty(value_key);
 }
@@ -405,11 +169,11 @@ fn protect_sync_leaves_a_sigilless_binding_alone() {
     interp
         .threads
         .shared_vars
-        .declare("\\type", Value::str("stale".to_string()));
+        .set("\\type", Value::str("stale".to_string()));
     interp
         .threads
         .shared_vars
-        .declare("count", Value::str("shared".to_string()));
+        .set("count", Value::str("shared".to_string()));
     interp.env.insert("\\type".to_string(), Value::str("live".to_string()));
     interp.env.insert("count".to_string(), Value::str("live".to_string()));
 

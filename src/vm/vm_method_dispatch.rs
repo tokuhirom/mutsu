@@ -2386,12 +2386,11 @@ impl Interpreter {
                 // A plain `@x`/`%x` binds the caller's container itself
                 // (admitted per call by `method_aggregate_args_light`),
                 // de-itemized like the general binder's `@`/`%` bind.
-                if let Some(pd) = pd
-                    .filter(|pd| crate::opcode::FastParamCheck::light_aggregate_sigil(pd).is_some())
-                {
+                if pd.is_some_and(|pd| {
+                    crate::opcode::FastParamCheck::light_aggregate_sigil(pd).is_some()
+                }) {
                     val =
                         crate::runtime::types::unwrap_varref_value(val).deitemize_for_sigil_bind();
-                    self.note_param_bound_aggregate(&pd.name, &val);
                     let source = self
                         .pending_call_arg_sources()
                         .and_then(|sources| sources.get(arg_idx))

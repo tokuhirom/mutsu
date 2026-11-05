@@ -71,7 +71,6 @@ mod nqp_ops_unicode;
 pub(crate) mod nqp_pure;
 mod nqp_radix;
 mod onlystar;
-mod param_bound_aggregates;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_body;
 pub(crate) mod cstruct_layout;
