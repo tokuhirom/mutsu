@@ -110,6 +110,7 @@ pub(super) const fn opaque(
                 "RakuAST::ApplyInfix",
                 "RakuAST::Routine",
                 "RakuAST::Parameter",
+                "RakuAST::Name",
             ],
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
