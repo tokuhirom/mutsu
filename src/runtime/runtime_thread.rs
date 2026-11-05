@@ -219,41 +219,6 @@ impl Interpreter {
         })
     }
 
-    /// The plain-lexical `@`/`%` containers a spawned block's compiled subtree
-    /// actually names, or `None` when the spawn has no known block (the
-    /// block-less [`clone_for_thread`](Self::clone_for_thread) entry point,
-    /// used by supply drivers, `.then`, socket and proc readers).
-    ///
-    /// ADR-0039 §8.6 uses this to decide *how long* a container's bare-name
-    /// lane entry is needed, NOT whether to create one. A container the block
-    /// names is genuinely shared and keeps the lane for good. A container it
-    /// never names still gets an entry — a routine the block *calls* may reach
-    /// it, which no analysis over the block's own free variables can see — but
-    /// that entry is marked transient and retired at the next cross-thread
-    /// drain. `free_var_syms` already folds up nested closures
-    /// (`compute_free_vars`, "Fold nested closures"), so
-    /// `start { start { @a.push(1) } }` keeps `@a` permanently.
-    fn block_referenced_containers(block: &Value) -> Option<std::collections::HashSet<String>> {
-        let mut out = std::collections::HashSet::new();
-        if let ValueView::Sub(data) = block.view()
-            && let Some(cc) = data.compiled_code.as_ref()
-        {
-            for sym in cc
-                .free_var_syms
-                .iter()
-                .chain(cc.free_var_writes.iter())
-                .chain(cc.free_var_container_writes.iter())
-            {
-                let name = sym.resolve();
-                if name.starts_with(['@', '%']) {
-                    out.insert(name);
-                }
-            }
-            return Some(out);
-        }
-        None
-    }
-
     /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6
     /// transient-lane rule applies to. Twigil'd, dynamic and attribute
     /// containers (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep
@@ -284,19 +249,24 @@ impl Interpreter {
     /// excluded from the name-keyed shared store. See `block_captured_scalars`.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
         let captured = self.block_captured_scalars(block);
-        // ADR-0039 §8.6: which containers this block names decides whether its
-        // lane entry is durable or transient. See `block_referenced_containers`.
-        let containers = Self::block_referenced_containers(block);
         if crate::runtime::shared_store::capture_check::enabled() {
             // ADR-12204 S1: the aggregates this spawn's block names.
-            crate::runtime::shared_store::capture_check::record_spawn_captures(
-                containers.iter().flatten(),
-            );
-        }
-        if crate::runtime::shared_store::capture_check::enabled() {
+            if let ValueView::Sub(data) = block.view()
+                && let Some(cc) = data.compiled_code.as_ref()
+            {
+                let names: Vec<String> = cc
+                    .free_var_syms
+                    .iter()
+                    .chain(cc.free_var_writes.iter())
+                    .chain(cc.free_var_container_writes.iter())
+                    .map(|sym| sym.resolve())
+                    .filter(|name| name.starts_with(['@', '%']))
+                    .collect();
+                crate::runtime::shared_store::capture_check::record_spawn_captures(&names);
+            }
             crate::runtime::shared_store::capture_check::record_cell_captures(&captured);
         }
-        self.clone_for_thread_excluding(&captured, containers.as_ref())
+        self.clone_for_thread_excluding(&captured)
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
@@ -304,7 +274,7 @@ impl Interpreter {
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
-        self.clone_for_thread_excluding(&std::collections::HashSet::new(), None)
+        self.clone_for_thread_excluding(&std::collections::HashSet::new())
     }
 
     /// The workhorse behind every thread clone.
@@ -320,7 +290,6 @@ impl Interpreter {
     fn clone_for_thread_excluding(
         &mut self,
         captured_scalars: &std::collections::HashSet<String>,
-        referenced_containers: Option<&std::collections::HashSet<String>>,
     ) -> Self {
         // ADR-12204 S1 oracle: the lane writes below seed the spawner's
         // lexicals; they are not uses of the names.
@@ -390,26 +359,6 @@ impl Interpreter {
             // locally and recorded once per spawn (one atomic add per counter).
             let mut seed_keys_walked: u64 = 0;
             let mut seed_inserts: u64 = 0;
-            // ADR-0039 §8.6 classification, collected while `self.env` is
-            // borrowed by the walk and applied to `self` once it ends.
-            //
-            // Only the top-level interpreter classifies. On a WORKER thread the
-            // lane is not an optional publication channel that a container
-            // might or might not need — it is the storage: `push @a, ...`
-            // routes through `__mutsu_atomic_arr::` unconditionally when
-            // `is_thread_clone()` (`vm/vm_data_push_ops.rs`), precisely so
-            // concurrent appends serialize, and `shared_array_mutate` then
-            // drops the worker's own `env` copy so `make_mut` can work in
-            // place. Retiring an entry there would be withdrawing a deliberate
-            // mechanism's backing store mid-use (measured: it emptied worker A's
-            // accumulator in `t/sibling-thread-array-lane-scope.t`). It also
-            // buys nothing: a worker's lineage store is its own (ADR-0010), so
-            // its entries cannot outlive into an unrelated frame the way a
-            // root-store entry published by the main interpreter does — which
-            // is the collision §8.2 records.
-            let referenced_containers = referenced_containers.filter(|_| !self.is_thread_clone());
-            let mut transient_marks: Vec<String> = Vec::new();
-            let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
                 Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
@@ -496,12 +445,6 @@ impl Interpreter {
                 }
             }
             crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
-            for key in transient_unmarks {
-                self.threads.transient_lane_containers.remove(&key);
-            }
-            for key in transient_marks {
-                self.threads.transient_lane_containers.insert(key);
-            }
             // Track C: migrate the parent's `state` variables into shared cells.
             // Incremental: only the keys created since the previous spawn.
             self.seed_unmigrated_state_vars(&shared);
