@@ -32,31 +32,53 @@ pub(super) fn is_field(field: &RakuAstField) -> bool {
     matches!(field.name, Some(LEADING | TRAILING))
 }
 
-/// Record `doc` on `node`.
-// Cost: O(1).
+/// Record `doc` on `node`: one field per text, a list of the comments' lines
+/// when the parser kept them.
+// Cost: O(l), l = lines of the doc.
 pub(super) fn attach(node: &mut RakuAstNode, doc: Option<&DeclDoc>) {
     let Some(doc) = doc else { return };
-    for (name, text) in [(LEADING, &doc.leading), (TRAILING, &doc.trailing)] {
-        if let Some(text) = text {
-            node.fields.push(RakuAstField {
-                name: Some(name),
-                value: RakuAstFieldValue::Node(Value::str(text.clone())),
-            });
-        }
+    for (name, text, lines) in [
+        (LEADING, &doc.leading, &doc.leading_lines),
+        (TRAILING, &doc.trailing, &doc.trailing_lines),
+    ] {
+        let Some(text) = text else { continue };
+        let value = if lines.is_empty() {
+            RakuAstFieldValue::Node(Value::str(text.clone()))
+        } else {
+            RakuAstFieldValue::List(lines.iter().map(|l| Value::str(l.clone())).collect())
+        };
+        node.fields.push(RakuAstField {
+            name: Some(name),
+            value,
+        });
     }
 }
 
-fn text(node: &RakuAstNode, name: &str) -> Option<String> {
-    node.fields
-        .iter()
-        .find(|f| f.name == Some(name))
-        .and_then(|f| match &f.value {
-            RakuAstFieldValue::Node(v) => match v.view() {
-                ValueView::Str(s) => Some(s.to_string()),
-                _ => None,
-            },
+/// The comments of one hidden field, one entry per line.
+// Cost: O(f + l), f = fields of the node, l = lines.
+pub(super) fn lines(node: &RakuAstNode, name: &str) -> Vec<String> {
+    let Some(field) = node.fields.iter().find(|f| f.name == Some(name)) else {
+        return Vec::new();
+    };
+    let items: Vec<&Value> = match &field.value {
+        RakuAstFieldValue::Node(v) => vec![v],
+        RakuAstFieldValue::List(items) => items.iter().collect(),
+        RakuAstFieldValue::Adverb(_) => Vec::new(),
+    };
+    items
+        .into_iter()
+        .filter_map(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
             _ => None,
         })
+        .collect()
+}
+
+/// The joined text of one hidden field (the comments joined by a space).
+// Cost: O(f + l).
+fn text(node: &RakuAstNode, name: &str) -> Option<String> {
+    let lines = lines(node, name);
+    (!lines.is_empty()).then(|| lines.join(" "))
 }
 
 /// The leading and trailing docs `node` carries, if it carries any.
@@ -72,6 +94,8 @@ pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {
     let doc = DeclDoc {
         leading: text(node, LEADING),
         trailing: text(node, TRAILING),
+        leading_lines: lines(node, LEADING),
+        trailing_lines: lines(node, TRAILING),
     };
     if doc.is_empty() {
         return None;
@@ -86,8 +110,9 @@ pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {
 /// its `WHY`.
 // Cost: O(f + l), f = fields of the node, l = lines of the text.
 fn lines_of(node: &RakuAstNode, label: &str, key: &str) -> Vec<String> {
-    if let Some(text) = text(node, key) {
-        return vec![text];
+    let own = lines(node, key);
+    if !own.is_empty() {
+        return own;
     }
     let Some(why) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
         (Some("WHY"), RakuAstFieldValue::Node(v)) => Some(v),

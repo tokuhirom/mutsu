@@ -20,6 +20,12 @@ pub(crate) struct DeclDoc {
     pub(crate) leading: Option<String>,
     /// The `#=` comments written after it, joined by a space.
     pub(crate) trailing: Option<String>,
+    /// The `#|` comments one by one (rakudo's `Doc::Declarator.leading`).
+    #[serde(default)]
+    pub(crate) leading_lines: Vec<String>,
+    /// The `#=` comments one by one.
+    #[serde(default)]
+    pub(crate) trailing_lines: Vec<String>,
 }
 
 impl DeclDoc {
