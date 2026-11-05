@@ -491,8 +491,26 @@ impl Interpreter {
 /// (`__mutsu_sigilless_readonly::\size`). `None` for a sigiled variable, a `&`
 /// code variable, a dynamic, any other internal `__mutsu_*` key and a `?`/`=`
 /// special: those are read by machinery that does not name them.
-// Cost: O(len) once per plan.
+// Cost: O(1) after the first call per symbol (a memo probe); the first call
+// is O(len).
 fn droppable_subject(k: &Symbol) -> Option<Symbol> {
+    // A pure function of the name's text, asked about every captured name each
+    // time a Seq builds its plan: with a module loaded that is ~60 names per
+    // `.map`/`.grep` call, so it is decided once per symbol (#7817).
+    thread_local! {
+        static MEMO: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Option<Symbol>>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if let Some(hit) = MEMO.with(|m| m.borrow().get(k).copied()) {
+        return hit;
+    }
+    let subject = droppable_subject_uncached(k);
+    MEMO.with(|m| m.borrow_mut().insert(*k, subject));
+    subject
+}
+
+// Cost: O(len).
+fn droppable_subject_uncached(k: &Symbol) -> Option<Symbol> {
     k.with_str(|s| {
         let term = s.strip_prefix("__mutsu_sigilless_readonly::").unwrap_or(s);
         let ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
@@ -518,4 +536,32 @@ fn droppable_subject(k: &Symbol) -> Option<Symbol> {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':');
         (std::ptr::eq(term, s) && type_like).then_some(*k)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn droppable_subject_memo_agrees_with_the_classification() {
+        for name in [
+            "CookieName",
+            "Cro::HTTP::Header",
+            "\\size",
+            "__mutsu_sigilless_readonly::\\size",
+            "&Cro::Uri::encode-percents",
+            "$x",
+            "@a",
+            "?FILE",
+            "__mutsu_state_key::__ANON_STATE#1__",
+        ] {
+            let k = Symbol::intern(name);
+            let expected = droppable_subject_uncached(&k);
+            // Twice: the first call fills the memo, the second reads it.
+            assert_eq!(droppable_subject(&k), expected, "{name}");
+            assert_eq!(droppable_subject(&k), expected, "{name} (memoized)");
+        }
+        assert!(droppable_subject(&Symbol::intern("CookieName")).is_some());
+        assert!(droppable_subject(&Symbol::intern("$x")).is_none());
+    }
 }
