@@ -92,7 +92,8 @@ impl Interpreter {
                 .env
                 .get(s)
                 .is_some_and(|v| matches!(v.view(), ValueView::Enum { .. }))
-                || s.rsplit_once("::").is_some_and(|(enum_name, value)| {
+                || crate::qualified::split_qualified(Symbol::intern(s)).is_some_and(|(enum_name, value)| {
+                    let (enum_name, value) = (enum_name.as_str(), value.as_str());
                     // The enum may be registered under its package-qualified
                     // name (declared inside `unit module M`).
                     self.enum_registry_name(enum_name).is_some_and(|resolved| {
@@ -599,7 +600,8 @@ impl Interpreter {
                 index,
             ));
         }
-        if let Some((enum_name, key)) = s.rsplit_once("::")
+        if let Some((enum_name, key)) = crate::qualified::split_qualified(Symbol::intern(s))
+            && let (enum_name, key) = (enum_name.as_str(), key.as_str())
             && let Some(resolved) = self
                 .resolve_bareword_type_name(enum_name)
                 .filter(|r| self.registry().enum_types.contains_key(r))
