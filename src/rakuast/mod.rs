@@ -42,6 +42,7 @@ mod decl_origins;
 mod doc_block;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
+pub(crate) mod eval_docs;
 mod expr_origins;
 mod fragment_origins;
 pub(crate) mod hyper_assign;

@@ -373,13 +373,14 @@ impl Interpreter {
             let stmts = crate::rakuast::lower(&names, node)?;
             // Pod blocks written into the tree are the unit's `$=pod`, which
             // is the EVAL's own: the caller's is put back afterwards.
+            let docs = crate::rakuast::eval_docs::collect(node);
             let Some(pod) = crate::rakuast::pod_source(node) else {
-                return self.eval_lowered_unit(stmts);
+                return self.eval_lowered_unit_with_docs(stmts, docs);
             };
             let previous_pod = self.env.get("=pod").cloned();
             self.env.remove("=pod");
             let result = match self.collect_pod_sources(&pod) {
-                Ok(()) => self.eval_lowered_unit(stmts),
+                Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs),
                 Err(e) => Err(e),
             };
             match previous_pod {

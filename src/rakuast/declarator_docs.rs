@@ -88,6 +88,18 @@ pub(crate) fn docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<Stri
     (leading.is_some() || trailing.is_some()).then_some((leading, trailing))
 }
 
+/// The docs `node` carries as the parser's value, if it carries any.
+// Cost: O(f + l).
+pub(super) fn doc(node: &RakuAstNode) -> Option<DeclDoc> {
+    let doc = DeclDoc {
+        leading: text(node, LEADING),
+        trailing: text(node, TRAILING),
+        leading_lines: lines(node, LEADING),
+        trailing_lines: lines(node, TRAILING),
+    };
+    (!doc.is_empty()).then_some(doc)
+}
+
 /// A filled documentation slot for the docs `node` carries, if any.
 // Cost: O(1).
 pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {
