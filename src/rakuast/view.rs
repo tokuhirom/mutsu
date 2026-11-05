@@ -4028,6 +4028,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     None => anon_routine_node(names, param_defs, body, return_type.as_deref())?,
                 };
                 super::declarator_docs::attach(&mut node, custom_traits.doc());
+                // The ranges the parser recorded for the parameters (#16643).
+                super::routine_origins::place_signature(&mut node, param_defs);
                 if super::routine_source::apply(names, &mut node, body)? {
                     return Ok(node);
                 }

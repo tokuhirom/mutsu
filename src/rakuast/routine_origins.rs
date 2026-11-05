@@ -222,7 +222,7 @@ pub(super) fn for_pointy_block(
 }
 
 // Cost: O(p), p = parameters.
-fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
+pub(super) fn place_signature(block: &mut RakuAstNode, params: &[ParamDef]) {
     let (Some(first), Some(last)) = (params.first(), params.last()) else {
         return;
     };
