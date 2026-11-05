@@ -1396,6 +1396,10 @@ pub(crate) struct Compiler {
     hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// Names declared by a plain `my <native> $x` scalar declaration, which a
+    /// direct read boxes (`SmartMatchLhs::Var::boxed_native`). A parameter of
+    /// the same name removes the entry.
+    boxed_native_scalars: HashSet<String>,
     /// How the atomic routine being compiled was spelled at its call site, and
     /// whether it is an integer-only `nqp::` op. Set around the lowering of the
     /// call by `with_atomic_spelling`; read by `atomic_target.rs`.
@@ -2158,6 +2162,7 @@ impl Compiler {
             hoisted_sub_plans: Vec::new(),
             hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
+            boxed_native_scalars: HashSet::new(),
             atomic_spelling: None,
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),

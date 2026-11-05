@@ -50,3 +50,21 @@ name_queries! {
     "without-colonpairs" => without_colonpairs,
     "without-first-part" => without_first_part,
 }
+
+// Cost: O(p + q), p, q = parts of the name and of the target.
+fn qualified_with(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let base = native_node(target)?;
+    let ValueView::RakuAst(node) = base.view() else {
+        return None;
+    };
+    Some(crate::rakuast::name_queries::qualified_with(node, &args[0]))
+}
+
+pub(super) static ONE_ARG_ROWS: &[MethodRow] = &[MethodRow {
+    owner: "RakuAST::Name",
+    name: "qualified-with",
+    arity: 1,
+    handler: Handler::Narrow(qualified_with),
+    flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+    named: &[],
+}];

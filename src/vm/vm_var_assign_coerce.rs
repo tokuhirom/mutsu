@@ -27,6 +27,12 @@ impl Interpreter {
             return Ok(());
         }
         let got = crate::runtime::utils::value_type_name(value);
+        let repr = self.type_check_got_repr(value);
+        let got = if repr.is_empty() {
+            got.to_string()
+        } else {
+            format!("{got} {repr}")
+        };
         let message = format!(
             "Type check failed in binding; expected Positional[{}] but got {}",
             constraint, got

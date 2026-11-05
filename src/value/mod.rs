@@ -96,9 +96,9 @@ pub(crate) fn is_seq_consumed_error(err: &RuntimeError) -> bool {
 /// (e.g. "Seq", "HyperSeq", "RaceSeq").
 pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
     let msg = format!(
-        "The iterator of this {type_name} is already in use/consumed by another {type_name} \
-         (you might solve this by adding .cache on usages of the {type_name}, or by \
-         assigning the {type_name} into an array)"
+        "The iterator of this {type_name} is already in use/consumed by another {type_name} (you\n\
+         might solve this by adding .cache on usages of the {type_name}, or by assigning\n\
+         the {type_name} into an array)"
     );
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -584,7 +584,7 @@ mod dispatch_shape;
 pub(crate) mod render_guard;
 mod varref_declared;
 pub(crate) use dispatch_shape::iterator_kind::{
-    MAP_GREP_STREAM_ATTR, shape_of as iterator_shape_of,
+    MAP_GREP_STREAM_ATTR, NOT_PREDICTIVE_ITERATOR_ATTR, shape_of as iterator_shape_of,
 };
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,

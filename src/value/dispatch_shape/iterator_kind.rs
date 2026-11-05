@@ -14,6 +14,10 @@ use crate::value::{Value, ValueView};
 /// (`runtime::iterator_map_grep_stream` re-exports it).
 pub(crate) const MAP_GREP_STREAM_ATTR: &str = "map_grep_stream";
 
+/// The attribute that marks an array-backed iterator whose rakudo counterpart
+/// is not a `PredictiveIterator` (a hash's).
+pub(crate) const NOT_PREDICTIVE_ITERATOR_ATTR: &str = "not_predictive";
+
 /// The shape of an `Iterator` instance with these attributes:
 /// `PredictiveIterator` for an array-backed one that knows how many elements
 /// it has left, `Iterator` alone for a stream (Rakudo's map iterator), a
@@ -28,6 +32,7 @@ pub(crate) fn shape_of<'a>(mut attribute: impl FnMut(&str) -> Option<&'a Value>)
     let predictive = array_backed
         && attribute(MAP_GREP_STREAM_ATTR).is_none()
         && attribute("squish_source").is_none()
+        && attribute(NOT_PREDICTIVE_ITERATOR_ATTR).is_none()
         && (attribute("known_count").is_some() || attribute("lazy_source").is_none());
     if predictive {
         DispatchShape::PredictiveIterator

@@ -327,6 +327,11 @@ pub(crate) enum SmartMatchLhs {
         name: String,
         slot: Option<u32>,
         implicit_topic: bool,
+        /// The variable is a plain `my int $x` / `my num $n` / `my str $s`
+        /// declaration. RakuAST reads such a variable boxed, so `$x ~~ int`
+        /// is `False`; a native parameter, a loop parameter and a
+        /// destructured `my int ($p, $q)` keep matching the native type.
+        boxed_native: bool,
     },
     /// `$obj.meth ~~ s///` — the LHS is a zero-arg method call on a variable
     /// (an `is rw` accessor in Raku, whose returned container the substitution

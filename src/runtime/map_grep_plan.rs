@@ -488,9 +488,12 @@ impl Interpreter {
 /// The name a captured key stands for when it is one a body can only reach by
 /// naming it: a type, enum or constant name (`Pt`, `Cro::HTTP`), a sigilless
 /// term (`\size`) or the readonly marker of one
-/// (`__mutsu_sigilless_readonly::\size`). `None` for a sigiled variable, a `&`
-/// code variable, a dynamic, any other internal `__mutsu_*` key and a `?`/`=`
-/// special: those are read by machinery that does not name them.
+/// (`__mutsu_sigilless_readonly::\size`), a lexical type's own key
+/// (`\u{1}Foo`) or a `state` variable's metadata key
+/// (`__mutsu_state_key::<name>`, read only for a free variable `<name>`).
+/// `None` for a sigiled variable, a `&` code variable, a dynamic, any other
+/// internal `__mutsu_*` key and a `?`/`=` special: those are read by machinery
+/// that does not name them.
 // Cost: O(1) after the first call per symbol (a memo probe); the first call
 // is O(len).
 fn droppable_subject(k: &Symbol) -> Option<Symbol> {
@@ -515,6 +518,16 @@ fn droppable_subject_uncached(k: &Symbol) -> Option<Symbol> {
         let term = s.strip_prefix("__mutsu_sigilless_readonly::").unwrap_or(s);
         let ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
         let ident = |t: &str| !t.is_empty() && t.bytes().all(ident_byte);
+        // A lexical type's own key (`\u{1}Foo`, `crate::term_names::lexical_type_key`)
+        // is consulted only by a reader that names the type `Foo`.
+        if let Some(name) = s.strip_prefix(crate::term_names::LEXICAL_TYPE_PREFIX) {
+            return ident(name).then(|| Symbol::intern(name));
+        }
+        // A `state` variable's metadata key (`__mutsu_state_key::<name>`) is read
+        // only for a free variable `<name>` of the running body.
+        if let Some(name) = s.strip_prefix("__mutsu_state_key::") {
+            return (!name.is_empty()).then(|| Symbol::intern(name));
+        }
         if let Some(name) = term.strip_prefix('\\') {
             return ident(name).then(|| Symbol::intern(name));
         }
@@ -562,6 +575,10 @@ mod tests {
             assert_eq!(droppable_subject(&k), expected, "{name} (memoized)");
         }
         assert!(droppable_subject(&Symbol::intern("CookieName")).is_some());
+        assert!(droppable_subject(&Symbol::intern("\u{1}Stream")).is_some());
+        assert!(
+            droppable_subject(&Symbol::intern("__mutsu_state_key::__ANON_STATE#11__")).is_some()
+        );
         assert!(droppable_subject(&Symbol::intern("$x")).is_none());
     }
 }
