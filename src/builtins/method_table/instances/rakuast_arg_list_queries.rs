@@ -1,4 +1,4 @@
-//! `RakuAST::ArgList`'s `arity`, `has-args` and `arg-at-pos`, answered by
+//! `RakuAST::ArgList`'s `arity`, `has-args`, `invocant` and `arg-at-pos`, answered by
 //! [`crate::rakuast::arg_list_queries`]; this file only registers the rows.
 
 use super::super::{Handler, MethodRow, RowFlags};
@@ -30,6 +30,11 @@ fn arg_at_pos(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
     }))
 }
 
+// Cost: O(1).
+fn invocant(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(crate::rakuast::arg_list_queries::invocant())
+}
+
 fn with_node(target: &Value, f: impl FnOnce(&crate::rakuast::RakuAstNode) -> Value) -> Value {
     native_node(target)
         .and_then(|base| match base.view() {
@@ -53,6 +58,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "has-args",
         arity: 0,
         handler: Handler::Pure(has_args),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::ArgList",
+        name: "invocant",
+        arity: 0,
+        handler: Handler::Pure(invocant),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
