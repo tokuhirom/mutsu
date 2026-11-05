@@ -45,4 +45,8 @@ name_queries! {
     "first-part" => first_part,
     "last-part" => last_part,
     "root-part" => root_part,
+    "simple-identifier" => simple_identifier,
+    "base-name" => base_name,
+    "without-colonpairs" => without_colonpairs,
+    "without-first-part" => without_first_part,
 }

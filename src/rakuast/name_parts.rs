@@ -100,7 +100,7 @@ pub(super) fn simple_part(name: &str) -> Value {
 }
 
 /// A `RakuAST::Name` over an explicit part list.
-pub(super) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
+pub(crate) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Name,

@@ -221,6 +221,17 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(Value::array(vec![name_parts::simple_part(&s)]));
     }
+    // A name without any part (the `without-first-part` of a one-part name)
+    // spells as the empty string.
+    if method == "canonicalize"
+        && node.class == RakuAstClass::Name
+        && matches!(
+            node.fields.iter().find(|f| f.name == Some("parts")).map(|f| &f.value),
+            Some(RakuAstFieldValue::List(parts)) if parts.is_empty()
+        )
+    {
+        return Some(Value::str(String::new()));
+    }
     // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.
     if method == "canonicalize"
         && let Some(name_parts::NameShape::Identifier(s)) = name_parts::name_shape(node)
