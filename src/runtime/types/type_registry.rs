@@ -1129,7 +1129,19 @@ impl Interpreter {
         // `A.^add_method('bar', ...)` mutated a bogus, never-registered
         // entity instead of the real class (`roast/S12-introspection/
         // meta-class.t`, "Can .^add_method what .^lookup returns...").
-        if self.has_type_direct(pkg) && crate::value::user_facing_type_name(pkg).as_ref() == name {
+        //
+        // A role's methods run on its pun (`R.m` runs on the class
+        // `R\0default[Any]` composed from the role), and there the role's own
+        // name still denotes the role GROUP, as it does in Rakudo: `R.^parameterize`
+        // inside the body must build `R[...]`, not hand the pun back. The pun's
+        // storage name demangles to the role's own name, so exclude a package
+        // that is no declaration of `name` but a composition of the role `name`.
+        let pun_of_role =
+            pkg != name && !self.registry().roles.contains_key(pkg) && self.registry().roles.contains_key(name);
+        if !pun_of_role
+            && self.has_type_direct(pkg)
+            && crate::value::user_facing_type_name(pkg).as_ref() == name
+        {
             return Some(pkg.to_string());
         }
         let name_sym = crate::symbol::Symbol::intern(name);
