@@ -232,7 +232,8 @@ impl Interpreter {
         // in folded space that correspond to the start of an original character's
         // fold expansion. This prevents false matches in the middle of a fold
         // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
-        if parsed.ignore_case && needs_casefold_expansion(orig_chars, parsed) {
+        let var_may_fold = |name: &str| self.interp_var_may_fold(name);
+        if parsed.ignore_case && needs_casefold_expansion(orig_chars, parsed, &var_may_fold) {
             return self.regex_match_casefold_captures(parsed, &target, pkg);
         }
 
