@@ -355,11 +355,30 @@ impl Interpreter {
         {
             return Some(v.clone());
         }
-        self.lexicals
+        if let Some(v) = self
+            .lexicals
             .package_lexicals
             .get(cur.as_str())
             .and_then(|m| m.get(name.as_str()))
-            .cloned()
+        {
+            return Some(v.clone());
+        }
+        // A class nested in a class body sees the enclosing class's `my`
+        // lexicals (the write side resolves the same owner).
+        if crate::qualified::is_global_package(cur)
+            || crate::qualified::is_routine_scoped_package(cur)
+        {
+            return None;
+        }
+        crate::qualified::package_ancestors(cur)
+            .filter(|pkg| *pkg != cur)
+            .find_map(|pkg| {
+                self.lexicals
+                    .package_lexicals
+                    .get(pkg.as_str())
+                    .and_then(|m| m.get(name.as_str()))
+                    .cloned()
+            })
     }
 
     /// Resolve a bare free-variable name through the enclosing package chain
@@ -1513,14 +1532,32 @@ impl Interpreter {
         // every package-scope write-back, the vast majority of which miss.
         // Cro's HTTP/2 parser hit exactly that: one table copy per HEADERS
         // frame, for a lookup that found nothing.
-        if !self
-            .lexicals
-            .package_lexicals
-            .get(cur)
-            .is_some_and(|m| m.contains_key(name))
+        let holds = |pkg: &str| {
+            self.lexicals
+                .package_lexicals
+                .get(pkg)
+                .is_some_and(|m| m.contains_key(name))
+        };
+        // The package that owns the lexical: the current one, else the nearest
+        // enclosing one. A method of `class Outer::N` declared inside `class
+        // Outer` writes `Outer`'s class-body `my $s`, as its reads already
+        // resolve it (`package_chain_var_fallback`); writing only the current
+        // package's store left the enclosing class's own methods on the old value.
+        let owner: Symbol = if holds(cur) {
+            cur_sym
+        } else if crate::qualified::is_global_package(cur_sym)
+            || crate::qualified::is_routine_scoped_package(cur_sym)
         {
             return false;
-        }
+        } else {
+            match crate::qualified::package_ancestors(cur_sym)
+                .find(|pkg| *pkg != cur_sym && holds(pkg.as_str()))
+            {
+                Some(pkg) => pkg,
+                None => return false,
+            }
+        };
+        let cur: &str = owner.as_str();
         // `get_value_mut`, not `get_mut`: the entry is known to exist (the
         // probe above proved it) and only its VALUE is written here, so the
         // table's name filter stays valid. Reaching the inner map through
