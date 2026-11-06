@@ -35,6 +35,14 @@ const METHOD_FORWARDING_ROUTINES: &[&str] = &[
     "samespace",
 ];
 
+/// Cool routines outside [`METHOD_FORWARDING_ROUTINES`] whose routine form is
+/// also `x.NAME` in rakudo, so an unhandled `Failure` argument is thrown.
+const FAILURE_THROWING_ROUTINES: &[&str] = &[
+    "chars", "chr", "sqrt", "abs", "floor", "ceiling", "round", "truncate", "sign", "exp",
+    "log", "log2", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh",
+    "cis", "polymod", "expmod", "is-prime", "lsb", "msb",
+];
+
 impl Interpreter {
     /// `NAME($obj, ...)` for a user object with its own `NAME` method: the
     /// method answers, as `$obj.NAME(...)`. `None` leaves the routine to the
@@ -49,13 +57,21 @@ impl Interpreter {
         // Cost: O(len(name)) -- one hash probe; every builtin call asks.
         static ROUTINES: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
             std::sync::OnceLock::new();
-        if !ROUTINES
+        let forwards = ROUTINES
             .get_or_init(|| METHOD_FORWARDING_ROUTINES.iter().copied().collect())
-            .contains(name)
-        {
+            .contains(name);
+        if !forwards && !FAILURE_THROWING_ROUTINES.contains(&name) {
             return None;
         }
         let first = args.first()?;
+        // `lc(Failure)` is `Failure.lc`: an unhandled Failure explodes with its
+        // exception instead of the routine stringifying its message.
+        if let Some(err) = self.failure_to_runtime_error_if_unhandled(first) {
+            return Some(Err(err));
+        }
+        if !forwards {
+            return None;
+        }
         let class = match first.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return None,
