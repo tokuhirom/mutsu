@@ -97,6 +97,26 @@ pub(in crate::builtins::method_table) fn is_lazy(
     }
 }
 
+/// `Iterator.is-deterministic` of a built-in iterator (rakudo's per-kind
+/// answer: `False` for a `.map`/`.grep` stream, a hash's iterator, a `gather`).
+// Cost: O(1), a few attribute probes.
+pub(in crate::builtins::method_table) fn iterator_is_deterministic(
+    target: &Value,
+    _args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    crate::value::native_iterator_determinism(target).map(|(det, _)| Ok(Value::truth(det)))
+}
+
+/// `Iterator.is-monotonically-increasing` of a built-in iterator (`True` only
+/// for a non-empty range's).
+// Cost: O(1), a few attribute probes.
+pub(in crate::builtins::method_table) fn iterator_is_monotonic(
+    target: &Value,
+    _args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    crate::value::native_iterator_determinism(target).map(|(_, mono)| Ok(Value::truth(mono)))
+}
+
 /// `Mu.sink`: evaluate the receiver for its effects and answer `Nil`. A plain
 /// array has nothing to run; an unhandled `Failure` throws its exception (a
 /// handled one is a no-op); a `Seq` whose source is already settled marks itself

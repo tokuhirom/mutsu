@@ -130,5 +130,38 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
             Value::TRUE,
         );
     }
+    // A non-empty Range iterates an increasing sequence; a `gather` is not
+    // reproducible (`is-deterministic` is `False`).
+    let non_empty_range = match target.view() {
+        ValueView::Range(a, b) => a <= b,
+        ValueView::RangeExcl(a, b) => a < b,
+        ValueView::RangeExclStart(a, b) => a < b,
+        ValueView::RangeExclBoth(a, b) => a + 1 < b,
+        ValueView::GenericRange { .. } => !attrs_items_empty(&attrs),
+        // `(1..*).lazy`: the range's `.succ` stepping list.
+        ValueView::LazyList(ll) => matches!(ll.sequence_spec, Some(crate::value::SequenceSpec::Succ)),
+        _ => false,
+    };
+    if non_empty_range {
+        attrs.insert(crate::value::MONOTONIC_ITERATOR_ATTR.to_string(), Value::TRUE);
+    }
+    if let ValueView::LazyList(ll) = target.view()
+        && ll.env.get("__mutsu_lazylist_from_gather").is_some()
+    {
+        attrs.insert(
+            crate::value::NONDETERMINISTIC_ITERATOR_ATTR.to_string(),
+            Value::TRUE,
+        );
+    }
     Value::make_instance(Symbol::intern("Iterator"), attrs)
+}
+
+/// Whether the iterator under construction has no cached element and no lazy
+/// source to pull one from.
+fn attrs_items_empty(attrs: &HashMap<String, Value>) -> bool {
+    !attrs.contains_key("lazy_source")
+        && matches!(
+            attrs.get("items").map(Value::view),
+            Some(ValueView::Array(items, ..)) if items.is_empty()
+        )
 }
