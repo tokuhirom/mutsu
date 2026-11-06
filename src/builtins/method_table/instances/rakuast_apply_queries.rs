@@ -1,4 +1,4 @@
-//! `operator`, `operands` and `return-type` of the operator applications
+//! `operator`, `operands`, `args` (infix only) and `return-type` of the operator applications
 //! (`RakuAST::ApplyInfix`, `ApplyPrefix`, `ApplyPostfix`, `ApplyListInfix`),
 //! answered by [`crate::rakuast::apply_queries`]; this file only registers
 //! the rows.
@@ -23,6 +23,7 @@ macro_rules! apply_query {
 
 apply_query!(operator, operator);
 apply_query!(operands, operands);
+apply_query!(args, args);
 apply_query!(return_type, return_type);
 
 /// One row.
@@ -45,6 +46,7 @@ macro_rules! row {
 pub(super) static ROWS: &[MethodRow] = &[
     row!("RakuAST::ApplyInfix", "operator", operator),
     row!("RakuAST::ApplyInfix", "operands", operands),
+    row!("RakuAST::ApplyInfix", "args", args),
     row!("RakuAST::ApplyInfix", "return-type", return_type),
     row!("RakuAST::ApplyPrefix", "operator", operator),
     row!("RakuAST::ApplyPrefix", "operands", operands),
