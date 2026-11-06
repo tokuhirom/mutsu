@@ -511,11 +511,22 @@ impl Interpreter {
         callback: &Value,
         catch_cb: &Option<Value>,
     ) -> Result<bool, RuntimeError> {
+        if let Some(catch) = catch_cb {
+            self.control.cue_catch.push(catch.clone());
+        }
         let result = self.call_sub_value(callback.clone(), Vec::new());
+        if catch_cb.is_some() {
+            self.control.cue_catch.pop();
+        }
         match result {
             Ok(_) => Ok(true),
             Err(e) => {
-                if let Some(catch) = catch_cb {
+                let handled_inline = e.catch_inline_verdict().is_some_and(|(token, _)| {
+                    token == crate::runtime::catch_inline::CUE_CATCH_TOKEN
+                });
+                if handled_inline {
+                    // The `:catch` already ran at the throw site.
+                } else if let Some(catch) = catch_cb {
                     let exception = e
                         .exception
                         .map(|boxed| *boxed)

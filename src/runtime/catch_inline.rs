@@ -22,6 +22,10 @@
 use super::*;
 use crate::value::{CatchInlinePayload, CatchInlineVerdict};
 
+/// Verdict token stamped on an exception a cue's `:catch` already handled at
+/// the throw site, so the cue does not call it a second time on unwind.
+pub(crate) const CUE_CATCH_TOKEN: u64 = u64::MAX;
+
 impl Interpreter {
     /// Whether `err` is an ordinary (catchable) exception rather than a control
     /// signal. Control signals — `return`, `last`, `next`, `warn`, `take`, `fail`,
@@ -76,10 +80,12 @@ impl Interpreter {
         // falls back to unwinding, so those handlers do not run a second time.
         let mut passed: Option<(u64, CatchInlineVerdict)> = None;
         let mut idx = self.control.catch_handlers.len();
+        let mut exhausted = true;
         while idx > 0 {
             idx -= 1;
             let entry = &self.control.catch_handlers[idx];
             let Some(handler) = entry.handler.as_ref() else {
+                exhausted = false;
                 break;
             };
             // A throw in the activation that installed the region runs the
@@ -178,6 +184,25 @@ impl Interpreter {
                         signal.set_return_target_callable_id(return_target);
                     }
                     return Err(signal);
+                }
+            }
+        }
+        // No region took it: a `$*SCHEDULER.cue(:catch)` task is the outermost
+        // handler, run here in the dynamic scope of the throw so its `.resume`
+        // continues the dying code (rakudo parity).
+        if exhausted && let Some(catch) = self.control.cue_catch.last().cloned() {
+            let exception = err.exception_value_with_backtrace(|| {
+                err.backtrace()
+                    .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true))
+            });
+            let outer = std::mem::take(&mut self.control.cue_catch);
+            let result = self.call_sub_value(catch, vec![exception]);
+            self.control.cue_catch = outer;
+            match result {
+                Err(ce) if ce.is_resume() => return Ok(Value::package(crate::symbol::wk::any())),
+                _ => {
+                    err.set_catch_inline_verdict(Some((CUE_CATCH_TOKEN, CatchInlineVerdict::Handled)));
+                    return Err(err);
                 }
             }
         }
