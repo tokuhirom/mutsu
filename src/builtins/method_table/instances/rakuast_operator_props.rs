@@ -25,6 +25,60 @@ fn reducer_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+/// `OperatorProperties.<category>($symbol)`: the symbol defaults to the empty
+/// string, as rakudo's `Str $op = ""` does.
+fn class_lookup(category: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+    let symbol = args.first().map(|v| v.to_string_value()).unwrap_or_default();
+    Ok(operator_props::lookup(category, &symbol).unwrap_or(Value::NIL))
+}
+
+macro_rules! lookup_fn {
+    ($fn_name:ident, $category:literal) => {
+        // Cost: O(log n), n = built-in operator count.
+        fn $fn_name(_target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+            class_lookup($category, args)
+        }
+    };
+}
+
+lookup_fn!(lookup_infix, "infix");
+lookup_fn!(lookup_prefix, "prefix");
+lookup_fn!(lookup_postfix, "postfix");
+lookup_fn!(lookup_circumfix, "circumfix");
+lookup_fn!(lookup_postcircumfix, "postcircumfix");
+
+macro_rules! lookup_rows {
+    ($(($name:literal, $handler:ident)),* $(,)?) => {
+        &[$(
+            MethodRow {
+                owner: "OperatorProperties",
+                name: $name,
+                arity: 0,
+                handler: Handler::Pure($handler),
+                flags: RowFlags::OWNER_ONLY,
+                named: &[],
+            },
+            MethodRow {
+                owner: "OperatorProperties",
+                name: $name,
+                arity: 1,
+                handler: Handler::Pure($handler),
+                flags: RowFlags::OWNER_ONLY,
+                named: &[],
+            },
+        )*]
+    };
+}
+
+/// The class-level lookups of the prelude's `OperatorProperties`.
+pub(super) static LOOKUP_ROWS: &[MethodRow] = lookup_rows![
+    ("infix", lookup_infix),
+    ("prefix", lookup_prefix),
+    ("postfix", lookup_postfix),
+    ("circumfix", lookup_circumfix),
+    ("postcircumfix", lookup_postcircumfix),
+];
+
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
         MethodRow {

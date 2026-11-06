@@ -124,6 +124,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_doc_edit::ROWS,
     rakuast_operator_props::ROWS,
     rakuast_operator_props::DEFAULT_ROWS,
+    rakuast_operator_props::LOOKUP_ROWS,
     rakuast_literal_queries::ROWS,
     rakuast_name_queries::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
