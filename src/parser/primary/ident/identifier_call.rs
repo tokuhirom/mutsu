@@ -56,6 +56,30 @@ use crate::value::{Value, ValueView};
 /// so it may open a no-paren listop argument (`unique +«(1,2,3)`). A bare
 /// `+`/`-` is deliberately excluded: distinguishing `pi - 1` (subtraction) from
 /// a prefixed argument needs term-vs-listop knowledge unavailable at this gate.
+/// Consume a `,` that ends an argument list (only whitespace, then `;`, `}`,
+/// `)` or EOF follows); otherwise return `input` as is.
+// Cost: O(w), w = whitespace skipped.
+fn consume_trailing_comma(input: &str) -> &str {
+    let Ok((r, _)) = ws(input) else {
+        return input;
+    };
+    let Some(after) = r.strip_prefix(',') else {
+        return input;
+    };
+    let Ok((after, _)) = ws(after) else {
+        return input;
+    };
+    if after.starts_with(';')
+        || after.starts_with('}')
+        || after.starts_with(')')
+        || after.is_empty()
+    {
+        after
+    } else {
+        input
+    }
+}
+
 fn starts_hyper_prefix_op(s: &str) -> bool {
     let rest = match s.as_bytes().first() {
         Some(b'+') | Some(b'-') | Some(b'~') | Some(b'?') | Some(b'!') => &s[1..],
@@ -2653,6 +2677,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 && !hyphen_forward_call
                 && crate::parser::stmt::simple::is_known_call(&name)
             {
+                // A trailing comma before a terminator is swallowed, as the
+                // listop loop below does: `lc "A",;` is `lc("A")`.
+                let r2 = consume_trailing_comma(r2);
                 return Ok((r2, make_listop_expr(call_name, input, vec![arg])));
             }
             let mut args = vec![arg];
@@ -2682,6 +2709,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     || r3.is_empty()
                     || is_stmt_modifier_ahead(r3)
                 {
+                    // The trailing comma belongs to this call's argument list.
+                    rest_after = r3;
                     break;
                 }
                 let (r3, next_arg) = parse_listop_arg(r3)?;
