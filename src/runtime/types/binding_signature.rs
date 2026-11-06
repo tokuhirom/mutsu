@@ -637,6 +637,10 @@ impl Interpreter {
         let seq_list_array_context = if pd.name.starts_with('@') {
             if let ValueView::LazyList(list) = value.view()
                 && (list.is_genuinely_lazy() || list.is_from_gather())
+                // A lazy `Array` (`my @y = 1..*`, `[1 .. *]`) binds as itself,
+                // like any Array: the callee's `@a` and the caller's variable
+                // are one list, so `@a.shift` reaches the caller (#16895).
+                && !list.in_array_context()
             {
                 let list = list.with_list_context();
                 bound_from_seq = Some(value.clone());

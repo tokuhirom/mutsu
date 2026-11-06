@@ -70,7 +70,10 @@ impl Interpreter {
         target_name: &str,
     ) -> Option<Result<LazySeqFrontMutation, RuntimeError>> {
         if !matches!(method, "shift" | "unshift" | "prepend" | "splice")
-            || !target_name.starts_with('@')
+            || !(target_name.starts_with('@')
+                // A scalar variable is named without its sigil: `my $d = [1 .. *]`
+                // holds the same lazy array.
+                || target_name.starts_with(|c: char| c.is_alphabetic() || c == '_'))
         {
             return None;
         }
@@ -131,6 +134,73 @@ impl Interpreter {
             prefix_len,
             returns_self: matches!(method, "unshift" | "prepend"),
             streamed,
+        }))
+    }
+
+    /// `shift` / `unshift` / `prepend` of a generator-backed lazy array (the
+    /// restitched shapes of the module docs) that has no variable to swap a
+    /// rebuilt list into: `$d.shift` through a `Pair`'s value, a parameter, a
+    /// closure capture. The list is shared by every holder, so its cache (and,
+    /// for a sequence spec, its generator history) is rewritten in place and all
+    /// of them see the new front, as they do on rakudo's one `Array`. `None`
+    /// when the receiver or call is not of that shape.
+    ///
+    /// Cost: O(k + c), k = elements generated past the front, c = the cache
+    /// length (the in-place `splice`).
+    pub(crate) fn lazy_array_front_mutate_in_place(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "shift" | "unshift" | "prepend") {
+            return None;
+        }
+        let target = target.deref_container();
+        let ValueView::LazyList(ll) = target.view() else {
+            return None;
+        };
+        let unbounded_closure_seq = ll
+            .closure_seq
+            .as_ref()
+            .is_some_and(|state| state.lock().unwrap().endpoint.is_none());
+        if !ll.in_array_context()
+            || !(ll.sequence_spec.is_some() || unbounded_closure_seq || ll.scan_spec.is_some())
+            || (method == "shift" && !args.is_empty())
+        {
+            return None;
+        }
+        // One element past the front, so the generator's last value stays in
+        // the untouched tail (see the module docs).
+        let reified = match ll.sequence_spec.as_ref() {
+            Some(spec) => Self::extend_sequence_cache(&ll, spec, 2),
+            None if unbounded_closure_seq => self.extend_closure_sequence(&ll, 2),
+            None => self.force_scan_lazy_list(&ll, 2),
+        };
+        let items = match reified {
+            Ok(items) if items.len() >= 2 => items,
+            Ok(_) => return None,
+            Err(e) => return Some(Err(e)),
+        };
+        let (remove, insert): (usize, &[Value]) = if method == "shift" {
+            (1, &[])
+        } else {
+            (0, args)
+        };
+        let rewrite = |slot: &mut Option<Vec<Value>>| {
+            let cached = slot.get_or_insert_with(Vec::new);
+            let end = remove.min(cached.len());
+            cached.splice(0..end, insert.iter().cloned());
+        };
+        rewrite(&mut ll.cache.lock().unwrap());
+        // Only a sequence spec reads its history in lockstep with the cache.
+        if ll.sequence_spec.is_some() {
+            rewrite(&mut ll.generation_state.lock().unwrap());
+        }
+        Some(Ok(if method == "shift" {
+            items[0].clone()
+        } else {
+            target.clone()
         }))
     }
 

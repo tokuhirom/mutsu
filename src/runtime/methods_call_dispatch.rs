@@ -384,6 +384,11 @@ impl Interpreter {
         {
             return result;
         }
+        // A generator-backed lazy array reached without a variable to rebuild
+        // (`$pair.value.unshift(0)`, a parameter): rewritten in place.
+        if let Some(result) = self.lazy_array_front_mutate_in_place(&target, method, &args) {
+            return result;
+        }
         let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything
