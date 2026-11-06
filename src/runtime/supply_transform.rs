@@ -180,7 +180,8 @@ impl Interpreter {
                 } else {
                     let vals = Arc::new(source_values);
                     let next_idx = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                    let slots: Arc<std::sync::Mutex<Vec<Option<Result<Value, RuntimeError>>>>> =
+                    type Slot = Option<Result<Value, RuntimeError>>;
+                    let slots: Arc<std::sync::Mutex<Vec<Slot>>> =
                         Arc::new(std::sync::Mutex::new((0..vals.len()).map(|_| None).collect()));
                     let mut handles = Vec::with_capacity(n_workers);
                     for _ in 0..n_workers {
