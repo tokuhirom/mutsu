@@ -83,16 +83,13 @@ impl Interpreter {
     ///
     /// A distribution may provide a module from a file whose name does not
     /// match the module's short name.  Rakudo uses the distribution's
-    /// `provides` map for that case, including when the repository prefix is
-    /// the distribution's `lib/` directory and the META6.json is one level
-    /// above it.
+    /// `provides` map for that case, but only for a repository whose prefix
+    /// holds the `META6.json` itself (`-I dist`): `-I dist/lib` does not adopt
+    /// the `META6.json` one level above (measured with `raku`, which answers
+    /// "Could not find M"), so a `use lib` directory nobody pointed at a
+    /// distribution root never reads its parent.
     fn resolve_module_from_meta6(base_path: &Path, module: &str) -> Option<std::path::PathBuf> {
-        let mut meta_paths = vec![base_path.join("META6.json")];
-        if let Some(parent) = base_path.parent() {
-            meta_paths.push(parent.join("META6.json"));
-        }
-
-        for meta_path in meta_paths {
+        for meta_path in [base_path.join("META6.json")] {
             let Ok(content) = std::fs::read_to_string(&meta_path) else {
                 continue;
             };
