@@ -1,6 +1,38 @@
 use super::*;
 
 impl Interpreter {
+    /// Make the running code the compunit a `gather` was written in for the
+    /// duration of one pull or force: a `gather` returned from a module names
+    /// what that module imported (`take KK` for a constant the module `use`d),
+    /// though the forcing frame belongs to a caller that never imported it.
+    /// Hands back what [`Self::leave_gather_defining_unit`] restores.
+    // Cost: O(1).
+    pub(crate) fn enter_gather_defining_unit(
+        &mut self,
+        list: &LazyList,
+    ) -> (usize, Option<(Option<Value>, crate::symbol::Symbol)>) {
+        let defining_unit = list
+            .env
+            .get_sym(crate::meta_ns::MetaNs::GatherUnit.key(crate::symbol::Symbol::intern("unit")))
+            .map(|v| v.to_string_value());
+        let saved = self.enter_source_file(defining_unit.as_deref());
+        let frame_len = self.routine_stack().len();
+        if let Some(unit) = defining_unit.as_deref() {
+            self.push_gather_body_frame(crate::symbol::Symbol::intern(unit));
+        }
+        (frame_len, saved)
+    }
+
+    /// Undo [`Self::enter_gather_defining_unit`].
+    // Cost: O(1).
+    pub(crate) fn leave_gather_defining_unit(
+        &mut self,
+        scope: (usize, Option<(Option<Value>, crate::symbol::Symbol)>),
+    ) {
+        self.truncate_routine_stack(scope.0);
+        self.leave_source_file(scope.1);
+    }
+
     /// The first `needed` elements of `list` (fewer when it runs out).
     // Cost: O(needed) for the copy, plus whatever producing the missing
     // elements costs.
@@ -241,6 +273,8 @@ impl Interpreter {
         };
         Self::set_gather_running_collector(list, Some(saved_gather_len));
         self.push_gather_take_limit(Some(needed));
+        // The body's own frame counts in the recorded depths below.
+        let gather_scope = self.enter_gather_defining_unit(list);
         // Record this pull's VM and interpreter routine depths so `take_value`
         // can detect a take arriving from a NESTED routine call, where
         // suspension is unsound (see the corresponding field docs).
@@ -309,6 +343,7 @@ impl Interpreter {
             body_finished = true;
         }
 
+        self.leave_gather_defining_unit(gather_scope);
         self.async_state.lazy_pull_entry_call_depth = saved_pull_depth;
         self.async_state.lazy_pull_entry_routine_depth = saved_routine_depth;
         self.async_state.take_defer_to_op_end = saved_take_defer_to_op_end;

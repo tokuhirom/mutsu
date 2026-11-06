@@ -501,6 +501,16 @@ impl Interpreter {
         self.push_block_frame(package, Symbol::intern(""), line, file, None, true);
     }
 
+    /// Push the frame a `gather` body runs under when it is pulled: a block
+    /// frame (not inlined: the compunit lookups skip inlined ones) that names the file the `gather` was written in, so names
+    /// resolved through the running frame's compunit (a constant its module
+    /// `use`d) are the defining unit's, not the puller's.
+    // Cost: O(1) amortized.
+    pub(crate) fn push_gather_body_frame(&mut self, def_file: Symbol) {
+        let package = self.current_package_sym();
+        self.push_block_frame(package, Symbol::intern(""), None, None, Some(def_file), false);
+    }
+
     // Cost: O(1) amortized.
     fn push_block_frame(
         &mut self,

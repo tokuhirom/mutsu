@@ -1627,6 +1627,7 @@ impl Interpreter {
         // Outer scope subs are available via the env as Sub values.
         let run_fns = fns.as_ref();
 
+        let gather_scope = self.enter_gather_defining_unit(list);
         let mut ip = 0;
         let mut run_result = Ok(());
         let polls = crate::vm::vm_poll::DispatchPolls::current();
@@ -1653,6 +1654,7 @@ impl Interpreter {
             }
         }
 
+        self.leave_gather_defining_unit(gather_scope);
         // Collect gather items
         let items = self.pop_gather_items().unwrap_or_default();
         self.pop_gather_take_limit();
