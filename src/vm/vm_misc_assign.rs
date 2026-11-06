@@ -474,7 +474,33 @@ impl Interpreter {
         // `%!a ∪= %x` on an `is SetHash`/`is BagHash`/`is MixHash` attribute:
         // the assignment writes INTO the QuantHash, which keeps its own type,
         // exactly as the statement-position store does (CRDT's LWW-Hash).
-        let quanthash_store = if name.starts_with("%!") || name.starts_with("%.") {
+        // Only when the attribute is declared a QuantHash (`is SetHash` and
+        // friends): a plain `has %!h` assigned a Set (`%!h ∪= $x`) becomes a
+        // Hash of its elements, like any other hash variable.
+        let attr_is_quanthash = (name.starts_with("%!") || name.starts_with("%."))
+            && Self::attr_twigil_base(&name)
+                .zip(self.get_env_self())
+                .and_then(|((bare, is_private), self_val)| {
+                    self.with_self_attr(
+                        &self_val,
+                        None,
+                        crate::symbol::Symbol::intern(bare),
+                        is_private,
+                        '%',
+                        |_, map, key| {
+                            map.get(key.as_str()).is_some_and(|v| {
+                                v.with_deref(|x| {
+                                    matches!(
+                                        crate::value::type_name::value_type_name(x),
+                                        "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                                    )
+                                })
+                            })
+                        },
+                    )
+                })
+                .unwrap_or(false);
+        let quanthash_store = if attr_is_quanthash {
             let stored =
                 self.coerce_typed_container_assignment(None, &name, raw_val.clone(), false)?;
             matches!(
