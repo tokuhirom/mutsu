@@ -1922,6 +1922,12 @@ pub(crate) struct Compiler {
     /// already bound in env, with no slot in the fresh compiler
     /// (`seed_prebound_amp_params`).
     prebound_amp_params: Vec<String>,
+    /// The operators `op` of every `&infix:<op>` lexical (a parameter or a
+    /// `my &infix:<op>`) declared in this frame or one around it. Raku resolves
+    /// an operator lexically, so `$a op $b` calls such a binding instead of the
+    /// builtin; empty (the common case) keeps `compile_expr_binary` untouched
+    /// (#16967).
+    lexical_infix_ops: Vec<String>,
     /// Loop parameters of the `for` loops being compiled that live only in env
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
@@ -2256,6 +2262,7 @@ impl Compiler {
             enclosing_underscore_implicit: false,
             for_param_names: Vec::new(),
             prebound_amp_params: Vec::new(),
+            lexical_infix_ops: Vec::new(),
             by_name_for_params: Vec::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
@@ -2568,6 +2575,7 @@ impl Compiler {
         // so a call argument `$name` is no longer known to be the readonly
         // parameter (#13782).
         self.readonly_scalar_params.remove(name);
+        self.note_lexical_infix(name);
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
         }
@@ -2979,6 +2987,11 @@ impl Compiler {
     }
 
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
+        for op in &self.lexical_infix_ops {
+            if !sub.lexical_infix_ops.contains(op) {
+                sub.lexical_infix_ops.push(op.clone());
+            }
+        }
         sub.enclosing_scopes = self.full_scope_chain();
         // Code nested in a closure body is still inside it (ADR-12529).
         sub.in_closure_body |= self.in_closure_body;

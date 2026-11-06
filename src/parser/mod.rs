@@ -8,6 +8,7 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // predicates, so re-export them at crate visibility without making the whole
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::lower_composition;
+pub(crate) use expr::precedence_meta_ops::infix_spelling_to_token;
 pub(crate) use expr::{
     contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
     operator_call_operands, should_wrap_whatevercode,

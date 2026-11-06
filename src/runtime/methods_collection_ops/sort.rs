@@ -110,6 +110,21 @@ fn detect_simple_mapper_block(data: &crate::value::SubData) -> Option<String> {
     }
 }
 
+/// Whether the block's compiled body really applies the builtin `cmp` / `<=>`
+/// opcode. The comparator fast paths read the block's SOURCE shape, which a
+/// lexical `&infix:<cmp>` (a parameter or a `my &infix:<cmp>`) overrides: the
+/// compiler then emits a call of that binding instead (#16967). A block with
+/// no compiled body is taken as written.
+// Cost: O(n), n = opcodes of the block's body.
+fn compiled_block_applies_builtin_cmp(data: &crate::value::SubData) -> bool {
+    use crate::opcode::OpCode;
+    data.compiled_code.as_ref().is_none_or(|code| {
+        code.ops
+            .iter()
+            .any(|op| matches!(op, OpCode::Cmp | OpCode::Spaceship))
+    })
+}
+
 /// Detect `{ $^a.method <=> $^b.method }` or `{ $^a.method cmp $^b.method }` patterns.
 /// Returns Some((method_name, reverse, is_string_cmp)) if detected.
 fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool, bool)> {
@@ -123,6 +138,9 @@ fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool
         .as_ref()
         .is_some_and(|code| !code.lexical_import_chains.is_empty())
     {
+        return None;
+    }
+    if !compiled_block_applies_builtin_cmp(data) {
         return None;
     }
     let body = &data.body;
@@ -614,6 +632,9 @@ pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(b
         .as_ref()
         .is_some_and(|code| !code.lexical_import_chains.is_empty())
     {
+        return None;
+    }
+    if !compiled_block_applies_builtin_cmp(data) {
         return None;
     }
     let body = &data.body;
