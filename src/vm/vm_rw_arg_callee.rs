@@ -57,6 +57,15 @@ impl Interpreter {
         let stack_offset = mark.stack_offset as usize;
         match &mark.callee {
             RwArgCallee::Method { name_idx } => {
+                // `BIND-POS($i, $elem)` / `BIND-KEY($k, $elem)` bind their
+                // second argument itself (rakudo's `\bindval` is raw): the
+                // built-in storage methods keep the caller's element container,
+                // whatever the invocant's class declares.
+                if positional == 1
+                    && matches!(Self::const_str(code, *name_idx), "BIND-POS" | "BIND-KEY")
+                {
+                    return true;
+                }
                 // The MRO walk below is the only expensive branch, and a
                 // container-binding method parameter is rare; skip it whole
                 // when no program-wide declaration could satisfy it. The filter
