@@ -623,6 +623,25 @@ impl Interpreter {
             .insert(name.to_string(), defs);
     }
 
+    /// Mark `name` as an exported `$`-scalar of `package` and of every module
+    /// key [`Self::register_exported_var`] mirrors the export under.
+    // Cost: O(1).
+    pub(crate) fn register_exported_scalar_name(&mut self, package: String, name: &str) {
+        let mut keys = vec![package];
+        if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
+            keys.push(unit_mod);
+        }
+        if let Some(owner) = self.module.module_load_stack.last().cloned() {
+            keys.push(owner);
+        }
+        for key in keys {
+            crate::runtime::cow_table_mut(&mut self.module.exported_scalar_vars)
+                .entry(key)
+                .or_default()
+                .insert(name.to_string());
+        }
+    }
+
     pub(crate) fn register_exported_var(
         &mut self,
         package: String,

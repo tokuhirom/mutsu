@@ -7852,8 +7852,12 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.
-            OpCode::RegisterVarExport { name_idx, tags_idx } => {
-                self.exec_register_var_export_op(code, *name_idx, *tags_idx)?;
+            OpCode::RegisterVarExport {
+                name_idx,
+                tags_idx,
+                scalar,
+            } => {
+                self.exec_register_var_export_op(code, *name_idx, *tags_idx, *scalar)?;
                 *ip += 1;
             }
             // Cost: O(m), m = modules on the load stack (the export mirrors in `register_exported_var`).

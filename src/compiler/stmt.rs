@@ -2305,8 +2305,14 @@ impl Compiler {
                     // key: a sigil-less constant's term key (#9962) is what
                     // tells the importer it is a term and not a sigil-stripped
                     // `$`-scalar export (`our $x is export` records `x`).
-                    self.code
-                        .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
+                    let scalar = !spelled.starts_with(['@', '%', '&', '\\'])
+                        && !declares_term
+                        && !crate::runtime::term_names::is_term_constant_decl(spelled, *constant);
+                    self.code.emit(OpCode::RegisterVarExport {
+                        name_idx,
+                        tags_idx,
+                        scalar,
+                    });
                 }
                 for (trait_name, trait_arg) in custom_traits {
                     // Skip internal markers (not real traits).

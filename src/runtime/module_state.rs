@@ -331,6 +331,9 @@ pub(crate) struct ModuleState {
     pub(crate) exported_subs: std::sync::Arc<ExportTagTable>,
     /// Exported variable/constant symbols by package and export tag.
     pub(crate) exported_vars: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    /// The `$`-scalars among [`Self::exported_vars`] (recorded without their
+    /// sigil), by package: an `EXPORT::` stash publishes them as `$name`.
+    pub(crate) exported_scalar_vars: std::sync::Arc<HashMap<String, HashSet<String>>>,
     /// An exported variable/constant a module re-exports from another module
     /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
     /// the module that owns the value.
@@ -779,6 +782,7 @@ impl ModuleState {
             exported_sub_values: Default::default(),
             exported_token_defs: Default::default(),
             exported_vars: Default::default(),
+            exported_scalar_vars: Default::default(),
             reexported_var_owners: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
@@ -897,6 +901,7 @@ impl ModuleState {
             module_block_packages: self.module_block_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
+            exported_scalar_vars: self.exported_scalar_vars.clone(),
             reexported_var_owners: self.reexported_var_owners.clone(),
             exported_sub_values: self.exported_sub_values.clone(),
             exported_token_defs: self.exported_token_defs.clone(),

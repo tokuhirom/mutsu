@@ -107,7 +107,17 @@ impl Interpreter {
                     let val = self.exported_var_value(module, name).unwrap_or(Value::NIL);
                     // A term export is published under its spelling (#9962).
                     let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
-                    symbols.insert(key.to_string(), val);
+                    // ... and a `$`-scalar under its sigil, as rakudo's stash keys it.
+                    let is_scalar = self
+                        .module
+                        .exported_scalar_vars
+                        .get(module)
+                        .is_some_and(|names| names.contains(name));
+                    if is_scalar {
+                        symbols.insert(format!("${key}"), val);
+                    } else {
+                        symbols.insert(key.to_string(), val);
+                    }
                 }
             }
             return Self::make_stash_instance(package, symbols);
