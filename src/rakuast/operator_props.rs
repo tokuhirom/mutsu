@@ -234,9 +234,7 @@ fn props(node: &RakuAstNode) -> Option<Props> {
     Some(match node.class {
         RakuAstClass::Infix => infix_props(node),
         RakuAstClass::Prefix => prefix_props(&symbol_text(node).unwrap_or_default()),
-        RakuAstClass::Postfix => {
-            postfix_props(&named_operator(node).unwrap_or_default())
-        }
+        RakuAstClass::Postfix => postfix_props(&named_operator(node).unwrap_or_default()),
         RakuAstClass::FunctionInfix => Props::builtin("infix", "+"),
         RakuAstClass::PostcircumfixArrayIndex
         | RakuAstClass::PostcircumfixHashIndex
