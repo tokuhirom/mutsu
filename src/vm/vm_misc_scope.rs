@@ -570,6 +570,7 @@ impl Interpreter {
         self.push_import_scope();
         if let Some(scope) = self.module.import_scope_stack.last_mut() {
             scope.region = Some(region_key);
+            scope.block_end = Some(body_end);
         }
         // The region's imports bind in an env layer of their own, dropped with
         // the region on every exit path: no key list and no restore
@@ -767,11 +768,28 @@ impl Interpreter {
             }
         }
 
-        let queue_res = if !ran_undo {
+        let mut queue_res = if !ran_undo {
             self.run_leave_queue_guarded(code, keep_start, undo_start, compiled_fns)
         } else {
             self.run_leave_queue_guarded(code, undo_start, post_start, compiled_fns)
         };
+        // LEAVE phasers a `use` attached to the scope this block is the body of
+        // (`runtime::attach_target`) run here, still inside the block: the
+        // dynamic variables the module exported are the block's own.
+        if self
+            .module
+            .import_scope_stack
+            .last()
+            .is_some_and(|scope| scope.block_end == Some(bounds[6]))
+        {
+            let attached = self.take_import_scope_leave_phasers();
+            if !attached.is_empty() {
+                let res = self.run_attached_leave_phasers(attached);
+                if queue_res.is_ok() {
+                    queue_res = res;
+                }
+            }
+        }
 
         // When UNDO phasers ran in response to a fail(), mark the error so the
         // resulting Failure value will be created with handled=True (Raku semantics:
