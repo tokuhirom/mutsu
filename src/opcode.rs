@@ -11263,7 +11263,15 @@ impl CompiledCode {
             if let Some(idx) = Self::op_code_var_read_const_idx(op)
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
-                && !name.contains(':')
+                // An operator-named lexical (`&infix:<cmp>`, a parameter or a
+                // `my &infix:<cmp>`) is captured like any other `&name`; the
+                // `outer_code_var_names` gate below keeps it to a binding
+                // that is really declared in an enclosing scope (#16967).
+                && (!name.contains(':')
+                    || (!crate::qualified::is_qualified_str(name.as_str())
+                        && (name.starts_with("infix:<")
+                            || name.starts_with("prefix:<")
+                            || name.starts_with("postfix:<"))))
             {
                 let key = format!("&{}", name.as_str());
                 if crate::env::is_plain_user_lexical(&key)
