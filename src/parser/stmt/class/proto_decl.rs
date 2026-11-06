@@ -79,11 +79,27 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
     let mut body = Vec::new();
     if rest.starts_with('{') {
         // `{*}` is the proto's dispatcher, not a statement list, to rakudo.
+        // The body sees the proto's sigilless / callable parameters as terms,
+        // exactly as a plain `sub` body does (`proto f(\item) { item }` reads the
+        // parameter, not the builtin `item`).
+        let needs_scope = crate::parser::stmt::sub::any_sigilless(&param_defs)
+            || crate::parser::stmt::sub::any_callable_param(&param_defs)
+            || crate::parser::stmt::sub::has_type_capture(&param_defs);
+        if needs_scope {
+            crate::parser::stmt::simple::push_scope();
+            crate::parser::stmt::simple::mark_current_scope_routine_body();
+            crate::parser::stmt::sub::register_sigilless_terms(&param_defs);
+            crate::parser::stmt::sub::register_callable_param_terms(&param_defs);
+            crate::parser::stmt::sub::register_body_type_captures(&param_defs);
+        }
         let parsed = if crate::parser::stmt::trace::is_dispatcher_body(rest) {
             crate::parser::stmt::trace::unnumbered(|| block(rest))
         } else {
             block(rest)
         };
+        if needs_scope {
+            crate::parser::stmt::simple::pop_scope();
+        }
         let (rest, parsed_body) = match parsed {
             Ok(ok) => ok,
             Err(error) if error.is_fatal() => return Err(error),
