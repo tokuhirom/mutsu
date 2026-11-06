@@ -79,7 +79,7 @@ pub(in crate::parser) use compile_consts::{
     mark_current_scope_routine_body, mark_current_scope_self_available, pop_scope,
     prepend_anon_state_decls, push_scope, record_anon_state_name, register_compile_time_constant,
     register_use_exports, restore_worries, self_available, set_trace_pragma, suppress_worries,
-    trace_pragma_active, worries_suppressed,
+    trace_pragma_active, truncate_current_scope_anon_states, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
