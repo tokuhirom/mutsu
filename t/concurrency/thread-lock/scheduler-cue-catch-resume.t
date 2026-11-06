@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 # A `$*SCHEDULER.cue(:catch)` handler runs in the dynamic scope of the `die`,
 # so `.resume` continues the dying code (as rakudo does).
@@ -42,4 +42,13 @@ plan 6;
     sleep 0.2;
     is-deeply @got.List, ("stop",), 'non-resuming handler ran once; code abandoned';
     is $p.status, 'Kept', 'handler completed';
+}
+
+# `try .resume` inside a CATCH block resumes too: the resume signal is not an
+# exception, so `try` must not swallow it.
+{
+    my @seen;
+    sub f { die "x"; @seen.push("after") }
+    { f(); CATCH { default { try .resume } } }
+    is-deeply @seen.List, ("after",), 'try .resume in CATCH continues the die site';
 }
