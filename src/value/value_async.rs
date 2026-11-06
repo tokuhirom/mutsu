@@ -347,6 +347,35 @@ impl SharedChannel {
         }
     }
 
+    /// Put `value` at the head of the queue, so the next receive takes it
+    /// (`nqp::unshift` on a `ConcBlockingQueue`). Ignored on a closed channel,
+    /// as `send` is.
+    // Cost: O(1) (one lock and a wakeup).
+    pub(crate) fn unshift(&self, value: Value) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if state.send_closed {
+            return;
+        }
+        state.queue.push_front(value);
+        cvar.notify_one();
+        for w in &state.wakers {
+            w.notify();
+        }
+    }
+
+    /// The `index`th waiting value, left in the queue (`nqp::atpos` on a
+    /// `ConcBlockingQueue`); `None` past the end.
+    // Cost: O(1).
+    pub(crate) fn peek(&self, index: usize) -> Option<Value> {
+        let (lock, _) = &*self.inner;
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .queue
+            .get(index)
+            .cloned()
+    }
+
     /// The values waiting to be received.
     // Cost: O(1).
     pub(crate) fn len(&self) -> usize {
