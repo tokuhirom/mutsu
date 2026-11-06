@@ -194,7 +194,7 @@ pub(crate) fn publish_late_imports<'a>(
     imported: &dyn Fn(&str) -> bool,
 ) {
     let mut names: Vec<String> = cus
-        .flat_map(|cu| crate::rakuast::unresolved_call_names(cu))
+        .flat_map(crate::rakuast::unresolved_call_names)
         .collect();
     names.sort();
     names.dedup();
