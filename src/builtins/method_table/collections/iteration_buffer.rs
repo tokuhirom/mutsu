@@ -204,8 +204,10 @@ fn list(target: &Value, _args: &[Value]) -> Answer {
     // `nqp::shift` on the buffer shows through a `List` taken earlier -- the
     // sliding window of `Sequence::Generator`'s `LambdaN`.
     if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(ValueView::Array(data, _)) =
-            attributes.as_map().get(ITERATION_BUFFER_ITEMS).map(Value::view)
+        && let Some(ValueView::Array(data, _)) = attributes
+            .as_map()
+            .get(ITERATION_BUFFER_ITEMS)
+            .map(Value::view)
     {
         return Some(Ok(Value::array_with_kind(
             data.clone(),
