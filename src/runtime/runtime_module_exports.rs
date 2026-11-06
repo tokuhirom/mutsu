@@ -1173,7 +1173,9 @@ impl Interpreter {
                     .family_keys(&format!("{module}::EXPORT::ALL::{name}"))
                     .is_empty();
             let global_single = format!("GLOBAL::{name}");
-            let imported_proto = self
+            // Whether the source declared a real `proto` (as opposed to a bare
+            // file whose `is export` multis merely form a family).
+            let imported_real_proto = self
                 .registry()
                 .proto_functions
                 .contains_key(&source_single_sym)
@@ -1181,8 +1183,8 @@ impl Interpreter {
                     && self
                         .registry()
                         .proto_functions
-                        .contains_key(&Symbol::intern(&global_single)))
-                || bare_file_multi;
+                        .contains_key(&Symbol::intern(&global_single)));
+            let imported_proto = imported_real_proto || bare_file_multi;
             let global_family_present = bare_file_module
                 && !self
                     .registry()
@@ -1421,7 +1423,13 @@ impl Interpreter {
             // under the importing package too. (Before unit-module routines
             // registered under their own package, a module's proto was already
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
-            if imported_proto && !family_bound_lexically {
+            // A bare file's exported `multi infix:<op>` candidates are NOT a
+            // `proto`: recording the name in `proto_subs` made the operator
+            // look shadowed, so a core candidate never competed with them
+            // (Color's `infix:<*>` made CSS::Units' own `($v * $n)` recurse).
+            let records_proto_name = imported_real_proto
+                || (bare_file_multi && !name.starts_with("infix:<"));
+            if records_proto_name && !family_bound_lexically {
                 let was_present = self.registry().proto_subs_contains(&target_single);
                 if !was_present {
                     self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
