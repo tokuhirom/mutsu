@@ -960,6 +960,42 @@ impl Compiler {
             self.compile_stmt(&rewritten);
             return;
         }
+        // `my $f = my $g = EXPR`: the inner declaration is a lexical of the
+        // enclosing scope, exactly as if it had been written as its own
+        // statement first. Compiled in expression position it got no local
+        // slot, so a closure or named sub declared later never saw it (its
+        // writes were lost). Hoist it, then initialize `$f` from `$g`.
+        if let Stmt::VarDecl {
+            name: outer,
+            expr,
+            is_state: false,
+            is_our: false,
+            bind: None,
+            constant: None,
+            ..
+        } = stmt
+            && let Some(inner) = Self::hoistable_inner_decl(expr)
+            && let Stmt::VarDecl {
+                name: inner_name,
+                is_state: false,
+                is_our: false,
+                bind: None,
+                constant: None,
+                has_initializer: true,
+                ..
+            } = inner
+            && !outer.starts_with(['\\'])
+            && Self::is_plain_lexical_name(inner_name)
+        {
+            let inner_name = inner_name.clone();
+            self.compile_stmt(inner);
+            let mut rewritten = stmt.clone();
+            if let Stmt::VarDecl { expr, .. } = &mut rewritten {
+                *expr = Expr::Var(inner_name);
+            }
+            self.compile_stmt(&rewritten);
+            return;
+        }
         // A statement is an expression-depth boundary: its own operands are
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).
@@ -975,6 +1011,16 @@ impl Compiler {
         }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);
+    }
+
+    /// The declaration an initializer consists of, `my $g = 2` in `my $f = my
+    /// $g = 2` or `my $f = (my $g = 2)`.
+    fn hoistable_inner_decl(expr: &Expr) -> Option<&Stmt> {
+        match expr {
+            Expr::DoStmt(inner) => Some(inner.as_ref()),
+            Expr::Grouped(inner) => Self::hoistable_inner_decl(inner),
+            _ => None,
+        }
     }
 
     /// Record the `@`/`%` name of `my @a = <initializer>` while its initializer
