@@ -29,6 +29,28 @@ impl Interpreter {
         {
             return crate::runtime::utils::coerce_to_hash(inner.as_ref().clone());
         }
+        // A user class that is `Iterable` through its own `iterator` (and has
+        // no `list`) contributes what that iterator yields: `Any.list` would
+        // answer `(self,)` and the object would become one bogus key. A lazy
+        // iterator is left alone (draining it would not terminate).
+        // The user `iterator` is reached through
+        // `try_compiled_method_or_interpret`, the compiled-method route.
+        if let ValueView::Instance { class_name, .. } = value.view()
+            && !value.is_match_instance()
+        {
+            let cn = class_name.resolve();
+            if self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, "list")
+                && let Ok(iterator) =
+                    self.try_compiled_method_or_interpret(value.clone(), "iterator", Vec::new())
+                && matches!(self.is_lazy_user_iterator(&iterator), Ok(false))
+                && let Ok((items, _)) = self.drive_iterator_value_items(iterator)
+            {
+                return crate::runtime::utils::coerce_to_hash(Value::real_array(
+                    items.into_iter().map(Self::containerize_pair_item).collect(),
+                ));
+            }
+        }
         if let ValueView::Instance { .. } = value.view()
             && !value.is_match_instance()
             && let Ok(listed) = self.call_method_with_values(value.clone(), "list", Vec::new())

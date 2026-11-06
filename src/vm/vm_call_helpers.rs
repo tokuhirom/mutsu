@@ -22,7 +22,7 @@ impl Interpreter {
     /// entirely — `exec_make_slip_op` applies this to every element sourced
     /// from a genuinely positional container (Array/Seq/LazyList/Capture's
     /// positional lane).
-    pub(super) fn containerize_pair_item(item: Value) -> Value {
+    pub(crate) fn containerize_pair_item(item: Value) -> Value {
         match item.view() {
             ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
             _ => item,

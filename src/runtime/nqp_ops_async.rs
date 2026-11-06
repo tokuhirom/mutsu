@@ -199,6 +199,24 @@ impl Interpreter {
             // nqp::elems($q): the items waiting.
             // Cost: O(1).
             "elems" => Ok(Value::int(queue.len() as i64)),
+            // nqp::unshift($q, $v): enqueue `$v` at the head and answer it.
+            // Cost: O(1).
+            "unshift" => {
+                let value = args.get(1).cloned().unwrap_or(Value::NIL);
+                queue.unshift(value.clone());
+                Ok(value)
+            }
+            // nqp::atpos($q, 0): the head item without taking it; a null
+            // (`Nil`) when the queue is empty. MoarVM refuses any other index.
+            // Cost: O(1).
+            "atpos" => {
+                if args.get(1).and_then(Value::as_int) != Some(0) {
+                    return Some(Err(RuntimeError::new(
+                        "Can only request (peek) head of a concurrent blocking queue",
+                    )));
+                }
+                Ok(queue.peek(0).unwrap_or(Value::NIL))
+            }
             // Cost: O(1).
             _ => Err(RuntimeError::new(format!(
                 "This representation (ConcBlockingQueue) does not support positional access (for type {})",
