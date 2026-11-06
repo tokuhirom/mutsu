@@ -7625,7 +7625,15 @@ impl Interpreter {
             }
             // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when none.
             OpCode::RunCheckCode => {
-                for (closure, _cu) in crate::unit_source_text::take_check_code() {
+                // The tree `$*CU` handed out earlier (a `sub EXPORT` of a `-M`
+                // module reads it before the unit's own `use` lines have run)
+                // resolved no imported routine: say which ones resolve now.
+                let queued = crate::unit_source_text::take_check_code();
+                crate::unit_source_text::publish_late_imports(
+                    queued.iter().map(|(_, cu)| cu),
+                    &|routine| self.unit_routine_imported(routine),
+                );
+                for (closure, _cu) in queued {
                     self.vm_call_on_value(closure, Vec::new(), None)?;
                 }
                 // The unit's compile phase ends after its CHECK phasers and

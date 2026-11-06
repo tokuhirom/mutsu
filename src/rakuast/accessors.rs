@@ -119,13 +119,22 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             // A package declaration keeps its qualified name there, not a resolution.
             "is-resolved" => {
                 return Some(Value::truth(
-                    node.origin.2.is_some() && resolve::package_qualified_name(node).is_none(),
+                    (node.origin.2.is_some() && resolve::package_qualified_name(node).is_none())
+                        || resolve::late_resolution(node).is_some(),
                 ));
             }
             "resolution" if resolve::package_qualified_name(node).is_some() => {
                 return Some(Value::NIL);
             }
-            "resolution" => return Some(node.origin.2.clone().unwrap_or(Value::NIL)),
+            "resolution" => {
+                return Some(
+                    node.origin
+                        .2
+                        .clone()
+                        .or_else(|| resolve::late_resolution(node))
+                        .unwrap_or(Value::NIL),
+                );
+            }
             _ => {}
         }
     }

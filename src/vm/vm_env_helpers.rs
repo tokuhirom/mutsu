@@ -2,6 +2,23 @@ use super::*;
 use crate::meta_ns::MetaNs;
 
 impl Interpreter {
+    /// Whether the unit being compiled can call `routine` by now: a routine of
+    /// the running scope, or one the importing unit has imported so far. The
+    /// resolution `$*CU` answers for an imported routine is built from it.
+    // Cost: O(1) expected, a few hashed lookups.
+    pub(crate) fn unit_routine_imported(&self, routine: &str) -> bool {
+        self.resolve_function(routine).is_some()
+            || matches!(
+                self.resolve_code_var(routine).view(),
+                crate::value::ValueView::Sub(_)
+            )
+            // A module reading `$*CU` (static's `CHECK`) has none of the
+            // unit's imports in its own scope: ask the unit that called it.
+            || self
+                .unit_import_routine(crate::runtime::main_unit(), routine)
+                .is_some()
+    }
+
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
     /// currently a scoped overlay. No-op (O(1)) for a flat env. Used at every
     /// boundary that would otherwise let a transient scoped env survive into code
@@ -1899,16 +1916,7 @@ impl Interpreter {
         // its lookups resolve to `Declaration::Import` (#15610).
         if matches!(name, "$*CU" | "*CU") {
             return crate::unit_source_text::compile_time_cu(&|routine| {
-                self.resolve_function(routine).is_some()
-                    || matches!(
-                        self.resolve_code_var(routine).view(),
-                        crate::value::ValueView::Sub(_)
-                    )
-                    // A module reading `$*CU` (static's `CHECK`) has none of the
-                    // unit's imports in its own scope: ask the unit that called it.
-                    || self
-                        .unit_import_routine(crate::runtime::main_unit(), routine)
-                        .is_some()
+                self.unit_routine_imported(routine)
             });
         }
         if let Some(v) = Self::lazy_magic_dynamic_var(name) {

@@ -1902,6 +1902,19 @@ pub fn compile_time_compunit(
     Ok(Value::rakuast(Box::new(node)))
 }
 
+/// The names of the calls of the unit tree `cu` that carry no resolution yet
+/// could still resolve to a routine the unit imports later.
+// Cost: O(n), n = nodes of the tree.
+pub(crate) fn unresolved_call_names(cu: &Value) -> Vec<String> {
+    let mut names = Vec::new();
+    if let ValueView::RakuAst(node) = cu.view() {
+        resolve::unresolved_call_names(node, &mut names);
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Entry point for `Str.AST(:compunit)`: the parsed `StatementList` wrapped in
 /// a `RakuAST::CompUnit`, as rakudo returns it. Rakudo names each compunit
 /// with a fresh 40-hex-digit identifier (two parses of the same source get
