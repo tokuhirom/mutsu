@@ -293,6 +293,21 @@ impl Interpreter {
                 Some(_) => self.capture_closure_env(code, &analysis_cc),
                 None => self.env().clone(),
             };
+            // A file-scope `our` variable is reachable by its bare name only
+            // through the env that declared it, and the capture above keeps
+            // just the body's own free variables: a routine the body calls
+            // (`sub f { $a }`, `our $a` at file scope) would read `Any`. Hand
+            // the shared containers over, unless the capture already holds
+            // that name (a nearer lexical of the same spelling).
+            // Cost: O(g), g = file-scope `our` variables declared so far.
+            for sym in self.lexicals.global_our_names.iter() {
+                if env.contains_key_sym(*sym) {
+                    continue;
+                }
+                if let Some(v) = self.get_our_var(sym.as_str()) {
+                    env.insert_sym(*sym, v.clone());
+                }
+            }
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
             env.insert(
                 "__mutsu_gather_unit".to_string(),
