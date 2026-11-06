@@ -98,6 +98,12 @@ impl Interpreter {
         let raw_value = args[3 + offset].clone();
         let is_bind = Self::is_bind_index_value(&raw_value);
         let (value, bind_source) = Self::unwrap_bind_index_value(raw_value);
+        // An assignment stores the VALUE. A constant read through a closure's
+        // capture (an imported `enum` member behind `LexImportCall`) arrives as
+        // its shared cell; stored as is, the element slot aliases the constant
+        // and a later store into the slot rewrites the constant itself
+        // (`@!rec[0] = RE_LEFT` turned `RE_RIGHT` into `RE_LEFT`, #16900).
+        let value = if is_bind { value } else { value.into_deref() };
         let var_name = args[4 + offset].to_string_value();
 
         // ADR-0068 §4 step 3: an attribute-rooted element store on an INSTANCE
