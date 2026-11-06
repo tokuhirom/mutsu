@@ -73,11 +73,16 @@ pub(crate) fn not(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError
 /// `.map` pipe is not lazy); everything else is lazy only when it is a lazy
 /// array, an infinite range or a lazy `Seq`.
 // Cost: O(1), the invocant's own lazy flag or range end.
-pub(in crate::builtins::method_table) fn is_lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(in crate::builtins::method_table) fn is_lazy(
+    target: &Value,
+    _args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Seq(_) => super::super::collections::seq::is_lazy(target, &[]),
         ValueView::Instance { .. } if crate::value::native_iterator_is_lazy(target).is_some() => {
-            Some(Ok(Value::truth(crate::value::native_iterator_is_lazy(target) == Some(true))))
+            Some(Ok(Value::truth(
+                crate::value::native_iterator_is_lazy(target) == Some(true),
+            )))
         }
         ValueView::LazyList(list) => {
             let is_gather = list.env.get("__mutsu_lazylist_from_gather").is_some();
