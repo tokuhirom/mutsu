@@ -788,6 +788,24 @@ fn near_snippet(input: &str, max_chars: usize) -> Option<String> {
     }
 }
 
+/// Whether one parser failure message is an operand parser's "expected
+/// expression after ... operator" (or "right-hand expression") diagnosis.
+/// The message may be a merged `expected A or B or ...` list, so each
+/// `expression after X` alternative is cut at the next ` or `.
+// Cost: O(m), m = message length.
+fn names_missing_operand_after_operator(message: &str) -> bool {
+    if message.contains("expected right-hand expression") {
+        return true;
+    }
+    message
+        .match_indices("expression after ")
+        .any(|(at, key)| {
+            let alternative = &message[at + key.len()..];
+            let alternative = alternative.split(" or ").next().unwrap_or(alternative);
+            alternative.trim_end().ends_with(" operator")
+        })
+}
+
 fn parse_error_hint(message: &str) -> Option<&'static str> {
     if message.contains("method name") {
         Some("check method-call syntax after '.' (for example: '$obj.method').")
@@ -903,7 +921,24 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
         // the generic "Confused." wrapper — which would otherwise bury it
         // inside an "expected A or B or …" list and leave the exception
         // classed `X::Syntax::Confused`.
-        if let Some(typed) = e.typed_convention_message() {
+        // An infix operator with no term after it (`42 *`, `1 +;`, `(1 +)`)
+        // is rakudo's `X::Comp::AdHoc: Missing required term after infix`. The
+        // operand parsers each fail with their own "expected expression after
+        // ... operator" text; at the furthest failure position, with nothing
+        // but a statement or bracket end after it, that is this diagnosis.
+        let missing_term_after_infix = e.typed_convention_message().is_none()
+            && tail
+                .trim_start()
+                .starts_with(|c: char| matches!(c, ';' | ')' | ']' | '}'))
+                | tail.trim().is_empty()
+            && e.messages.iter().any(|m| names_missing_operand_after_operator(m));
+        let missing_term_message = "X::Comp::AdHoc: Missing required term after infix";
+        let typed_message = if missing_term_after_infix {
+            Some(missing_term_message)
+        } else {
+            e.typed_convention_message()
+        };
+        if let Some(typed) = typed_message {
             let mut err = RuntimeError::with_location(
                 typed.to_string(),
                 RuntimeErrorCode::ParseExpected,
