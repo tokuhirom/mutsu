@@ -1916,22 +1916,7 @@ impl Compiler {
                     } else {
                         expr
                     };
-                    if marks.sigilless_decl
-                        && !bind_vardecl
-                        && matches!(rhs_expr, Expr::DoBlock { .. } | Expr::DoStmt(_))
-                        && Self::is_bind_container_block(rhs_expr)
-                    {
-                        // `my \c = do { ...; Proxy.new(...) }`: a sigilless
-                        // declaration binds its initializer whether spelled `=`
-                        // or `:=`, so a `do` source yields its tail's
-                        // container (a Proxy stays a Proxy), as in `my $c := do
-                        // ...` (#16965).
-                        self.with_escape(true, |c| {
-                            c.compile_bind_through_block(rhs_expr, true, false);
-                        });
-                    } else {
-                        self.compile_assignment_rhs_for_target(name, rhs_expr);
-                    }
+                    self.compile_assignment_rhs_for_target(name, rhs_expr);
                     // `my $ref := $obj.attr`: flag the trailing accessor
                     // dispatch to return the attribute slot's ContainerRef cell
                     // (see MarkAccessorRefContext). Done HERE, on the normal

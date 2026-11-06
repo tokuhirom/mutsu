@@ -120,6 +120,11 @@ pub(super) fn build_sigilless_bind_stmt(
         // (`my $x := y`) already routes this way, through the `__scalar_bind`
         // branch in `compile_stmt`'s `VarDecl` arm.
         Expr::BareWord(n) => is_value_term(n),
+        // `my \c = do { ...; Proxy.new(...) }`: a `do` source denotes the
+        // container of its tail, exactly as the parenthesized spelling does
+        // (`my \d = (Proxy.new(...))`), so it binds through the block (#16965).
+        Expr::DoBlock { .. } => true,
+        Expr::DoStmt(stmt) => !matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
         _ => false,
     };
     // A scopeless expansion, as in expression position (`foo(my \x = 1)`).
