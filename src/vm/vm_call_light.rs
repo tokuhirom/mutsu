@@ -1379,7 +1379,12 @@ impl Interpreter {
             // legitimate caller value ever reaches this arm with one of
             // those kinds since a Raku source program has no way to name a
             // lowercase native type in term position as a bare word).
-            ValueView::Package(sym) => kind == T::Wild || sym == name_sym,
+            // The `Bool` type object is an `Int` type object too (Bool is-an Int).
+            ValueView::Package(sym) => {
+                kind == T::Wild
+                    || sym == name_sym
+                    || (kind == T::Int && sym.with_str(|n| n == "Bool"))
+            }
             // `NativeInt` also accepts `Bool` and `BigInt` here -- the actual
             // Bool-unbox / range-check / wrap coercion (which can fail for an
             // out-of-range `BigInt`) runs at the bind site right after this
@@ -1389,9 +1394,11 @@ impl Interpreter {
             }
             ValueView::Str(_) => matches!(kind, T::Str | T::NativeStr | T::Wild),
             ValueView::Num(_) => matches!(kind, T::Num | T::NativeNum | T::Wild),
-            ValueView::Bool(_) => {
-                matches!(kind, T::Bool | T::NativeInt | T::NativeIntSized | T::Wild)
-            }
+            // `Bool` is-an `Int`: it satisfies an `Int` constraint too.
+            ValueView::Bool(_) => matches!(
+                kind,
+                T::Bool | T::Int | T::NativeInt | T::NativeIntSized | T::Wild
+            ),
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
             // An enum value satisfies the base type its values carry (`our Str
             // enum S «:A<a>»` — `S::A` is a `Str`) as well as its own enum type,
@@ -1564,7 +1571,8 @@ impl Interpreter {
         if let ValueView::Package(sym) = val.view()
             && !matches!(type_name, "Any" | "Mu")
         {
-            return sym.resolve() == type_name;
+            return sym.resolve() == type_name
+                || (type_name == "Int" && sym.with_str(|n| n == "Bool"));
         }
         // An enum value satisfies the base type its values carry (`our Str enum
         // S «:A<a>»` — `S::A` is a `Str`), which neither the by-name arms below
@@ -1583,7 +1591,12 @@ impl Interpreter {
             };
         }
         match type_name {
-            "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),
+            // `Bool` is-an `Int` (`Bool.^mro` is `Bool, Int, Cool, ...`), so it
+            // binds an `Int` parameter exactly as the general binder lets it.
+            "Int" => matches!(
+                val.view(),
+                ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
+            ),
             "Str" => matches!(val.view(), ValueView::Str(_)),
             "Num" => matches!(val.view(), ValueView::Num(_)),
             "Bool" => matches!(val.view(), ValueView::Bool(_)),
