@@ -5246,6 +5246,25 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        // A sigilless target's store consumes the assigned value
+                        // (`SetGlobal`), so a unit ending in `p = 8` (`EVAL 'p = 8'`,
+                        // a REPL chunk `_ = _1`) was Nil where raku's assignment
+                        // yields the container. Route it through the expression
+                        // form, as a block's value-final assignment does (#16947).
+                        Stmt::Assign {
+                            name,
+                            expr,
+                            op: op @ (AssignOp::Assign | AssignOp::Bind),
+                            target_is_sigilless: true,
+                        } => {
+                            self.compile_expr(&Expr::AssignExpr {
+                                name: crate::runtime::term_names::bareword_target_key(name),
+                                expr: Box::new(expr.clone()),
+                                is_bind: matches!(op, AssignOp::Bind),
+                            });
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         Stmt::Call { name, args, .. } => {
                             // Tail call: its value is the body result, whether
                             // the args are positional-only or carry named/slip

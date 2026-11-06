@@ -370,10 +370,21 @@ impl Interpreter {
         let outer_ctx = outer.and_then(|id| self.repl_compiler.contexts.get(id).cloned());
         // Without an outer context the unit sees the setting only, as in
         // rakudo -- not the lexicals of whichever method called `.eval`.
-        let unit_env = outer_ctx
+        let mut unit_env = outer_ctx
             .as_ref()
             .map(|ctx| ctx.env.clone())
             .unwrap_or_default();
+        // ...but dynamic variables are resolved through the CALLER chain, so
+        // the unit sees the caller's `$*OUT` / `$*ERR` / `$*FOO` (a REPL
+        // sandbox that redirects `$*OUT` to capture a chunk's output),
+        // replacing whatever stale copy the outer context captured (#16947).
+        // Oldest caller first, so the nearest binding of a name wins.
+        for env in self.caller_env_stack.iter().chain(std::iter::once(&self.env)) {
+            let dynamics = env.filtered_flat(&|key, _| key.is_dynamic_var_env_key());
+            for (key, value) in dynamics.iter() {
+                unit_env.insert_sym(*key, value.clone());
+            }
+        }
         let saved_env = std::mem::replace(&mut self.env, unit_env);
         let registry_before = self.snapshot_routine_registry();
         if let Some(ctx) = &outer_ctx {
