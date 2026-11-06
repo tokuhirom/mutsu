@@ -1293,7 +1293,12 @@ impl Interpreter {
                         if !super::signature::named_param_parens_accept(self, pd, sub_params, val) {
                             return false;
                         }
-                    } else if pd.default.is_none() && !sub_signature_binds_nothing(sub_params) {
+                    } else if pd.default.is_none()
+                        // `:a($u)` / `:a(@u)` only renames the variable; the
+                        // one-parameter "sub-signature" is not an unpack.
+                        && !pd.named_alias
+                        && !sub_signature_binds_nothing(sub_params)
+                    {
                         return false;
                     }
                 }
