@@ -109,6 +109,12 @@ impl Interpreter {
         // `Pkg::<$v>.VAR`: the parent is the package's stash, which names its
         // symbols by key (#16923).
         if let Some(key) = Self::stash_key_of_element(&container, &element) {
+            // An `@`/`%` symbol is the Array/Hash itself (a stash is a Map of
+            // symbols, mutsu#10757): its `.VAR` is that aggregate, named by
+            // its own descriptor, not a `Scalar` element descriptor.
+            if matches!(element.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+                return self.call_method_with_values(element, "VAR", Vec::new());
+            }
             return self.element_var_meta(element, None, &key);
         }
         self.element_var_meta(element, Some(container), "")
