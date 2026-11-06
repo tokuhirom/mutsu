@@ -877,6 +877,13 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A (reified) `Seq` answers `[i]:exists` through its cache, like the
+        // `Array` it indexes as (`Seq.EXISTS-POS`).
+        let target = match target.view() {
+            ValueView::Seq(body) => Value::array(body.iter().cloned().collect()),
+            _ => target,
+        };
+
         // Owned clone of the array backing (a view guard's borrow cannot
         // outlive the match), so the slice stays valid below.
         let arr_data: Option<(crate::gc::Gc<crate::value::ArrayData>, bool)> = match target.view() {

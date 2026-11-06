@@ -324,6 +324,21 @@ impl Compiler {
             // expression, so it is built here as that AST.
             // Cost: O(1) per iteration sunk (compiles to jumps; no runtime
             // op); O(1) per pulled element in value position (a gather).
+            // The optional third operand is the loop's `post` step, run after
+            // every iteration's body (`nqp::until(cond, body, post)`, as in
+            // Iter::Able's `$idx++, nqp::if(...)`): the body then is
+            // `nqp::stmts(body, post)`. The loop test runs first, so an empty
+            // iteration never reaches `post`.
+            "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
+                if args.len() == 3 =>
+            {
+                let body = Expr::Call {
+                    name: crate::symbol::Symbol::intern("nqp::stmts"),
+                    args: vec![args[1].clone(), args[2].clone()],
+                    listop: false,
+                };
+                self.try_compile_nqp_form(name, &[args[0].clone(), body])
+            }
             "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
                 if args.len() == 2 =>
             {
@@ -350,7 +365,7 @@ impl Compiler {
         matches!(
             e,
             Expr::Call { name, args, .. }
-                if args.len() == 2
+                if matches!(args.len(), 2 | 3)
                     && matches!(
                         name.as_str(),
                         "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
