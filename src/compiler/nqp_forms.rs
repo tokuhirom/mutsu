@@ -308,6 +308,39 @@ impl Compiler {
             // empty iterator after a missing directory.
             // Cost: O(1) (compiles to a try/CATCH region; no runtime op).
             "nqp::handle" if args.len() == 3 => {
+                // The category names which exceptions the handler takes: a
+                // loop-control one (`'LAST'`, `'NEXT'`, `'REDO'`: Sequence::Generator's
+                // `nqp::handle($!producer(), 'LAST', return IterationEnd)`)
+                // catches only that control exception and lets everything
+                // else, and every error, through; anything else (`'CATCH'`)
+                // takes the errors.
+                let control = match &args[1] {
+                    Expr::Literal(v) => match v.to_string_value().as_str() {
+                        "LAST" => Some("CX::Last"),
+                        "NEXT" => Some("CX::Next"),
+                        "REDO" => Some("CX::Redo"),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(kind) = control {
+                    // The phaser comes first so the body's own value stays the last statement.
+                    // TODO: rakudo's `nqp::handle` yields the handler's value when the
+                    // control exception is taken; a CONTROL phaser drops it here, so only a
+                    // handler that acts (`return`, a side effect) is right. The correct
+                    // approach is a try region whose control arm leaves the handler's value
+                    // on the stack.
+                    let body = vec![
+                        Stmt::Control(vec![Stmt::When {
+                            cond: Expr::BareWord(kind.to_string()),
+                            body: vec![Stmt::Expr(args[2].clone())],
+                            is_statement_modifier: false,
+                        }]),
+                        Stmt::Expr(args[0].clone()),
+                    ];
+                    self.compile_try_with_catch_value(&body, &None);
+                    return true;
+                }
                 let body = vec![Stmt::Expr(args[0].clone())];
                 let catch = Some(vec![Stmt::Default(vec![Stmt::Expr(args[2].clone())])]);
                 self.compile_try_with_catch_value(&body, &catch);

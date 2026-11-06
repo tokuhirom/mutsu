@@ -55,6 +55,11 @@ role GLOBAL::Iterator {
     method is-deterministic() { True }
     method is-monotonically-increasing() { False }
 }
+# `role PredictiveIterator does Iterator`: a class composing it composes the
+# Iterator defaults above through it.
+role GLOBAL::PredictiveIterator does Iterator {
+    method bool-only(--> Bool:D) { so self.count-only }
+}
 "#;
 
 impl Interpreter {
@@ -77,8 +82,12 @@ impl Interpreter {
     // declares `class Iterator {}`), and a module that composes the role still
     // collides with a program that declares its own global `class Iterator`.
     pub(super) fn inject_iterator_role_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        let composes =
-            source.contains_name("does Iterator") || source.contains_name("but Iterator");
+        // `PredictiveIterator` is `role PredictiveIterator does Iterator`, so a
+        // class composing it gets the same defaults (`skip-one`, ...).
+        let composes = source.contains_name("does Iterator")
+            || source.contains_name("but Iterator")
+            || source.contains_name("does PredictiveIterator")
+            || source.contains_name("but PredictiveIterator");
         if !composes
             || source.contains_name("role Iterator")
             || source.contains_name("class Iterator")
