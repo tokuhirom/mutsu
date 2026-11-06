@@ -265,7 +265,31 @@ impl Interpreter {
                 self.stack.push(stash);
                 Ok(())
             }
-            None => self.exec_get_pseudo_stash_op(code, name_idx),
+            None => {
+                self.exec_get_pseudo_stash_op(code, name_idx)?;
+                // `::<M>` inside a routine: `M` is a package of the enclosing
+                // scopes, which the routine's own frame does not hold.
+                if name == "::"
+                    && let ValueView::Str(key_str) = key.deref_container().view()
+                    && !key_str.is_empty()
+                    && !key_str.starts_with(['$', '@', '%', '&'])
+                    && self.is_known_package(&key_str)
+                    && let Some(top) = self.stack.pop()
+                {
+                    let mut entries: ValueMap = ValueMap::default();
+                    if let ValueView::Hash(map, ..) = top.view() {
+                        for (k, v) in map.iter() {
+                            entries.insert(k.clone(), v.clone());
+                        }
+                    }
+                    entries
+                        .entry(key_str.to_string())
+                        .or_insert_with(|| Value::package(Symbol::intern(&key_str)));
+                    let stash = self.pseudo_stash_hash(entries);
+                    self.stack.push(stash);
+                }
+                Ok(())
+            }
         }
     }
 

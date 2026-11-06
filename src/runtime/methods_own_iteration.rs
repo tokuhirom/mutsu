@@ -264,6 +264,15 @@ impl Interpreter {
                 if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
                     return Some(Source::Iterator { iterable: false });
                 }
+                // `Any`'s `Seq`/`map`/`head`/... read `self.iterator`, so a
+                // class that declares both gives its `iterator` the say
+                // (BinaryHeap's `method list { self.Seq.list }` would
+                // otherwise recurse through its own `list`).
+                if VIA_ITERATOR.contains(&method) && self.has_user_method(&class, "iterator") {
+                    return Some(Source::Iterator {
+                        iterable: self.class_does_role(&class, "Iterable"),
+                    });
+                }
                 self.class_source(&class)
             }
             _ => None,
