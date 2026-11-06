@@ -221,7 +221,9 @@ impl Interpreter {
                     crate::symbol::Symbol::intern("AT-KEY"),
                     std::slice::from_ref(&key_arg),
                 )
-                .or_else(|| Some(self.vm_call_method_with_values(storage, "AT-KEY", vec![key_arg])));
+                .or_else(|| {
+                    Some(self.vm_call_method_with_values(storage, "AT-KEY", vec![key_arg]))
+                });
         }
         // `STORE` re-initializes the container wholesale, in place for the same
         // shared-identity reason as the element writes above.
