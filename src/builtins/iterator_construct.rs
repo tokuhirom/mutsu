@@ -139,11 +139,16 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
         ValueView::RangeExclBoth(a, b) => a + 1 < b,
         ValueView::GenericRange { .. } => !attrs_items_empty(&attrs),
         // `(1..*).lazy`: the range's `.succ` stepping list.
-        ValueView::LazyList(ll) => matches!(ll.sequence_spec, Some(crate::value::SequenceSpec::Succ)),
+        ValueView::LazyList(ll) => {
+            matches!(ll.sequence_spec, Some(crate::value::SequenceSpec::Succ))
+        }
         _ => false,
     };
     if non_empty_range {
-        attrs.insert(crate::value::MONOTONIC_ITERATOR_ATTR.to_string(), Value::TRUE);
+        attrs.insert(
+            crate::value::MONOTONIC_ITERATOR_ATTR.to_string(),
+            Value::TRUE,
+        );
     }
     if let ValueView::LazyList(ll) = target.view()
         && ll.env.get("__mutsu_lazylist_from_gather").is_some()
