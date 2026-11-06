@@ -138,9 +138,24 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
         ValueView::RangeExclStart(a, b) => a < b,
         ValueView::RangeExclBoth(a, b) => a + 1 < b,
         ValueView::GenericRange { .. } => !attrs_items_empty(&attrs),
-        // `(1..*).lazy`: the range's `.succ` stepping list.
+        // `(1..*).lazy`: the range's `.succ` stepping list, or the identity
+        // index pipe `Range.lazy` builds over it.
         ValueView::LazyList(ll) => {
             matches!(ll.sequence_spec, Some(crate::value::SequenceSpec::Succ))
+                || ll.lazy_pipe.as_ref().is_some_and(|pipe| {
+                    let spec = pipe.lock().unwrap_or_else(|e| e.into_inner());
+                    matches!(
+                        spec.index_transform,
+                        Some(crate::value::IndexTransform::Identity)
+                    ) && matches!(
+                        spec.source.view(),
+                        ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. }
+                    )
+                })
         }
         _ => false,
     };

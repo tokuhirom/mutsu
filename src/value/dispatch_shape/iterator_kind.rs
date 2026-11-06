@@ -57,10 +57,13 @@ pub(crate) fn native_iterator_determinism(value: &Value) -> Option<(bool, bool)>
             ..
         } if class_name == "Iterator" => {
             let map = attributes.as_map();
-            let deterministic = map.get(MAP_GREP_STREAM_ATTR).is_none()
-                && map.get(NOT_PREDICTIVE_ITERATOR_ATTR).is_none()
-                && map.get(NONDETERMINISTIC_ITERATOR_ATTR).is_none();
             let monotonic = map.get(MONOTONIC_ITERATOR_ATTR).is_some();
+            // An increasing range's iterator (even one pulled through the
+            // identity pipe `Range.lazy` builds) is reproducible.
+            let deterministic = monotonic
+                || (map.get(MAP_GREP_STREAM_ATTR).is_none()
+                    && map.get(NOT_PREDICTIVE_ITERATOR_ATTR).is_none()
+                    && map.get(NONDETERMINISTIC_ITERATOR_ATTR).is_none());
             Some((deterministic, monotonic))
         }
         _ => None,
