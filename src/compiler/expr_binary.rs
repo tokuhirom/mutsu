@@ -760,7 +760,8 @@ impl Compiler {
             // argument, so against a bare value (a literal or type object) or
             // another such parameter `=:=` is value identity (#16959).
             let direct = |e: &Expr| matches!(e.peel_parens(), Expr::Var(n) if self.direct_bound_params.contains(n));
-            let bare_value = |e: &Expr| matches!(e.peel_parens(), Expr::Literal(_) | Expr::BareWord(_));
+            let bare_value =
+                |e: &Expr| matches!(e.peel_parens(), Expr::Literal(_) | Expr::BareWord(_));
             if (direct(left) && (bare_value(right) || direct(right)))
                 || (direct(right) && bare_value(left))
             {
