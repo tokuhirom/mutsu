@@ -797,13 +797,11 @@ fn names_missing_operand_after_operator(message: &str) -> bool {
     if message.contains("expected right-hand expression") {
         return true;
     }
-    message
-        .match_indices("expression after ")
-        .any(|(at, key)| {
-            let alternative = &message[at + key.len()..];
-            let alternative = alternative.split(" or ").next().unwrap_or(alternative);
-            alternative.trim_end().ends_with(" operator")
-        })
+    message.match_indices("expression after ").any(|(at, key)| {
+        let alternative = &message[at + key.len()..];
+        let alternative = alternative.split(" or ").next().unwrap_or(alternative);
+        alternative.trim_end().ends_with(" operator")
+    })
 }
 
 fn parse_error_hint(message: &str) -> Option<&'static str> {
@@ -931,7 +929,9 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
                 .trim_start()
                 .starts_with(|c: char| matches!(c, ';' | ')' | ']' | '}'))
                 | tail.trim().is_empty()
-            && e.messages.iter().any(|m| names_missing_operand_after_operator(m));
+            && e.messages
+                .iter()
+                .any(|m| names_missing_operand_after_operator(m));
         let missing_term_message = "X::Comp::AdHoc: Missing required term after infix";
         let typed_message = if missing_term_after_infix {
             Some(missing_term_message)
