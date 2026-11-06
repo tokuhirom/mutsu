@@ -227,6 +227,21 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         (ValueView::Version { .. }, ValueView::Version { .. }) => {
             left.to_string_value() == right.to_string_value()
         }
+        // A Proxy is identified by its callbacks: a copy of the Value shares the
+        // very same FETCH and STORE closures (`eqv` would compare what FETCH
+        // answers, never the Proxy).
+        (
+            ValueView::Proxy {
+                fetcher: a_fetch,
+                storer: a_store,
+                ..
+            },
+            ValueView::Proxy {
+                fetcher: b_fetch,
+                storer: b_store,
+                ..
+            },
+        ) => values_same_object(a_fetch, b_fetch) && values_same_object(a_store, b_store),
         // Junction identity: each junction object is unique
         (
             ValueView::Junction { values: a_vals, .. },

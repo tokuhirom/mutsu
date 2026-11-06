@@ -2740,6 +2740,11 @@ impl Interpreter {
                         }
                         let val = if assigned_nil { Value::NIL } else { val };
                         loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
+                        // The STORE wrote a caller lexical by name (a Proxy in the
+                        // process stash, `PROCESS::<$P> := Proxy.new(...)`): drain the
+                        // recorded names so the owner's slot refreshes, as the other
+                        // Proxy-STORE assign sites do.
+                        self.apply_pending_rw_writeback(code);
                         *ip += 1;
                         return Ok(());
                     }
