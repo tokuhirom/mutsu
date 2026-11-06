@@ -594,6 +594,25 @@ pub(crate) fn stmt_list_with_mode(
                         r_ws,
                     ));
                 }
+                // The same, across a line break: a single-line expression
+                // statement with no `;` whose next line opens with a plain term
+                // (`$a ** 3` newline `$a ** 2`) is not two statements. Only a `;`
+                // or a closing `}` ends a statement (rakudo: "Two terms in a row
+                // across lines", #16975). Deliberately narrow: other statement
+                // shapes and next lines that could continue the expression are
+                // left alone.
+                if matches!(stmt, Stmt::Expr(_))
+                    && !consumed.ends_with(';')
+                    && !consumed.ends_with('}')
+                    && !consumed.contains(['\n', '\r'])
+                    && consumed_raw[consumed.len()..].contains(['\n', '\r'])
+                    && next_line_opens_with_plain_term(r_ws)
+                {
+                    return Err(PError::fatal(
+                        "X::Syntax::Confused: Two terms in a row across lines (missing semicolon or comma?)"
+                            .to_string(),
+                    ));
+                }
                 if matches!(
                     stmt,
                     Stmt::Package { .. } | Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
@@ -757,5 +776,21 @@ fn detect_vcs_conflict_block(r: &str) -> Option<(&str, i64)> {
             return Some((after, line));
         }
         rest = after;
+    }
+}
+
+/// Whether `rest` opens with a term no infix operator can start: a scalar or
+/// array variable, a number or a quoted string. Used to tell a missing `;`
+/// between two lines from a continuation of the first line's expression.
+// Cost: O(1).
+fn next_line_opens_with_plain_term(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some('$' | '@') => chars
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_' || matches!(c, '*' | '!' | '.' | '?')),
+        Some(c) if c.is_ascii_digit() => true,
+        Some('"' | '\'') => true,
+        _ => false,
     }
 }
