@@ -524,7 +524,10 @@ impl RuntimeError {
     pub(crate) fn assignment_ro_value_with_gist(value: Value, gist: &str) -> Self {
         // A user class's instance names its own class; the static builtin name
         // of an object is `Any`.
-        let typename = if matches!(value.view(), super::ValueView::Instance { .. }) {
+        let typename = if matches!(
+            value.view(),
+            super::ValueView::Instance { .. } | super::ValueView::Mixin(..)
+        ) {
             crate::value::types::what_type_name(&value)
         } else {
             crate::value::type_name::value_type_name(&value).to_string()
