@@ -184,24 +184,22 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
     }
 }
 
-/// Before the unit's check code runs: record which calls of the tree `$*CU`
-/// already handed out resolve to an imported routine by now. Rakudo resolves in
-/// place before the CHECK phase; the tree here is immutable, so a call that
-/// found no import when the tree was built reads this set instead.
-// Cost: O(n + u), n = nodes of the tree, u = its unresolved calls.
-pub(crate) fn publish_late_imports(imported: &dyn Fn(&str) -> bool) {
-    let Some(cu) = UNITS.with(|units| {
-        let units = units.borrow();
-        active_index(&units)
-            .and_then(|i| units.get(i))
-            .and_then(|unit| unit.cu.clone())
-    }) else {
-        return;
-    };
-    let late: std::collections::HashSet<String> = crate::rakuast::unresolved_call_names(&cu)
-        .into_iter()
-        .filter(|name| imported(name))
+/// Before the unit's check code runs: record which calls of the trees the
+/// queued closures were handed (`cus`) resolve to an imported routine by now.
+/// Rakudo resolves in place before the CHECK phase; those trees are immutable,
+/// so a call that found no import when its tree was built reads this set.
+// Cost: O(n + u), n = nodes of the trees, u = their unresolved calls.
+pub(crate) fn publish_late_imports<'a>(
+    cus: impl Iterator<Item = &'a Value>,
+    imported: &dyn Fn(&str) -> bool,
+) {
+    let mut names: Vec<String> = cus
+        .flat_map(|cu| crate::rakuast::unresolved_call_names(cu))
         .collect();
+    names.sort();
+    names.dedup();
+    let late: std::collections::HashSet<String> =
+        names.into_iter().filter(|name| imported(name)).collect();
     UNITS.with(|units| {
         let mut units = units.borrow_mut();
         if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {

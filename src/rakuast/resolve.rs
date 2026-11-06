@@ -985,8 +985,9 @@ fn deferrable_call(node: &RakuAstNode) -> Option<String> {
         return None;
     }
     let name = call_name_str(node).ok()?;
-    let plain = !super::declared_routines::is_declared(&name)
-        && !super::declared_routines::is_user_call(node)
+    // `declared_routines` is no help here: it describes the unit lowered last,
+    // which by now may be a module loaded after this tree was built.
+    let plain = !super::declared_routines::is_user_call(node)
         && !crate::builtin_functions::is_builtin_function(&name);
     plain.then_some(name)
 }
