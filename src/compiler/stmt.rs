@@ -1348,6 +1348,20 @@ impl Compiler {
                 // TODO: bind the capture name (`a`) as a type alias for the
                 // declared/inferred type so `::a` is usable as a type later.
                 let owned_type_constraint = match owned_type_constraint {
+                    // `::?CLASS` is the compile-time pseudo type of the
+                    // enclosing class, not a capture: constrain to that class
+                    // (keeping a `:U`/`:D`/`:_` smiley).
+                    // TODO: a method body does not know its class here (and a
+                    // role body's consuming class is dynamic), so the class
+                    // check is dropped to `Mu` + the smiley; the correct
+                    // approach resolves `::?CLASS` at run time.
+                    Some(tc) if tc == "::?CLASS" || tc.starts_with("::?CLASS:") => {
+                        let smiley = &tc["::?CLASS".len()..];
+                        match self.static_class.as_deref() {
+                            Some(class) => Some(format!("{class}{smiley}")),
+                            None => Some(format!("Mu{smiley}")),
+                        }
+                    }
                     Some(tc) if tc.starts_with("::") => Some("NQPMu".to_string()),
                     // A constraint naming a `constant` type alias is its
                     // target, settled here as rakudo settles it at compile
