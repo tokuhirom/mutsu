@@ -13,7 +13,7 @@ impl Interpreter {
     /// `is-lazy` answers True. mutsu's built-in iterators carry their
     /// laziness as data and are handled by the Seq itself.
     // Cost: O(1) plus one user `is-lazy` call.
-    pub(super) fn is_lazy_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
+    pub(crate) fn is_lazy_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
         let class_name = match iterator.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return Ok(false),
