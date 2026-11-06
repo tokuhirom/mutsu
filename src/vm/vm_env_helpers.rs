@@ -355,11 +355,30 @@ impl Interpreter {
         {
             return Some(v.clone());
         }
-        self.lexicals
+        if let Some(v) = self
+            .lexicals
             .package_lexicals
             .get(cur.as_str())
             .and_then(|m| m.get(name.as_str()))
-            .cloned()
+        {
+            return Some(v.clone());
+        }
+        // A class nested in a class body sees the enclosing class's `my`
+        // lexicals (the write side resolves the same owner).
+        if crate::qualified::is_global_package(cur) || crate::qualified::is_routine_scoped_package(cur)
+        {
+            return None;
+        }
+        crate::qualified::package_ancestors(cur)
+            .into_iter()
+            .filter(|pkg| *pkg != cur)
+            .find_map(|pkg| {
+                self.lexicals
+                    .package_lexicals
+                    .get(pkg.as_str())
+                    .and_then(|m| m.get(name.as_str()))
+                    .cloned()
+            })
     }
 
     /// Resolve a bare free-variable name through the enclosing package chain
