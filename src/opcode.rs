@@ -11346,9 +11346,13 @@ impl CompiledCode {
             // shows it, exactly as for an `is rw` call argument, so the receiver
             // counts as a possible write too (Object::Delayed's trampoline,
             // resolved by a `start` block that only calls a method on it).
-            if let OpCode::CallMethodMut { target_name_idx, .. } = op
-                && let Some(ValueView::Str(name)) =
-                    self.constants.get(*target_name_idx as usize).map(Value::view)
+            if let OpCode::CallMethodMut {
+                target_name_idx, ..
+            } = op
+                && let Some(ValueView::Str(name)) = self
+                    .constants
+                    .get(*target_name_idx as usize)
+                    .map(Value::view)
                 && !own.contains(name.as_str())
                 && crate::env::is_plain_user_lexical(name.as_str())
                 && !name.starts_with(['@', '%', '&'])
