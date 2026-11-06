@@ -382,6 +382,8 @@ impl Interpreter {
             // stash (`CG6::.keys` is empty in raku for `class CG6 {}; sub f is export {}`).
             if !pkg_is_global
                 && !is_lowercase_export_stash
+                && package_name != "EXPORT"
+                && !package_name.starts_with("EXPORT::")
                 && def.package == crate::symbol::wk::global_package()
                 && key_s != crate::qualified::qualified(def.package, def.name).as_str()
             {
