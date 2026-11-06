@@ -601,6 +601,7 @@ impl Interpreter {
         match name {
             "postcircumfix:<[ ]>" => return self.builtin_postcircumfix_subscript(args, true),
             "postcircumfix:<{ }>" => return self.builtin_postcircumfix_subscript(args, false),
+            "postcircumfix:<[; ]>" => return self.builtin_postcircumfix_multidim(args),
             _ => {}
         }
         Err(self.multi_no_match_error(name, args))

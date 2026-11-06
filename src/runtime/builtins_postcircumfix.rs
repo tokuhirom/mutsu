@@ -89,6 +89,38 @@ impl Interpreter {
         }
     }
 
+    /// The CORE `postcircumfix:<[; ]>` routine: `postcircumfix:<[; ]>(@a, (1, 0))`
+    /// reads `@a[1;0]`. The second argument carries one index per dimension
+    /// (a list, as the `[; ]` syntax collects them); a lone non-list index is a
+    /// one-dimensional subscript.
+    // Cost: O(d), d = the number of dimensions (one `AT-POS` walk).
+    pub(crate) fn builtin_postcircumfix_multidim(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (Some(target), Some(dims)) = (args.first().cloned(), args.get(1)) else {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller postcircumfix:<[; ]>(); got {} arguments",
+                args.len()
+            )));
+        };
+        let indices = match dims.as_list_items() {
+            Some(items) => items.to_vec(),
+            None => vec![dims.clone()],
+        };
+        // The same opcode the `[; ]` syntax lowers to: it walks a plain
+        // container a dimension at a time (a `*` takes every element, a list
+        // those indices) and defers to an object invocant's own protocol.
+        let ndims = indices.len() as u32;
+        self.stack.push(target);
+        self.stack.extend(indices);
+        self.dispatch.skip_postcircumfix_overload = true;
+        let result = self.exec_multi_dim_index_op(ndims, true);
+        self.dispatch.skip_postcircumfix_overload = false;
+        result?;
+        Ok(self.stack.pop().unwrap_or(Value::NIL))
+    }
+
     /// The adverb-bearing call shapes of `postcircumfix:<[ ]>`/`<{ }>`
     /// (`postcircumfix:<[ ]>(@a, 1, :exists)`), mirroring what `@a[1]:exists`
     /// lowers to at the opcode level. A single index with a single built-in
