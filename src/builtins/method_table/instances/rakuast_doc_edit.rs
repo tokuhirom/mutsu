@@ -109,7 +109,41 @@ fn splat_letterless(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeEr
     Ok(Value::NIL)
 }
 
+// Cost: O(f), f = fields of the node.
+fn allowed_markup(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::doc_block_queries::allowed_markup(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(f + p), f = fields of the node, p = paragraphs.
+fn visual_table(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::doc_block_queries::visual_table(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "RakuAST::Doc::Block",
+        name: "allowed-markup",
+        arity: 0,
+        handler: Handler::Pure(allowed_markup),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Doc::Block",
+        name: "visual-table",
+        arity: 0,
+        handler: Handler::Pure(visual_table),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::Doc::Markup",
         name: "check-meta",

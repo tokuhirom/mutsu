@@ -40,6 +40,7 @@ mod control_signature;
 mod ctor_names;
 mod decl_origins;
 mod doc_block;
+pub(crate) mod doc_block_queries;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 pub(crate) mod eval_docs;
