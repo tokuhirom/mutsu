@@ -156,6 +156,9 @@ struct SeqState {
     /// source, so a strict force (`.List`, `.elems`, ...) must throw
     /// `X::Cannot::Lazy` instead of hanging.
     lazy: bool,
+    /// The elements are not reproducible (`.pick`): the Seq's iterator answers
+    /// `False` to `is-deterministic`.
+    nondeterministic: bool,
     /// The `:batch`/`:degree` a `HyperSeq`/`RaceSeq` was created with, read
     /// back by `.configuration`. `None` means unspecified (report defaults).
     hyper: Option<(Option<i64>, Option<i64>)>,
@@ -346,6 +349,7 @@ impl SeqBody {
                     source: SeqSource::Reified,
                     cache_requested: false,
                     lazy: false,
+                    nondeterministic: false,
                     hyper: None,
                     hyper_iterator_claimed: false,
                     single_use_claimed: false,
@@ -383,6 +387,7 @@ impl SeqBody {
                     source,
                     cache_requested: false,
                     lazy: false,
+                    nondeterministic: false,
                     hyper: None,
                     hyper_iterator_claimed: false,
                     single_use_claimed: false,
@@ -930,6 +935,18 @@ impl SeqBody {
 
     pub(crate) fn is_lazy(&self) -> bool {
         self.lock_state().lazy
+    }
+
+    /// Mark this Seq's elements as not reproducible (`.pick`).
+    // Cost: O(1).
+    pub(crate) fn mark_nondeterministic(&self) {
+        self.lock_state().nondeterministic = true;
+    }
+
+    /// Whether [`Self::mark_nondeterministic`] was called.
+    // Cost: O(1).
+    pub(crate) fn is_nondeterministic(&self) -> bool {
+        self.lock_state().nondeterministic
     }
 
     /// Whether `.gist` renders this body as Rakudo's `(...)` placeholder: a

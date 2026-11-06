@@ -165,6 +165,14 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
             Value::TRUE,
         );
     }
+    if let ValueView::Seq(body) = target.view()
+        && body.is_nondeterministic()
+    {
+        attrs.insert(
+            crate::value::NONDETERMINISTIC_ITERATOR_ATTR.to_string(),
+            Value::TRUE,
+        );
+    }
     if let ValueView::LazyList(ll) = target.view()
         && ll.env.get("__mutsu_lazylist_from_gather").is_some()
     {
