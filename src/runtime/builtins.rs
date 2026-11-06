@@ -48,7 +48,47 @@ impl Interpreter {
         // is a shared `ContainerRef`, which is not itself a container of
         // element Scalars (#9488).
         let container = self.env.get(&source_name).map(Value::deref_container);
+        // A package stash names each symbol by its key (`$v1`, `@a`), and that
+        // key -- not the variable holding the stash -- is the element
+        // container's name (#16923).
+        if let Some(c) = &container
+            && let Some(key) = Self::stash_key_of_element(c, &element)
+        {
+            return self.element_var_meta(element, None, &key);
+        }
         self.element_var_meta(element, container, &source_name)
+    }
+
+    /// The key under which `container`, when it is a package stash, holds
+    /// `element` itself (the shared cell of an `our` scalar, or the very
+    /// Array/Hash of an `our @a`/`our %h`); `None` for anything else.
+    // Cost: O(s), s = symbols of the stash (one identity probe per symbol).
+    fn stash_key_of_element(container: &Value, element: &Value) -> Option<String> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = container.view()
+        else {
+            return None;
+        };
+        if !crate::value::types::is_stash_class_name(class_name.as_str()) {
+            return None;
+        }
+        let map = attributes.as_map();
+        let ValueView::Hash(symbols) = map.get("symbols")?.view() else {
+            return None;
+        };
+        let same = |entry: &Value| match (entry.view(), element.view()) {
+            (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            _ => false,
+        };
+        symbols
+            .iter()
+            .find(|(_, entry)| same(entry))
+            .map(|(key, _)| key.to_string())
     }
 
     /// `.VAR` on a subscript whose source container has NO NAME: a chained
@@ -66,6 +106,11 @@ impl Interpreter {
     fn builtin_anon_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let container = args.first().cloned().unwrap_or(Value::NIL);
         let element = args.get(1).cloned().unwrap_or(Value::NIL);
+        // `Pkg::<$v>.VAR`: the parent is the package's stash, which names its
+        // symbols by key (#16923).
+        if let Some(key) = Self::stash_key_of_element(&container, &element) {
+            return self.element_var_meta(element, None, &key);
+        }
         self.element_var_meta(element, Some(container), "")
     }
 
