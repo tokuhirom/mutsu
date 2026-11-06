@@ -492,6 +492,15 @@ impl Interpreter {
         self.lexicals
             .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));
+        let key_sym = Symbol::intern(&key);
+        // Probe before the mutable borrow: a re-store of a known name must not
+        // copy the table shared with the thread clones (`cow_table_mut`).
+        if !crate::qualified::is_qualified(key_sym)
+            && !key.contains('\u{0}')
+            && !self.lexicals.global_our_names.contains(&key_sym)
+        {
+            crate::runtime::cow_table_mut(&mut self.lexicals.global_our_names).insert(key_sym);
+        }
         // A package variable of a lexical class (`my class X { our $v }`) is
         // keyed by the class's mangled storage name; `$X::v` spells the
         // user-facing one, so the same container is stored there too (#16620).

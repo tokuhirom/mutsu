@@ -93,6 +93,12 @@ pub(crate) struct LexicalState {
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
     pub(crate) our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
+    /// The bare keys (`a`, `@arr`, `%h`) of [`Self::our_vars`]: the file-scope
+    /// `our` variables, whose package-qualified spelling collapses to the bare
+    /// name. A `gather` body's captured env keeps only the body's own free
+    /// variables, so a routine it calls would not find these; the gather
+    /// creation copies them in (`exec_make_gather_op`).
+    pub(crate) global_our_names: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
     /// The `our_vars` keys (`Pkg::answer`) that hold a sigil-less `our
     /// constant`. The store spells such a key like a scalar's, so this is the
     /// only record that `answer` is a term and not `$answer` (#11877).
@@ -425,6 +431,7 @@ impl LexicalState {
             nested_capture_cell_names: Default::default(),
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
+            global_our_names: Default::default(),
             our_term_keys: rustc_hash::FxHashSet::default(),
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
@@ -488,6 +495,7 @@ impl LexicalState {
             // their `Gc` with the parent.
             our_vars: self.our_vars.clone(),
             our_var_unqualified: self.our_var_unqualified.clone(),
+            global_our_names: self.global_our_names.clone(),
             our_term_keys: self.our_term_keys.clone(),
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
