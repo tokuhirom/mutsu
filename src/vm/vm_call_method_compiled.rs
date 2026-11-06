@@ -111,55 +111,59 @@ impl Interpreter {
                 .last()
                 .map(|slot| *slot as usize)
         };
-        let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings, captured_names) = match code_val
-            .view()
-        {
-            // Running the block inline in THIS frame is only sound for a block
-            // literal of this frame (`$lock.protect: { ... }`): its captured
-            // names are this frame's locals. A block created elsewhere and
-            // passed in (`method !protect(&code) { $!lock.protect: &code }`)
-            // closes over ITS creator's lexicals, and seeding them from this
-            // frame read the parameter `&code` — the block itself — for the
-            // block's own free `&code` (FINALIZER's `register`). Call it as
-            // the closure it is instead.
-            ValueView::Sub(data) if !outer_code.owns_closure_body(&data.body) => {
-                return self.call_sub_value(code_val.clone(), Vec::new());
-            }
-            ValueView::Sub(data) => {
-                let (block_cc, block_fns, captured_bindings, writeback_bindings, captured_names) =
-                    self.get_or_compile_protect_block_with_slots(&data);
-                // A name the enclosing frame owns as a scalar slot is read from
-                // that slot below, not from the by-name shared-variable store:
-                // that store is keyed by the bare name, so it also holds the
-                // snapshot of an unrelated `$name` some thread body wrote
-                // (#16881: Red's `alias` read another scope's `$name`).
-                self.sync_shared_vars_for_names(
-                    captured_names
-                        .iter()
-                        .map(|name| name.as_str())
-                        .filter(|name| {
-                            name.starts_with(['@', '%'])
-                                || outer_code.local_slots_named(name).is_empty()
-                        }),
-                );
-                let captured_names_all = captured_names.clone();
-                // Keep an owned handle: a view guard's borrow cannot
-                // outlive the match, so clone the Gc (refcount bump only).
-                (
-                    block_cc,
-                    block_fns,
-                    Some(data.clone()),
-                    captured_bindings,
-                    writeback_bindings,
-                    captured_names_all,
-                )
-            }
-            _ => {
-                // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
-                // in the Interpreter. Currently these are rare and delegate to interpreter.
-                return self.call_protect_block(code_val);
-            }
-        };
+        let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings, captured_names) =
+            match code_val.view() {
+                // Running the block inline in THIS frame is only sound for a block
+                // literal of this frame (`$lock.protect: { ... }`): its captured
+                // names are this frame's locals. A block created elsewhere and
+                // passed in (`method !protect(&code) { $!lock.protect: &code }`)
+                // closes over ITS creator's lexicals, and seeding them from this
+                // frame read the parameter `&code` — the block itself — for the
+                // block's own free `&code` (FINALIZER's `register`). Call it as
+                // the closure it is instead.
+                ValueView::Sub(data) if !outer_code.owns_closure_body(&data.body) => {
+                    return self.call_sub_value(code_val.clone(), Vec::new());
+                }
+                ValueView::Sub(data) => {
+                    let (
+                        block_cc,
+                        block_fns,
+                        captured_bindings,
+                        writeback_bindings,
+                        captured_names,
+                    ) = self.get_or_compile_protect_block_with_slots(&data);
+                    // A name the enclosing frame owns as a scalar slot is read from
+                    // that slot below, not from the by-name shared-variable store:
+                    // that store is keyed by the bare name, so it also holds the
+                    // snapshot of an unrelated `$name` some thread body wrote
+                    // (#16881: Red's `alias` read another scope's `$name`).
+                    self.sync_shared_vars_for_names(
+                        captured_names
+                            .iter()
+                            .map(|name| name.as_str())
+                            .filter(|name| {
+                                name.starts_with(['@', '%'])
+                                    || outer_code.local_slots_named(name).is_empty()
+                            }),
+                    );
+                    let captured_names_all = captured_names.clone();
+                    // Keep an owned handle: a view guard's borrow cannot
+                    // outlive the match, so clone the Gc (refcount bump only).
+                    (
+                        block_cc,
+                        block_fns,
+                        Some(data.clone()),
+                        captured_bindings,
+                        writeback_bindings,
+                        captured_names_all,
+                    )
+                }
+                _ => {
+                    // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
+                    // in the Interpreter. Currently these are rare and delegate to interpreter.
+                    return self.call_protect_block(code_val);
+                }
+            };
         let captured_env = sub_data.as_ref().map(|data| &data.env);
 
         // RAII (`MarkContextGuard`,
@@ -388,4 +392,3 @@ impl Interpreter {
         Some(result)
     }
 }
-
