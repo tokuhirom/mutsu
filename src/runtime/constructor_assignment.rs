@@ -141,6 +141,14 @@ impl Interpreter {
                 coerced
             }
         };
+        // Assigning `Nil` to a scalar attribute resets it to its declared
+        // type's default (`has T $.value` built with `value => Nil` holds
+        // `Any`/`Int`, not `Nil`), as the native constructor path does.
+        let coerced = if sigil == '$' && coerced.is_nil() {
+            self.attr_store_nil_default(class_key, key, '$', coerced)
+        } else {
+            coerced
+        };
         let storage_key =
             super::attribute_storage_key(class_attrs_info, key, sigil);
         attrs.insert(
