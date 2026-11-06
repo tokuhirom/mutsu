@@ -313,7 +313,7 @@ impl Interpreter {
                     continue;
                 };
                 if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
-                    let stash_key = Self::type_member_stash_key(&val, key, stash_key);
+                    let stash_key = Self::type_member_stash_key(val, key, stash_key);
                     symbols.entry(stash_key).or_insert_with(|| val.clone());
                 }
             }
