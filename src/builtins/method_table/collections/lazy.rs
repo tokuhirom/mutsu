@@ -110,9 +110,8 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     {
         return match body.take_iterator_source() {
             Ok(Some(iterator)) => {
-                let lazy_body = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(
-                    iterator,
-                ));
+                let lazy_body =
+                    crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(iterator));
                 lazy_body.mark_lazy();
                 Some(Ok(Value::seq_body(lazy_body)))
             }
