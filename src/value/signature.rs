@@ -1032,7 +1032,9 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
     } else if p.name.is_empty() || p.is_capture || p.sigilless {
         p.name.clone()
     } else {
-        format!("{}{}", p.sigil, p.name)
+        // A positional placeholder (`$^x`) is stored with its twigil, but the
+        // parameter's own name is the plain `$x`, as in rakudo.
+        format!("{}{}", p.sigil, p.name.strip_prefix('^').unwrap_or(&p.name))
     };
     attrs.insert("name".to_string(), Value::str(display_name));
 
