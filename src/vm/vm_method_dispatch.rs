@@ -773,10 +773,14 @@ impl Interpreter {
                 if !is_fixed_frame_name(&storage_name) {
                     self.env_mut().insert(storage_name.clone(), invocant_value);
                 }
-                if method_def
-                    .param_defs
-                    .get(idx)
-                    .is_some_and(|pd| pd.declares_self_lexical())
+                // (A raw `$self` invocant already bound the caller's container
+                // under that key above; rebinding the plain value here would
+                // cut `$self = ...` off from the caller's variable.)
+                if !bound_to_container
+                    && method_def
+                        .param_defs
+                        .get(idx)
+                        .is_some_and(|pd| pd.declares_self_lexical())
                 {
                     self.env_mut()
                         .insert(crate::env::LEX_SELF.to_string(), base.clone());
