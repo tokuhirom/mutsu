@@ -404,6 +404,25 @@ impl Interpreter {
                 .push(if return_new { new_val } else { effective });
             return Ok(());
         }
+        // A package stash publishes an `our` scalar as the variable's own
+        // cell: `$stash<$v>++` steps the variable itself (#16920).
+        if !is_positional
+            && let Some(raw) = &container
+            && let Some(mut cell) = Self::stash_element_cell(&raw.deref_container(), &idx_val)
+        {
+            let old = cell.deref_container();
+            let effective =
+                Self::normalize_incdec_source(if old.is_nil() { Value::int(0) } else { old });
+            let new_val = if increment {
+                self.increment_value_smart(&effective)?
+            } else {
+                self.decrement_value_smart(&effective)?
+            };
+            Value::assign_element_slot(&mut cell, new_val.clone());
+            self.stack
+                .push(if return_new { new_val } else { effective });
+            return Ok(());
+        }
         let container = match container {
             Some(raw)
                 if !name.starts_with(['@', '%', '&'])

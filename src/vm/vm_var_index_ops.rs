@@ -856,7 +856,51 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A package stash holds its `our` scalars as the variables' own cells;
+        // a bind source or `.VAR` subscript of one keeps the cell, like an
+        // Array element does above (#16920).
+        if !is_positional
+            && self.stack.len() >= 2
+            && let Some(cell) = Self::stash_element_cell(
+                &self.stack[self.stack.len() - 2],
+                &self.stack[self.stack.len() - 1],
+            )
+        {
+            let n = self.stack.len();
+            self.stack.truncate(n - 2);
+            self.stack.push(cell);
+            return Ok(());
+        }
         self.exec_index_op_with_positional(is_positional)
+    }
+
+    /// The shared cell a stash publishes under `key` (an `our` scalar's own
+    /// container), or `None` when `target` is not a stash, `key` is not a
+    /// single string, or the symbol is not a cell.
+    // Cost: O(1) expected: one hash probe.
+    pub(crate) fn stash_element_cell(target: &Value, key: &Value) -> Option<Value> {
+        let key = match key.view() {
+            ValueView::Str(s) => s.to_string(),
+            _ => return None,
+        };
+        let target = target.descalarize();
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        if !crate::value::types::is_stash_class_name(class_name.as_str()) {
+            return None;
+        }
+        let map = attributes.as_map();
+        let ValueView::Hash(symbols) = map.get("symbols")?.view() else {
+            return None;
+        };
+        let entry = symbols.get(key.as_str())?;
+        entry.is_container_ref().then(|| entry.clone())
     }
 
     // Cost: O(1) for a single `Int` index (a `*-1` WhateverCode index is one closure
