@@ -167,7 +167,19 @@ impl Interpreter {
                 }
                 let mut full = Vec::with_capacity(args.len() + 1);
                 full.push(target);
-                full.extend(args);
+                // The text to parse is read through a Proxy argument (an
+                // `is mooish` attribute: `Recipe.subparse($!recipe)`), not
+                // parsed as the Proxy's own name.
+                for a in args {
+                    if a.is_proxy_value() {
+                        match self.auto_fetch_proxy(&a) {
+                            Ok(v) => full.push(v),
+                            Err(e) => return Some(Err(e)),
+                        }
+                    } else {
+                        full.push(a);
+                    }
+                }
                 crate::builtins::method_table::invoke_owner_raw(self, &["Grammar"], method, &full)
             }
             _ => self.text_method_by_mro(target, method, &args),
