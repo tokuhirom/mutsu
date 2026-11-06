@@ -2877,6 +2877,11 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
+    /// The `end` of the `OpCode::BlockScope` this scope's region wraps (the
+    /// region's `body_end`): that block runs the attached phasers itself,
+    /// before its own scope is left, so a phaser sees the block's imports and
+    /// declarations.
+    pub(crate) block_end: Option<u32>,
     /// The lexical import sets a block-scoped `use` in this scope filled
     /// (ADR-8751): what a by-name lookup the compiler could not resolve
     /// (`::('&f')`, an `EVAL` in the block) still sees while it runs.
