@@ -446,7 +446,14 @@ impl Interpreter {
                 };
                 arg.with_deref(|arg| match arg.view() {
                     ValueView::Pair(key, value) => {
-                        format!(":{}({})", key, crate::value::what_type_name(value))
+                        // A list literal is a `List` here as in the positional arm below.
+                        let type_name = match value.view() {
+                            ValueView::Array(_, kind) if !kind.is_real_array() => {
+                                "List".to_string()
+                            }
+                            _ => crate::value::what_type_name(value),
+                        };
+                        format!(":{}({})", key, type_name)
                     }
                     _ => {
                         let smiley = if matches!(
