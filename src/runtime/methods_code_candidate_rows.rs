@@ -61,35 +61,39 @@ impl Interpreter {
             // by the time a later importer asks, the registry has only the
             // family's other candidates, and `&trait_mod:<is>.candidates` would
             // be missing the one the dispatcher was built around.
-            // Counted by declaration: a candidate is registered by both the
-            // hoist pass and the in-sequence pass, and a dispatcher built from
-            // an export table can carry both copies of one declaration.
-            let captured_len = match data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .map(Value::view)
+            if let Some(ValueView::Str(disp_name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
             {
-                Some(ValueView::Array(cands, _)) => cands
-                    .iter()
-                    .filter_map(|cand| match cand.view() {
+                let name_based =
+                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+                // The family is the union of the name's candidates and the
+                // captured ones the name does not reach (a hook's dispatcher
+                // imported next to another module's candidates of the same
+                // name: `use Test; use Hook` hands the program both).
+                if !name_based.is_empty() {
+                    let fingerprint = |cand: &Value| match cand.view() {
                         ValueView::Sub(d) => Some(crate::ast::function_body_fingerprint(
                             &d.params,
                             &d.param_defs,
                             &d.body,
                         )),
                         _ => None,
-                    })
-                    .collect::<std::collections::HashSet<_>>()
-                    .len(),
-                _ => 0,
-            };
-            if let Some(ValueView::Str(disp_name)) =
-                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-            {
-                let name_based =
-                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
-                if !name_based.is_empty() && name_based.len() >= captured_len {
-                    return Some(Ok(Value::array(name_based)));
+                    };
+                    let mut known: std::collections::HashSet<_> =
+                        name_based.iter().filter_map(fingerprint).collect();
+                    let mut union = name_based;
+                    if let Some(ValueView::Array(cands, _)) = data
+                        .env
+                        .get("__mutsu_multi_dispatch_candidates")
+                        .map(Value::view)
+                    {
+                        for cand in cands.iter() {
+                            if fingerprint(cand).is_some_and(|f| known.insert(f)) {
+                                union.push(cand.clone());
+                            }
+                        }
+                    }
+                    return Some(Ok(Value::array(union)));
                 }
             }
             // Fall back to captured candidates (for out-of-scope multi subs)
