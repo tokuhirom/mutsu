@@ -960,6 +960,9 @@ impl Compiler {
             self.compile_stmt(&rewritten);
             return;
         }
+        if self.hoist_nested_decl_stmt(stmt) {
+            return;
+        }
         // A statement is an expression-depth boundary: its own operands are
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).

@@ -827,6 +827,13 @@ impl Interpreter {
         } else {
             target
         };
+        // Invoking a container invokes what it holds: a `&`-attribute bound
+        // with `:=` (`&!v := sub () { ... }`) is read as the cell it shares.
+        let target = if matches!(target.view(), ValueView::ContainerRef(_)) {
+            target.into_deref()
+        } else {
+            target
+        };
         // A routine a trait composed a CALL-ME role into is called through
         // that role, whichever code object of it is called (ADR-11827).
         if let Some(current) = self.routine_call_me_view(&target) {
