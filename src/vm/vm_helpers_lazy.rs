@@ -683,6 +683,13 @@ impl Interpreter {
         if method == "lazy" && body.unpulled_iterator().is_some() {
             return Ok(target);
         }
+        // `.Bool` on a `Seq.new($iterator)` nothing has pulled asks the
+        // iterator for one element only (as `so $seq` does) and leaves the
+        // rest for later reads, instead of draining an unbounded iterator.
+        if method == "Bool" && body.unpulled_iterator().is_some() {
+            self.reify_map_grep_prefix(&target, 1)?;
+            return Ok(target);
+        }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }
@@ -1231,7 +1238,21 @@ impl Interpreter {
         let ValueView::Seq(body) = inner.view() else {
             return Ok(None);
         };
-        let items = match body.take_prefix_source() {
+        let prefix_source = body.take_prefix_source();
+        // A `Seq.new($iterator)` whose first element a boolification already
+        // pulled keeps that element in its body, so it has no prefix source to
+        // steal: top the body up to `n` and answer from it, rather than falling
+        // through to the consuming path that drains the (possibly unbounded)
+        // iterator.
+        if prefix_source.is_none() && body.unpulled_iterator().is_some() {
+            let body = Arc::clone(&body);
+            body.extend_from_iterator(n, |iterator, count, out| {
+                self.pull_iterator_prefix_into(iterator, count, out)
+            })?;
+            let items: Vec<Value> = body.iter().take(n).cloned().collect();
+            return Ok(Some(Value::seq(items)));
+        }
+        let items = match prefix_source {
             Some(crate::value::PrefixSource::Pure(mut spec)) => {
                 let mut items = Vec::new();
                 spec.push_up_to(&mut items, n);

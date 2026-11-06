@@ -9,17 +9,16 @@ use super::*;
 /// precedence trait (`my proto sub infix:<^...>(|) is equiv(&infix:<...>)`) sits
 /// at the sequence level, where the built-in token would otherwise always win;
 /// it is the user's routine that must be called, as for any other overridden
-/// operator. Without a trait the declaration is parsed at the additive level
-/// before this layer is reached, or adds candidates to the core operator.
+/// operator. A declaration without a trait adds candidates to the core operator
+/// and keeps its precedence, so it is dispatched here too (the call falls back to
+/// the core body when no declared candidate matches).
 pub(super) fn sequence_operator_node(
     op_str: &str,
     op: crate::token_kind::TokenKind,
     left: Expr,
     right: Expr,
 ) -> Expr {
-    if crate::parser::stmt::simple::is_user_defined_infix(op_str)
-        && crate::parser::stmt::simple::lookup_custom_infix_precedence(op_str).is_some()
-    {
+    if crate::parser::stmt::simple::is_user_defined_infix(op_str) {
         return Expr::InfixFunc {
             name: op_str.to_string(),
             left: Box::new(left),

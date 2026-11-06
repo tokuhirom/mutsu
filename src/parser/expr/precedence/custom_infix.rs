@@ -249,7 +249,22 @@ pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
 /// words (`eq`, `lt`, `eqv`, `after`, ...) are reached only through that path,
 /// and `unicmp`, `coll` and `o` run their core body without trying the declared
 /// candidate (`t/routines/dispatch/core-infix-user-candidate-fallbacks.t`).
-const CORE_PARSED_INFIX_WORDS: &[&str] = &["cmp", "leg", "min", "max", "x", "xx"];
+const CORE_PARSED_INFIX_WORDS: &[&str] = &[
+    "cmp",
+    "leg",
+    "min",
+    "max",
+    "x",
+    "xx",
+    "...",
+    "...^",
+    "^...",
+    "^...^",
+    "\u{2026}",
+    "\u{2026}^",
+    "^\u{2026}",
+    "^\u{2026}^",
+];
 
 /// The precedence a declared `multi infix:<word>` of a core word keeps when it
 /// names no `is tighter`/`is looser`/`is equiv` trait: the declaration adds a
