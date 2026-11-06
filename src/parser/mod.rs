@@ -925,10 +925,7 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
         // ... operator" text; at the furthest failure position, with nothing
         // but a statement or bracket end after it, that is this diagnosis.
         let missing_term_after_infix = e.typed_convention_message().is_none()
-            && tail
-                .trim_start()
-                .starts_with([';', ')', ']', '}'])
-                | tail.trim().is_empty()
+            && tail.trim_start().starts_with([';', ')', ']', '}']) | tail.trim().is_empty()
             && e.messages
                 .iter()
                 .any(|m| names_missing_operand_after_operator(m));
