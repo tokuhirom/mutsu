@@ -425,6 +425,19 @@ impl Interpreter {
     /// calling frame — visible here only because the env is flattened — must never
     /// shadow them.
     pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
+        // A class nested in another sees the enclosing class bodies' `my`
+        // statics too (outermost first, so an inner declaration shadows).
+        let enclosing: Vec<Symbol> = crate::qualified::package_ancestors(Symbol::intern(class_name))
+            .skip(1)
+            .collect();
+        for outer in enclosing.into_iter().rev() {
+            self.inject_own_class_body_statics(outer.as_str());
+        }
+        self.inject_own_class_body_statics(class_name);
+    }
+
+    // Cost: O(s), s = statics of `class_name`.
+    fn inject_own_class_body_statics(&mut self, class_name: &str) {
         let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
             return;
         };
