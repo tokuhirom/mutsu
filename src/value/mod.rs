@@ -3826,6 +3826,12 @@ pub(crate) enum ForLoopResumeState {
     /// parked on the loop opcode across a gather coroutine suspend.
     CStyleLoop {
         inner: Option<Box<ForLoopResumeState>>,
+        /// The suspension came from a loop nested in the body (`inner` is
+        /// set), part-way through an iteration: re-enter that iteration's body
+        /// directly instead of re-checking the condition (a condition with
+        /// side effects, `while $i++ < 3`, would otherwise run twice) and,
+        /// for a C-style loop, without having run the step yet.
+        in_body: bool,
         /// `(code_id, ip)` of the loop opcode itself. Not used to match the
         /// marker to its loop (any `loop`/`while` op consumes one); only an
         /// enclosing `TryCatch` region reads it to know which op to re-enter.

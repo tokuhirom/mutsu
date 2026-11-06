@@ -526,15 +526,17 @@ impl Interpreter {
         // When resuming a gather coroutine that suspended inside this loop, the
         // marker is consumed here; the loop's state lives in locals/env so
         // re-entering from the top (cond re-check) continues correctly.
+        let mut resume_in_body = false;
         if matches!(
             self.async_state.gather_for_loop_resume,
             Some(crate::value::ForLoopResumeState::CStyleLoop { .. })
         ) {
             // Restore the chained inner state (a loop nested in this body)
             // into the slot so the next loop op encountered resumes too.
-            if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner, .. }) =
+            if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner, in_body, .. }) =
                 self.async_state.gather_for_loop_resume.take()
             {
+                resume_in_body = in_body;
                 self.async_state.gather_for_loop_resume = inner.map(|b| *b);
             }
         } else if !code.state_locals.is_empty() {
@@ -559,6 +561,7 @@ impl Interpreter {
                 self.async_state.gather_for_loop_resume =
                     Some(crate::value::ForLoopResumeState::CStyleLoop {
                         inner: nested.map(Box::new),
+                        in_body: false,
                         site: (code.ops.as_ptr() as usize, cond_start - 1),
                     });
                 self.pop_loop_local_scope(code);
@@ -566,20 +569,25 @@ impl Interpreter {
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
                 ));
             }
-            self.topic_state.loop_cond_active = true;
-            let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
-            self.topic_state.loop_cond_active = false;
-            if let Err(e) = cond_res {
-                self.pop_loop_local_scope(code);
-                return Err(e);
-            }
-            // The loop condition is a boolean context like `if`'s: a user
-            // `Bool` method decides it (`while self`), and a Failure tested
-            // there is handled.
-            Self::mark_failure_handled_on_stack(&mut self.stack);
-            let cond_val = self.stack.pop().unwrap();
-            if !self.eval_truthy(&cond_val) {
-                break;
+            if std::mem::take(&mut resume_in_body) {
+                // Resuming part-way through an iteration: its condition was
+                // already checked.
+            } else {
+                self.topic_state.loop_cond_active = true;
+                let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
+                self.topic_state.loop_cond_active = false;
+                if let Err(e) = cond_res {
+                    self.pop_loop_local_scope(code);
+                    return Err(e);
+                }
+                // The loop condition is a boolean context like `if`'s: a user
+                // `Bool` method decides it (`while self`), and a Failure tested
+                // there is handled.
+                Self::mark_failure_handled_on_stack(&mut self.stack);
+                let cond_val = self.stack.pop().unwrap();
+                if !self.eval_truthy(&cond_val) {
+                    break;
+                }
             }
             let topic_before_body = if spec.isolate_topic {
                 Some(self.env().get("_").cloned())
@@ -691,9 +699,11 @@ impl Interpreter {
                         // loop opcode (it stays unchanged on this Err path),
                         // letting us re-enter and continue from locals/env state.
                         let nested = self.async_state.gather_for_loop_resume.take();
+                        let in_body = nested.is_some();
                         self.async_state.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::CStyleLoop {
                                 inner: nested.map(Box::new),
+                                in_body,
                                 site: (code.ops.as_ptr() as usize, cond_start - 1),
                             });
                         self.pop_loop_local_scope(code);
