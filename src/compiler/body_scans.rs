@@ -425,3 +425,40 @@ pub(super) fn type_aliases(stmts: &[Stmt]) -> Vec<(String, String)> {
     walk_stmts(&mut scan, stmts);
     scan.out
 }
+
+/// Finds a `my $x := ...` (a bind declaration) anywhere in an expression,
+/// outside closures and routines.
+#[derive(Default)]
+struct BoundDeclScan {
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for BoundDeclScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if self.found {
+            return;
+        }
+        match stmt {
+            Stmt::VarDecl { bind: Some(_), .. } => self.found = true,
+            _ => walk_stmt_own_scope(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if !self.found && !opens_own_scope(expr) {
+            walk_expr(self, expr);
+        }
+    }
+
+    // A regex code block is a closure of its own.
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
+}
+
+/// Whether `expr` contains a bind declaration (`(my $q := $p).succ`) whose own
+/// bind markers a surrounding rebind's markers must not precede.
+// Cost: O(n), n = size of the part of `expr` in the block's own scope.
+pub(super) fn expr_declares_bound_var(expr: &Expr) -> bool {
+    let mut scan = BoundDeclScan::default();
+    scan.visit_expr(expr);
+    scan.found
+}
