@@ -265,13 +265,42 @@ impl Interpreter {
             // rakudo's container descriptor does (#11196).
             let cell_name = (!target_var.starts_with(['@', '%', '&']))
                 .then(|| {
-                    let named = |v: &Value| match v.view() {
-                        ValueView::ContainerRef(cell) => cell.descriptor_name(),
-                        _ => None,
-                    };
+                    // A `:=` binding cell wraps the container it aliases; the
+                    // aliased container's declaration names the variable.
+                    fn named(v: &Value) -> Option<Symbol> {
+                        match v.view() {
+                            ValueView::ContainerRef(cell) => {
+                                // The aliased (inner) container wins over the
+                                // wrapper, which the binding variable named.
+                                let inner = cell.load();
+                                if inner.is_container_ref() {
+                                    named(&inner).or_else(|| cell.descriptor_name())
+                                } else {
+                                    cell.descriptor_name()
+                                }
+                            }
+                            _ => None,
+                        }
+                    }
                     named(&target)
                         .or_else(|| self.env.get(target_var).and_then(named))
                         .map(|s| s.resolve())
+                        // A `:=`-bound variable is another name for its root's
+                        // container, whose declaration names it:
+                        // `my $c := $x; $c.VAR.name` is `$x` (#16931).
+                        .or_else(|| {
+                            let root = self.resolve_alias_root(target_var);
+                            (root != target_var
+                                && !root.starts_with("__")
+                                && !root.starts_with(['@', '%', '&']))
+                            .then(|| {
+                                if root.starts_with('$') {
+                                    root.to_string()
+                                } else {
+                                    format!("${root}")
+                                }
+                            })
+                        })
                 })
                 .flatten();
             let display_name = if let Some(src) = container_source_name.clone().or(cell_name) {
