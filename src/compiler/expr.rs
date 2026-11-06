@@ -717,6 +717,29 @@ impl Compiler {
                 );
                 self.compile_expr(&lowered);
             }
+            // Container identity called as a function: `infix:<=:=>($a, $b)`
+            // and `&[=:=]($a, $b)` are `$a =:= $b`. The operator form is the
+            // one that sees the argument variables' containers (a call passes
+            // values), so lower the call to it.
+            Expr::Call { name, args, .. } if args.len() == 2 && name.resolve() == "infix:<=:=>" => {
+                self.compile_expr(&Expr::Binary {
+                    left: Box::new(args[0].clone()),
+                    op: TokenKind::Ident("=:=".to_string()),
+                    right: Box::new(args[1].clone()),
+                    form: crate::ast::BinaryForm::Infix,
+                });
+            }
+            Expr::CallOn { target, args }
+                if args.len() == 2
+                    && matches!(target.as_ref(), Expr::CodeVar(n) if n == "infix:<=:=>") =>
+            {
+                self.compile_expr(&Expr::Binary {
+                    left: Box::new(args[0].clone()),
+                    op: TokenKind::Ident("=:=".to_string()),
+                    right: Box::new(args[1].clone()),
+                    form: crate::ast::BinaryForm::Infix,
+                });
+            }
             Expr::CallOn { target, args }
                 if args.len() == 2
                     && matches!(
