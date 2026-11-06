@@ -1276,6 +1276,16 @@ impl Interpreter {
             // `@needed`). The light-call merge already excludes these via
             // `declared_locals`.
             let class_body_static_names = self.lexicals.class_body_static_names.clone();
+            // The type parameters of the roles the receiver class composes are
+            // bound while an instance is constructed, so a class's own TWEAK /
+            // BUILD frame sees them; they are not the caller's variables
+            // (`Pk[Qos $qos]` and a caller's `my $qos` passed as `:$qos`).
+            let class_role_param_names: Vec<String> = self
+                .registry()
+                .class_role_param_bindings
+                .get(receiver_class_name)
+                .map(|bindings| bindings.keys().cloned().collect())
+                .unwrap_or_default();
             let is_method_local = |s: &str| -> bool {
                 // `@_`/`%_` are rebound to the callee's own arguments by the
                 // slow bind path, so they are as frame-local as `_`: merging
@@ -1303,6 +1313,7 @@ impl Interpreter {
                         .role_param_bindings
                         .as_deref()
                         .is_some_and(|b| b.iter().any(|(n, _)| n == s))
+                    || class_role_param_names.iter().any(|n| n == s)
                     || class_body_static_names
                         .get(owner_class)
                         .is_some_and(|names| names.contains(s))
