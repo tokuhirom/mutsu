@@ -398,7 +398,9 @@ impl Interpreter {
             {
                 return Some(rendered);
             }
-            let raw = if raku_leaf_is_iterable(target) {
+            // A typed container (`Array[Int].new(1, 2)`) is not itemized by
+            // its `Scalar`: rakudo prints no `$(...)` around it.
+            let raw = if raku_leaf_is_iterable(target) && !rendered.starts_with("Array[") {
                 raku_raw_iterable(rendered)
             } else {
                 raku_raw(rendered)

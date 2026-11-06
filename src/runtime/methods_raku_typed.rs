@@ -95,14 +95,16 @@ impl Interpreter {
                 .map(|item| self.raku_element_repr(item))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let type_name = info
-                .declared_type
-                .unwrap_or_else(|| {
-                    format!(
-                        "Array[{}]",
-                        crate::value::type_arg_display_name(&info.value_type)
-                    )
-                });
+            // A subclass instantiation (`class P is Array; P[Int].new`) renders
+            // under `Array[T]`, as rakudo's `Array.raku` names the typed
+            // container, not the subclass.
+            let type_name = match info.declared_type {
+                Some(dt) if dt.starts_with("Array[") || dt.starts_with("array[") => dt,
+                _ => format!(
+                    "Array[{}]",
+                    crate::value::type_arg_display_name(&info.value_type)
+                ),
+            };
             return Some(Ok(Value::str(format!("{type_name}.new({inner})"))));
         }
         None

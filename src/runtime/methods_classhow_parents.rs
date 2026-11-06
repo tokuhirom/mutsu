@@ -226,6 +226,10 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => self.dispatch_owner_name(&args[0]).to_string(),
             },
+            ValueView::ParametricRole {
+                base_name,
+                type_args,
+            } => crate::value::parametric_role_display_name(&base_name.resolve(), type_args),
             _ => self.mop_receiver_owner(&args[0]),
         };
         let local = args[1..]
@@ -283,7 +287,12 @@ impl Interpreter {
         // source for `.^roles`; treating those dual names as bare roles would
         // incorrectly turn `Buf.^roles(:!transitive)` from `Blob[T]` into the
         // full role-parent closure.
-        let is_role = self.is_role(class_name)
+        let role_base = class_name
+            .split_once('[')
+            .map(|(b, _)| b)
+            .filter(|b| self.registry().role_type_params.contains_key(*b))
+            .unwrap_or(class_name);
+        let is_role = self.is_role(role_base)
             || (crate::runtime::types::is_builtin_role_name(class_name)
                 && !self.registry().classes.contains_key(class_name));
         if is_role {
@@ -294,11 +303,11 @@ impl Interpreter {
             }
             if non_transitive {
                 if !is_instance {
-                    result.extend(self.role_only_parents_of(class_name));
+                    result.extend(self.specialize_role_parents(class_name, self.role_only_parents_of(role_base)));
                 }
                 return result;
             }
-            let parents = self.role_only_parents_of(class_name);
+            let parents = self.specialize_role_parents(class_name, self.role_only_parents_of(role_base));
             let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
             for p in &parents {
                 if seen.insert(p.clone()) {
@@ -473,6 +482,64 @@ impl Interpreter {
     /// class) shares `role_parents` with its `does` parents, but a class is
     /// not a role and must not be listed by `.^roles`.
     // Cost: O(p), p = the role's parents, two hash lookups each.
+    /// Substitute a parametric role's type parameters in the names of its
+    /// composed roles: `R[Str]` of `role R[::T] does Positional[T]` composes
+    /// `Positional[Str]`, not the declaration's `Positional[T]`.
+    // Cost: O(p * n), p = the parents, n = chars of a parent name.
+    fn specialize_role_parents(&self, role_name: &str, parents: Vec<String>) -> Vec<String> {
+        let Some((base, rest)) = role_name.split_once('[') else {
+            return parents;
+        };
+        let Some(inner) = rest.strip_suffix(']') else {
+            return parents;
+        };
+        let Some(params) = self.registry().role_type_params.get(base).cloned() else {
+            return parents;
+        };
+        let mut args: Vec<&str> = Vec::new();
+        let (mut start, mut depth) = (0, 0usize);
+        for (i, b) in inner.bytes().enumerate() {
+            match b {
+                b'[' => depth += 1,
+                b']' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    args.push(inner[start..i].trim());
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        args.push(inner[start..].trim());
+        if params.is_empty() || params.len() != args.len() {
+            return parents;
+        }
+        parents
+            .into_iter()
+            .map(|parent| {
+                let mut out = String::with_capacity(parent.len());
+                let mut word = String::new();
+                let flush = |word: &mut String, out: &mut String| {
+                    if let Some(i) = params.iter().position(|p| p == word) {
+                        out.push_str(args[i]);
+                    } else {
+                        out.push_str(word);
+                    }
+                    word.clear();
+                };
+                for c in parent.chars() {
+                    if c.is_alphanumeric() || c == '_' || c == '-' {
+                        word.push(c);
+                    } else {
+                        flush(&mut word, &mut out);
+                        out.push(c);
+                    }
+                }
+                flush(&mut word, &mut out);
+                out
+            })
+            .collect()
+    }
+
     fn role_only_parents_of(&self, role_name: &str) -> Vec<String> {
         let reg = self.registry();
         let mut parents = reg.role_parents_of(role_name);
@@ -495,7 +562,7 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        for p in self.role_only_parents_of(base) {
+        for p in self.specialize_role_parents(role_name, self.role_only_parents_of(base)) {
             if seen.insert(p.clone()) {
                 result.push(p.clone());
                 self.collect_transitive_roles(&p, result, seen);
