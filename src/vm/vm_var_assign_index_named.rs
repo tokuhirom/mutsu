@@ -421,6 +421,16 @@ impl Interpreter {
                     None
                 }
             });
+        // An alias target this frame cannot see names a variable of an
+        // enclosing CALLER frame (`sub g(@x) { f(@x) }` with `sub f(\v)`): the
+        // store would autovivify a fresh array under that name here and lose it
+        // on return. The parameter itself shares the caller's array, so store
+        // into it (#16988).
+        let sigilless_alias_target = sigilless_alias_target.filter(|target| {
+            self.env().get(target).is_some()
+                || self.find_local_slot(code, target).is_some()
+                || self.module_scope_lexical(target).is_some()
+        });
         let var_name = sigilless_alias_target
             .as_deref()
             .unwrap_or(&original_var_name)
