@@ -94,7 +94,11 @@ pub(super) fn casefold_text(orig_chars: &[char]) -> (Vec<char>, Vec<usize>) {
 }
 
 /// Check whether text or pattern contains any characters with multi-char case folds.
-pub(super) fn needs_casefold_expansion(chars: &[char], pattern: &RegexPattern) -> bool {
+pub(super) fn needs_casefold_expansion(
+    chars: &[char],
+    pattern: &RegexPattern,
+    var_may_fold: &dyn Fn(&str) -> bool,
+) -> bool {
     // Check text
     for &c in chars {
         if has_multichar_fold(c) {
@@ -102,23 +106,27 @@ pub(super) fn needs_casefold_expansion(chars: &[char], pattern: &RegexPattern) -
         }
     }
     // Check pattern literals
-    pattern_has_multichar_fold(pattern)
+    pattern_has_multichar_fold(pattern, var_may_fold)
 }
 
-fn pattern_has_multichar_fold(pattern: &RegexPattern) -> bool {
+fn pattern_has_multichar_fold(
+    pattern: &RegexPattern,
+    var_may_fold: &dyn Fn(&str) -> bool,
+) -> bool {
     for token in &pattern.tokens {
-        if atom_has_multichar_fold(&token.atom) {
+        if atom_has_multichar_fold(&token.atom, var_may_fold) {
             return true;
         }
     }
     false
 }
 
-fn atom_has_multichar_fold(atom: &RegexAtom) -> bool {
+fn atom_has_multichar_fold(atom: &RegexAtom, var_may_fold: &dyn Fn(&str) -> bool) -> bool {
     match atom {
         RegexAtom::Literal(ch) => has_multichar_fold(*ch),
-        // The value is read at match time and may hold a ligature.
-        RegexAtom::VarInterp(_) | RegexAtom::VarInterpMarkless(_) => true,
+        // The value is read at match time and may hold a ligature, unless it
+        // is a Regex object: that keeps its own adverbs and never folds.
+        RegexAtom::VarInterp(name) | RegexAtom::VarInterpMarkless(name) => var_may_fold(name),
         RegexAtom::CharClass(class) => {
             !class.negated
                 && class
@@ -126,14 +134,15 @@ fn atom_has_multichar_fold(atom: &RegexAtom) -> bool {
                     .iter()
                     .any(|item| matches!(item, ClassItem::Char(ch) if has_multichar_fold(*ch)))
         }
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has_multichar_fold(p),
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has_multichar_fold(p, var_may_fold),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
-        | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has_multichar_fold),
+        | RegexAtom::Conjunction(alts) => alts.iter().any(|p| pattern_has_multichar_fold(p, var_may_fold)),
         RegexAtom::GoalMatch { goal, inner, .. } => {
-            pattern_has_multichar_fold(goal) || pattern_has_multichar_fold(inner)
+            pattern_has_multichar_fold(goal, var_may_fold)
+                || pattern_has_multichar_fold(inner, var_may_fold)
         }
-        RegexAtom::Lookaround { pattern, .. } => pattern_has_multichar_fold(pattern),
+        RegexAtom::Lookaround { pattern, .. } => pattern_has_multichar_fold(pattern, var_may_fold),
         _ => false,
     }
 }

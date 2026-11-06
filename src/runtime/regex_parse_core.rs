@@ -4205,7 +4205,25 @@ impl Interpreter {
                                             return None;
                                         }
                                         // Parse as regex, propagating outer modifiers (:i, :m)
-                                        let scoped_pat = if ignore_case || ignore_mark {
+                                        // A Regex OBJECT keeps its own adverbs: the enclosing
+                                        // literal's `:i` / `:m` do not reach into it (its own
+                                        // `:i`, recorded on a `RegexWithAdverbs`, does). A
+                                        // string is compiled in the enclosing scope, so it
+                                        // inherits them.
+                                        let (ignore_case, ignore_mark) = if is_regex_value {
+                                            let own_i = matches!(
+                                                value.view(),
+                                                ValueView::RegexWithAdverbs(a) if a.ignore_case
+                                            );
+                                            (own_i, false)
+                                        } else {
+                                            (ignore_case, ignore_mark)
+                                        };
+                                        let scoped_pat = if is_regex_value && !ignore_case {
+                                            // Off explicitly: the enclosing literal's `:i`
+                                            // also reaches a nested parse at match time.
+                                            format!(":!i {pat_str}")
+                                        } else if ignore_case || ignore_mark {
                                             let mut s = String::new();
                                             if ignore_case {
                                                 s.push_str(":i ");

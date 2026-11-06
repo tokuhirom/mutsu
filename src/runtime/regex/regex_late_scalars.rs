@@ -157,6 +157,29 @@ impl super::super::Interpreter {
     }
 }
 
+impl super::super::Interpreter {
+    /// Whether an interpolated `$name` may hold text the case-folding match
+    /// has to expand. A Regex object never does: it keeps its own adverbs, so
+    /// the enclosing literal's `:i` does not fold it, and folding the subject
+    /// for it would break its exact-case literals (`m:i{^$re}` with
+    /// `$re = rx{A}` matches "A").
+    // Cost: O(1).
+    pub(crate) fn interp_var_may_fold(&self, name: &str) -> bool {
+        use crate::value::ValueView;
+        let value = self
+            .env
+            .get(name)
+            .or_else(|| self.env.get(&format!("${name}")))
+            .cloned()
+            .map(crate::value::Value::into_deref);
+        !value.is_some_and(|v| match v.view() {
+            ValueView::Regex(_) => true,
+            ValueView::RegexWithAdverbs(a) => !a.ignore_case,
+            _ => false,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::scalars_in_pattern;
