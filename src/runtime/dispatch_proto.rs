@@ -513,6 +513,26 @@ impl Interpreter {
     /// `assign_method_lvalue_with_values` rather than the method-call op handlers
     /// or `call_method_with_values`, so a delegated proto method's body is not yet
     /// intercepted here. Cover that path when delegation dispatch is unified.
+    /// Whether `try_proto_method_body` would intercept `target.method(...)`: the
+    /// receiver's class declares a `proto method` for `method`. Cheap for a
+    /// program without a proto method (`Registry::has_proto_methods`).
+    // Cost: O(1) without proto methods; otherwise one MRO walk (`lookup_proto_method`).
+    pub(crate) fn proto_method_declared_for(&mut self, target: &Value, method: &str) -> bool {
+        if !self.registry().has_proto_methods {
+            return false;
+        }
+        let cn = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) if method != "new" => name.resolve(),
+            ValueView::Mixin(inner, _) if method != "new" => match inner.view() {
+                ValueView::Package(name) => name.resolve(),
+                _ => return false,
+            },
+            _ => return false,
+        };
+        self.lookup_proto_method(&cn, method).is_some()
+    }
+
     pub(crate) fn try_proto_method_body(
         &mut self,
         target: &Value,

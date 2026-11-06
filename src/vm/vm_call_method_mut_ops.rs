@@ -1043,8 +1043,17 @@ impl Interpreter {
             }
             other => self.caches.plain_method_lane_candidate = other,
         }
-        // `proto method` body dispatch (see try_proto_method_body).
-        if let Some(result) = self.try_proto_method_body(&target, method, &args) {
+        // `proto method` body dispatch (see try_proto_method_body). The proto's
+        // `{*}` runs the winning candidate through the resolved-method leg, not
+        // through `dispatch_compiled_method_mut_with_raw_invocant`, so the
+        // ADR-0067 slice 3b arrival channel is armed around it here: a candidate
+        // that binds its invocant raw (`multi method m(::?ROLE:U $self is rw:
+        // ...)`) must reach the caller's variable, as it does without a proto.
+        let proto_armed = self.proto_method_declared_for(&target, method)
+            && self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
+        let proto_result = self.try_proto_method_body(&target, method, &args);
+        self.disarm_raw_invocant_arrival(proto_armed);
+        if let Some(result) = proto_result {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "proto");
             let v = result?;
             // Drain captured-outer writeback recorded by the dispatched multi
