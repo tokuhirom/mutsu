@@ -721,9 +721,7 @@ impl Compiler {
             // and `&[=:=]($a, $b)` are `$a =:= $b`. The operator form is the
             // one that sees the argument variables' containers (a call passes
             // values), so lower the call to it.
-            Expr::Call { name, args, .. }
-                if args.len() == 2 && name.resolve() == "infix:<=:=>" =>
-            {
+            Expr::Call { name, args, .. } if args.len() == 2 && name.resolve() == "infix:<=:=>" => {
                 self.compile_expr(&Expr::Binary {
                     left: Box::new(args[0].clone()),
                     op: TokenKind::Ident("=:=".to_string()),
