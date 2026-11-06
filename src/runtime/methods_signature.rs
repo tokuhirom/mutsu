@@ -33,8 +33,8 @@ impl Interpreter {
         // no `list`) contributes what that iterator yields: `Any.list` would
         // answer `(self,)` and the object would become one bogus key. A lazy
         // iterator is left alone (draining it would not terminate).
-        // TODO: compile to bytecode -- this reaches the user `iterator`
-        // through `try_compiled_method_or_interpret`, like `exec_make_slip_op`.
+        // The user `iterator` is reached through
+        // `try_compiled_method_or_interpret`, the compiled-method route.
         if let ValueView::Instance { class_name, .. } = value.view()
             && !value.is_match_instance()
         {
