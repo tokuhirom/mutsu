@@ -82,6 +82,11 @@ impl Interpreter {
             if head.is_empty() || Self::env_tail_has_sigil(head) || head.starts_with("__mutsu_") {
                 return None;
             }
+            // `class M::c2` inside `module M`: a name qualified with the
+            // enclosing package's own name declares a plain member of it.
+            if let Some(member) = Self::self_qualified_member(rest, package_name) {
+                return Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(member)));
+            }
             return Some(EnvStashMember::SubPackage(head.to_string()));
         }
         // GLOBAL is the root package: every flat env key would
@@ -143,10 +148,30 @@ impl Interpreter {
             return Some(stash_key);
         }
         let rest = Self::stash_member_tail(key, package_name)?;
+        if let Some(member) = Self::self_qualified_member(rest, package_name) {
+            return Some(Self::stash_symbol_key_from_env_tail(member));
+        }
         if rest.is_empty() || crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
         Some(Self::stash_symbol_key_from_env_tail(rest))
+    }
+
+    /// `c2` of `rest` = `M::c2` when `M` is the last component of the package
+    /// `package_name` being listed (`M`, `Outer::M`): rakudo resolves such a
+    /// qualified declaration against the enclosing package.
+    // Cost: O(|rest| + |package|).
+    pub(super) fn self_qualified_member(rest: &str, package_name: &str) -> Option<&'static str> {
+        let rest_sym = Symbol::intern(rest);
+        if !crate::qualified::is_qualified(rest_sym) {
+            return None;
+        }
+        let segments = crate::qualified::segments(rest_sym);
+        let [head, tail] = segments else {
+            return None;
+        };
+        let own = crate::qualified::last_segment(Symbol::intern(package_name));
+        (head.as_str() == own.as_str() && !tail.as_str().is_empty()).then(|| tail.as_str())
     }
 
     /// The bare routine name (the stash key minus its `&`) that the routine
