@@ -63,6 +63,26 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    MethodRow {
+        owner: "Iterator",
+        name: "is-deterministic",
+        arity: 0,
+        handler: Handler::Narrow(
+            crate::builtins::method_table::ctors_mop::mu_answers::iterator_is_deterministic,
+        ),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Iterator",
+        name: "is-monotonically-increasing",
+        arity: 0,
+        handler: Handler::Narrow(
+            crate::builtins::method_table::ctors_mop::mu_answers::iterator_is_monotonic,
+        ),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     row!("PredictiveIterator", "count-only", 0, CountOnly),
     row!("PredictiveIterator", "bool-only", 0, BoolOnly),
 ];
