@@ -394,6 +394,17 @@ impl Interpreter {
                 self.pull_gather_window(list, from, n)
             });
         }
+        // `Seq.new($iterator)` nothing has pulled: the first element decides
+        // `Bool` (rakudo asks the iterator for one), so pull exactly that many
+        // and keep the iterator for later reads -- an unbounded user iterator
+        // is never drained.
+        if let ValueView::Seq(body) = value.view()
+            && body.unpulled_iterator().is_some()
+        {
+            return body.extend_from_iterator(needed, |iterator, count, out| {
+                self.pull_iterator_prefix_into(iterator, count, out)
+            });
+        }
         if let ValueView::Seq(body) = value.view()
             && body.is_map_grep_source()
         {
@@ -664,6 +675,12 @@ impl Interpreter {
         if body.unpulled_iterator().is_some()
             && crate::builtins::method_table::lazy_stream::stream_of(&target, method).is_some()
         {
+            return Ok(target);
+        }
+        // `.lazy` on a `Seq.new($iterator)` nothing has pulled hands the
+        // iterator to a Seq that is lazy by definition (`collections::lazy::lazy`)
+        // instead of draining a possibly unbounded one first.
+        if method == "lazy" && body.unpulled_iterator().is_some() {
             return Ok(target);
         }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {

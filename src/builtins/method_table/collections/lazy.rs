@@ -101,6 +101,25 @@ pub(crate) fn race(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
 // Cost: O(e) for an eager list, a finite range or a hash (its elements are
 // copied once), e = elements; O(1) otherwise.
 pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // A `Seq.new($iterator)` that has not been pulled: `.lazy` takes the
+    // iterator (the original Seq is spent, as in Rakudo) and wraps it in a Seq
+    // that is lazy by definition, without pulling -- reifying an unbounded
+    // user iterator here never returned.
+    if let ValueView::Seq(body) = target.view()
+        && body.unpulled_iterator().is_some()
+    {
+        return match body.take_iterator_source() {
+            Ok(Some(iterator)) => {
+                let lazy_body = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(
+                    iterator,
+                ));
+                lazy_body.mark_lazy();
+                Some(Ok(Value::seq_body(lazy_body)))
+            }
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        };
+    }
     if is_value_lazy(target) {
         // An unbounded range is lazy already, but `.lazy` still makes it a
         // `Seq`.
