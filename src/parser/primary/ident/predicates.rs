@@ -405,27 +405,36 @@ pub(crate) fn next_word_is_builtin_term_op(input: &str) -> bool {
         }
     }
     let word = &input[..end];
-    is_listop(word)
-        || matches!(
-            word,
-            "splice"
-                | "item"
-                | "uc"
-                | "lc"
-                | "tc"
-                | "tclc"
-                | "fc"
-                | "wordcase"
-                | "flip"
-                | "chop"
-                | "chomp"
-                | "ord"
-                | "ords"
-                | "chr"
-                | "chrs"
-                | "chars"
-                | "defined"
-        )
+    is_listop(word) || is_named_unary_builtin(word)
+}
+
+/// A value-producing named unary builtin (`uc`, `trim`, `ord`, ...): it takes
+/// one term as its argument and is not a list operator.
+// Cost: O(1) over a fixed word list.
+pub(crate) fn is_named_unary_builtin(word: &str) -> bool {
+    matches!(
+        word,
+        "splice"
+            | "item"
+            | "uc"
+            | "lc"
+            | "tc"
+            | "tclc"
+            | "fc"
+            | "wordcase"
+            | "flip"
+            | "chop"
+            | "chomp"
+            | "trim"
+            | "trim-leading"
+            | "trim-trailing"
+            | "ord"
+            | "ords"
+            | "chr"
+            | "chrs"
+            | "chars"
+            | "defined"
+    )
 }
 
 /// Check if `input` begins with a bareword fat-arrow pair: `key => value`

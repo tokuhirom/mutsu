@@ -2630,6 +2630,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || starts_slip_prefix_arg(r)
             || qualified_routine_prefix_arg
             || starts_with_term_keyword(r)
+            // A named unary builtin takes a glued string/numeric prefix as its
+            // argument: `trim ~$cell`, `uc ~$x` are `trim(~$cell)`, `uc(~$x)`,
+            // not the bareword concatenated with `~$cell`. The glue (no space
+            // between the sigil and the term) separates it from the infix.
+            || (crate::parser::primary::ident::predicates::is_named_unary_builtin(&name)
+                && starts_glued_prefix_arg(r))
             // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
             // so `undeclared-sub q:to/END/` is a no-paren listop call.
             || crate::parser::primary::ident::predicates::starts_with_quote_construct(r)
