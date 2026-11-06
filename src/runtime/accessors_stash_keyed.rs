@@ -161,10 +161,17 @@ impl Interpreter {
     /// `package_name` being listed (`M`, `Outer::M`): rakudo resolves such a
     /// qualified declaration against the enclosing package.
     // Cost: O(|rest| + |package|).
-    pub(super) fn self_qualified_member<'a>(rest: &'a str, package_name: &str) -> Option<&'a str> {
-        let (head, tail) = rest.split_once("::")?;
-        let own = package_name.rsplit("::").next()?;
-        (head == own && !tail.is_empty() && !tail.contains("::")).then_some(tail)
+    pub(super) fn self_qualified_member(rest: &str, package_name: &str) -> Option<&'static str> {
+        let rest_sym = Symbol::intern(rest);
+        if !crate::qualified::is_qualified(rest_sym) {
+            return None;
+        }
+        let segments = crate::qualified::segments(rest_sym);
+        let [head, tail] = segments else {
+            return None;
+        };
+        let own = crate::qualified::last_segment(Symbol::intern(package_name));
+        (head.as_str() == own.as_str() && !tail.as_str().is_empty()).then(|| tail.as_str())
     }
 
     /// The bare routine name (the stash key minus its `&`) that the routine
