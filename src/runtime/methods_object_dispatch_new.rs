@@ -500,6 +500,12 @@ impl Interpreter {
         if let ValueView::Mixin(inner, mixins) = target.view()
             && let ValueView::Package(_) = inner.as_ref().view()
         {
+            // `Base.^mixin(R[T])` registered the real class `Base+{R[T]}`: build
+            // through it, so an Array/Hash base keeps its constructor and the
+            // role's own composition (not a by-value wrapper) types the object.
+            if let Some(mixin_class) = self.mixin_class_of_type_object(&target) {
+                return self.dispatch_new(Value::package(Symbol::intern(&mixin_class)), args);
+            }
             let base_instance = self.dispatch_new(inner.as_ref().clone(), args)?;
             return self.compose_mixin_type_roles(base_instance, mixins);
         }
