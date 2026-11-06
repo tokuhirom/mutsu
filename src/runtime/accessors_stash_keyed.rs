@@ -215,11 +215,12 @@ impl Interpreter {
         // `our sub M::o2` inside `module M` is the member whose name is the
         // literal `M::o2` (rakudo lists `&M::o2`): a qualifier equal to the
         // package's own last component is part of the name, not a sub-package.
-        let self_qualified = package != crate::symbol::wk::global_package()
-            && base
-                .strip_prefix(crate::qualified::last_segment(package).as_str())
-                .and_then(|r| r.strip_prefix("::"))
-                .is_some_and(|tail| !tail.is_empty() && !tail.contains(':'));
+        let self_qualified = package != crate::symbol::wk::global_package() && {
+            let segments = crate::qualified::segments(crate::qualified::known_symbol(base));
+            segments.len() == 2
+                && segments[0].as_str() == crate::qualified::last_segment(package).as_str()
+                && !segments[1].as_str().is_empty()
+        };
         // No `:` at all, so in particular no `::` qualifier.
         // An operator's name carries its own colon (`infix:<graffiti>`): it is
         // a member of the package like any other routine.
