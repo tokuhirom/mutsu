@@ -365,12 +365,12 @@ impl Interpreter {
         }
         // A class nested in a class body sees the enclosing class's `my`
         // lexicals (the write side resolves the same owner).
-        if crate::qualified::is_global_package(cur) || crate::qualified::is_routine_scoped_package(cur)
+        if crate::qualified::is_global_package(cur)
+            || crate::qualified::is_routine_scoped_package(cur)
         {
             return None;
         }
         crate::qualified::package_ancestors(cur)
-            .into_iter()
             .filter(|pkg| *pkg != cur)
             .find_map(|pkg| {
                 self.lexicals
@@ -1551,7 +1551,6 @@ impl Interpreter {
             return false;
         } else {
             match crate::qualified::package_ancestors(cur_sym)
-                .into_iter()
                 .find(|pkg| *pkg != cur_sym && holds(pkg.as_str()))
             {
                 Some(pkg) => pkg,
