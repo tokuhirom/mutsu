@@ -71,7 +71,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': does not exist",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
@@ -80,7 +80,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': is not a directory",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
@@ -89,7 +89,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': permission denied",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
@@ -168,7 +168,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': does not exist",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
@@ -177,7 +177,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': is not a directory",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
@@ -186,7 +186,7 @@ impl Interpreter {
                 "X::IO::Chdir",
                 format!(
                     "Failed to change the working directory to '{}': permission denied",
-                    requested
+                    absolute_target.display()
                 ),
             ));
         }
