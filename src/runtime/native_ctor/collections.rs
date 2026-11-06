@@ -142,8 +142,17 @@ impl Interpreter {
         _c: &CtorCall<'_>,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-            // Shared with the VM's native fast path.
-            Ok(Value::slip(args.to_vec()))
+            // `Slip.new(*@values)`: a Slip argument (`Empty`, `slip(..)`)
+            // splices into the new Slip; every other value stays one element.
+            // Cost: O(n) in the total number of spliced elements.
+            let mut items = Vec::with_capacity(args.len());
+            for a in args {
+                match a.view() {
+                    ValueView::Slip(inner) => items.extend(inner.iter().cloned()),
+                    _ => items.push(a),
+                }
+            }
+            Ok(Value::slip(items))
     }
 
     /// `Match`.
