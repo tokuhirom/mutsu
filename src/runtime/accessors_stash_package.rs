@@ -106,18 +106,7 @@ impl Interpreter {
                     }
                     let val = self.exported_var_value(module, name).unwrap_or(Value::NIL);
                     // A term export is published under its spelling (#9962).
-                    let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
-                    // ... and a `$`-scalar under its sigil, as rakudo's stash keys it.
-                    let is_scalar = self
-                        .module
-                        .exported_scalar_vars
-                        .get(module)
-                        .is_some_and(|names| names.contains(name));
-                    if is_scalar {
-                        symbols.insert(format!("${key}"), val);
-                    } else {
-                        symbols.insert(key.to_string(), val);
-                    }
+                    symbols.insert(self.exported_var_stash_key(module, name), val);
                 }
             }
             return Self::make_stash_instance(package, symbols);
@@ -285,6 +274,7 @@ impl Interpreter {
             };
             match self.env_stash_member(&key_s, &package_name) {
                 Some(EnvStashMember::Value(stash_key)) => {
+                    let stash_key = Self::type_member_stash_key(val, &key_s, stash_key);
                     symbols.insert(stash_key, val.clone());
                 }
                 Some(EnvStashMember::SubPackage(head)) => {
@@ -304,8 +294,9 @@ impl Interpreter {
         if let Some(vars) = self.module.exported_vars.get(package_name.as_str()) {
             for name in vars.keys() {
                 if let Some(value) = self.exported_var_value(&package_name, name) {
-                    let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
-                    symbols.entry(key.to_string()).or_insert(value);
+                    symbols
+                        .entry(self.exported_var_stash_key(&package_name, name))
+                        .or_insert(value);
                 }
             }
         }
@@ -322,6 +313,7 @@ impl Interpreter {
                     continue;
                 };
                 if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
+                    let stash_key = Self::type_member_stash_key(val, key, stash_key);
                     symbols.entry(stash_key).or_insert_with(|| val.clone());
                 }
             }
@@ -652,6 +644,38 @@ impl Interpreter {
     /// each one is still judged by the member rules the whole scans apply.
     // Cost: O(k + m), k = the names listed, m = symbols interned since the
     // index last caught up (amortized O(1) per symbol).
+    /// The key a stash publishes the exported variable `name` of `module` under:
+    /// a term constant by its spelling (#9962), a `$`-scalar with its sigil (the
+    /// export record keeps it sigil-less), anything else as recorded.
+    // Cost: O(1).
+    fn exported_var_stash_key(&self, module: &str, name: &str) -> String {
+        let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
+        let is_scalar = self
+            .module
+            .exported_scalar_vars
+            .get(module)
+            .is_some_and(|names| names.contains(name));
+        if is_scalar {
+            format!("${key}")
+        } else {
+            key.to_string()
+        }
+    }
+
+    /// `stash_key` unless `val` is the type object `qualified_key` itself: a
+    /// declared type is a package member under its bare name, whatever its
+    /// case (a lowercase `class c1` reads like a `$`-scalar to the name-only
+    /// rule in `stash_symbol_key_from_env_tail`).
+    // Cost: O(1).
+    fn type_member_stash_key(val: &Value, qualified_key: &str, stash_key: String) -> String {
+        match val.view() {
+            ValueView::Package(sym) if sym.resolve() == qualified_key => {
+                stash_key.strip_prefix('$').map_or(stash_key.clone(), str::to_string)
+            }
+            _ => stash_key,
+        }
+    }
+
     fn named_stash_candidates(package: &str) -> Vec<Symbol> {
         let mut names = crate::qualified_tail_index::names_under_package(package);
         if crate::runtime::enum_bare_names::enum_bare_keys_in_use() {
