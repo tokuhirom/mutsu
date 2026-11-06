@@ -900,7 +900,8 @@ impl Interpreter {
                 // A qualified `package`/`module` a module's mainline declared
                 // is not bound in the frame env (ADR-0084 §7.6); its kind
                 // record is the persistent one.
-                || self.is_qualified_package_decl(name))
+                || self.is_qualified_package_decl(name)
+                || self.is_bare_package_decl(name))
         {
             return Value::package(Symbol::intern(name));
         }

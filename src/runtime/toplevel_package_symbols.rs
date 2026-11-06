@@ -105,6 +105,19 @@ impl Interpreter {
             && !self.is_my_scoped_package_item(name)
     }
 
+    /// Whether the bare `name` is a `package`/`module` the program declared at
+    /// its top level (not `my`-scoped): an indirect `::($name)` from any
+    /// compunit finds it, as it is a GLOBAL member in rakudo. Such a bare
+    /// declaration is not bound in the frame env of another compunit's
+    /// routine.
+    // Cost: O(|name|) to classify, plus O(1) avg hash probes.
+    pub(crate) fn is_bare_package_decl(&self, name: &str) -> bool {
+        !crate::qualified::is_qualified_str(name)
+            && !name.starts_with(['$', '@', '%', '&'])
+            && self.registry().package_kinds.contains_key(name)
+            && !self.is_my_scoped_package_item(name)
+    }
+
     /// Bind the package-qualified symbol `name` to `value`: in
     /// [`ModuleToplevel::package_symbols`](super::toplevel_callable_ids::ModuleToplevel::package_symbols) when a module's mainline makes the
     /// binding directly, else in the frame env.
