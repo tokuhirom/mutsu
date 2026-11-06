@@ -325,6 +325,8 @@ pub(crate) fn what_type_name(val: &Value) -> String {
             }
         }
         ValueView::ContainerRef(_) => val.with_deref(what_type_name),
+        ValueView::Whatever => "Whatever".to_string(),
+        ValueView::HyperWhatever => "HyperWhatever".to_string(),
         _ => "Any".to_string(),
     }
 }
