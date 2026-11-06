@@ -10,6 +10,16 @@ fn is_curried_lexical_key(key: &str, prefix_len: usize) -> bool {
         .starts_with('[')
 }
 
+/// Whether the registry key `key`, whose lexical-declaration prefix is
+/// `prefix_len` bytes, is a synthesized mixin class of the declaration
+/// (`C\u{0}<id>+{R}`, made by `C.^mixin(R)`) rather than the declaration.
+// Cost: O(|key| - prefix_len).
+fn is_mixin_lexical_key(key: &str, prefix_len: usize) -> bool {
+    key[prefix_len..]
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with("+{")
+}
+
 /// The built-in roles mutsu models natively rather than as a registered
 /// `RoleDef`. They are still roles: in Rakudo each carries a
 /// `ParametricRoleGroupHOW`, is composable with `but`/`does`, and shows up in
@@ -1038,6 +1048,7 @@ impl Interpreter {
                         .next()
                         .is_some_and(crate::qualified::is_qualified_str)
                     && !(declared_only && is_curried_lexical_key(key, prefix.len()))
+                    && !is_mixin_lexical_key(key, prefix.len())
             };
             reg.classes
                 .keys()
@@ -1065,7 +1076,11 @@ impl Interpreter {
             .chain(reg.roles.keys())
             .chain(reg.enum_types.keys())
             .chain(reg.subsets.keys())
-            .filter(|key| key.starts_with(&prefix) && !is_curried_lexical_key(key, prefix.len()))
+            .filter(|key| {
+                key.starts_with(&prefix)
+                    && !is_curried_lexical_key(key, prefix.len())
+                    && !is_mixin_lexical_key(key, prefix.len())
+            })
         {
             match found {
                 Some(prev) if prev != key => return None,

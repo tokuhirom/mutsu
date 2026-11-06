@@ -651,6 +651,7 @@ impl Interpreter {
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
+        Self::inject_array_typed_role_prelude(&code, &mut stmts);
         Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_tappable_prelude(&code, &mut stmts);

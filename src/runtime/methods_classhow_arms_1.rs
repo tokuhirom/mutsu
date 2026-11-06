@@ -27,6 +27,20 @@ impl Interpreter {
                     {
                         role_names.push(name)
                     }
+                    // A parametric role over type objects (`Bar.^mixin(AT[Str])`)
+                    // is composed by its specialized name, as `class C does AT[Str]`
+                    // does, so the mixin class stays a class (an Array subclass
+                    // keeps `.new` building an Array).
+                    Some((name, role_args, _))
+                        if !role_args.is_empty()
+                            && crate::runtime::methods_object_dispatch_new::default_new_accepts_positionals(&self.class_mro(&base.resolve()))
+                            && self.registry().roles.contains_key(&name)
+                            && role_args
+                                .iter()
+                                .all(|a| matches!(a.view(), ValueView::Package(_))) =>
+                    {
+                        role_names.push(crate::runtime::registration_class::type_value_name(role))
+                    }
                     _ => {
                         role_names.clear();
                         break;
@@ -159,6 +173,12 @@ impl Interpreter {
                         && !crate::gc::Gc::ptr_eq(&overrides, mixins)
                     {
                         mixins.set_type_name(&new_name);
+                    }
+                    // `Class.^mixin(R)` is a registered class: its instances are
+                    // tagged with that class, so the rename lands there too.
+                    if let Some(mixin_class) = self.mixin_class_of_type_object(&args[0]) {
+                        self.type_metadata_mut(mixin_class)
+                            .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
                 }
                 ValueView::Package(name) => {

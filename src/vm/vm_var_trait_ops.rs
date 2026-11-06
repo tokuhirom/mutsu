@@ -926,9 +926,20 @@ impl Interpreter {
                 // `my Str @a is Foo`: the container is `Foo[Str]`, as rakudo's
                 // `is` trait on a typed array parameterizes the class.
                 let type_obj = match self.var_type_constraint(&name_str) {
-                    Some(of) if of != "Mu" && of != "Any" && !of.contains('[') => Value::package(
-                        crate::symbol::Symbol::intern(&format!("{trait_name}[{of}]")),
-                    ),
+                    Some(of) if of != "Mu" && of != "Any" && !of.contains('[') => {
+                        let spelled = format!("{trait_name}[{of}]");
+                        // A class with its own `^parameterize` builds `Foo[Str]`
+                        // itself (rakudo's `is` trait calls it); otherwise the
+                        // spelling names the parameterized subclass.
+                        let built = if self.has_user_method(&trait_name, "^parameterize") {
+                            self.meta_parameterized_type(&spelled)
+                        } else {
+                            None
+                        };
+                        built.unwrap_or_else(|| {
+                            Value::package(crate::symbol::Symbol::intern(&spelled))
+                        })
+                    }
                     _ => type_obj,
                 };
                 let instance =

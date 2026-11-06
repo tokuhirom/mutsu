@@ -28,6 +28,7 @@ mod run_modules_scans;
 mod run_pod_declarants;
 mod run_prelude;
 mod run_prelude_hash_ordered;
+mod run_prelude_array_typed;
 mod run_prelude_iterator;
 mod run_prelude_precomp;
 mod run_prelude_tappable;
