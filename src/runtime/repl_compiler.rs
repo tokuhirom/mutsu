@@ -385,6 +385,21 @@ impl Interpreter {
                 unit_env.insert_sym(*key, value.clone());
             }
         }
+        // A caller lexical that a closure captured is a shared cell. The unit
+        // holds it too, so a callback the unit runs (a role method, which
+        // writes the cell by name) reaches the cell it captured; it is
+        // removed from the unit's captured scope afterwards (#16977).
+        let mut seeded: Vec<(Symbol, Value)> = Vec::new();
+        for (key, value) in &self.env.flattened() {
+            if value.is_container_ref()
+                && !key.is_dynamic_var_env_key()
+                && crate::env::is_plain_user_lexical(&key.resolve())
+                && !unit_env.contains_key_sym(*key)
+            {
+                unit_env.insert_sym(*key, value.clone());
+                seeded.push((*key, value.clone()));
+            }
+        }
         let saved_env = std::mem::replace(&mut self.env, unit_env);
         let registry_before = self.snapshot_routine_registry();
         if let Some(ctx) = &outer_ctx {
@@ -412,9 +427,14 @@ impl Interpreter {
         self.env = saved_env;
         let value = result?;
 
-        let Some(captured) = captured else {
+        let Some(mut captured) = captured else {
             return Ok(value);
         };
+        for (key, cell) in &seeded {
+            if captured.env.get_sym(*key).is_some_and(|v| v.same_binding(cell)) {
+                captured.env.remove_sym(*key);
+            }
+        }
         let mut routines = outer_ctx
             .as_ref()
             .map(|ctx| ctx.routines.clone())
