@@ -340,6 +340,35 @@ impl Compiler {
                 }
                 true
             }
+            // The three-operand `while` / `until` (QAST's third child): a `post`
+            // expression that runs after the body of every iteration, as the step
+            // of a C-style loop does. Only the sunk spelling is lowered; in value
+            // position the loop's Seq has no such step.
+            "nqp::while" | "nqp::until" if args.len() == 3 && sunk => {
+                let cond = if name.ends_with("until") {
+                    Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(args[0].clone()),
+                        word: false,
+                    }
+                } else {
+                    args[0].clone()
+                };
+                let stmt = Stmt::Loop {
+                    init: None,
+                    cond: Some(cond),
+                    step: Some(args[2].clone()),
+                    body: vec![Stmt::Expr(args[1].clone())],
+                    repeat: false,
+                    label: None,
+                    is_until: false,
+                    is_bare_term: false,
+                };
+                self.with_stmt_root(|c| c.compile_stmt(&stmt));
+                let nil_idx = self.code.add_constant(Value::NIL);
+                self.code.emit(OpCode::LoadConst(nil_idx));
+                true
+            }
             _ => false,
         }
     }
@@ -350,11 +379,12 @@ impl Compiler {
         matches!(
             e,
             Expr::Call { name, args, .. }
-                if args.len() == 2
+                if (args.len() == 2
                     && matches!(
                         name.as_str(),
                         "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
-                    )
+                    ))
+                    || (args.len() == 3 && matches!(name.as_str(), "nqp::while" | "nqp::until"))
         )
     }
 
