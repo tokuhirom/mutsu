@@ -290,7 +290,9 @@ impl Interpreter {
         let role_base = class_name
             .split_once('[')
             .map(|(b, _)| b)
-            .filter(|b| self.registry().role_type_params.contains_key(*b))
+            .filter(|b| !is_instance
+                    && !self.registry().classes.contains_key(class_name)
+                    && self.registry().role_type_params.contains_key(*b))
             .unwrap_or(class_name);
         let is_role = self.is_role(role_base)
             || (crate::runtime::types::is_builtin_role_name(class_name)
