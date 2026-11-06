@@ -196,7 +196,11 @@ impl Interpreter {
         value: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
         let target = Self::unwrap_lvalue_invocant(target);
-        if !matches!(target.view(), ValueView::Package(_)) {
+        // A metamethod call (`$obj.^model = v`) may also have an instance
+        // invocant; every other shape here is a type-object call.
+        if !matches!(target.view(), ValueView::Package(_))
+            && !(method.starts_with('^') && matches!(target.view(), ValueView::Instance { .. }))
+        {
             return Ok(None);
         }
         // A metamethod (`Type.^model = v`) lives on the HOW, which
@@ -221,6 +225,7 @@ impl Interpreter {
             // the first argument, as in the rvalue metamethod dispatch.
             let user_class = match target.view() {
                 ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
             // A user-declared `method ^bar` stays on the type's own method

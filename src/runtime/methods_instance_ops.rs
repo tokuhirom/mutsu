@@ -2709,9 +2709,29 @@ impl Interpreter {
                 let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
                 // A twiddle is an assignment to the attribute: a typed one
                 // refuses a value of the wrong type (`X::TypeCheck::Assignment`).
-                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.deref_container()) {
-                    Ok(value) => value,
-                    Err(err) => return Some(Err(err)),
+                //
+                // rakudo checks against the descriptor of the container already
+                // in the slot. A slot holding a value that does NOT satisfy the
+                // declared type got it through `Attribute.set_value`, which
+                // binds without checking (a MOP-built attribute, RedFactory's
+                // `Type.^add_attribute: Attribute.new(:type(Str), ...)` holding
+                // a Block), so its container carries no such constraint and the
+                // twiddle is not checked either.
+                let incoming = boxed.deref_container();
+                let slot_is_unchecked = sigil == '$'
+                    && attrs.get(key.as_str()).is_some_and(|existing| {
+                        !existing.is_nil()
+                            && self
+                                .check_attr_store_type(&cn, key, sigil, existing.deref_container())
+                                .is_err()
+                    });
+                let checked = if slot_is_unchecked {
+                    incoming
+                } else {
+                    match self.check_attr_store_type(&cn, key, sigil, incoming) {
+                        Ok(value) => value,
+                        Err(err) => return Some(Err(err)),
+                    }
                 };
                 // `clone` binds an `@` attribute to an itemized Array as it is
                 // (`.clone(tasks => $arr)`), where `new` would wrap the item
