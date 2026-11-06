@@ -53,5 +53,5 @@ fn grammar_parse(
     if !interp.class_is_grammar(&class_name) {
         return None;
     }
-    Some(interp.dispatch_package_parse(&class_name, method, &args[1..]))
+    Some(interp.dispatch_package_parse_on(Some(target), &class_name, method, &args[1..]))
 }

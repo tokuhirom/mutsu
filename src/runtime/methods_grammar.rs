@@ -711,7 +711,22 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let parsed = self.dispatch_package_parse_impl(package_name, method, args);
+        self.dispatch_package_parse_on(None, package_name, method, args)
+    }
+
+    /// [`Self::dispatch_package_parse`] for a parse called on `receiver`: an
+    /// instance of the grammar is what the start rule's `self.new` is called
+    /// on (a role's `method new` that only acts `if self.defined`, as
+    /// Grammar::PrettyErrors', then runs), a type object or `None` builds from
+    /// the type as before.
+    pub(crate) fn dispatch_package_parse_on(
+        &mut self,
+        receiver: Option<&Value>,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let parsed = self.dispatch_package_parse_impl(receiver, package_name, method, args);
         // A parse that answered (a Match, or a failed Match) is over: a subrule
         // argument-binding error it recorded without raising belongs to that
         // parse alone and must not surface from the next unrelated `~~` or
@@ -733,6 +748,7 @@ impl Interpreter {
 
     fn dispatch_package_parse_impl(
         &mut self,
+        receiver: Option<&Value>,
         package_name: &str,
         method: &str,
         args: &[Value],
@@ -984,6 +1000,7 @@ impl Interpreter {
         let outer_invocant = self.arm_start_rule_invocant(None);
         let result = (|| -> Result<Value, RuntimeError> {
             let invocant = self.build_start_rule_invocant(
+                receiver,
                 Symbol::intern(package_name),
                 &text,
                 candidate_from,

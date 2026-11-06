@@ -144,11 +144,18 @@ impl Interpreter {
     // O(n), n = chars of `text`, to share the subject.
     pub(crate) fn build_start_rule_invocant(
         &mut self,
+        receiver: Option<&Value>,
         pkg: Symbol,
         text: &str,
         pos: usize,
     ) -> Result<Value, RuntimeError> {
-        let invocant = self.dispatch_new(Value::package(pkg), Vec::new())?;
+        // `self.new` of a parse called on an instance runs on that instance.
+        let invocant = match receiver {
+            Some(r) if matches!(r.view(), ValueView::Instance { .. }) => {
+                self.try_compiled_method_or_interpret(r.clone(), "new", Vec::new())?
+            }
+            _ => self.dispatch_new(Value::package(pkg), Vec::new())?,
+        };
         if let ValueView::Instance { attributes, .. } = invocant.view() {
             attributes.insert("orig", Value::str(text.to_string()));
             attributes.insert("from", Value::int(pos as i64));
