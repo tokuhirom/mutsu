@@ -3429,6 +3429,30 @@ impl MethodFrameSyms<'_> {
 /// per-nested-call O(env) cost measured in PR #2683. `saved` is consumed (the
 /// caller discards it in favor of the returned env), so mutating it directly is
 /// safe and avoids the extra `saved.clone()`.
+/// The entries `merge_method_env` drives its merge from: the frame's write log
+/// (after a flatten) or its whole overlay.
+enum MergeEntries<'a> {
+    Log(&'a Env, std::slice::Iter<'a, Symbol>),
+    Overlay(std::collections::hash_map::Iter<'a, Symbol, Value>),
+}
+
+impl<'a> Iterator for MergeEntries<'a> {
+    type Item = (&'a Symbol, &'a Value);
+
+    // Cost: O(1) amortized per entry; a log key with no overlay value is skipped.
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MergeEntries::Log(env, keys) => loop {
+                let k = keys.next()?;
+                if let Some(v) = env.overlay_get_sym(*k) {
+                    return Some((k, v));
+                }
+            },
+            MergeEntries::Overlay(it) => it.next(),
+        }
+    }
+}
+
 fn merge_method_env(
     mut saved: Env,
     current: Env,
@@ -3446,12 +3470,11 @@ fn merge_method_env(
     // not in it is still the value inherited at the flatten, which the
     // `cheaply_unchanged` test below would drop anyway; drive the merge from
     // the log instead, exactly as the light-call return merge does (#7630).
-    let entries: Box<dyn Iterator<Item = (&Symbol, &Value)> + '_> = match current.frame_writes() {
-        Some(log) => Box::new(
-            log.iter()
-                .filter_map(|k| current.overlay_get_sym(*k).map(|v| (k, v))),
-        ),
-        None => Box::new(current.overlay_iter()),
+    // An enum, not a `Box<dyn Iterator>`: the box was one heap allocation per
+    // merging method call (#16098).
+    let entries = match current.frame_writes() {
+        Some(log) => MergeEntries::Log(&current, log.iter()),
+        None => MergeEntries::Overlay(current.overlay_iter()),
     };
     // The writes the frame made to the method's own captured lexicals, kept
     // whether or not the caller has a binding of that name to merge into: the
