@@ -32,6 +32,7 @@ impl Interpreter {
         Self::inject_precomp_api_prelude(code, stmts);
         Self::inject_formatter_syntax_prelude(code, stmts);
         Self::inject_deparse_prelude(code, stmts);
+        Self::inject_doc_markup_prelude(code, stmts);
         Self::inject_container_descriptor_prelude(code, stmts);
     }
 
