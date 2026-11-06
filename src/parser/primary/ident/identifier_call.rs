@@ -2354,6 +2354,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     || r3.is_empty()
                     || is_stmt_modifier_ahead(r3)
                 {
+                    // The trailing comma belongs to the argument list: left
+                    // behind, the statement parser would read it as a
+                    // one-element list around the whole call
+                    // (`join '', 'a', 'b',;` gave `("ab",)`, Selkie).
+                    rest_after = r3;
                     break;
                 }
                 let (r3, rest_arg) = parse_arg(r3)?;

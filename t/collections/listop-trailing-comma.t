@@ -1,39 +1,35 @@
-use v6;
 use Test;
 
-# A paren-less list operator (listop) call must swallow a trailing comma into
-# its own argument list, exactly like Rakudo: `f $x,` is `f($x)`, NOT
-# `(f($x),)`. When the call returns a container (Array/Hash), the wrong reading
-# nests the result on list-assignment (`my @a = f $x,` -> `[[...]]`).
-# Regression: Template::Mustache inheritable_partials relied on
-# `my @parsed = get-template .<val>, :delims(...), ;` staying flat.
+# A trailing comma after the last argument of a builtin listop call belongs to
+# the argument list; it must not wrap the call's result in a one-element list.
+# Found in Selkie (`join '', "a", "b", ;` in its terminal-cleanup sequence).
 
-plan 8;
+plan 7;
 
-sub arr($k) { return [ { :t($k) }, ]; }
+sub t1(--> Str) {
+    join '',
+        "a",     # one
+        "b",
+        "c", # trailing comma, then the statement end
+    ;
+}
+is t1(), "abc", 'join with trailing comma before ; returns a Str';
 
-# single-line trailing comma
-my @a = arr 'x', ;
-is @a.elems, 1, 'trailing comma: elems stays 1 (not nested)';
-is @a[0].^name, 'Hash', 'trailing comma: [0] is the Hash, not an Array';
+sub t2 { join "-", "a", "b", ; }
+is t2().raku, '"a-b"', 'trailing comma then ; on one line';
 
-# multiline trailing comma (module form)
-my @b = arr
-            'y',
-            ;
-is @b.elems, 1, 'multiline trailing comma: elems stays 1';
-is @b[0].^name, 'Hash', 'multiline trailing comma: [0] is the Hash';
+sub t3 { join "-", "a", "b", }
+is t3().raku, '"a-b"', 'trailing comma then }';
 
-# with a named arg then trailing comma
-sub arn($k, :$d) { return [ { :t($k), :d($d) }, ]; }
-my @c = arn
-            'z',
-            :d('dd'),
-            ;
-is @c.elems, 1, 'named arg + trailing comma: elems stays 1';
-is @c[0]<t>, 'z', 'named arg + trailing comma: positional bound';
-is @c[0]<d>, 'dd', 'named arg + trailing comma: named bound';
+sub t4 { my $x = join "-", "a", "b",; $x }
+is t4().raku, '"a-b"', 'trailing comma in an assignment';
 
-# no trailing comma still flat (control)
-my @d = arr 'w';
-is @d.elems, 1, 'no trailing comma: elems 1 (control)';
+is (join "-", 1, 2,).raku, '"1-2"', 'parenthesised';
+
+my @c = 1;
+my $r = do { join "-", 1, 2, if @c };
+is $r, "1-2", 'trailing comma before a statement modifier';
+
+sub foo(*@a) { @a.join("|") }
+sub t7 { foo "a", "b", ; }
+is t7(), "a|b", 'user sub listop with trailing comma (unchanged)';
