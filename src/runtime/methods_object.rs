@@ -443,7 +443,13 @@ impl Interpreter {
                             // A composed role shows up in the MRO; its attributes
                             // are flattened into `class_attrs`, so a known role is
                             // just as complete as a known class.
-                                || registry.roles.contains_key(cls))
+                                || registry.roles.contains_key(cls)
+                            // A parametric role composes under its instance name
+                            // (`Q[2]`); the role itself is registered by base name.
+                            || (cls.ends_with(']')
+                                && cls
+                                    .split_once('[')
+                                    .is_some_and(|(base, _)| registry.roles.contains_key(base))))
                     })
                 };
             // Does any `is default(...)` element default exist keyed by this
