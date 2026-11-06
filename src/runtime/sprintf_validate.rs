@@ -18,15 +18,20 @@ pub(crate) fn directives_count_message(fmt: &str, args_used: usize, args_have: u
     } else {
         ""
     };
-    format!(
-        "Your printf-style directives specify {} argument{}, but {} {} {}\nsupplied to format '{}'.{}",
-        args_used,
-        if args_used == 1 { "" } else { "s" },
-        have_count,
-        have_unit,
-        have_verb,
-        fmt,
-        hint,
+    // Rakudo word-wraps the whole message (the format is echoed inline, so a
+    // long format wraps inside its own text).
+    wrap_words(
+        &format!(
+            "Your printf-style directives specify {} argument{}, but {} {} {} supplied to format '{}'.{}",
+            args_used,
+            if args_used == 1 { "" } else { "s" },
+            have_count,
+            have_unit,
+            have_verb,
+            fmt,
+            hint,
+        ),
+        71,
     )
 }
 
