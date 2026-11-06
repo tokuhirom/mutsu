@@ -33,6 +33,7 @@ impl Interpreter {
                     // keeps `.new` building an Array).
                     Some((name, role_args, _))
                         if !role_args.is_empty()
+                            && crate::runtime::methods_object_dispatch_new::default_new_accepts_positionals(&self.class_mro(&base.resolve()))
                             && self.registry().roles.contains_key(&name)
                             && role_args
                                 .iter()
