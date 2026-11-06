@@ -141,6 +141,19 @@ impl Interpreter {
         super::regex::regex_helpers::interp_closure_scope_get(var_name)
             .or_else(|| self.get_env_with_main_alias(var_name))
             .or_else(|| self.get_env_with_main_alias(&format!("${var_name}")))
+            // A module routine's own file-scope `our $re` is not in the env of a
+            // call made from a `gather` body (the body runs over a snapshot of
+            // its creator's env, not the loader's): the routine still sees it
+            // lexically, so ask the `our` store last, and only from inside a
+            // routine declared in a file (never for a script's own undeclared name).
+            .or_else(|| {
+                self.routine_stack()
+                    .iter()
+                    .rev()
+                    .find(|f| !f.is_block)
+                    .and_then(|f| f.def_file)?;
+                self.get_our_var(var_name).cloned()
+            })
             .map(Value::into_deref)
     }
 
