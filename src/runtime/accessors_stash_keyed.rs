@@ -198,11 +198,28 @@ impl Interpreter {
         } else {
             key_s
         };
+        // An `EXPORT::<tag>::...` registry key is a view of the module's
+        // exports, never a member of the package it names.
+        if effective_key.starts_with("EXPORT::")
+            && package_name != "EXPORT"
+            && !package_name.starts_with("EXPORT::")
+        {
+            return None;
+        }
         let rest = Self::stash_member_tail(effective_key, package_name)?;
         let base = if split_signature {
             rest.split('/').next().unwrap_or(rest)
         } else {
             rest
+        };
+        // `our sub M::o2` inside `module M` is the member whose name is the
+        // literal `M::o2` (rakudo lists `&M::o2`): a qualifier equal to the
+        // package's own last component is part of the name, not a sub-package.
+        let self_qualified = package != crate::symbol::wk::global_package() && {
+            let segments = crate::qualified::segments(crate::qualified::known_symbol(base));
+            segments.len() == 2
+                && segments[0].as_str() == crate::qualified::last_segment(package).as_str()
+                && !segments[1].as_str().is_empty()
         };
         // No `:` at all, so in particular no `::` qualifier.
         // An operator's name carries its own colon (`infix:<graffiti>`): it is
@@ -213,7 +230,7 @@ impl Interpreter {
                 "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "term"
             ) && tail.starts_with(['<', '\u{ab}', '['])
         });
-        if base.is_empty() || (base.contains(':') && !operator_name) {
+        if base.is_empty() || (base.contains(':') && !operator_name && !self_qualified) {
             return None;
         }
         // A routine the package's own module body imported is lexical to that
