@@ -159,6 +159,25 @@ impl Interpreter {
         for (name, prior) in saved {
             Self::restore_env_entry(&mut self.env, &name, prior);
         }
+        // The composition happens once per class but can run inside a routine
+        // that declares inner routines. That routine's exit restores the
+        // routine registry to its entry state, which would drop these
+        // class-package subs while the composed class (cached) outlives them;
+        // a later construction then finds only the role's own `sub`, closed
+        // over none of the composition's parameters (#16899). They belong to
+        // the class's package, so they are kept like an `our` sub.
+        if result.is_ok() {
+            for name in &redeclared {
+                let key = Symbol::intern(
+                    crate::qualified::qualified_text(package.as_str(), name).as_str(),
+                );
+                let def = self.registry().functions.get(&key).cloned();
+                if let Some(def) = def {
+                    std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                        .insert(key, def);
+                }
+            }
+        }
         // A parametric composition's lexical-package copy of each re-declared
         // sub knows nothing of the composition's parameters (#15100).
         if result.is_ok() && !params.is_empty() {
