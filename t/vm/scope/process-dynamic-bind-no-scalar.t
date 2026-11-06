@@ -4,7 +4,7 @@ use Test;
 # container, so `$*X.VAR` is the value's own type and `my @a = $*X` flattens an
 # Iterable. An assignment (`PROCESS::<$X> = value`) does make a Scalar.
 
-plan 11;
+plan 12;
 
 PROCESS::<$R> := 1..3;
 is $*R.VAR.^name, 'Range', '$*X.VAR of a bound Range';
@@ -32,3 +32,9 @@ my $stored;
 PROCESS::<$P> := Proxy.new(FETCH => sub ($) { $stored }, STORE => sub ($, $v) { $stored = $v });
 $*P = 'via proxy';
 is $*P, 'via proxy', 'a bound Proxy stays assignable';
+
+my $kept;
+my $held := Proxy.new(FETCH => sub ($) { $kept }, STORE => sub ($, $v) { $kept = $v });
+PROCESS::<$H> := $held;
+$*H = 'held';
+is $*H, 'held', 'a Proxy bound through a variable stays assignable';
