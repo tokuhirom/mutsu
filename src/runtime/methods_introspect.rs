@@ -7,14 +7,24 @@ use crate::symbol::Symbol;
 // Cost: O(1) plus the length of the type names.
 fn parameterized_container_name(target: &Value, info: &ContainerTypeInfo) -> Option<String> {
     match target.view() {
-        ValueView::Array(_, _) => Some(format!("Array[{}]", info.value_type)),
+        ValueView::Array(_, _) => Some(format!(
+            "Array[{}]",
+            crate::value::type_arg_display_name(&info.value_type)
+        )),
         ValueView::Hash(_) => Some(match &info.key_type {
             // The `:{...}` / classify shape (of = Mu, no declared value
             // type): rakudo parameterizes it as Hash[Mu,Mu,Any] -- the third
             // argument is the (Any) default that differs from the Mu of-type.
             Some(key_type) if info.value_type.is_empty() => format!("Hash[Mu,{},Any]", key_type),
-            Some(key_type) => format!("Hash[{},{}]", info.value_type, key_type),
-            None => format!("Hash[{}]", info.value_type),
+            Some(key_type) => format!(
+                "Hash[{},{}]",
+                crate::value::type_arg_display_name(&info.value_type),
+                crate::value::type_arg_display_name(key_type)
+            ),
+            None => format!(
+                "Hash[{}]",
+                crate::value::type_arg_display_name(&info.value_type)
+            ),
         }),
         _ => None,
     }
@@ -1300,7 +1310,10 @@ impl Interpreter {
                                     info.value_type, key_type
                                 )));
                             } else if info.value_type != "Any" && info.value_type != "Mu" {
-                                return Ok(Value::str(format!("Hash[{}]", info.value_type)));
+                                return Ok(Value::str(format!(
+                                    "Hash[{}]",
+                                    crate::value::type_arg_display_name(&info.value_type)
+                                )));
                             }
                         }
                         ValueView::Array(_, kind)
@@ -1308,7 +1321,10 @@ impl Interpreter {
                                 && info.value_type != "Any"
                                 && info.value_type != "Mu" =>
                         {
-                            return Ok(Value::str(format!("Array[{}]", info.value_type)));
+                            return Ok(Value::str(format!(
+                                    "Array[{}]",
+                                    crate::value::type_arg_display_name(&info.value_type)
+                                )));
                         }
                         _ => {}
                     }

@@ -3699,7 +3699,11 @@ impl Interpreter {
                 let args = type_args
                     .into_iter()
                     .map(|v| match v.view() {
-                        ValueView::Package(name) => name.resolve(),
+                        // A package-scoped enum is named by its declared name here, as
+                        // its own `.^name` and `Array[E]` of a declared container are.
+                        ValueView::Package(name) => {
+                            crate::value::type_arg_display_name(&name.resolve()).into_owned()
+                        }
                         _ => {
                             let s = v.to_string_value();
                             s.trim_start_matches('(').trim_end_matches(')').to_string()

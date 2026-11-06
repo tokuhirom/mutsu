@@ -617,7 +617,7 @@ impl Interpreter {
             })
             .collect();
         let key_suffix = if let Some(ref kt) = info.key_type {
-            format!("{{{}}}", kt)
+            format!("{{{}}}", crate::value::type_arg_display_name(kt))
         } else {
             String::new()
         };
@@ -630,6 +630,7 @@ impl Interpreter {
         } else {
             "Any"
         };
+        let value_type = crate::value::type_arg_display_name(value_type);
         let inner = parts.join(", ");
         let result = if inner.is_empty() {
             format!("(my {} %{})", value_type, key_suffix)

@@ -786,7 +786,7 @@ pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
 pub(crate) use display::{is_internal_anon_type_name, is_nameless_anon_type_name};
 pub(crate) use enum_display::{
-    enum_display_name, is_package_enum_declared_name, note_enum_display_name,
+    enum_display_name, is_package_enum_declared_name, note_enum_display_name, type_arg_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
 pub(crate) use error::expected_type_object;
