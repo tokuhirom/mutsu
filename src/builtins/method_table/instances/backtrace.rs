@@ -87,13 +87,13 @@ fn attr_or(target: &Value, key: &str, default: Value) -> Answer {
 /// `Backtrace.Str`: the text the builder rendered.
 // Cost: O(a), a = attributes of the instance (one copy of the text).
 fn str_row(target: &Value, _args: &[Value]) -> Answer {
+    // Rakudo: `Backtrace.Str` is `.nice` -- the interesting frames, one per
+    // line, each newline-terminated.
     let attributes = attrs_of(target)?;
-    let text = attributes
-        .as_map()
-        .get("text")
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    Some(Ok(Value::str(text)))
+    let frames = frames_of(&attributes);
+    Some(Ok(Value::str(crate::builtins::backtrace_methods::nice(
+        &frames, false,
+    ))))
 }
 
 /// `Backtrace.gist`: `Backtrace(3 frames)`.
