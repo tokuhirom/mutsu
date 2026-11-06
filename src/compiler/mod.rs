@@ -1879,6 +1879,11 @@ pub(crate) struct Compiler {
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
     sigilless_locals: std::collections::HashSet<String>,
+    /// Scalar parameters of the routine being compiled that rakudo binds
+    /// straight to the (decontainerized) argument: a nominally typed, readonly
+    /// one (`Int $x`, `Int :$x`, `Int $x?`). They own no `Scalar`, so `$x =:= Int`
+    /// asks about the value itself (#16959).
+    direct_bound_params: std::collections::HashSet<String>,
     /// Sigilless-binding names declared in an ENCLOSING compilation (the parent
     /// sub/block's `sigilless_locals`, transitively). A BareWord naming one of
     /// these — but not a local of the current frame — is a genuine lexical
@@ -2242,6 +2247,7 @@ impl Compiler {
             qualified_class_names_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
+            direct_bound_params: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
             type_capture_locals: std::collections::HashSet::new(),
             enclosing_type_captures: std::collections::HashSet::new(),
