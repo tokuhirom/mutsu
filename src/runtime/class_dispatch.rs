@@ -279,7 +279,10 @@ impl Interpreter {
             // The row table has no signatures, so "the built-in is a multi" is
             // approximated by "the receiver's MRO has a built-in of that name".
             // TODO: rank the built-in's candidates with the user's (#12751).
-            if !matches!(inv_value.view(), ValueView::Package(_) | ValueView::Mixin(..))
+            // A type object reaches the built-in too when the user's candidates
+            // are all `:D` (`multi method Bool(::?CLASS:D:)` on `C.Bool` is
+            // `Mu.Bool`, False).
+            if !matches!(inv_value.view(), ValueView::Mixin(..))
                 && !self.native_base_bypass_hit(&inv_value, Symbol::intern(method_name))
                 && self
                     .lookup_proto_method(receiver_class_name, method_name)
