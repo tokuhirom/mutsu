@@ -13,7 +13,7 @@ mod class_how_buildplan;
 mod ctor_late;
 mod enum_how;
 mod grammar;
-mod mu_answers;
+pub(in crate::builtins::method_table) mod mu_answers;
 mod mu_base;
 mod mu_emit;
 mod mu_identity;

@@ -52,6 +52,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Iterator", "skip-one", 0, SkipOne),
     row!("Iterator", "skip-at-least", 1, SkipAtLeast),
     row!("Iterator", "skip-at-least-pull-one", 1, SkipAtLeastPullOne),
+    // A built-in iterator reports its own laziness (`[1, 2].lazy.iterator`),
+    // never the `Iterator` role's `False` default that a program composing
+    // the role brings in (`run_prelude_iterator.rs`).
+    MethodRow {
+        owner: "Iterator",
+        name: "is-lazy",
+        arity: 0,
+        handler: Handler::Narrow(crate::builtins::method_table::ctors_mop::mu_answers::is_lazy),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     row!("PredictiveIterator", "count-only", 0, CountOnly),
     row!("PredictiveIterator", "bool-only", 0, BoolOnly),
 ];

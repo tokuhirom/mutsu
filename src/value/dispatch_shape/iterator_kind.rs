@@ -18,6 +18,24 @@ pub(crate) const MAP_GREP_STREAM_ATTR: &str = "map_grep_stream";
 /// is not a `PredictiveIterator` (a hash's).
 pub(crate) const NOT_PREDICTIVE_ITERATOR_ATTR: &str = "not_predictive";
 
+/// Whether `value` is one of mutsu's built-in iterators that reports itself
+/// lazy (the `is_lazy` attribute): `Some(answer)` for such an iterator, `None`
+/// for any other value. The single answer behind every `is-lazy` row.
+// Cost: O(1), one attribute probe.
+pub(crate) fn native_iterator_is_lazy(value: &Value) -> Option<bool> {
+    match value.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Iterator" => Some(matches!(
+            attributes.as_map().get("is_lazy").map(Value::view),
+            Some(ValueView::Bool(true))
+        )),
+        _ => None,
+    }
+}
+
 /// The shape of an `Iterator` instance with these attributes:
 /// `PredictiveIterator` for an array-backed one that knows how many elements
 /// it has left, `Iterator` alone for a stream (Rakudo's map iterator), a

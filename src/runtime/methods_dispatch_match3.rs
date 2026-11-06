@@ -542,6 +542,11 @@ impl Interpreter {
     /// checked for a lazy tail); O(1) on a LazyList or Range. Plain `@a.is-lazy`
     /// is answered O(1) by the native arm in `dispatch_core_str.rs` first.
     pub(crate) fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
+        // A built-in iterator carries its laziness as data.
+        if let Some(lazy) = crate::value::native_iterator_is_lazy(target)
+        {
+            return Value::truth(lazy);
+        }
         let value_is_lazy = |v: &Value| match v.view() {
             ValueView::LazyList(list) => list.is_genuinely_lazy(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
