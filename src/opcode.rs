@@ -11340,6 +11340,21 @@ impl CompiledCode {
                     }
                 }
             }
+            // A method called on a captured plain scalar (`$x.m`) may write
+            // straight into the variable's container (`method m(\\SELF:) {
+            // nqp::assign(SELF, ...) }`, an `is rw` invocant): no name-write op
+            // shows it, exactly as for an `is rw` call argument, so the receiver
+            // counts as a possible write too (Object::Delayed's trampoline,
+            // resolved by a `start` block that only calls a method on it).
+            if let OpCode::CallMethodMut { target_name_idx, .. } = op
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(*target_name_idx as usize).map(Value::view)
+                && !own.contains(name.as_str())
+                && crate::env::is_plain_user_lexical(name.as_str())
+                && !name.starts_with(['@', '%', '&'])
+            {
+                free_call_arg_syms.insert(Symbol::intern(name.as_str()));
+            }
             // Own-container in-place mutation: not a name-write, so `self_mutated`
             // misses it, but it still invalidates a closure's by-value capture.
             if let Some(idx) = self.op_container_mutate_const_idx(op)
