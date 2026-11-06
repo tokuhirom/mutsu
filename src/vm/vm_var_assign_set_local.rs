@@ -2916,10 +2916,7 @@ impl Interpreter {
             // reaches here; it stays correctly immutable.
             let val_is_simple_scalar = !matches!(
                 val.view(),
-                ValueView::Array(..)
-                    | ValueView::Hash(..)
-                    | ValueView::Sub(..)
-                    | ValueView::Instance { .. }
+                ValueView::Array(..) | ValueView::Hash(..) | ValueView::Sub(..)
             );
             // A same-scope DECLARATION bind (`my $t := $s`, `my \x := $s`) of a
             // plain scalar used to fall through to the `local_bind_pairs` slot

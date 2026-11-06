@@ -271,9 +271,18 @@ impl UndeclaredVars<'_> {
         // A file-scope lexical of the running routine's own compunit (an
         // imported `our $x is export` among them) is not in `env`: the by-name
         // read chokepoint redirects to the unit's store, and so does this.
+        // A sub of the same name does not hide a real variable: `my $Out = [];
+        // sub Out { $Out }` declares both, and the bare entry then holds the
+        // variable's value, not the sub.
+        let bare_holds_variable = env.get(name).is_some_and(|v| {
+            !matches!(
+                v.deref_container().view(),
+                ValueView::Package(_) | ValueView::Routine { .. } | ValueView::Sub(_)
+            )
+        });
         if (env.contains_key(name) || self.unit_lexical_declares(name))
             && !self.interp.registry().classes.contains_key(name)
-            && !self.interp.has_function(name)
+            && (bare_holds_variable || !self.interp.has_function(name))
         {
             return None;
         }
