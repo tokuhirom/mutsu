@@ -61,6 +61,10 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         ValueView::LazyList(_)
         | ValueView::Channel(_)
         | ValueView::Instance { .. }
+        // A type object of a class with its own `iterator` is read through it
+        // (`Any.Seq` is `Seq.new(self.iterator)`); only the interpreter can
+        // ask the class.
+        | ValueView::Package(_)
         | ValueView::Mixin(..) => None,
         // A bare scalar becomes a one-element Seq (matches the interpreter's
         // `other => Seq([other])` tail).

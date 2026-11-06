@@ -4,6 +4,16 @@ use crate::symbol::Symbol;
 impl Interpreter {
     /// Dispatch .Seq coercion method
     pub(crate) fn dispatch_seq_coercion(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        // A type object of a class with its own `iterator` (`Any.Seq` is
+        // `Seq.new(self.iterator)`, defined or not) reads that iterator.
+        if let ValueView::Package(name) = target.view()
+            && self.class_has_user_method(name.resolve().as_str(), "iterator")
+        {
+            let iterator = self.call_method_with_values(target.clone(), "iterator", vec![])?;
+            return Ok(Value::seq_body(crate::value::SeqBody::deferred(
+                crate::value::SeqSource::Iterator(iterator),
+            )));
+        }
         // Structural receivers (Seq/Array/Slip/Range/bare scalar) share the pure
         // impl with the VM native path; Supply/LazyList/Instance need state and
         // are handled below.
