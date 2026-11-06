@@ -1221,7 +1221,11 @@ impl Interpreter {
                 chars.next();
                 continue;
             }
-            if ch == '<' {
+            // A `<` between the brackets of a character class (`<[<]>`,
+            // `<-[<>]>`) is a member, not the start of another assertion.
+            let literal_class_member =
+                angles.last().is_some_and(|f| f.char_class && f.class_bracket_depth > 0);
+            if ch == '<' && !literal_class_member {
                 let char_class = matches!(chars.peek(), Some('[' | '-' | '+' | ':'));
                 body.push(ch);
                 angles.push(AngleFrame {
