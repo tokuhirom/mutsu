@@ -311,9 +311,9 @@ impl Interpreter {
         self.trir_gen_settle(chunk, site, armed);
         self.literal_native_args = saved;
         self.static_call_args = saved_static;
-        let result = result?;
         // Read the containers back, so an `is rw` parameter's write lands in
-        // this frame's slot.
+        // this frame's slot -- also when the callee died after assigning it
+        // (`try f($n)`): rakudo aliases the container, so the write stands.
         let args = kept.unwrap_or_default();
         for (i, arg) in call.args.iter().enumerate().take(args.len()) {
             let ValueView::ContainerRef(cell) = args[i].view() else {
@@ -336,6 +336,7 @@ impl Interpreter {
                 TrArg::Value(_) | TrArg::Outer(_) => {}
             }
         }
+        let result = result?;
         self.push_trir_result(result, call.result);
         Ok(Some(()))
     }
