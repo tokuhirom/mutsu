@@ -70,7 +70,7 @@ impl Interpreter {
         // here, with the callee's Rust frames intact, so `.resume` continues
         // the callee (#15555). The call yields `Any`.
         if Self::is_resumable_call_op(code, &code.ops[*ip]) {
-            if self.control.catch_handlers.is_empty()
+            if (self.control.catch_handlers.is_empty() && self.control.cue_catch.is_empty())
                 || !Self::is_inline_catchable(&err)
                 || err.catch_inline_verdict().is_some()
             {
