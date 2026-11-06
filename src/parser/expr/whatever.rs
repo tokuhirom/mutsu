@@ -353,6 +353,24 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             if is_flipflop {
                 return false;
             }
+            // A sequence operator the program declared itself (see
+            // `sequence_operator_node`) takes the Whatever endpoint as-is,
+            // exactly as the built-in `...` does above: rakudo exempts the
+            // operator by symbol, not by which routine implements it.
+            let is_sequence = matches!(
+                name.as_str(),
+                "..."
+                    | "...^"
+                    | "^..."
+                    | "^...^"
+                    | "\u{2026}"
+                    | "\u{2026}^"
+                    | "^\u{2026}"
+                    | "^\u{2026}^"
+            );
+            if is_sequence {
+                return false;
+            }
             contains_whatever(left)
                 || is_wrapped_whatevercode(left)
                 || right

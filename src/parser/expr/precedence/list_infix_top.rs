@@ -1,4 +1,4 @@
-use super::list_infix::{attach_trailing_adverbs, wrap_left_exclusive_sequence};
+use super::list_infix::{attach_trailing_adverbs, sequence_operator_node};
 use super::ternary::{
     assign_operator_is_tight, is_assignment_expr, spelled_assign_operator,
     ternary_missing_bang_bang_error,
@@ -167,15 +167,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 right = Expr::curry(right);
             }
             maybe_wrap_lhs(&mut left);
-            left = wrap_left_exclusive_sequence(
-                op_str,
-                Expr::Binary {
-                    left: Box::new(left),
-                    op,
-                    right: Box::new(right),
-                    form: Default::default(),
-                },
-            );
+            left = sequence_operator_node(op_str, op, left, right);
             current_assoc_key = Some(op_str.to_string());
             rest = r2;
             continue;

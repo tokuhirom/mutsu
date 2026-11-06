@@ -375,6 +375,20 @@ impl Interpreter {
             {
                 continue;
             }
+            // A package-less top-level routine of a module file whose only
+            // package block shares the file's name is registered under that
+            // package so `use` can find it, but it is the file's own lexical
+            // routine -- declared in GLOBAL -- not a member of the package's
+            // stash (`CG6::.keys` is empty in raku for `class CG6 {}; sub f is export {}`).
+            if !pkg_is_global
+                && !is_lowercase_export_stash
+                && package_name != "EXPORT"
+                && !package_name.starts_with("EXPORT::")
+                && def.package == crate::symbol::wk::global_package()
+                && key_s != crate::qualified::qualified(def.package, def.name).as_str()
+            {
+                continue;
+            }
             if !registered_routines.insert(base.to_string()) {
                 continue;
             }
@@ -562,6 +576,11 @@ impl Interpreter {
             // above -- only a role the user actually declared is a genuine
             // GLOBAL member, not every built-in role (`Positional`, `Iterable`, ...).
             if pkg_is_global && !self.registry().user_declared_roles.contains(role_name) {
+                continue;
+            }
+            // A `my role` is lexical: like a `my class` (classes loop above) it
+            // is never a member of the enclosing package's stash.
+            if self.is_my_scoped_package_item(role_name) {
                 continue;
             }
             let Some(rest) = Self::stash_member_tail(role_name, &package_name) else {
