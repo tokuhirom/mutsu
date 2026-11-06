@@ -183,6 +183,15 @@ fn prefix_props(symbol: &str) -> Props {
     }
 }
 
+/// `postfix:<.>` is the method call, which the grammar parses without a
+/// routine, so the routine table does not list it.
+fn postfix_props(symbol: &str) -> Props {
+    match symbol {
+        "." => Props::builtin("postcircumfix", "[ ]"),
+        _ => Props::builtin("postfix", symbol),
+    }
+}
+
 fn infix_symbol_props(symbol: &str) -> Props {
     if NO_OPERATOR_PROPERTIES.contains(&symbol) {
         return Props::from_entries(op_prec::category_default("infix").unwrap_or(&[]));
@@ -210,7 +219,7 @@ pub(crate) fn lookup(category: &str, symbol: &str) -> Option<Value> {
     let props = match category {
         "infix" => infix_symbol_props(symbol),
         "prefix" => prefix_props(symbol),
-        "postfix" => Props::builtin("postfix", symbol),
+        "postfix" => postfix_props(symbol),
         "circumfix" | "postcircumfix" if SUBSCRIPT_SYNTAX.contains(&symbol) => {
             Props::builtin("postcircumfix", "[ ]")
         }
@@ -226,7 +235,7 @@ fn props(node: &RakuAstNode) -> Option<Props> {
         RakuAstClass::Infix => infix_props(node),
         RakuAstClass::Prefix => prefix_props(&symbol_text(node).unwrap_or_default()),
         RakuAstClass::Postfix => {
-            Props::builtin("postfix", &named_operator(node).unwrap_or_default())
+            postfix_props(&named_operator(node).unwrap_or_default())
         }
         RakuAstClass::FunctionInfix => Props::builtin("infix", "+"),
         RakuAstClass::PostcircumfixArrayIndex

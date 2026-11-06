@@ -45,7 +45,7 @@ is strip($c.circumfix("( )")), ':dba("default-circumfix")', 'circumfix ( ) gets 
 is strip($c.circumfix("[; ]")), ':dba("default-circumfix")', 'circumfix [; ] is not known';
 is strip($c.postcircumfix("[ ]")), $methodcall, 'postcircumfix [ ]';
 is strip($c.postcircumfix("[; ]")), $methodcall, 'postcircumfix [; ]';
-is strip($c.postcircumfix("{; }")), $methodcall, 'postcircumfix {; }';
+is strip($c.postcircumfix('{; }')), $methodcall, 'postcircumfix {; }';
 is strip($c.postcircumfix("< >")), $methodcall, 'postcircumfix < >';
 is strip($c.postcircumfix("( )")), ':precedence("y="), :dba("default-postcircumfix")',
     'postcircumfix ( ) gets the default';
