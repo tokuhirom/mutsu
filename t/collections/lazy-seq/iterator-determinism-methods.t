@@ -3,7 +3,7 @@ use Test;
 # A built-in iterator answers `is-lazy`, `is-deterministic` and
 # `is-monotonically-increasing` per kind, as rakudo's does (with or without a
 # program-defined `does Iterator` class in scope).
-plan 19;
+plan 22;
 class It does Iterator { method pull-one { IterationEnd } }
 my %h = a => 1;
 my @cases =
@@ -25,12 +25,16 @@ my @cases =
     'comb' => 'abc'.comb.iterator,
     'squish' => (1,1,2).squish.iterator,
     'reverse' => (1,2).reverse.iterator,
-    'roll*' => (1,2).roll(*).iterator;
+    'roll*' => (1,2).roll(*).iterator,
+    'pick(2)' => (1,2,3).pick(2).iterator,
+    'pick(*)' => <a b c>.pick(*).iterator,
+    'range pick' => (1..5).pick(2).iterator;
 my %expect = (
     '1..3' => '011', '^5' => '011', 'a..e' => '011', '1..*' => '111', '5..1' => '010',
     '<a b>' => '010', '[1,2]' => '010', '(1,2)' => '010', '[1,2].lazy' => '110', '(1..*).lazy' => '111',
     'map' => '000', 'grep' => '000', 'lazy map' => '100', 'gather' => '000', '%h' => '000',
     'comb' => '010', 'squish' => '010', 'reverse' => '010', 'roll*' => '110',
+    'pick(2)' => '000', 'pick(*)' => '000', 'range pick' => '000',
 );
 for @cases -> $p {
     my $i = $p.value;

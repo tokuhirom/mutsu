@@ -45,11 +45,18 @@ pub(crate) fn pick(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     if matches!(target.view(), ValueView::Bool(_)) {
         return Some(Err(bool_defined_error("pick", args.first())));
     }
-    match args {
+    let result = match args {
         [] => pick::pick_one(target),
         [arg] => with_count(arg, |arg| pick::pick_n(target, arg)),
         _ => None,
+    };
+    // A picked Seq is not reproducible: its iterator is not deterministic.
+    if let Some(Ok(picked)) = &result
+        && let ValueView::Seq(body) = picked.view()
+    {
+        body.mark_nondeterministic();
     }
+    result
 }
 
 /// `.roll` / `.roll($count)`; `None` declines.
