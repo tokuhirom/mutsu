@@ -160,6 +160,10 @@ pub(crate) enum MetaNs {
     /// `__mutsu_gather_self_ref::<name>` — the name is the aggregate a `gather`
     /// is being assigned to, so a self-mention inside must not reify it.
     GatherSelfRef,
+    /// `__mutsu_gather_unit::<name>` — the compunit a `gather` was written in
+    /// (the name is a fixed tag), so its body, forced later by a caller of
+    /// another compunit, still resolves the names its own unit imported.
+    GatherUnit,
     /// `__mutsu_inline_package_proto_preregistered::<package>::<name>` — an
     /// `our proto` the package prepass already installed. Built with
     /// [`MetaNs::key_pair`].
@@ -279,6 +283,7 @@ impl MetaNs {
         MetaNs::EvalRole,
         MetaNs::FfState,
         MetaNs::GatherSelfRef,
+        MetaNs::GatherUnit,
         MetaNs::InlinePackageProto,
         MetaNs::InlinePackageSub,
         MetaNs::SharedState,
@@ -334,6 +339,7 @@ impl MetaNs {
             MetaNs::EvalRole => "__mutsu_eval_role::",
             MetaNs::FfState => "__mutsu_ff_state::",
             MetaNs::GatherSelfRef => "__mutsu_gather_self_ref::",
+            MetaNs::GatherUnit => "__mutsu_gather_unit::",
             MetaNs::InlinePackageProto => "__mutsu_inline_package_proto_preregistered::",
             MetaNs::InlinePackageSub => "__mutsu_inline_package_sub_preregistered::",
             MetaNs::SharedState => "__mutsu_shared_state::",
@@ -592,6 +598,7 @@ mod tests {
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
             (MetaNs::GatherSelfRef, "__mutsu_gather_self_ref::@a"),
+            (MetaNs::GatherUnit, "__mutsu_gather_unit::@a"),
             (MetaNs::MethodValue, "__mutsu_method_value::@a"),
             (MetaNs::SharedState, "__mutsu_shared_state::@a"),
             (MetaNs::Outer, "__mutsu_outer::@a"),

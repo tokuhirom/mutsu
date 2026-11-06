@@ -356,6 +356,13 @@ impl Interpreter {
             // gather whose body has no analysis chunk (an `EVAL`-built one)
             // compiles fresh, exactly as the map/grep sibling does.
             let (compiled_code, compiled_fns) = self.compile_gather_body_cached(&analysis_cc, body);
+            // Record the compunit the `gather` is written in: pulled later by a
+            // caller of another unit, its body must still see what this one imports.
+            let mut env = env;
+            env.insert_sym(
+                crate::meta_ns::MetaNs::GatherUnit.key(crate::symbol::Symbol::intern("unit")),
+                Value::str(self.executing_unit_sym().resolve()),
+            );
             let list = LazyList {
                 fixtures: self.capture_fixtures(),
                 body: body.clone(),
