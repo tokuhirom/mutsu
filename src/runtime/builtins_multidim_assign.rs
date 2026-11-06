@@ -98,6 +98,11 @@ impl Interpreter {
         let raw_value = args[3 + offset].clone();
         let is_bind = Self::is_bind_index_value(&raw_value);
         let (value, bind_source) = Self::unwrap_bind_index_value(raw_value);
+        // An assignment copies the value into the element's own container. A
+        // shared cell (an imported constant read from a method's closure comes as
+        // the constant's `ContainerRef`) must not become the element, or the next
+        // store through the element rewrites the constant (#16900).
+        let value = if is_bind { value } else { value.into_deref() };
         let var_name = args[4 + offset].to_string_value();
 
         // ADR-0068 §4 step 3: an attribute-rooted element store on an INSTANCE
