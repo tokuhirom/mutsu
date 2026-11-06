@@ -162,12 +162,59 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             } else {
-                let mut promises = Vec::with_capacity(source_values.len());
-                for val in &source_values {
-                    let result =
-                        self.call_supply_callback(block.clone(), vec![val.clone()])?;
-                    let promise = SharedPromise::new_kept(result);
-                    promises.push(Value::promise(promise));
+                // `throttle` limits how many jobs run at once, it does not
+                // serialize them: a callback that blocks (`await $proc`,
+                // `sleep`) must overlap with its siblings up to `limit`.
+                // The results stay in input order.
+                let n_workers = if limit > 0 {
+                    (limit as usize).min(source_values.len().max(1))
+                } else {
+                    source_values.len().max(1)
+                };
+                let results: Vec<Value> = if n_workers <= 1 || source_values.len() <= 1 {
+                    let mut out = Vec::with_capacity(source_values.len());
+                    for val in &source_values {
+                        out.push(self.call_supply_callback(block.clone(), vec![val.clone()])?);
+                    }
+                    out
+                } else {
+                    let vals = Arc::new(source_values);
+                    let next_idx = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                    let slots: Arc<std::sync::Mutex<Vec<Option<Result<Value, RuntimeError>>>>> =
+                        Arc::new(std::sync::Mutex::new((0..vals.len()).map(|_| None).collect()));
+                    let mut thread_interp = self.clone_for_thread_for_block(&block);
+                    let mut handles = Vec::with_capacity(n_workers);
+                    for _ in 0..n_workers {
+                        let mut winterp = thread_interp.clone_for_thread();
+                        let (vals, next_idx, slots) =
+                            (Arc::clone(&vals), Arc::clone(&next_idx), Arc::clone(&slots));
+                        let blk = block.clone();
+                        handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                            loop {
+                                let idx =
+                                    next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if idx >= vals.len() {
+                                    break;
+                                }
+                                let result =
+                                    winterp.call_supply_callback(blk.clone(), vec![vals[idx].clone()]);
+                                slots.lock().unwrap()[idx] = Some(result);
+                            }
+                        }));
+                    }
+                    for handle in handles {
+                        let _ = crate::gc::block_quiescent(|| handle.join());
+                    }
+                    let mut out = Vec::with_capacity(vals.len());
+                    let taken: Vec<_> = std::mem::take(&mut *slots.lock().unwrap());
+                    for slot in taken {
+                        out.push(slot.unwrap_or_else(|| Ok(Value::NIL))?);
+                    }
+                    out
+                };
+                let mut promises = Vec::with_capacity(results.len());
+                for result in results {
+                    promises.push(Value::promise(SharedPromise::new_kept(result)));
                 }
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(promises));
