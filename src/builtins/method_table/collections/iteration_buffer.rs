@@ -197,8 +197,21 @@ fn clear(target: &Value, _args: &[Value]) -> Answer {
 }
 
 /// `IterationBuffer.List`.
-// Cost: O(n), n = elements.
+// Cost: O(1) (shares the buffer's storage).
 fn list(target: &Value, _args: &[Value]) -> Answer {
+    // The `List` views the buffer's own storage (Rakudo's `List` is built over
+    // the `IterationBuffer` as its `$!reified`), so an in-place `nqp::push` /
+    // `nqp::shift` on the buffer shows through a `List` taken earlier -- the
+    // sliding window of `Sequence::Generator`'s `LambdaN`.
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && let Some(ValueView::Array(data, _)) =
+            attributes.as_map().get(ITERATION_BUFFER_ITEMS).map(Value::view)
+    {
+        return Some(Ok(Value::array_with_kind(
+            data.clone(),
+            crate::value::ArrayKind::List,
+        )));
+    }
     items(target).map(|items| Ok(Value::array(items)))
 }
 

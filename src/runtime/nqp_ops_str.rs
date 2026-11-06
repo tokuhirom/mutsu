@@ -191,6 +191,30 @@ impl Interpreter {
                 if matches!(v.view(), ValueView::Instance { .. })
                     && let Some(r) = self.native_instance_clone_value(&v, &[])
                 {
+                    // An `IterationBuffer` clone owns a copy of the elements:
+                    // the instance copy alone shares the storage node, so a
+                    // push onto the clone showed in the original.
+                    if let Ok(clone) = &r
+                        && crate::runtime::nqp_ops_list::is_iteration_buffer(clone)
+                        && let ValueView::Instance { attributes, .. } = clone.view()
+                    {
+                        // Read the elements first: the map guard must be gone
+                        // before the attribute is written.
+                        let copied: Option<Vec<Value>> = {
+                            let map = attributes.as_map();
+                            map.get(crate::runtime::nqp_ops_list::iteration_buffer_items_key())
+                                .and_then(|a| match a.view() {
+                                    ValueView::Array(data, _) => Some(data.to_vec()),
+                                    _ => None,
+                                })
+                        };
+                        if let Some(items) = copied {
+                            attributes.insert(
+                                crate::runtime::nqp_ops_list::iteration_buffer_items_key(),
+                                Value::real_array(items),
+                            );
+                        }
+                    }
                     return Some(r);
                 }
                 // A raw VMArray/VMHash copies into a fresh raw object of the
