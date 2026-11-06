@@ -199,6 +199,18 @@ impl Interpreter {
                 ValueView::ContainerRef(_) => target.deref_container(),
                 _ => target,
             };
+            // A finite `Seq` answers a positional `:exists` from its cache, as
+            // its plain `[ ]` read does (`$seq[1]:exists`, Iter::Able's
+            // `how[$idx]:exists` with a Seq filler).
+            let target = match target.view() {
+                ValueView::Seq(body) if kind == SubscriptKind::Positional && !body.is_lazy() => {
+                    Value::array_with_kind(
+                        Value::array_arc(body.to_vec()),
+                        crate::value::ArrayKind::List,
+                    )
+                }
+                _ => target,
+            };
             if kind != SubscriptKind::Positional {
                 idx = self.prepare_hash_subscript_index(&target, idx)?;
             }
