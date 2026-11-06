@@ -250,6 +250,22 @@ impl Interpreter {
             .checked_sub(arity as usize + 1)
             .and_then(|i| self.stack.get(i))
             .is_some_and(Value::is_nil);
+        // A generator-backed lazy array is one shared list: its front is
+        // rewritten in place, so every holder (a caller's variable behind a
+        // `:@a` argument, a `Pair`, a closure capture) sees it.
+        if modifier_idx.is_none()
+            && let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
+        {
+            let target = self.stack[target_idx].clone();
+            let args = self.stack[target_idx + 1..].to_vec();
+            if let Some(result) = self.lazy_array_front_mutate_in_place(&target, name.raw, &args) {
+                self.stack.truncate(target_idx);
+                self.set_pending_call_arg_sources(None);
+                self.pending_call_arg_source_slots.clear();
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
         // A front mutation of a lazy `@`-array over an infinite sequence runs on
         // a reified prefix and is stitched back in front of the live tail
         // afterwards (see `vm_lazy_front_mutate`).
