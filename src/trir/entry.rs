@@ -155,19 +155,47 @@ impl Interpreter {
                 super::stats::record(super::stats::TrirEntry::Bailed);
                 return None;
             }
+            // A body that dies after assigning an `is rw` parameter has
+            // already written the caller's variable (rakudo aliases the
+            // container), so the spills are copied back on this path too.
             Err(e) => {
+                let writes = Self::trir_read_rw_spills(&self.trir, frame, &rw[..rw_len]);
                 self.trir.pop_frame(frame);
+                // The copy-back cannot fail the way the success path reports
+                // (an internal invariant); the original error wins.
+                let _ = self.trir_write_rw_spills(&writes[..rw_len]);
                 return Some(Err(e));
             }
         };
         // Read the spills back BEFORE the frame is closed.
-        let mut writes: [(i64, RwTarget); 4] = [(0, RwTarget::Slot(0, TrKind::Int)); 4];
-        for i in 0..rw_len {
-            let (spill, target) = rw[i];
-            writes[i] = (self.trir.nl[frame.nbase as usize + spill as usize], target);
-        }
+        let writes = Self::trir_read_rw_spills(&self.trir, frame, &rw[..rw_len]);
         self.trir.pop_frame(frame);
-        for &(raw, target) in &writes[..rw_len] {
+        if let Err(e) = self.trir_write_rw_spills(&writes[..rw_len]) {
+            return Some(Err(e));
+        }
+        super::stats::record(super::stats::TrirEntry::Completed);
+        Some(Ok(result))
+    }
+
+    /// The final value of each `is rw` spill slot, read before the frame is
+    /// closed.
+    // Cost: O(r), r = rw parameters (at most 4).
+    fn trir_read_rw_spills(
+        trir: &super::frame::TrStacks,
+        frame: TrFrame,
+        rw: &[(u16, RwTarget)],
+    ) -> [(i64, RwTarget); 4] {
+        let mut writes: [(i64, RwTarget); 4] = [(0, RwTarget::Slot(0, TrKind::Int)); 4];
+        for (i, &(spill, target)) in rw.iter().enumerate() {
+            writes[i] = (trir.nl[frame.nbase as usize + spill as usize], target);
+        }
+        writes
+    }
+
+    /// Copy the spilled `is rw` values back into the caller's variables.
+    // Cost: O(r), r = rw parameters (at most 4).
+    fn trir_write_rw_spills(&mut self, writes: &[(i64, RwTarget)]) -> Result<(), RuntimeError> {
+        for &(raw, target) in writes {
             match target {
                 RwTarget::Cell(slot, kind) => {
                     let v = kind.box_native(raw);
@@ -177,16 +205,15 @@ impl Interpreter {
                         // The bind pass proved this slot held a cell — an
                         // internal invariant, so report rather than panic
                         // (#8186).
-                        return Some(Err(RuntimeError::new(
+                        return Err(RuntimeError::new(
                             "internal error: a TRIR `is rw` slot lost its container".to_string(),
-                        )));
+                        ));
                     }
                 }
                 RwTarget::Slot(slot, kind) => self.locals[slot as usize] = kind.box_native(raw),
             }
         }
-        super::stats::record(super::stats::TrirEntry::Completed);
-        Some(Ok(result))
+        Ok(())
     }
 
     /// Bind the parameters of a statically resolved call site from the

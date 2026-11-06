@@ -1350,6 +1350,28 @@ impl Compiler {
                 // and evaluates to the routine object itself (raku: a Sub / Method
                 // value), so it can be stored or passed (e.g. to `.wrap`).
                 self.compile_stmt(stmt);
+                // Inside another routine the declaration is that routine's own
+                // lexical: its value is the closure built here, not whatever a
+                // by-name read finds -- a same-named sub of the enclosing
+                // compunit (`sub EXPORT { ... sub to-json(...) {...} }` in a
+                // module that also has a file-level `to-json`) shadows or
+                // blocks the nested registration and was returned instead.
+                if let Stmt::SubDecl {
+                    scope: crate::ast::SubScope::My,
+                    multi: false,
+                    custom_traits,
+                    ..
+                } = stmt
+                    && custom_traits.is_empty()
+                    && self.lexically_in_routine
+                {
+                    let mut value = stmt.clone();
+                    if let Stmt::SubDecl { scope, .. } = &mut value {
+                        *scope = crate::ast::SubScope::Anon;
+                    }
+                    self.compile_anon_named_sub_decl(&value);
+                    return;
+                }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 self.code.emit(OpCode::GetCodeVar(name_idx));
             }
