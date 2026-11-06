@@ -2644,6 +2644,8 @@ impl Compiler {
                     // declaration first -- before the bind markers below,
                     // which its own store would otherwise consume -- and then
                     // bind the declared variable exactly as `$a := $z` does.
+                    let mut deferred_bind_marks: Vec<OpCode> = Vec::new();
+                    let defer_bind_marks = super::body_scans::expr_declares_bound_var(expr);
                     let decl_source = Self::scalar_decl_bind_source(effective_name, expr);
                     if let Some((decl, _)) = decl_source {
                         self.compile_stmt(decl);
@@ -2655,7 +2657,11 @@ impl Compiler {
                         // the slot instead of assigning *into* the current value
                         // (which for an immutable QuantHash would wrongly throw
                         // "Cannot modify an immutable Set").
-                        self.code.emit(OpCode::MarkBindContext);
+                        if defer_bind_marks {
+                            deferred_bind_marks.push(OpCode::MarkBindContext);
+                        } else {
+                            self.code.emit(OpCode::MarkBindContext);
+                        }
                     } else if !effective_name.starts_with('&') {
                         // A scalar rebind (`$r := ...`) is still a bind: mark it
                         // so SetLocal records the bound-decont marker (it has no
@@ -2663,7 +2669,11 @@ impl Compiler {
                         // does). Without this the rebind is seen as a plain
                         // assignment and clears the marker, so `$r.VAR.^name`
                         // would wrongly report Scalar and `@a = $r` would itemize.
-                        self.code.emit(OpCode::MarkScalarBindContext);
+                        if defer_bind_marks {
+                            deferred_bind_marks.push(OpCode::MarkScalarBindContext);
+                        } else {
+                            self.code.emit(OpCode::MarkScalarBindContext);
+                        }
                         // A bound array/hash element (`$x := @a[1]`) must share a
                         // cell with the source slot so a later `$x = v` writes
                         // through to `@a[1]`, exactly like the `my $x := @a[1]`
@@ -2680,7 +2690,11 @@ impl Compiler {
                             );
                     }
                     // Signal rebind context for cleanup of old bind pairs.
-                    self.code.emit(OpCode::MarkRebindContext);
+                    if defer_bind_marks {
+                        deferred_bind_marks.push(OpCode::MarkRebindContext);
+                    } else {
+                        self.code.emit(OpCode::MarkRebindContext);
+                    }
                     if scalar_elem_bind {
                         self.scalar_bind_autovivify = true;
                         self.bind_terminal = true;
@@ -2735,6 +2749,13 @@ impl Compiler {
                         });
                     } else {
                         self.compile_call_arg(expr);
+                    }
+                    // The markers are consumed by the store below, so they are
+                    // emitted AFTER the source: a declaration inside it
+                    // (`$p := (my $q := $p).succ`) has its own bind markers
+                    // and must not eat these.
+                    for mark in deferred_bind_marks {
+                        self.code.emit(mark);
                     }
                 } else {
                     // Fuse `$local ~= rhs` into one instruction that reads the

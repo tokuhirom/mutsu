@@ -57,7 +57,17 @@ impl Value {
     // Cost: O(1).
     #[inline]
     pub fn is_iteration_end(&self) -> bool {
-        matches!(self.view(), ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID)
+        match self.view() {
+            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
+            // A `pull-one` that hands back a bound attribute (`my $this :=
+            // $!value; ... $this` with `$!value := IterationEnd`) returns the
+            // cell holding the sentinel; the consumer reads what it holds.
+            ValueView::ContainerRef(_) => matches!(
+                self.deref_container().view(),
+                ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID
+            ),
+            _ => false,
+        }
     }
     /// A regex value over the pattern `s`. A regex is a code object, so even
     /// a runtime-synthesized one gets the closure payload: it has an identity
