@@ -742,9 +742,29 @@ impl Interpreter {
     /// type itself: raising a bare `RuntimeError` there made
     /// `throws-like ..., X::TypeCheck::Return` fail whenever a routine with a
     /// return type reached that path (roast/S02-types/type.t, #7573).
-    pub(crate) fn throw_type_check_return(&self, expected: &str, got: &Value) -> RuntimeError {
-        let got_type = Self::display_type_name(got);
-        let got_gist = Self::display_gist(got);
+    pub(crate) fn throw_type_check_return(&mut self, expected: &str, got: &Value) -> RuntimeError {
+        let got_type = match got.view() {
+            ValueView::Package(_) => Self::display_type_name(got),
+            _ => crate::runtime::utils::got_type_name(got).to_string(),
+        };
+        // Rakudo names a container (List, Hash, object) by its `.raku`; a
+        // scalar keeps the plain rendering below.
+        let got_gist = match got.view() {
+            ValueView::Array(..)
+            | ValueView::Hash(..)
+            | ValueView::Instance { .. } => {
+                let repr = self.type_check_got_repr(got);
+                if repr.is_empty() {
+                    Self::display_gist(got)
+                } else {
+                    repr.strip_prefix('(')
+                        .and_then(|r| r.strip_suffix(')'))
+                        .unwrap_or(&repr)
+                        .to_string()
+                }
+            }
+            _ => Self::display_gist(got),
+        };
         let msg = format!(
             "Type check failed for return value; expected {} but got {} ({})",
             expected, got_type, got_gist
