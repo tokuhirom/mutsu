@@ -65,6 +65,18 @@ pub(crate) fn record_anon_state_name(name: &str) {
     });
 }
 
+/// Forget the current scope's pending anonymous-state names from index `from`
+/// on. A speculative probe parse (one whose result is discarded) calls this so
+/// the names it minted do not become implicit `state` declarations.
+// Cost: O(k), k = names dropped.
+pub(crate) fn truncate_current_scope_anon_states(from: usize) {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.anon_states.truncate(from);
+        }
+    });
+}
+
 /// How many anonymous-state names the current scope has pending, so a caller can
 /// tell which ones a nested parse added (see `current_scope_anon_state_names_from`).
 pub(crate) fn current_scope_anon_state_count() -> usize {

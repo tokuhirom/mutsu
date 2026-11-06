@@ -17,12 +17,15 @@ pub(crate) fn is_user_declared_postfix_sub(symbol: &str) -> bool {
 /// Other sigil-prefixed forms remain available wherever the parser can
 /// disambiguate them from these ordinary variable/contextualizer forms.
 fn starts_sigil_variable(input: &str, op: &str) -> bool {
+    // The probe is a real parse; the bare `%`/`@` it may mint is discarded.
+    let anon_states_before = super::current_scope_anon_state_count();
     let parsed = match op {
         "@" => crate::parser::primary::var::array_var(input),
         "%" => crate::parser::primary::var::hash_var(input),
         "&" => crate::parser::primary::var::code_var(input),
         _ => return false,
     };
+    super::truncate_current_scope_anon_states(anon_states_before);
     if let Ok((rest, _)) = parsed
         && rest.len() < input.len()
     {
@@ -40,10 +43,13 @@ fn starts_sigil_variable(input: &str, op: &str) -> bool {
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.
 pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usize)> {
-    SCOPES.with(|s| {
+    // Phase 1 (scope table borrowed): collect the operators the input starts
+    // with. The sigil-variable probe of phase 2 is a real parse, which mints
+    // and records anonymous state names in this same table, so it must run
+    // after the borrow is released (a nested `borrow_mut` panics).
+    let candidates: Vec<(String, usize)> = SCOPES.with(|s| {
         let scopes = s.borrow();
-        let mut best: Option<(String, usize)> = None;
-
+        let mut out = Vec::new();
         for scope in scopes.iter().rev() {
             for name in &scope.prefix_operator_subs {
                 let op = name
@@ -51,9 +57,6 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
                     .and_then(|s| s.strip_suffix('>'))
                     .expect("prefix operator index contains canonical names");
                 if !input.starts_with(op) {
-                    continue;
-                }
-                if starts_sigil_variable(input, op) {
                     continue;
                 }
                 if scope
@@ -81,16 +84,26 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
                 {
                     continue;
                 }
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_len)| consumed > *best_len)
-                {
-                    best = Some((name.clone(), consumed));
-                }
+                out.push((name.clone(), consumed));
             }
         }
-        best
-    })
+        out
+    });
+    let mut best: Option<(String, usize)> = None;
+    for (name, consumed) in candidates {
+        if best
+            .as_ref()
+            .is_some_and(|(_, best_len)| consumed <= *best_len)
+        {
+            continue;
+        }
+        let op = &input[..consumed];
+        if starts_sigil_variable(input, op) {
+            continue;
+        }
+        best = Some((name, consumed));
+    }
+    best
 }
 
 /// Match a user-declared postfix operator against the current input.
