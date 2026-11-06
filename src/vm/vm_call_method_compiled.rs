@@ -111,7 +111,7 @@ impl Interpreter {
                 .last()
                 .map(|slot| *slot as usize)
         };
-        let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings) = match code_val
+        let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings, captured_names) = match code_val
             .view()
         {
             // Running the block inline in THIS frame is only sound for a block
@@ -128,7 +128,21 @@ impl Interpreter {
             ValueView::Sub(data) => {
                 let (block_cc, block_fns, captured_bindings, writeback_bindings, captured_names) =
                     self.get_or_compile_protect_block_with_slots(&data);
-                self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
+                // A name the enclosing frame owns as a scalar slot is read from
+                // that slot below, not from the by-name shared-variable store:
+                // that store is keyed by the bare name, so it also holds the
+                // snapshot of an unrelated `$name` some thread body wrote
+                // (#16881: Red's `alias` read another scope's `$name`).
+                self.sync_shared_vars_for_names(
+                    captured_names
+                        .iter()
+                        .map(|name| name.as_str())
+                        .filter(|name| {
+                            name.starts_with(['@', '%'])
+                                || outer_code.local_slots_named(name).is_empty()
+                        }),
+                );
+                let captured_names_all = captured_names.clone();
                 // Keep an owned handle: a view guard's borrow cannot
                 // outlive the match, so clone the Gc (refcount bump only).
                 (
@@ -137,6 +151,7 @@ impl Interpreter {
                     Some(data.clone()),
                     captured_bindings,
                     writeback_bindings,
+                    captured_names_all,
                 )
             }
             _ => {
@@ -187,6 +202,32 @@ impl Interpreter {
                 }
                 if let Some(val) = self.env().get(name) {
                     self.locals[*slot] = val.clone();
+                }
+            }
+        }
+
+        // A captured name the block reads through the live env (not through one
+        // of its own slots) is read from env at run time, but the enclosing
+        // frame's slot is the authority: the env copy can be stale (a parameter
+        // of a sub-signature, a name an earlier call wrote). Seed env from the
+        // enclosing slot for the block's run and put the old entry back after,
+        // so `$name` means the lexical the block closed over (#16881).
+        let mut seeded_env: Vec<(String, Option<Value>)> = Vec::new();
+        if captured_env.is_some() {
+            for name in captured_names.iter() {
+                if captured_bindings.iter().any(|(_, n)| n == name)
+                    || name.starts_with('@')
+                    || name.starts_with('%')
+                {
+                    continue;
+                }
+                if let Some(outer_slot) = outer_slot_of(name.as_str())
+                    && let Some(val) = saved_locals.get(outer_slot)
+                    && !matches!(val.view(), ValueView::Nil)
+                {
+                    let old = self.env().get(name).cloned();
+                    self.env_mut().insert(name.clone(), val.clone());
+                    seeded_env.push((name.clone(), old));
                 }
             }
         }
@@ -256,6 +297,12 @@ impl Interpreter {
                     *target = val;
                 }
             });
+        }
+        for (name, old) in seeded_env {
+            match old {
+                Some(v) => self.env_mut().insert(name, v),
+                None => self.env_mut().remove(&name),
+            };
         }
         // Sync locals back to env
         if let Some(captured) = captured_env {
@@ -341,3 +388,4 @@ impl Interpreter {
         Some(result)
     }
 }
+
