@@ -396,6 +396,20 @@ impl Interpreter {
         self.nodemap_iterate(&block, &obj)
     }
 
+    /// A gather / lazy pipeline (`gather {..}.grep(..)`) is an iterable
+    /// receiver of `deepmap`/`duckmap`/`nodemap`: walk its elements instead of
+    /// handing the list to the block as one opaque value. Returns the forced
+    /// elements as a Seq, or `None` for any other receiver.
+    // Cost: O(e) forcing the lazy list, e = elements it yields.
+    fn forced_lazy_receiver(&mut self, target: &Value) -> Result<Option<Value>, RuntimeError> {
+        if let ValueView::LazyList(ll) = target.view() {
+            let ll = ll.clone();
+            let items = self.force_lazy_list_bridge(&ll)?;
+            return Ok(Some(Value::seq(items)));
+        }
+        Ok(None)
+    }
+
     /// Iterate over the elements of a value, applying duckmap to each.
     /// This is the entry point for both the method and function forms.
     /// Cost: O(t) block calls/visits, t = nodes of the structure (each node is
@@ -407,6 +421,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(list) = range_as_list(target) {
             return self.duckmap_iterate(block, &list);
+        }
+        if let Some(seq) = self.forced_lazy_receiver(target)? {
+            return self.duckmap_iterate(block, &seq);
         }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -538,6 +555,9 @@ impl Interpreter {
         }
         if let Some(list) = range_as_list(target) {
             return self.deepmap_iterate_inner(block, &list, itemize_result);
+        }
+        if let Some(seq) = self.forced_lazy_receiver(target)? {
+            return self.deepmap_iterate_inner(block, &seq, itemize_result);
         }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -723,6 +743,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(list) = range_as_list(target) {
             return self.nodemap_iterate(block, &list);
+        }
+        if let Some(seq) = self.forced_lazy_receiver(target)? {
+            return self.nodemap_iterate(block, &seq);
         }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go

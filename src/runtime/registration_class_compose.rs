@@ -300,6 +300,17 @@ impl Interpreter {
                     .or_insert_with(|| v.clone());
             }
         }
+        let capture_variables = self.role_capture_variable_bindings(
+            base_role_name,
+            role.role_id,
+            &role_param_names,
+            &role_arg_values,
+        );
+        for (p, v) in &capture_variables {
+            cx.out
+                .class_role_param_bindings
+                .insert(p.clone(), v.clone());
+        }
         for (p, v) in role_param_names.iter().zip(role_arg_values.iter()) {
             cx.out
                 .class_role_param_bindings
@@ -333,6 +344,7 @@ impl Interpreter {
                 None
             } else {
                 let mut bindings = Vec::with_capacity(role_param_names.len() * 2);
+                bindings.extend(capture_variables.iter().cloned());
                 for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
                     bindings.push((name.clone(), value.clone()));
                     bindings.extend(Self::role_type_capture_marker(name, value));

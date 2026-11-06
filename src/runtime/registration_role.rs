@@ -197,6 +197,46 @@ impl Interpreter {
         true
     }
 
+    /// The variable half of a `::T $x` role parameter. A role parameter list
+    /// entry that both captures a type and names a variable binds two names
+    /// (`T` and `$x`); the resolved candidate lists only the capture's name,
+    /// so the variable's binding is recovered here, keyed by its storage name
+    /// (the spelling the role body reads from the env).
+    // Cost: O(c + p) scanning the base role's candidates and their parameters,
+    // c = candidates, p = parameters of the matched candidate.
+    pub(crate) fn role_capture_variable_bindings(
+        &self,
+        base_role_name: &str,
+        role_id: u64,
+        param_names: &[String],
+        values: &[Value],
+    ) -> Vec<(String, Value)> {
+        let registry = self.registry();
+        let Some(candidates) = registry.role_candidates.get(base_role_name) else {
+            return Vec::new();
+        };
+        let Some(candidate) = candidates
+            .iter()
+            .find(|c| c.role_def.role_id == role_id && c.type_params.len() == param_names.len())
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (i, pd) in candidate.type_param_defs.iter().enumerate() {
+            let Some(value) = values.get(i) else { break };
+            if pd.captured_type_name().is_none()
+                || pd.name.starts_with(crate::ast::TYPE_CAPTURE_PREFIX)
+            {
+                continue;
+            }
+            let key = pd.storage_name().into_owned();
+            if param_names.get(i).is_none_or(|n| *n != key) {
+                out.push((key, value.clone()));
+            }
+        }
+        out
+    }
+
     pub(crate) fn resolve_role_candidate(
         &mut self,
         parent: &str,
