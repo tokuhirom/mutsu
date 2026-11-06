@@ -157,20 +157,6 @@ impl super::super::Interpreter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::scalars_in_pattern;
-
-    #[test]
-    fn every_scalar_of_a_pattern_is_read_at_match_time() {
-        assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
-        assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
-        assert!(scalars_in_pattern("$a=$b").0.is_empty());
-        assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
-        assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
-    }
-}
-
 impl super::super::Interpreter {
     /// Whether an interpolated `$name` may hold text the case-folding match
     /// has to expand. A Regex object never does: it keeps its own adverbs, so
@@ -188,8 +174,22 @@ impl super::super::Interpreter {
             .map(crate::value::Value::into_deref);
         !value.is_some_and(|v| match v.view() {
             ValueView::Regex(_) => true,
-            ValueView::RegexWithAdverbs(ref a) => !a.ignore_case,
+            ValueView::RegexWithAdverbs(a) => !a.ignore_case,
             _ => false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scalars_in_pattern;
+
+    #[test]
+    fn every_scalar_of_a_pattern_is_read_at_match_time() {
+        assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
+        assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
+        assert!(scalars_in_pattern("$a=$b").0.is_empty());
+        assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
+        assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }
 }

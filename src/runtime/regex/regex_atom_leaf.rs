@@ -193,7 +193,7 @@ impl Interpreter {
             // `:i` does not reach into it (`m:i{^$re}` with `$re = rx{a}`
             // does not match "A"), while an `rx:i` object folds on its own.
             let own_i = val.as_ref().is_some_and(|v| {
-                matches!(v.view(), ValueView::RegexWithAdverbs(ref a) if a.ignore_case)
+                matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.ignore_case)
             });
             let mut source = String::from(if is_regex {
                 if own_i { ":i " } else { ":!i " }

@@ -4213,7 +4213,7 @@ impl Interpreter {
                                         let (ignore_case, ignore_mark) = if is_regex_value {
                                             let own_i = matches!(
                                                 value.view(),
-                                                ValueView::RegexWithAdverbs(ref a) if a.ignore_case
+                                                ValueView::RegexWithAdverbs(a) if a.ignore_case
                                             );
                                             (own_i, false)
                                         } else {
