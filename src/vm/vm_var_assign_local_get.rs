@@ -314,7 +314,13 @@ impl Interpreter {
                 // The read is of THIS slot: a same-named shadow elsewhere in the
                 // frame is another variable (#12006).
                 let fetched = loan_env!(self, atomic_fetch_local(atomic_name, idx as u32))?;
-                self.locals[idx] = fetched.clone();
+                // A slot that holds the binding's shared cell keeps it: the fetch
+                // answers the cell's value, and overwriting the slot with that
+                // plain value would drop the cell, so the next read would box a
+                // fresh one the other threads' stores never reach.
+                if !self.locals[idx].is_container_ref() {
+                    self.locals[idx] = fetched.clone();
+                }
                 self.stack.push(fetched);
                 return Ok(());
             }
