@@ -524,13 +524,16 @@ impl RuntimeError {
     pub(crate) fn assignment_ro_value_with_gist(value: Value, gist: &str) -> Self {
         // A user class's instance names its own class; the static builtin name
         // of an object is `Any`.
+        // A value held in a binding cell names the type of what the cell holds
+        // (`Int+{<anon|1>}`), not the cell's.
+        let held = value.clone().into_deref();
         let typename = if matches!(
-            value.view(),
+            held.view(),
             super::ValueView::Instance { .. } | super::ValueView::Mixin(..)
         ) {
-            crate::value::types::what_type_name(&value)
+            crate::value::types::what_type_name(&held)
         } else {
-            crate::value::type_name::value_type_name(&value).to_string()
+            crate::value::type_name::value_type_name(&held).to_string()
         };
         let message = if matches!(value.view(), super::ValueView::Nil) {
             "Cannot modify an immutable Nil value".to_string()
