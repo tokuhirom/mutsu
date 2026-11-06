@@ -4,7 +4,17 @@
 /// than to the Rakudo snapshot. ADR-10723 section 6.92 records hash captures.
 // Cost: O(1), one fixed owner/name pair.
 pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
-    owner == "RakuAST::Regex::NamedCapture" && name == "hash"
+    (owner == "RakuAST::Regex::NamedCapture" && name == "hash")
+        // Rakudo declares these on the `RakuAST::OperatorProperties` role the
+        // owners compose; mutsu serves them from per-class rows.
+        || (matches!(name, "properties" | "reducer-name")
+            && matches!(
+                owner,
+                "RakuAST::Postfix"
+                    | "RakuAST::Postcircumfix::ArrayIndex"
+                    | "RakuAST::Postcircumfix::HashIndex"
+                    | "RakuAST::Postcircumfix::LiteralHashIndex"
+            ))
 }
 
 // Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local methods.

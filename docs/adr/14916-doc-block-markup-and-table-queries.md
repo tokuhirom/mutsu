@@ -1,4 +1,4 @@
-# ADR-14916: `Doc::Block.allowed-markup` is a `Map` type object from a Raku prelude; `visual-table` is native
+# ADR-14916: RakuAST model queries answered from rakudo shapes: `Doc::Block` markup/table, operator properties
 
 - **Status**: Proposed
 - **Date**: 2026-11-07
@@ -31,3 +31,25 @@ Two `RakuAST::Doc::Block` queries had no mutsu answer. Measured with the bare `r
 An `EVAL($ast)` unit that calls `allowed-markup` without the text naming it does not get the
 prelude (its type object then has no `AT-KEY`); that needs the unit-level gate the deparser's
 prelude has (`inject_deparse_prelude_for_unit`) and is left for when a consumer needs it.
+
+## 4. Operator properties (amendment)
+
+`properties`, `reducer-name` and `default-operator-properties` of the operator nodes answer an
+`OperatorProperties` instance (rakudo's class: `precedence`, `sub-precedence`, `associative`,
+`thunky`, `dba`, `next-term`, `iffy`, `diffy`, `fiddly`, `adverb`, `ternary`; `.raku` omits empty
+values and prints flags as `:name`).
+
+- The class is a Raku prelude (`run_prelude_operator_properties.rs`), injected when a unit names
+  `OperatorProperties` or `.properties`; the native rows build an instance of it.
+- The data is the existing built-in precedence table (`src/op_prec`, generated from `Routine.prec`),
+  plus what the grammar parses without a routine (`:=`, the flip-flops, the dotty infix) and the
+  few symbols rakudo's `OperatorProperties` does not know although `Routine.prec` does (`÷ ≠ ≤ ≥ ∊ ∍
+  ⩵ ⩶`, prefix `−`; the lone prefix `//` it does). Each difference was found by probing every table
+  symbol on rakudo 2026.09.
+- `reducer-name` is chosen by associativity (and the `list-infix` level); `MetaInfix::Assign`
+  answers the item- or list-assignment level (list when the inner infix binds looser than
+  assignment) but reduces like its inner infix, `Reverse` flips `left`/`right`, `Negate` and
+  `Hyper` answer the inner infix's, `Cross`/`Zip` are the list-infix level, a `FunctionInfix` the
+  additive level.
+- Not done: the class-level lookup API (`OperatorProperties.infix("+")`, `.prefix`, `.circumfix`,
+  ...).
