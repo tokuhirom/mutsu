@@ -1557,6 +1557,10 @@ impl Compiler {
                 sub_compiler.note_param_declaration(pd);
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
+                } else if is_routine && pd.binds_directly_to_argument() {
+                    // A method / routine-valued block body: the same direct
+                    // binding the `sub` path records (#16959).
+                    sub_compiler.direct_bound_params.insert(pd.name.clone());
                 }
             }
             if let Some(cap) = &pd.type_capture {
