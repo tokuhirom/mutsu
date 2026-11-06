@@ -3455,8 +3455,25 @@ impl Interpreter {
         };
         // `PROCESS::<$REPO> := $repo` arrives as a bind marker; unwrap it
         // so the bound value (not the marker Pair) becomes the dynamic.
-        let (val, _bind_source) = Self::unwrap_bind_index_value(val);
-        let val = if env_key.starts_with('@') {
+        let (val, is_bind) = match Self::split_bind_index_marker(val) {
+            Ok((bound, _sources)) => (bound, true),
+            Err(plain) => (plain, false),
+        };
+        if !is_bind && env_key.starts_with('*') {
+            // An assignment (re)creates the container a bind removed.
+            self.unmark_readonly(&env_key);
+        }
+        let val = if is_bind && env_key.starts_with('*') {
+            // `:=` binds the value itself: the stash entry is not a container,
+            // so `$*X.VAR` is the value's own type and `my @a = $*X` flattens.
+            // The readonly mark is what reflection reads as "no container".
+            // A `Proxy` is a container of its own (it mediates the stores), so
+            // it stays assignable.
+            if !matches!(val.view(), ValueView::Proxy { .. }) {
+                self.mark_readonly_with(&env_key, crate::ast::ReadonlyKind::ImmutableValue);
+            }
+            val
+        } else if env_key.starts_with('@') {
             runtime::coerce_to_array(val)
         } else if env_key.starts_with('%') {
             self.coerce_hash_var_value(None, &env_key, val, None)?

@@ -40,7 +40,7 @@ is $*MOD-DYN, "from-module",
 
 # --- a sub call, installing a plain (non-Proxy) value ---
 sub installer() {
-    PROCESS::<$SUB-DYN> := 123;
+    PROCESS::<$SUB-DYN> = 123;
 }
 installer();
 is $*SUB-DYN, 123,
