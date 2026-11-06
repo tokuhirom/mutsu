@@ -630,17 +630,15 @@ impl Interpreter {
     /// cell placed in BOTH the slot and the env entry, so a directly-nested named
     /// sub that writes the lexical by name (via `SetGlobal` through env) and the
     /// owner that reads it by slot observe one cell — enabling cross-call
-    /// accumulation without the `env_dirty` blanket reconcile. The skips mirror
-    /// `box_captured_lexicals` exactly: scalars only (`@`/`%`/`&` share already),
-    /// never an already-shared cell, never a reference/identity-bearing value,
+    /// accumulation without the `env_dirty` blanket reconcile. A `&` code
+    /// variable is boxed too: a module's file-scope `my &f` that a routine
+    /// fills at load time has no mainline bucket to share through (#16824).
+    /// The other skips mirror `box_captured_lexicals`: never an already-shared cell, never a reference/identity-bearing value,
     /// and never a name the legacy atomic lane currently owns. (The
     /// type/`where`-constraint refusal that used to be listed here was retired
     /// with ADR-0055 slice 1 — the constraint belongs to the container now, so
     /// a write reaching the scalar through its cell re-checks it.)
     pub(crate) fn box_decl_local_cell(&mut self, code: &CompiledCode, idx: usize) {
-        if code.locals[idx].starts_with('&') {
-            return;
-        }
         self.box_decl_local_cell_any_sigil(code, idx);
     }
 
