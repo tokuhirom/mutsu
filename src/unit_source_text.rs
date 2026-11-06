@@ -27,6 +27,9 @@ pub(crate) struct Unit {
     /// A module's `sub EXPORT` is running for this unit: `$*CU` is the
     /// importing unit below it, not this one.
     in_export: bool,
+    /// Routines the unit imported after `$*CU` was built, which the tree's
+    /// calls of them resolve to now (`publish_late_imports`).
+    late_imports: std::collections::HashSet<String>,
 }
 
 thread_local! {
@@ -48,6 +51,7 @@ impl UnitSourceTextGuard {
                 sorries: Vec::new(),
                 worries: Vec::new(),
                 in_export: false,
+                late_imports: std::collections::HashSet::new(),
             });
         });
         Self
@@ -178,4 +182,41 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
             Some(cu)
         }
     }
+}
+
+/// Before the unit's check code runs: record which calls of the tree `$*CU`
+/// already handed out resolve to an imported routine by now. Rakudo resolves in
+/// place before the CHECK phase; the tree here is immutable, so a call that
+/// found no import when the tree was built reads this set instead.
+// Cost: O(n + u), n = nodes of the tree, u = its unresolved calls.
+pub(crate) fn publish_late_imports(imported: &dyn Fn(&str) -> bool) {
+    let Some(cu) = UNITS.with(|units| {
+        let units = units.borrow();
+        active_index(&units)
+            .and_then(|i| units.get(i))
+            .and_then(|unit| unit.cu.clone())
+    }) else {
+        return;
+    };
+    let late: std::collections::HashSet<String> = crate::rakuast::unresolved_call_names(&cu)
+        .into_iter()
+        .filter(|name| imported(name))
+        .collect();
+    UNITS.with(|units| {
+        let mut units = units.borrow_mut();
+        if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
+            unit.late_imports = late;
+        }
+    });
+}
+
+/// Whether the unit being compiled imported `name` after `$*CU` was built.
+// Cost: O(1).
+pub(crate) fn is_late_import(name: &str) -> bool {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        active_index(&units)
+            .and_then(|i| units.get(i))
+            .is_some_and(|unit| unit.late_imports.contains(name))
+    })
 }

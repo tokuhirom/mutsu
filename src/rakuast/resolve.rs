@@ -975,3 +975,49 @@ pub(super) fn declared_variable_name(node: &RakuAstNode) -> Option<String> {
 pub(super) fn leaf_of(node: &RakuAstNode, name: &str) -> Option<String> {
     leaf(node, name)
 }
+
+/// Whether a call node is one `resolve` leaves unresolved only because no import
+/// of its name was visible yet.
+// Cost: O(1).
+fn deferrable_call(node: &RakuAstNode) -> Option<String> {
+    if !matches!(node.class, C::CallName | C::CallNameWithoutParentheses) || node.origin.2.is_some()
+    {
+        return None;
+    }
+    let name = call_name_str(node).ok()?;
+    let plain = !super::declared_routines::is_declared(&name)
+        && !super::declared_routines::is_user_call(node)
+        && !crate::builtin_functions::is_builtin_function(&name);
+    plain.then_some(name)
+}
+
+/// The names of the calls under `node` that carry no resolution and could still
+/// resolve to a routine the unit imports later.
+// Cost: O(n), n = nodes of the subtree.
+pub(super) fn unresolved_call_names(node: &RakuAstNode, out: &mut Vec<String>) {
+    if let Some(name) = deferrable_call(node) {
+        out.push(name);
+    }
+    for field in &node.fields {
+        let children: &[Value] = match &field.value {
+            RakuAstFieldValue::Node(value) => std::slice::from_ref(value),
+            RakuAstFieldValue::List(values) => values,
+            RakuAstFieldValue::Adverb(_) => continue,
+        };
+        for child in children {
+            if let ValueView::RakuAst(held) = child.view() {
+                unresolved_call_names(held, out);
+            }
+        }
+    }
+}
+
+/// The `Declaration::Import` of a call whose name the unit imported after its
+/// tree was built ([`crate::unit_source_text::publish_late_imports`]).
+// Cost: O(1).
+pub(super) fn late_resolution(node: &RakuAstNode) -> Option<Value> {
+    let name = deferrable_call(node)?;
+    crate::unit_source_text::is_late_import(&name)
+        .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
+        .flatten()
+}
