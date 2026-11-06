@@ -53,6 +53,13 @@ impl Interpreter {
         if method == "Seq" && crate::builtins::native_base::has_iterable_payload(target) {
             return Ok(None);
         }
+        // `Any.Seq` is `Seq.new(self.iterator)`: a class that declares its own
+        // `iterator` is read through it, never through a `list` that may well
+        // be written in terms of `.Seq` itself (BinaryHeap's
+        // `method list { self.Seq.list }`).
+        if method == "Seq" && self.has_user_method(&cn, "iterator") {
+            return Ok(None);
+        }
         if !self.has_user_method(&cn, "list") {
             // `Any.hash` is `self.list.hash`; a plain user class's default
             // `list` is the one-item list of itself, so `.hash` dies with
