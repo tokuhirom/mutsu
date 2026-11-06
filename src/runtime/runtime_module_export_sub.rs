@@ -68,6 +68,25 @@ impl Interpreter {
     ///
     /// Only keys the caller already had are carried over, so a dynamic the
     /// module declared for itself still dies with the load.
+    /// Register the importer's env for the hook call about to be made at the
+    /// current call depth (see `ModuleState::export_hook_importer_envs`).
+    // Cost: O(1).
+    fn push_hook_importer_env(&mut self, env: crate::env::Env) {
+        let depth = self.call_frames.len();
+        self.module.export_hook_importer_envs.push((depth, env));
+    }
+
+    /// The importer's env after the hook returned or died, with any write an
+    /// inline `CATCH` of the importer made while the hook was running.
+    // Cost: O(1).
+    fn pop_hook_importer_env(&mut self) -> crate::env::Env {
+        self.module
+            .export_hook_importer_envs
+            .pop()
+            .map(|(_, env)| env)
+            .unwrap_or_else(|| self.env.clone())
+    }
+
     fn restore_caller_env_keeping_dynamics(&mut self, mut caller_env: crate::env::Env) {
         for (key, value) in &self.env {
             if key.is_dynamic_var_env_key()
@@ -162,7 +181,9 @@ impl Interpreter {
                 self.env = module_env;
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
+                self.push_hook_importer_env(caller_env);
                 let result = self.call_sub_value(export_sub.clone(), export_args);
+                let caller_env = self.pop_hook_importer_env();
                 // The caller's env comes back whether the hook returned or died:
                 // a `die` must not leave the importer running in the module's env.
                 self.restore_caller_env_keeping_dynamics(caller_env);
@@ -204,7 +225,9 @@ impl Interpreter {
         let saved_unit = self.current_unit;
         self.current_unit = self.unit_of_declaring_file(def.source_file.as_deref());
         let hook_args = export_args.clone();
+        self.push_hook_importer_env(caller_env);
         let result = self.call_export_hook_def(&def, export_args, &empty_fns);
+        let caller_env = self.pop_hook_importer_env();
         self.current_unit = saved_unit;
         // The caller's env comes back whether the hook returned or died (a hook
         // that `die`s on a bad `use` argument must not leave the importer
@@ -285,7 +308,7 @@ impl Interpreter {
             return Ok(());
         }
         let hook_args = export_args.clone();
-        let saved_env = self.env.clone();
+        let mut saved_env = self.env.clone();
         let result = match def {
             ModuleExportDef::Sub(candidates, mut module_env) => {
                 // Re-dispatch among the remembered candidates with THIS
@@ -313,7 +336,9 @@ impl Interpreter {
                 // through `UNIT::` (#11246).
                 let reinstated = self.reinstate_own_families(module);
                 self.module.module_scope_runs += 1;
+                self.push_hook_importer_env(saved_env.clone());
                 let r = self.call_export_hook_def(&d, export_args, &empty_fns);
+                saved_env = self.pop_hook_importer_env();
                 self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
@@ -322,7 +347,10 @@ impl Interpreter {
             ModuleExportDef::Value(v) => {
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
-                self.call_sub_value(v, export_args)
+                self.push_hook_importer_env(saved_env.clone());
+                let r = self.call_sub_value(v, export_args);
+                saved_env = self.pop_hook_importer_env();
+                r
             }
         };
         // The importer's env comes back whether the hook returned or died.

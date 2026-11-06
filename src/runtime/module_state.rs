@@ -418,6 +418,13 @@ pub(crate) struct ModuleState {
     /// lexical outer, so its frames link to it as a module body's do
     /// (`Interpreter::code_is_foreign_unit`).
     pub(crate) module_scope_runs: u32,
+    /// The importer's env while a `sub EXPORT` hook runs in the module's own
+    /// env, keyed by the call-frame depth the hook's frame occupies. An inline
+    /// `CATCH` installed by the importer and reached through a dying hook
+    /// finds the hook's frame (`handler_frame`), whose saved env is the
+    /// module's, so it runs against this env instead and its writes land here
+    /// (#16968).
+    pub(crate) export_hook_importer_envs: Vec<(usize, crate::env::Env)>,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
@@ -790,6 +797,7 @@ impl ModuleState {
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
+            export_hook_importer_envs: Vec::new(),
             module_owned_exports: Default::default(),
             module_owned_types: Default::default(),
             suppress_exports: false,
@@ -911,6 +919,7 @@ impl ModuleState {
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
+            export_hook_importer_envs: Vec::new(),
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,

@@ -199,6 +199,28 @@ impl Interpreter {
             .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))
     }
 
+    /// The importer's env for the `sub EXPORT` hook whose call frame sits at
+    /// `depth`, if one is running there.
+    // Cost: O(h), h = hooks running at once (nested `use`s).
+    fn hook_importer_env(&self, depth: usize) -> Option<&crate::env::Env> {
+        self.module
+            .export_hook_importer_envs
+            .iter()
+            .rev()
+            .find(|(d, _)| *d == depth)
+            .map(|(_, e)| e)
+    }
+
+    // Cost: O(h), h = hooks running at once (nested `use`s).
+    fn hook_importer_env_mut(&mut self, depth: usize) -> Option<&mut crate::env::Env> {
+        self.module
+            .export_hook_importer_envs
+            .iter_mut()
+            .rev()
+            .find(|(d, _)| *d == depth)
+            .map(|(_, e)| e)
+    }
+
     /// Make the installing activation's env the executing one for an inline
     /// handler run, so the handler's by-name reads (`GetGlobal`,
     /// `GetHashVar`, ...) resolve its own lexicals: at the throw site a
@@ -216,7 +238,10 @@ impl Interpreter {
         depth: usize,
         live_slots: bool,
     ) -> Option<HandlerEnv> {
-        let installing = self.installing_call_frame(base, depth)?.saved_env.clone();
+        let frame_env = self.installing_call_frame(base, depth)?.saved_env.clone();
+        // A `sub EXPORT` hook's frame saved the module's env; the importer
+        // that installed the handler lives in the env the use site kept.
+        let installing = self.hook_importer_env(depth).cloned().unwrap_or(frame_env);
         let dynamics = self.env().tier_dynamic_entries();
         let mut env = crate::env::Env::scoped_child(installing);
         for (k, v) in &dynamics {
@@ -314,7 +339,9 @@ impl Interpreter {
             // equality: `PartialEq` walks container and object contents, so
             // two same-shaped cyclic object graphs (a tree whose nodes point
             // back at their parent) recursed until the stack overflowed (#11014).
-            let installing = self.call_frames.get(depth).map(|f| &f.saved_env);
+            let installing = self
+                .hook_importer_env(depth)
+                .or_else(|| self.call_frames.get(depth).map(|f| &f.saved_env));
             let same_var = match (
                 self.env().get_sym(*k),
                 installing.and_then(|e| e.get_sym(*k)),
@@ -331,7 +358,9 @@ impl Interpreter {
             if same_var && !own_live {
                 self.write_throw_env(*k, v.clone());
             }
-            if let Some(f) = self.call_frames.get_mut(depth) {
+            if let Some(e) = self.hook_importer_env_mut(depth) {
+                e.insert_sym(*k, v.clone());
+            } else if let Some(f) = self.call_frames.get_mut(depth) {
                 f.saved_env.insert_sym(*k, v.clone());
             }
         }
