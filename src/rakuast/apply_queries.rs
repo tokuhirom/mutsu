@@ -5,7 +5,7 @@
 //! prefix or postfix, the arguments of a list infix, as a List) and
 //! `return-type` (the `Mu` type object: none is declared).
 
-use super::{RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::Value;
 
 // Cost: O(f), f = fields of the node.
@@ -47,6 +47,24 @@ pub(crate) fn operands(node: &RakuAstNode) -> Value {
             .collect()
     };
     Value::array(items)
+}
+
+/// `args` (`ApplyInfix` only): the operands as a `RakuAST::ArgList`.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn args(node: &RakuAstNode) -> Value {
+    let fields = ["left", "right"]
+        .iter()
+        .filter_map(|name| node_value(node, name))
+        .map(|value| RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(value),
+        })
+        .collect();
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ArgList,
+        fields,
+    }))
 }
 
 /// `return-type`: no type is declared, so `Mu`.
