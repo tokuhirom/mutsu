@@ -27,9 +27,15 @@ impl Interpreter {
             // `(:a(1), :b(2))` list is; every other shape passes through with
             // its own identity so a typed single-positional `STORE(Str $x)`
             // binds the scalar rather than a 1-element list.
+            // An object hash (`:{ $obj => 1 }`) keeps its key objects.
             ValueView::Hash(h) => Some(Value::array(
                 h.iter()
-                    .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                    .map(
+                        |(k, v)| match h.original_keys.as_ref().and_then(|o| o.get(k.as_str())) {
+                            Some(key) => Value::value_pair(key.clone(), v.clone()),
+                            None => Value::pair(k.clone(), v.clone()),
+                        },
+                    )
                     .collect(),
             )),
             ValueView::Seq(s) => Some(Value::array(s.iter().cloned().collect())),
