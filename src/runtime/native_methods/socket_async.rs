@@ -116,7 +116,11 @@ impl Interpreter {
                                 format!("Failed to resolve '{}'", host)
                             }
                             crate::runtime::tcp_core::TcpBindError::Io(e) => {
-                                format!("Failed to bind: {}", e)
+                                crate::runtime::tcp_core::TcpBindError::async_listen_message(
+                                    &e,
+                                    &host,
+                                    port as u16,
+                                )
                             }
                         };
                         if let Some(q) = quit_cb {
