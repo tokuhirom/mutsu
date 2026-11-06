@@ -4,23 +4,33 @@
 /// than to the Rakudo snapshot. ADR-10723 section 6.92 records hash captures.
 // Cost: O(1), one fixed owner/name pair.
 pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
-    (owner == "RakuAST::Regex::NamedCapture" && name == "hash")
-        // Rakudo declares these on the `RakuAST::OperatorProperties` role the
-        // owners compose; mutsu serves them from per-class rows.
-        || (matches!(name, "properties" | "reducer-name")
-            && matches!(
-                owner,
-                "RakuAST::Postfix"
-                    | "RakuAST::Postcircumfix::ArrayIndex"
-                    | "RakuAST::Postcircumfix::HashIndex"
-                    | "RakuAST::Postcircumfix::LiteralHashIndex"
-            ))
+    (owner == "RakuAST::Regex::NamedCapture" && name == "hash") || role_provided(owner, name)
+}
+
+/// `properties` / `reducer-name` of the owners that get them from the
+/// `RakuAST::OperatorProperties` role: rakudo declares them on the role, not
+/// in the class's own method table, so `.^methods(:local)` does not list
+/// them; mutsu serves them from per-class rows.
+// Cost: O(1), fixed owner/name pairs.
+fn role_provided(owner: &str, name: &str) -> bool {
+    matches!(name, "properties" | "reducer-name")
+        && matches!(
+            owner,
+            "RakuAST::Postfix"
+                | "RakuAST::Postcircumfix::ArrayIndex"
+                | "RakuAST::Postcircumfix::HashIndex"
+                | "RakuAST::Postcircumfix::LiteralHashIndex"
+        )
 }
 
 // Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local methods.
 pub(crate) fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     let mut names = crate::rakuast::constructor_method_names(class_name)?;
-    names.extend(super::owner_row_names(class_name));
+    names.extend(
+        super::owner_row_names(class_name)
+            .into_iter()
+            .filter(|name| !role_provided(class_name, name)),
+    );
     names.sort_unstable();
     names.dedup();
     Some(names)

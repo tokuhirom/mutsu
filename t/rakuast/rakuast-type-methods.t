@@ -32,4 +32,4 @@ is RakuAST::Statement::Expression.^methods(:local).map(*.name).sort.join(','),
     'statement wrapper exposes constructor and accessors';
 
 is RakuAST::Postfix.^methods(:local).map(*.name).sort.join(','),
-    'is-resolved,new,operator,resolution', 'Postfix exposes its own accessors';
+    'default-operator-properties,is-resolved,new,operator,resolution', 'Postfix exposes its own accessors';
