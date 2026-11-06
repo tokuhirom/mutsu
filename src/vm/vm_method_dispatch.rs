@@ -1716,6 +1716,11 @@ impl Interpreter {
                             && !crate::ast::param_defs_declare_lexical(param_defs, bare)
                             && !code
                                 .my_declared_sym
+                                .contains(&crate::symbol::Symbol::intern(bare))
+                            // A `my` written inside an expression
+                            // (`f($!x, my $x := ...)`) is recorded apart.
+                            && !code
+                                .expr_declared_syms
                                 .contains(&crate::symbol::Symbol::intern(bare)))
                     {
                         continue;
