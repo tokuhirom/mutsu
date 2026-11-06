@@ -304,6 +304,31 @@ pub(crate) struct ParamDef {
     pub(crate) spans: parsed::ParamSpans,
 }
 
+impl ParamDef {
+    /// Whether rakudo binds this scalar parameter straight to the argument's
+    /// value, with no `Scalar` of its own: a nominally typed (not `Any` / `Mu`),
+    /// readonly (no `is copy` / `is rw` / `is raw`) positional or named scalar.
+    /// Then `$p =:= Int` is True when the argument is that type object (#16959).
+    // Cost: O(t), t = traits of the parameter.
+    pub(crate) fn binds_directly_to_argument(&self) -> bool {
+        !self.sigilless
+            && !self.slurpy
+            && !self.double_slurpy
+            && !self.onearg
+            && !self.name.starts_with(['@', '%', '&'])
+            && self.sub_signature.is_none()
+            && self.type_capture.is_none()
+            && self
+                .type_constraint
+                .as_deref()
+                .is_some_and(|t| !matches!(t, "Any" | "Mu"))
+            && !self
+                .traits
+                .iter()
+                .any(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly"))
+    }
+}
+
 /// The bytecode for a parameter's signature-time expressions, compiled once in
 /// the declaring scope by `Compiler::attach_param_chunks` (ADR-0133).
 ///

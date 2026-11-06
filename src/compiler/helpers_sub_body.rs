@@ -378,6 +378,8 @@ impl Compiler {
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
+                } else if pd.binds_directly_to_argument() {
+                    sub_compiler.direct_bound_params.insert(pd.name.clone());
                 }
             }
             if let Some(cap) = &pd.type_capture {

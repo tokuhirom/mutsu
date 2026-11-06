@@ -756,6 +756,20 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerEq(0));
                 return;
             }
+            // A typed readonly parameter (`Int $x`) is bound straight to the
+            // argument, so against a bare value (a literal or type object) or
+            // another such parameter `=:=` is value identity (#16959).
+            let direct = |e: &Expr| matches!(e.peel_parens(), Expr::Var(n) if self.direct_bound_params.contains(n));
+            let bare_value =
+                |e: &Expr| matches!(e.peel_parens(), Expr::Literal(_) | Expr::BareWord(_));
+            if (direct(left) && (bare_value(right) || direct(right)))
+                || (direct(right) && bare_value(left))
+            {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                self.code.emit(OpCode::ContainerEq(0));
+                return;
+            }
             // `EXPR.self` hands back the invocant's *value*, never its
             // container, so pairing it with a named variable is decided by
             // whether that name has a container at all — a runtime fact (`:=`
