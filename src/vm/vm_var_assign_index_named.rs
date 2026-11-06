@@ -3469,7 +3469,7 @@ impl Interpreter {
             // The readonly mark is what reflection reads as "no container".
             // A `Proxy` is a container of its own (it mediates the stores), so
             // it stays assignable.
-            if !matches!(val.view(), ValueView::Proxy { .. }) {
+            if !val.with_deref(|v| matches!(v.view(), ValueView::Proxy { .. })) {
                 self.mark_readonly_with(&env_key, crate::ast::ReadonlyKind::ImmutableValue);
             }
             val
