@@ -101,6 +101,9 @@ impl Interpreter {
                     .insert(target_key, target_defs);
                 crate::runtime::regex_parse::TOKEN_DEFS_GEN
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                // A `.^find_method` answer memoized before the rule existed
+                // (a miss) must not outlive it.
+                self.registry_mut().bump_method_generation();
                 return Ok(Value::NIL);
             }
             // A regex value (`EVAL 'regex { a | b }'`, `token { ... }`)
@@ -128,6 +131,7 @@ impl Interpreter {
                     false,
                     None,
                 );
+                self.registry_mut().bump_method_generation();
                 return Ok(Value::NIL);
             }
             // An attribute accessor (`Foo.^method_table<val>`, AttrX::Mooish's
