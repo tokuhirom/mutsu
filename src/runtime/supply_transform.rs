@@ -182,10 +182,9 @@ impl Interpreter {
                     let next_idx = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                     let slots: Arc<std::sync::Mutex<Vec<Option<Result<Value, RuntimeError>>>>> =
                         Arc::new(std::sync::Mutex::new((0..vals.len()).map(|_| None).collect()));
-                    let mut thread_interp = self.clone_for_thread_for_block(&block);
                     let mut handles = Vec::with_capacity(n_workers);
                     for _ in 0..n_workers {
-                        let mut winterp = thread_interp.clone_for_thread();
+                        let mut winterp = self.clone_for_thread_for_block(&block);
                         let (vals, next_idx, slots) =
                             (Arc::clone(&vals), Arc::clone(&next_idx), Arc::clone(&slots));
                         let blk = block.clone();
