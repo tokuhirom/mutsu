@@ -68,3 +68,14 @@ pub(crate) fn enum_display_name(key: &str) -> Option<String> {
     }
     table().read().ok()?.get(key).cloned()
 }
+
+/// `key` as a type argument of a parameterized container name
+/// (`Array[E]`, `Hash[E,Str]`): a package-scoped enum answers to its declared
+/// name there, as its own `.^name` does, every other type to its key.
+// Cost: O(1) -- see `enum_display_name`; borrows when `key` is not such an enum.
+pub(crate) fn type_arg_display_name(key: &str) -> std::borrow::Cow<'_, str> {
+    match enum_display_name(key) {
+        Some(declared) => std::borrow::Cow::Owned(declared),
+        None => std::borrow::Cow::Borrowed(key),
+    }
+}

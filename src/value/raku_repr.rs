@@ -1155,8 +1155,9 @@ fn raku_value_node(v: &Value) -> String {
                     .value_type
                     .as_deref()
                     .unwrap_or(if map.key_type.is_some() { "Mu" } else { "Any" });
+                let value_type = super::type_arg_display_name(value_type);
                 let key_suffix = match map.key_type.as_deref() {
-                    Some(kt) => format!("{{{}}}", kt),
+                    Some(kt) => format!("{{{}}}", super::type_arg_display_name(kt)),
                     None => String::new(),
                 };
                 let inner = parts.join(", ");

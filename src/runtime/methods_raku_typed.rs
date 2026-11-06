@@ -38,7 +38,10 @@ impl Interpreter {
                 // a boxed one is `Array[Int]` (`my Int @a[3]`).
                 format!("array[{}]", info.value_type)
             } else {
-                format!("Array[{}]", info.value_type)
+                format!(
+                    "Array[{}]",
+                    crate::value::type_arg_display_name(&info.value_type)
+                )
             };
             // Rakudo renders a shaped array as
             //   array[int].new(:shape(4,), [1, 2, 3, 4])           # 1-D
@@ -94,7 +97,12 @@ impl Interpreter {
                 .join(", ");
             let type_name = info
                 .declared_type
-                .unwrap_or_else(|| format!("Array[{}]", info.value_type));
+                .unwrap_or_else(|| {
+                    format!(
+                        "Array[{}]",
+                        crate::value::type_arg_display_name(&info.value_type)
+                    )
+                });
             return Some(Ok(Value::str(format!("{type_name}.new({inner})"))));
         }
         None
