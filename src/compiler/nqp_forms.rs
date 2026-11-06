@@ -324,19 +324,35 @@ impl Compiler {
             // expression, so it is built here as that AST.
             // Cost: O(1) per iteration sunk (compiles to jumps; no runtime
             // op); O(1) per pulled element in value position (a gather).
+            // The optional third operand is the loop's `post` step, run after
+            // every iteration's body (`nqp::until(cond, body, post)`, as in
+            // Iter::Able's `$idx++, nqp::if(...)`): the body then is
+            // `nqp::stmts(body, post)`. The loop test runs first, so an empty
+            // iteration never reaches `post`.
             "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
-                if args.len() == 2 =>
+                if matches!(args.len(), 2 | 3) =>
             {
+                let post_body;
+                let body_expr = if args.len() == 3 {
+                    post_body = Expr::Call {
+                        name: crate::symbol::Symbol::intern("nqp::stmts"),
+                        args: vec![args[1].clone(), args[2].clone()],
+                        listop: false,
+                    };
+                    &post_body
+                } else {
+                    &args[1]
+                };
                 let is_until = name.ends_with("until");
                 let repeat = name.starts_with("nqp::repeat_");
-                if sunk && super::nqp_loop_control::body_names_loop_control(&args[1]) {
+                if sunk && super::nqp_loop_control::body_names_loop_control(body_expr) {
                     // A `last` / `next` in the body needs a registered loop:
                     // the ordinary `while` lowering, its value dropped.
-                    self.compile_nqp_controlled_loop(&args[0], &args[1], is_until, repeat);
+                    self.compile_nqp_controlled_loop(&args[0], body_expr, is_until, repeat);
                 } else if sunk {
-                    self.compile_nqp_sunk_loop(&args[0], &args[1], is_until, repeat);
+                    self.compile_nqp_sunk_loop(&args[0], body_expr, is_until, repeat);
                 } else {
-                    self.compile_nqp_value_loop(&args[0], &args[1], is_until, repeat);
+                    self.compile_nqp_value_loop(&args[0], body_expr, is_until, repeat);
                 }
                 true
             }
@@ -350,7 +366,7 @@ impl Compiler {
         matches!(
             e,
             Expr::Call { name, args, .. }
-                if args.len() == 2
+                if matches!(args.len(), 2 | 3)
                     && matches!(
                         name.as_str(),
                         "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"

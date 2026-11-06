@@ -204,10 +204,13 @@ impl Interpreter {
         // Foo.new`) is a value, not a block — call it only if it is `Callable`
         // (has a `CALL-ME`), otherwise `Foo.new` would be mis-invoked as `Foo()`.
         let rhs_is_callable = match rhs.view() {
-            ValueView::Sub(_)
-            | ValueView::WeakSub(_)
-            | ValueView::Routine { .. }
-            | ValueView::Mixin(..) => true,
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+            // `42 but role {...}` is a value; only a mixin over a code object
+            // (`&f but role {...}`) is itself callable (#16939).
+            ValueView::Mixin(inner, _) => matches!(
+                inner.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            ),
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 self.class_has_method(&cn, "CALL-ME")
