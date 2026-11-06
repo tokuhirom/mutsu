@@ -34,6 +34,7 @@ mod run_prelude_precomp;
 mod run_prelude_tappable;
 mod run_prelude_deparse;
 mod run_prelude_doc_markup;
+mod run_prelude_operator_properties;
 mod run_prelude_formatter;
 mod run_prelude_trait_export;
 mod run_prelude_x_comp;
