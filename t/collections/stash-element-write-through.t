@@ -4,7 +4,7 @@ use Test;
 # stores through the stash reach the variable. From CustomImporting's
 # `from-import` (#16920).
 
-plan 12;
+plan 15;
 
 module TI {
     our $v1 = 42;
@@ -46,3 +46,8 @@ ok TI.WHO.EXISTS-KEY('$v1'), 'Stash.EXISTS-KEY sees it';
 
 TI::<$v1> = 60;
 is $TI::v1, 60, 'the direct package subscript still writes';
+
+# The element container of a stash symbol is named by its key (#16923).
+is $items<$v1>.VAR.name, '$v1', 'the VAR descriptor of a scalar symbol is named by its key';
+is $items<@a>.VAR.name, '@a', 'and that of an array symbol';
+is TI.WHO<$v2>.VAR.name, '$v2', 'and through a method-call stash';
