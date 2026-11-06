@@ -1238,11 +1238,13 @@ impl Interpreter {
         let ValueView::Seq(body) = inner.view() else {
             return Ok(None);
         };
+        let prefix_source = body.take_prefix_source();
         // A `Seq.new($iterator)` whose first element a boolification already
-        // pulled keeps that element in its body: top the body up to `n` and
-        // answer from it, rather than falling through to the consuming
-        // path that drains the (possibly unbounded) iterator.
-        if !body.is_empty() && body.unpulled_iterator().is_some() {
+        // pulled keeps that element in its body, so it has no prefix source to
+        // steal: top the body up to `n` and answer from it, rather than falling
+        // through to the consuming path that drains the (possibly unbounded)
+        // iterator.
+        if prefix_source.is_none() && body.unpulled_iterator().is_some() {
             let body = Arc::clone(&body);
             body.extend_from_iterator(n, |iterator, count, out| {
                 self.pull_iterator_prefix_into(iterator, count, out)
@@ -1250,7 +1252,7 @@ impl Interpreter {
             let items: Vec<Value> = body.iter().take(n).cloned().collect();
             return Ok(Some(Value::seq(items)));
         }
-        let items = match body.take_prefix_source() {
+        let items = match prefix_source {
             Some(crate::value::PrefixSource::Pure(mut spec)) => {
                 let mut items = Vec::new();
                 spec.push_up_to(&mut items, n);
