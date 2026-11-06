@@ -430,6 +430,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         tags_idx: Option<u32>,
+        scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let tags = tags_idx
@@ -444,6 +445,9 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_else(|| vec!["DEFAULT".to_string()]);
+        if scalar {
+            self.register_exported_scalar_name(self.current_package(), &name);
+        }
         self.register_exported_var(self.current_package(), name, tags);
         Ok(())
     }

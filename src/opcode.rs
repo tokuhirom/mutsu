@@ -4807,6 +4807,9 @@ pub(crate) enum OpCode {
     RegisterVarExport {
         name_idx: u32,
         tags_idx: Option<u32>,
+        /// A `$`-scalar: recorded without its sigil, but published in an
+        /// `EXPORT::` stash under `$name`, as rakudo does.
+        scalar: bool,
     },
     /// Publish an `our` variable declared directly inside an
     /// `EXPORT::<tag>` package (`package EXPORT::DEFAULT { our &f = ... }`)
