@@ -1482,7 +1482,13 @@ impl Compiler {
                     // `@__destructure_tmp__` (an `Expr::ArrayLiteral`) that
                     // legitimately re-run on each `my (...)` destructure — must always
                     // execute.
-                    let is_default_init = !has_init && Self::is_synthesized_decl_default(expr);
+                    // A native-typed `my int $x;` has the type's zero as its synthesized
+                    // default (`0`, `0e0`, `""`), so it is the same bare redeclaration.
+                    let native_default = type_constraint
+                        .as_deref()
+                        .is_some_and(crate::native_types::is_native_type_name);
+                    let is_default_init =
+                        !has_init && (native_default || Self::is_synthesized_decl_default(expr));
                     let already_declared = !self.my_vars_current_scope.insert(name.clone());
                     if already_declared && is_default_init {
                         return;
