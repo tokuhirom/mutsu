@@ -93,9 +93,16 @@ impl Compiler {
             target,
             Expr::Index { target: it, index, .. }
                 if !Self::index_expr_is_slice(index)
+                    && !matches!(it.as_ref(), Expr::HashVar(_))
+                    // A package stash (`Pkg::<$v>`) names its symbols by key,
+                    // so it takes the element path; `CALLER::`, `OUTER::` ...
+                    // compile to frame lookups instead.
                     && !matches!(
                         it.as_ref(),
-                        Expr::PseudoStash(_) | Expr::HashVar(_)
+                        Expr::PseudoStash(name)
+                            if name.trim_end_matches("::").split("::").any(
+                                crate::runtime::Interpreter::is_pseudo_package_name
+                            )
                     )
         )
     }

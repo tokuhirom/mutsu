@@ -219,6 +219,9 @@ impl Interpreter {
             }
             container.set_binding_decision(None);
         }
+        // The container is the variable's: `.VAR.name` through any alias of it
+        // (a stash entry, a `:=` binding) reports the declared name.
+        crate::value::name_container_cell(&cell, &local_name);
         self.locals[idx] = cell.clone();
         self.env_mut().insert(local_name.clone(), cell.clone());
         self.env_mut().insert(qualified.clone(), cell.clone());

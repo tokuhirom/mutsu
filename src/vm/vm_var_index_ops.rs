@@ -900,7 +900,13 @@ impl Interpreter {
             return None;
         };
         let entry = symbols.get(key.as_str())?;
-        entry.is_container_ref().then(|| entry.clone())
+        if !entry.is_container_ref() {
+            return None;
+        }
+        // The symbol's own name (`$v1`) is the cell's descriptor name, so a
+        // variable bound to it reports it from `.VAR.name`.
+        crate::value::name_container_cell(entry, &key);
+        Some(entry.clone())
     }
 
     // Cost: O(1) for a single `Int` index (a `*-1` WhateverCode index is one closure
