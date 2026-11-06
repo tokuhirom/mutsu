@@ -3105,7 +3105,10 @@ impl Interpreter {
                     // surfaces as X::AdHoc instead of the bare "Exception" default.
                     return Err(RuntimeError::typed_msg(
                         "X::AdHoc",
-                        format!("Required named parameter '{}' not passed", pd.name),
+                        format!(
+                            "Required named parameter '{}' not passed",
+                            pd.name.trim_start_matches(['@', '%', '&'])
+                        ),
                     ));
                 } else if !found && !pd.name.is_empty() {
                     // An unsupplied optional named param binds its default (the

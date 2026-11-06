@@ -387,7 +387,7 @@ impl Interpreter {
                         "X::AdHoc",
                         format!(
                             "Required named parameter '{}' not passed",
-                            cf.param_defs[i].name
+                            cf.param_defs[i].name.trim_start_matches(['@', '%', '&'])
                         ),
                     ));
                     break 'bind;
