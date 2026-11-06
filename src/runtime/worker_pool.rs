@@ -42,6 +42,9 @@ mod yield_points;
 mod yield_points;
 pub(crate) use yield_points::{KeeperMark, keeper_mark};
 
+mod park_observer;
+pub(crate) use park_observer::run_with_park_observer;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::Rejecter;
@@ -385,6 +388,7 @@ pub(crate) fn max_threads() -> usize {
 /// (`waker::park_dispatching`, #11268): they cannot progress until it wakes.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn enter_blocking() -> (native::BlockingGuard, crate::value::waker::ParkGuard) {
+    park_observer::notify();
     crate::runtime::decl_gate::release_all();
     let parked = crate::value::waker::park_dispatching();
     (native::enter_blocking(), parked)
@@ -396,6 +400,7 @@ pub(crate) struct BlockingGuard;
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn enter_blocking() -> BlockingGuard {
+    park_observer::notify();
     crate::runtime::decl_gate::release_all();
     BlockingGuard
 }
