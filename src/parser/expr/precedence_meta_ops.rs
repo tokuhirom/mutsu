@@ -24,6 +24,9 @@ pub(super) use meta_bracket::{
     cannot_meta_ternary_error, op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op,
     parse_meta_op,
 };
-pub(crate) use meta_bracket::{parse_meta_op as parse_meta_op_spelling, strip_sequence_op};
+pub(crate) use meta_bracket::{
+    op_str_to_token_kind as infix_spelling_to_token, parse_meta_op as parse_meta_op_spelling,
+    strip_sequence_op,
+};
 pub(super) use set_ops::structural_expr;
 pub(crate) use set_ops::{negated_glyph_relation, starts_with_set_infix_op};

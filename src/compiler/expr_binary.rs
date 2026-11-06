@@ -147,6 +147,17 @@ impl Compiler {
         // field doc on `mint_named_pair`.
         let mint_named_pair = self.mint_named_pair;
         self.mint_named_pair = false;
+        // A lexical `&infix:<op>` (parameter or `my &infix:<op>`) shadows the
+        // builtin operator: `$a op $b` calls it (#16967).
+        if !self.lexical_infix_ops.is_empty()
+            && let Some(name) = self.lexical_infix_callable(op)
+        {
+            self.compile_expr(&Expr::CallOn {
+                target: Box::new(Expr::CodeVar(name)),
+                args: vec![left.clone(), right.clone()],
+            });
+            return;
+        }
         // Constant folding (ADR-0006 §2.1): a literal-only pure expression
         // (`60 * 60 * 24`) is evaluated here and collapses to one LoadConst.
         if let Some(folded) = self.try_const_fold_binary(left, op, right) {

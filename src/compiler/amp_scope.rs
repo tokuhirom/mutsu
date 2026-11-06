@@ -11,6 +11,41 @@ use super::Compiler;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Remember that `name` (a local being allocated) is a `&infix:<op>`
+    /// lexical, so `compile_expr_binary` knows to look for it (#16967).
+    // Cost: O(1) for any other name.
+    pub(super) fn note_lexical_infix(&mut self, name: &str) {
+        if let Some(op) = name
+            .strip_prefix("&infix:<")
+            .and_then(|rest| rest.strip_suffix('>'))
+            && !self.lexical_infix_ops.iter().any(|known| known == op)
+        {
+            self.lexical_infix_ops.push(op.to_string());
+        }
+    }
+
+    /// The name (`infix:<op>`) of the `&infix:<op>` lexical that `op` resolves
+    /// to here, if a visible parameter or `my &infix:<op>` shadows the builtin
+    /// operator: Raku resolves an operator lexically (#16967).
+    // Cost: O(k * s), k = distinct `&infix:` lexicals declared (0 almost
+    // always, which exits first), s = scopes in the chain.
+    pub(super) fn lexical_infix_callable(&self, op: &crate::token_kind::TokenKind) -> Option<String> {
+        for text in &self.lexical_infix_ops {
+            if crate::parser::infix_spelling_to_token(text).as_ref() != Some(op) {
+                continue;
+            }
+            let name = format!("infix:<{text}>");
+            let key = format!("&{name}");
+            if self.amp_binding_in_active_scope(&name)
+                || self.prebound_amp_params.contains(&key)
+                || (self.local_scopes.is_empty() && self.local_map.contains_key(&key))
+            {
+                return Some(name);
+            }
+        }
+        None
+    }
+
     /// Record `name` in `CompiledCode::unscoped_amp_reads` when this `&name`
     /// read site provably sees no lexical `&name`: no `&name` local in this
     /// frame (including a closed sibling block's -- `local_map` is monotonic,
