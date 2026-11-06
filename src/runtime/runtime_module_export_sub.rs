@@ -162,8 +162,11 @@ impl Interpreter {
                 self.env = module_env;
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
-                let result = self.call_sub_value(export_sub.clone(), export_args)?;
+                let result = self.call_sub_value(export_sub.clone(), export_args);
+                // The caller's env comes back whether the hook returned or died:
+                // a `die` must not leave the importer running in the module's env.
                 self.restore_caller_env_keeping_dynamics(caller_env);
+                let result = result?;
                 self.install_export_map(&result, importer.as_deref());
                 if let Some(m) = self.module.module_load_stack.last().cloned() {
                     self.module
@@ -203,8 +206,11 @@ impl Interpreter {
         let hook_args = export_args.clone();
         let result = self.call_export_hook_def(&def, export_args, &empty_fns);
         self.current_unit = saved_unit;
-        let result = result?;
+        // The caller's env comes back whether the hook returned or died (a hook
+        // that `die`s on a bad `use` argument must not leave the importer
+        // running in the module's env, #16968).
         self.restore_caller_env_keeping_dynamics(caller_env);
+        let result = result?;
         // `EXPORT` must not itself become a callable in (or leak from) the
         // module; drop every registered `EXPORT` routine now that it has run,
         // keeping the candidates for a later import's re-run.
@@ -311,19 +317,23 @@ impl Interpreter {
                 self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
-                r?
+                r
             }
             ModuleExportDef::Value(v) => {
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
-                self.call_sub_value(v, export_args)?
+                self.call_sub_value(v, export_args)
             }
         };
+        // The importer's env comes back whether the hook returned or died.
+        // (`?` before this left the importer in the module's env, so a closure's
+        // by-name `@`/`%` captures read `Nil` after a failed `use`, #16968.)
         // Same discipline as the first-load path: EXPORT's own lexicals go,
         // the importer's dynamics keep whatever EXPORT wrote (#8229). Raku
         // runs `sub EXPORT` on every import, so a re-`use` must report its
         // load the same way the first one did.
         self.restore_caller_env_keeping_dynamics(saved_env);
+        let result = result?;
         let importer = self.module.module_load_stack.last().cloned();
         self.record_eval_hook_result(module, &hook_args, &result);
         self.install_export_map(&result, importer.as_deref());
