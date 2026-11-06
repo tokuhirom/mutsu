@@ -608,6 +608,20 @@ impl Interpreter {
                 );
                 Ok(Value::NIL)
             }
+            // Cost: O(a), a = arguments (one type name each).
+            "__mutsu_push_named_no_match" => {
+                // The SUB forms of `push`/`unshift`/`append`/`prepend` take no named
+                // arguments: rakudo's two candidates are `(\a, \b)` and
+                // `(\a, **@b is raw)`, and a call with a named argument matches
+                // neither (`push @a, :x(1)`).
+                let routine = args.first().map(Value::to_string_value).unwrap_or_default();
+                let call_args = args.get(1..).unwrap_or(&[]);
+                let message = format!(
+                    "Cannot resolve caller {}; none of these signatures matches:\n    (\\a, \\b)\n    (\\a, **@b is raw)",
+                    Self::multi_call_profile(&routine, call_args)
+                );
+                Err(Self::multi_no_match_exception(&routine, message))
+            }
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.

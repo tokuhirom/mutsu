@@ -1531,23 +1531,25 @@ impl Compiler {
             name.resolve().as_str(),
             "push" | "unshift" | "append" | "prepend"
         ) && !suppress_listop_rewrite
-            && let Some(key) = args.iter().skip(1).find_map(|arg| match arg {
-                Expr::Binary {
-                    op: TokenKind::FatArrow,
-                    left,
-                    ..
-                } => match left.as_ref() {
-                    Expr::Literal(lit) => lit.as_str().map(str::to_string),
-                    _ => None,
-                },
-                _ => None,
+            && args.iter().skip(1).any(|arg| {
+                matches!(
+                    arg,
+                    Expr::Binary {
+                        op: TokenKind::FatArrow,
+                        left,
+                        ..
+                    } if matches!(left.as_ref(), Expr::Literal(lit) if lit.as_str().is_some())
+                )
             })
         {
+            // The exception names the call with the argument types it got, so
+            // the arguments are evaluated and handed to the routine that raises
+            // it (`__mutsu_push_named_no_match`).
+            let mut no_match_args = vec![Expr::Literal(Value::str(name.resolve().to_string()))];
+            no_match_args.extend(args.iter().cloned());
             self.compile_expr(&Expr::Call {
-                name: Symbol::intern("die"),
-                args: vec![Expr::Literal(Value::str(format!(
-                    "Unexpected named argument '{key}' passed"
-                )))],
+                name: Symbol::intern("__mutsu_push_named_no_match"),
+                args: no_match_args,
                 listop: false,
             });
         }
