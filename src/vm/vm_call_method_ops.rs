@@ -1730,6 +1730,17 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // A built-in `Iterator` answers its protocol through its rows on a
+        // call-result receiver too (`(1..*).iterator.is-lazy`), as on a
+        // variable: otherwise the `Iterator` role a program composes
+        // (`run_prelude_iterator.rs`) answers its defaults for it (#16934).
+        if modifier_idx.is_none()
+            && let Some(result) = self.try_native_iterator(&target, method, &args)
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "iterator-row");
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Convert HyperSeq/RaceSeq to List for method dispatch
         let target = match target.view() {
             ValueView::HyperSeq(items) | ValueView::RaceSeq(items)
