@@ -927,7 +927,7 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
         let missing_term_after_infix = e.typed_convention_message().is_none()
             && tail
                 .trim_start()
-                .starts_with(|c: char| matches!(c, ';' | ')' | ']' | '}'))
+                .starts_with([';', ')', ']', '}'])
                 | tail.trim().is_empty()
             && e.messages
                 .iter()
