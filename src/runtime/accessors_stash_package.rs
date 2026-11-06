@@ -527,6 +527,13 @@ impl Interpreter {
             if rest.is_empty() {
                 continue;
             }
+            // `class M::c2` inside `module M` is the plain member `c2`.
+            if let Some(member) = Self::self_qualified_member(rest, &package_name) {
+                symbols
+                    .entry(member.to_string())
+                    .or_insert_with(|| Value::package(Symbol::intern(class_name)));
+                continue;
+            }
             if let Some(head) = Self::stash_tail_sub_package(rest) {
                 symbols.entry(head.to_string()).or_insert_with(|| {
                     Value::package(Symbol::intern(&Self::qualify_stash_name(
@@ -650,6 +657,9 @@ impl Interpreter {
     // Cost: O(1).
     fn exported_var_stash_key(&self, module: &str, name: &str) -> String {
         let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
+        // An export qualified with the module's own name (`class M::c3 is
+        // export` in `module M`) is the plain member `c3`.
+        let key = Self::self_qualified_member(key, module).unwrap_or(key);
         let is_scalar = self
             .module
             .exported_scalar_vars
@@ -669,7 +679,10 @@ impl Interpreter {
     // Cost: O(1).
     fn type_member_stash_key(val: &Value, qualified_key: &str, stash_key: String) -> String {
         match val.view() {
-            ValueView::Package(sym) if sym.resolve() == qualified_key => {
+            ValueView::Package(sym)
+                if sym.resolve() == qualified_key
+                    || sym.resolve().ends_with(&format!("::{qualified_key}")) =>
+            {
                 stash_key.strip_prefix('$').map_or(stash_key.clone(), str::to_string)
             }
             _ => stash_key,
