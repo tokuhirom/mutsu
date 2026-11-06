@@ -211,11 +211,17 @@ impl Interpreter {
         // never routed back through a user `AT-KEY` override.
         if method == "__mutsu_container_at_key" {
             let key_arg = args.first().cloned().unwrap_or(Value::NIL);
-            return self.try_native_method(
-                &storage,
-                crate::symbol::Symbol::intern("AT-KEY"),
-                &[key_arg],
-            );
+            // The native row declines some keys (an object key such as
+            // `Any.new`); the ordinary dispatch on the wrapped bag answers
+            // them, still never reaching a user `AT-KEY` override because the
+            // receiver is the bare storage.
+            return self
+                .try_native_method(
+                    &storage,
+                    crate::symbol::Symbol::intern("AT-KEY"),
+                    std::slice::from_ref(&key_arg),
+                )
+                .or_else(|| Some(self.vm_call_method_with_values(storage, "AT-KEY", vec![key_arg])));
         }
         // `STORE` re-initializes the container wholesale, in place for the same
         // shared-identity reason as the element writes above.

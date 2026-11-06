@@ -39,6 +39,18 @@ fn fold_entries(args: &[Value]) -> Vec<Entry> {
             ValueView::Array(elems, _) => items.extend(elems.iter().cloned()),
             ValueView::Seq(elems) => items.extend(elems.iter().cloned()),
             ValueView::Slip(elems) => items.extend(elems.iter().cloned()),
+            // A Hash is a list of its pairs; an object hash (`:{ $obj => 3 }`)
+            // keeps the key objects, which `original_keys` remembers.
+            ValueView::Hash(h) => {
+                for (k, v) in h.map.iter() {
+                    let key = h
+                        .original_keys
+                        .as_ref()
+                        .and_then(|o| o.get(k).cloned())
+                        .unwrap_or_else(|| Value::str(k.clone()));
+                    items.push(Value::value_pair(key, v.clone()));
+                }
+            }
             _ => items.push(arg.clone()),
         }
     }
