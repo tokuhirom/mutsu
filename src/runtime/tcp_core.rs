@@ -15,6 +15,33 @@ pub(crate) enum TcpBindError {
     Io(std::io::Error),
 }
 
+impl TcpBindError {
+    /// The reason rakudo reports for a failed `IO::Socket::Async.listen`:
+    /// libuv's error name in words, with the address that was bound.
+    // Cost: O(1).
+    pub(crate) fn async_listen_message(e: &std::io::Error, host: &str, port: u16) -> String {
+        use std::io::ErrorKind;
+        let reason = match e.kind() {
+            ErrorKind::AddrInUse => "address already in use",
+            ErrorKind::AddrNotAvailable => "address not available",
+            ErrorKind::PermissionDenied => "permission denied",
+            _ => return format!("Failed to bind: {}", Self::strerror(e)),
+        };
+        format!("{reason} (address: {host}:{port})")
+    }
+
+    /// The C library's text for an I/O error, without Rust's ` (os error N)`
+    /// suffix: what `IO::Socket::INET` reports after `Could not bind socket:`.
+    // Cost: O(len).
+    pub(crate) fn strerror(e: &std::io::Error) -> String {
+        let text = e.to_string();
+        match text.rfind(" (os error ") {
+            Some(pos) => text[..pos].to_string(),
+            None => text,
+        }
+    }
+}
+
 /// Bind a listener on `host:port` (port 0: one the OS picks).
 ///
 /// The host is resolved to ONE address and exactly that is bound.

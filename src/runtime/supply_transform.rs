@@ -32,6 +32,13 @@ fn wait_for_control_limit(ctrl_id: u64) -> i64 {
     current_limit
 }
 
+/// Start order of `Supply.throttle`'s jobs: `next` is the next input index to
+/// start, `unyielded` the started jobs that have neither finished nor parked.
+struct ThrottleGate {
+    next: usize,
+    unyielded: usize,
+}
+
 impl Interpreter {
     /// Implement Supply.throttle($limit, $seconds-or-block, :$control, :$status)
     pub(super) fn supply_throttle(
@@ -162,12 +169,91 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             } else {
-                let mut promises = Vec::with_capacity(source_values.len());
-                for val in &source_values {
-                    let result =
-                        self.call_supply_callback(block.clone(), vec![val.clone()])?;
-                    let promise = SharedPromise::new_kept(result);
-                    promises.push(Value::promise(promise));
+                // `throttle` limits how many jobs run at once, it does not
+                // serialize them: a callback that blocks (`await $proc`,
+                // `sleep`) must overlap with its siblings up to `limit`.
+                // The results stay in input order.
+                let n_workers = if limit > 0 {
+                    (limit as usize).min(source_values.len().max(1))
+                } else {
+                    source_values.len().max(1)
+                };
+                let results: Vec<Value> = if n_workers <= 1 || source_values.len() <= 1 {
+                    let mut out = Vec::with_capacity(source_values.len());
+                    for val in &source_values {
+                        out.push(self.call_supply_callback(block.clone(), vec![val.clone()])?);
+                    }
+                    out
+                } else {
+                    let vals = Arc::new(source_values);
+                    // Jobs start in input order, and the next one starts only
+                    // once every started job has finished or parked (reached
+                    // a blocking point): callbacks that never block therefore
+                    // run in order, as on rakudo, while a callback that blocks
+                    // lets its siblings overlap up to `limit`.
+                    let gate = Arc::new((
+                        std::sync::Mutex::new(ThrottleGate { next: 0, unyielded: 0 }),
+                        std::sync::Condvar::new(),
+                    ));
+                    type Slot = Option<Result<Value, RuntimeError>>;
+                    let slots: Arc<std::sync::Mutex<Vec<Slot>>> =
+                        Arc::new(std::sync::Mutex::new((0..vals.len()).map(|_| None).collect()));
+                    let mut handles = Vec::with_capacity(n_workers);
+                    for _ in 0..n_workers {
+                        let mut winterp = self.clone_for_thread_for_block(&block);
+                        let (vals, gate, slots) =
+                            (Arc::clone(&vals), Arc::clone(&gate), Arc::clone(&slots));
+                        let blk = block.clone();
+                        handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                            loop {
+                                let idx = {
+                                    let Some(mut g) = crate::gc::wait_until(&gate.0, &gate.1, |g| {
+                                        g.unyielded == 0 || g.next >= vals.len()
+                                    }) else {
+                                        break;
+                                    };
+                                    if g.next >= vals.len() {
+                                        break;
+                                    }
+                                    g.next += 1;
+                                    g.unyielded += 1;
+                                    g.next - 1
+                                };
+                                let released = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                let release: Arc<dyn Fn() + Send + Sync> = {
+                                    let (gate, released) = (Arc::clone(&gate), Arc::clone(&released));
+                                    Arc::new(move || {
+                                        if !released.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                                            gate.0.lock().unwrap().unyielded -= 1;
+                                            gate.1.notify_all();
+                                        }
+                                    })
+                                };
+                                let on_park = Arc::clone(&release);
+                                let result = crate::runtime::worker_pool::run_with_park_observer(
+                                    move || on_park(),
+                                    || winterp.call_supply_callback(blk.clone(), vec![vals[idx].clone()]),
+                                );
+                                release();
+                                slots.lock().unwrap()[idx] = Some(result);
+                            }
+                            // Wake siblings still waiting on the last job.
+                            gate.1.notify_all();
+                        }));
+                    }
+                    for handle in handles {
+                        let _ = crate::gc::block_quiescent(|| handle.join());
+                    }
+                    let mut out = Vec::with_capacity(vals.len());
+                    let taken: Vec<_> = std::mem::take(&mut *slots.lock().unwrap());
+                    for slot in taken {
+                        out.push(slot.unwrap_or_else(|| Ok(Value::NIL))?);
+                    }
+                    out
+                };
+                let mut promises = Vec::with_capacity(results.len());
+                for result in results {
+                    promises.push(Value::promise(SharedPromise::new_kept(result)));
                 }
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(promises));

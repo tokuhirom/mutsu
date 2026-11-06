@@ -107,6 +107,11 @@ pub(crate) struct ControlState {
     pub(crate) catch_handlers: Vec<crate::vm::CatchHandlerEntry>,
     /// Monotonic id source for `CatchHandlerEntry::token`.
     pub(crate) catch_handler_seq: u64,
+    /// `:catch` callables of the `$*SCHEDULER.cue` tasks running on this thread,
+    /// innermost last. Rakudo runs a cue's `:catch` in the dynamic scope of the
+    /// `die` (so its `.resume` continues the dying code); `try_catch_inline`
+    /// offers an exception no `CATCH` region took to the last entry.
+    pub(crate) cue_catch: Vec<Value>,
     /// The exception each CATCH/CONTROL handler currently executing on the
     /// dynamic call stack is handling, innermost last: what `nqp::exception()`
     /// answers. MoarVM keeps the same thing as the thread's active-handler

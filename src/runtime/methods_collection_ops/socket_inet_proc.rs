@@ -158,7 +158,10 @@ impl Interpreter {
                 format!("{}:{}", localhost, localport)
             };
             let listener = std::net::TcpListener::bind(&bind_addr).map_err(|e| {
-                RuntimeError::new(format!("Failed to bind to '{}': {}", bind_addr, e))
+                RuntimeError::new(format!(
+                    "Could not bind socket: {}",
+                    crate::runtime::tcp_core::TcpBindError::strerror(&e)
+                ))
             })?;
             let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(localport);
             let state = IoHandleState {

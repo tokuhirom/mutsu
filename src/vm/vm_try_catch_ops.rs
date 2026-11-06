@@ -414,6 +414,7 @@ impl Interpreter {
                     || e.is_emit()
                     || e.is_done()
                     || e.is_react_done()
+                    || e.is_resume()
                     || e.is_supply_body_done())
                     // ...except a loop-control signal raised with no construct
                     // to act on. There is nothing further up that would consume

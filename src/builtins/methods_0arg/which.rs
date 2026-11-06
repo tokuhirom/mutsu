@@ -64,6 +64,12 @@ pub(crate) fn has_value_identity(v: &Value) -> bool {
 // `Set`/`Bag`/`Mix` (n = elements, hashed) and for a `Range`/`Version`
 // (n = chars of the rendering).
 pub(crate) fn which_of(target: &Value) -> Value {
+    // A scalar container (`my $m = Post` captured by a `|c` parameter) has the
+    // identity of its content, as a method call on the variable does; without
+    // this it fell to the counter fallback and every call minted a new one.
+    if target.is_container_ref() {
+        return which_of(&target.deref_container());
+    }
     // A plain Str's identity is `Str|<text>`. The ValueObjAt keeps the
     // invocant itself (shared) and renders that text only when it is
     // read -- see `AttrMap::objat_which`.

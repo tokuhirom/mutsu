@@ -5,12 +5,23 @@ impl Interpreter {
     /// Build a `Failure` value wrapping an `X::IO::*` exception with the given
     /// type name and offending path. The Failure throws the exception when sunk.
     fn make_io_failure(&self, ex_type: &str, path: &str) -> Value {
+        self.make_io_failure_with(
+            ex_type,
+            Value::str(path.to_string()),
+            format!("{}: {}", ex_type, path),
+        )
+    }
+
+    /// An `X::IO::Resolve` Failure carrying the `IO::Path` itself as `path`
+    /// and rakudo's message text.
+    fn make_io_resolve_failure(&self, path: Value, message: String) -> Value {
+        self.make_io_failure_with("X::IO::Resolve", path, message)
+    }
+
+    fn make_io_failure_with(&self, ex_type: &str, path: Value, message: String) -> Value {
         let mut ex_attrs = HashMap::new();
-        ex_attrs.insert("path".to_string(), Value::str(path.to_string()));
-        ex_attrs.insert(
-            "message".to_string(),
-            Value::str(format!("{}: {}", ex_type, path)),
-        );
+        ex_attrs.insert("message".to_string(), Value::str(message));
+        ex_attrs.insert("path".to_string(), path);
         let exception = Value::make_instance(Symbol::intern(ex_type), ex_attrs);
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
@@ -127,7 +138,14 @@ impl Interpreter {
         let completely = Self::named_bool(args, "completely");
         let resolved = match Self::resolve_io_path(&path_buf, completely, &p) {
             Ok(r) => r,
-            Err(_) => return Ok(self.make_io_failure("X::IO::Resolve", &p)),
+            Err(_) => {
+                // rakudo's message renders the `IO::Path` itself with `.raku`.
+                let raku = self.io_path_raku(&class_name.resolve(), attributes);
+                return Ok(self.make_io_resolve_failure(
+                    Value::make_instance(class_name, attributes.clone()),
+                    format!("Failed to completely resolve {raku}"),
+                ));
+            }
         };
         // A resolved path is absolute, so its CWD becomes the volume root
         // (the SPEC's dir separator on POSIX).
