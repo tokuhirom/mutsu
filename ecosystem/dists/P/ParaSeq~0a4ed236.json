@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 4,
-        "secs": 0.38,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.09,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.93,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 89.44,
+        "secs": 95.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.79,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 123.13,
+        "secs": 113.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.54,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,11 +115,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you",
         "nok": 0,
         "ok": 14,
         "plan": 20,
-        "secs": 0.27,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,30 +129,29 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.45,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.01,
+        "ok": 22,
+        "plan": 22,
+        "secs": 41.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/07-first.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.4,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +164,7 @@
         "nok": 0,
         "ok": 42,
         "plan": 84,
-        "secs": 6.87,
+        "secs": 12.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,7 +174,7 @@
         "nok": 0,
         "ok": 84,
         "plan": 84,
-        "secs": 13.0,
+        "secs": 29.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -188,7 +187,7 @@
         "nok": 1,
         "ok": 18,
         "plan": 38,
-        "secs": 0.93,
+        "secs": 1.92,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -198,30 +197,29 @@
         "nok": 0,
         "ok": 37,
         "plan": 38,
-        "secs": 3.1,
+        "secs": 5.89,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 112.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/10-invert.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.66,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -235,7 +233,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.03,
+        "secs": 240.09,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -248,7 +246,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 4,
-        "secs": 0.39,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -258,7 +256,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.71,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -271,7 +269,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 4,
-        "secs": 0.42,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -281,7 +279,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -293,7 +291,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.21,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -303,7 +301,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.28,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -316,7 +314,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 18,
-        "secs": 0.25,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -326,7 +324,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.3,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -338,7 +336,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 46.68,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -348,7 +346,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.37,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -360,7 +358,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.26,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -370,7 +368,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.34,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -382,7 +380,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.22,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -392,7 +390,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.31,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -405,7 +403,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 39,
-        "secs": 188.35,
+        "secs": 13.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -415,166 +413,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 11.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "timeout"
-      },
-      "path": "t/20-unique.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 1.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 122.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/21-keys.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
-        "nok": 0,
-        "ok": 3,
-        "plan": 4,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/22-kv.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
-        "nok": 0,
-        "ok": 3,
-        "plan": 4,
-        "secs": 0.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/23-pairs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
-        "nok": 0,
-        "ok": 3,
-        "plan": 4,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/24-antipairs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.95,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 87.72,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/25-pick.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 2.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'roll' for invocant of type 'List'. Did you mean any of",
-        "nok": 0,
-        "ok": 3,
-        "plan": 10,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/26-roll.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.83,
+        "secs": 12.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -592,12 +431,148 @@
         "todo": 0,
         "verdict": "timeout"
       },
-      "path": "t/27-batch.t",
+      "path": "t/20-unique.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 0.97,
+        "ok": 24,
+        "plan": 24,
+        "secs": 3.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 90.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/21-keys.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
+        "nok": 0,
+        "ok": 3,
+        "plan": 4,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-kv.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
+        "nok": 0,
+        "ok": 3,
+        "plan": 4,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/23-pairs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "This representation (ConcBlockingQueue) does not support positional access (for type ParaQueue)",
+        "nok": 0,
+        "ok": 3,
+        "plan": 4,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/24-antipairs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 58.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/25-pick.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'roll' for invocant of type 'List'. Did you mean any of",
+        "nok": 0,
+        "ok": 3,
+        "plan": 10,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/26-roll.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -610,7 +585,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.05,
+        "secs": 240.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      },
+      "path": "t/27-batch.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.04,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -620,7 +618,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 1.88,
+        "secs": 3.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -633,7 +631,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 8,
-        "secs": 0.22,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -643,7 +641,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.68,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -656,7 +654,7 @@
         "nok": 4,
         "ok": 6,
         "plan": 18,
-        "secs": 45.41,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -666,7 +664,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.57,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -679,7 +677,7 @@
         "nok": 4,
         "ok": 6,
         "plan": 18,
-        "secs": 45.56,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -689,7 +687,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.59,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -702,7 +700,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 4,
-        "secs": 0.22,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -712,7 +710,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.51,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -725,7 +723,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 4,
-        "secs": 0.23,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -735,7 +733,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.56,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -748,7 +746,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 0.22,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -758,7 +756,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.41,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -770,7 +768,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 215.19,
+        "secs": 137.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -780,30 +778,29 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.17,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 4,
+        "plan": 4,
+        "secs": 220.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/36-collate.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.79,
+        "secs": 12.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -826,7 +823,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 9.61,
+        "secs": 17.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -838,7 +835,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 78.16,
+        "secs": 54.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -848,30 +845,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.65,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.04,
+        "ok": 4,
+        "plan": 4,
+        "secs": 84.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/39-pairup.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.9,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -884,7 +880,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 24,
-        "secs": 95.66,
+        "secs": 162.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -894,7 +890,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 7.31,
+        "secs": 13.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -917,7 +913,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.19,
+        "secs": 3.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -929,7 +925,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 145.08,
+        "secs": 92.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -939,7 +935,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.94,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -951,7 +947,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.3,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -961,7 +957,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.25,
+        "secs": 2.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -974,7 +970,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.21,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -984,7 +980,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.62,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -997,7 +993,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.23,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1007,7 +1003,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.33,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1020,7 +1016,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.93,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1030,7 +1026,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 3.46,
+        "secs": 5.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1043,7 +1039,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 16,
-        "secs": 0.23,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1053,7 +1049,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 16,
-        "secs": 0.43,
+        "secs": 0.62,
         "skip": 0,
         "todo": 2,
         "verdict": "pass"
@@ -1066,7 +1062,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1076,7 +1072,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.35,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1086,10 +1082,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "list.squish with degree = 3",
-        "nok": 2,
-        "ok": 20,
+        "nok": 1,
+        "ok": 21,
         "plan": 32,
-        "secs": 225.07,
+        "secs": 166.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1099,7 +1095,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 2.22,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1111,10 +1107,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-05",
+    "date": "2026-11-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e4ad3b0",
+    "mutsu_commit": "0bbd8009",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -1129,9 +1125,9 @@
   "totals": {
     "baseline_assertions": 607,
     "baseline_files": 47,
-    "mutsu_assertions": 280,
-    "parity_files": 12,
-    "regressed_files": 35
+    "mutsu_assertions": 315,
+    "parity_files": 16,
+    "regressed_files": 31
   },
   "version": "0.2.7"
 }

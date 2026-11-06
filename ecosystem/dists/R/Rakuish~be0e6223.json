@@ -1,0 +1,865 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Commands",
+      "Prompt"
+    ],
+    "unresolved": []
+  },
+  "dist": "Rakuish",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-incomplete.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-platform.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-eval.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-loop.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-slow.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-slow-run.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-summary.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-run.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-complete.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-time.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-load.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-ctrlc.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-repl.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-bin.t",
+      "raku": {
+        "first_failure": "raku -c 语法检查通过 (rc=1)",
+        "nok": 1,
+        "ok": 3,
+        "plan": 4,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-color.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-lexical.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-render.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-backtick.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-cd.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-path-complete.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-command-highlight.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-ls-color.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-replay.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-error-beautify.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-help.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-raku-complete.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-rc.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-multiline.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/29-autoshell.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-path-quote.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/31-shell-lexer.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/32-shell-parser.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/33-shell-expand.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-glob-test' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 11,
+        "plan": null,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/34-shell-exec.t",
+      "raku": {
+        "first_failure": "Cannot resolve caller trim(Nil:U: ); none of these signatures matches:",
+        "nok": 2,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/35-shell-session.t",
+      "raku": {
+        "first_failure": "export：设置后跨行存活",
+        "nok": 10,
+        "ok": 13,
+        "plan": 23,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/36-shell-andor.t",
+      "raku": {
+        "first_failure": "&&：成功才跑后面那条",
+        "nok": 7,
+        "ok": 7,
+        "plan": 14,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/37-shell-cmdsub.t",
+      "raku": {
+        "first_failure": "No such method 'lines' for invocant of type 'Any'",
+        "nok": 11,
+        "ok": 2,
+        "plan": null,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/38-shell-heredoc.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/39-shell-special-params.t",
+      "raku": {
+        "first_failure": "a b",
+        "nok": 9,
+        "ok": 4,
+        "plan": null,
+        "secs": 3.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/40-shell-arith.t",
+      "raku": {
+        "first_failure": "执行层：算术展开",
+        "nok": 4,
+        "ok": 9,
+        "plan": 13,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/41-shell-param.t",
+      "raku": {
+        "first_failure": "取值与长度",
+        "nok": 12,
+        "ok": 2,
+        "plan": 14,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/42-shell-engine.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/43-script.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/rk-2-6476.rakuish: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 24,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/44-result.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/45-builtins.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/46-rdsl-sugar.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/47-run-display.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/48-complete-p3.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/49-p4-cells.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/50-p5-script.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rk-p51-d-2-9739' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/51-meta-provides.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/52-script-shebang.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/rk-shebang-2-2057-a.sh: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/53-native-parity.t",
+      "raku": {
+        "first_failure": "native：`[ -n 空参数 ]` 判假（与 bash 一致）",
+        "nok": 3,
+        "ok": 5,
+        "plan": 8,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "Rakuish::Builtins": "ok",
+    "Rakuish::Eval": "ok",
+    "Rakuish::Incomplete": "ok",
+    "Rakuish::JSONServer": "ok",
+    "Rakuish::Loop": "raku_also_fails",
+    "Rakuish::Platform": "ok",
+    "Rakuish::Result": "ok",
+    "Rakuish::Script": "ok",
+    "Rakuish::Shell::Arith": "ok",
+    "Rakuish::Shell::Engine": "ok",
+    "Rakuish::Shell::Exec": "ok",
+    "Rakuish::Shell::Expand": "ok",
+    "Rakuish::Shell::Heredoc": "ok",
+    "Rakuish::Shell::Lexer": "ok",
+    "Rakuish::Shell::Parser": "ok",
+    "Rakuish::Shell::Session": "ok",
+    "Rakuish::Slow": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-06",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "0bbd8009",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AK/RAKUISH/dfa9568554889956f6a444597b06085870844d9a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 52,
+    "baseline_files": 8,
+    "mutsu_assertions": 52,
+    "parity_files": 8,
+    "regressed_files": 0
+  },
+  "version": "0.17.7"
+}

@@ -1,0 +1,64 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "EEL",
+  "files": [],
+  "load": {
+    "EEL": "Runtime error: slang activation for 'EEL' failed: X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::Absence": "ok",
+    "EEL::Assertion": "ok",
+    "EEL::CLI": "Runtime error: Failed to parse module 'EEL::CLI': slang activation for 'EEL' failed: X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::Clock": "ok",
+    "EEL::Condition": "ok",
+    "EEL::Continuation": "ok",
+    "EEL::DeadlineQueue": "ok",
+    "EEL::Definition": "ok",
+    "EEL::Input": "ok",
+    "EEL::InputQueue": "ok",
+    "EEL::IntervalIndex": "ok",
+    "EEL::MemoryStorage": "ok",
+    "EEL::Metadata": "ok",
+    "EEL::Query": "ok",
+    "EEL::Reemit": "ok",
+    "EEL::RetainedStore": "ok",
+    "EEL::Runner": "X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::SearchIndex": "ok",
+    "EEL::Slang": "ok",
+    "EEL::State": "ok",
+    "EEL::SupplyMatch": "X::InvalidType: Invalid typename 'Tappable'",
+    "Event": "ok",
+    "MetamodelX::Event": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-05",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "0bbd8009",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/EL/EEL/2aa3ec4a8a114245c5a8f1fd36d591984e10d452.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2"
+}
