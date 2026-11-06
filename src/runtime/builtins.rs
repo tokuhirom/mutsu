@@ -1288,6 +1288,7 @@ impl Interpreter {
             // `&postcircumfix:<[ ]>` resolves to as a term.
             "postcircumfix:<[ ]>" => self.builtin_postcircumfix_subscript(&args, true),
             "postcircumfix:<{ }>" => self.builtin_postcircumfix_subscript(&args, false),
+            "postcircumfix:<[; ]>" => self.builtin_postcircumfix_multidim(&args),
             // Boolean coercion functions
             "not" => Ok(Value::truth(!args.first().unwrap_or(&Value::NIL).truthy())),
             "so" => Ok(Value::truth(args.first().unwrap_or(&Value::NIL).truthy())),

@@ -1992,6 +1992,25 @@ impl Interpreter {
                     items.get(i as usize).cloned().unwrap_or(Value::NIL)
                 }
             }
+            // A list slice of a Seq that kept its source's element cells
+            // (`[5, 6, 7].Seq[0, 2]`): the elements at those positions, as a
+            // List, `Nil` past the end.
+            (ValueView::Seq(items), ValueView::Array(positions, ..)) => {
+                let mut out = Vec::with_capacity(positions.len());
+                for position in positions.iter() {
+                    let element = match position.view() {
+                        ValueView::Int(i) if i >= 0 => match items.get(i as usize) {
+                            Some(v) if v.is_container_ref() => v.deref_container(),
+                            Some(v) if v.is_hash_entry_ref_value() => v.hash_entry_read(),
+                            Some(v) => v.clone(),
+                            None => Value::NIL,
+                        },
+                        _ => Value::NIL,
+                    };
+                    out.push(element);
+                }
+                Value::array(out)
+            }
             (ValueView::Seq(items), ValueView::Range(a, b)) => {
                 let slice = match Self::inclusive_range_window(a, b, items.len())? {
                     Some((start, end_excl)) if start < items.len() => {

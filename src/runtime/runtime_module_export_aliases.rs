@@ -291,6 +291,12 @@ impl Interpreter {
         {
             self.declare_export_namespaces(&module, tags);
             record_export_tags(&mut self.module.exported_subs, &module, name, tags);
+            // The unit-module table is read by the requested compunit path as
+            // well (`import_module`), which is how a bodied `proto` of a
+            // `unit module` named differently from its file is found.
+            if module != unit_mod_name_for_path(self.declared_unit_module_here()) {
+                record_export_tags(&mut self.module.unit_module_exported_subs, &module, name, tags);
+            }
         }
         self.declare_export_namespaces(package, tags);
         record_export_tags(&mut self.module.exported_subs, package, name, tags);
@@ -351,4 +357,9 @@ impl Interpreter {
             self.register_exported_multi_candidates(&package, name, &tags, new_keys);
         }
     }
+}
+
+/// The declared `unit module` name as plain text (empty when none).
+fn unit_mod_name_for_path(unit_mod: Option<&String>) -> &str {
+    unit_mod.map_or("", String::as_str)
 }

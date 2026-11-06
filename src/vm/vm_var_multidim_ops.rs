@@ -32,7 +32,7 @@ impl Interpreter {
 
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: `[target, dim0, dim1, ..., dimN-1] → [result]`
-    pub(super) fn exec_multi_dim_index_op(
+    pub(crate) fn exec_multi_dim_index_op(
         &mut self,
         ndims: u32,
         is_positional: bool,
@@ -115,6 +115,12 @@ impl Interpreter {
         dims: &[Value],
         is_positional: bool,
     ) -> Result<Option<Value>, RuntimeError> {
+        // The CORE `postcircumfix:<[; ]>` routine drives this opcode with the
+        // override suppressed, so a user candidate delegating to `&postcircumfix:<[; ]>`
+        // cannot re-enter itself.
+        if std::mem::take(&mut self.dispatch.skip_postcircumfix_overload) {
+            return Ok(None);
+        }
         if !matches!(
             target.view(),
             ValueView::Instance { .. } | ValueView::Mixin(..)

@@ -5,6 +5,7 @@
 pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "postcircumfix:<[ ]>",
     "postcircumfix:<{ }>",
+    "postcircumfix:<[; ]>",
     "defined",
     "undefine",
     "say",
