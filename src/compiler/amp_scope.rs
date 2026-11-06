@@ -29,7 +29,10 @@ impl Compiler {
     /// operator: Raku resolves an operator lexically (#16967).
     // Cost: O(k * s), k = distinct `&infix:` lexicals declared (0 almost
     // always, which exits first), s = scopes in the chain.
-    pub(super) fn lexical_infix_callable(&self, op: &crate::token_kind::TokenKind) -> Option<String> {
+    pub(super) fn lexical_infix_callable(
+        &self,
+        op: &crate::token_kind::TokenKind,
+    ) -> Option<String> {
         for text in &self.lexical_infix_ops {
             if crate::parser::infix_spelling_to_token(text).as_ref() != Some(op) {
                 continue;
