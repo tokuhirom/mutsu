@@ -15,7 +15,17 @@ impl Interpreter {
     }
 
     pub(crate) fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
-        let mut current = value;
+        // The count of `"ab" x $obj.rw-accessor` arrives as the accessor's
+        // container (or hash-entry reference): read the value it holds.
+        let held;
+        let mut current = if value.is_container_ref()
+            || matches!(value.view(), ValueView::HashEntryRef { .. })
+        {
+            held = value.deref_container();
+            &held
+        } else {
+            value
+        };
         while let ValueView::Mixin(inner, _) = current.view() {
             current = inner;
         }
