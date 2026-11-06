@@ -13,5 +13,5 @@ is msg({ my %h is Foo = a => 42 }), 'Cannot modify an immutable Foo (Foo.new)', 
 is msg({ 5 = 6 }), 'Cannot modify an immutable Int (5)', 'a plain Int is unchanged';
 
 my \v = 42 but role { };
-my $m = msg({ v = 1 });
-like $m, /'Cannot modify an immutable Int+{' .* '} (42)'/, 'a but-mixin keeps its mixin name';
+try { v = 1 };
+like $!.message, /'Cannot modify an immutable Int+{' .* '} (42)'/, 'a but-mixin keeps its mixin name';
