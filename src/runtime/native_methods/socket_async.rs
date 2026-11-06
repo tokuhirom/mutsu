@@ -119,7 +119,7 @@ impl Interpreter {
                                 crate::runtime::tcp_core::TcpBindError::async_listen_message(
                                     &e,
                                     &host,
-                                    port as u16,
+                                    port,
                                 )
                             }
                         };
