@@ -245,8 +245,10 @@ impl Interpreter {
                 if self.has_user_method(&class, method) {
                     return None;
                 }
+                // `Backtrace.Str` is `.nice`, not the frames joined: it keeps
+                // its own method-table row.
                 if class == "Backtrace" {
-                    return Some(Source::List);
+                    return (method != "Str").then_some(Source::List);
                 }
                 // A `Range`/`Seq` subclass keeps the base type's own `iterator`
                 // (the carried range or sequence), so declaring only `list`
