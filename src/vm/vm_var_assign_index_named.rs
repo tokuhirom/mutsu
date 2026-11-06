@@ -1371,6 +1371,13 @@ impl Interpreter {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
                 _ => idx.clone(),
             };
+            // A package stash publishes an `our` scalar as the variable's own
+            // cell: `$stash<$v> = 1` stores through it (#16920).
+            if !bind_mode && let Some(mut cell) = Self::stash_element_cell(&inst, &key_val) {
+                Value::assign_element_slot(&mut cell, val.clone());
+                self.stack.push(val.clone());
+                return Ok(());
+            }
             let method = if bind_mode { "BIND-KEY" } else { "ASSIGN-KEY" };
             // A `:=` binds the element to the source variable's container,
             // as it does on a plain Hash: share a cell with the source so a
