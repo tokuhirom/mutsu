@@ -30,6 +30,7 @@ mod run_prelude;
 mod run_prelude_hash_ordered;
 mod run_prelude_iterator;
 mod run_prelude_precomp;
+mod run_prelude_tappable;
 mod run_prelude_deparse;
 mod run_prelude_formatter;
 mod run_prelude_trait_export;
