@@ -394,6 +394,17 @@ impl Interpreter {
                 if matches!(v.view(), ValueView::Int(_) | ValueView::BigInt(_)) {
                     return Some(Ok(Value::int(crate::runtime::to_int(&v))));
                 }
+                // An enum member with an integer value is an `Int` (`enum E
+                // <A B C D>; nqp::unbox_i(D)` is 3, as `unbox_u` already says):
+                // `CArray[int32].new: FFTW_REDFT00, ...` stored 0 for it, which
+                // made Math::FFT::Libfftw3 plan the wrong r2r transform (#17077).
+                if let ValueView::Enum {
+                    value: crate::value::EnumValue::Int(n),
+                    ..
+                } = v.view()
+                {
+                    return Some(Ok(Value::int(*n)));
+                }
                 // Only an address-bearing object (a Pointer, a CArray, a Buf)
                 // unboxes to an int; a Str, Num, Bool or Failure is a
                 // different REPR and MoarVM refuses it (#16420).
