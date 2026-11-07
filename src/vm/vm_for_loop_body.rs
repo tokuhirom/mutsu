@@ -1535,7 +1535,7 @@ impl Interpreter {
                         self.topic_state.topic_source_var = saved_topic_source;
                         self.topic_state.quanthash_bind_params = saved_quanthash_bind;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
-                        self.pop_loop_local_scope(code);
+                        self.suspend_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
