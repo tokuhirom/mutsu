@@ -423,6 +423,7 @@ impl Interpreter {
             | OpCode::SetLocal(..)
             | OpCode::SetLocalDecl { .. }
             | OpCode::SetVarDynamic { .. }
+            | OpCode::ShareLazyArrayInit { .. }
             | OpCode::SigillessAggregateStore { .. }
             | OpCode::VarTraitCtl { .. }
             | OpCode::WheneverScope { .. }

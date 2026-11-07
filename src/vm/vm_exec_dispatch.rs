@@ -7912,6 +7912,11 @@ impl Interpreter {
                 self.exec_publish_export_stash_var_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(1) (one lazy-list header clone; the generation cache is shared lazily).
+            OpCode::ShareLazyArrayInit { name_idx } => {
+                self.exec_share_lazy_array_init_op(code, *name_idx);
+                *ip += 1;
+            }
             // Cost: O(1) plus the trait's own work (a tied container's STORE may copy the initializer, O(e)).
             OpCode::ApplyVarTrait {
                 name_idx,

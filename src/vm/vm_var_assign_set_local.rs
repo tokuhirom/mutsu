@@ -231,8 +231,10 @@ impl Interpreter {
             // 1/3) — so `coroutine.is_some()` is checked too. Tag it as
             // living in `@` array context so gist/`.WHAT` render
             // `[...]`/`Array` rather than `(...)`/`Seq`.
+            // An already-flagged list (an imported `our @A`) is bound as is, so
+            // the importer indexes the very list the exporter's code does (#17035).
             ValueView::LazyList(list) if list.coroutine.is_some() || list.is_genuinely_lazy() => {
-                self.lazy_array_value(&list, name)
+                self.lazy_array_value_shared(raw_popped, &list, name)
             }
             ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
             ValueView::Seq(body) if body.is_io_lines_source() => {
@@ -2011,7 +2013,10 @@ impl Interpreter {
                         // a pipe over one) is `.is-lazy` False and
                         // materializes eagerly.
                         if list.preserve_lazy_on_array_assign() {
-                            self.lazy_array_value(&list, name)
+                            // Already the array's flagged list (`our @A = ...`
+                            // flagged it before duplicating, #17035): keep the
+                            // same list so every store of it shares one cache.
+                            self.lazy_array_value_shared(&raw_popped, &list, name)
                         } else {
                             let forced = self.force_lazy_list_vm(&list)?;
                             Value::real_array(self.decay_nil_vec_elements(forced))

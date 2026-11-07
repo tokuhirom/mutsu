@@ -452,6 +452,26 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `our @A = 0, 1, {...} ... *`: flag the raw lazy initializer as the
+    /// array's list once, before it is duplicated for the local slot and the
+    /// package store, so the two stores share one lazy list (#17035).
+    // Cost: O(1) (one lazy-list clone).
+    pub(super) fn exec_share_lazy_array_init_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let Some(top) = self.stack.last().cloned() else {
+            return;
+        };
+        if let ValueView::LazyList(list) = top.view()
+            && !list.in_array_context()
+            && !list.is_itemized()
+            && !list.is_cached_no_sink()
+        {
+            let flagged = self.lazy_array_value(&list, Self::const_str(code, name_idx));
+            if let Some(slot) = self.stack.last_mut() {
+                *slot = flagged;
+            }
+        }
+    }
+
     /// `package EXPORT::<tag> { our &f = ...; our $v = ... }` -- the manual
     /// export-stash idiom (`Cro::Uri` re-exports `decode-percents` this way).
     /// The stash's `our` symbols ARE the module's export list for `<tag>`, so

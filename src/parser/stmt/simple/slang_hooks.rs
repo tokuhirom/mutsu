@@ -33,6 +33,10 @@ pub(in crate::parser) struct SlangHooks {
     /// The module whose `use` activated the slang: the overrides apply to what
     /// follows that statement.
     activator: Option<String>,
+    /// Extra lexemes a slang's `pointy-block-starter` token accepts besides
+    /// `->` / `<->` (Slang::Lambda's `λ`), with whether each is the `<->`
+    /// (read-write) form.
+    pointy_starters: Vec<(String, bool)>,
 }
 
 thread_local! {
@@ -52,6 +56,62 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
         "number" => Some("number"),
         _ => None,
     }
+}
+
+/// The alternatives of a `pointy-block-starter` token body written as a plain
+/// alternation of quoted literals (`'->' | '→' | 'λ'`), or `None` when it is
+/// anything else, which the caller reports as unsupported. Only `<->` is the
+/// read-write form, as in rakudo; every other literal (`↔` included) is an
+/// ordinary pointy starter.
+// Cost: O(n), n = body length.
+pub(crate) fn parse_pointy_starters(body: &str) -> Option<Vec<(String, bool)>> {
+    // The regex source carries its adverbs (`:ratchet` for a token).
+    let body = body.trim();
+    let body = body.strip_prefix(":ratchet").unwrap_or(body);
+    let mut starters = Vec::new();
+    for alt in body.split('|') {
+        let alt = alt.trim();
+        let quote = alt.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
+        let inner = alt.strip_prefix(quote)?.strip_suffix(quote)?;
+        if inner.is_empty() || inner.contains(quote) || inner.contains('\\') {
+            return None;
+        }
+        starters.push((inner.to_string(), inner == "<->"));
+    }
+    (!starters.is_empty()).then_some(starters)
+}
+
+/// Add the lexemes a slang's `pointy-block-starter` accepts.
+// Cost: O(k), k = registered starters.
+pub(in crate::parser) fn register_pointy_starters(starters: Vec<(String, bool)>) {
+    HOOKS.with(|h| {
+        let mut hooks = h.borrow_mut();
+        for starter in starters {
+            if !hooks.pointy_starters.contains(&starter) {
+                hooks.pointy_starters.push(starter);
+            }
+        }
+    });
+}
+
+/// How `input` starts a pointy block: whether it is the read-write form and
+/// the byte length of the starter. Beyond the built-in `<->` and `->`, only
+/// the lexemes a slang registered count.
+// Cost: O(1) for the built-ins; O(k) for k registered starters otherwise.
+pub(crate) fn pointy_starter(input: &str) -> Option<(bool, usize)> {
+    if input.starts_with("<->") {
+        return Some((true, 3));
+    }
+    if input.starts_with("->") {
+        return Some((false, 2));
+    }
+    HOOKS.with(|h| {
+        h.borrow()
+            .pointy_starters
+            .iter()
+            .find(|(lexeme, _)| input.starts_with(lexeme.as_str()))
+            .map(|(lexeme, rw)| (*rw, lexeme.len()))
+    })
 }
 
 /// Whether `name` is a core action a slang may override (ADR-15762 slice 3).
