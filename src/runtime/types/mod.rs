@@ -1452,7 +1452,7 @@ impl Interpreter {
             .collect::<Vec<_>>();
         let saved_env = self.env.clone();
         let saved_scope = self.enter_role_declaring_scope(&role_name, &candidate.role_def);
-        let bound = self.bind_function_args_values(&candidate.type_param_defs, &param_names, &[]);
+        let bound = self.bind_role_type_args_values(&candidate.type_param_defs, &param_names, &[]);
         self.leave_role_declaring_scope(saved_scope);
         if let Err(err) = bound {
             self.env = saved_env;

@@ -938,6 +938,26 @@ impl Interpreter {
         )
     }
 
+    /// [`Interpreter::bind_function_args_values`] for a role's TYPE parameters.
+    ///
+    /// Binding them is not a call of the routine being dispatched, yet the
+    /// binder consumes the pending argument-source names, which belong to the
+    /// method call that is resolving the role (`P[Int].m(@a)`). They are put
+    /// back, so the method's own sigilless parameter still sees the caller's
+    /// variable (#16937).
+    // Cost: O(a), a = pending argument-source names (copied out and back).
+    pub(crate) fn bind_role_type_args_values(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let saved_sources = self.take_pending_call_arg_sources();
+        let bound = self.bind_function_args_values(param_defs, params, args);
+        self.set_pending_call_arg_sources(saved_sources);
+        bound
+    }
+
     /// [`Interpreter::bind_function_args_values`] plus whether the routine
     /// reads the legacy argument array `@_` and named argument hash `%_`.
     ///
@@ -3907,14 +3927,22 @@ impl Interpreter {
                             let topic_writeback = rw_bindings
                                 .iter()
                                 .any(|(param, _)| *param == storage_name)
-                                && (source_name == "_" || self.env.get(&resolved_source).is_none());
+                                && (source_name == "_"
+                                    // An `@`/`%` source is a named variable even when the
+                                    // caller's local slot is not in the env yet (the first
+                                    // call passing it on); it keeps its alias below so
+                                    // `.VAR` of the parameter reflects the aggregate (#16937).
+                                    || (!resolved_source.starts_with(['@', '%'])
+                                        && self.env.get(&resolved_source).is_none()));
                             if topic_writeback {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::FALSE);
                             } else if is_compile_time_pseudo || is_routine_reset_magic {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::TRUE);
-                            } else if self.env.get(&resolved_source).is_some() {
+                            } else if self.env.get(&resolved_source).is_some()
+                                || resolved_source.starts_with(['@', '%'])
+                            {
                                 self.env
                                     .insert_sym_noting(alias_key, Value::str(resolved_source));
                                 self.env.insert_sym_noting(readonly_key, Value::FALSE);
