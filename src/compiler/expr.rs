@@ -254,6 +254,11 @@ impl Compiler {
                     self.emit_outer_var_access(format!("@{bare}"), depth);
                     return;
                 }
+                // `@OUTERS::x`: the nearest enclosing scope declaring it.
+                if let Some(bare) = Self::parse_outers_prefix(name) {
+                    self.emit_outers_var_access(format!("@{bare}"));
+                    return;
+                }
                 // A block reads the `@_` of the routine around it (`sub f(*@_) {
                 // { @_.elems }() }`): a block has no `@_` of its own unless its
                 // signature declares one, so it never reads the per-call
@@ -315,6 +320,11 @@ impl Compiler {
                 // `%OUTER::h` -- see the `ArrayVar` twin above (#10857).
                 if let Some((bare, depth)) = Self::parse_outer_prefix(name) {
                     self.emit_outer_var_access(format!("%{bare}"), depth);
+                    return;
+                }
+                // `%OUTERS::x`: the nearest enclosing scope declaring it.
+                if let Some(bare) = Self::parse_outers_prefix(name) {
+                    self.emit_outers_var_access(format!("%{bare}"));
                     return;
                 }
                 let sigiled = format!("%{}", name);
