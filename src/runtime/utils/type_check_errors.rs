@@ -33,6 +33,24 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
     short_repr_of_raku(&crate::builtins::methods_0arg::raku_repr::raku_value(val))
 }
 
+/// The `(repr)` of a "Constraint type check failed in binding" message: the
+/// value as [`value_short_repr`] spells it (long strings cut to 19 characters
+/// plus `...`), or its full `.raku` when only a method call can render it.
+// Cost: O(l), l = length of the value's `.raku`.
+pub(crate) fn constraint_value_repr(val: &Value) -> String {
+    let short = value_short_repr(val);
+    let shown = if short.is_empty() {
+        crate::builtins::methods_0arg::raku_repr::raku_value(val)
+    } else {
+        short
+    };
+    shown
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or(&shown)
+        .to_string()
+}
+
 /// `val` out of its `$` container, the way the type check saw it. A `for`
 /// variable or a `my $x = (1, 2, 3)` holds its value itemized, which `.raku`
 /// shows as `$(1, 2, 3)`; rakudo's message names the value itself
