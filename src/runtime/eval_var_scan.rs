@@ -559,9 +559,11 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             }
             // A statement-form phaser (`BEGIN my $c = ...`) declares into the
             // enclosing scope; its block form (`BEGIN { my $c }`, whose body
-            // starts with a `SetLine`) is a scope of its own, below.
-            Stmt::Phaser { body, .. }
-                if matches!(body.as_slice(), [Stmt::VarDecl { .. }]) =>
+            // starts with a `SetLine`) is a scope of its own, below. The
+            // parser marks the statement form `bare`, whatever statement it
+            // holds (`NEXT (state $b) max= $_`).
+            Stmt::Phaser { body, bare, .. }
+                if *bare || matches!(body.as_slice(), [Stmt::VarDecl { .. }]) =>
             {
                 self.judging(true, |v| walk_stmts(v, body))
             }
