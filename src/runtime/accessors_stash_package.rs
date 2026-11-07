@@ -309,7 +309,12 @@ impl Interpreter {
         if let Some(names) = &candidates {
             for name in names {
                 let key = name.as_str();
-                let Some(val) = self.get_our_var(key) else {
+                // A package object's stash is the package's own, whichever unit
+                // asks (`ModA.WHO` inside `ModB`'s routine): read the `our`
+                // store directly, not through `get_our_var`, which redirects a
+                // package this running unit did not merge to the empty store
+                // a qualified `$ModA::x` read uses (#17054).
+                let Some(val) = self.lexicals.our_vars.get(key) else {
                     continue;
                 };
                 if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
