@@ -195,8 +195,48 @@ impl Interpreter {
         if !crate::runtime::types::value_is_defined(&target) {
             return Ok(Value::NIL);
         }
+        // `@array.reduce(&[=:=])`: an Array's elements are its own Scalar
+        // containers, so two positions are one container only when they share a
+        // cell. The element values alone cannot say (`[$x, $y]` holds 3 and 3),
+        // so the identity chain is decided here on the cells (#16948).
+        if let Some(negate) = Self::container_identity_callable(&callable)
+            && let ValueView::Array(elems, kind) = target.deref_container().view()
+            && kind.is_real_array()
+            && elems.len() > 1
+        {
+            let same_cell = |a: &Value, b: &Value| match (a.view(), b.view()) {
+                (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => {
+                    crate::gc::Gc::ptr_eq(&x, &y)
+                }
+                _ => false,
+            };
+            let mut all = true;
+            for pair in elems.windows(2) {
+                if same_cell(&pair[0], &pair[1]) == negate {
+                    all = false;
+                    break;
+                }
+            }
+            return Ok(Value::truth(all));
+        }
         let items = Self::value_to_list(&target);
         self.reduce_items(callable, items)
+    }
+
+    /// `Some(false)` for the builtin `=:=` and `Some(true)` for `!=:=` as a
+    /// code object, `None` for any other callable.
+    // Cost: O(1).
+    fn container_identity_callable(callable: &Value) -> Option<bool> {
+        let name = match callable.view() {
+            ValueView::Routine { name, .. } => name.resolve(),
+            ValueView::Sub(data) => data.name.resolve(),
+            _ => return None,
+        };
+        match name.as_str() {
+            "infix:<=:=>" | "=:=" => Some(false),
+            "infix:<!=:=>" | "!=:=" => Some(true),
+            _ => None,
+        }
     }
 
     /// Dispatch the "elems" method.
