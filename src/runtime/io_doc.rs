@@ -106,10 +106,16 @@ impl Interpreter {
         // module) the declarators follow the blocks.
         let starts = std::mem::take(&mut self.declarator_docs.pod_block_starts);
         if starts.len() == pod_entries.len() {
-            let mut merged: Vec<(usize, Value)> = starts.into_iter().zip(pod_entries).collect();
-            merged.extend(declarator_entries);
-            merged.sort_by_key(|(start, _)| *start);
-            pod_entries = merged.into_iter().map(|(_, v)| v).collect();
+            // Equal offsets (a tree's text offsets) mean the declarator comes
+            // first: one after a block starts past that block's start.
+            let mut merged: Vec<(usize, u8, Value)> = starts
+                .into_iter()
+                .zip(pod_entries)
+                .map(|(start, entry)| (start, 1, entry))
+                .collect();
+            merged.extend(declarator_entries.into_iter().map(|(start, entry)| (start, 0, entry)));
+            merged.sort_by_key(|(start, kind, _)| (*start, *kind));
+            pod_entries = merged.into_iter().map(|(_, _, v)| v).collect();
         } else {
             pod_entries.extend(declarator_entries.into_iter().map(|(_, v)| v));
         }

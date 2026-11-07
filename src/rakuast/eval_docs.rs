@@ -193,6 +193,31 @@ fn attribute_name(node: &RakuAstNode) -> Option<String> {
 // Cost: O(n), n = nodes of the tree.
 pub(crate) fn collect(root: &RakuAstNode) -> Vec<DocComment> {
     let mut collector = Collector::default();
-    collector.visit(root);
+    if root.class != C::StatementList {
+        collector.visit(root);
+        return collector.out;
+    }
+    // The unit's Pod text is its top-level `Doc::Block` statements written in
+    // order (`doc_source::pod_source`); a declaration is placed at the length
+    // of the text before it, so `$=pod` interleaves them as the tree does.
+    let mut pod_len = 0usize;
+    for field in &root.fields {
+        let RakuAstFieldValue::Node(value) = &field.value else {
+            collector.visit_field(root, field);
+            continue;
+        };
+        let ValueView::RakuAst(child) = value.view() else {
+            continue;
+        };
+        if child.class == C::DocBlock {
+            pod_len += super::doc_source::block_source(child).map_or(0, |text| text.len());
+            continue;
+        }
+        let before = collector.out.len();
+        collector.visit(child);
+        for doc in &mut collector.out[before..] {
+            doc.start = pod_len;
+        }
+    }
     collector.out
 }
