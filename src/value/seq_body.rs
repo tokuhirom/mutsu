@@ -802,6 +802,17 @@ impl SeqBody {
         Ok(Some(iterator))
     }
 
+    /// Put back the iterator a [`SeqBody::take_iterator_source`] just took,
+    /// when the stage it was taken for declined its arguments before pulling
+    /// anything: the receiver is then exactly as it was (#17037).
+    // Cost: O(1).
+    pub(crate) fn restore_iterator_source(&self, iterator: Value) {
+        let mut state = self.lock_state();
+        if matches!(state.source, SeqSource::Taken) {
+            state.source = SeqSource::Iterator(iterator);
+        }
+    }
+
     /// Store elements a [`SeqBody::take`] just pulled back into this body's
     /// generation graveyard WITHOUT reviving its (now `Taken`) source.
     ///

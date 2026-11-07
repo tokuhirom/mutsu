@@ -40,6 +40,7 @@ mod contextualizer;
 mod control_signature;
 mod ctor_names;
 mod decl_origins;
+pub(crate) mod diagnostics;
 mod doc_block;
 pub(crate) mod doc_block_queries;
 pub(crate) mod doc_children;
@@ -3878,6 +3879,7 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
         || arg_invocant::is_hidden_invocant(node, field)
         || why_doc::is_hidden(node, field)
         || unit_finish::is_hidden(node, field)
+        || diagnostics::is_hidden(node, field)
         || regex_variable_alias::is_source_field(node, field)
 }
 

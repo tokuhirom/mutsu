@@ -1138,12 +1138,17 @@ impl Interpreter {
 
     /// The routine depth the lazy-pull suspension compares: the frames a pull
     /// driver cannot snapshot, so an inlined bare block (a `for` body that has
-    /// phasers runs as one, in the driver's own frame) does not count.
+    /// phasers runs as one, in the driver's own frame) does not count. Neither
+    /// does a `try` body or a bare block with a `CATCH`: it is a callframe for
+    /// backtraces but runs in place, with no declaring file of its own, so a
+    /// `take` inside `for 1..* { try { take $_ } }` can still suspend at the
+    /// take (otherwise the deferred suspension was never consumed and the
+    /// pull ran forever).
     // Cost: O(d), d = depth of the routine stack.
     pub(crate) fn lazy_pull_routine_depth(&self) -> usize {
         self.routine_stack
             .iter()
-            .filter(|frame| !frame.is_inlined_block)
+            .filter(|frame| !frame.is_inlined_block && !(frame.is_block && frame.def_file.is_none()))
             .count()
     }
 

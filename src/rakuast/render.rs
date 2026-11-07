@@ -300,6 +300,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::arg_invocant::is_hidden_invocant(node, field)
                 || super::why_doc::is_hidden(node, field)
                 || super::unit_finish::is_hidden(node, field)
+                || super::diagnostics::is_hidden(node, field)
                 || super::phaser_condition::is_source(node, field)
                 || node.class == RakuAstClass::PointyBlock
                     && field.name == Some("signature")
