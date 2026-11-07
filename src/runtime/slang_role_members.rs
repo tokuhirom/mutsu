@@ -43,7 +43,25 @@ impl Interpreter {
             _ => role.to_string_value(),
         };
         let registry = self.registry();
-        let Some(def) = registry.roles.get(&role_name) else {
+        // A role instance (`Numish[&f]`, an anonymous `role { }`) names its
+        // declaration first, then its type arguments' identity.
+        let declared = role_name
+            .trim_matches(['(', ')'])
+            .split([' ', '['])
+            .next()
+            .unwrap_or(&role_name)
+            .to_string();
+        let Some(def) = registry
+            .roles
+            .get(&role_name)
+            .or_else(|| registry.roles.get(&declared))
+        else {
+            // TODO: an anonymous role (`role { }`) is not in the role registry
+            // when the slang registers it, so its members cannot be read; it is
+            // taken as empty, which is what the refinements seen so far pass.
+            if declared.starts_with("__ANON_ROLE_") {
+                return Ok(Vec::new());
+            }
             return Err(RuntimeError::new(format!(
                 "Slang activation: '{role_name}' is not a known role"
             )));

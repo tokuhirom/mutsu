@@ -249,3 +249,11 @@ runs the override and answers the node it attached; that node replaces the appli
 the path; other core actions (`POSTFIX-EXPR`, `statement-control:sym<given>`) are added by naming
 them in `slang_action_rule`.
 
+### Amendment 4 (2026-11-07): `refine_slang` and `numish`
+
+`$*LANG.refine_slang($name, $grammar-role, $actions-role?)` is `define_slang` over roles given
+directly (the handles `.^mixin` builds are only a recording). `numish` joins `INFIX-EXPR` and
+`PREFIX-EXPR` in `slang_action_rule`: the pre-finalization pass offers every numeric `Expr::Literal`
+to it. Role values are read by their declared name (a parenthesised instance `(Numish[...])` or an
+anonymous `role { }` is taken as its declaration; the anonymous case is read as empty until #17008).
+

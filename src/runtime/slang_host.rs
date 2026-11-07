@@ -51,6 +51,7 @@ class Mutsu::Slang::Host::Actions {
     # is the Match's `.ast` already, so they answer it.
     method INFIX-EXPR(Mu $/) { $/.ast }
     method PREFIX-EXPR(Mu $/) { $/.ast }
+    method numish(Mu $/) { $/.ast }
 }
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::A;

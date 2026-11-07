@@ -14,7 +14,7 @@ impl DeclScan {
             // the AST, not the source text: a comment mentioning
             // `define_slang` must not make a module run at parse time.
             Expr::MethodCall { name, .. } | Expr::HyperMethodCall { name, .. }
-                if name.resolve() == "define_slang" =>
+                if matches!(name.resolve().as_str(), "define_slang" | "refine_slang") =>
             {
                 self.out.defines_slang = true;
             }
