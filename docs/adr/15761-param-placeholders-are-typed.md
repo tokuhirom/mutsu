@@ -28,7 +28,7 @@ closure's captured set).
 1. **One definition.** `ast` owns the placeholder vocabulary: the constants (`PARENS_PARAM`,
    `BRACKETS_PARAM`, `TYPE_ONLY_PARAM`, `TYPE_CAPTURE_PREFIX`, plus `LITERAL_PARAM`) and exactly
    two predicates:
-   - `ParamDef::is_placeholder(&self)` — for every consumer that holds a `ParamDef`; it is
+   - `ParamDef::is_placeholder(&self)` (a later slice; not yet defined) — for every consumer that holds a `ParamDef`; it is
      defined over the placeholder name in the first slice and moves to `target` once the binding
      keys no longer depend on the name;
    - `ast::is_placeholder_name(&str)` — the single name-based test, for the consumers that only

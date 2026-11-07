@@ -453,8 +453,7 @@ pub(crate) const LITERAL_PARAM: &str = "__literal__";
 
 /// Whether `name` is one of the placeholder names a parameter without a written
 /// variable executes under (ADR-15761): the one name-based test, for consumers
-/// that only receive a name. A consumer holding the `ParamDef` reads
-/// [`ParamDef::is_placeholder`] instead.
+/// that only receive a name.
 // Cost: O(1).
 pub(crate) fn is_placeholder_name(name: &str) -> bool {
     matches!(name, PARENS_PARAM | TYPE_ONLY_PARAM | LITERAL_PARAM)
@@ -529,14 +528,6 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
-    /// Whether this parameter was written without a variable of its own (a bare
-    /// type, a bare `::T`, a literal pattern, an unnamed `(...)` group) and so
-    /// executes under a placeholder name (ADR-15761).
-    // Cost: O(1).
-    pub(crate) fn is_placeholder(&self) -> bool {
-        is_placeholder_name(&self.name)
-    }
-
     /// A parameter with nothing written yet but its execution `name`: what the
     /// parser starts every parameter from.
     // Cost: O(|name|).
@@ -4110,12 +4101,15 @@ mod placeholder_tests {
             "__type_capture__T",
         ] {
             assert!(is_placeholder_name(name), "{name}");
-            assert!(ParamDef::blank(name.to_string()).is_placeholder(), "{name}");
         }
         for name in ["x", "@", "@xs", "_", ""] {
             assert!(!is_placeholder_name(name), "{name}");
         }
-        assert!(ParamDef::destructure(Vec::new(), false).is_placeholder());
-        assert!(!ParamDef::destructure(Vec::new(), true).is_placeholder());
+        assert!(is_placeholder_name(
+            &ParamDef::destructure(Vec::new(), false).name
+        ));
+        assert!(!is_placeholder_name(
+            &ParamDef::destructure(Vec::new(), true).name
+        ));
     }
 }
