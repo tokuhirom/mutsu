@@ -1083,6 +1083,10 @@ impl Interpreter {
             self.stack.push(answer?);
             return Ok(());
         }
+        if let Some(answer) = self.lazy_pipe_truth_answer(&target, method, &args)? {
+            self.stack.push(answer);
+            return Ok(());
+        }
         // A streaming method (`skip`, `rotor`, `pairs`, ...) on a receiver
         // that may not end: a lazy stage over it instead of forcing the
         // (possibly infinite) source (ADR-13891 §4).
