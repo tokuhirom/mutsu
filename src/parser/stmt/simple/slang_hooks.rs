@@ -301,3 +301,15 @@ pub(crate) fn parse_slang_shim_production<'a>(
         _ => None,
     }
 }
+
+/// Parse the parameters of a slang token's `<signature>` at the start of `text`
+/// (what stands between the parentheses of `sub f(...)`): the text after them,
+/// the parameters and the return type.
+// Cost: the parse of the parameter list.
+pub(crate) fn parse_slang_signature(
+    text: &str,
+) -> Option<(&str, Vec<crate::ast::ParamDef>, Option<String>)> {
+    let (rest, (params, returns)) =
+        crate::parser::stmt::parse_param_list_with_return_pub(text).ok()?;
+    Some((rest, params, returns))
+}
