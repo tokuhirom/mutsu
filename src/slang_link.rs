@@ -43,7 +43,13 @@ pub(crate) struct SlangHost {
 pub(crate) fn connect() -> (SlangHost, HostEnd) {
     let (to_host, from_parser) = std::sync::mpsc::channel();
     let (to_parser, from_host) = std::sync::mpsc::channel();
-    (SlangHost { to_host, from_host }, HostEnd { to_parser, from_parser })
+    (
+        SlangHost { to_host, from_host },
+        HostEnd {
+            to_parser,
+            from_parser,
+        },
+    )
 }
 
 impl SlangHost {
@@ -79,4 +85,3 @@ impl SlangHost {
         }
     }
 }
-
