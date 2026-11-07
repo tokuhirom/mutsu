@@ -551,7 +551,7 @@ impl Interpreter {
                 if terminal && Self::index_to_usize(&index).is_some() && !body.is_consumed() =>
             {
                 let body = std::sync::Arc::clone(body);
-                let idx = Self::index_to_usize(&index).unwrap();
+                let idx = Self::index_to_usize(&index).unwrap_or(0);
                 body.mark_cache_requested();
                 if body.needs_touch() {
                     self.reify_seq_body_prefix(&body, idx + 1)?;
