@@ -548,9 +548,7 @@ impl Interpreter {
             // out the stored cell, as the `Array` arm does, so
             // `my $x := $seq[0]; $x = 9` writes through (#17063).
             ValueView::Seq(ref body)
-                if terminal
-                    && Self::index_to_usize(&index).is_some()
-                    && !body.is_consumed() =>
+                if terminal && Self::index_to_usize(&index).is_some() && !body.is_consumed() =>
             {
                 let body = std::sync::Arc::clone(body);
                 let idx = Self::index_to_usize(&index).unwrap();
