@@ -303,7 +303,7 @@ impl Interpreter {
                         self.topic_state.topic_source_var = saved_topic_source;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         // Gather suspend: pop (body resumes and re-pushes).
-                        self.pop_loop_local_scope(code);
+                        self.suspend_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
