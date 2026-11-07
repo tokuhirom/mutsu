@@ -942,6 +942,18 @@ impl Interpreter {
         // `# You planned N test, but ran M`. Raku prints the exception first and
         // the plan diagnostic after, so keep `finish()`'s side effects (the
         // diagnostics it writes and the exit code it sets) and drop its error.
+        // An `exit` that ran inside a CATCH handler (or anywhere else on the
+        // way out of a `die`) ends the program on the spot: the exception that
+        // was unwinding when it was requested is not reported and does not
+        // change the status (rakudo: `{ die "x"; CATCH { exit } }` is status 0).
+        if let Err(e) = &body_result
+            && self.is_halted()
+            && e.exception.is_some()
+            && Self::is_inline_catchable(e)
+        {
+            self.finish()?;
+            return Ok(self.output_sink().output.clone());
+        }
         if let Err(e) = body_result {
             self.report_uncaught_early(&e);
             let _ = self.finish();

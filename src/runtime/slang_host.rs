@@ -57,11 +57,11 @@ our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::A;
 sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     unless $Mutsu::Slang::Host::G.defined {
-        my $g = Metamodel::GrammarHOW.new_type(:name<Mutsu::Slang::Host::Grammar>);
+        my $g = Metamodel::GrammarHOW.new_type(:name<Raku::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
         $g.^add_role($_) for @groles;
         $g.^compose;
-        my $a = Metamodel::ClassHOW.new_type(:name<Mutsu::Slang::Host::ActionsClass>);
+        my $a = Metamodel::ClassHOW.new_type(:name<Raku::Actions>);
         $a.^add_parent(Mutsu::Slang::Host::Actions);
         $a.^add_role($_) for @aroles;
         $a.^compose;
