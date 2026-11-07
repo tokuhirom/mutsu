@@ -1582,6 +1582,7 @@ impl Interpreter {
         }
         // Restore saved multi-param values and readonly state
         for (name, saved_val, was_readonly, sigilless_ro, saved_local) in saved_multi_params {
+            let had_outer_binding = saved_val.is_some();
             match saved_val {
                 Some(v) => {
                     self.env_mut().insert(name.clone(), v);
@@ -1615,6 +1616,15 @@ impl Interpreter {
                 && let Some((slot, v)) = saved_local
             {
                 self.locals[slot] = v;
+            } else if !name.starts_with(['@', '%', '&'])
+                && !had_outer_binding
+                && let Some(slot) = self.find_local_slot(code, &name)
+            {
+                // The name had no binding before the loop, so its slot is the
+                // loop's own. Left holding the last iteration's value, a later
+                // env sync (a class body's, at its end) re-published it as a
+                // variable of the enclosing scope.
+                self.locals[slot] = Value::NIL;
             }
             self.restore_readonly(&name, was_readonly);
             let sigilless_key = crate::runtime::sigilless_readonly_key(&name);
