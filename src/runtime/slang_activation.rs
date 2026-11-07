@@ -320,6 +320,20 @@ impl Interpreter {
                 Some(Ok(handle_instance(ACTIONS_HANDLE_CLASS, &kind, Vec::new())))
             }
             (COMP_LANG_CLASS, "define_slang") => Some(self.slang_define_slang(args)),
+            // `$*LANG.refine_slang($name, $grammar-role, $actions-role?)`: the
+            // roles themselves, rather than the handles `.^mixin` builds.
+            (COMP_LANG_CLASS, "refine_slang") => {
+                let name = args.first().cloned().unwrap_or_else(|| Value::str("MAIN".to_string()));
+                let handle = |class: &str, role: Option<&Value>| {
+                    handle_instance(class, "MAIN", role.cloned().into_iter().collect())
+                };
+                let handles = [
+                    name,
+                    handle(GRAMMAR_HANDLE_CLASS, args.get(1)),
+                    handle(ACTIONS_HANDLE_CLASS, args.get(2)),
+                ];
+                Some(self.slang_define_slang(&handles))
+            }
             // `$*LANG.how('class')` is the metaclass the language builds a
             // `class` declaration with (the value of `EXPORTHOW::class`);
             // `know_how` asks whether the language has one for that name.

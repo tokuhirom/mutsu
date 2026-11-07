@@ -57,7 +57,7 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
 /// Whether `name` is a core action a slang may override (ADR-15762 slice 3).
 // Cost: O(1).
 pub(crate) fn slang_action_rule(name: &str) -> bool {
-    matches!(name, "INFIX-EXPR" | "PREFIX-EXPR")
+    matches!(name, "INFIX-EXPR" | "PREFIX-EXPR" | "numish")
 }
 
 /// Register the override of the core action `name`.

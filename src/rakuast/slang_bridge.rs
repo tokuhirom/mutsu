@@ -117,6 +117,14 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             let rule = match expr {
                 Expr::Binary { .. } => "INFIX-EXPR",
                 Expr::Unary { .. } => "PREFIX-EXPR",
+                Expr::Literal(value)
+                    if matches!(
+                        value.view(),
+                        ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..)
+                    ) =>
+                {
+                    "numish"
+                }
                 _ => return,
             };
             if !crate::parser::slang_overrides_action(rule) {
