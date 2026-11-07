@@ -42,12 +42,19 @@ impl Interpreter {
                 let iterator = body.take_iterator_source().ok()??;
                 let lazy = body.is_lazy();
                 let fresh = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(
-                    iterator,
+                    iterator.clone(),
                 ));
                 if lazy {
                     fresh.mark_lazy();
                 }
-                return stream(self, &Value::seq_body(fresh), args);
+                let staged = stream(self, &Value::seq_body(fresh), args);
+                // A stream that declines its arguments (`skip(*-3)`: a
+                // Callable count) pulled nothing, so the receiver is still
+                // unspent for the method's ordinary dispatch (#17037).
+                if staged.is_none() {
+                    body.restore_iterator_source(iterator);
+                }
+                return staged;
             }
             let source = body.take_io_lines_pipe_source()?;
             return stream(self, &Value::seq_deferred(source), args);

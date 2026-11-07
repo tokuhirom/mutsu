@@ -730,6 +730,27 @@ impl Interpreter {
         {
             return Ok(stage);
         }
+        // The stage declined its arguments (`skip(*-3)`: a Callable count), so
+        // the consume step's exemption for streamed methods left the body
+        // unpulled for nothing: take it now, as that step would have, before
+        // the eager implementation reads the still-empty body (#17037).
+        let target = match target.view() {
+            ValueView::Seq(ref body)
+                if body.unpulled_iterator().is_some()
+                    && crate::value::seq_method_consumes(method)
+                    && crate::builtins::method_table::lazy_stream::stream_of(&target, method)
+                        .is_some() =>
+            {
+                let body = Arc::clone(body);
+                let (items, outcome) = self.take_seq_body(&body)?;
+                if matches!(outcome, crate::value::SeqTaken::Taken) {
+                    Value::seq(items)
+                } else {
+                    target.clone()
+                }
+            }
+            _ => target,
+        };
         if target_was_seq
             && method == "iterator"
             && matches!(target.view(), ValueView::Instance { .. })
