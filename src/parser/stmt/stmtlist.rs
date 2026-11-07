@@ -783,7 +783,7 @@ fn detect_vcs_conflict_block(r: &str) -> Option<(&str, i64)> {
 /// array variable, a number or a quoted string. Used to tell a missing `;`
 /// between two lines from a continuation of the first line's expression.
 // Cost: O(1).
-fn next_line_opens_with_plain_term(rest: &str) -> bool {
+pub(in crate::parser) fn next_line_opens_with_plain_term(rest: &str) -> bool {
     let mut chars = rest.chars();
     match chars.next() {
         Some('$' | '@') => chars

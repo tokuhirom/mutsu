@@ -214,6 +214,8 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     } else {
         expression_no_sequence(input)?
     };
+    // Kept un-skipped: the list loop below looks for a line break in the gap.
+    let after_first = input;
     let (input, _) = ws(input)?;
     // A colonpair directly following a bare literal is illegal -- rakudo lets an
     // adverb attach to a call (`foo :bar`, absorbed as a named arg) or even a
@@ -308,7 +310,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     let mut sections: Vec<Vec<Expr>> = Vec::new();
     let mut items = vec![first];
     let mut saw_semicolon = false;
-    let mut input_rest = input;
+    let mut input_rest = after_first;
     loop {
         let (input, _) = ws(input_rest)?;
         // Space-separated colonpairs form a list without commas: (:$a :$b),
@@ -351,6 +353,17 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
         } else if input.starts_with(';') && !input.starts_with(";;") {
             ';'
         } else {
+            // The next line opens with a plain term after an item that ended the
+            // previous line: a missing `,` or `;` (rakudo: "Two terms in a row
+            // across lines", the same diagnosis the statement list gives).
+            if input_rest[..input_rest.len() - input.len()].contains(['\n', '\r'])
+                && crate::parser::stmt::next_line_opens_with_plain_term(input)
+            {
+                return Err(PError::fatal(
+                    "X::Syntax::Confused: Two terms in a row across lines (missing semicolon or comma?)"
+                        .to_string(),
+                ));
+            }
             return Err(PError::expected("',' or ';' in parenthesized list"));
         };
         let (input, _) = parse_char(input, sep)?;
