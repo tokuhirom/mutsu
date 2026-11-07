@@ -189,6 +189,10 @@ impl Compiler {
         }
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
+        // The declaring scopes are handed down for `OUTER::`/`OUTERS::`
+        // resolution (`lex_scope`): a method's own parameter or `my` can
+        // shadow a file-scope lexical that `$OUTERS::x` names (#17003).
+        method_compiler.enclosing_scopes = self.full_scope_chain();
         if let Some(frame) = &self.role_param_scope {
             method_compiler.enclosing_scopes.push(frame.clone());
         }
