@@ -138,6 +138,12 @@ pub(super) fn has_export_tag_argument(input: &str) -> bool {
 }
 
 pub(super) fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
+    // A name a slang's `sigilless-variable` token accepts (`my 👍 = 42`).
+    if input.starts_with(super::super::simple::is_symbol_other)
+        && let Some(len) = super::super::simple::slang_sigilless_name_len(input)
+    {
+        return Ok((&input[len..], input[..len].to_string()));
+    }
     super::super::parse_sub_name_pub(input)
 }
 

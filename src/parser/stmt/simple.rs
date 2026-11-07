@@ -134,6 +134,7 @@ pub(crate) use slang_hooks::{
     parse_slang_shim_production, run_slang_action, slang_action_activator, slang_action_rule,
     slang_hook_rule, slang_overrides_action,
 };
+pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
