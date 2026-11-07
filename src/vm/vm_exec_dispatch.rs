@@ -4873,6 +4873,13 @@ impl Interpreter {
             OpCode::Pop => {
                 if let Some(popped) = self.stack.pop()
                     && let ValueView::LazyList(list) = popped.view()
+                    // A lazy `@`-array, an itemized Seq and a `.cache`d view are
+                    // not drained by `sink` (the `SinkPop` rule): a module whose
+                    // last statement is `our @A = 0, 1, {...} ... *;` must load
+                    // without forcing the infinite sequence (#17035).
+                    && !(list.is_cached_no_sink()
+                        || list.is_itemized()
+                        || list.in_array_context())
                 {
                     // Sink context must realize lazy gathers for side effects.
                     self.force_lazy_list_vm(&list)?;

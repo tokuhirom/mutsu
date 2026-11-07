@@ -2126,8 +2126,15 @@ impl Compiler {
                     // plain `Array`/`Hash`, and the package-qualified name
                     // (`@Pkg::a`, `%Pkg::h`) would lose its `Array[Int]`/`Hash[Int]`
                     // identity and with it the element constraint.
-                    let our_typed_aggregate =
-                        *is_our && type_constraint.is_some() && name.starts_with(['@', '%']);
+                    //
+                    // An untyped `our @a` does the same (#17035): the raw initializer
+                    // may be a lazy sequence (`our @A = 0, 1, {...} ... *`), and the
+                    // global must hold the array container `SetLocal` made of it (its
+                    // lazy list is flagged as an array's), not the bare Seq, which a
+                    // later sink of the declaration's value would drain.
+                    let our_typed_aggregate = *is_our
+                        && name.starts_with(['@', '%'])
+                        && (type_constraint.is_some() || name.starts_with('@'));
                     if use_our_cell {
                         let qualified = self.qualify_our_storage_name(spelled, name);
                         self.code
