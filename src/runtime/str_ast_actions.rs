@@ -45,7 +45,12 @@ impl Interpreter {
                 )
             })
             .collect();
-        let events = crate::rakuast::action_events::collect(&tree, source, &comments);
+        let events = crate::rakuast::action_events::collect(
+            &tree,
+            source,
+            &comments,
+            &crate::builtins::method_table::rakuast_children,
+        );
         if events.is_empty() {
             return Ok(tree);
         }

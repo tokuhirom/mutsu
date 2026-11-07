@@ -26,9 +26,14 @@ const MAX_DEPTH: usize = 4096;
 /// `=finish` line of `source`, ordered as the grammar finishes them: by end,
 /// the inner before the outer.
 // Cost: O(n + c log c), n = nodes of the tree, c = events.
-pub(crate) fn collect(tree: &Value, source: &str, comments: &[(i64, i64)]) -> Vec<Event> {
+pub(crate) fn collect(
+    tree: &Value,
+    source: &str,
+    comments: &[(i64, i64)],
+    children: &dyn Fn(&RakuAstNode) -> Vec<Value>,
+) -> Vec<Event> {
     let mut events = Vec::new();
-    walk(tree, 0, &mut events);
+    walk(tree, 0, children, &mut events);
     for &(from, to) in comments {
         events.push(Event {
             rule: "comment:sym<#>",
@@ -51,7 +56,12 @@ pub(crate) fn collect(tree: &Value, source: &str, comments: &[(i64, i64)]) -> Ve
 }
 
 // Cost: O(size of the subtree).
-fn walk(value: &Value, depth: usize, out: &mut Vec<Event>) {
+fn walk(
+    value: &Value,
+    depth: usize,
+    children: &dyn Fn(&RakuAstNode) -> Vec<Value>,
+    out: &mut Vec<Event>,
+) {
     let ValueView::RakuAst(node) = value.view() else {
         return;
     };
@@ -72,8 +82,8 @@ fn walk(value: &Value, depth: usize, out: &mut Vec<Event>) {
             name,
         });
     }
-    for child in crate::builtins::method_table::rakuast_children(node) {
-        walk(&child, depth + 1, out);
+    for child in children(node) {
+        walk(&child, depth + 1, children, out);
     }
 }
 
