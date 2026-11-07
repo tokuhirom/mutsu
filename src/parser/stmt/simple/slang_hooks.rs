@@ -262,7 +262,11 @@ fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str
 // Cost: as [`run_category`].
 pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'_, Stmt>> {
     let found = run_category(
-        &["statement-control", "routine-declarator", "scope-declarator"],
+        &[
+            "statement-control",
+            "routine-declarator",
+            "scope-declarator",
+        ],
         input,
     )?;
     Some(found.and_then(|(rest, node)| {

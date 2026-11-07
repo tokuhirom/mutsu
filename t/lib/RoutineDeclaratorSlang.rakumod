@@ -1,4 +1,4 @@
-# Fixture for t/lang/parsing/slang-routine-declarator-hook.t (ADR-15762, #13370): a
+# Fixture for t/routines/slang-routine-declarator-hook.t (ADR-15762, #13370): a
 # slang whose grammar role adds a `routine-declarator:sym<fun>` production whose
 # action attaches a RakuAST::Sub.
 use v6.e.PREVIEW;
