@@ -74,11 +74,16 @@ impl<'a> CodeText<'a> {
                 use std::fmt::Write;
                 let _ = match kind {
                     NameKind::SubDecl => write!(self.0, "sub {name} "),
+                    // A module the unit loads, spelled as the source writes it:
+                    // the gates that skip a prelude the module itself provides
+                    // (`use Hash::Ordered`) key on it.
+                    NameKind::Module => write!(self.0, "use {name} need {name} "),
                     NameKind::Decl => write!(self.0, "role {name} class {name} "),
                     NameKind::Call
                     | NameKind::UserRoutineCall
                     | NameKind::CodeVar
                     | NameKind::Type
+                    | NameKind::Term
                     | NameKind::Trait => write!(self.0, "{name} "),
                     _ => Ok(()),
                 };

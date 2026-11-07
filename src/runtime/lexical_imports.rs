@@ -683,7 +683,10 @@ impl Interpreter {
             // `EVAL` call: `use P5substr; substr($s, 4) = 'dy'` in an EVAL
             // finds the import.
             let mut chain: Vec<Symbol> = Vec::new();
-            if let Some(region) = self.module.eval_unit_region {
+            // Only code of the EVAL'd unit itself: a routine of another
+            // compunit it called does not see the unit's imports.
+            let in_eval_unit = self.module.eval_import_unit == Some(self.executing_unit_sym());
+            if in_eval_unit && let Some(region) = self.module.eval_unit_region {
                 let own = self
                     .module
                     .import_scope_stack

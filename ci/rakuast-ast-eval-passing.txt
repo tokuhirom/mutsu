@@ -2195,6 +2195,7 @@ t/grammar/eval-grammar-parse.t
 t/grammar/eval-multi-token-redeclaration.t
 t/grammar/exporthow-grammar-how.t
 t/grammar/failed-grammar-parse-does-not-leak-binding-error.t
+t/grammar/formatter-syntax-grammar.t
 t/grammar/grammar-action-capture-env-isolation.t
 t/grammar/grammar-action-capture-order.t
 t/grammar/grammar-action-die-caught-by-callers-catch-return.t
@@ -2307,6 +2308,7 @@ t/grammar/grammar-quantified-capture-for-loop.t
 t/grammar/grammar-quantified-subrule-frames.t
 t/grammar/grammar-reduce-time-dynvar.t
 t/grammar/grammar-registry-snapshot-cache.t
+t/grammar/grammar-routine-in-rule.t
 t/grammar/grammar-rule-arg-memo-outer-lexical.t
 t/grammar/grammar-rule-args.t
 t/grammar/grammar-rule-code-reads-module-lexical.t
@@ -3137,6 +3139,7 @@ t/modules/compunit/compunit-loader-source-file.t
 t/modules/compunit/compunit-method-rows.t
 t/modules/compunit/compunit-need-after-use.t
 t/modules/compunit/compunit-need-protocol.t
+t/modules/compunit/compunit-precompilation-store.t
 t/modules/compunit/compunit-repo-chain.t
 t/modules/compunit/compunit-repo-method-rows.t
 t/modules/compunit/compunit-repository-distribution.t
@@ -3144,6 +3147,7 @@ t/modules/compunit/compunit-repository-filesystem.t
 t/modules/compunit/compunit-repository-for-name.t
 t/modules/compunit/compunit-repository-load-absolute-path.t
 t/modules/compunit/compunit-repository-required-methods.t
+t/modules/compunit/compunit-repository-spec.t
 t/modules/compunit/compunit-repository-staging-install-wrapped-dist.t
 t/modules/compunit/compunit-repository-subclass.t
 t/modules/compunit/compunit-resources-object-type.t
@@ -3505,6 +3509,7 @@ t/modules/import-export/unit-module-export-qualified-types.t
 t/modules/import-export/unit-module-export-sub.t
 t/modules/import-export/unit-module-imported-parent.t
 t/modules/import-export/unit-module-multi-candidates-and-tagged-code.t
+t/modules/import-export/unit-module-prelude-type-global.t
 t/modules/import-export/unit-module-scope.t
 t/modules/import-export/unit-module-sibling-parametric-role-does.t
 t/modules/import-export/unit-module-typed-hash-lanes.t
@@ -4919,6 +4924,7 @@ t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-declared-in-routine-body.t
 t/oo/method/method-deferral-expansion-shared-cache.t
 t/oo/method/method-deferral-tail-lazy.t
+t/oo/method/method-definite-return-fail.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-direct-underscore-rejected.t
 t/oo/method/method-dispatch-colon-question-syntax.t
@@ -5356,6 +5362,7 @@ t/oo/role/allomorph-role-mixin-what.t
 t/oo/role/also-does-parametric-role.t
 t/oo/role/anon-class-does-imported-role.t
 t/oo/role/anonymous-role-pun-new.t
+t/oo/role/array-typed-role-mixin.t
 t/oo/role/assignment-ro-role-mixin-typename.t
 t/oo/role/attr-container-does-role-store.t
 t/oo/role/attr-does-role-trait.t
@@ -5534,6 +5541,7 @@ t/oo/role/role-arg-site-keyed-hyphen-name.t
 t/oo/role/role-assign-key-hash-subclass.t
 t/oo/role/role-attr-default-captured-scope.t
 t/oo/role/role-attr-default-scope-tier.t
+t/oo/role/role-attr-shadows-builtin-method.t
 t/oo/role/role-attribute-built-bind.t
 t/oo/role/role-attribute-custom-trait.t
 t/oo/role/role-attribute-is-default-nil-restore.t
@@ -5760,6 +5768,7 @@ t/oo/role/tied-container-attribute-and-role.t
 t/oo/role/trait-named-like-role-param-stays-a-named-trait.t
 t/oo/role/tweak-role-param-name-clash-with-caller-variable.t
 t/oo/role/typed-array-element-container-ref-role-check.t
+t/oo/role/typed-array-raku-and-role-roles.t
 t/oo/role/typed-decl-imported-parametric-role.t
 t/oo/role/uppercase-is-trait-reaches-trait-mod-on-a-role.t
 t/oo/role/var-trait-curried-role.t
@@ -6062,6 +6071,7 @@ t/rakuast/rakuast-doc-block-pod-config.t
 t/rakuast/rakuast-doc-block-statements.t
 t/rakuast/rakuast-doc-block.t
 t/rakuast/rakuast-doc-config-directive.t
+t/rakuast/rakuast-doc-constant-and-rule.t
 t/rakuast/rakuast-doc-declarator-surface.t
 t/rakuast/rakuast-doc-defn-formula.t
 t/rakuast/rakuast-doc-entity-codes.t
@@ -6091,6 +6101,7 @@ t/rakuast/rakuast-eval-anonsub.t
 t/rakuast/rakuast-eval-array-lit.t
 t/rakuast/rakuast-eval-assign-expr.t
 t/rakuast/rakuast-eval-ast-exported-type-param.t
+t/rakuast/rakuast-eval-ast-pod-declarator-order.t
 t/rakuast/rakuast-eval-ast-use-imports.t
 t/rakuast/rakuast-eval-bare-done.t
 t/rakuast/rakuast-eval-bare-for.t
@@ -6118,6 +6129,7 @@ t/rakuast/rakuast-eval-pair.t
 t/rakuast/rakuast-eval-paren.t
 t/rakuast/rakuast-eval-pointy.t
 t/rakuast/rakuast-eval-postfix.t
+t/rakuast/rakuast-eval-prelude-term-name.t
 t/rakuast/rakuast-eval-qualifies-nested-type-names.t
 t/rakuast/rakuast-eval-reduce-pointy.t
 t/rakuast/rakuast-eval-repeat.t
@@ -6125,6 +6137,7 @@ t/rakuast/rakuast-eval-return.t
 t/rakuast/rakuast-eval-scope-declarations.t
 t/rakuast/rakuast-eval-scope.t
 t/rakuast/rakuast-eval-slurpy.t
+t/rakuast/rakuast-eval-smiley-dot-assign-decl.t
 t/rakuast/rakuast-eval-source-diagnostics.t
 t/rakuast/rakuast-eval-sub.t
 t/rakuast/rakuast-eval-subscript.t
@@ -6292,6 +6305,7 @@ t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operator-properties-lookup.t
 t/rakuast/rakuast-operators.t
+t/rakuast/rakuast-origin-absent-type-object.t
 t/rakuast/rakuast-origin-anonymous-parameters.t
 t/rakuast/rakuast-origin-arglists.t
 t/rakuast/rakuast-origin-attribute-compound-lhs.t
@@ -8367,6 +8381,7 @@ t/routines/signature/system-object-signature-blob-type.t
 t/routines/signature/too-few-positionals-fixed-arity.t
 t/routines/signature/too-many-positionals-before-required-named.t
 t/routines/signature/too-many-positionals-fixed-arity.t
+t/routines/signature/type-capture-parameterized-vs-same-named-class.t
 t/routines/signature/type-capture-smiley-param.t
 t/routines/signature/type-only-param-before-double-semicolon.t
 t/routines/signature/type-parameterize-junction-whole.t
@@ -8767,6 +8782,7 @@ t/types/enum-subset/omitted-optional-subset-implicit-default.t
 t/types/enum-subset/qualified-enum-coercion.t
 t/types/enum-subset/qualified-enum-short-name-import.t
 t/types/enum-subset/smiley-tests-concreteness.t
+t/types/enum-subset/smiley-typed-dot-assign-new.t
 t/types/enum-subset/stash-enum-key-term.t
 t/types/enum-subset/subset.t
 t/types/enum-subset/subsethow-new-type-refinee-in-variable.t
@@ -8775,6 +8791,7 @@ t/types/enum-subset/typed-array-range-init-subset.t
 t/types/enum-subset/typed-container-name-uses-enum-declared-name.t
 t/types/enum-subset/uint-subset-mixed-in-int.t
 t/types/enum-subset/uint-subset-type-object.t
+t/types/enum-subset/unbox-i-enum-member.t
 t/types/enum-subset/untyped-my-in-loop-with-subset-and-process-stash.t
 t/types/expression-typed-scalar-assignment.t
 t/types/fatrat-add-overflow.t
@@ -8969,6 +8986,7 @@ t/types/string/fmt-directive-count.t
 t/types/string/fmt-scalar-arity-adhoc.t
 t/types/string/format-class.t
 t/types/string/format-directives.t
+t/types/string/format-formatter.t
 t/types/string/format-str-subclass-rows.t
 t/types/string/format-types-need-6e.t
 t/types/string/formatter-new.t

@@ -1122,7 +1122,18 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
             return Err(unsupported(node));
         }
         // The invocant is the declared type, `Mu` when untyped.
-        let invocant = type_constraint.clone().unwrap_or_else(|| "Mu".to_string());
+        // The definiteness smiley qualifies the variable, not the type that
+        // is constructed (`my Int:D \b .= new: 42` calls `Int.new`).
+        let invocant = type_constraint
+            .as_deref()
+            .map(|t| {
+                [":D", ":U", ":_"]
+                    .iter()
+                    .find_map(|smiley| t.strip_suffix(smiley))
+                    .unwrap_or(t)
+            })
+            .unwrap_or("Mu")
+            .to_string();
         let expr = Expr::MethodCall {
             target: Box::new(Expr::BareWord(invocant)),
             name: crate::symbol::Symbol::intern(&method),
@@ -3235,11 +3246,17 @@ pub(super) fn lower_var_decl(names: &NameScope, node: &RakuAstNode) -> Result<St
 /// where rakudo drops the parentheses): a `.=` declaration is the one
 /// expression-position declaration, not the statement-level expansion.
 // Cost: O(n), n = size of the declaration.
-fn lower_expression_declaration(
+pub(super) fn lower_expression_declaration(
     names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<Stmt, RuntimeError> {
-    Ok(match lower_stmt_kept(names, node)? {
+    let kept = if node.class == RakuAstClass::VarDeclarationAnonymous {
+        // The statement dispatch would expand the `.=` form at statement level.
+        lower_var_decl_kept(names, node)?
+    } else {
+        lower_stmt_kept(names, node)?
+    };
+    Ok(match kept {
         Stmt::Ast(kept) => match *kept {
             crate::ast::parsed::ParsedStmt::MethodAssignDecl(form) => {
                 match crate::ast::method_assign_decl::expression_declaration(&form) {
@@ -4688,14 +4705,19 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             } else {
                 Some(inner)
             };
-            if let Some(declaration) = declaration
-                && matches!(
+            let is_declaration = |declaration: &RakuAstNode| {
+                matches!(
                     declaration.class,
                     RakuAstClass::VarDeclarationSimple
                         | RakuAstClass::VarDeclarationTerm
                         | RakuAstClass::VarDeclarationConstant
                         | RakuAstClass::VarDeclarationSignature
-                )
+                ) || (declaration.class == RakuAstClass::VarDeclarationAnonymous
+                    && named_child(declaration, "initializer")
+                        .is_ok_and(|init| init.class == RakuAstClass::InitializerCallAssign))
+            };
+            if let Some(declaration) = declaration
+                && is_declaration(declaration)
             {
                 // A `.=` declaration is one expression-position declaration,
                 // not the statement-level expansion.
