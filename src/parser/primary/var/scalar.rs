@@ -431,23 +431,6 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             compiler_var(Expr::Literal(Value::int(8)), "$?TABSTOP"),
         ));
     }
-    // `$?LANG` is the language handle the unit is compiled with
-    // (`slang_grammar`/`slang_actions`/...), the same object graph `$*LANG` is
-    // during a slang activation. A run-time program only ever hands it to
-    // `Perl6::Compiler.parsegrammar`/`.parseactions` (Jupyter::Kernel).
-    if full_name == "?LANG" {
-        return Ok((
-            rest,
-            compiler_var(
-                Expr::Call {
-                    name: crate::symbol::Symbol::intern("__mutsu_comp_lang"),
-                    args: vec![],
-                    listop: false,
-                },
-                "$?LANG",
-            ),
-        ));
-    }
     // $?FILE is a compile-time constant too: the file of the compilation unit
     // being parsed, NOT the file that happens to be running when the code is
     // reached. Folding it here is what makes a routine defined in a module
