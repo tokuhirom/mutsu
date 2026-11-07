@@ -543,6 +543,29 @@ impl Interpreter {
             // A single `List` element whose own writability is what the
             // consumer sees: hand back the raw element rather than promoting it
             // (see the doc comment above).
+            // A reified `Seq` (a `.map` result whose block ended in a
+            // subscript holds the source's live cells, #16919): a bind hands
+            // out the stored cell, as the `Array` arm does, so
+            // `my $x := $seq[0]; $x = 9` writes through (#17063).
+            ValueView::Seq(ref body)
+                if terminal && Self::index_to_usize(&index).is_some() && !body.is_consumed() =>
+            {
+                let body = std::sync::Arc::clone(body);
+                let idx = Self::index_to_usize(&index).unwrap_or(0);
+                body.mark_cache_requested();
+                if body.needs_touch() {
+                    self.reify_seq_body_prefix(&body, idx + 1)?;
+                }
+                let elem = body.live_generation().get(idx).cloned();
+                match elem {
+                    Some(v) if v.is_container_ref() => self.stack.push(v),
+                    _ => {
+                        self.stack.push(resolved.clone());
+                        self.stack.push(index);
+                        return self.exec_index_autovivify_op(is_positional);
+                    }
+                }
+            }
             ValueView::Array(ref items, kind)
                 if terminal
                     && raw_list_elem
