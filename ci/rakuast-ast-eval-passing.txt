@@ -2663,7 +2663,6 @@ t/lang/eval-code-var-infix-minus.t
 t/lang/eval-compile-checks-nested-positions.t
 t/lang/eval-context-live-target.t
 t/lang/eval-core-term-constant-call-undeclared-class.t
-t/lang/eval-end-phaser-calls-unit-routine.t
 t/lang/eval-imported-constant-term.t
 t/lang/eval-imported-lowercase-constant.t
 t/lang/eval-imported-main.t
@@ -7826,6 +7825,7 @@ t/routines/emit-from-a-nested-sub.t
 t/routines/enter-phaser-expr-hoisted-in-routine.t
 t/routines/eval-block-routine-shadows-outer.t
 t/routines/eval-context-caller-routine-attr.t
+t/routines/eval-end-phaser-calls-unit-routine.t
 t/routines/eval-in-other-routine-lexicals.t
 t/routines/eval-in-routine-sees-unit-locals.t
 t/routines/eval-mainline-placeholder.t
