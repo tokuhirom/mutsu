@@ -749,8 +749,10 @@ impl Interpreter {
                                                 // `$<foo>`) like a token's own match;
                                                 // `<.foo>` files nothing.
                                                 // (A Match it built carries its `.ast`.)
-                                                let mut inner = RegexCaptures::default();
-                                                inner.ast = ast;
+                                                let inner = RegexCaptures {
+                                                    ast,
+                                                    ..RegexCaptures::default()
+                                                };
                                                 let (end, delta) = self
                                                     .build_named_candidate_from_inner(
                                                         end,
