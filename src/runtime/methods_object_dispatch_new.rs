@@ -2479,6 +2479,12 @@ impl Interpreter {
                         // apart from a genuinely unknown *method* on a real
                         // type -- raku reports the former as a missing global
                         // symbol, not a missing method (#9795).
+                        // A pun another thread composed (`Conc::Maybe[Any]`
+                        // reached through a type cached in a shared Map) is
+                        // composed here from its published recipe first.
+                        if self.adopt_published_mixin(&name.resolve()) {
+                            return self.dispatch_new(target.clone(), args);
+                        }
                         if let Some(pkg_prefix) = crate::qualified::package_parent(name)
                             && !self.is_known_package(pkg_prefix.as_str())
                         {
