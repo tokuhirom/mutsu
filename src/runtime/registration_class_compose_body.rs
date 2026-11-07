@@ -110,6 +110,20 @@ impl Interpreter {
         class_name: &str,
         role_name: &str,
     ) -> Result<(), RuntimeError> {
+        self.add_role_to_class_with_args(class_name, role_name, None)
+    }
+
+    /// [`Self::add_role_to_class`] for a role APPLICATION value whose bracket
+    /// arguments are already evaluated (`Numish[* * 10]`): the type name alone
+    /// (`Numish[WhateverCode]`) cannot carry non-type argument values, so they
+    /// travel as `pre_args` to the candidate resolution (#17007).
+    // Cost: O(m), m = the members of the role and class composed.
+    pub(crate) fn add_role_to_class_with_args(
+        &mut self,
+        class_name: &str,
+        role_name: &str,
+        pre_args: Option<&[Value]>,
+    ) -> Result<(), RuntimeError> {
         let role_name = self.resolve_declared_type_name(role_name);
         let base_role_name = role_name
             .split_once('[')
@@ -134,7 +148,7 @@ impl Interpreter {
             return Ok(());
         }
         let resolved = self
-            .resolve_role_candidate(&role_name)?
+            .resolve_role_candidate_with_args(&role_name, pre_args)?
             .ok_or_else(|| RuntimeError::new(format!("Unknown role: {role_name}")))?;
         let old_composed = self
             .registry()

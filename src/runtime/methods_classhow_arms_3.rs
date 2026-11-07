@@ -325,7 +325,13 @@ impl Interpreter {
             // like every other consumer of a role type object.
             let role = self.normalize_role_type_object(&args[1]);
             let role_name = super::registration_class::type_value_name(&role);
-            self.add_role_to_class(&class_name, &role_name)?;
+            // A role application carries its evaluated arguments: the name
+            // alone loses non-type values (`Numish[* * 10]`).
+            let pre_args = match role.view() {
+                ValueView::ParametricRole { type_args, .. } => Some(type_args.to_vec()),
+                _ => None,
+            };
+            self.add_role_to_class_with_args(&class_name, &role_name, pre_args.as_deref())?;
             Ok(Value::NIL)
     }
 
