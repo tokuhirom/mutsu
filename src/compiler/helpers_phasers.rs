@@ -195,7 +195,23 @@ impl Compiler {
         } else {
             body
         };
+        // A plain `my $x;` of the body comes into existence before the ENTER
+        // phasers run, so a phaser may assign it (`is_bare_enter_hoistable_decl`).
+        let body_has_enter = body.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    ..
+                }
+            )
+        }) || !enter_exprs.is_empty();
+        let mut hoisted_decls = Vec::new();
         for stmt in body {
+            if body_has_enter && Self::is_bare_enter_hoistable_decl(stmt) {
+                hoisted_decls.push(stmt.clone());
+                continue;
+            }
             if let Stmt::Phaser {
                 kind, body, bare, ..
             } = stmt
@@ -217,6 +233,7 @@ impl Compiler {
             }
         }
 
+        enter_ph.splice(0..0, hoisted_decls);
         let mut enter_expr_vars: Vec<String> = Vec::new();
         {
             for (var_name, phaser_body) in enter_exprs {

@@ -454,7 +454,22 @@ impl Compiler {
             let mut body_main: Vec<Stmt> = Vec::new();
             // Collect all ENTER phaser bodies for potential value production
             let mut enter_bodies: Vec<Vec<Stmt>> = Vec::new();
+            // The routine's plain declarations exist before its ENTER phasers
+            // run, so a phaser may assign them (`is_bare_enter_hoistable_decl`).
+            let routine_has_enter = body.iter().any(|s| {
+                matches!(
+                    s,
+                    Stmt::Phaser {
+                        kind: PhaserKind::Enter,
+                        ..
+                    }
+                )
+            });
             for stmt in body.iter() {
+                if routine_has_enter && Compiler::is_bare_enter_hoistable_decl(stmt) {
+                    sub_compiler.compile_stmt(stmt);
+                    continue;
+                }
                 match stmt {
                     Stmt::Phaser {
                         kind: PhaserKind::Enter,
@@ -1661,6 +1676,25 @@ impl Compiler {
             let enter_last_idx =
                 crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
                     .unwrap_or(usize::MAX);
+            // The body's plain declarations exist before its ENTER phasers run
+            // (`is_bare_enter_hoistable_decl`).
+            let closure_has_enter = body.iter().any(|s| {
+                matches!(
+                    s,
+                    Stmt::Phaser {
+                        kind: PhaserKind::Enter,
+                        ..
+                    }
+                )
+            });
+            if closure_has_enter {
+                for stmt in body
+                    .iter()
+                    .filter(|s| Compiler::is_bare_enter_hoistable_decl(s))
+                {
+                    sub_compiler.compile_stmt(stmt);
+                }
+            }
             // ENTER phasers
             for (i, stmt) in body.iter().enumerate() {
                 if let Stmt::Phaser {
@@ -1705,6 +1739,7 @@ impl Compiler {
             // Body (excluding phasers)
             let body_stmts: Vec<&Stmt> = body
                 .iter()
+                .filter(|s| !(closure_has_enter && Compiler::is_bare_enter_hoistable_decl(s)))
                 .filter(|s| {
                     !matches!(
                         s,

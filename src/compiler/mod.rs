@@ -5445,6 +5445,29 @@ impl Compiler {
     /// current frame's topic register rather than getting a fresh one. It is
     /// only safe for a routine's own compiled body, which always runs in its
     /// own fresh call frame (see `news/2026-08/given-if-block-scope-topic-clobber.md`).
+    /// A plain `my $x;` / `my @a;` / `my %h;` with nothing but a name (and
+    /// maybe a type): no initializer, binding, trait, `our`/`state` scope or
+    /// `where` clause. Such a declaration only brings the variable into
+    /// existence, so a block's `ENTER` phaser (which runs at block entry,
+    /// before the statement itself) can already assign it, and the later
+    /// declaration statement must not reset what the phaser stored
+    /// (`{ my $f; ENTER { $f = 1 }; say $f }` prints 1).
+    pub(super) fn is_bare_enter_hoistable_decl(stmt: &Stmt) -> bool {
+        matches!(
+            stmt,
+            Stmt::VarDecl {
+                has_initializer: false,
+                is_state: false,
+                is_our: false,
+                constant: None,
+                bind: None,
+                where_constraint: None,
+                custom_traits,
+                ..
+            } if custom_traits.is_empty()
+        )
+    }
+
     pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], mode: PhaserBlockResult) {
         let idx = self.code.emit(OpCode::BlockScope {
             pre_end: 0,
@@ -5472,6 +5495,26 @@ impl Compiler {
                 ..
             })
         );
+        // The block's plain declarations come into existence before its ENTER
+        // phasers run (the phasers may assign them); see
+        // `is_bare_enter_hoistable_decl`.
+        let has_enter = stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    ..
+                }
+            )
+        });
+        if has_enter {
+            for s in stmts
+                .iter()
+                .filter(|s| Self::is_bare_enter_hoistable_decl(s))
+            {
+                self.compile_stmt(s);
+            }
+        }
         for (i, s) in stmts.iter().enumerate() {
             if let Stmt::Phaser {
                 kind: PhaserKind::Enter,
@@ -5520,6 +5563,7 @@ impl Compiler {
         self.code.patch_block_enter_end(idx);
         let body_stmts: Vec<&Stmt> = stmts
             .iter()
+            .filter(|s| !(has_enter && Self::is_bare_enter_hoistable_decl(s)))
             .filter(|s| {
                 !matches!(
                     s,
