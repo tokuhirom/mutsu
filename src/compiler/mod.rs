@@ -1686,6 +1686,10 @@ pub(crate) struct Compiler {
     /// the `is rw` anonymous-sub paths; a nested closure gets its own
     /// compiler with the flag off.
     rw_tail: bool,
+    /// With `rw_tail`: only a subscript (or a ternary/`if` choosing between
+    /// subscripts) denotes a container; every other tail is an ordinary value.
+    /// A `.map` block's tail is such a tail (#16919).
+    rw_tail_elems_only: bool,
     /// ADR-0059 Slice 2, extended to conditionals (#9060): set while compiling
     /// the value-position branches of an `if`/`elsif`/`else` that IS the tail
     /// of an `is rw` routine body. The taken branch's own tail expression is
@@ -2224,6 +2228,7 @@ impl Compiler {
             bind_terminal: false,
             rw_return_operand: false,
             rw_tail: false,
+            rw_tail_elems_only: false,
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,

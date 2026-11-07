@@ -30,6 +30,10 @@ impl Compiler {
     /// outlives the callee frame because it is a GC'd `Gc<crate::value::ContainerCell>`, not a
     /// frame reference.
     pub(super) fn compile_return_rw_arg(&mut self, arg: &Expr) {
+        if !self.rw_tail_shape_is_container(arg) {
+            self.compile_expr(arg);
+            return;
+        }
         let saved_rw = self.rw_return_operand;
         self.rw_return_operand = true;
         match arg {

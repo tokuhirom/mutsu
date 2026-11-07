@@ -932,8 +932,19 @@ impl Compiler {
     /// plain scalar lexical yields its own cell, and a call nested in the tail
     /// gets container-mode arguments. A plain `return EXPR` is unaffected —
     /// `return` decontainerizes, in Rakudo too.
+    /// Whether `expr`, in the tail of an `rw_tail` body, is compiled as a
+    /// container: always for an `is rw` routine, only for a subscript-shaped
+    /// tail when `rw_tail_elems_only` (a `.map` block, #16919).
+    pub(super) fn rw_tail_shape_is_container(&self, expr: &Expr) -> bool {
+        !self.rw_tail_elems_only
+            || matches!(
+                expr,
+                Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::Ternary { .. }
+            )
+    }
+
     pub(super) fn compile_routine_tail_expr(&mut self, expr: &Expr) {
-        if self.rw_tail {
+        if self.rw_tail && self.rw_tail_shape_is_container(expr) {
             self.compile_return_rw_arg(expr);
         } else if let Expr::Literal(v) = expr
             && matches!(v.view(), crate::value::ValueView::RegexWithAdverbs(_))

@@ -395,6 +395,10 @@ impl Interpreter {
             } else {
                 normalized_body
             };
+        // A block whose last statement is a plain subscript hands back the
+        // element's container (`.map({ %h<a> })` yields bindable element
+        // containers, #16919), as `rw_tail` compiles it for an `is rw` routine.
+        compiler.compile_tail_subscript_as_container();
         let (mut code, mut fns) = compiler.compile(&normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
