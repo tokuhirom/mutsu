@@ -47,10 +47,14 @@ grammar Mutsu::Slang::Host::Base {
 }
 class Mutsu::Slang::Host::Actions {
     method attach($/, $ast) { $/.make($ast); $ast }
+    # The core actions a slang may override and `callsame` into: the core node
+    # is the Match's `.ast` already, so they answer it.
+    method INFIX-EXPR(Mu $/) { $/.ast }
+    method PREFIX-EXPR(Mu $/) { $/.ast }
 }
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::A;
-sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles) {
+sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     unless $Mutsu::Slang::Host::G.defined {
         my $g = Metamodel::GrammarHOW.new_type(:name<Mutsu::Slang::Host::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
@@ -62,6 +66,12 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles) {
         $a.^compose;
         $Mutsu::Slang::Host::G = $g;
         $Mutsu::Slang::Host::A = $a.new;
+    }
+    if $node.defined {
+        my $core = Match.new(:orig(''), :from(0), :to(0));
+        $core.make($node);
+        $Mutsu::Slang::Host::A."$rule"($core);
+        return ($core.to, $core.ast);
     }
     my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
     $m ?? ($m.to, $m.ast) !! Nil
@@ -80,10 +90,10 @@ impl Interpreter {
                 let link = link.as_ref()?;
                 crate::gc::block_quiescent(|| link.from_parser.recv()).ok()
             });
-            let Some(ToHost::Hook { rule, source }) = message else {
+            let Some(ToHost::Hook { rule, source, node }) = message else {
                 return;
             };
-            if !self.answer_hook(&rule, &source) {
+            if !self.answer_hook(&rule, &source, node) {
                 return;
             }
         }
@@ -92,7 +102,7 @@ impl Interpreter {
     /// Run one hook and send the parser its `Done`; `false` when the parser is
     /// gone.
     // Cost: the token and the action.
-    fn answer_hook(&mut self, rule: &str, source: &str) -> bool {
+    fn answer_hook(&mut self, rule: &str, source: &str, node: Option<Value>) -> bool {
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
         let answer = if depth >= MAX_HOOK_DEPTH {
             Err(format!(
@@ -100,7 +110,7 @@ impl Interpreter {
             ))
         } else {
             HOOK_DEPTH.with(|d| d.set(depth + 1));
-            let answer = self.run_slang_hook(rule, source);
+            let answer = self.run_slang_hook(rule, source, node);
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
         };
@@ -114,7 +124,7 @@ impl Interpreter {
     /// Match `rule` at the start of `source` with the composed grammar and
     /// read the node its action attached.
     // Cost: the token and the action.
-    fn run_slang_hook(&mut self, rule: &str, source: &str) -> HostAnswer {
+    fn run_slang_hook(&mut self, rule: &str, source: &str, node: Option<Value>) -> HostAnswer {
         let mut run = HOST_ENTRY.with(|e| e.borrow().clone());
         if run.is_none() {
             let entry = self
@@ -129,12 +139,18 @@ impl Interpreter {
         let answer = self
             .call_sub_value(
                 run,
-                vec![
-                    Value::str(rule.to_string()),
-                    Value::str(source.to_string()),
-                    grammar_roles,
-                    action_roles,
-                ],
+                {
+                    let mut args = vec![
+                        Value::str(rule.to_string()),
+                        Value::str(source.to_string()),
+                        grammar_roles,
+                        action_roles,
+                    ];
+                    if let Some(node) = node {
+                        args.push(Value::pair("node".to_string(), node));
+                    }
+                    args
+                },
             )
             .map_err(|e| e.message.to_string())?;
         let Some(items) = answer.as_list_items() else {
@@ -221,8 +237,8 @@ impl Interpreter {
             });
             match message.ok_or_else(lost)? {
                 ToHost::BackReply(answer) => return Ok(answer),
-                ToHost::Hook { rule, source } => {
-                    if !self.answer_hook(&rule, &source) {
+                ToHost::Hook { rule, source, node } => {
+                    if !self.answer_hook(&rule, &source, node) {
                         return Err(lost());
                     }
                 }

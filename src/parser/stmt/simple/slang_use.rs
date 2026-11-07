@@ -51,6 +51,12 @@ pub(crate) fn apply_slang_overrides(
         }
         // A new production of a hookable category (ADR-15762): the slang host
         // runs its token and action where the parser reaches it.
+        // A core action the slang overrides (ADR-15762 slice 3): the
+        // expressions the parse builds go through it before the unit is finalized.
+        if slang_action_rule(&over.name) {
+            register_action(&over.name);
+            continue;
+        }
         // Its token must be written by the slang: an actions-only method names
         // a production nothing declares, which stays an error.
         if slang_hook_rule(&over.name).is_some()
@@ -128,6 +134,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     }
     if let Some(host) = activation.host {
         set_slang_host(host);
+        set_activator(module);
     }
     // `define_slang` already validated these on the activation thread; this
     // only re-reports if the two maps ever drift apart.

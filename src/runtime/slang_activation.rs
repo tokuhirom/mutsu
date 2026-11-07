@@ -229,7 +229,10 @@ pub(crate) fn run_slang_activation(
             let hooks = outcome.as_ref().is_ok_and(|a| {
                 a.rules
                     .iter()
-                    .any(|r| crate::parser::slang_hook_rule(&r.name).is_some())
+                    .any(|r| {
+                        crate::parser::slang_hook_rule(&r.name).is_some()
+                            || crate::parser::slang_action_rule(&r.name)
+                    })
             });
             if !hooks {
                 let _ = result_tx.send(outcome);
@@ -413,6 +416,7 @@ impl Interpreter {
                         // overrides something only if it names a production.
                         SlangRoleKind::Actions
                             if over.aliases.is_empty()
+                                && !crate::parser::slang_action_rule(&over.name)
                                 && !super::slang_productions::is_production_handler(
                                     &over.name,
                                     &slang_productions,

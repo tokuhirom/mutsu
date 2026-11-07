@@ -234,3 +234,18 @@ choices, each a refinement of the text above rather than a reversal:
 from slice 2: `routine-declarator`, `scope-declarator`, `sigilless-variable`, which need the
 `signature`/`trait` shims.
 
+### Amendment 3 (2026-11-07): slice 3, core action overrides as a pre-finalization pass
+
+`INFIX-EXPR` and `PREFIX-EXPR` overrides (#13369) are not run at the parser's productions: the
+Rust parser builds infix applications at 34 sites with no single funnel, and the unit's
+finalization (ADR-15334 Stage 2) is the one place the whole tree is normalized. So the override
+runs as a pass over the parsed unit **just before** `finalize_unit` (`slang_bridge::apply_action_overrides`):
+bottom-up over `Expr::Binary` / `Expr::Unary`, each application is converted to its RakuAST node,
+the host composes the slang's actions role onto a base actions class whose `INFIX-EXPR` /
+`PREFIX-EXPR` answer the `.ast` of the Match they are given (so `callsame` returns the core node),
+runs the override and answers the node it attached; that node replaces the application
+(`ParsedExpr::Lowered`, so a parent sees its child's node). The pass touches only what follows the
+`use` of the activating module, and costs nothing for a unit with no override. `PREFIX-EXPR` shares
+the path; other core actions (`POSTFIX-EXPR`, `statement-control:sym<given>`) are added by naming
+them in `slang_action_rule`.
+

@@ -285,7 +285,10 @@ pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>
 pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
-pub(crate) use stmt::simple::slang_hook_rule;
+pub(crate) use stmt::simple::{
+    run_slang_action, slang_action_activator, slang_action_rule, slang_hook_rule,
+    slang_overrides_action,
+};
 
 pub(crate) use stmt::simple::parse_slang_shim_production;
 

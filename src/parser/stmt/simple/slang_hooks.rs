@@ -28,6 +28,11 @@ pub(crate) struct HookRule {
 pub(in crate::parser) struct SlangHooks {
     rules: Vec<HookRule>,
     host: Option<Rc<SlangHost>>,
+    /// Core actions the slang's actions role overrides (`INFIX-EXPR`).
+    actions: Vec<String>,
+    /// The module whose `use` activated the slang: the overrides apply to what
+    /// follows that statement.
+    activator: Option<String>,
 }
 
 thread_local! {
@@ -47,6 +52,55 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
         "number" => Some("number"),
         _ => None,
     }
+}
+
+/// Whether `name` is a core action a slang may override (ADR-15762 slice 3).
+// Cost: O(1).
+pub(crate) fn slang_action_rule(name: &str) -> bool {
+    matches!(name, "INFIX-EXPR" | "PREFIX-EXPR")
+}
+
+/// Register the override of the core action `name`.
+// Cost: O(k), k = registered overrides.
+pub(in crate::parser) fn register_action(name: &str) {
+    HOOKS.with(|h| {
+        let mut hooks = h.borrow_mut();
+        if !hooks.actions.iter().any(|a| a == name) {
+            hooks.actions.push(name.to_string());
+        }
+    });
+}
+
+/// Note the module whose `use` activated the slang.
+pub(in crate::parser) fn set_activator(module: &str) {
+    HOOKS.with(|h| h.borrow_mut().activator = Some(module.to_string()));
+}
+
+/// The module after whose `use` the registered action overrides apply, and
+/// whether any is registered with a host to run it.
+// Cost: O(1).
+pub(crate) fn slang_action_activator() -> Option<String> {
+    HOOKS.with(|h| {
+        let hooks = h.borrow();
+        (hooks.host.is_some() && !hooks.actions.is_empty())
+            .then(|| hooks.activator.clone())
+            .flatten()
+    })
+}
+
+/// Whether the slang overrides the core action `rule`.
+// Cost: O(k), k = registered overrides.
+pub(crate) fn slang_overrides_action(rule: &str) -> bool {
+    HOOKS.with(|h| h.borrow().actions.iter().any(|a| a == rule))
+}
+
+/// Run the slang's override of the core action `rule` over `node`.
+// Cost: the slang's own action.
+pub(crate) fn run_slang_action(rule: &str, node: Value) -> Result<Value, String> {
+    let host = HOOKS
+        .with(|h| h.borrow().host.clone())
+        .ok_or_else(|| "no slang host is running".to_string())?;
+    host.run_action(rule, node)
 }
 
 /// The literal a token body starts with: `'twice' ...` or `"twice" ...`.

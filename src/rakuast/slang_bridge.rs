@@ -84,3 +84,69 @@ pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
         },
     )))
 }
+
+/// The pass that runs a slang's overrides of core actions (`INFIX-EXPR`,
+/// `PREFIX-EXPR`; ADR-15762 slice 3) over the parsed unit, bottom-up, before the
+/// unit is finalized: each infix or prefix application becomes the node the
+/// slang's action attached (the core node, when it attached none).
+///
+/// Only what follows the `use` of the activating module is touched.
+// Cost: O(n) for the walk, plus the slang's own action per application, n =
+// size of the unit; O(1) when the unit has no override.
+pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
+    let Some(activator) = crate::parser::slang_action_activator() else {
+        return Ok(());
+    };
+    struct Pass {
+        activator: String,
+        enabled: bool,
+        failed: Option<RuntimeError>,
+    }
+    impl crate::ast_visit::VisitMut for Pass {
+        fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+            crate::ast_visit::walk_stmt_mut(self, stmt);
+            if matches!(stmt, Stmt::Use { module, .. } if *module == self.activator) {
+                self.enabled = true;
+            }
+        }
+        fn visit_expr_mut(&mut self, expr: &mut Expr) {
+            crate::ast_visit::walk_expr_mut(self, expr);
+            if !self.enabled || self.failed.is_some() {
+                return;
+            }
+            let rule = match expr {
+                Expr::Binary { .. } => "INFIX-EXPR",
+                Expr::Unary { .. } => "PREFIX-EXPR",
+                _ => return,
+            };
+            if !crate::parser::slang_overrides_action(rule) {
+                return;
+            }
+            match apply_action(rule, expr) {
+                Ok(lowered) => *expr = lowered,
+                Err(e) => self.failed = Some(e),
+            }
+        }
+    }
+    let mut pass = Pass {
+        activator,
+        enabled: false,
+        failed: None,
+    };
+    for stmt in stmts.iter_mut() {
+        crate::ast_visit::VisitMut::visit_stmt_mut(&mut pass, stmt);
+    }
+    pass.failed.map_or(Ok(()), Err)
+}
+
+/// Run the slang's override of `rule` over the node of `expr`.
+// Cost: O(n) in the application, plus the slang's action.
+fn apply_action(rule: &str, expr: &Expr) -> Result<Expr, RuntimeError> {
+    let names = NameScope::default();
+    let node = super::view::view_expr(&names, expr)?;
+    let core = Value::rakuast(Box::new(node));
+    let attached = crate::parser::run_slang_action(rule, core)
+        .map_err(|e| RuntimeError::new(format!("slang action {rule}: {e}")))?;
+    lower_expression(&attached)
+}
+
