@@ -73,6 +73,37 @@ impl Interpreter {
         Self::prepend_deparse_prelude(stmts);
     }
 
+    /// Declare the deparser now if no unit has, for a module that asks for it
+    /// by `nqp::gethllsym('Raku', 'DEPARSE')` (the unit that loads it does not
+    /// mention `DEPARSE` itself, so no prelude was injected).
+    // Cost: O(d) to parse and run the deparser the first time, d = its source size.
+    pub(super) fn ensure_deparse_class(&mut self) -> Result<(), RuntimeError> {
+        if !self.get_hll_sym("Raku", "DEPARSE").is_nil() {
+            return Ok(());
+        }
+        // A unit that mentions the deparser carries the class as a prelude,
+        // declared before the unit's compile-time code runs but bound only
+        // when the prelude's own statements do: `my constant D =
+        // nqp::gethllsym('Raku', 'DEPARSE')` would see nothing.
+        if self.has_class("RakuAST::Deparse") {
+            self.set_hll_sym(
+                "Raku".to_string(),
+                "DEPARSE".to_string(),
+                Value::package(Symbol::intern("RakuAST::Deparse")),
+            );
+            return Ok(());
+        }
+        let Some(class) = DEPARSE_CLASS
+            .contains(DEPARSE_CLASS_HEAD)
+            .then(|| DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1))
+        else {
+            return Ok(());
+        };
+        INJECTED.store(true, std::sync::atomic::Ordering::Release);
+        self.eval_code_string(&format!("{{\n{DEPARSE_NYI}\n{class}\n}}\n{DEPARSE_ENTRY}"))?;
+        Ok(())
+    }
+
     fn prepend_deparse_prelude(stmts: &mut Vec<Stmt>) {
         let Some(class) = DEPARSE_CLASS
             .contains(DEPARSE_CLASS_HEAD)

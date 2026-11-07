@@ -88,3 +88,9 @@ those files (comma-separated); `scripts/update-vendor.sh rakudo <tag>` copies
 exactly them. mutsu injects the class into a program that mentions `DEPARSE`
 (`src/runtime/run_prelude_deparse.rs`), changing nothing in the file but
 lifting its declaration into `GLOBAL::`.
+
+`lib/RakuAST/Deparse/Highlight.rakumod` and `Highlight/CORE.rakumod` are also
+copied, byte for byte, into `modules/Rakudo-Core/lib/RakuAST/Deparse/` (and listed in its
+`META6.json`), which is where `use RakuAST::Deparse::Highlight` finds them as a bundled
+module; `t/modules/bundled-highlight-vendor-copy.t` fails when the copies drift. After
+`scripts/update-vendor.sh rakudo <tag>`, copy the two files over again.

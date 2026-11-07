@@ -731,7 +731,7 @@ fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
 /// `elsifs` clauses contribute their own children). Leaf payloads (a
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
-pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
+pub(crate) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = children_without_docs(node);
     crate::rakuast::doc_children::insert(node, &mut out);
     out

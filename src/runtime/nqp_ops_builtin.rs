@@ -234,6 +234,16 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                if hll == "Raku" && matches!(name.as_str(), "Grammar" | "Actions") {
+                    if let Err(e) = self.ensure_raku_bases() {
+                        return Some(Err(e));
+                    }
+                }
+                if hll == "Raku" && name == "DEPARSE" {
+                    if let Err(e) = self.ensure_deparse_class() {
+                        return Some(Err(e));
+                    }
+                }
                 Ok(self.get_hll_sym(&hll, &name))
             }
             // Cost: O(m), m = chars of $hll + $name (copied, then hashed).

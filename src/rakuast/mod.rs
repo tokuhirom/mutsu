@@ -14,6 +14,7 @@ pub(crate) use doc_source::pod_source;
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
+pub(crate) mod action_events;
 mod anon_state;
 mod assign_lower;
 mod assign_target;
@@ -64,6 +65,7 @@ mod pod_nested;
 mod pod_table;
 pub(crate) mod pointy_bind;
 pub(crate) mod post_declared;
+mod pragma_statics;
 mod quote_nesting;
 mod regex_call_origins;
 mod regex_origins;
@@ -72,6 +74,7 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod stmt_call;
 mod trait_is_constructor;
+pub(crate) mod unit_finish;
 pub(crate) mod why_doc;
 mod with_branch;
 use constructor_positional::single_positional_class;
@@ -1942,19 +1945,21 @@ pub fn str_dot_ast_compunit(
         *word = hasher.finish();
     }
     let name = format!("{:016X}{:016X}{:08X}", words[0], words[1], words[2] as u32);
+    let mut fields = vec![
+        RakuAstField {
+            name: Some("statement-list"),
+            value: RakuAstFieldValue::Node(statement_list),
+        },
+        RakuAstField {
+            name: Some("comp-unit-name"),
+            value: RakuAstFieldValue::Node(Value::str(name)),
+        },
+    ];
+    unit_finish::record(&mut fields, source);
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CompUnit,
-        fields: vec![
-            RakuAstField {
-                name: Some("statement-list"),
-                value: RakuAstFieldValue::Node(statement_list),
-            },
-            RakuAstField {
-                name: Some("comp-unit-name"),
-                value: RakuAstFieldValue::Node(Value::str(name)),
-            },
-        ],
+        fields,
     })))
 }
 
@@ -2056,6 +2061,11 @@ fn construct_values(
         if let Some(literal) = literal {
             return construct_values(names, literal, "new", args);
         }
+    }
+    if class_name == "RakuAST::Pragma"
+        && let Some(answer) = pragma_statics::call(method, args)
+    {
+        return Ok(Some(answer));
     }
     if method != "new" {
         return construct_class(names, class_name, method, args);
@@ -3867,6 +3877,7 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
         || block_queries::is_bare_marker(node, field)
         || arg_invocant::is_hidden_invocant(node, field)
         || why_doc::is_hidden(node, field)
+        || unit_finish::is_hidden(node, field)
         || regex_variable_alias::is_source_field(node, field)
 }
 
