@@ -144,6 +144,7 @@ impl Interpreter {
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
         declared_static_names: &[Symbol],
+        nested_decl_names: &[Symbol],
         compiled_fns: &crate::opcode::CompiledFns,
         body_plan: &[crate::opcode::ClassBodyOp],
         is_hoisted_shell: super::registration_class::HoistedShell,
@@ -426,7 +427,7 @@ impl Interpreter {
             self.queue_role_attribute_composes(&mut cx, own_attribute_names);
             self.run_pending_attr_composes(&mut cx)?;
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
-            self.persist_class_body_statics(&cx, declared_static_names);
+            self.persist_class_body_statics(&cx, declared_static_names, nested_decl_names);
             self.restore_class_body_our_aliases(&cx, body_plan);
             self.restore_nested_type_short_names(&cx);
             Ok(())
