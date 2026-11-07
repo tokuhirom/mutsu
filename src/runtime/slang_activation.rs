@@ -42,7 +42,7 @@ pub(crate) struct SlangActivation {
     /// The parser's end of the slang host, when a rule is a production hook
     /// (ADR-15762): the interpreter that loaded the slang stays alive to run
     /// its tokens and actions.
-    pub(crate) host: Option<super::slang_host::SlangHost>,
+    pub(crate) host: Option<crate::slang_link::SlangHost>,
 }
 
 /// Classes of the compile-time `$*LANG` object graph. `.^name` on these must
@@ -235,8 +235,8 @@ pub(crate) fn run_slang_activation(
                 let _ = result_tx.send(outcome);
                 return;
             }
-            let (host, install) = super::slang_host::host_pair();
-            install();
+            let (host, end) = crate::slang_link::connect();
+            super::slang_host::install_host_end(end);
             let _ = result_tx.send(outcome.map(|mut a| {
                 a.host = Some(host);
                 a

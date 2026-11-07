@@ -9,7 +9,7 @@
 //! parse (the activation interpreter has no host to ask).
 
 use super::*;
-use crate::runtime::slang_host::SlangHost;
+use crate::slang_link::SlangHost;
 use std::cell::RefCell;
 use std::rc::Rc;
 
