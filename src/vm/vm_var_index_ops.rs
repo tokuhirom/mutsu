@@ -404,7 +404,9 @@ impl Interpreter {
             }
             Ok(())
         } else {
-            self.exec_index_op_with_positional(is_positional)
+            self.exec_index_op_with_positional(is_positional)?;
+            // As `OpCode::Index` does: a native array's element view is read.
+            self.decont_native_pos_ref_on_top()
         }
     }
 
