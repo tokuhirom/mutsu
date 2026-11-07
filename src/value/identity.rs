@@ -60,6 +60,25 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.resolve();
             canonical_meta_name(&a_name) == canonical_meta_name(&b_name)
         }
+        // A parameterized role type object is one type per distinct argument
+        // list (`R[Str, Int] === R[Str, Int]`).
+        (
+            ValueView::ParametricRole {
+                base_name: a_base,
+                type_args: a_args,
+            },
+            ValueView::ParametricRole {
+                base_name: b_base,
+                type_args: b_args,
+            },
+        ) => {
+            a_base == b_base
+                && a_args.len() == b_args.len()
+                && a_args
+                    .iter()
+                    .zip(b_args.iter())
+                    .all(|(x, y)| values_identical(x, y))
+        }
         // A type made by `Metamodel::Primitives.create_type` is one object per
         // `id`, however many times the value was copied around.
         (ValueView::CustomType(a), ValueView::CustomType(b)) => a.id == b.id,

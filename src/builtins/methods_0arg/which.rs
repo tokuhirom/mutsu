@@ -115,6 +115,30 @@ pub(crate) fn which_of(target: &Value) -> Value {
                 crate::value::which_id::shown(c.id)
             )
         }
+        // A parameterized role type object (`R[Str, Int]`) is one type per
+        // distinct argument list: its identity is the rendered `Name[Args]`,
+        // interned so the same parameterization is `===` itself and two
+        // parameterizations never share an id. (It used to fall to the
+        // counter fallback, so `Monad::Either`'s `.WHICH`-keyed type cache
+        // could hand back the entry of another parameterization.)
+        ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } => {
+            let args: Vec<String> = type_args
+                .iter()
+                .map(|a| match a.view() {
+                    ValueView::Package(p) => p.resolve().to_string(),
+                    _ => a.to_string_value(),
+                })
+                .collect();
+            let rendered = format!("{}[{}]", base_name.resolve(), args.join(","));
+            format!(
+                "{}|U{}",
+                rendered,
+                crate::value::which_id::shown(Symbol::intern(&rendered).id() as u64)
+            )
+        }
         ValueView::Int(n) => format!("Int|{}", n),
         ValueView::BigInt(n) => format!("Int|{}", *n),
         ValueView::Num(n) => format!("Num|{}", n),
