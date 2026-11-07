@@ -62,6 +62,10 @@ pub(crate) fn round_trip_owned(
     names: &NameScope,
     stmts: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
+    let mut stmts = stmts;
+    // A slang's overrides of core actions see the parsed unit before it is
+    // finalized (ADR-15762 slice 3).
+    super::slang_bridge::apply_action_overrides(&mut stmts)?;
     let mut lowered = super::finalize::finalize_unit(names, stmts)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.

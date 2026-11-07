@@ -18,6 +18,17 @@
 /// Registered once per interpreter, in `GLOBAL`.
 pub(super) const REPL_COMPILER_PRELUDE: &str = r#"
 class GLOBAL::Perl6::Compiler {
+    # HLL::Compiler's `parsegrammar`/`parseactions` accessors: with an argument
+    # they replace the grammar/actions the compiler parses with, without one
+    # they answer the current value. mutsu's own parser is not a replaceable
+    # grammar object, so the value is only recorded (a slang's rules reach the
+    # parser through `define_slang`, ADR-0026), not consulted by `.eval`.
+    has Mu $!parsegrammar;
+    has Mu $!parseactions;
+    multi method parsegrammar() { $!parsegrammar }
+    multi method parsegrammar(Mu $value) { $!parsegrammar = $value }
+    multi method parseactions() { $!parseactions }
+    multi method parseactions(Mu $value) { $!parseactions = $value }
     # `$code` is compiled as its own compilation unit. With `:outer_ctx` it
     # sees the lexicals, subs and operators a previous `.eval` left in that
     # context (one `$*CTXSAVE.ctxsave` handed back); without it, only the

@@ -9,7 +9,12 @@ use std::sync::mpsc::{Receiver, Sender};
 pub(crate) enum ToHost {
     /// Match the slang's token `rule` (`statement-control:sym<twice>`) at the
     /// start of `source`, then run its action.
-    Hook { rule: String, source: String },
+    Hook {
+        rule: String,
+        source: String,
+        /// For an action override (`INFIX-EXPR`): the node the core action built.
+        node: Option<Value>,
+    },
     /// The answer to a [`FromHost::BackCall`].
     BackReply(HostAnswer),
 }
@@ -68,6 +73,7 @@ impl SlangHost {
             .send(ToHost::Hook {
                 rule: rule.to_string(),
                 source: source.to_string(),
+                node: None,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
         loop {
@@ -82,6 +88,29 @@ impl SlangHost {
                         .map_err(|_| "the slang host is gone".to_string())?;
                 }
             }
+        }
+    }
+
+    /// Run the slang's override of the core action `rule` (`INFIX-EXPR`) over
+    /// the `node` the core action built, and answer the node it attached.
+    // Cost: the slang's own action.
+    pub(crate) fn run_action(&self, rule: &str, node: Value) -> Result<Value, String> {
+        self.to_host
+            .send(ToHost::Hook {
+                rule: rule.to_string(),
+                source: String::new(),
+                node: Some(node),
+            })
+            .map_err(|_| "the slang host is gone".to_string())?;
+        let message = crate::gc::block_quiescent(|| self.from_host.recv())
+            .map_err(|_| "the slang host stopped answering".to_string())?;
+        match message {
+            FromHost::Done(Ok(Some((_, node)))) => Ok(node),
+            FromHost::Done(Ok(None)) => Err(format!("the action override {rule} answered no node")),
+            FromHost::Done(Err(message)) => Err(message),
+            FromHost::BackCall { .. } => Err(format!(
+                "the action override {rule} asked the parser for a production"
+            )),
         }
     }
 }
