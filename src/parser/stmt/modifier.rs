@@ -124,7 +124,9 @@ pub(in crate::parser) fn is_stmt_modifier_after_trailing_comma(input: &str) -> b
     let Some(kw) = leading_modifier_keyword(input) else {
         return false;
     };
-    !input[kw.len()..].trim_start().starts_with("=>")
+    let after = &input[kw.len()..];
+    // `kw(` glued to a paren is a sub call (`say 1, with(1)`), not a modifier.
+    !after.starts_with('(') && !after.trim_start().starts_with("=>")
 }
 
 /// The statement-modifier keyword at the start of `input`, if any.
