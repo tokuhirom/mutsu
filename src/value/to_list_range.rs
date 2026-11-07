@@ -173,6 +173,12 @@ pub(super) fn generic_range_to_list(
                 }
                 result.push(Value::str(current.clone()));
                 current = crate::value::str_increment::string_succ(&current);
+                // The sequence ends once the successor is longer than the end
+                // (`"a".."zz"` stops at `zz`, it does not run on through the
+                // three-letter strings that still sort before it).
+                if current.chars().count() > b.chars().count() {
+                    break;
+                }
             }
             result
         }
