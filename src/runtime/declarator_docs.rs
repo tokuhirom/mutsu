@@ -19,6 +19,10 @@ pub(crate) struct DeclaratorDocs {
     /// DOC INIT uses AST-built declarants before runtime registration, so a
     /// name key would collide for multis and same-named parameters.
     pub(crate) why_object_cache: HashMap<u64, Value>,
+    /// The source byte offset each Pod block of `$=pod` starts at, parallel to
+    /// the entries `collect_pod_blocks` put there (empty when unknown); the
+    /// declarator blocks are merged among them in source order.
+    pub(crate) pod_block_starts: Vec<usize>,
     /// The named-declaration docs of every module loaded so far, by the
     /// module's compilation unit, in load order. A module's own
     /// [`Self::doc_comments`] are replaced by the importer's when the load

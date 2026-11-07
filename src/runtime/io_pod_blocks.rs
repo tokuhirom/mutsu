@@ -9,7 +9,8 @@ impl Interpreter {
     /// Build `$=pod` from `input`'s Pod blocks.
     pub(super) fn collect_pod_blocks(&mut self, input: &str) -> Result<(), RuntimeError> {
         Self::clear_pod_config_error();
-        let (entries, _) = Self::scan_pod_source(input);
+        let (entries, _, starts) = Self::scan_pod_source_ordered(input);
+        self.declarator_docs.pod_block_starts = starts;
         self.finish_pod_blocks(entries)
     }
 
@@ -34,6 +35,8 @@ impl Interpreter {
         }
         let lines: Vec<&str> = text.lines().collect();
         let (entries, _) = Self::scan_pod_lines(&lines);
+        // The pieces are not at their source offsets, so the blocks carry none.
+        self.declarator_docs.pod_block_starts = Vec::new();
         self.finish_pod_blocks(entries)
     }
 
@@ -58,6 +61,16 @@ impl Interpreter {
 
     /// The Pod entries of a whole source, and the byte ranges they came from.
     pub(crate) fn scan_pod_source(input: &str) -> (Vec<Value>, Option<PodRanges>) {
+        let (entries, ranges, _) = Self::scan_pod_source_ordered(input);
+        (entries, ranges)
+    }
+
+    /// [`Self::scan_pod_source`], also answering the byte offset each entry
+    /// starts at (so the declarator blocks can be merged in source order).
+    // Cost: O(n), n = size of the source.
+    pub(crate) fn scan_pod_source_ordered(
+        input: &str,
+    ) -> (Vec<Value>, Option<PodRanges>, Vec<usize>) {
         let raw_lines: Vec<&str> = input.lines().collect();
         let in_heredoc = Self::heredoc_body_lines(&raw_lines);
         let lines: Vec<&str> = raw_lines
@@ -74,11 +87,16 @@ impl Interpreter {
             offset += piece.len();
         }
         starts.push(offset);
+        let entry_starts: Vec<usize> = if spans.len() == entries.len() {
+            spans.iter().map(|&(first, _)| starts[first]).collect()
+        } else {
+            Vec::new()
+        };
         let mut ranges: PodRanges = Vec::new();
         for (first, past) in spans {
             // A masked line cannot be rebuilt from the ranges alone.
             if in_heredoc[first..past].iter().any(|masked| *masked) {
-                return (entries, None);
+                return (entries, None, Vec::new());
             }
             let (start, end) = (starts[first], starts[past]);
             match ranges.last_mut() {
@@ -86,7 +104,7 @@ impl Interpreter {
                 _ => ranges.push((start, end)),
             }
         }
-        (entries, Some(ranges))
+        (entries, Some(ranges), entry_starts)
     }
 
     /// The Pod entries of `lines`, and the line spans `[first, past)` each
