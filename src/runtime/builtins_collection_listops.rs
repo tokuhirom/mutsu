@@ -538,10 +538,20 @@ impl Interpreter {
             callable = by_callable;
         }
 
-        // Flatten positional args into items
+        // `sort(+values)` applies the single-argument rule: only a lone
+        // positional is flattened. With several, each is an item, so
+        // `sort([10], [9,1])` orders the two arrays.
+        let single = positional.len() == 1;
         let mut items: Vec<Value> = Vec::new();
         for arg in &positional {
-            if crate::runtime::utils::is_shaped_array(arg) {
+            if !single
+                && matches!(
+                    arg.view(),
+                    ValueView::Array(..) | ValueView::Seq(..)
+                )
+            {
+                items.push(arg.clone());
+            } else if crate::runtime::utils::is_shaped_array(arg) {
                 items.extend(crate::runtime::utils::shaped_array_leaves(arg));
             } else {
                 match arg.view() {
