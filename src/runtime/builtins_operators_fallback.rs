@@ -1464,6 +1464,32 @@ impl Interpreter {
         Some(qualified(pkg, rest).as_str().to_string())
     }
 
+    /// `pkg::short` where `pkg` is a package that resolves as a type only under
+    /// a longer name (a `use` of a module's `our class Packet::Sub` under
+    /// `unit package M`): `short` as that package's nested type, found as the
+    /// one registered type named `<outer>::pkg::short`. Rakudo's GLOBAL merge
+    /// of the loaded module exposes the whole `Packet::` stash the same way.
+    /// Only reached where the lookup would otherwise fail, so the scan of the
+    /// type table costs nothing on a successful resolution.
+    // Cost: O(c * |name|), c = registered classes and roles, on the error path only.
+    pub(crate) fn nested_type_via_package_binding(&self, pkg: &str, short: &str) -> Option<Value> {
+        if !self.has_type(pkg) {
+            return None;
+        }
+        let suffix = format!("::{pkg}::{short}");
+        let reg = self.registry();
+        let mut found = reg
+            .classes
+            .keys()
+            .chain(reg.roles.keys())
+            .filter(|k| k.ends_with(suffix.as_str()));
+        let first = found.next()?;
+        found
+            .next()
+            .is_none()
+            .then(|| Value::package(Symbol::intern(first)))
+    }
+
     pub(crate) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
         // An explicitly written `GLOBAL::` qualifier resolves through the
         // pseudo-package, and raku then names the symbol without its `&` sigil:
