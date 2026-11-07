@@ -277,7 +277,11 @@ impl Interpreter {
                 Ok(())
             }
             Err(e) if e.is_return() => {
-                if control_begin < end {
+                // A `return` raised by this region's own CATCH handler is not
+                // offered to its CONTROL block.
+                let raised_by_own_catch =
+                    catch_token.is_some() && e.raised_by_catch() == catch_token;
+                if control_begin < end && !raised_by_own_catch {
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     let signal_topic = Self::control_signal_topic_value(&e);

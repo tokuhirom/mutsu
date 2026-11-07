@@ -183,6 +183,9 @@ impl Interpreter {
                     {
                         signal.set_return_target_callable_id(return_target);
                     }
+                    if signal.is_return() {
+                        signal.set_raised_by_catch(Some(token));
+                    }
                     return Err(signal);
                 }
             }
