@@ -942,6 +942,21 @@ impl Interpreter {
         // happens to share the name does not: the statics are the class's own
         // lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
+        // A role method's own composition bindings (its type parameters and the
+        // role-body lexicals persisted with the composition) are closer than the
+        // statics of a class the role is declared in: `class C { my \iv = 1;
+        // my role R[\n] { my \iv = n * 2; method v { iv } } }` reads the
+        // role's `iv`. The enclosing class's statics were just injected over
+        // them, so apply the bindings again.
+        if owner_is_role
+            && let Some(bindings) = method_def.role_param_bindings.as_deref()
+        {
+            for (name, value) in bindings {
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
+            }
+        }
 
         // Push routine_stack so &?ROUTINE can find the current method. This is
         // done BEFORE parameter binding: a parameter default (`:$n = helper()`)
