@@ -1245,6 +1245,27 @@ impl Interpreter {
                         self.unit_of_source_sym(Some(Symbol::intern(file))) != importer
                     })
                 });
+                // The `GLOBAL::name` family holds this module's candidates only
+                // until another compunit's candidates of the same name shared
+                // it (a `unit module Core` file loaded as `Pkg::Core` registers
+                // under GLOBAL, and its load-time cleanup removes what it put
+                // there). The module's own `{module}::EXPORT::ALL::name` alias
+                // family is the stable copy: add the candidates the global
+                // family no longer carries (`use Test; use Pkg::Core;` lost
+                // Core's `trait_mod:<is>` candidate, so `is aliased-by` was an
+                // unknown trait).
+                let own_alias = format!("{module}::EXPORT::ALL::{name}");
+                let own_family = self.registry().functions.family_keys(&own_alias);
+                let mut own_entries: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
+                self.rebase_family_entries(&own_alias, &own_family, &target_single, &mut own_entries);
+                for (key, def) in own_entries {
+                    if !function_entries
+                        .iter()
+                        .any(|(_, have)| Arc::ptr_eq(have, &def))
+                    {
+                        function_entries.push((key, def));
+                    }
+                }
             }
             // Fallback for a re-import (`use Foo; use Foo :tag`) of a `unit
             // module Foo` sub: the sub is registered under `GLOBAL::name`, not
