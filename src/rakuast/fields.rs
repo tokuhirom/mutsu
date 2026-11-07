@@ -398,7 +398,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("cells", Absent::EmptyList),
         ],
         DocDeclarator => &[
-            ("WHEREFORE", Absent::Required),
+            ("WHEREFORE", Absent::TypeObject("NQPMu")),
             ("leading", Absent::EmptyList),
             ("trailing", Absent::EmptyList),
         ],

@@ -732,6 +732,13 @@ fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
+    let mut out = children_without_docs(node);
+    crate::rakuast::doc_children::insert(node, &mut out);
+    out
+}
+
+// Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
+fn children_without_docs(node: &RakuAstNode) -> Vec<Value> {
     // The implicit parameters of a method's signature, and the expansion of a
     // public attribute variable, are visited though the source wrote neither.
     if let Some(with_signature) = crate::rakuast::implicit_signature::method_with_signature(node) {
@@ -742,7 +749,7 @@ pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
     }
     // A field Rakudo fills with an empty node is visited too.
     if let Some(filled) = crate::rakuast::empty_fields::materialized(node) {
-        return children(&filled);
+        return children_without_docs(&filled);
     }
     if let Some(shaped) = rakudo_shaped_children(node) {
         return shaped;

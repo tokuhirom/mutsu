@@ -54,6 +54,30 @@ pub(super) fn attach(node: &mut RakuAstNode, doc: Option<&DeclDoc>) {
     }
 }
 
+/// Replace the documentation of `node` by `leading` / `trailing` (an empty
+/// list leaves that text out), dropping any `WHY` it was given: the
+/// `declarator-docs(:@leading, :@trailing)` call.
+// Cost: O(f + l), f = fields of the node, l = lines.
+pub(crate) fn replace(node: &mut RakuAstNode, leading: Vec<String>, trailing: Vec<String>) {
+    clear(node);
+    for (name, lines) in [(LEADING, leading), (TRAILING, trailing)] {
+        if lines.is_empty() {
+            continue;
+        }
+        node.fields.push(RakuAstField {
+            name: Some(name),
+            value: RakuAstFieldValue::List(lines.into_iter().map(Value::str).collect()),
+        });
+    }
+}
+
+/// Drop every kind of documentation `node` carries.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn clear(node: &mut RakuAstNode) {
+    node.fields
+        .retain(|f| !matches!(f.name, Some(LEADING | TRAILING | "WHY")));
+}
+
 /// The comments of one hidden field, one entry per line.
 // Cost: O(f + l), f = fields of the node, l = lines.
 pub(super) fn lines(node: &RakuAstNode, name: &str) -> Vec<String> {
@@ -74,17 +98,21 @@ pub(super) fn lines(node: &RakuAstNode, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// The joined text of one hidden field (the comments joined by a space).
+/// The joined text of one documentation part, from the hidden field or the
+/// `WHY` doc (the comments joined by a space).
 // Cost: O(f + l).
-fn text(node: &RakuAstNode, name: &str) -> Option<String> {
-    let lines = lines(node, name);
+fn joined(node: &RakuAstNode, label: &str, key: &str) -> Option<String> {
+    let lines = lines_of(node, label, key);
     (!lines.is_empty()).then(|| lines.join(" "))
 }
 
 /// The leading and trailing docs `node` carries, if it carries any.
 // Cost: O(1).
 pub(crate) fn docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
-    let (leading, trailing) = (text(node, LEADING), text(node, TRAILING));
+    let (leading, trailing) = (
+        joined(node, "leading", LEADING),
+        joined(node, "trailing", TRAILING),
+    );
     (leading.is_some() || trailing.is_some()).then_some((leading, trailing))
 }
 
@@ -92,10 +120,10 @@ pub(crate) fn docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<Stri
 // Cost: O(f + l).
 pub(super) fn doc(node: &RakuAstNode) -> Option<DeclDoc> {
     let doc = DeclDoc {
-        leading: text(node, LEADING),
-        trailing: text(node, TRAILING),
-        leading_lines: lines(node, LEADING),
-        trailing_lines: lines(node, TRAILING),
+        leading: joined(node, "leading", LEADING),
+        trailing: joined(node, "trailing", TRAILING),
+        leading_lines: lines_of(node, "leading", LEADING),
+        trailing_lines: lines_of(node, "trailing", TRAILING),
     };
     (!doc.is_empty()).then_some(doc)
 }
@@ -103,15 +131,7 @@ pub(super) fn doc(node: &RakuAstNode) -> Option<DeclDoc> {
 /// A filled documentation slot for the docs `node` carries, if any.
 // Cost: O(1).
 pub(super) fn slot(node: &RakuAstNode) -> Option<DocSlot> {
-    let doc = DeclDoc {
-        leading: text(node, LEADING),
-        trailing: text(node, TRAILING),
-        leading_lines: lines(node, LEADING),
-        trailing_lines: lines(node, TRAILING),
-    };
-    if doc.is_empty() {
-        return None;
-    }
+    let doc = doc(node)?;
     let slot = DocSlot::pending();
     slot.fill(doc);
     Some(slot)
