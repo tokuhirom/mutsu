@@ -306,6 +306,7 @@ pub(crate) fn reset_user_subs() {
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
     EXPORTHOW_ERRORS.with(|e| e.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
+    super::slang_hooks::reset_hooks();
     // ... and, like the language revision above, a nested parse that was asked
     // for a localized slang (`Str.AST("JA")`) re-establishes its vocabulary
     // after the reset rather than losing it to one.

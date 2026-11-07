@@ -24,6 +24,15 @@ pub(super) fn parsed_node(
     node: &ParsedStmt,
 ) -> Result<RakuAstNode, RuntimeError> {
     Ok(match node {
+        // The node the slang's action attached stands for the statement.
+        ParsedStmt::Lowered { node, .. } => match node.view() {
+            crate::value::ValueView::RakuAst(node) => node.clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "RakuAST: a slang production's statement lost its node",
+                ));
+            }
+        },
         ParsedStmt::Conditional(c) => conditional_node(names, c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
             origin: Default::default(),

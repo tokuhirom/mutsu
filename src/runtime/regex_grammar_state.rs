@@ -12,6 +12,10 @@ pub(crate) struct RegexGrammarState {
     /// activation run (ADR-0026). Only ever populated in the dedicated
     /// activation sub-interpreter; read once by its thread runner.
     pub(crate) defined_slang_rules: Vec<crate::runtime::slang_activation::SlangRuleOverride>,
+    /// The role values a slang registered through `define_slang`, grammar half
+    /// and actions half, for the slang host to compose (ADR-15762 §2.2).
+    pub(crate) slang_grammar_roles: Vec<Value>,
+    pub(crate) slang_action_roles: Vec<Value>,
     /// Package declarators a slang grammar role registered via
     /// `token package_declarator:sym<name>` (ADR-0091). Populated by
     /// `$*LANG.define_slang` in both the activation sub-interpreter (where the

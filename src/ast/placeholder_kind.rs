@@ -153,6 +153,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             }
             ParsedStmt::Default(_) => PlaceholderBodyKind::NoSignature,
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
+            ParsedStmt::Lowered { .. } => PlaceholderBodyKind::Transparent,
             ParsedStmt::DoesDecl { .. }
             | ParsedStmt::WillDecl { .. }
             | ParsedStmt::DeclTail { .. }

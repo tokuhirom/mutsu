@@ -190,3 +190,38 @@ needs a per-token callback (as opposed to per-hook) is **open** and decided when
   (a probe) or only its leading literal, for the categories of slice 2.
 - The exact `NodeData` leaf set once `RakuAST::Doc` nodes cross the boundary.
 - Slang state across `EVAL` (ADR-0026 §5, first question): this ADR keeps it unit-scoped.
+
+## 8. Amendment 1 (2026-11-07): slice 1 as built
+
+Slice 1 (`statement-control` hook, host, channel, `block` shim) landed with these
+choices, each a refinement of the text above rather than a reversal:
+
+- **Positions are character offsets into the source from the start of the
+  production to the end of the unit**, not into the whole unit: the parser hands
+  the host `&input[..]` at the statement start, and a back-call parses
+  `&input[pos..]`. No global source pointer is needed.
+- **The host is re-entrant.** A production inside the block a shim parsed (a
+  `twice` in a `twice` block) sends a `Hook` while the host waits for its
+  `BackReply`; the shim serves it on the spot. Nesting is bounded
+  (`MAX_HOOK_DEPTH`, a catchable error), as §2.9 requires.
+- **The node is lowered where the unit is finalized, not where the production is
+  parsed.** The unit's finalization (ADR-15334 Stage 2) normalizes the parser's
+  spelled tree and re-converts any plain expression it does not recognize, so a
+  plain lowered statement placed in the tree would be rejected. The hook returns
+  `ParsedStmt::Lowered { stmt, node }`: the statement already lowered (finalize
+  takes it as it is) beside the node the action attached (a conversion that reads
+  the parse back as RakuAST, such as the block of an outer production, uses
+  that). The name scope is the default one until #15760's NameScope reaches the
+  hook (§2.5's documented limit).
+- **Shims.** `block` is a back-call. `end-keyword` is rakudo's own token in the
+  host's base grammar, and `ws` is the grammar's default `ws`; the Rust scanner's
+  `ws` shim of §2.3 is still to come with the first slang that needs comments in
+  its whitespace.
+- **A token is only a hook when the slang's grammar half writes it.** An
+  actions-only method naming a production nothing declares is still the
+  activation error of ADR-0026 §2.2.
+- Two engine bugs the first real consumer exposed were fixed on the way: an alias
+  spelled like its rule (`$<block>=<block>`) filed the capture twice, and the
+  `.ast` of the Match a grammar *method* answers was dropped instead of carried
+  to the capture.
+

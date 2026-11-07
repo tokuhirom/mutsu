@@ -23,6 +23,7 @@ use crate::value::RuntimeError;
 // Cost: O(n), n = size of the construct (each block body is moved once).
 pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
     match node {
+        ParsedStmt::Lowered { stmt, .. } => Ok(*stmt),
         ParsedStmt::Conditional(c) => lower(c),
         ParsedStmt::Given { topic, block } => {
             let body = match block.params {

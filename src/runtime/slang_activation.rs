@@ -39,6 +39,10 @@ pub(crate) struct SlangActivation {
     /// Built-in declarators whose HOW an `EXPORT` hook replaced through
     /// `LEXICAL::<EXPORTHOW>` (`EXPORTHOW::SUPERSEDE`).
     pub(crate) supersede_keywords: Vec<String>,
+    /// The parser's end of the slang host, when a rule is a production hook
+    /// (ADR-15762): the interpreter that loaded the slang stays alive to run
+    /// its tokens and actions.
+    pub(crate) host: Option<super::slang_host::SlangHost>,
 }
 
 /// Classes of the compile-time `$*LANG` object graph. `.^name` on these must
@@ -179,46 +183,69 @@ pub(crate) fn run_slang_activation(
     lib_paths: Vec<String>,
     use_args: Option<Vec<SlangUseArg>>,
 ) -> Result<SlangActivation, String> {
-    let handle = crate::runtime::builtins_system::try_spawn_user_thread(
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<SlangActivation, String>>();
+    // Detached: a plain activation thread ends when it has answered; a host
+    // thread lives until the parser drops its end of the channel.
+    let _thread = crate::runtime::builtins_system::try_spawn_user_thread(
         ACTIVATION_THREAD_NAME,
         crate::runtime::builtins_system::StackPolicy::Required,
-        move || -> Result<SlangActivation, String> {
+        move || {
             let mut interp = Interpreter::new();
-            for path in lib_paths {
-                interp.add_lib_path(path);
-            }
-            interp.env.insert("*LANG".to_string(), comp_lang_instance());
-            // The `use` statement's literal arguments reach the module's
-            // `sub EXPORT`, as they do at run time: an EXPORT that declines to
-            // slang when given one (`use L10N::BG 'no-slangification'`) must not
-            // slang the importing unit here either (#9550).
-            if let Some(args) = use_args {
-                interp.module.pending_use_export_args =
-                    Some(args.into_iter().map(SlangUseArg::into_value).collect());
-            }
-            interp
-                .use_module(&module)
-                .map_err(|e| e.message.to_string())?;
-            let mut declarators = std::mem::take(&mut interp.regex_state.defined_slang_declarators);
-            // What the hook bound into `LEXICAL::<EXPORTHOW>` for the importer.
-            for keyword in interp.exporthow_stash_keywords("DECLARE") {
-                if !declarators.iter().any(|d| d.keyword == keyword) {
-                    declarators.push(SlangDeclarator {
-                        keyword,
-                        kind: "class".to_string(),
-                        how_type: String::new(),
-                    });
+            let outcome = (|| -> Result<SlangActivation, String> {
+                for path in lib_paths {
+                    interp.add_lib_path(path);
                 }
+                interp.env.insert("*LANG".to_string(), comp_lang_instance());
+                // The `use` statement's literal arguments reach the module's
+                // `sub EXPORT`, as they do at run time: an EXPORT that declines
+                // to slang when given one (`use L10N::BG 'no-slangification'`)
+                // must not slang the importing unit here either (#9550).
+                if let Some(args) = use_args {
+                    interp.module.pending_use_export_args =
+                        Some(args.into_iter().map(SlangUseArg::into_value).collect());
+                }
+                interp
+                    .use_module(&module)
+                    .map_err(|e| e.message.to_string())?;
+                let mut declarators =
+                    std::mem::take(&mut interp.regex_state.defined_slang_declarators);
+                // What the hook bound into `LEXICAL::<EXPORTHOW>` for the importer.
+                for keyword in interp.exporthow_stash_keywords("DECLARE") {
+                    if !declarators.iter().any(|d| d.keyword == keyword) {
+                        declarators.push(SlangDeclarator {
+                            keyword,
+                            kind: "class".to_string(),
+                            how_type: String::new(),
+                        });
+                    }
+                }
+                Ok(SlangActivation {
+                    rules: std::mem::take(&mut interp.regex_state.defined_slang_rules),
+                    declarators,
+                    supersede_keywords: interp.exporthow_stash_keywords("SUPERSEDE"),
+                    host: None,
+                })
+            })();
+            let hooks = outcome.as_ref().is_ok_and(|a| {
+                a.rules
+                    .iter()
+                    .any(|r| crate::parser::slang_hook_rule(&r.name).is_some())
+            });
+            if !hooks {
+                let _ = result_tx.send(outcome);
+                return;
             }
-            Ok(SlangActivation {
-                rules: std::mem::take(&mut interp.regex_state.defined_slang_rules),
-                declarators,
-                supersede_keywords: interp.exporthow_stash_keywords("SUPERSEDE"),
-            })
+            let (host, install) = super::slang_host::host_pair();
+            install();
+            let _ = result_tx.send(outcome.map(|mut a| {
+                a.host = Some(host);
+                a
+            }));
+            interp.serve_slang_host();
         },
     )
     .map_err(|e| e.message())?;
-    crate::gc::block_quiescent(|| handle.join())
+    crate::gc::block_quiescent(|| result_rx.recv())
         .map_err(|_| "slang activation thread panicked".to_string())?
 }
 
@@ -373,6 +400,10 @@ impl Interpreter {
         for (handle, kind) in halves {
             let Some(handle) = handle else { continue };
             for role in Self::slang_handle_roles(handle) {
+                match kind {
+                    SlangRoleKind::Grammar => self.regex_state.slang_grammar_roles.push(role.clone()),
+                    SlangRoleKind::Actions => self.regex_state.slang_action_roles.push(role.clone()),
+                }
                 for over in self.slang_role_rule_names(&role, kind)? {
                     match kind {
                         SlangRoleKind::Grammar => {

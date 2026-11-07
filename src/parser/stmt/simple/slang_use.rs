@@ -49,6 +49,20 @@ pub(crate) fn apply_slang_overrides(
         if vocabulary.try_insert_token(&over.name, over.body.as_deref()) {
             continue;
         }
+        // A new production of a hookable category (ADR-15762): the slang host
+        // runs its token and action where the parser reaches it.
+        // Its token must be written by the slang: an actions-only method names
+        // a production nothing declares, which stays an error.
+        if slang_hook_rule(&over.name).is_some()
+            && overrides
+                .iter()
+                .any(|o| o.name == over.name && o.body.is_some())
+        {
+            if over.body.is_some() {
+                register_hook(&over.name, over.body.as_deref());
+            }
+            continue;
+        }
         return Err(format!(
             "Slang activation NYI: grammar rule override '{}' is not supported by this \
              implementation (recognized: {}, and the L10N vocabulary token categories)",
@@ -111,6 +125,9 @@ pub(in crate::parser) fn maybe_activate_slang_use(
         // A memoized parse from before the keyword existed must not be
         // replayed now that it is a declarator.
         crate::parser::invalidate_all_memos();
+    }
+    if let Some(host) = activation.host {
+        set_slang_host(host);
     }
     // `define_slang` already validated these on the activation thread; this
     // only re-reports if the two maps ever drift apart.

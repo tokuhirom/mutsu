@@ -31,6 +31,7 @@ mod lib_paths;
 mod module_exports;
 mod pragma_preseed;
 mod registry;
+mod slang_hooks;
 mod slang_modes;
 mod slang_use;
 mod user_ops;
@@ -126,6 +127,11 @@ pub(in crate::parser) use registry::{
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
+pub(crate) use slang_hooks::{parse_slang_shim_production, slang_hook_rule};
+pub(in crate::parser) use slang_hooks::{
+    hooks_snapshot, register_hook, restore_hooks, set_host as set_slang_host,
+    statement_control_hook,
+};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(crate) use user_ops::is_user_declared_value_term;

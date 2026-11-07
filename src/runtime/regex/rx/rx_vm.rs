@@ -743,15 +743,18 @@ impl Interpreter {
                                             call_args.as_deref().unwrap_or(&[]),
                                             cursor,
                                         ) {
-                                            Some(end) => {
+                                            Some((end, ast)) => {
                                                 // The method's answer is filed under
                                                 // the subrule's name (`<foo>` ->
                                                 // `$<foo>`) like a token's own match;
                                                 // `<.foo>` files nothing.
+                                                // (A Match it built carries its `.ast`.)
+                                                let mut inner = RegexCaptures::default();
+                                                inner.ast = ast;
                                                 let (end, delta) = self
                                                     .build_named_candidate_from_inner(
                                                         end,
-                                                        RegexCaptures::default(),
+                                                        inner,
                                                         pos,
                                                         name.spec(),
                                                         None,

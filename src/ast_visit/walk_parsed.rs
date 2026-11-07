@@ -172,6 +172,7 @@ fn block<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, b: &'ast ParsedBlock) {
 // Cost: O(n), n = size of `node`'s subtree.
 pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut ParsedStmt) {
     match node {
+        ParsedStmt::Lowered { stmt, .. } => v.visit_stmt_mut(stmt),
         ParsedStmt::Conditional(c) => {
             v.visit_expr_mut(&mut c.condition);
             block_mut(v, &mut c.then);
