@@ -44,6 +44,11 @@ fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, 
     super::infix_func::reset();
     let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(names, node))?;
     finish_unit(&mut stmts)?;
+    // A parsed unit has its bare type names qualified by the package they are
+    // written in (`parser::type_qualify`); a hand-built or read-back tree
+    // gets the same pass, so `my Inner $x` inside `class Outer` names
+    // `Outer::Inner` as it does from source.
+    crate::parser::qualify_type_names(&mut stmts);
     Ok(stmts)
 }
 
