@@ -149,4 +149,3 @@ fn apply_action(rule: &str, expr: &Expr) -> Result<Expr, RuntimeError> {
         .map_err(|e| RuntimeError::new(format!("slang action {rule}: {e}")))?;
     lower_expression(&attached)
 }
-

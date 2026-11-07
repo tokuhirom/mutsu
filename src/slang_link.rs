@@ -108,9 +108,9 @@ impl SlangHost {
             FromHost::Done(Ok(Some((_, node)))) => Ok(node),
             FromHost::Done(Ok(None)) => Err(format!("the action override {rule} answered no node")),
             FromHost::Done(Err(message)) => Err(message),
-            FromHost::BackCall { .. } => {
-                Err(format!("the action override {rule} asked the parser for a production"))
-            }
+            FromHost::BackCall { .. } => Err(format!(
+                "the action override {rule} asked the parser for a production"
+            )),
         }
     }
 }
