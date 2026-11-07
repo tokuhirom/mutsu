@@ -97,6 +97,8 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
             let end = r.find('\n').unwrap_or(r.len());
             if r.starts_with("#|") || r.starts_with("#=") {
                 saw_leading_doc |= super::decl_doc::note_comment(r, &r[end..], false);
+            } else {
+                super::comment_log::note(r, &r[end..]);
             }
             rest = &r[end..];
             at_line_start = true;

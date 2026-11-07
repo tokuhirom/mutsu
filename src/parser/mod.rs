@@ -1,3 +1,4 @@
+pub(crate) mod comment_log;
 pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
 mod expr;

@@ -83,7 +83,7 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Interp(cool_ast),
         flags: RowFlags::NONE,
-        named: &["compunit"],
+        named: &["compunit", "actions"],
     },
     // `.AST($slang)`: the localized surface syntax of `L10N::<$slang>`.
     MethodRow {
@@ -92,7 +92,7 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         arity: 1,
         handler: Handler::Interp(cool_ast),
         flags: RowFlags::ANY_ARGS,
-        named: &["compunit"],
+        named: &["compunit", "actions"],
     },
     MethodRow {
         owner: "Cool",
@@ -302,6 +302,9 @@ fn cool_ast(
         return Some(interp.str_ast_with_slang(&source, slang));
     }
     let compunit = named.get("compunit").is_some_and(Value::truthy);
+    if let Some(actions) = named.get("actions").filter(|v| !v.is_nil()) {
+        return Some(interp.str_ast_with_actions(&source, compunit, actions));
+    }
     Some(interp.str_ast_with_paths(&source, compunit))
 }
 
