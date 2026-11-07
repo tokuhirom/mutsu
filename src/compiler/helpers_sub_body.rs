@@ -1688,7 +1688,10 @@ impl Compiler {
                 )
             });
             if closure_has_enter {
-                for stmt in body.iter().filter(|s| Compiler::is_bare_enter_hoistable_decl(s)) {
+                for stmt in body
+                    .iter()
+                    .filter(|s| Compiler::is_bare_enter_hoistable_decl(s))
+                {
                     sub_compiler.compile_stmt(stmt);
                 }
             }

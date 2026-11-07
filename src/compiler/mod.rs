@@ -5508,7 +5508,10 @@ impl Compiler {
             )
         });
         if has_enter {
-            for s in stmts.iter().filter(|s| Self::is_bare_enter_hoistable_decl(s)) {
+            for s in stmts
+                .iter()
+                .filter(|s| Self::is_bare_enter_hoistable_decl(s))
+            {
                 self.compile_stmt(s);
             }
         }
