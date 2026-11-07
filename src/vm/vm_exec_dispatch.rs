@@ -1475,6 +1475,24 @@ impl Interpreter {
                     // A plain gather too (ADR-11678): `@!crange = gather {...}`.
                     self.reify_gather_seq(&top)?;
                 }
+                // A lazy list stored into an `@` global (`our @A = 0, 1, {...}
+                // ... *`) is that array's list: flag it so a later sink of the
+                // declaration's value (a module body's last statement) does not
+                // drain it (#17035), exactly as the local slot's copy is.
+                if !is_bind_ctx
+                    && !is_rebind
+                    && name_str.starts_with('@')
+                    && let Some(top) = self.stack.last().cloned()
+                    && let ValueView::LazyList(list) = top.view()
+                    && !list.in_array_context()
+                    && !list.is_itemized()
+                    && !list.is_cached_no_sink()
+                {
+                    let flagged = self.lazy_array_value(&list, name_str);
+                    if let Some(slot) = self.stack.last_mut() {
+                        *slot = flagged;
+                    }
+                }
                 // `@GLOBAL::u = 1, 2` on a slot no `our` declared is an item
                 // assignment into rakudo's auto-created Scalar (#11000).
                 if !is_bind_ctx
@@ -4873,6 +4891,13 @@ impl Interpreter {
             OpCode::Pop => {
                 if let Some(popped) = self.stack.pop()
                     && let ValueView::LazyList(list) = popped.view()
+                    // A lazy `@`-array, an itemized Seq and a `.cache`d view are
+                    // not drained by `sink` (the `SinkPop` rule): a module whose
+                    // last statement is `our @A = 0, 1, {...} ... *;` must load
+                    // without forcing the infinite sequence (#17035).
+                    && !(list.is_cached_no_sink()
+                        || list.is_itemized()
+                        || list.in_array_context())
                 {
                     // Sink context must realize lazy gathers for side effects.
                     self.force_lazy_list_vm(&list)?;
