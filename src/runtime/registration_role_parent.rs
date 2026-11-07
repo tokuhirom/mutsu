@@ -275,6 +275,16 @@ impl Interpreter {
                     .next_back()
                     .is_some_and(|c| c.is_alphanumeric() || c == '_')
             })
+        }) || role_name_str.find('[').is_some_and(|start| {
+            // `role Sub[::R = Any] does Base[R]`: a bare argument naming one of
+            // THIS role's own type parameters forwards it just as `::R` does.
+            // It is not a value to evaluate here: `R` has no binding until
+            // `Sub` is concretized, and evaluating the bareword yielded a Str
+            // that fixed the parent's parameter to `Str` for every later call.
+            !cx.type_params.is_empty()
+                && parse_role_type_args(&role_name_str[start + 1..role_name_str.len() - 1])
+                    .iter()
+                    .any(|arg| cx.type_params.iter().any(|tp| tp == arg.trim()))
         });
         // Evaluate this parent's precompiled bracket-argument chunks
         // (ADR-0019 D7-3), if any, instead of leaving candidate resolution
