@@ -201,6 +201,21 @@ impl Interpreter {
     /// gave a shadowing declaration a fresh slot, so the slot half is isolated;
     /// any outer slot sharing the name re-syncs from the restored env on next read.
     pub(super) fn pop_loop_local_scope(&mut self, code: &CompiledCode) {
+        self.pop_loop_local_scope_impl(code, true);
+    }
+
+    /// Drop the loop-body declaration scope because a gather coroutine is
+    /// SUSPENDING inside the loop, not leaving it. The loop op is re-entered on
+    /// resume, so the body-local `my` names must keep their current values: the
+    /// scope's saved "shadowed" values are the previous iteration's own
+    /// bindings, and restoring them here rolled `my $k = 0; ... $k++` of an
+    /// inner loop back to a stale value (#17019).
+    // Cost: O(1).
+    pub(super) fn suspend_loop_local_scope(&mut self, code: &CompiledCode) {
+        self.pop_loop_local_scope_impl(code, false);
+    }
+
+    fn pop_loop_local_scope_impl(&mut self, code: &CompiledCode, restore: bool) {
         // `readonly_vars` is keyed by bare name: a `my $x := value` in the
         // body marked that name readonly, which must not outlive the body and
         // refuse a later assignment to an enclosing `my $x`. A bare block
@@ -217,6 +232,9 @@ impl Interpreter {
         self.topic_state.active_loop_param_names.pop();
         self.topic_state.active_loop_rw_param_names.pop();
         if let Some(saved) = self.topic_state.loop_local_saved_env.pop() {
+            if !restore {
+                return;
+            }
             for (name_sym, val) in saved {
                 // A `None` entry is a body-local `my` that shadowed NOTHING: the
                 // name did not exist before the loop, so the block's exit must
@@ -596,7 +614,7 @@ impl Interpreter {
                         in_body: false,
                         site: (code.ops.as_ptr() as usize, cond_start - 1),
                     });
-                self.pop_loop_local_scope(code);
+                self.suspend_loop_local_scope(code);
                 return Err(RuntimeError::new(
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
                 ));
@@ -743,7 +761,7 @@ impl Interpreter {
                                 in_body,
                                 site: (code.ops.as_ptr() as usize, cond_start - 1),
                             });
-                        self.pop_loop_local_scope(code);
+                        self.suspend_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
