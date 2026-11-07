@@ -65,7 +65,7 @@ fn flag(node: &RakuAstNode, name: &str) -> bool {
 }
 
 // Cost: O(n), n = size of the block.
-fn block_source(node: &RakuAstNode) -> Option<String> {
+pub(super) fn block_source(node: &RakuAstNode) -> Option<String> {
     let kind = str_field(node, "type")?;
     if kind.is_empty()
         || !kind
