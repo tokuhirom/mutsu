@@ -2038,6 +2038,24 @@ fn construct_values(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    // `RakuAST::Literal.from-value($v)` builds the literal node for the value's
+    // own type (`5` -> IntLiteral, `"s"` -> StrLiteral, ...), as the
+    // constructor of that class would.
+    if class_name == "RakuAST::Literal"
+        && method == "from-value"
+        && let [value] = args
+    {
+        let literal = match value.view() {
+            ValueView::Int(_) | ValueView::BigInt(_) => Some("RakuAST::IntLiteral"),
+            ValueView::Str(_) => Some("RakuAST::StrLiteral"),
+            ValueView::Num(_) => Some("RakuAST::NumLiteral"),
+            ValueView::Rat(..) => Some("RakuAST::RatLiteral"),
+            _ => None,
+        };
+        if let Some(literal) = literal {
+            return construct_values(names, literal, "new", args);
+        }
+    }
     if method != "new" {
         return construct_class(names, class_name, method, args);
     }
