@@ -975,7 +975,8 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
                     );
                 }
                 if let Some(pos) = err.parse_pos() {
-                    attributes.insert_if_absent("pos".to_string(), crate::value::Value::int(pos as i64));
+                    attributes
+                        .insert_if_absent("pos".to_string(), crate::value::Value::int(pos as i64));
                 }
             }
             err.exception = Some(ex);
