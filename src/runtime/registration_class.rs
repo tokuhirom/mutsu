@@ -274,6 +274,8 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// registration time. Empty for registration paths with no compiled plan
     /// available (role-pun/mixin synthesis, `augment class`).
     pub(crate) declared_static_names: &'a [Symbol],
+    /// See [`crate::opcode::CompiledClassDeclPlan::nested_decl_names`].
+    pub(crate) nested_decl_names: &'a [Symbol],
     /// Precompiled declaration-trait-arg chunks for each `is`/`does`/`hides`
     /// parent's bracket arguments (ADR-0019 D4-2/D4-3), position-aligned
     /// with the `parents` argument to `register_class_decl` (looked up by

@@ -49,6 +49,7 @@ impl Interpreter {
         &mut self,
         cx: &ClassBodyCx<'_>,
         declared_static_names: &[crate::symbol::Symbol],
+        nested_decl_names: &[crate::symbol::Symbol],
     ) {
         // Names this class body actually `my`/`state`-declared at top level
         // (ADR-0019 D6-1: precomputed by the compiler at plan lowering
@@ -69,17 +70,44 @@ impl Interpreter {
             .iter()
             .map(|sym| sym.resolve())
             .collect();
+        let nested_decls: std::collections::HashSet<String> =
+            nested_decl_names.iter().map(|sym| sym.resolve()).collect();
         let nested_cells = self
             .lexicals
             .nested_capture_cell_names
             .remove(&crate::symbol::Symbol::intern(name))
             .unwrap_or_default();
+        // The class body is a nested block's whole scope: its stale copy must
+        // not stay bound for the next body/loader that syncs the env (#17022).
+        let stale_nested: Vec<crate::symbol::Symbol> = self
+            .env
+            .iter()
+            .filter(|(k, _)| {
+                let bare = k.resolve();
+                nested_decls.contains(bare.as_str())
+                    && !declared_statics.contains(bare.as_str())
+                    && !saved_env.contains_key_sym(**k)
+            })
+            .map(|(k, _)| *k)
+            .collect();
+        for sym in stale_nested {
+            self.env.remove(&sym.resolve());
+        }
         let mut body_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
             .filter_map(|(k, v)| {
                 let bare = k.resolve();
                 if saved_env.contains_key_sym(*k) && !declared_statics.contains(bare.as_str()) {
+                    return None;
+                }
+                // A `my` of a block nested in the body (a file-scope `for` of
+                // a `unit class`) is that block's own: its stale last-iteration
+                // copy in the env is not a static, and publishing it rebinds a
+                // same-named lexical of any method that runs in this package
+                // (#17022).
+                if nested_decls.contains(bare.as_str()) && !declared_statics.contains(bare.as_str())
+                {
                     return None;
                 }
                 // A nested block's scalar its methods share as a cell (#13044):

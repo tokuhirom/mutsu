@@ -95,6 +95,7 @@ impl Interpreter {
             method_name_chunks: &[],
             method_decls: &[],
             declared_static_names: &[],
+            nested_decl_names: &[],
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],

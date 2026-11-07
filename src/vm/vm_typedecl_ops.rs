@@ -216,6 +216,7 @@ impl Interpreter {
             method_outer_lexical_slots,
             body_bind_source_slots,
             declared_static_names,
+            nested_decl_names,
             parent_arg_chunks,
             body_plan,
         }) = code.class_decl_plans.get(idx as usize)
@@ -636,6 +637,7 @@ impl Interpreter {
                         method_name_chunks,
                         method_decls,
                         declared_static_names,
+                        nested_decl_names,
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
                         body_plan,
