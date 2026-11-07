@@ -120,14 +120,26 @@ impl Interpreter {
                 // the variable that routine returned. A name that owns a
                 // Scalar (`my $h = @a`) stays a distinct container.
                 (ValueView::Array(..) | ValueView::Hash(..) | ValueView::Instance { .. }, _) => {
-                    !self.name_denotes_scalar_container(left_name)
-                        && !self.name_denotes_scalar_container(right_name)
+                    !self.operand_denotes_scalar_container(code, left_name)
+                        && !self.operand_denotes_scalar_container(code, right_name)
                         && crate::runtime::values_identical(&left, &right)
                 }
                 _ => false,
             }
         };
         self.stack.push(Value::truth(result));
+    }
+
+    /// [`Self::name_denotes_scalar_container`] for a `$` variable, or
+    /// [`Self::sigilless_denotes_scalar_container`] for a sigilless name (a
+    /// term key).
+    // Cost: O(1) env probes.
+    fn operand_denotes_scalar_container(&self, code: &CompiledCode, name: &str) -> bool {
+        if crate::runtime::term_names::term_spelling(name).is_some() {
+            self.sigilless_denotes_scalar_container(code, name)
+        } else {
+            self.name_denotes_scalar_container(name)
+        }
     }
 
     /// Container identity (`=:=`) when one operand is `EXPR.self` and the
