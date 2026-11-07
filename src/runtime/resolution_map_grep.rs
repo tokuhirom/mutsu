@@ -442,6 +442,27 @@ impl Interpreter {
     /// decision is itself a pure function of the body, so it stays inside the
     /// cached computation. A gather with no analysis chunk (an `EVAL`-built one)
     /// compiles fresh, exactly like the map/grep sibling.
+    /// Whether `stmt` ends in a `.map`/`.grep` producer, looking through a
+    /// `try` body (`gather { try { (1..*).map: { take $_ } } }`): the Seq is
+    /// then the statement's value and must be sunk by the gather.
+    // Cost: O(d), d = nesting depth of `try` tails.
+    fn stmt_yields_lazy_map_grep(stmt: &crate::ast::Stmt) -> bool {
+        // Peel `try` bodies down to the statement that supplies their value.
+        let mut tail = stmt;
+        while let crate::ast::Stmt::Expr(crate::ast::Expr::Try { body, .. }) = tail {
+            let Some(last) = body.last() else {
+                return false;
+            };
+            tail = last;
+        }
+        matches!(
+            tail,
+            crate::ast::Stmt::Expr(
+                crate::ast::Expr::MethodCall { name, .. } | crate::ast::Expr::Call { name, .. }
+            ) if matches!(name.resolve().as_str(), "map" | "grep")
+        )
+    }
+
     pub(crate) fn compile_gather_body_cached(
         &mut self,
         analysis_cc: &Option<std::sync::Arc<crate::opcode::CompiledCode>>,
@@ -465,13 +486,7 @@ impl Interpreter {
         // gather. Sink only this shape: adding a synthetic tail to every
         // gather changes coroutine resumption for control-flow-heavy bodies
         // such as nested recursive loops.
-        let needs_lazy_tail = body.last().is_some_and(|stmt| match stmt {
-            crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall { name, .. })
-            | crate::ast::Stmt::Expr(crate::ast::Expr::Call { name, .. }) => {
-                matches!(name.resolve().as_str(), "map" | "grep")
-            }
-            _ => false,
-        });
+        let needs_lazy_tail = body.last().is_some_and(Self::stmt_yields_lazy_map_grep);
         let mut gather_body = body.to_vec();
         if needs_lazy_tail {
             gather_body.push(crate::ast::Stmt::Expr(crate::ast::Expr::Literal(
