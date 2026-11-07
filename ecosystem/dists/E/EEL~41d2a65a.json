@@ -11,10 +11,10 @@
   "dist": "EEL",
   "files": [],
   "load": {
-    "EEL": "Runtime error: slang activation for 'EEL' failed: X::InvalidType: Invalid typename 'Tappable'",
+    "EEL": "Runtime error: slang activation for 'EEL' failed: Slang activation: '(EEL::Slang::Grammar[Block,Block,Block,Block,Block,Block])' is not a known role",
     "EEL::Absence": "ok",
     "EEL::Assertion": "ok",
-    "EEL::CLI": "Runtime error: Failed to parse module 'EEL::CLI': slang activation for 'EEL' failed: X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::CLI": "Runtime error: Failed to parse module 'EEL::CLI': slang activation for 'EEL' failed: Slang activation: '(EEL::Slang::Grammar[Block,Block,Block,Block,Block,Block])' is not a known role",
     "EEL::Clock": "ok",
     "EEL::Condition": "ok",
     "EEL::Continuation": "ok",
@@ -28,20 +28,20 @@
     "EEL::Query": "ok",
     "EEL::Reemit": "ok",
     "EEL::RetainedStore": "ok",
-    "EEL::Runner": "X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::Runner": "ok",
     "EEL::SearchIndex": "ok",
     "EEL::Slang": "ok",
     "EEL::State": "ok",
-    "EEL::SupplyMatch": "X::InvalidType: Invalid typename 'Tappable'",
+    "EEL::SupplyMatch": "ok",
     "Event": "ok",
     "MetamodelX::Event": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-05",
+    "date": "2026-11-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "0bbd8009",
+    "mutsu_commit": "5af4b0ee",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -50,7 +50,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/E/EL/EEL/2aa3ec4a8a114245c5a8f1fd36d591984e10d452.tar.gz"
+    "url": "https://360.zef.pm/E/EL/EEL/7e879f6dc33c78e5763db959f51098125890643f.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -60,5 +60,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.2"
+  "version": "0.3"
 }

@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.34,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.04,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,16 +56,16 @@
     }
   ],
   "load": {
-    "CLI::Graphing::BarChart::Core": "ok",
-    "CLI::Graphing::BarChart::Horizontal": "ok",
-    "CLI::Graphing::BarChart::Vertical": "ok"
+    "CLI::Graphing::BarChart::Core": "raku_also_fails",
+    "CLI::Graphing::BarChart::Horizontal": "raku_also_fails",
+    "CLI::Graphing::BarChart::Vertical": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-06",
+    "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "0bbd8009",
+    "mutsu_commit": "5af4b0ee",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

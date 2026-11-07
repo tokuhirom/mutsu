@@ -21,23 +21,22 @@
   "dist": "Fortran::Grammar",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller glob(Str:D); none of these signatures matches",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.69,
+        "ok": 42,
+        "plan": 42,
+        "secs": 6.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/FortranBasic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 42,
         "plan": 42,
-        "secs": 23.02,
+        "secs": 34.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,10 +49,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-05",
+    "date": "2026-11-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "0bbd8009",
+    "mutsu_commit": "5af4b0ee",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -64,13 +63,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/OR/FORTRAN_GRAMMAR/3c35281fe3c8868da74885de1de03e8bfd101b87.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 42,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 42,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.7"
 }

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.59,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 4.59,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "t/messages/02-connack.txt",
-        "nok": 1,
-        "ok": 16,
+        "nok": 0,
+        "ok": 17,
         "plan": 17,
-        "secs": 0.47,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-messages.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.37,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +58,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.31,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +68,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.7,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,10 +78,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Can't duplicate qos-less message",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": null,
-        "secs": 0.4,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,7 +91,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.73,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,10 +104,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-06",
+    "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "0bbd8009",
+    "mutsu_commit": "5af4b0ee",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,9 +122,9 @@
   "totals": {
     "baseline_assertions": 50,
     "baseline_files": 4,
-    "mutsu_assertions": 37,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 39,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.0.4"
 }

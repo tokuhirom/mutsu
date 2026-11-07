@@ -1,0 +1,54 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Arduino::WiFi",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-needs-rakupp.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/arduino-wifi-stub-2.raku: Read-only file system",
+        "nok": 0,
+        "ok": 4,
+        "plan": 6,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Arduino::WiFi": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-06",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "5af4b0ee",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/RD/ARDUINO_WIFI/ba82d6b7705d47663730fb6f6cccea7cd20566c0.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

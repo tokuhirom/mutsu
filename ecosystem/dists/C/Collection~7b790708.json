@@ -35,13 +35,12 @@
   "dist": "Collection",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 7.6,
+        "secs": 7.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +50,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 16.02,
+        "secs": 77.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +70,7 @@
     "date": "2026-11-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "0bbd8009",
+    "mutsu_commit": "5af4b0ee",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -82,12 +81,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OL/COLLECTION/176ca29ff827a5fd125b3b70817c2cbe4f48b764.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 5,
+    "baseline_files": 1,
+    "mutsu_assertions": 5,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.18.0"
