@@ -238,10 +238,16 @@ impl Interpreter {
         } else {
             self.env.remove("=pod");
         }
+        // The docs table is name-keyed and put back below, so a routine the
+        // unit declared would lose its documentation as the unit ends. Pin the
+        // docs to the routine objects first: their ids are unique, so the
+        // entries stay valid after the table is restored.
+        let pinned = self.pin_eval_routine_docs(&previous_doc_comments, &result);
         self.declarator_docs.doc_comments = previous_doc_comments;
         self.declarator_docs.doc_comment_list = previous_doc_comment_list;
         self.declarator_docs.why_cache = previous_why_cache;
         self.declarator_docs.why_object_cache = previous_why_object_cache;
+        self.declarator_docs.why_object_cache.extend(pinned);
         if let Some(saved) = saved_in_eval {
             self.env.insert("__mutsu_in_eval".to_string(), saved);
         } else {
