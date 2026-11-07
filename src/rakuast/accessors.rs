@@ -9,10 +9,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     }
     // A statement records where it began, and so does a node of a family the
     // parser builds in its RakuAST shape (ADR-10723 Stage 2); every other node
-    // (and a hand-built one) has no origin, which reads as `Nil` so `with`
+    // (and a hand-built one) has no origin, which reads as the undefined
+    // `RakuAST::Origin` (rakudo's answer for a hand-built node) so `with`
     // skips it.
     if method == "origin" {
-        return Some(origin::origin_of(node).unwrap_or(Value::NIL));
+        return Some(
+            origin::origin_of(node).unwrap_or_else(|| {
+                Value::package(crate::symbol::Symbol::intern("RakuAST::Origin"))
+            }),
+        );
     }
     // A lookup's resolution, added by [`resolve`] to the unit tree `$*CU`
     // answers (and absent from a tree built any other way, which resolves
