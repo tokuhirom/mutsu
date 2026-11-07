@@ -147,6 +147,10 @@ pub(crate) enum SlangUseArg {
     Int(i64),
     Num(f64),
     Bool(bool),
+    /// `&name` of a sub declared earlier in the importing unit, with the text of
+    /// its declaration: rebuilt on the host, so the sub must not close over the
+    /// unit's other lexicals (#17055).
+    Routine { name: String, source: String },
 }
 
 impl SlangUseArg {
@@ -162,13 +166,21 @@ impl SlangUseArg {
         })
     }
 
-    fn into_value(self) -> Value {
-        match self {
+    fn into_value(self, interp: &mut Interpreter) -> Result<Value, String> {
+        Ok(match self {
             SlangUseArg::Str(s) => Value::str(s),
             SlangUseArg::Int(n) => Value::int(n),
             SlangUseArg::Num(f) => Value::num(f),
             SlangUseArg::Bool(b) => Value::truth(b),
-        }
+            SlangUseArg::Routine { name, source } => {
+                let program = format!("{source}\n&{name}");
+                let (stmts, _) = crate::parser::parse_program(&program)
+                    .map_err(|e| format!("use argument &{name}: {}", e.message))?;
+                interp
+                    .eval_block_value(&stmts)
+                    .map_err(|e| format!("use argument &{name}: {}", e.message))?
+            }
+        })
     }
 }
 
@@ -210,8 +222,11 @@ pub(crate) fn run_slang_activation(
                 // to slang when given one (`use L10N::BG 'no-slangification'`)
                 // must not slang the importing unit here either (#9550).
                 if let Some(args) = use_args {
-                    interp.module.pending_use_export_args =
-                        Some(args.into_iter().map(SlangUseArg::into_value).collect());
+                    let values = args
+                        .into_iter()
+                        .map(|a| a.into_value(&mut interp))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    interp.module.pending_use_export_args = Some(values);
                 }
                 interp
                     .use_module(&module)
