@@ -16,6 +16,7 @@ mod system_eval_names;
 mod eval_scope_redecl;
 mod system_eval_redecl;
 mod system_eval_string;
+mod eval_doc_pin;
 mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
