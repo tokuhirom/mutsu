@@ -801,7 +801,9 @@ fn near_snippet(input: &str, max_chars: usize) -> Option<String> {
 /// `expression after X` alternative is cut at the next ` or `.
 // Cost: O(m), m = message length.
 fn names_missing_operand_after_operator(message: &str) -> bool {
-    if message.contains("expected right-hand expression") {
+    if message.contains("expected right-hand expression")
+        || message.contains("exponent expression after '**'")
+    {
         return true;
     }
     message.match_indices("expression after ").any(|(at, key)| {
