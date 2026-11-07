@@ -187,7 +187,11 @@ impl Interpreter {
             return Ok(compiler.clone());
         }
         self.ensure_repl_compiler_prelude()?;
-        let compiler = Value::make_instance(Symbol::intern("Perl6::Compiler"), HashMap::new());
+        // The attributes the prelude class declares (`parsegrammar`/`parseactions`).
+        let mut attrs = HashMap::new();
+        attrs.insert("parsegrammar".to_string(), Value::NIL);
+        attrs.insert("parseactions".to_string(), Value::NIL);
+        let compiler = Value::make_instance(Symbol::intern("Perl6::Compiler"), attrs);
         self.repl_compiler.compiler = Some(compiler.clone());
         Ok(compiler)
     }
@@ -348,6 +352,10 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if name == "__mutsu_comp_lang" {
+            // `$?LANG`: see `parser::primary::var::scalar`.
+            return Some(Ok(crate::runtime::slang_activation::comp_lang_instance()));
+        }
         if name != "__mutsu_compiler_eval" {
             return None;
         }
