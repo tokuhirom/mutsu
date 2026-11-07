@@ -69,15 +69,18 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
 // Cost: O(n), n = size of the node.
 pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
     let ValueView::RakuAst(inner) = node.view() else {
-        return Err(RuntimeError::new("slang production produced no RakuAST node"));
+        return Err(RuntimeError::new(
+            "slang production produced no RakuAST node",
+        ));
     };
     let names = NameScope::default();
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    let lowered = crate::parser::with_rakuast_lexical_scope(|| {
-        super::lower::lower_expr(&names, inner)
-    })?;
-    Ok(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Lowered {
-        expr: Box::new(lowered),
-        node: node.clone(),
-    })))
+    let lowered =
+        crate::parser::with_rakuast_lexical_scope(|| super::lower::lower_expr(&names, inner))?;
+    Ok(Expr::Ast(Box::new(
+        crate::ast::parsed::ParsedExpr::Lowered {
+            expr: Box::new(lowered),
+            node: node.clone(),
+        },
+    )))
 }

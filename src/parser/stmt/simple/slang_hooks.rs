@@ -102,10 +102,7 @@ fn byte_offset(text: &str, chars: usize) -> usize {
 /// after the first one that matches and the node its action attached. `None`: no
 /// hook applies here (no slang, or no candidate matched).
 // Cost: O(1) with no hook registered; otherwise the slang's own run.
-fn run_category<'a>(
-    category: &[&str],
-    input: &'a str,
-) -> Option<Result<(&'a str, Value), PError>> {
+fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str, Value), PError>> {
     let (rules, host) = HOOKS.with(|h| {
         let hooks = h.borrow();
         if hooks.rules.is_empty() {
@@ -126,9 +123,8 @@ fn run_category<'a>(
     for candidate in rules {
         let answer = host.run_hook(&candidate.rule, input, &mut |rule, pos| {
             let start = byte_offset(input, pos);
-            crate::rakuast::slang_bridge::parse_production(rule, &input[start..]).map(|found| {
-                found.map(|(len, node)| (input[..start + len].chars().count(), node))
-            })
+            crate::rakuast::slang_bridge::parse_production(rule, &input[start..])
+                .map(|found| found.map(|(len, node)| (input[..start + len].chars().count(), node)))
         });
         match answer {
             Ok(None) => continue,
