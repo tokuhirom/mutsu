@@ -38,6 +38,7 @@ impl Interpreter {
         // from the AST: DOC INIT runs before the program's registration
         // opcodes, but Pod::To::Text needs both `.WHY` identity and the
         // routine's real signature at that point.
+        let mut declarator_entries: Vec<(usize, Value)> = Vec::new();
         for dc in &self.declarator_docs.doc_comment_list {
             // The key first: it is what distinguishes the candidates of a
             // multi (`&mm/multi.0` vs `&mm/multi.1`) and one routine's `$a`
@@ -98,7 +99,19 @@ impl Interpreter {
                     .why_object_cache
                     .insert(object_id, pod_entry.clone());
             }
-            pod_entries.push(pod_entry);
+            declarator_entries.push((dc.start, pod_entry));
+        }
+        // Source order: the Pod blocks and the declarator blocks interleave as
+        // they are written. Without block offsets (a tree, a precompiled
+        // module) the declarators follow the blocks.
+        let starts = std::mem::take(&mut self.declarator_docs.pod_block_starts);
+        if starts.len() == pod_entries.len() {
+            let mut merged: Vec<(usize, Value)> = starts.into_iter().zip(pod_entries).collect();
+            merged.extend(declarator_entries);
+            merged.sort_by_key(|(start, _)| *start);
+            pod_entries = merged.into_iter().map(|(_, v)| v).collect();
+        } else {
+            pod_entries.extend(declarator_entries.into_iter().map(|(_, v)| v));
         }
         self.env
             .insert("=pod".to_string(), Value::real_array(pod_entries));
