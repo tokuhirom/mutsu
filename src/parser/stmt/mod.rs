@@ -53,7 +53,7 @@ use idents::{ident, lexical_var_name, qualified_ident, starts_unit_class_role_gr
 pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.
-pub(in crate::parser) use stmtlist::partial_parse_skips;
+pub(in crate::parser) use stmtlist::{next_line_opens_with_plain_term, partial_parse_skips};
 use stmtlist::{
     block, method_block, package_body_block, package_body_block_with_terms, routine_block,
 };

@@ -483,7 +483,27 @@ fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
         }
         let (r, stmt) = crate::parser::stmt::statement_pub(rest)?;
         stmts.push(stmt);
+        // The statement parser may swallow the line break after the statement,
+        // so look at the text from the statement's start up to the next term.
+        let statement_start = rest;
         let (r, _) = ws(r)?;
+        let consumed = statement_start[..statement_start.len() - r.len()].trim_end();
+        let gap = &statement_start[consumed.len()..statement_start.len() - r.len()];
+        // A single-line expression statement followed, on the next line, by a
+        // plain term with no `;` between is a missing separator, as in a block
+        // (rakudo: "Two terms in a row across lines").
+        if !consumed.ends_with([';', '}'])
+            && !r.starts_with(';')
+            && !consumed.contains(['\n', '\r'])
+            && gap.contains(['\n', '\r'])
+            && crate::parser::stmt::next_line_opens_with_plain_term(r)
+            && matches!(stmts.last(), Some(crate::ast::Stmt::Expr(_)))
+        {
+            return Err(PError::fatal(
+                "X::Syntax::Confused: Two terms in a row across lines (missing semicolon or comma?)"
+                    .to_string(),
+            ));
+        }
         // Consume semicolons
         let mut r = r;
         while r.starts_with(';') {
