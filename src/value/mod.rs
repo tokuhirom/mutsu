@@ -3907,8 +3907,9 @@ impl ForLoopResumeState {
     /// and a `CStyleLoop` marker its recorded `site`.
     pub(crate) fn resume_op_site(&self) -> (usize, usize) {
         match self {
-            ForLoopResumeState::CStyleLoop { site, .. }
-            | ForLoopResumeState::SunkPipe { site } => *site,
+            ForLoopResumeState::CStyleLoop { site, .. } | ForLoopResumeState::SunkPipe { site } => {
+                *site
+            }
             ForLoopResumeState::IntRange {
                 code_id, loop_ip, ..
             }

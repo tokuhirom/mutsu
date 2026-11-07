@@ -477,7 +477,11 @@ impl Interpreter {
     /// [`Self::force_lazy_pipe`] without the copy: run the pipe until its
     /// cache holds `needed` elements or the source is exhausted.
     // Cost: O(1) amortized per produced element, plus the stage callback.
-    pub(super) fn fill_lazy_pipe(&mut self, list: &LazyList, needed: usize) -> Result<(), RuntimeError> {
+    pub(super) fn fill_lazy_pipe(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
