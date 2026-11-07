@@ -5647,14 +5647,37 @@ fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
         .collect()
 }
 
-/// Names declared inside blocks nested in a class body (`for`/`if`/`while`
-/// bodies and their loop parameters), minus nothing: the caller compares them
-/// with the body's own top-level declarations.
+/// Names declared inside the loops (`for`/`while`/`loop`) at a class body's
+/// top level, except those the body also declares itself. A loop body is the
+/// whole scope of its `my`s: nothing outside it (no method) can read them, so
+/// their last-iteration copy in the env is stale, not a static. A bare block
+/// is left alone: its methods close over its lexicals.
 // Cost: O(n), n = size of the body's subtree outside nested routines and closures.
 fn class_nested_decl_names(body: &[Stmt]) -> Vec<Symbol> {
-    let mut names = std::collections::HashSet::new();
-    crate::ast::collect_all_my_decl_names(body, &mut names);
-    names.iter().map(|n| Symbol::intern(n)).collect()
+    use crate::ast_visit::{Visit, walk_stmt};
+    struct LoopDecls(std::collections::HashSet<String>);
+    impl<'ast> Visit<'ast> for LoopDecls {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Loop { body, .. } => {
+                    crate::ast::collect_all_my_decl_names(body, &mut self.0);
+                }
+                _ => walk_stmt(self, stmt),
+            }
+        }
+    }
+    let mut v = LoopDecls(std::collections::HashSet::new());
+    for stmt in body {
+        v.visit_stmt(stmt);
+    }
+    // A name the body also declares at its own top level (any kind: `my`,
+    // `our`, `constant`) is that declaration's, not the loop's.
+    for stmt in crate::ast::scope_statements(body) {
+        if let Stmt::VarDecl { name, .. } = stmt {
+            v.0.remove(name.as_str());
+        }
+    }
+    v.0.iter().map(|n| Symbol::intern(n)).collect()
 }
 
 /// The declaring frame's lexicals a type's methods may capture, once the names
