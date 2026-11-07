@@ -6,6 +6,20 @@ use crate::value::AttrMap;
 pub(crate) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl Interpreter {
+    /// Put a method's own composition bindings (a role's type parameters and the
+    /// role-body lexicals persisted with the composition) into the method's env.
+    /// `::?CLASS` is the frame record's, not an env key.
+    // Cost: O(b), b = the method's bindings.
+    fn apply_method_role_bindings(&mut self, method_def: &crate::runtime::MethodDef) {
+        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
+            for (name, value) in bindings {
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
+            }
+        }
+    }
+
     /// Ordinary methods own state through their declaring/composing type;
     /// inherited methods retain that owner. A metamethod instead belongs to
     /// each receiver's HOW, including dynamically composed receiver types.
@@ -596,14 +610,7 @@ impl Interpreter {
                 self.env_mut().insert(name.clone(), value.clone());
             }
         }
-        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
-            for (name, value) in bindings {
-                // `::?CLASS` is the frame record's (below), not an env key.
-                if name != "?CLASS" {
-                    self.env_mut().insert(name.clone(), value.clone());
-                }
-            }
-        }
+        self.apply_method_role_bindings(method_def);
         // A method can carry its defining lexical environment either from an
         // `.^add_method` closure literal or from a class declared in a routine.
         // Install these true lexical captures before parameter binding.
@@ -639,14 +646,7 @@ impl Interpreter {
         // environment: `role R[&limit]` must keep its `&limit` callable even
         // when the callable argument closes over an outer `$limit`, whose
         // capture metadata otherwise supplies a same-named nil entry.
-        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
-            for (name, value) in bindings {
-                // `::?CLASS` is the frame record's (below), not an env key.
-                if name != "?CLASS" {
-                    self.env_mut().insert(name.clone(), value.clone());
-                }
-            }
-        }
+        self.apply_method_role_bindings(method_def);
 
         // Skip invocant param, bind remaining
         let mut skipped_invocant = false;
@@ -942,6 +942,15 @@ impl Interpreter {
         // happens to share the name does not: the statics are the class's own
         // lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
+        // A role method's own composition bindings (its type parameters and the
+        // role-body lexicals persisted with the composition) are closer than the
+        // statics of a class the role is declared in: `class C { my \iv = 1;
+        // my role R[\n] { my \iv = n * 2; method v { iv } } }` reads the
+        // role's `iv`. The enclosing class's statics were just injected over
+        // them, so apply the bindings again.
+        if owner_is_role {
+            self.apply_method_role_bindings(method_def);
+        }
 
         // Push routine_stack so &?ROUTINE can find the current method. This is
         // done BEFORE parameter binding: a parameter default (`:$n = helper()`)
