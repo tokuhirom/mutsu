@@ -1780,6 +1780,11 @@ pub(crate) struct EndPhaser {
     /// Event::Emitter's `submethod BUILD`), and no frame is left at exit to
     /// answer it. `None` for an `END` that is not inside a method.
     pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
+    /// The routines an `EVAL`'d unit declared, for an `END` that unit
+    /// installed: the unit's routines are lexical to it and leave the registry
+    /// when it ends, but the phaser runs at program exit and still calls them.
+    /// Empty for every other phaser.
+    pub(crate) unit_routines: std::sync::Arc<Vec<(Symbol, std::sync::Arc<FunctionDef>)>>,
 }
 
 /// Install-order bases for [`EndPhaser::order`]; lowest = installed earliest =
