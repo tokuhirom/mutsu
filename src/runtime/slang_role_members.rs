@@ -43,6 +43,14 @@ impl Interpreter {
         // the role registry is keyed by the role group, so normalise first
         // like every other consumer of a role type object (#17008).
         let role = self.normalize_role_type_object(role);
+        // A parametric role instance (`Numish[%handlers]`) names the group it
+        // was instantiated from; read the members of that declaration.
+        let role = match role.view() {
+            ValueView::ParametricRole { base_name, .. } => {
+                self.normalize_role_type_object(&Value::package(base_name))
+            }
+            _ => role,
+        };
         let role_name = match role.view() {
             ValueView::Package(name) => name.resolve(),
             _ => role.to_string_value(),
