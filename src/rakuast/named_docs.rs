@@ -28,6 +28,10 @@ fn documentable(class: C) -> bool {
             | C::Module
             | C::Package
             | C::VarDeclarationSimple
+            | C::VarDeclarationConstant
+            | C::RegexDeclaration
+            | C::TokenDeclaration
+            | C::RuleDeclaration
             | C::TypeEnum
             | C::TypeSubset
             | C::Parameter
