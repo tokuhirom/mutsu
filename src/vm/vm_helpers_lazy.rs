@@ -1221,7 +1221,11 @@ impl Interpreter {
             return Ok(None);
         }
         let truth = !self.force_lazy_list_vm_n(&ll, 1)?.is_empty();
-        Ok(Some(Value::truth(if method == "not" { !truth } else { truth })))
+        Ok(Some(Value::truth(if method == "not" {
+            !truth
+        } else {
+            truth
+        })))
     }
 
     /// For `.head` on a gather-sourced `LazyList`, return how many leading
