@@ -487,6 +487,29 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The ip a resumed loop iteration re-enters its body at. A suspension from
+    /// a loop nested in the body leaves that loop's resume state chained, and
+    /// the nested loop op is where execution stopped: replaying the body from
+    /// its first statement would run the statements before it a second time
+    /// (`my $d = @q.shift; for ... { take ... }` shifted again on every
+    /// resume). `None` when the iteration was not part-way through, or the
+    /// chained state has no loop op in this body to jump to.
+    // Cost: O(1).
+    pub(super) fn nested_loop_entry(
+        &self,
+        code: &CompiledCode,
+        in_body: bool,
+        body_start: usize,
+        loop_end: usize,
+    ) -> Option<usize> {
+        if !in_body {
+            return None;
+        }
+        let (code_id, op_ip) = self.async_state.gather_for_loop_resume.as_ref()?.resume_op_site();
+        (code_id == code.ops.as_ptr() as usize && (body_start..loop_end).contains(&op_ip))
+            .then_some(op_ip)
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,
@@ -527,6 +550,10 @@ impl Interpreter {
         // marker is consumed here; the loop's state lives in locals/env so
         // re-entering from the top (cond re-check) continues correctly.
         let mut resume_in_body = false;
+        // Where the resumed iteration's body re-enters: the nested loop op the
+        // suspension came from, not the top of the body (see
+        // [`Interpreter::nested_loop_entry`]).
+        let mut body_entry: Option<usize> = None;
         if matches!(
             self.async_state.gather_for_loop_resume,
             Some(crate::value::ForLoopResumeState::CStyleLoop { .. })
@@ -538,6 +565,7 @@ impl Interpreter {
             {
                 resume_in_body = in_body;
                 self.async_state.gather_for_loop_resume = inner.map(|b| *b);
+                body_entry = self.nested_loop_entry(code, resume_in_body, body_start, loop_end);
             }
         } else if !code.state_locals.is_empty() {
             // Fresh entry to the loop statement: state variables declared in
@@ -595,7 +623,12 @@ impl Interpreter {
                 None
             };
             'body_redo: loop {
-                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                let body_res = self.run_range(
+                    code,
+                    body_entry.take().unwrap_or(body_start),
+                    loop_end,
+                    compiled_fns,
+                );
                 // Sync state variables modified in this iteration so the next
                 // iteration's StateVarInit sees updated values. State mutations
                 // persist on every exit path (`next`/`redo`/`last`/exception),
