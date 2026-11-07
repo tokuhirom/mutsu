@@ -234,8 +234,18 @@ fn capture_closure(decl: &Stmt) -> Expr {
     };
     // A method literal's invocant is its leading synthetic `self`; an
     // explicitly declared invocant is not an extra positional.
-    let mut all_params = vec!["self".to_string()];
-    let mut all_param_defs = vec![crate::parser::invocant_param_def()];
+    // The explicit invocant's name (`method m ($class: |c)`) is the leading
+    // parameter's, so the body's uses of it are not free variables.
+    let mut invocant = crate::parser::invocant_param_def();
+    let mut invocant_name = "self".to_string();
+    for (name, pd) in params.iter().zip(param_defs.iter()) {
+        if pd.is_invocant && !name.is_empty() {
+            invocant_name = name.clone();
+            invocant.name = pd.name.clone();
+        }
+    }
+    let mut all_params = vec![invocant_name];
+    let mut all_param_defs = vec![invocant];
     for (name, pd) in params.iter().zip(param_defs.iter()) {
         if pd.is_invocant {
             continue;
