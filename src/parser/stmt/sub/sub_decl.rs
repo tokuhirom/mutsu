@@ -108,6 +108,20 @@ pub(crate) fn sub_decl_with_semicolon_mode(
     input: &str,
     allow_main_semicolon_decl: bool,
 ) -> PResult<'_, Stmt> {
+    let (rest, stmt) = sub_decl_head(input, allow_main_semicolon_decl)?;
+    // A plain named sub's text is kept for the rest of the unit: a slang
+    // activation can hand it to the slang host (`use Slang &sub`, #17055).
+    if let Stmt::SubDecl {
+        name, multi: false, ..
+    } = &stmt
+    {
+        let consumed = input.len() - rest.len();
+        super::super::simple::record_unit_sub_source(name.as_str(), &input[..consumed]);
+    }
+    Ok((rest, stmt))
+}
+
+fn sub_decl_head(input: &str, allow_main_semicolon_decl: bool) -> PResult<'_, Stmt> {
     let (input, supersede) = if let Some(r) = keyword("supersede", input) {
         let (r, _) = ws1(r)?;
         (r, true)

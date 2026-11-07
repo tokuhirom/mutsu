@@ -160,9 +160,11 @@ pub(in crate::parser) fn maybe_activate_slang_use(
 
 /// The literal arguments of a `use` statement (`use Foo 'a', 42`), in the form
 /// the activation thread carries them. `None` when any argument is not a plain
-/// string/number/boolean literal: such a `use` activates with no arguments, as
+/// string/number/boolean literal or a `&sub` of the unit: such a `use` activates with no arguments, as
 /// it did before arguments were passed at all.
-fn literal_use_args(arg: &Expr) -> Option<Vec<crate::runtime::slang_activation::SlangUseArg>> {
+use crate::runtime::slang_activation::SlangUseArg;
+
+fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
     let items: &[Expr] = match arg.peel_parens() {
         Expr::ArrayLiteral(items) => items,
         single => std::slice::from_ref(single),
@@ -170,7 +172,13 @@ fn literal_use_args(arg: &Expr) -> Option<Vec<crate::runtime::slang_activation::
     items
         .iter()
         .map(|item| match item.peel_parens() {
-            Expr::Literal(v) => crate::runtime::slang_activation::SlangUseArg::from_literal(v),
+            Expr::Literal(v) => SlangUseArg::from_literal(v),
+            // A routine of the unit being parsed (`use overload::constant &integer`):
+            // the slang host rebuilds it from the declaration's text (#17055).
+            Expr::CodeVar(name) => unit_sub_source(name).map(|source| SlangUseArg::Routine {
+                name: name.clone(),
+                source,
+            }),
             _ => None,
         })
         .collect()

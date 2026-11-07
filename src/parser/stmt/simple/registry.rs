@@ -241,6 +241,30 @@ pub(crate) fn register_user_test_assertion_sub(name: &str) {
     });
 }
 
+/// Remember the source text of the `sub` declaration `name` in the current scope.
+// Cost: O(n), n = length of the declaration's text.
+pub(crate) fn record_unit_sub_source(name: &str, source: &str) {
+    SCOPES.with(|s| {
+        if let Some(scope) = s.borrow_mut().last_mut() {
+            scope
+                .sub_sources
+                .insert(name.to_string(), source.to_string());
+        }
+    });
+}
+
+/// The source text of the sub `name` declared before this point in an enclosing
+/// scope, if any.
+// Cost: O(d + n), d = scope depth, n = length of the declaration's text.
+pub(crate) fn unit_sub_source(name: &str) -> Option<String> {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .rev()
+            .find_map(|scope| scope.sub_sources.get(name).cloned())
+    })
+}
+
 /// Reset all scopes (called at parse start).
 pub(crate) fn reset_user_subs() {
     SCOPES.with(|s| {

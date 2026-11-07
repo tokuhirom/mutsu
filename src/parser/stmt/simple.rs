@@ -59,6 +59,7 @@ pub(crate) use registry::{ExportHowError, take_exporthow_error};
 pub(crate) use registry::{
     current_language_version, current_language_version_starts_with, set_current_language_version,
 };
+pub(crate) use registry::{record_unit_sub_source, unit_sub_source};
 pub(crate) use slang_modes::{
     RECOGNIZED_PRODUCTION_OVERRIDES, SlangModes, apply_slang_rule_override,
     consume_slang_ident_trailing_punct, set_slang_modes, slang_modes, slang_spaced_call,
@@ -160,6 +161,8 @@ enum TermBinding {
 #[derive(Clone, Default)]
 pub(in crate::parser) struct LexicalScope {
     user_subs: HashSet<String>,
+    /// Declaration text of the plain named subs of this scope (`use Slang &sub`, #17055).
+    sub_sources: HashMap<String, String>,
     prefix_operator_subs: HashSet<String>,
     postfix_operator_subs: HashSet<String>,
     infix_operator_subs: HashSet<String>,
