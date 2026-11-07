@@ -82,7 +82,7 @@ impl Interpreter {
         // when they share a binding root.
         if args.len() == 2
             && matches!(op, "=:=" | "!=:=")
-            && let Some(same) = self.call_site_containers_identical()
+            && let Some(same) = self.call_site_containers_identical(args)
         {
             return Ok(Value::truth(same == (op == "=:=")));
         }
@@ -556,7 +556,7 @@ impl Interpreter {
     /// Whether the two variables the current call site passed share one
     /// container, or `None` when the call site did not name two variables.
     // Cost: O(c), c = length of the `:=` alias chains of the two names.
-    fn call_site_containers_identical(&self) -> Option<bool> {
+    fn call_site_containers_identical(&self, args: &[Value]) -> Option<bool> {
         let sources = self.pending_call_arg_sources()?;
         let [Some(left), Some(right)] = sources.as_slice() else {
             return None;
@@ -578,8 +578,25 @@ impl Interpreter {
         if left_root == right_root {
             return Some(true);
         }
-        // Distinct roots: only two scalar variables are known to own distinct
-        // containers; anything else keeps the value comparison.
-        (scalar(&left_root) && scalar(&right_root)).then_some(false)
+        // Distinct roots: two scalar variables hold distinct containers when
+        // they hold plain values. Type objects, code objects, enum values,
+        // aggregates and objects are singletons or may be bare `:=` bindings,
+        // which the operator form (`exec_container_eq_named_op`) leaves to
+        // value identity, so they keep the value comparison here too.
+        let plain_value = |v: &Value| {
+            matches!(
+                v.unwrap_varref().view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::Complex(..)
+            )
+        };
+        (scalar(&left_root) && scalar(&right_root) && args.iter().all(plain_value))
+            .then_some(false)
     }
 }
