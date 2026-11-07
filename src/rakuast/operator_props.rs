@@ -183,15 +183,50 @@ fn prefix_props(symbol: &str) -> Props {
     }
 }
 
-fn infix_props(node: &RakuAstNode) -> Props {
-    let symbol = symbol_text(node).unwrap_or_default();
-    if NO_OPERATOR_PROPERTIES.contains(&symbol.as_str()) {
+/// `postfix:<.>` is the method call, which the grammar parses without a
+/// routine, so the routine table does not list it.
+fn postfix_props(symbol: &str) -> Props {
+    match symbol {
+        "." => Props::builtin("postcircumfix", "[ ]"),
+        _ => Props::builtin("postfix", symbol),
+    }
+}
+
+fn infix_symbol_props(symbol: &str) -> Props {
+    if NO_OPERATOR_PROPERTIES.contains(&symbol) {
         return Props::from_entries(op_prec::category_default("infix").unwrap_or(&[]));
     }
-    match syntax_infix(&symbol) {
+    match syntax_infix(symbol) {
         Some(entries) => Props::from_entries(entries),
-        None => Props::builtin("infix", &symbol),
+        None => Props::builtin("infix", symbol),
     }
+}
+
+fn infix_props(node: &RakuAstNode) -> Props {
+    infix_symbol_props(&symbol_text(node).unwrap_or_default())
+}
+
+/// Subscript delimiters the grammar parses that the routine table does not
+/// list; rakudo's class-level `circumfix` / `postcircumfix` lookups answer the
+/// method-call level for them.
+const SUBSCRIPT_SYNTAX: &[&str] = &["< >", "<< >>", "\u{ab} \u{bb}"];
+
+/// `OperatorProperties.infix` / `prefix` / `postfix` / `circumfix` /
+/// `postcircumfix`: the class-level lookup by symbol, the same answer an
+/// operator node of that category gives (`None` for another category).
+// Cost: O(log n), n = built-in operator count.
+pub(crate) fn lookup(category: &str, symbol: &str) -> Option<Value> {
+    let props = match category {
+        "infix" => infix_symbol_props(symbol),
+        "prefix" => prefix_props(symbol),
+        "postfix" => postfix_props(symbol),
+        "circumfix" | "postcircumfix" if SUBSCRIPT_SYNTAX.contains(&symbol) => {
+            Props::builtin("postcircumfix", "[ ]")
+        }
+        "circumfix" | "postcircumfix" => Props::builtin(category, symbol),
+        _ => return None,
+    };
+    Some(props.into_value())
 }
 
 /// The properties of `node`, or `None` when it is not an operator node.
@@ -199,9 +234,7 @@ fn props(node: &RakuAstNode) -> Option<Props> {
     Some(match node.class {
         RakuAstClass::Infix => infix_props(node),
         RakuAstClass::Prefix => prefix_props(&symbol_text(node).unwrap_or_default()),
-        RakuAstClass::Postfix => {
-            Props::builtin("postfix", &named_operator(node).unwrap_or_default())
-        }
+        RakuAstClass::Postfix => postfix_props(&named_operator(node).unwrap_or_default()),
         RakuAstClass::FunctionInfix => Props::builtin("infix", "+"),
         RakuAstClass::PostcircumfixArrayIndex
         | RakuAstClass::PostcircumfixHashIndex
