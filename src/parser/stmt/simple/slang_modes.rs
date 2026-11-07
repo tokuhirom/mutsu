@@ -128,8 +128,19 @@ pub(crate) fn slang_sigilless_name_len(input: &str) -> Option<usize> {
         .unwrap_or(input.len());
     let name = &input[..end];
     const CORE: [&str; 13] = [
-        "class", "constant", "grammar", "module", "method", "native", "package", "regex", "role",
-        "rule", "sub", "submethod", "token",
+        "class",
+        "constant",
+        "grammar",
+        "module",
+        "method",
+        "native",
+        "package",
+        "regex",
+        "role",
+        "rule",
+        "sub",
+        "submethod",
+        "token",
     ];
     (!CORE.contains(&name)).then_some(end)
 }

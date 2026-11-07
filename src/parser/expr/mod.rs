@@ -124,8 +124,8 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             // cannot distinguish it from a plain `V`. Detect it from the raw LHS
             // source text instead.
             let leading_colons = consumed.trim_start().starts_with("::");
-            let is_bareword =
-                !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
+            let is_bareword = !leading_colons
+                && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
             let left = match expr {
                 Expr::BareWord(ref name)
                     if !consumed.trim_start().starts_with('(')
