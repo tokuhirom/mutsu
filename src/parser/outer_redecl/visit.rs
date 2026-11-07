@@ -193,6 +193,7 @@ impl VisitMut for Ctx {
                     | ParsedStmt::InlineProtoUse { .. }
                     | ParsedStmt::CallAssignList { .. }
                     | ParsedStmt::RoutineTraits(_)
+                    | ParsedStmt::Lowered { .. }
                     | ParsedStmt::ImmediateCall { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)
                     }

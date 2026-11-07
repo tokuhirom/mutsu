@@ -502,6 +502,14 @@ impl VisitMut for Finalize<'_> {
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        // What a slang production stands for was lowered when the parser built it.
+        if matches!(stmt, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::Lowered { .. }))
+            && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
+            && let ParsedStmt::Lowered { stmt: inner, .. } = *node
+        {
+            *stmt = *inner;
+            return;
+        }
         if !carried::stmt_carried(stmt) {
             self.view_statement(stmt);
             return;

@@ -282,6 +282,12 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         STMT_MEMO.store(input, &result);
         return result;
     }
+    // A slang's own `statement-control` productions compete ahead of the
+    // built-in ones (ADR-15762 §2.1).
+    if let Some(result) = simple::statement_control_hook(input) {
+        STMT_MEMO.store(input, &result);
+        return result;
+    }
     let input_len = input.len();
     let mut best_error: Option<(usize, PError)> = None;
     let mut early_success: Option<(&str, Stmt)> = None;

@@ -5247,7 +5247,11 @@ impl Interpreter {
             if !token_ratchet && ratchet {
                 unratchet_transparent_group(&mut atom);
             }
-            let user_alias = pending_named_capture.take();
+            // An alias spelled like the rule it names (`$<b>=<b>`) is that
+            // rule's own capture, not a second one beside it.
+            let user_alias = pending_named_capture.take().filter(|alias| {
+                !(aliased_subrule_call && matches!(&atom, RegexAtom::Named(n) if n.spec().lookup_name == *alias))
+            });
             let user_alias_is_angle = pending_named_capture_is_angle_alias;
             pending_named_capture_is_angle_alias = false;
             let user_alias_is_array = pending_named_capture_is_array;

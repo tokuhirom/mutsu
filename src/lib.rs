@@ -65,6 +65,7 @@ mod runtime;
 pub(crate) mod scan_cache;
 mod scope;
 pub(crate) mod sigilless_alias_index;
+pub(crate) mod slang_link;
 pub(crate) mod source_comments;
 mod state_scope;
 pub(crate) mod static_str;

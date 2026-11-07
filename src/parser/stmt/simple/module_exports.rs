@@ -775,6 +775,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // activation is lexical to that module, and the importer's modes must
     // survive the nested parse's reset (ADR-0026 §2.1 scoping).
     let saved_slang_modes = super::slang_modes_snapshot();
+    let saved_slang_hooks = super::hooks_snapshot();
     let saved_l10n_vocabulary = super::l10n_vocabulary_snapshot();
     // This is a scan of `path`, not of whatever file the importer is being
     // parsed from — tag it so any warning this scan raises is attributed to
@@ -878,6 +879,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     set_current_language_version(&saved_language_version);
     restore_declare_keywords(saved_declare_keywords);
     super::restore_slang_modes(saved_slang_modes);
+    super::restore_hooks(saved_slang_hooks);
     super::restore_l10n_vocabulary(saved_l10n_vocabulary);
     // Collect the module's declared type names (classes/roles/enums/grammars)
     // for the importer's scope. A `use`d module makes its `our`-scoped and

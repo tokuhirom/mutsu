@@ -156,6 +156,16 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
     }
 }
 
+/// Lower one statement node on its own, inside a parse (ADR-15762 §2.5): the
+/// unit's closing passes (`finish_unit`) run on the whole unit later.
+// Cost: O(n), n = size of the node.
+pub(super) fn lower_fragment(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let _method_scope = super::underscore_bindings::MethodScope::enter(false);
+    super::shadowed_terms::scan(node);
+    super::infix_func::reset();
+    crate::parser::with_rakuast_lexical_scope(|| lower_stmt(names, node))
+}
+
 pub(super) fn lower_stmt(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;

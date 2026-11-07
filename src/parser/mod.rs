@@ -285,6 +285,10 @@ pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>
 pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
+pub(crate) use stmt::simple::slang_hook_rule;
+
+pub(crate) use stmt::simple::parse_slang_shim_production;
+
 /// The module search paths a parse-time slang activation must run under — the
 /// paths this parse itself resolves `use` against.
 pub(crate) fn parser_lib_paths_for_slang() -> Vec<String> {

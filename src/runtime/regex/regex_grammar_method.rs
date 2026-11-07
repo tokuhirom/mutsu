@@ -11,7 +11,8 @@ use super::super::*;
 impl Interpreter {
     /// Call the grammar method `name` of `pkg` on `invocant` (the cursor of the
     /// rule invocation making the call) at `pos` of `chars`, with `args`. The
-    /// end it answers, or `None` for no match.
+    /// end it answers with the `.ast` of the Match it returned, or `None` for no
+    /// match.
     ///
     /// The method's exception (`die` inside it) does not read as a silent
     /// non-match: the first one raised in the match is kept in
@@ -27,7 +28,7 @@ impl Interpreter {
         pkg: Symbol,
         args: &[Value],
         invocant: Value,
-    ) -> Option<usize> {
+    ) -> Option<(usize, Option<Value>)> {
         // The failure-position probe of a failed `.parse` re-walks the start
         // rule purely to measure it (ADR-0009): it must not run user code a
         // second time (#11608: an overridden `method ws` saw every position
@@ -53,7 +54,7 @@ impl Interpreter {
         pkg: Symbol,
         args: &[Value],
         invocant: Value,
-    ) -> Option<usize> {
+    ) -> Option<(usize, Option<Value>)> {
         // The invocant is an INSTANCE of the grammar carrying the cursor state
         // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
         // method the in-progress cursor, which is what makes the documented
@@ -112,7 +113,7 @@ impl Interpreter {
                 Some(p) => p as usize,
                 None => pos,
             };
-            return (end <= chars.len()).then_some(end);
+            return (end <= chars.len()).then_some((end, None));
         }
         // A defined Match/Cursor return advances the parse by its extent.
         // (Match goes through the seam; a non-Match cursor-like instance with a
@@ -139,6 +140,6 @@ impl Interpreter {
         } else {
             pos + to as usize
         };
-        (end <= chars.len()).then_some(end)
+        (end <= chars.len()).then_some((end, v.match_ast()))
     }
 }

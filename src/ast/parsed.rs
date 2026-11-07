@@ -18,6 +18,15 @@ use super::{Expr, ParamDef, SrcSpan, Stmt};
 /// A statement-level construct kept in its RakuAST shape.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ParsedStmt {
+    /// The statement a slang production stands for (ADR-15762), already
+    /// lowered from the node its action attached: the unit's finalization
+    /// takes it as it is.
+    Lowered {
+        stmt: Box<Stmt>,
+        /// The `RakuAST::Statement` node the action attached, for the
+        /// conversions that read the parse back as RakuAST.
+        node: crate::value::Value,
+    },
     /// The traits written on a routine or package, in source order; opens
     /// its body. Compiler-inert: the execution fields the parser folds them
     /// into are the code, this is what the source said. Analyses skip it
@@ -757,6 +766,7 @@ impl ParsedStmt {
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
             ParsedStmt::For { .. }
+            | ParsedStmt::Lowered { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::AttributeGroup(_)
@@ -802,6 +812,7 @@ impl ParsedStmt {
             ParsedStmt::WhileLoop(w) => vec![&w.block],
             ParsedStmt::Loop(l) => vec![&l.block],
             ParsedStmt::For { .. }
+            | ParsedStmt::Lowered { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::DoesDecl { .. }
             | ParsedStmt::WillDecl { .. }

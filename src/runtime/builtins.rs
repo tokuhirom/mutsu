@@ -1268,6 +1268,7 @@ impl Interpreter {
             "__mutsu_native_lexref_fetch" | "__mutsu_native_lexref_store" => self
                 .try_native_lex_ref_routine(name, &args)
                 .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
+            "__mutsu_slang_shim" => self.builtin_slang_shim(&args),
             // Cost: O(log n), n = built-in operator count.
             "__mutsu_operator_properties" => Ok(crate::rakuast::operator_props::lookup(
                 &args.first().map(|v| v.to_string_value()).unwrap_or_default(),

@@ -190,6 +190,7 @@ mod shadowed_terms;
 mod signature_decl;
 mod signature_decl_origins;
 mod signature_literal;
+pub(crate) mod slang_bridge;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
