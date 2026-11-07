@@ -49,6 +49,15 @@ pub(crate) fn apply_slang_overrides(
         if vocabulary.try_insert_token(&over.name, over.body.as_deref()) {
             continue;
         }
+        // The names a bare `my NAME` may declare (Slang::Nogil / Slang::Emoji).
+        if over.name == "sigilless-variable"
+            && let Some(body) = over.body.as_deref()
+            && (body.contains("<.ident>") || body.contains(":So>"))
+        {
+            modes.sigilless_ident |= body.contains("<.ident>");
+            modes.sigilless_symbol |= body.contains(":So>");
+            continue;
+        }
         // The lexemes that open a pointy block (Slang::Lambda's `λ`).
         if over.name == "pointy-block-starter"
             && let Some(starters) = over.body.as_deref().and_then(parse_pointy_starters)

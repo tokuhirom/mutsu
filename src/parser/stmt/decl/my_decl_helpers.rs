@@ -167,6 +167,7 @@ pub(super) fn parse_optional_type_constraint(rest: &str) -> PResult<'_, Option<S
             || r2.starts_with('\\')
             || r2.starts_with('(')
             || keyword("constant", r2).is_some()
+            || crate::parser::stmt::simple::slang_sigilless_name_len(r2).is_some()
         {
             Ok((r2, Some(tc)))
         } else {
@@ -219,6 +220,7 @@ fn parse_fallback_type_constraint(rest: &str) -> Option<(&str, Option<String>)> 
         || r2.starts_with('\\')
         || r2.starts_with('(')
         || keyword("constant", r2).is_some()
+        || crate::parser::stmt::simple::slang_sigilless_name_len(r2).is_some()
     {
         Some((r2, Some(tc)))
     } else {
