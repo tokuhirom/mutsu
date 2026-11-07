@@ -2159,6 +2159,13 @@ impl Compiler {
                             && !preapply_container_default
                             && !our_typed_aggregate
                         {
+                            if name.starts_with('@') {
+                                // A lazy initializer is flagged once, so the local
+                                // slot and the package store share one lazy list.
+                                let idx = self.code.add_constant(Value::str(name.clone()));
+                                self.code
+                                    .emit(OpCode::ShareLazyArrayInit { name_idx: idx });
+                            }
                             self.code.emit(OpCode::Dup);
                         }
                         // A sigilless bind (`my \x := EXPR`) settles its

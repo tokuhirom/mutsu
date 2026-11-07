@@ -416,6 +416,7 @@ impl Interpreter {
             | OpCode::GetScalarContainer { .. }
             | OpCode::MarkSigillessBindSource(..)
             | OpCode::PublishExportStashVar { .. }
+            | OpCode::ShareLazyArrayInit { .. }
             | OpCode::ReactScope { .. }
             | OpCode::RegisterSubset { .. }
             | OpCode::RegisterVarExport { .. }
