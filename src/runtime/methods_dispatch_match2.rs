@@ -205,6 +205,13 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // A `Seq.new($iterator)` nothing has pulled answers its iterator's
+        // `count-only` and stays unpulled (see `seq_unpulled_count_only`).
+        if args.is_empty()
+            && let Some(count) = self.seq_unpulled_count_only(&target)
+        {
+            return Some(Ok(count));
+        }
         // .elems on a Seq caches it (makes it available for multiple calls)
         if let ValueView::Seq(items) = target.view() {
             items.mark_cache_requested();

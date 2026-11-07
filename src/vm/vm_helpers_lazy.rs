@@ -690,6 +690,12 @@ impl Interpreter {
             self.reify_map_grep_prefix(&target, 1)?;
             return Ok(target);
         }
+        // `.elems` on a `Seq.new($iterator)` nothing has pulled asks the
+        // iterator for its `count-only` (`seq_elems_late`) and leaves the
+        // Seq and the iterator unpulled.
+        if method == "elems" && self.seq_unpulled_count_only(&target).is_some() {
+            return Ok(target);
+        }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }
