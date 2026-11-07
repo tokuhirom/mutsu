@@ -416,7 +416,6 @@ impl Interpreter {
             | OpCode::GetScalarContainer { .. }
             | OpCode::MarkSigillessBindSource(..)
             | OpCode::PublishExportStashVar { .. }
-            | OpCode::ShareLazyArrayInit { .. }
             | OpCode::ReactScope { .. }
             | OpCode::RegisterSubset { .. }
             | OpCode::RegisterVarExport { .. }
@@ -424,6 +423,7 @@ impl Interpreter {
             | OpCode::SetLocal(..)
             | OpCode::SetLocalDecl { .. }
             | OpCode::SetVarDynamic { .. }
+            | OpCode::ShareLazyArrayInit { .. }
             | OpCode::SigillessAggregateStore { .. }
             | OpCode::VarTraitCtl { .. }
             | OpCode::WheneverScope { .. }
