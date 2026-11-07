@@ -414,7 +414,11 @@ impl Interpreter {
                 continue;
             }
             if let Some(initial) = initial_env.get_sym(*k) {
-                if v.to_string_value() != initial.to_string_value() {
+                // The same heap allocation stringifies the same, so a name the
+                // body never rebound skips the render: stringifying a large
+                // captured Hash/Array on every force made each pull O(size of
+                // every collection in scope) (Math::Sequences A000009).
+                if !v.same_binding(initial) && v.to_string_value() != initial.to_string_value() {
                     merged_env.insert_sym(*k, v.clone());
                 }
             } else {

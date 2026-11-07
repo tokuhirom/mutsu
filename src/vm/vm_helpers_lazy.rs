@@ -1743,7 +1743,10 @@ impl Interpreter {
                 // except a newly-promoted scalar cell: it deliberately has the
                 // same visible value as its source while changing the storage
                 // identity (`take-rw $x` must not lose that cell on gather exit).
-                if v.to_string_value() != initial.to_string_value()
+                // A name the body never rebound (the same heap allocation)
+                // stringifies the same: skip rendering a large captured
+                // Hash/Array on every force.
+                if (!v.same_binding(initial) && v.to_string_value() != initial.to_string_value())
                     || (v.is_container_ref() && !initial.is_container_ref())
                 {
                     merged_env.insert_sym(*k, v.clone());
