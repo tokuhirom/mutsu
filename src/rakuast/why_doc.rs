@@ -33,7 +33,7 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
         (Some(FIELD), RakuAstFieldValue::Node(value)) => Some(value.clone()),
         _ => None,
     }) {
-        return value;
+        return with_wherefore(node, value);
     }
     let leading = super::declarator_docs::lines(node, "declarator-docs-leading");
     let trailing = super::declarator_docs::lines(node, "declarator-docs-trailing");
@@ -89,7 +89,7 @@ fn check(value: &Value) -> Result<(), RuntimeError> {
 pub(crate) fn set_why(node: &mut RakuAstNode, doc: &Value) -> Result<Value, RuntimeError> {
     check(doc)?;
     if matches!(doc.view(), ValueView::RakuAst(_)) {
-        let value = RakuAstFieldValue::Node(doc.clone());
+        let value = RakuAstFieldValue::Node(without_cycle(node, doc));
         match node.fields.iter_mut().find(|f| f.name == Some(FIELD)) {
             Some(slot) => slot.value = value,
             None => node.fields.push(RakuAstField {
@@ -143,4 +143,140 @@ pub(super) fn attach(built: Value, doc: Value) -> Value {
         }
         _ => built,
     }
+}
+
+/// The lines of a documentation argument: a list of strings, or one string.
+// Cost: O(l), l = lines.
+fn lines_arg(value: &Value) -> Vec<String> {
+    let value = value.with_deref(|v| v.descalarize().clone());
+    match value.as_list_items() {
+        Some(items) => items.iter().map(|v| v.to_string_value()).collect(),
+        None if value.is_nil() => Vec::new(),
+        None => vec![value.to_string_value()],
+    }
+}
+
+/// `declarator-docs(:@leading, :@trailing)`: replace the documentation of the
+/// declaration by the two texts (an omitted one is empty).
+// Cost: O(f + l), f = fields of the node, l = lines.
+pub(crate) fn declarator_docs(
+    node: &mut RakuAstNode,
+    leading: Option<&Value>,
+    trailing: Option<&Value>,
+) {
+    let get = |v: Option<&Value>| v.map(lines_arg).unwrap_or_default();
+    super::declarator_docs::replace(node, get(leading), get(trailing));
+}
+
+/// `cut-WHY`: the documentation the declaration holds (the `Doc::Declarator`
+/// type object when it has none), which it no longer holds afterwards.
+// Cost: O(f + l), f = fields of the node, l = lines.
+pub(crate) fn cut_why(node: &mut RakuAstNode) -> Value {
+    let doc = why(node);
+    super::declarator_docs::clear(node);
+    doc
+}
+
+fn doc_lines(node: &RakuAstNode, name: &str) -> Vec<Value> {
+    node.fields
+        .iter()
+        .find(|f| f.name == Some(name))
+        .map_or_else(Vec::new, |f| match &f.value {
+            RakuAstFieldValue::List(items) => items.clone(),
+            RakuAstFieldValue::Node(item) => vec![item.clone()],
+            RakuAstFieldValue::Adverb(_) => Vec::new(),
+        })
+}
+
+fn put_lines(node: &mut RakuAstNode, name: &'static str, lines: Vec<Value>) {
+    node.fields.retain(|f| f.name != Some(name));
+    if !lines.is_empty() {
+        node.fields.push(RakuAstField {
+            name: Some(name),
+            value: RakuAstFieldValue::List(lines),
+        });
+    }
+}
+
+/// `Doc::Declarator.add-leading($line)` / `add-trailing`.
+// Cost: O(l), l = lines held.
+pub(crate) fn add_line(node: &mut RakuAstNode, name: &'static str, line: &Value) -> Value {
+    let mut lines = doc_lines(node, name);
+    lines.push(Value::str(line.to_string_value()));
+    put_lines(node, name, lines);
+    Value::NIL
+}
+
+/// `Doc::Declarator.set-leading(@lines)` / `set-trailing`.
+// Cost: O(l), l = lines given.
+pub(crate) fn set_lines(node: &mut RakuAstNode, name: &'static str, lines: &Value) -> Value {
+    let lines = lines_arg(lines).into_iter().map(Value::str).collect();
+    put_lines(node, name, lines);
+    Value::NIL
+}
+
+/// `Doc::Declarator.paragraphs`: the leading and trailing texts, each joined
+/// by newlines.
+// Cost: O(l), l = lines held.
+pub(crate) fn paragraphs(node: &RakuAstNode) -> Value {
+    let join = |name| {
+        doc_lines(node, name)
+            .iter()
+            .map(Value::to_string_value)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Value::array(vec![
+        Value::str(join("leading")),
+        Value::str(join("trailing")),
+    ])
+}
+
+/// The `WHEREFORE` field of a `Doc::Declarator` node.
+fn wherefore_of(doc: &RakuAstNode) -> Option<&Value> {
+    doc.fields.iter().find_map(|f| match (&f.name, &f.value) {
+        (Some("WHEREFORE"), RakuAstFieldValue::Node(v)) => Some(v),
+        _ => None,
+    })
+}
+
+/// `doc` without its `WHEREFORE` when that is `node` itself. The node is
+/// edited in place and shared by every holder, so storing a doc that holds the
+/// same node would make the tree contain itself; [`why`] gives the doc its
+/// `WHEREFORE` back when it is read.
+// Cost: O(f), f = fields of the doc.
+fn without_cycle(node: &RakuAstNode, doc: &Value) -> Value {
+    let ValueView::RakuAst(held) = doc.view() else {
+        return doc.clone();
+    };
+    let points_here = wherefore_of(held).is_some_and(|w| match w.view() {
+        ValueView::RakuAst(target) => std::ptr::eq(target, node),
+        _ => false,
+    });
+    if !points_here {
+        return doc.clone();
+    }
+    let mut stripped = held.clone();
+    stripped.fields.retain(|f| f.name != Some("WHEREFORE"));
+    Value::rakuast(Box::new(stripped))
+}
+
+/// `doc` with `WHEREFORE` set to (a copy of) `node` when it has none.
+// Cost: O(f), f = fields of the node.
+fn with_wherefore(node: &RakuAstNode, doc: Value) -> Value {
+    let ValueView::RakuAst(held) = doc.view() else {
+        return doc;
+    };
+    if held.class != RakuAstClass::DocDeclarator || wherefore_of(held).is_some() {
+        return doc;
+    }
+    let mut full = held.clone();
+    full.fields.insert(
+        0,
+        RakuAstField {
+            name: Some("WHEREFORE"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
+        },
+    );
+    Value::rakuast(Box::new(full))
 }

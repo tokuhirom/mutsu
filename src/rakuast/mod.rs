@@ -41,6 +41,7 @@ mod ctor_names;
 mod decl_origins;
 mod doc_block;
 pub(crate) mod doc_block_queries;
+pub(crate) mod doc_children;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 pub(crate) mod eval_docs;
@@ -3873,7 +3874,8 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
 /// answers it: `Parameter.type-captures`.
 // Cost: O(1).
 pub(crate) fn is_unwalked_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
-    node.class == RakuAstClass::Parameter && field.name == Some("type-captures")
+    (node.class == RakuAstClass::Parameter && field.name == Some("type-captures"))
+        || doc_children::is_wherefore(node, field)
 }
 
 /// The line `node`'s origin begins on, if it has one.

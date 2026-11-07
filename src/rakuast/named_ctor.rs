@@ -183,7 +183,7 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
         "RakuAST::Doc::Declarator" => (
             C::DocDeclarator,
             &[
-                ("WHEREFORE", Node, Required),
+                ("WHEREFORE", Node, Omit),
                 ("leading", List, Omit),
                 ("trailing", List, Omit),
             ],
