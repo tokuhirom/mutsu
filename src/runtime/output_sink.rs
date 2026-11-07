@@ -44,6 +44,10 @@ pub(crate) struct OutputSink {
     pub(crate) shared_thread_output: Option<Arc<Mutex<String>>>,
     /// Shared real-time stderr buffer used by thread clones.
     pub(crate) shared_thread_stderr: Option<Arc<Mutex<String>>>,
+    /// What the last `say`/`put`/`print`/`note` got back from a USER output
+    /// handle's own `print` (`$*OUT = $object`): the routine answers that value,
+    /// as `$*OUT.print(...)` is its tail in Rakudo. `None` for a real handle.
+    pub(crate) last_handle_result: Option<crate::value::Value>,
 }
 
 impl OutputSink {
@@ -56,6 +60,7 @@ impl OutputSink {
             is_thread_clone: false,
             shared_thread_output: None,
             shared_thread_stderr: None,
+            last_handle_result: None,
         }
     }
 

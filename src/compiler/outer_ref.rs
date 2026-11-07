@@ -126,7 +126,6 @@ impl Compiler {
         }
         let Stmt::VarDecl {
             name,
-            is_state: false,
             is_our: false,
             ..
         } = stmt

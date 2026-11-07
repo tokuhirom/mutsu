@@ -729,7 +729,7 @@ impl Compiler {
                         // in block-final position prints and returns True, so leave
                         // True as the block's value (e.g. `do { say 1 }` is a Bool).
                         self.compile_stmt(stmt);
-                        self.compile_expr(&Expr::Literal(Value::TRUE));
+                        self.code.emit(OpCode::LoadOutputResult);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }

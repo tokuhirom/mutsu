@@ -930,6 +930,7 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
             let (line_num, col_num) = line_col_at_offset(source, near_offset);
             err.set_line(Some(line_num));
             err.set_column(Some(col_num));
+            err.set_parse_pos(source[..near_offset].chars().count());
             // "Two terms in a row across lines" reports the failure at the
             // line that introduced the second term (matching rakudo's own
             // `at FILE:LINE`), but rakudo's `------>` snippet echoes the END
@@ -972,6 +973,10 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
                         "column".to_string(),
                         crate::value::Value::int(column as i64),
                     );
+                }
+                if let Some(pos) = err.parse_pos() {
+                    attributes
+                        .insert_if_absent("pos".to_string(), crate::value::Value::int(pos as i64));
                 }
             }
             err.exception = Some(ex);
@@ -1039,9 +1044,10 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
             let pre = pre_full.rsplit('\n').next().unwrap_or(pre_full).to_string();
             let post = tail.split('\n').next().unwrap_or(tail).to_string();
             err.set_pre_post_context(pre, post);
+            err.set_parse_pos(source[..consumed].chars().count());
             with_parse_hint(err)
         } else if let Some(context) = near_snippet(tail, 60) {
-            with_parse_hint(RuntimeError::with_location(
+            let mut err = RuntimeError::with_location(
                 format!(
                     "Confused. parse error at line {}, column {}: {} — near: {:?}",
                     line_num, col_num, e, context
@@ -1049,9 +1055,11 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
                 RuntimeErrorCode::ParseExpected,
                 line_num,
                 col_num,
-            ))
+            );
+            err.set_parse_pos(source[..near_offset].chars().count());
+            with_parse_hint(err)
         } else {
-            with_parse_hint(RuntimeError::with_location(
+            let mut err = RuntimeError::with_location(
                 format!(
                     "Confused. parse error at line {}, column {}: {}",
                     line_num, col_num, e
@@ -1059,7 +1067,9 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
                 RuntimeErrorCode::ParseExpected,
                 line_num,
                 col_num,
-            ))
+            );
+            err.set_parse_pos(source[..near_offset].chars().count());
+            with_parse_hint(err)
         }
     } else {
         let mut err = RuntimeError::new(format!("Confused. parse error: {}", e));
@@ -1221,7 +1231,7 @@ pub(crate) fn parse_program_spelled(
                 let near_offset = consumed + leading_ws_bytes(rest);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 let context: String = rest_trimmed.chars().take(60).collect();
-                Err(RuntimeError::with_location(
+                let mut err = RuntimeError::with_location(
                     format!(
                         "Confused. parse error: unparsed input at line {}, column {}: {:?}",
                         line_num, col_num, context
@@ -1229,7 +1239,9 @@ pub(crate) fn parse_program_spelled(
                     RuntimeErrorCode::ParseUnparsed,
                     line_num,
                     col_num,
-                ))
+                );
+                err.set_parse_pos(source[..near_offset].chars().count());
+                Err(err)
             } else if let Some(line) = whenever_scope::find_out_of_scope_whenever(&stmts) {
                 // A `whenever` outside a `supply`/`react` block is a compile-time
                 // error in rakudo (X::Comp::WheneverOutOfScope).

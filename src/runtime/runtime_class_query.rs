@@ -683,6 +683,14 @@ impl Interpreter {
         output_sink::OutputSinkWriteGuard::new(&self.io.output_sink, "output_sink")
     }
 
+    /// What the last output routine got back from a user handle's `print`
+    /// (see `OutputSink::last_handle_result`), taken so a later routine's value
+    /// cannot be mistaken for it.
+    // Cost: O(1).
+    pub(crate) fn take_output_handle_result(&self) -> Option<Value> {
+        self.output_sink_mut().last_handle_result.take()
+    }
+
     /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
     /// Same guard discipline as [`Self::io_handles`].
     #[inline]

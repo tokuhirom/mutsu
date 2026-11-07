@@ -2920,6 +2920,11 @@ pub(crate) enum OpCode {
     /// statement is an ENTER phaser, materializing its captured value as the
     /// block result.
     LoadEnterResult,
+    /// The value of a statement-form `say`/`put`/`print`/`note` in value position
+    /// (a block's or routine's last statement): what the output handle's own
+    /// `print` answered when `$*OUT`/`$*ERR` is a user object (Jupyter's `Std.print`
+    /// returns `True but role { method __hide }`), else `True`. Stack: `[] → [value]`.
+    LoadOutputResult,
     /// A block in value position: `do { ... }`, a block used as a term, and a
     /// `"{...}"` interpolation. Stack: `[] → [value]`.
     ///

@@ -645,6 +645,18 @@ impl Interpreter {
             // An alias of another container: its default, carried on the cell,
             // is what the Nil decays to (#9831).
             val = def;
+        } else if val.is_nil()
+            && name == "_"
+            && let Some(def) = self
+                .topic_state
+                .topic_source_var
+                .as_deref()
+                .and_then(|source| self.var_default(source))
+        {
+            // `given $x { $_ = Nil }` / `for $x { $_ = Nil }` assigns the topic's
+            // SOURCE container, so the Nil decays to that variable's default
+            // (`my $x is default(Nil)` stays Nil, `is default(42)` becomes 42).
+            val = def.clone();
         }
         if self.module.lexical_fatal_mode
             && !name.contains("__mutsu_")

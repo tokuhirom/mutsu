@@ -478,6 +478,7 @@ impl Interpreter {
         if crate::value::render_guard::take_render_overflow() {
             return Err(crate::value::render_guard::render_overflow_error());
         }
+        self.output_sink_mut().last_handle_result = None;
         if let Some(handle) = self.get_dynamic_handle(name) {
             // `$*OUT = $handle` leaves the handle in a Scalar cell; the
             // dispatch below is on the handle itself (#15647).
@@ -515,7 +516,11 @@ impl Interpreter {
                 self.call_method_with_values(handle, "print", vec![Value::str(payload.clone())]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
             match printed {
-                Ok(_) => return Ok(()),
+                Ok(answer) => {
+                    // The routine's value is what the handle's `print` answered.
+                    self.output_sink_mut().last_handle_result = Some(answer);
+                    return Ok(());
+                }
                 // The handle has no usable `print` at all: the text goes to
                 // the real stream. An exception the handle's own `print` threw
                 // propagates (`my $*OUT = class { method print(|) { die ... } }`
