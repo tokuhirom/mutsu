@@ -788,6 +788,18 @@ impl Interpreter {
                 } else {
                     v
                 }
+            } else if matches!(
+                v.view(),
+                ValueView::ParametricRole { .. } | ValueView::Mixin(..)
+            ) && self.has_type_capture_binding(name)
+            {
+                // A `::T` capture bound to a parameterized type (a role
+                // specialization `R[Int]`, or a class parameterized with a role
+                // mixin such as `CArray[int32]`) is that type, even when a class
+                // named `T` exists: `sub f(Mu ::T) { T.^name }; class T {};
+                // f(R[Int])` is `R[Int]`, as for any other captured type
+                // (#17076, NativeCall's own `::T` helpers).
+                v
             } else if self.has_type(name) || Self::is_builtin_type(name) {
                 Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
             } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
