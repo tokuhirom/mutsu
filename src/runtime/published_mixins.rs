@@ -34,6 +34,17 @@ pub(crate) struct MixinRecipe {
     pub(crate) body_lexicals: Vec<(String, crate::value::Value)>,
 }
 
+/// What a parametric-role pun class is made of: the role and its type
+/// arguments (`Conc::Maybe[Any]` is `Conc::Maybe` with `[Any]`). Only puns
+/// whose arguments are all type objects are published: those are plain
+/// symbols, so a process-wide table holds no GC-managed value.
+#[derive(Clone, Debug)]
+pub(crate) struct PunRecipe {
+    pub(crate) base_name: String,
+    pub(crate) type_args: Vec<String>,
+    pub(crate) from_defaults: bool,
+}
+
 /// The recipes of every mixin type created in this process, keyed by the
 /// type's name. One instance is shared (not snapshotted) by an interpreter and
 /// every thread forked from it.
@@ -43,6 +54,11 @@ pub(crate) struct PublishedMixins {
     /// program that never mixes in costs one relaxed load.
     any: AtomicBool,
     recipes: RwLock<HashMap<String, MixinRecipe>>,
+    /// Parametric-role pun classes, keyed by their class name. A pun made on
+    /// one thread is reachable from another through any value that carries its
+    /// name (a type object cached in a shared `Map`, a `but`-mixed type), so
+    /// the other thread has to be able to compose it too.
+    puns: RwLock<HashMap<String, PunRecipe>>,
 }
 
 impl PublishedMixins {
@@ -55,12 +71,38 @@ impl PublishedMixins {
         self.any.store(true, Ordering::Release);
     }
 
+    /// Record the recipe of the parametric-role pun class `name`.
+    // Cost: O(n) expected, n = name.len() (hash + one write-locked insert).
+    pub(crate) fn publish_pun(&self, name: &str, recipe: PunRecipe) {
+        let mut puns = self.puns.write().unwrap_or_else(|e| e.into_inner());
+        puns.entry(name.to_string()).or_insert(recipe);
+        self.any.store(true, Ordering::Release);
+    }
+
+    /// The recipe of the pun class `name`, when one was published.
+    // Cost: O(1) when `may_hold` is false; otherwise O(n) expected,
+    // n = name.len() (hash + read-locked probe).
+    pub(crate) fn lookup_pun(&self, name: &str) -> Option<PunRecipe> {
+        if !self.may_hold_pun(name) {
+            return None;
+        }
+        let puns = self.puns.read().unwrap_or_else(|e| e.into_inner());
+        puns.get(name).cloned()
+    }
+
     /// Whether `name` may have a published recipe: something was published
     /// and `name` has the shape of a mixin type name.
     // Cost: O(1).
     #[inline]
     pub(crate) fn may_hold(&self, name: &str) -> bool {
         self.any.load(Ordering::Acquire) && name.ends_with('}')
+    }
+
+    /// Whether `name` may be a published parametric-role pun (`R[Int]`).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn may_hold_pun(&self, name: &str) -> bool {
+        self.any.load(Ordering::Acquire) && name.ends_with(']')
     }
 
     /// The recipe of the mixin type `name`, when one was published.

@@ -140,6 +140,9 @@ impl Interpreter {
     // registered or not a mixin name; otherwise one class composition per
     // missing level of a stacked `C+{A}+{B}`.
     pub(crate) fn adopt_published_mixin(&mut self, class_name: &str) -> bool {
+        if self.types.published_mixins.may_hold_pun(class_name) {
+            return self.adopt_published_pun(class_name);
+        }
         if !self.types.published_mixins.may_hold(class_name) {
             return false;
         }
@@ -199,6 +202,39 @@ impl Interpreter {
             }
         }
         matches!(composed, Ok(name) if name == class_name)
+    }
+
+    /// Compose the parametric-role pun `class_name` (`Conc::Maybe[Any]`) into
+    /// this interpreter's registry when another thread created it. The
+    /// creating thread published the role and its type-object arguments; the
+    /// same role declaration composes the same pun here.
+    // Cost: O(1) when the name is registered or unpublished; otherwise one
+    // pun composition.
+    fn adopt_published_pun(&mut self, class_name: &str) -> bool {
+        if self.registry().classes.contains_key(class_name) {
+            return true;
+        }
+        let Some(recipe) = self.types.published_mixins.lookup_pun(class_name) else {
+            return false;
+        };
+        if self.types.adopting_mixins.iter().any(|n| n == class_name)
+            || !self.registry().roles.contains_key(&recipe.base_name)
+        {
+            return false;
+        }
+        let type_args: Vec<Value> = recipe
+            .type_args
+            .iter()
+            .map(|n| Value::package(Symbol::intern(n)))
+            .collect();
+        self.types.adopting_mixins.push(class_name.to_string());
+        let composed = self.ensure_parametric_role_pun_class_for(
+            &recipe.base_name,
+            &type_args,
+            recipe.from_defaults,
+        );
+        self.types.adopting_mixins.retain(|n| n != class_name);
+        matches!(composed, Ok(Some(name)) if name == class_name)
     }
 
     /// Whether `class_name` is a routine meta-object class (`Method`,

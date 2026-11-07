@@ -1022,6 +1022,26 @@ impl Interpreter {
             }
         }
         self.store_language_revision_from_version(&pun_name, &language_version);
+        // Another thread can reach this class by name (a type cached in a
+        // shared Map, a `but`-mixed type); let it compose the same pun. Only
+        // plain type objects are published: they carry no GC-managed state.
+        let plain_args: Option<Vec<String>> = type_args
+            .iter()
+            .map(|a| match a.view() {
+                ValueView::Package(name) => Some(name.resolve().to_string()),
+                _ => None,
+            })
+            .collect();
+        if let Some(type_args) = plain_args {
+            self.types.published_mixins.publish_pun(
+                &pun_name,
+                crate::runtime::published_mixins::PunRecipe {
+                    base_name: base_name.to_string(),
+                    type_args,
+                    from_defaults,
+                },
+            );
+        }
         Ok(Some(pun_name))
     }
 
