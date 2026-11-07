@@ -5187,7 +5187,13 @@ impl Interpreter {
                                 || list.is_itemized()
                                 || list.in_array_context() => {}
                         ValueView::LazyList(list) => {
-                            self.force_lazy_list_vm(&list)?;
+                            if !self.sink_lazy_pipe_in_gather(
+                                &list,
+                                &val,
+                                (code.ops.as_ptr() as usize, *ip),
+                            )? {
+                                self.force_lazy_list_vm(&list)?;
+                            }
                         }
                         ValueView::Seq(body) if body.needs_touch() => {
                             // Sinking a not-yet-read Seq source must drain it
