@@ -301,13 +301,10 @@ pub(crate) fn promise_raku_repr(status: &str) -> String {
 pub(crate) fn enum_raku_repr(enum_type: &str, key: &str) -> String {
     // A package-scoped enum's identity is qualified, its `.raku` is not (#9654).
     let enum_type = crate::value::user_facing_type_name(enum_type);
-    let is_ident = key
-        .chars()
-        .next()
-        .is_some_and(|c| c == '_' || (c.is_alphabetic() && !c.is_numeric()))
-        && key
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'');
+    // rakudo leaves a name bare only when every character is a word
+    // character: a hyphenated name (`At-least-once`), a quote or a dot is
+    // quoted, while `1x` is not.
+    let is_ident = !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_');
     if is_ident {
         crate::qualified::qualified(
             crate::symbol::Symbol::intern(&enum_type),

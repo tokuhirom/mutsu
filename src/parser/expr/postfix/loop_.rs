@@ -40,13 +40,32 @@ thread_local! {
     /// precedence-annotated postfix, and a plain term (`4.7k`) then found no one to
     /// consume it at all.
     static PENDING_PREFIX_LEVEL: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    /// The same for a BUILT-IN prefix (`-`, `+`, `!`, `~`, `?`, ...) waiting for
+    /// its operand. Kept apart from [`PENDING_PREFIX_LEVEL`] because that one
+    /// also moves trailing colonpair adverbs onto the prefix call, which a
+    /// built-in `Unary` node cannot carry; this one only defers a user postfix
+    /// declared looser than the prefix (`-1@` with
+    /// `postfix:<@> is looser(&infix:<->)` is `(-1)@`, as in raku).
+    static PENDING_BUILTIN_PREFIX_LEVEL: std::cell::Cell<Option<i32>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// Run `f` while parsing the operand of a user-defined prefix operator at `level`.
 fn with_pending_prefix_level<T>(level: Option<i32>, f: impl FnOnce() -> T) -> T {
     let saved = PENDING_PREFIX_LEVEL.with(|c| c.replace(level));
+    let saved_builtin = PENDING_BUILTIN_PREFIX_LEVEL.with(|c| c.replace(None));
     let out = f();
     PENDING_PREFIX_LEVEL.with(|c| c.set(saved));
+    PENDING_BUILTIN_PREFIX_LEVEL.with(|c| c.set(saved_builtin));
+    out
+}
+
+/// Run `f` while parsing the operand of a built-in prefix operator.
+fn with_pending_builtin_prefix_level<T>(f: impl FnOnce() -> T) -> T {
+    let saved = PENDING_BUILTIN_PREFIX_LEVEL
+        .with(|c| c.replace(Some(crate::parser::stmt::simple::PREC_PREFIX)));
+    let out = f();
+    PENDING_BUILTIN_PREFIX_LEVEL.with(|c| c.set(saved));
     out
 }
 
@@ -384,9 +403,9 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                     crate::parser::expr::operators::ExprMode::Full,
                 )?
             } else if op.parses_postfix_target() {
-                postfix_expr(rest)?
+                with_pending_builtin_prefix_level(|| postfix_expr(rest))?
             } else {
-                prefix_expr(rest)?
+                with_pending_builtin_prefix_level(|| prefix_expr(rest))?
             };
             // Detect precedence confusion: `!%h<a>:exists` should be `:!exists`
             // Only trigger when the operand was NOT parenthesized (i.e., not `!(%h<a>:exists)`)
@@ -406,14 +425,28 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                     },
                 ));
             }
-            return Ok((
-                rest,
-                Expr::Unary {
-                    op: op.token_kind(),
-                    expr: Box::new(expr),
-                    word: false,
-                },
-            ));
+            let mut rest = rest;
+            let mut result = Expr::Unary {
+                op: op.token_kind(),
+                expr: Box::new(expr),
+                word: false,
+            };
+            // A user postfix declared looser than this prefix (`-1@` with
+            // `postfix:<@> is looser(&infix:<->)`) applies to the whole
+            // prefix expression; the operand's postfix loop left it for here.
+            while let Some((post_name, post_len)) =
+                crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+                && crate::parser::stmt::simple::lookup_postfix_precedence(&post_name)
+                    .is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX)
+            {
+                result = Expr::Call {
+                    name: Symbol::intern(&post_name),
+                    args: vec![result],
+                    listop: false,
+                };
+                rest = &rest[post_len..];
+            }
+            return Ok((rest, result));
         }
     }
     // not(expr) — tight-binding form: not followed by ( without space
@@ -3028,6 +3061,9 @@ fn postfix_expr_loop_from<'a>(
         }
 
         // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        // Set when a declared postfix is left for the pending prefix to apply; the
+        // generic operator-character scan below must not take it either.
+        let mut postfix_deferred = false;
         if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
         {
             let after = &rest[len..];
@@ -3048,13 +3084,16 @@ fn postfix_expr_loop_from<'a>(
                 // for, and the postfix binds to the term it follows -- which is how a plain
                 // `4.7k` (postfix:<k> is tighter(&infix:<*>)) gets consumed at all.
                 let post_prec = crate::parser::stmt::simple::lookup_postfix_precedence(&name);
-                let pending = PENDING_PREFIX_LEVEL.with(|c| c.get());
+                let pending = PENDING_PREFIX_LEVEL
+                    .with(|c| c.get())
+                    .or_else(|| PENDING_BUILTIN_PREFIX_LEVEL.with(|c| c.get()));
                 let defer_to_prefix = match (post_prec, pending) {
                     (Some(p), Some(prefix_level)) => p < prefix_level,
                     _ => false,
                 };
                 if defer_to_prefix {
                     // Don't consume this postfix here; let it be consumed at prefix level
+                    postfix_deferred = true;
                 } else {
                     expr = Expr::Call {
                         name: Symbol::intern(&name),
@@ -3067,7 +3106,7 @@ fn postfix_expr_loop_from<'a>(
             }
         }
 
-        if let Some((op, len)) = parse_custom_postfix_operator(rest) {
+        if !postfix_deferred && let Some((op, len)) = parse_custom_postfix_operator(rest) {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {

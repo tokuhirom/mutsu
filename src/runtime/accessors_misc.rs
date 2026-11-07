@@ -466,9 +466,13 @@ impl Interpreter {
         // `temp $*OUT = ...` over the process binding temporized the process
         // stash (ADR-11318): restore it there too. Ahead of the `ContainerRef`
         // branch below, which returns without reaching the by-name writer.
-        if name.starts_with('*') {
-            self.publish_process_dynamic_write(&name, &restored);
-        }
+        // Every dynamic spelling counts, not only `*name`: a `temp %*ENV` /
+        // `temp @*ARGS` publishes its element stores to the stash, so the
+        // restore has to publish the saved hash back, or the stash keeps the
+        // temporized one and the restored binding stops being "the process
+        // binding" (every later `%*ENV<K> = v` is then read back as Nil).
+        // The helper returns at once for a name that is not a dynamic.
+        self.publish_process_dynamic_write(&name, &restored);
         // A boxed (shared-cell) binding: write the restored value THROUGH the live
         // cell so the owner's local slot (which holds the same Arc) sees the
         // restoration, rather than replacing the env entry with a detached plain

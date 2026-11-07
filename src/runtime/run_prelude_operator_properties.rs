@@ -42,6 +42,11 @@ class GLOBAL::OperatorProperties {
         @parts.push(":ternary") if $!ternary;
         'OperatorProperties.new: ' ~ @parts.join(", ")
     }
+    method infix(OperatorProperties:U: Str $op = "") { __mutsu_operator_properties("infix", $op) }
+    method prefix(OperatorProperties:U: Str $op = "") { __mutsu_operator_properties("prefix", $op) }
+    method postfix(OperatorProperties:U: Str $op = "") { __mutsu_operator_properties("postfix", $op) }
+    method circumfix(OperatorProperties:U: Str $op = "") { __mutsu_operator_properties("circumfix", $op) }
+    method postcircumfix(OperatorProperties:U: Str $op = "") { __mutsu_operator_properties("postcircumfix", $op) }
     multi method gist(OperatorProperties:D: --> Str) { self.raku }
 }
 "#;
