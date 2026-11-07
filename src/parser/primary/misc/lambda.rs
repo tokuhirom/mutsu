@@ -71,7 +71,8 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
 }
 
 fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
-    let Some((is_rw_block, starter_len)) = crate::parser::stmt::simple::pointy_starter(input) else {
+    let Some((is_rw_block, starter_len)) = crate::parser::stmt::simple::pointy_starter(input)
+    else {
         return Err(PError::expected("arrow lambda"));
     };
     // Capture the definition line of the pointy block (at the `->` position)
