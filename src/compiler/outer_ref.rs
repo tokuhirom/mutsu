@@ -51,6 +51,7 @@ struct OuterWriteScan {
 impl OuterWriteScan {
     fn record(&mut self, target: &str, rebinds: bool) {
         if let Some((name, _)) = Compiler::split_outer_name(target)
+            .or_else(|| Compiler::split_outers_name(target).map(|name| (name, 0)))
             && !name.starts_with('&')
         {
             *self.names.entry(name).or_default() |= rebinds;
@@ -151,6 +152,17 @@ impl Compiler {
         });
     }
 
+    /// Split a `[sigil]OUTERS::name` spelling into the name a scope frame
+    /// records (the sigil kept for `@`/`%`/`&`).
+    fn split_outers_name(name: &str) -> Option<String> {
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'@' | b'%' | b'&') => name.split_at(1),
+            _ => ("", name),
+        };
+        let bare = Self::parse_outers_prefix(rest)?;
+        Some(format!("{sigil}{bare}"))
+    }
+
     /// Split a `[sigil]OUTER::...::name` spelling into the name a scope frame
     /// records (the sigil kept for `@`/`%`/`&`) and the `OUTER::` depth.
     fn split_outer_name(name: &str) -> Option<(String, usize)> {
@@ -170,8 +182,31 @@ impl Compiler {
     /// can see; the write then keeps its literal by-name store. `rebinds` is
     /// whether the write is a `:=`.
     pub(super) fn outer_write_target(&mut self, name: &str, rebinds: bool) -> Option<String> {
-        let (key, depth) = Self::split_outer_name(name)?;
         let chain = self.full_scope_chain();
+        let (key, depth) = match Self::split_outer_name(name) {
+            Some(split) => split,
+            // `$OUTERS::x`: the innermost ENCLOSING scope that declares `x`,
+            // which is `OUTER::` at that depth (the current scope is excluded).
+            None => {
+                let key = Self::split_outers_name(name)?;
+                let n = chain.len();
+                match (1..n).find(|d| chain[n - 1 - d].contains_key(&key)) {
+                    Some(depth) => (key, depth),
+                    // A method body is compiled without the enclosing scope
+                    // chain, so a name none of its own scopes declares lives
+                    // further out: the plain name reaches the innermost one
+                    // that declares it, which is what `OUTERS::` names. (When
+                    // the body declares it too, the plain name would hit that
+                    // one, so leave the write alone.)
+                    None if self.lexically_in_method
+                        && !chain.iter().any(|scope| scope.contains_key(&key)) =>
+                    {
+                        return Some(key);
+                    }
+                    None => return None,
+                }
+            }
+        };
         if lex_scope::outer_is_visible_binding(&chain, &key, depth) {
             return Some(key);
         }

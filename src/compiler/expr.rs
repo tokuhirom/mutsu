@@ -206,6 +206,17 @@ impl Compiler {
                     continue_expr.as_deref(),
                 );
             }
+            // `$?LANG` is the language handle the unit is compiled with
+            // (`slang_grammar`/`slang_actions`/...), the object `$*LANG` is
+            // during a slang activation. A run-time program only hands it to
+            // `Perl6::Compiler.parsegrammar`/`.parseactions` (Jupyter::Kernel).
+            Expr::Var(name) if name == "?LANG" => {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("__mutsu_comp_lang"),
+                    args: vec![],
+                    listop: false,
+                });
+            }
             Expr::Var(name) => {
                 self.compile_expr_var(name);
             }
