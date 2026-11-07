@@ -826,8 +826,7 @@ impl Compiler {
                 }
                 _ => None,
             };
-            let left_name =
-                Self::resolve_container_var_name(left).or_else(|| sigilless_name(left));
+            let left_name = Self::resolve_container_var_name(left).or_else(|| sigilless_name(left));
             let right_name =
                 Self::resolve_container_var_name(right).or_else(|| sigilless_name(right));
             if let (Some(ln), Some(rn)) = (&left_name, &right_name) {
