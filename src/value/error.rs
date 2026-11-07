@@ -188,6 +188,11 @@ pub struct RuntimeErrorCold {
     /// matched. That region recognises its own token while unwinding and applies
     /// the verdict instead of running the handler a second time.
     pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
+    /// The token of the `CATCH` region whose handler raised this `return`
+    /// signal. That region's own `CONTROL` block must let it pass: a handler
+    /// runs outside the protected body's scope (rakudo: a `return` in a CATCH
+    /// is not offered to the same routine's CONTROL).
+    pub raised_by_catch: Option<u64>,
     /// See [`CatchInlinePayload`]; only ever set alongside `catch_inline_verdict`.
     pub catch_inline_payload: Option<Box<CatchInlinePayload>>,
     /// The subscript and element constraint of a single-element store the type
@@ -472,6 +477,13 @@ impl RuntimeError {
     /// See `RuntimeErrorCold::catch_inline_verdict` (ADR-0072).
     pub(crate) fn catch_inline_verdict(&self) -> Option<(u64, CatchInlineVerdict)> {
         self.cold.as_ref().and_then(|c| c.catch_inline_verdict)
+    }
+    /// See `RuntimeErrorCold::raised_by_catch`.
+    pub(crate) fn raised_by_catch(&self) -> Option<u64> {
+        self.cold.as_ref().and_then(|c| c.raised_by_catch)
+    }
+    pub(crate) fn set_raised_by_catch(&mut self, v: Option<u64>) {
+        self.cold_mut().raised_by_catch = v;
     }
     pub(crate) fn set_catch_inline_verdict(&mut self, v: Option<(u64, CatchInlineVerdict)>) {
         self.cold_mut().catch_inline_verdict = v;
