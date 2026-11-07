@@ -51,6 +51,8 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
     rest.strip_suffix('>')?;
     match category {
         "statement-control" | "statement_control" => Some("statement-control"),
+        "routine-declarator" | "routine_declarator" => Some("routine-declarator"),
+        "scope-declarator" | "scope_declarator" => Some("scope-declarator"),
         "term" => Some("term"),
         "value" => Some("value"),
         "number" => Some("number"),
@@ -254,11 +256,19 @@ fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str
     None
 }
 
-/// Try the slang's `statement-control` productions at `input`, the start of a
-/// statement, ahead of the built-in ones.
+/// Try the slang's `statement-control`, `routine-declarator` and
+/// `scope-declarator` productions at `input`, the start of a statement, ahead of
+/// the built-in ones.
 // Cost: as [`run_category`].
 pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'_, Stmt>> {
-    let found = run_category(&["statement-control"], input)?;
+    let found = run_category(
+        &[
+            "statement-control",
+            "routine-declarator",
+            "scope-declarator",
+        ],
+        input,
+    )?;
     Some(found.and_then(|(rest, node)| {
         crate::rakuast::slang_bridge::lower_statement(&node)
             .map(|stmt| (rest, stmt))
