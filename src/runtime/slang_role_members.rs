@@ -38,6 +38,11 @@ impl Interpreter {
         role: &Value,
         kind: SlangRoleKind,
     ) -> Result<Vec<SlangRuleOverride>, RuntimeError> {
+        // A role declaration value (an anonymous `role { }`, a lexical
+        // `my role`) is the Package of its individual candidate's site key;
+        // the role registry is keyed by the role group, so normalise first
+        // like every other consumer of a role type object (#17008).
+        let role = self.normalize_role_type_object(role);
         let role_name = match role.view() {
             ValueView::Package(name) => name.resolve(),
             _ => role.to_string_value(),
@@ -56,12 +61,6 @@ impl Interpreter {
             .get(&role_name)
             .or_else(|| registry.roles.get(&declared))
         else {
-            // TODO: an anonymous role (`role { }`) is not in the role registry
-            // when the slang registers it, so its members cannot be read; it is
-            // taken as empty, which is what the refinements seen so far pass.
-            if declared.starts_with("__ANON_ROLE_") {
-                return Ok(Vec::new());
-            }
             return Err(RuntimeError::new(format!(
                 "Slang activation: '{role_name}' is not a known role"
             )));
