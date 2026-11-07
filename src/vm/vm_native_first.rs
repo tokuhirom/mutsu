@@ -117,7 +117,18 @@ impl Interpreter {
         // = 5 })` writes `@a`, as `.grep`/`.map` and `@a.values.first(...)`
         // already do. A `Hash` is decomposed whole into its pairs.
         if Self::promotable_array_len(target).is_some() || Self::first_borrows(target) {
-            return answer(self.find_first_match_chunked_with(target, false, scan));
+            let found = self.find_first_match_chunked_with(target, false, scan);
+            // A mutable `Array` answers the element's own container (rakudo:
+            // `@a.first(*>1).VAR` is a `Scalar`; `my $x := @a.first(...)` binds
+            // into `@a`), as `.head` does.
+            if let Ok(Some((idx, _))) = &found
+                && let ValueView::Array(_, kind) = target.view()
+                && !kind.is_immutable_list()
+                && let Some(cell) = target.array_slot_ref(*idx, true)
+            {
+                return Some(Ok(cell));
+            }
+            return answer(found);
         }
         // An unbounded range of any element type is stepped by `.succ` in
         // doubling chunks: O(i) time, nothing reified past the match.
