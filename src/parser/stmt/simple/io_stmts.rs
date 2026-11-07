@@ -217,7 +217,7 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
             return Ok((r, items));
         }
         // Check for statement modifier keywords
-        if is_stmt_modifier_keyword(r) {
+        if crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma(r) {
             return Ok((r, items));
         }
         let (r, next) = crate::parser::expr::listop_arg_expr_list_infix(r)?;
