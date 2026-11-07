@@ -102,6 +102,10 @@ impl Interpreter {
             .eval_unit_capture_key
             .replace(unit_capture_key.clone());
         let routine_snapshot = self.snapshot_routine_registry();
+        let saved_functions_base = self
+            .module
+            .eval_unit_functions_base
+            .replace(std::sync::Arc::clone(&routine_snapshot.0));
         let hidden_local_subsets = self.hide_dynamic_callers_local_subs();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
@@ -267,6 +271,7 @@ impl Interpreter {
         // A `unit package P;` / `unit module P;` in the snippet scopes only the
         // snippet: a later EVAL starts in the caller's package again (#12135).
         self.set_current_package(saved_package);
+        self.module.eval_unit_functions_base = saved_functions_base;
         self.restore_routine_registry_eval(routine_snapshot);
         self.restore_hidden_local_subsets(hidden_local_subsets);
         let eval_main_keys: Vec<Symbol> = self

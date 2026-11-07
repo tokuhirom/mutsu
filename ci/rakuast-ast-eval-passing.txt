@@ -2663,6 +2663,7 @@ t/lang/eval-code-var-infix-minus.t
 t/lang/eval-compile-checks-nested-positions.t
 t/lang/eval-context-live-target.t
 t/lang/eval-core-term-constant-call-undeclared-class.t
+t/lang/eval-end-phaser-calls-unit-routine.t
 t/lang/eval-imported-constant-term.t
 t/lang/eval-imported-lowercase-constant.t
 t/lang/eval-imported-main.t
@@ -7404,6 +7405,7 @@ t/routines/closure/closure-capture-named-arg-imported-callee.t
 t/routines/closure/closure-capture-nested-named-sub.t
 t/routines/closure/closure-capture-not-hijacked-by-later-my.t
 t/routines/closure/closure-capture-probes-plain-lexicals.t
+t/routines/closure/closure-capture-reflective-scope.t
 t/routines/closure/closure-capture-sub-valued-cell.t
 t/routines/closure/closure-capture-survives-caller-and-source-writes.t
 t/routines/closure/closure-capture-symbol-sets.t
@@ -8432,6 +8434,7 @@ t/tooling/cli-compile-only-types.t
 t/tooling/cli-lib-repo-chain.t
 t/tooling/cli-lines-regressions.t
 t/tooling/cli-module-option-keeps-dynamic-variable-mixin.t
+t/tooling/cli-module-option-with-arguments.t
 t/tooling/cli-mvm-coverage-log.t
 t/tooling/cli-option-errors.t
 t/tooling/cli-rakudo-internals-include.t

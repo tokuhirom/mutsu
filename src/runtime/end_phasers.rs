@@ -173,6 +173,7 @@ impl Interpreter {
             order,
             capture_seq: None,
             fixtures: None,
+            unit_routines: Default::default(),
         });
         self.control.main_end_slots.insert(end_index, slot);
     }
@@ -228,6 +229,59 @@ impl Interpreter {
         true
     }
 
+    /// The routines the running `EVAL` unit has declared so far, for an END it
+    /// installs: the unit's routines are lexical to it and leave the registry
+    /// with it, but its END phasers run at program exit and still call them.
+    /// Empty outside an `EVAL` unit.
+    // Cost: O(r), r = routines in the registry; only inside an `EVAL` unit.
+    fn eval_unit_routines(
+        &self,
+    ) -> std::sync::Arc<Vec<(Symbol, std::sync::Arc<crate::ast::FunctionDef>)>> {
+        let Some(base) = &self.module.eval_unit_functions_base else {
+            return Default::default();
+        };
+        let added: Vec<(Symbol, std::sync::Arc<crate::ast::FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter(|(key, def)| {
+                base.get(key)
+                    .is_none_or(|old| !std::sync::Arc::ptr_eq(old, def))
+            })
+            .map(|(key, def)| (*key, def.clone()))
+            .collect();
+        std::sync::Arc::new(added)
+    }
+
+    /// Install `routines` that the registry lacks, for an END phaser's run.
+    /// Returns the registry as it was, to be put back with
+    /// `restore_routine_registry`, or `None` when nothing was added.
+    // Cost: O(k), k = routines the phaser carries.
+    pub(crate) fn reinstall_unit_routines(
+        &mut self,
+        routines: &[(Symbol, std::sync::Arc<crate::ast::FunctionDef>)],
+    ) -> Option<crate::runtime::RoutineRegistrySnapshot> {
+        let missing: Vec<&(Symbol, std::sync::Arc<crate::ast::FunctionDef>)> = {
+            let registry = self.registry();
+            routines
+                .iter()
+                .filter(|(key, _)| !registry.functions.contains_key(key))
+                .collect()
+        };
+        if missing.is_empty() {
+            return None;
+        }
+        let snapshot = self.snapshot_routine_registry();
+        let keys: Vec<Symbol> = missing.iter().map(|(key, _)| *key).collect();
+        for (key, def) in missing {
+            self.registry_mut()
+                .routine_tables_mut()
+                .install_function(*key, def.clone());
+        }
+        self.invalidate_fn_resolution_for_keys(keys);
+        Some(snapshot)
+    }
+
     fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64, index: Option<u32>) {
         let captured_env = self.env.clone();
         let package = self.current_package();
@@ -244,6 +298,7 @@ impl Interpreter {
             order,
             capture_seq: Some(mark),
             fixtures: self.frame_fixtures().cloned(),
+            unit_routines: self.eval_unit_routines(),
         });
     }
 
