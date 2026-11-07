@@ -825,7 +825,18 @@ impl Interpreter {
         // top-level `use`s import (Rakudo reports a redeclaration there);
         // a block's own `use` still wins over the unit's routine.
         if self.running_unit_declares_routine(name) {
-            let unit_sets: Vec<Symbol> = self.running_unit_lexical_sets().collect();
+            let mut unit_sets: Vec<Symbol> = self.running_unit_lexical_sets().collect();
+            // An `EVAL`'d unit's own top-level `use`s are its unit sets too.
+            if let Some(region) = self.module.eval_unit_region
+                && let Some(scope) = self
+                    .module
+                    .import_scope_stack
+                    .iter()
+                    .rev()
+                    .find(|scope| scope.region == Some(region))
+            {
+                unit_sets.extend(scope.lexical_sets.iter().copied());
+            }
             chain.retain(|id| !unit_sets.contains(id));
         }
         if chain.is_empty() {
