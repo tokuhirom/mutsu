@@ -4818,6 +4818,13 @@ pub(crate) enum OpCode {
     /// declared (unqualified) name. A no-op unless the runtime package is an
     /// export stash.
     PublishExportStashVar { name_idx: u32 },
+    /// Before an untyped `our @a = EXPR` duplicates its initializer for the
+    /// local slot and the package store: if the top of stack is a raw lazy
+    /// list, replace it by its `@`-array-flagged form, so both stores hold the
+    /// SAME lazy list (one generation cache) and a generator that reads the
+    /// array it builds sees the very list the importer indexes (#17035).
+    /// Stack: `[v] → [v']`. `name_idx` is the declared `@` name's constant.
+    ShareLazyArrayInit { name_idx: u32 },
     /// Apply a custom variable trait via `trait_mod:<is>`.
     /// When `has_arg` is true, pops trait argument value from stack.
     /// `slot` is the compile-time-baked local slot of the declared variable

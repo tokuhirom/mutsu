@@ -142,6 +142,27 @@ impl Interpreter {
         )))
     }
 
+    /// [`Self::lazy_array_value`], except that `raw` (the `Value` holding `list`)
+    /// is returned as is when it is already an `@` array's list carrying no
+    /// descriptor of its own to add: the stores of one `our @A = LIST` and its
+    /// importers then share a single lazy list and generation cache (#17035).
+    // Cost: O(1).
+    pub(crate) fn lazy_array_value_shared(
+        &self,
+        raw: &Value,
+        list: &crate::value::LazyList,
+        name: &str,
+    ) -> Value {
+        if list.in_array_context()
+            && self.var_default(name).is_none()
+            && self.var_type_constraint(name).is_none()
+        {
+            raw.clone()
+        } else {
+            self.lazy_array_value(list, name)
+        }
+    }
+
     pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
         if is_attr_twigil_name(name) {
             if self.types.attr_var_defaults.is_empty() {
