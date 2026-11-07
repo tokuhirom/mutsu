@@ -105,10 +105,16 @@ impl Interpreter {
     /// ASN::META) are already registered as empty class shells. Reuse the
     /// same role composition machinery as a class-header does declaration,
     /// then publish the updated class metadata and MRO.
-    pub(crate) fn add_role_to_class(
+    /// `pre_args` are the bracket arguments of a role APPLICATION value
+    /// (`Numish[* * 10]`) already evaluated: the type name alone
+    /// (`Numish[WhateverCode]`) cannot carry non-type argument values, so they
+    /// travel to the candidate resolution (#17007).
+    // Cost: O(m), m = the members of the role and class composed.
+    pub(crate) fn add_role_to_class_with_args(
         &mut self,
         class_name: &str,
         role_name: &str,
+        pre_args: Option<&[Value]>,
     ) -> Result<(), RuntimeError> {
         let role_name = self.resolve_declared_type_name(role_name);
         let base_role_name = role_name
@@ -134,7 +140,7 @@ impl Interpreter {
             return Ok(());
         }
         let resolved = self
-            .resolve_role_candidate(&role_name)?
+            .resolve_role_candidate_with_args(&role_name, pre_args)?
             .ok_or_else(|| RuntimeError::new(format!("Unknown role: {role_name}")))?;
         let old_composed = self
             .registry()
