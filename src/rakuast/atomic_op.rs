@@ -125,7 +125,9 @@ fn atomic_operator(node: &RakuAstNode) -> Option<String> {
         },
         _ => return None,
     };
-    value.contains('⚛').then_some(value)
+    // `⚛−=` (U+2212 MINUS SIGN) is the same operator as `⚛-=`; the parser
+    // builds the call under the ASCII spelling.
+    value.contains('⚛').then(|| value.replace('\u{2212}', "-"))
 }
 
 /// The call the parser builds for the atomic operator `node` is, or `None`

@@ -48,7 +48,7 @@ impl Interpreter {
     pub(super) fn inject_prelude_roles(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         // Only inject when the program mentions `Rational` and does not declare
         // its own role of that name (which would conflict).
-        if !source.contains("Rational") || source.contains("role Rational") {
+        if !source.contains("Rational") || source.contains_name("role Rational") {
             return;
         }
         use std::sync::OnceLock;
@@ -83,7 +83,7 @@ impl Interpreter {
     /// `IO::Socket::SSL` binding, whose class header is
     /// `class IO::Socket::SSL does IO::Socket`. Parsed once and cached.
     pub(super) fn inject_iosocket_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.contains("does IO::Socket") || source.contains("role IO::Socket") {
+        if !source.contains("does IO::Socket") || source.contains_name("role IO::Socket") {
             return;
         }
         use std::sync::OnceLock;
@@ -133,7 +133,7 @@ impl Interpreter {
         stmts: &mut Vec<Stmt>,
     ) {
         if !source.contains("Distribution::Locally")
-            || source.contains("role Distribution::Locally")
+            || source.contains_name("role Distribution::Locally")
         {
             return;
         }
@@ -310,7 +310,7 @@ impl Interpreter {
     /// program that loads it (`use Logic::Ternary;`) never names `Enumeration`
     /// at all — so gating on the main program's source alone would never fire.
     pub(super) fn inject_enumeration_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.contains("Enumeration") || source.contains("role Enumeration") {
+        if !source.contains("Enumeration") || source.contains_name("role Enumeration") {
             return;
         }
         use std::sync::OnceLock;
@@ -339,7 +339,7 @@ impl Interpreter {
     /// ::?CLASS.^add_role(::('X::Wrapper')) }`, while the program that loads
     /// it (`use AttrX::Mooish;`) never names `X::Wrapper` at all.
     pub(super) fn inject_x_wrapper_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.contains("X::Wrapper") || source.contains("role X::Wrapper") {
+        if !source.contains("X::Wrapper") || source.contains_name("role X::Wrapper") {
             return;
         }
         use std::sync::OnceLock;
