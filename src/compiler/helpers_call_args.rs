@@ -52,6 +52,14 @@ impl Compiler {
                 // `Crane.set` on an immutable `List`).
                 self.raw_list_elem_terminal = true;
                 self.compile_expr(arg);
+                // A `.map` block's tail subscript (#16919) reads a receiver
+                // that has no element containers as a plain value.
+                if self.rw_tail_elems_only
+                    && let Some(last) = self.code.ops.last_mut()
+                    && let OpCode::IndexAutovivifyLazyTerminal { is_positional, .. } = *last
+                {
+                    *last = OpCode::IndexTailElem { is_positional };
+                }
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
                 self.raw_list_elem_terminal = saved_raw_list_elem;

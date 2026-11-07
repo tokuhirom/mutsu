@@ -253,6 +253,7 @@ impl Interpreter {
             | OpCode::IndexAutovivifyLazy { .. }
             | OpCode::IndexAutovivifyLazyTerminal { .. }
             | OpCode::IndexInvocantRef { .. }
+            | OpCode::IndexTailElem { .. }
             | OpCode::IndexVarRef { .. }
             | OpCode::Last(..)
             | OpCode::LastValue

@@ -3173,6 +3173,14 @@ pub(crate) enum OpCode {
         is_positional: bool,
         raw_list_elem: bool,
     },
+    /// The tail subscript of a `.map` block (#16919): hand back the element's
+    /// own container the way [`Self::IndexAutovivifyLazyTerminal`] does, but only
+    /// for a receiver that HAS element containers (an `Array`, a `Hash`, a
+    /// `Stash`); any other receiver (a `CArray` handle, a `Buf`, an `Instance`
+    /// with its own `AT-POS`) is read as an ordinary `Index`, so a native view
+    /// is not captured as a deferred reference. A missing entry is read too,
+    /// since nothing exists to bind. Stack: `[target, index] -> [element]`.
+    IndexTailElem { is_positional: bool },
     /// `%h<k>:delete` / `@a[i]:delete`. First field is the container variable's
     /// name (const-pool index); the optional second is its compile-time-resolved
     /// local slot (§1.5: the mutated container is written back through this exact
