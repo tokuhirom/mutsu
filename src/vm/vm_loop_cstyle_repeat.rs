@@ -82,7 +82,7 @@ impl Interpreter {
                         in_body: false,
                         site: (code.ops.as_ptr() as usize, cond_start - 1),
                     });
-                self.pop_loop_local_scope(code);
+                self.suspend_loop_local_scope(code);
                 return Err(RuntimeError::new(
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
                 ));
@@ -206,7 +206,7 @@ impl Interpreter {
                                 in_body,
                                 site: (code.ops.as_ptr() as usize, cond_start - 1),
                             });
-                        self.pop_loop_local_scope(code);
+                        self.suspend_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
