@@ -505,7 +505,11 @@ impl Interpreter {
         if !in_body {
             return None;
         }
-        let (code_id, op_ip) = self.async_state.gather_for_loop_resume.as_ref()?.resume_op_site();
+        let (code_id, op_ip) = self
+            .async_state
+            .gather_for_loop_resume
+            .as_ref()?
+            .resume_op_site();
         (code_id == code.ops.as_ptr() as usize && (body_start..loop_end).contains(&op_ip))
             .then_some(op_ip)
     }
