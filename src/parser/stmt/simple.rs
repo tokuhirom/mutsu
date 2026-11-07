@@ -126,12 +126,12 @@ pub(in crate::parser) use registry::{
     register_user_sub, register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
     restore_declare_keywords, set_eval_language_version_preseed,
 };
-pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
-pub(crate) use slang_hooks::{parse_slang_shim_production, slang_hook_rule};
 pub(in crate::parser) use slang_hooks::{
     hooks_snapshot, register_hook, restore_hooks, set_host as set_slang_host,
     statement_control_hook,
 };
+pub(crate) use slang_hooks::{parse_slang_shim_production, slang_hook_rule};
+pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(crate) use user_ops::is_user_declared_value_term;

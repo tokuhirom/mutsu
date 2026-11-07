@@ -15,9 +15,8 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     // The node is read from the parse (`.AST`'s shapes), so the parse keeps the
     // term origins that reading wants.
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
-    let parsed = crate::parser::parse_slang_shim_production(rule, text).ok_or_else(|| {
-        format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)")
-    })?;
+    let parsed = crate::parser::parse_slang_shim_production(rule, text)
+        .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
     let Ok((rest, stmt)) = parsed else {
         return Ok(None);
     };
@@ -51,7 +50,9 @@ fn production_node(stmt: &Stmt) -> Result<Value, RuntimeError> {
 // Cost: O(n), n = size of the node.
 pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
     let ValueView::RakuAst(node) = node.view() else {
-        return Err(RuntimeError::new("slang production produced no RakuAST node"));
+        return Err(RuntimeError::new(
+            "slang production produced no RakuAST node",
+        ));
     };
     let names = NameScope::default();
     let lowered = super::lower::lower_fragment(&names, node)?;
