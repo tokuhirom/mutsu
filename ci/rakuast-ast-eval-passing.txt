@@ -2695,6 +2695,7 @@ t/lang/eval-unit-builtin-prelude-by-names.t
 t/lang/eval-unit-deparse-prelude.t
 t/lang/eval-unit-named-sub-sees-use-imports.t
 t/lang/eval-unit-trailing-constant-value.t
+t/lang/eval-unit-use-lvalue-call.t
 t/lang/eval-use-declares-name-over-sigilless.t
 t/lang/eval-use-rerun-counts-live-dynamic-in-region.t
 t/lang/eval-will-leave-nested-block.t
@@ -3256,7 +3257,6 @@ t/modules/import-export/enum-export-space-and-slip.t
 t/modules/import-export/enum-export-tag.t
 t/modules/import-export/enum-slip-value-term-without-use.t
 t/modules/import-export/eqv-hook-export-scoped-to-importer.t
-t/modules/import-export/eval-unit-use-lvalue-call.t
 t/modules/import-export/eval-use-export-hook-before-check.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/eval-use-lib-before-export-hook-use.t
