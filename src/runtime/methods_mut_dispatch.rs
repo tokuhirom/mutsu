@@ -574,6 +574,16 @@ impl Interpreter {
         if method == "map"
             && target_var.starts_with('@')
             && !user_map_receiver
+            // An `@` variable bound to a non-array object (a NativeCall
+            // `CArray` is an instance, possibly under a role mixin): there is
+            // no array to write back into, and `value_to_list` would see ONE
+            // item. The ordinary dispatcher iterates it, as `$z.map` does for
+            // the same object.
+            && !match target.view() {
+                ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Instance { .. }),
+                ValueView::Instance { .. } => true,
+                _ => false,
+            }
             // A live gather/pipe has no eager item snapshot to put into the
             // deferred map body. Let the ordinary map dispatcher preserve
             // its lazy source instead of turning it into an empty Seq.

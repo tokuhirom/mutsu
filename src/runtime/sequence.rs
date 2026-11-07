@@ -324,6 +324,60 @@ impl Interpreter {
             ),
         };
 
+        // Complex seeds with a Complex endpoint (`1+0i, 2+0i ... 18+0i`): the
+        // pattern is deduced with Complex arithmetic, as the real-valued modes
+        // below cannot represent it (they would read each seed as a Num and run
+        // on past the endpoint).
+        if generator.is_none()
+            && !seeds.is_empty()
+            && let Some(EndpointKind::Value(ep)) = endpoint_kind.as_ref()
+            && let ValueView::Complex(ep_re, ep_im) = ep.view()
+            && let Some(parts) = seeds
+                .iter()
+                .map(|v| match v.view() {
+                    ValueView::Complex(re, im) => Some((re, im)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<(f64, f64)>>>()
+            && extra_rhs.is_empty()
+        {
+            // A lone seed steps by one, as `1 ... 5` does.
+            let b = parts[parts.len() - 1];
+            let (step_re, step_im) = match parts.len() {
+                1 => (1.0, 0.0),
+                n => (b.0 - parts[n - 2].0, b.1 - parts[n - 2].1),
+            };
+            let mut out: Vec<Value> = seeds.clone();
+            let (mut cur_re, mut cur_im) = b;
+            const COMPLEX_SEQ_CAP: usize = 1_000_000;
+            for _ in 0..COMPLEX_SEQ_CAP {
+                if (step_re, step_im) == (0.0, 0.0) {
+                    break;
+                }
+                cur_re += step_re;
+                cur_im += step_im;
+                let hit = cur_re == ep_re && cur_im == ep_im;
+                // Past the endpoint along the step: complex numbers have no
+                // order, so overshoot is judged on the axis the step moves along.
+                let overshoot = if step_re != 0.0 {
+                    (step_re > 0.0 && cur_re > ep_re) || (step_re < 0.0 && cur_re < ep_re)
+                } else {
+                    (step_im > 0.0 && cur_im > ep_im) || (step_im < 0.0 && cur_im < ep_im)
+                };
+                if hit {
+                    if !exclusive {
+                        out.push(Value::complex(cur_re, cur_im));
+                    }
+                    break;
+                }
+                if overshoot {
+                    break;
+                }
+                out.push(Value::complex(cur_re, cur_im));
+            }
+            return Ok(Value::seq(out));
+        }
+
         // Determine generation mode
         enum SeqMode {
             Arithmetic(f64),
