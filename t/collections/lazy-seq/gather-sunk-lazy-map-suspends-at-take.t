@@ -1,5 +1,5 @@
 use Test;
-plan 8;
+plan 11;
 
 # A bare `.map` statement in a lazy gather is sunk element by element: every
 # `take` in its callback is an element of the gather, and the gather suspends
@@ -30,3 +30,10 @@ is-deeply @w[^4], (11, 12, 21, 22), "a sunk map inside a loop of the gather body
 
 my @e = gather { (1..3).map: { take $_ * 2 } };
 is-deeply @e, [2, 4, 6], "an eager gather is unchanged";
+
+# The tail of a `try` body is the statement's value and is sunk the same way.
+my @t = lazy gather { try { (1..*).map: { take $_ * 2 } } };
+is-deeply @t[^4], (2, 4, 6, 8), "infinite map as the tail of a try body";
+is-deeply @t[4..5], (10, 12), "a later pull resumes it";
+my @l = lazy gather { for 1..2 { try { (1..2).map: { take $_ } } } };
+is-deeply @l[^4], (1, 2, 1, 2), "a try-tail map inside a loop";
