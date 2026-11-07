@@ -54,7 +54,7 @@ macro_rules! narrow_at {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    pure!("elems", list::elems),
+    narrow!("elems", elems),
     // `Seq.Int` is `self.cache.Int`, the element count (§9.164).
     pure!("Int", list::elems),
     pure!("end", list::end),
@@ -87,6 +87,19 @@ pub(super) static ROWS: &[MethodRow] = &[
     narrow_at!("AT-POS", 1, positional::at_pos),
     narrow_at!("EXISTS-POS", 1, positional::exists_pos),
 ];
+
+/// `Seq.elems`: the reified element count. A `Seq.new($iterator)` nothing has
+/// pulled declines, so the call reaches `dispatch_elems_method`, which asks the
+/// iterator's `count-only` instead of draining it.
+// Cost: O(1), a length read on the reified items.
+fn elems(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Seq(body) = target.view()
+        && body.unpulled_iterator().is_some()
+    {
+        return None;
+    }
+    Some(list::elems(target, args))
+}
 
 /// `Seq.is-lazy`: read its flag without consuming; a body already handed
 /// away refuses even when the pure row is invoked directly.

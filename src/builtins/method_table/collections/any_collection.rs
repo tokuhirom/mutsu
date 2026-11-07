@@ -93,6 +93,13 @@ pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
     {
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
     }
+    // A `Seq.new($iterator)` nothing has pulled has no items yet: the
+    // interpreter asks the iterator's `count-only` instead.
+    if let ValueView::Seq(body) = target.view()
+        && body.unpulled_iterator().is_some()
+    {
+        return None;
+    }
     if let Some(items) = target.as_list_items() {
         return Some(Ok(Value::int(items.len() as i64)));
     }

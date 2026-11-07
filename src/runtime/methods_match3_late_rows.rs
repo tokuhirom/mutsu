@@ -21,6 +21,41 @@ impl Interpreter {
         Some(Ok(Value::int(items.len() as i64)))
     }
 
+    /// The `count-only` of the built-in iterator a `Seq.new($iterator)` nothing
+    /// has pulled will pull from, or `None` when the receiver is not such a
+    /// Seq or its iterator cannot predict its count (a lazy source, a user
+    /// class). Rakudo's `Seq.elems` asks the iterator's `count-only`, which
+    /// advances nothing for an Array or Range iterator, so the Seq and the
+    /// iterator stay usable afterwards.
+    // Cost: O(1) for an array-backed iterator.
+    pub(crate) fn seq_unpulled_count_only(&mut self, target: &Value) -> Option<Value> {
+        let ValueView::Seq(body) = target.view() else {
+            return None;
+        };
+        let iterator = body.unpulled_iterator()?;
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterator.view()
+        else {
+            return None;
+        };
+        // Only an iterator over a plain element array (`@a.iterator`,
+        // `(1..5).iterator`) predicts its count: a `.map`/`.grep` stream or a
+        // `squish` scan counts by running, like Rakudo's.
+        if class_name != "Iterator"
+            || !attributes.contains_key("items")
+            || attributes.contains_key(crate::value::MAP_GREP_STREAM_ATTR)
+            || attributes.contains_key("squish_source")
+        {
+            return None;
+        }
+        self.iterator_count_only_from_attrs(&attributes.to_map())
+            .ok()
+            .flatten()
+    }
+
     /// `Date.Date` / `.DateTime` (and `DateTime`'s) on a type object: the
     /// coercion's own type object. `None` for an instance, whose answer is
     /// the temporal rows'.
