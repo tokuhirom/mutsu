@@ -861,8 +861,8 @@ impl Interpreter {
                 return result;
             }
             // The compile-time $*LANG object graph (ADR-0026 slang activation):
-            // slang_grammar/slang_actions/define_slang on Mutsu::Slang::CompLang.
-            if class_name.as_str().starts_with("Mutsu::Slang::")
+            // slang_grammar/slang_actions/define_slang on Raku::Slang::CompLang.
+            if crate::runtime::slang_activation::is_slang_handle_class(class_name.as_str())
                 && let Some(result) =
                     self.dispatch_slang_comp_lang_method(&class_name.resolve(), method, &args)
             {

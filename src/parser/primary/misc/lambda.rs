@@ -71,18 +71,13 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
 }
 
 fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
-    let is_rw_block = input.starts_with("<->");
-    if !is_rw_block && !input.starts_with("->") {
+    let Some((is_rw_block, starter_len)) = crate::parser::stmt::simple::pointy_starter(input) else {
         return Err(PError::expected("arrow lambda"));
-    }
+    };
     // Capture the definition line of the pointy block (at the `->` position)
     let arrow_line = crate::parser::primary::current_line_number(input);
     let arrow_is_original = crate::parser::primary::is_within_original_source(input);
-    let r = if is_rw_block {
-        &input[3..]
-    } else {
-        &input[2..]
-    };
+    let r = &input[starter_len..];
     let (r, _) = ws(r)?;
     // Zero-param pointed block: -> { body }
     if r.starts_with('{') {

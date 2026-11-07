@@ -21,7 +21,7 @@
 //!
 //! The `$*LANG` object graph is deliberately minimal (ADR-0026 §4 rejects
 //! executing the Rakudo-internal token bodies, and ADR-0091 keeps the
-//! refusal): `Mutsu::Slang::CompLang` is the language handle, and
+//! refusal): `Raku::Slang::CompLang` is the language handle, and
 //! `slang_grammar`/`slang_actions`/`actions`/`WHAT` return opaque
 //! `Mutsu::Slang::Grammar`/`Mutsu::Slang::Actions` handles whose `.^mixin`
 //! only *records* the role composition.
@@ -45,13 +45,22 @@ pub(crate) struct SlangActivation {
     pub(crate) host: Option<crate::slang_link::SlangHost>,
 }
 
-/// Classes of the compile-time `$*LANG` object graph. `.^name` on these must
-/// not start with `Raku::` — Slangify keys its legacy-grammar selection on
-/// that prefix, and mutsu deliberately selects the legacy (NQP-named) roles;
-/// either role set maps to the same rule names (ADR-0026 §2.2).
-pub(crate) const COMP_LANG_CLASS: &str = "Mutsu::Slang::CompLang";
+/// Classes of the compile-time `$*LANG` object graph. The language handle is
+/// named `Raku::...`, as rakudo's own `$*LANG` is (`Raku::Grammar`): Slangify
+/// keys its selection of the RakuAST roles on `$LANG.^name.starts-with('Raku::')`,
+/// and a slang with both a RakuAST and a legacy role (`Slang::Lambda`'s
+/// `pointy-block-starter` / `lambda`) must get the RakuAST one, since mutsu's
+/// frontend is RakuAST (ADR-10723). Before the slang host (ADR-15762) every
+/// legacy role was mapped onto the same parser mode, so the prefix was kept off.
+pub(crate) const COMP_LANG_CLASS: &str = "Raku::Slang::CompLang";
 pub(crate) const GRAMMAR_HANDLE_CLASS: &str = "Mutsu::Slang::Grammar";
 const ACTIONS_HANDLE_CLASS: &str = "Mutsu::Slang::Actions";
+
+/// Whether `class_name` is one of the `$*LANG` object-graph classes above.
+// Cost: O(1).
+pub(crate) fn is_slang_handle_class(class_name: &str) -> bool {
+    class_name == COMP_LANG_CLASS || class_name.starts_with("Mutsu::Slang::")
+}
 
 /// The thread name marks the activation sub-interpreter, so the parser hook
 /// can refuse to recurse from inside one (a slang module chain that somehow
