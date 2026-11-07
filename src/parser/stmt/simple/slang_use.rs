@@ -49,6 +49,13 @@ pub(crate) fn apply_slang_overrides(
         if vocabulary.try_insert_token(&over.name, over.body.as_deref()) {
             continue;
         }
+        // The lexemes that open a pointy block (Slang::Lambda's `λ`).
+        if over.name == "pointy-block-starter"
+            && let Some(starters) = over.body.as_deref().and_then(parse_pointy_starters)
+        {
+            register_pointy_starters(starters);
+            continue;
+        }
         // A new production of a hookable category (ADR-15762): the slang host
         // runs its token and action where the parser reaches it.
         // A core action the slang overrides (ADR-15762 slice 3): the

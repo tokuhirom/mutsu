@@ -36,7 +36,7 @@ overridden **rule names** map onto hand-implemented parser modes. The chain:
    activation gate, checked on the cached module scan).
 2. X's whole load runs at parse time in a fresh interpreter on a fresh
    thread (`runtime/slang_activation.rs`) with a compile-time `$*LANG`
-   object (`Mutsu::Slang::CompLang`) bound. Slangify's inner `&EXPORT` runs
+   object (`Raku::Slang::CompLang`) bound. Slangify's inner `&EXPORT` runs
    verbatim — mutsu executes its `.^name` check (a non-`Raku::` name, so the
    legacy/NQP role set is selected, per the ADR), the `.^mixin` recording,
    and `define_slang`.
