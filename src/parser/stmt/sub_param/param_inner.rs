@@ -862,7 +862,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
 
     // Handle literal value parameters: multi sub foo(0), foo(-١), foo(Inf), foo("x")
     if let Some((after_lit, v)) = super::helpers::parse_literal_param_value(rest) {
-        let mut p = super::helpers::make_param("__literal__".to_string());
+        let mut p = super::helpers::make_param(crate::ast::LITERAL_PARAM.to_string());
         // If no explicit type constraint, infer from the literal value type
         p.type_constraint = type_constraint.or_else(|| {
             Some(

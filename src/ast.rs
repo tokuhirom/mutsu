@@ -448,6 +448,17 @@ pub(crate) const TYPE_CAPTURE_PREFIX: &str = "__type_capture__";
 pub(crate) const PARENS_PARAM: &str = "__subsig__";
 /// The execution name of an anonymous `[…]` destructuring parameter.
 pub(crate) const BRACKETS_PARAM: &str = "@";
+/// The execution name of a literal-value parameter (`multi f(0)`, `-> 'add' { }`).
+pub(crate) const LITERAL_PARAM: &str = "__literal__";
+
+/// Whether `name` is one of the placeholder names a parameter without a written
+/// variable executes under (ADR-15761): the one name-based test, for consumers
+/// that only receive a name.
+// Cost: O(1).
+pub(crate) fn is_placeholder_name(name: &str) -> bool {
+    matches!(name, PARENS_PARAM | TYPE_ONLY_PARAM | LITERAL_PARAM)
+        || name.starts_with(TYPE_CAPTURE_PREFIX)
+}
 
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
@@ -4075,4 +4086,30 @@ pub struct PackageMarks {
     /// when the name is a trait instead (`is foo`) it is dispatched as written
     /// (#11349).
     pub parent_spellings: Vec<(String, String)>,
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_names_are_recognised_in_one_place() {
+        for name in [
+            PARENS_PARAM,
+            TYPE_ONLY_PARAM,
+            LITERAL_PARAM,
+            "__type_capture__T",
+        ] {
+            assert!(is_placeholder_name(name), "{name}");
+        }
+        for name in ["x", "@", "@xs", "_", ""] {
+            assert!(!is_placeholder_name(name), "{name}");
+        }
+        assert!(is_placeholder_name(
+            &ParamDef::destructure(Vec::new(), false).name
+        ));
+        assert!(!is_placeholder_name(
+            &ParamDef::destructure(Vec::new(), true).name
+        ));
+    }
 }

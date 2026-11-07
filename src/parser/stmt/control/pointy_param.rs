@@ -508,7 +508,8 @@ fn parse_pointy_param_inner(input: &str) -> PResult<'_, ParamDef> {
 
     // Literal parameters use the same grammar in sub and pointy signatures.
     if let Some((rest, value)) = crate::parser::stmt::sub_param::parse_literal_param_value(rest) {
-        let mut param = crate::parser::stmt::sub_param::make_param("__literal__".to_string());
+        let mut param =
+            crate::parser::stmt::sub_param::make_param(crate::ast::LITERAL_PARAM.to_string());
         param.literal_value = Some(value);
         param.slurpy = slurpy;
         param.double_slurpy = double_slurpy;

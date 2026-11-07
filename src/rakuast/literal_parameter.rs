@@ -7,7 +7,7 @@ use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The parser's name for a literal-value parameter.
-pub(super) const NAME: &str = "__literal__";
+pub(super) const NAME: &str = crate::ast::LITERAL_PARAM;
 
 /// The type Rakudo records beside a scalar literal parameter value. Mutsu
 /// stores large rational literals in more than one representation, but all of
