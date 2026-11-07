@@ -224,6 +224,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 mark_expr(&mut a.source);
             }
             crate::ast::parsed::ParsedExpr::Supply(body) => mark_stmts(body),
+            crate::ast::parsed::ParsedExpr::Lowered { .. } => {}
             crate::ast::parsed::ParsedExpr::HyperAssign(a) => {
                 mark_expr(&mut a.target);
                 mark_expr(&mut a.value);

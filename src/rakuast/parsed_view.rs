@@ -203,6 +203,13 @@ pub(super) fn parsed_expr_node(
     node: &ParsedExpr,
 ) -> Result<RakuAstNode, RuntimeError> {
     match node {
+        // The node the slang's action attached stands for the expression.
+        ParsedExpr::Lowered { node, .. } => match node.view() {
+            crate::value::ValueView::RakuAst(node) => Ok(node.clone()),
+            _ => Err(RuntimeError::new(
+                "RakuAST: a slang production's expression lost its node",
+            )),
+        },
         ParsedExpr::Assign(a) => match &a.target {
             crate::ast::Expr::Index {
                 target,

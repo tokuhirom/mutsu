@@ -146,6 +146,7 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             | ParsedExpr::AtomicVar(_)
             | ParsedExpr::ObjectHash(_)
             | ParsedExpr::HyperAssign(_)
+            | ParsedExpr::Lowered { .. }
             | ParsedExpr::InlineSubset(_) => true,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass

@@ -272,6 +272,12 @@ pub(crate) enum SigillessForm {
 /// An expression-level construct kept in its RakuAST shape.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ParsedExpr {
+    /// The expression a slang production stands for (ADR-15762), already
+    /// lowered from the node its action attached; see [`ParsedStmt::Lowered`].
+    Lowered {
+        expr: Box<Expr>,
+        node: crate::value::Value,
+    },
     /// `TARGET = SOURCE` (`ApplyInfix` over `Assignment`).
     Assign(Assign),
     /// `TARGET OP= SOURCE` (`ApplyInfix` over `MetaInfix::Assign`).

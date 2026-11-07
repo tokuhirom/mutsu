@@ -3,7 +3,7 @@
 //! node a slang action attaches is lowered where the production stood.
 
 use super::{RakuAstFieldValue, RakuAstNode};
-use crate::ast::Stmt;
+use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -62,4 +62,22 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             node: Value::rakuast(Box::new(RakuAstNode::clone(node))),
         },
     )))
+}
+
+/// Lower the expression node a slang action attached into the expression it
+/// stands for at the hook (a `term`, `value` or `number` production).
+// Cost: O(n), n = size of the node.
+pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
+    let ValueView::RakuAst(inner) = node.view() else {
+        return Err(RuntimeError::new("slang production produced no RakuAST node"));
+    };
+    let names = NameScope::default();
+    let _method_scope = super::underscore_bindings::MethodScope::enter(false);
+    let lowered = crate::parser::with_rakuast_lexical_scope(|| {
+        super::lower::lower_expr(&names, inner)
+    })?;
+    Ok(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Lowered {
+        expr: Box::new(lowered),
+        node: node.clone(),
+    })))
 }

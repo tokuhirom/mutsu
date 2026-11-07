@@ -841,6 +841,11 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
                 );
             }
         }
+        // A slang's own `term` / `value` / `number` productions compete ahead of
+        // the built-in ones (ADR-15762 §2.1).
+        if let Some(hooked) = crate::parser::stmt::simple::term_hook(input) {
+            return hooked;
+        }
         macro_rules! try_primary {
             ($expr:expr) => {
                 match $expr {
