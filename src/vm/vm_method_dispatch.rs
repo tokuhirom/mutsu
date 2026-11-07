@@ -1091,6 +1091,7 @@ impl Interpreter {
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
         let polls = crate::vm::vm_poll::DispatchPolls::current();
         let frame_caller_code = self.current_code;
         while ip < cc.ops.len() {
@@ -1156,6 +1157,7 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
@@ -1526,8 +1528,13 @@ impl Interpreter {
         };
 
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
-        let final_result =
-            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref());
+        // A `fail` hands its Failure back as is: a definite `--> True` /
+        // `--> 42` return value is what a routine that COMPLETES yields.
+        let final_result = if fail_bypass {
+            final_result
+        } else {
+            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref())
+        };
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure
@@ -2948,6 +2955,7 @@ impl Interpreter {
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
         let polls = crate::vm::vm_poll::DispatchPolls::current();
         let frame_caller_code = self.current_code;
         while ip < cc.ops.len() {
@@ -3010,6 +3018,7 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
@@ -3231,13 +3240,17 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        let final_result = self.finalize_method_result_fast(
-            cc,
-            final_result,
-            method_def.return_type.as_deref(),
-            effective_return_spec.as_deref(),
-            return_fast,
-        );
+        let final_result = if fail_bypass {
+            final_result
+        } else {
+            self.finalize_method_result_fast(
+                cc,
+                final_result,
+                method_def.return_type.as_deref(),
+                effective_return_spec.as_deref(),
+                return_fast,
+            )
+        };
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure
