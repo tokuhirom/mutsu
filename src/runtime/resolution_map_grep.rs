@@ -447,16 +447,20 @@ impl Interpreter {
     /// then the statement's value and must be sunk by the gather.
     // Cost: O(d), d = nesting depth of `try` tails.
     fn stmt_yields_lazy_map_grep(stmt: &crate::ast::Stmt) -> bool {
-        match stmt {
-            crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall { name, .. })
-            | crate::ast::Stmt::Expr(crate::ast::Expr::Call { name, .. }) => {
-                matches!(name.resolve().as_str(), "map" | "grep")
-            }
-            crate::ast::Stmt::Expr(crate::ast::Expr::Try { body, .. }) => {
-                body.last().is_some_and(Self::stmt_yields_lazy_map_grep)
-            }
-            _ => false,
+        // Peel `try` bodies down to the statement that supplies their value.
+        let mut tail = stmt;
+        while let crate::ast::Stmt::Expr(crate::ast::Expr::Try { body, .. }) = tail {
+            let Some(last) = body.last() else {
+                return false;
+            };
+            tail = last;
         }
+        matches!(
+            tail,
+            crate::ast::Stmt::Expr(
+                crate::ast::Expr::MethodCall { name, .. } | crate::ast::Expr::Call { name, .. }
+            ) if matches!(name.resolve().as_str(), "map" | "grep")
+        )
     }
 
     pub(crate) fn compile_gather_body_cached(
