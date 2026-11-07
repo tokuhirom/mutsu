@@ -110,6 +110,15 @@ impl Interpreter {
             }
             list = flattened;
         }
+        // A `CArray` / native-array element read inside the operand list
+        // (`[*] @carray[0..1]`, `[*] (@c[0], @c[1])`) is a native reference
+        // (a Proxy). A reduction folds element VALUES, and the numeric
+        // operators read a Proxy as 0 (`[*] @dims[0..*-2]` was `0`, #17010).
+        for item in &mut list {
+            if let Some(value) = crate::runtime::native_pos_ref::fetch_native_pos_ref(item) {
+                *item = value;
+            }
+        }
         // ADR-0040 slices 1-2: a reduction's operands are the element VALUES of
         // the source list, so an element that is itemized *because it is an
         // element* is handed to the operator decontainerized. Measured on raku:
