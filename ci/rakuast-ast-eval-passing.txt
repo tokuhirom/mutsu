@@ -1538,6 +1538,7 @@ t/concurrency/thread-lock/atomic-ops.t
 t/concurrency/thread-lock/atomic-read-gate.t
 t/concurrency/thread-lock/atomic-scalar-follows-its-binding.t
 t/concurrency/thread-lock/atomic-store-expression-and-metaop.t
+t/concurrency/thread-lock/atomic-subtract-assign.t
 t/concurrency/thread-lock/atomicint-cas-object-shadowed-by-inner-declaration.t
 t/concurrency/thread-lock/atomicint-class-body-static-attribute-default.t
 t/concurrency/thread-lock/atomicint-closure-reset-writeback.t
@@ -2670,6 +2671,7 @@ t/lang/eval-imported-lowercase-constant.t
 t/lang/eval-imported-main.t
 t/lang/eval-label-redeclaration.t
 t/lang/eval-lang-adverb.t
+t/lang/eval-late-class-forward-code-var.t
 t/lang/eval-line-unicode-line-breaks.t
 t/lang/eval-my-constant-stays-in-eval.t
 t/lang/eval-named-sub-why-after-eval.t
@@ -5443,6 +5445,7 @@ t/oo/role/iterator-is-lazy-with-iterator-role.t
 t/oo/role/iterator-role-default-methods.t
 t/oo/role/key-subscript-assign-rw-at-key-role.t
 t/oo/role/key-subscript-delete-rw-accessor-role.t
+t/oo/role/later-role-composition-keeps-forward-code-var-binding.t
 t/oo/role/lexical-role-pun-name.t
 t/oo/role/lexical-role-two-modules.t
 t/oo/role/local-role-parameter-identity.t
@@ -6103,6 +6106,7 @@ t/rakuast/rakuast-eval-assign-expr.t
 t/rakuast/rakuast-eval-ast-exported-type-param.t
 t/rakuast/rakuast-eval-ast-pod-declarator-order.t
 t/rakuast/rakuast-eval-ast-use-imports.t
+t/rakuast/rakuast-eval-atomic-minus-sign.t
 t/rakuast/rakuast-eval-bare-done.t
 t/rakuast/rakuast-eval-bare-for.t
 t/rakuast/rakuast-eval-block-arg.t
@@ -8933,6 +8937,7 @@ t/types/numeric/rat-fatrat-epsilon-real-check.t
 t/types/numeric/rat-mul-operator-forms.t
 t/types/numeric/rat-num-correct-rounding.t
 t/types/numeric/rat-numerator-denominator-nude.t
+t/types/numeric/rat-numerator-uint-refinement-forwarding.t
 t/types/numeric/rat-overflow-dynamic-var.t
 t/types/numeric/rat-overflow-literal-arith.t
 t/types/numeric/rat-str-precision.t

@@ -440,7 +440,13 @@ impl Interpreter {
         // A unit with a BEGIN prologue keeps its per-run capture bucket
         // (`eval_unit_capture_key`): the declaring frame's reads of the bucket
         // name the running unit's key (`eval_unit_declaring_key`, #16476).
-        crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+        let prologue_len = crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+        // Everything before this marker is the unit's BEGIN-time prologue: a
+        // closure compiled after it treats a binding the prologue only declared
+        // (`my &f := ...`) as a forward reference (#16351).
+        if prologue_len > 0 {
+            stmts.insert(prologue_len, Stmt::BeginPrologueEnd);
+        }
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
         // of the snippet too (#13137), as for the mainline (#13091).
