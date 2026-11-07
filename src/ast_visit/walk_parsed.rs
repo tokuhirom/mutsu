@@ -305,6 +305,7 @@ fn block_mut<V: VisitMut + ?Sized>(v: &mut V, b: &mut ParsedBlock) {
 // Cost: O(n), n = size of `node`'s subtree.
 pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast ParsedExpr) {
     match node {
+        ParsedExpr::Lowered { expr, .. } => v.visit_expr(expr),
         ParsedExpr::Assign(a) => {
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
@@ -352,6 +353,7 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
 // Cost: O(n), n = size of `node`'s subtree.
 pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut ParsedExpr) {
     match node {
+        ParsedExpr::Lowered { expr, .. } => v.visit_expr_mut(expr),
         ParsedExpr::Assign(a) => {
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);

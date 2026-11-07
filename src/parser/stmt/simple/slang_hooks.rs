@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::slang_link::SlangHost;
+use crate::value::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -41,6 +42,9 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
     rest.strip_suffix('>')?;
     match category {
         "statement-control" | "statement_control" => Some("statement-control"),
+        "term" => Some("term"),
+        "value" => Some("value"),
+        "number" => Some("number"),
         _ => None,
     }
 }
@@ -94,10 +98,11 @@ fn byte_offset(text: &str, chars: usize) -> usize {
         .map_or(text.len(), |(at, _)| at)
 }
 
-/// Try the slang's `statement-control` productions at `input`, the start of a
-/// statement. `None`: no hook applies here (no slang, or no candidate matched).
+/// Run the slang's productions of `category` at the start of `input`: the text
+/// after the first one that matches and the node its action attached. `None`: no
+/// hook applies here (no slang, or no candidate matched).
 // Cost: O(1) with no hook registered; otherwise the slang's own run.
-pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'_, Stmt>> {
+fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str, Value), PError>> {
     let (rules, host) = HOOKS.with(|h| {
         let hooks = h.borrow();
         if hooks.rules.is_empty() {
@@ -107,7 +112,7 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
             .rules
             .iter()
             .filter(|r| {
-                slang_hook_rule(&r.rule) == Some("statement-control")
+                slang_hook_rule(&r.rule).is_some_and(|c| category.contains(&c))
                     && r.prefix.as_deref().is_none_or(|p| input.starts_with(p))
             })
             .cloned()
@@ -117,24 +122,13 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
     let host = host?;
     for candidate in rules {
         let answer = host.run_hook(&candidate.rule, input, &mut |rule, pos| {
-            crate::rakuast::slang_bridge::parse_production(rule, &input[byte_offset(input, pos)..])
-                .map(|found| {
-                    found.map(|(len, node)| {
-                        let start = byte_offset(input, pos);
-                        (input[..start + len].chars().count(), node)
-                    })
-                })
+            let start = byte_offset(input, pos);
+            crate::rakuast::slang_bridge::parse_production(rule, &input[start..])
+                .map(|found| found.map(|(len, node)| (input[..start + len].chars().count(), node)))
         });
         match answer {
             Ok(None) => continue,
-            Ok(Some((end, node))) => {
-                let rest = &input[byte_offset(input, end)..];
-                return Some(
-                    crate::rakuast::slang_bridge::lower_statement(&node)
-                        .map(|stmt| (rest, stmt))
-                        .map_err(|e| PError::fatal_at(e.message.to_string(), input)),
-                );
-            }
+            Ok(Some((end, node))) => return Some(Ok((&input[byte_offset(input, end)..], node))),
             Err(message) => {
                 return Some(Err(PError::fatal_at(
                     format!("slang production '{}': {message}", candidate.rule),
@@ -144,6 +138,30 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
         }
     }
     None
+}
+
+/// Try the slang's `statement-control` productions at `input`, the start of a
+/// statement, ahead of the built-in ones.
+// Cost: as [`run_category`].
+pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'_, Stmt>> {
+    let found = run_category(&["statement-control"], input)?;
+    Some(found.and_then(|(rest, node)| {
+        crate::rakuast::slang_bridge::lower_statement(&node)
+            .map(|stmt| (rest, stmt))
+            .map_err(|e| PError::fatal_at(e.message.to_string(), input))
+    }))
+}
+
+/// Try the slang's `term`, `value` and `number` productions at `input`, the
+/// start of a term, ahead of the built-in ones.
+// Cost: as [`run_category`].
+pub(in crate::parser) fn term_hook(input: &str) -> Option<PResult<'_, Expr>> {
+    let found = run_category(&["term", "value", "number"], input)?;
+    Some(found.and_then(|(rest, node)| {
+        crate::rakuast::slang_bridge::lower_expression(&node)
+            .map(|expr| (rest, expr))
+            .map_err(|e| PError::fatal_at(e.message.to_string(), input))
+    }))
 }
 
 /// Parse the core production `rule` at the start of `text` for a slang token

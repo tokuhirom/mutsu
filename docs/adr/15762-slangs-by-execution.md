@@ -225,3 +225,12 @@ choices, each a refinement of the text above rather than a reversal:
   `.ast` of the Match a grammar *method* answers was dropped instead of carried
   to the capture.
 
+### Amendment 2 (2026-11-07): slice 2, term-level categories
+
+`term`, `value` and `number` productions hook where the primary-term parser starts
+(`primary_term`), ahead of the built-in term parsers; they share the host, the channel and the
+`statement-control` machinery (`run_category`). The lowered expression is carried as
+`ParsedExpr::Lowered { expr, node }`, the expression twin of `ParsedStmt::Lowered`. Still to come
+from slice 2: `routine-declarator`, `scope-declarator`, `sigilless-variable`, which need the
+`signature`/`trait` shims.
+

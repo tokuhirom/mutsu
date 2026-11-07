@@ -128,7 +128,7 @@ pub(in crate::parser) use registry::{
 };
 pub(in crate::parser) use slang_hooks::{
     hooks_snapshot, register_hook, restore_hooks, set_host as set_slang_host,
-    statement_control_hook,
+    statement_control_hook, term_hook,
 };
 pub(crate) use slang_hooks::{parse_slang_shim_production, slang_hook_rule};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};

@@ -278,6 +278,14 @@ impl VisitMut for Finalize<'_> {
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        // What a slang production stands for was lowered when the parser built it.
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Lowered { .. }))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+            && let ParsedExpr::Lowered { expr: inner, .. } = *node
+        {
+            *expr = *inner;
+            return;
+        }
         let names = self.names;
         // A bareword naming a setting term that a later statement of an
         // enclosing list redeclares is still the setting's (`say X; constant
