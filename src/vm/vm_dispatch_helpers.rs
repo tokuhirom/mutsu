@@ -635,10 +635,12 @@ impl Interpreter {
             // cannot pull and answers true, so `so gather { }` was true. Pull
             // exactly one element; the rest stays lazy. A body that dies leaves
             // the answer at the pure approximation (true).
-            // Only a gather coroutine can be pulled this way; the other LazyList
-            // kinds (combinatorial `permutations`, sequences, pipes) keep the
-            // pure answer.
-            ValueView::LazyList(list) if list.coroutine.is_some() => {
+            // A lazy `.map`/`.grep` pipe (`(1,2,3).lazy.grep({ False })`,
+            // `Seq.new($iterator).grep(...)`) is the same: its truth is whether
+            // the stage yields a first element, not whether its source has one.
+            // The other LazyList kinds (combinatorial `permutations`,
+            // sequences) keep the pure answer.
+            ValueView::LazyList(list) if list.coroutine.is_some() || list.lazy_pipe.is_some() => {
                 match self.force_lazy_list_vm_n(&list, 1) {
                     Ok(items) => !items.is_empty(),
                     Err(_) => true,

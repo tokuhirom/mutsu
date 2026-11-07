@@ -1200,6 +1200,30 @@ impl Interpreter {
         }
     }
 
+    /// `.Bool` / `.so` / `.not` on a lazy `.map`/`.grep` pipe: its truth is
+    /// whether the stage yields a first element, not whether its source has
+    /// one, so pull exactly one result (as rakudo's `Seq.Bool` asks its
+    /// iterator for one). `None` for any other receiver or method.
+    // Cost: the pipe's work up to its first result.
+    pub(crate) fn lazy_pipe_truth_answer(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !args.is_empty() || !matches!(method, "Bool" | "so" | "not") {
+            return Ok(None);
+        }
+        let ValueView::LazyList(ll) = target.descalarize().view() else {
+            return Ok(None);
+        };
+        if ll.lazy_pipe.is_none() || ll.coroutine.is_some() {
+            return Ok(None);
+        }
+        let truth = !self.force_lazy_list_vm_n(&ll, 1)?.is_empty();
+        Ok(Some(Value::truth(if method == "not" { !truth } else { truth })))
+    }
+
     /// For `.head` on a gather-sourced `LazyList`, return how many leading
     /// elements need to be produced (so an infinite gather is pulled lazily via
     /// [`Self::force_lazy_list_vm_n`] instead of forced to completion).
