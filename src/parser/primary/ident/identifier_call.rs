@@ -2646,6 +2646,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // between the sigil and the term) separates it from the infix.
             || (crate::parser::primary::ident::predicates::is_named_unary_builtin(&name)
                 && starts_glued_prefix_arg(r))
+            // After whitespace, `[` opens an array literal or a reduction
+            // (`flip [~] 1, 2`, `uc [~] <a b>`) for a named unary builtin:
+            // `flip [~] ...` is `flip([~] ...)`, not `flip ~ ...`.
+            || (next == '['
+                && crate::parser::primary::ident::predicates::is_named_unary_builtin(&name))
             // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
             // so `undeclared-sub q:to/END/` is a no-paren listop call.
             || crate::parser::primary::ident::predicates::starts_with_quote_construct(r)
