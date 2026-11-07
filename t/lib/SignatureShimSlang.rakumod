@@ -1,4 +1,4 @@
-# Fixture for t/routines/slang-signature-shim.t (ADR-15762, #13370): a
+# Fixture for t/routines/signature/slang-signature-shim.t (ADR-15762, #13370): a
 # `routine-declarator:sym<fun>` token that calls the core `<signature>` rule and
 # builds a RakuAST::Sub from the signature and block it matched.
 use v6.e.PREVIEW;
