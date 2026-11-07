@@ -90,10 +90,16 @@ pub(crate) fn typecheck_binding_parameter_with_hint(
 pub(crate) fn typecheck_binding_parameter_where(param: &str, value: &Value) -> RuntimeError {
     let got = crate::runtime::utils::got_type_name(value);
     let msg = format!(
-        "Constraint type check failed in binding to parameter '{}'; expected anonymous constraint to be met but got {} ({})",
+        "Constraint type check failed in binding to parameter '{}'; {}",
         param,
-        got,
-        crate::builtins::methods_0arg::raku_repr::raku_value(value),
+        crate::word_wrap::naive_word_wrap(
+            &format!(
+                "expected anonymous constraint to be met but got {} ({})",
+                got,
+                crate::runtime::utils::constraint_value_repr(value),
+            ),
+            72
+        ),
     );
     let mut attrs = ValueMap::default();
     attrs.insert("parameter".to_string(), Value::str(param.to_string()));

@@ -125,11 +125,17 @@ impl Interpreter {
             constraint,
             &got,
             Some(format!(
-                "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
+                "Constraint type check failed in binding to parameter '{}'; {}",
                 param_display_name(pd),
-                base,
-                got,
-                crate::builtins::methods_0arg::raku_repr::raku_value(value)
+                crate::word_wrap::naive_word_wrap(
+                    &format!(
+                        "expected {} but got {} ({})",
+                        base,
+                        got,
+                        crate::runtime::utils::constraint_value_repr(value)
+                    ),
+                    72
+                ),
             )),
         )
         .with_parameter_object(pd, Some(self))
