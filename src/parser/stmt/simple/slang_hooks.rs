@@ -4,7 +4,7 @@
 //! host. The node the action attached is lowered here and stands for the
 //! statement.
 //!
-//! The registry is unit state like [`super::slang_modes`]: reset at parse
+//! The registry is unit state like [`mod@super::slang_modes`]: reset at parse
 //! start, snapshotted around a nested module scan, and filled only on the real
 //! parse (the activation interpreter has no host to ask).
 
