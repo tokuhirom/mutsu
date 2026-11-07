@@ -822,15 +822,24 @@ fn source_ends_with_infix(before: &str) -> bool {
         "&&", "||", "^^", "//", ":=", "=>", "...^", "^...", "...", "R-", "R+", "R*", "=",
     ];
     const WORDS: &[&str] = &[
-        "and", "or", "xor", "andthen", "orelse", "notandthen", "Z", "X", "but", "does", "ff",
+        "and",
+        "or",
+        "xor",
+        "andthen",
+        "orelse",
+        "notandthen",
+        "Z",
+        "X",
+        "but",
+        "does",
+        "ff",
         "fff",
     ];
     let before = before.trim_end();
     let word_start_ok = |at: usize| {
-        !before[..at]
-            .chars()
-            .next_back()
-            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '$' || c == '@' || c == '%')
+        !before[..at].chars().next_back().is_some_and(|c| {
+            c.is_alphanumeric() || c == '_' || c == '-' || c == '$' || c == '@' || c == '%'
+        })
     };
     for op in WORDS {
         if before.ends_with(op) && word_start_ok(before.len() - op.len()) {
