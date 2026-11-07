@@ -3106,9 +3106,7 @@ fn postfix_expr_loop_from<'a>(
             }
         }
 
-        if !postfix_deferred
-            && let Some((op, len)) = parse_custom_postfix_operator(rest)
-        {
+        if !postfix_deferred && let Some((op, len)) = parse_custom_postfix_operator(rest) {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {
