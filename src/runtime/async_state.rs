@@ -116,6 +116,12 @@ pub(crate) struct AsyncState {
     /// instruction, because the bounded-pull driver can only resume its own
     /// compiled frame.
     pub(crate) lazy_pull_entry_routine_depth: Option<usize>,
+    /// Number of active loop-local scopes (`topic_state.loop_local_vars`) at
+    /// entry to the innermost lazy-gather pull. A sunk lazy `map`/`grep` in
+    /// the gather body may suspend between its elements only when no loop op
+    /// of the body is active (`vm_sink_lazy_pipe.rs`): loop ops resume from
+    /// their own state, which a mid-op suspension would not record.
+    pub(crate) lazy_pull_entry_loop_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
     /// Set by the `.map`/`.grep` loops when a `last` in the callback stopped
     /// them, to the loop-handler depth of the loop that caught it

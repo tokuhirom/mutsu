@@ -3839,6 +3839,16 @@ pub(crate) enum ForLoopResumeState {
         /// enclosing `TryCatch` region reads it to know which op to re-enter.
         site: (usize, usize),
     },
+    /// Resume a sunk lazy `map`/`grep` pipe (`OpCode::SinkPop` on a bare lazy
+    /// `Seq`) that suspended between two of its elements. The pipe stays on
+    /// the saved stack and the saved ip stays on the `SinkPop`, so the
+    /// marker only tells the driver to keep that ip (and the op that the next
+    /// pull continues the pipe rather than starting a new sink).
+    SunkPipe {
+        /// `(code_id, ip)` of the `SinkPop` to re-enter; an enclosing
+        /// `TryCatch` region reads it to know which op to continue at.
+        site: (usize, usize),
+    },
     /// Resume a `try`/CATCH/CONTROL region (`OpCode::TryCatch`) whose protected
     /// body suspended. The take-limit signal is a coroutine suspension, not an
     /// exception, so the region neither runs its handlers nor ends: re-entering
@@ -3862,6 +3872,7 @@ impl ForLoopResumeState {
             | ForLoopResumeState::LazyGather { inner, .. }
             | ForLoopResumeState::CStyleLoop { inner, .. }
             | ForLoopResumeState::TryCatch { inner, .. } => inner.as_deref(),
+            ForLoopResumeState::SunkPipe { .. } => None,
         }
     }
 
@@ -3875,7 +3886,7 @@ impl ForLoopResumeState {
             | ForLoopResumeState::List { loop_ip, .. }
             | ForLoopResumeState::LazyGather { loop_ip, .. }
             | ForLoopResumeState::TryCatch { loop_ip, .. } => Some(*loop_ip),
-            ForLoopResumeState::CStyleLoop { .. } => None,
+            ForLoopResumeState::CStyleLoop { .. } | ForLoopResumeState::SunkPipe { .. } => None,
         }
     }
 
@@ -3887,7 +3898,7 @@ impl ForLoopResumeState {
             | ForLoopResumeState::List { code_id, .. }
             | ForLoopResumeState::LazyGather { code_id, .. }
             | ForLoopResumeState::TryCatch { code_id, .. } => Some(*code_id),
-            ForLoopResumeState::CStyleLoop { .. } => None,
+            ForLoopResumeState::CStyleLoop { .. } | ForLoopResumeState::SunkPipe { .. } => None,
         }
     }
 
@@ -3896,7 +3907,9 @@ impl ForLoopResumeState {
     /// and a `CStyleLoop` marker its recorded `site`.
     pub(crate) fn resume_op_site(&self) -> (usize, usize) {
         match self {
-            ForLoopResumeState::CStyleLoop { site, .. } => *site,
+            ForLoopResumeState::CStyleLoop { site, .. } | ForLoopResumeState::SunkPipe { site } => {
+                *site
+            }
             ForLoopResumeState::IntRange {
                 code_id, loop_ip, ..
             }

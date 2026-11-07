@@ -286,6 +286,10 @@ impl Interpreter {
             .async_state
             .lazy_pull_entry_routine_depth
             .replace(self.lazy_pull_routine_depth());
+        let saved_loop_depth = self
+            .async_state
+            .lazy_pull_entry_loop_depth
+            .replace(self.topic_state.loop_local_vars.len());
         // An enclosing multi-take op's deferral belongs to the OUTER pull; this
         // pull's own takes suspend normally.
         let saved_take_defer_to_op_end =
@@ -346,6 +350,7 @@ impl Interpreter {
         self.leave_gather_defining_unit(gather_scope);
         self.async_state.lazy_pull_entry_call_depth = saved_pull_depth;
         self.async_state.lazy_pull_entry_routine_depth = saved_routine_depth;
+        self.async_state.lazy_pull_entry_loop_depth = saved_loop_depth;
         self.async_state.take_defer_to_op_end = saved_take_defer_to_op_end;
         self.async_state.lazy_take_boundary_defer = saved_lazy_take_boundary_defer;
         // The body may finish (or error) with the deferred-suspension flag
@@ -472,7 +477,11 @@ impl Interpreter {
     /// [`Self::force_lazy_pipe`] without the copy: run the pipe until its
     /// cache holds `needed` elements or the source is exhausted.
     // Cost: O(1) amortized per produced element, plus the stage callback.
-    fn fill_lazy_pipe(&mut self, list: &LazyList, needed: usize) -> Result<(), RuntimeError> {
+    pub(super) fn fill_lazy_pipe(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site

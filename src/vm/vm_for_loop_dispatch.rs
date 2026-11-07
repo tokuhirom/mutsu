@@ -137,7 +137,8 @@ impl Interpreter {
                 // Guarded out above: a CStyleLoop marker is never taken here,
                 // and a TryCatch state carries its own (non-loop) op's ip.
                 crate::value::ForLoopResumeState::CStyleLoop { .. }
-                | crate::value::ForLoopResumeState::TryCatch { .. } => unreachable!(),
+                | crate::value::ForLoopResumeState::TryCatch { .. }
+                | crate::value::ForLoopResumeState::SunkPipe { .. } => unreachable!(),
             }
         }
 
