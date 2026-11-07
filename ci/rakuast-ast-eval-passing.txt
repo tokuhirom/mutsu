@@ -3256,6 +3256,7 @@ t/modules/import-export/enum-export-space-and-slip.t
 t/modules/import-export/enum-export-tag.t
 t/modules/import-export/enum-slip-value-term-without-use.t
 t/modules/import-export/eqv-hook-export-scoped-to-importer.t
+t/modules/import-export/eval-unit-use-lvalue-call.t
 t/modules/import-export/eval-use-export-hook-before-check.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/eval-use-lib-before-export-hook-use.t
@@ -3374,6 +3375,7 @@ t/modules/import-export/imported-increment-proxy-operand.t
 t/modules/import-export/imported-listop-angle-arg.t
 t/modules/import-export/imported-multi-infix-unicode-mul-declines-to-core-numeric.t
 t/modules/import-export/imported-multi-return-spec.t
+t/modules/import-export/imported-multi-rw-routine-method-on-param.t
 t/modules/import-export/imported-my-type-does-not-shadow.t
 t/modules/import-export/imported-postcircumfix-slice-adverbs-unit.t
 t/modules/import-export/imported-postcircumfix-slice-adverbs.t
@@ -6862,6 +6864,7 @@ t/regex/regex-code-block-quoted-brace.t
 t/regex/regex-code-block-slash-var.t
 t/regex/regex-code-block-writeback.t
 t/regex/regex-code-count-and-list-interpolation.t
+t/regex/regex-code-imported-routine-matched-in-other-unit.t
 t/regex/regex-code-interp-lazy-frame.t
 t/regex/regex-code-interp-regex-value.t
 t/regex/regex-code-runs-on-caller.t
@@ -7065,6 +7068,7 @@ t/regex/subst/eval-subst-writeback.t
 t/regex/subst/failed-subst-is-nil.t
 t/regex/subst/gate-b-subst-and-phaser-fold.t
 t/regex/subst/given-with-subst-topic.t
+t/regex/subst/imported-substr-lvalue.t
 t/regex/subst/loop-subst-readonly-topic.t
 t/regex/subst/match-subst-named-regex-arg.t
 t/regex/subst/match-var-param-subst-invocant.t
