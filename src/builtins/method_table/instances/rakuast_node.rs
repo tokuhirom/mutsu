@@ -100,44 +100,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         crate::unit_source_text::add_check_code(t.clone(), a[0].clone());
         Some(Ok(Value::NIL))
     }),
-    // `$*CU.add-sorry($ex)` / `add-worry($ex)`: queue a compile-time
-    // diagnostic, reported at the end of the unit's compile phase (#15666).
-    node_row!("RakuAST::CompUnit", "add-sorry", |_t, a| {
-        crate::unit_diagnostics::add(&a[0], false);
-        Some(Ok(Value::NIL))
-    }),
-    node_row!("RakuAST::CompUnit", "add-worry", |_t, a| {
-        crate::unit_diagnostics::add(&a[0], true);
-        Some(Ok(Value::NIL))
-    }),
-    // `$*CU.sorries` / `worries` / `has-check-time-problems`: what was queued so far.
-    MethodRow {
-        owner: "RakuAST::CompUnit",
-        name: "sorries",
-        arity: 0,
-        handler: Handler::Narrow(|_, _| Some(Ok(Value::array(crate::unit_diagnostics::peek().0)))),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
-    MethodRow {
-        owner: "RakuAST::CompUnit",
-        name: "worries",
-        arity: 0,
-        handler: Handler::Narrow(|_, _| Some(Ok(Value::array(crate::unit_diagnostics::peek().1)))),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
-    MethodRow {
-        owner: "RakuAST::CompUnit",
-        name: "has-check-time-problems",
-        arity: 0,
-        handler: Handler::Narrow(|_, _| {
-            let (sorries, worries) = crate::unit_diagnostics::peek();
-            Some(Ok(Value::truth(!sorries.is_empty() || !worries.is_empty())))
-        }),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",
