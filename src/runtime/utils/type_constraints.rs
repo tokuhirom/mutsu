@@ -63,6 +63,17 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "CX::Take"
             | "CX::Warn"
             | "CompUnit::DependencySpecification"
+            // The rest of the `CompUnit::` core types: a role method such as
+            // `method need(CompUnit::PrecompilationRepository $precomp)`
+            // (Language/compilation.rakudoc) names them in its signature.
+            | "CompUnit::Handle"
+            | "CompUnit::Loader"
+            | "CompUnit::PrecompilationRepository"
+            | "CompUnit::PrecompilationRepository::None"
+            | "CompUnit::PrecompilationUnit"
+            | "CompUnit::PrecompilationUnit::File"
+            | "CompUnit::Repository::AbsolutePath"
+            | "CompUnit::Repository::Unknown"
             | "CompUnit::RepositoryRegistry"
             | "CompUnit::Repository::FileSystem"
             | "CompUnit::Repository::Installable"
