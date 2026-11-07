@@ -2163,8 +2163,7 @@ impl Compiler {
                                 // A lazy initializer is flagged once, so the local
                                 // slot and the package store share one lazy list.
                                 let idx = self.code.add_constant(Value::str(name.clone()));
-                                self.code
-                                    .emit(OpCode::ShareLazyArrayInit { name_idx: idx });
+                                self.code.emit(OpCode::ShareLazyArrayInit { name_idx: idx });
                             }
                             self.code.emit(OpCode::Dup);
                         }
