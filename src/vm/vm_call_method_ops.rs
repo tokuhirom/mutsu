@@ -1664,6 +1664,10 @@ impl Interpreter {
             self.stack.push(answer?);
             return Ok(());
         }
+        if let Some(answer) = self.lazy_pipe_truth_answer(&target, method, &args)? {
+            self.stack.push(answer);
+            return Ok(());
+        }
         // Force gather-sourced LazyList before method dispatch for methods that need
         // element access. This must happen before the native method fast path, because
         // builtins don't have access to the interpreter for forcing.
