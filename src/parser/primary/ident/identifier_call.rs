@@ -1050,7 +1050,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             match crate::parser::stmt::my_decl_expr_pub(input) {
                 Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
                 Err(err) if err.is_fatal() => return Err(err),
-                Err(_) => {
+                Err(decl_err) => {
                     // `my grammar { ... }` / `my class { ... }` / `my role { ... }`:
                     // an *anonymous* lexical package declarator used as an
                     // expression (e.g. `my grammar { ... }.parse: $s`). The named
@@ -1089,6 +1089,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 return Ok((r, make_anon_method(body, declarator)));
                             }
                         }
+                    }
+                    // No anonymous form fits either. A declaration that got
+                    // past its own `my $x` before failing (`(my $a = 42 *)`)
+                    // reports THAT failure, not a bare "expected term" at the
+                    // keyword, so the caller can diagnose the missing operand.
+                    if decl_err
+                        .remaining_len
+                        .is_some_and(|remaining| remaining + 4 < input.len())
+                    {
+                        return Err(decl_err);
                     }
                 }
             }
