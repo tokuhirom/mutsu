@@ -3485,7 +3485,7 @@ impl Compiler {
                                 if !name.starts_with('!')
                                     && !name.starts_with('.')
                                     && !name.starts_with('&')
-                                    && name != "__subsig__" =>
+                                    && name != crate::ast::PARENS_PARAM =>
                             {
                                 Some(name.clone())
                             }

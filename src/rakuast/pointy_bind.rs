@@ -51,7 +51,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // from that name. Dropping the sub-signature (which is what this
         // function did before) left `@list` unbound and silently empty.
         let target = if pd.name.is_empty() {
-            "__subsig__"
+            crate::ast::PARENS_PARAM
         } else {
             pd.name.as_str()
         };

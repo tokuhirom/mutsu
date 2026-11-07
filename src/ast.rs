@@ -448,6 +448,18 @@ pub(crate) const TYPE_CAPTURE_PREFIX: &str = "__type_capture__";
 pub(crate) const PARENS_PARAM: &str = "__subsig__";
 /// The execution name of an anonymous `[…]` destructuring parameter.
 pub(crate) const BRACKETS_PARAM: &str = "@";
+/// The execution name of a literal-value parameter (`multi f(0)`, `-> 'add' { }`).
+pub(crate) const LITERAL_PARAM: &str = "__literal__";
+
+/// Whether `name` is one of the placeholder names a parameter without a written
+/// variable executes under (ADR-15761): the one name-based test, for consumers
+/// that only receive a name. A consumer holding the `ParamDef` reads
+/// [`ParamDef::is_placeholder`] instead.
+// Cost: O(1).
+pub(crate) fn is_placeholder_name(name: &str) -> bool {
+    matches!(name, PARENS_PARAM | TYPE_ONLY_PARAM | LITERAL_PARAM)
+        || name.starts_with(TYPE_CAPTURE_PREFIX)
+}
 
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
@@ -517,6 +529,14 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// Whether this parameter was written without a variable of its own (a bare
+    /// type, a bare `::T`, a literal pattern, an unnamed `(...)` group) and so
+    /// executes under a placeholder name (ADR-15761).
+    // Cost: O(1).
+    pub(crate) fn is_placeholder(&self) -> bool {
+        is_placeholder_name(&self.name)
+    }
+
     /// A parameter with nothing written yet but its execution `name`: what the
     /// parser starts every parameter from.
     // Cost: O(|name|).
@@ -4075,4 +4095,27 @@ pub struct PackageMarks {
     /// when the name is a trait instead (`is foo`) it is dispatched as written
     /// (#11349).
     pub parent_spellings: Vec<(String, String)>,
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_names_are_recognised_in_one_place() {
+        for name in [
+            PARENS_PARAM,
+            TYPE_ONLY_PARAM,
+            LITERAL_PARAM,
+            "__type_capture__T",
+        ] {
+            assert!(is_placeholder_name(name), "{name}");
+            assert!(ParamDef::blank(name.to_string()).is_placeholder(), "{name}");
+        }
+        for name in ["x", "@", "@xs", "_", ""] {
+            assert!(!is_placeholder_name(name), "{name}");
+        }
+        assert!(ParamDef::destructure(Vec::new(), false).is_placeholder());
+        assert!(!ParamDef::destructure(Vec::new(), true).is_placeholder());
+    }
 }

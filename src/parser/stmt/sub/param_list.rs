@@ -66,7 +66,7 @@ fn collect_sub_signature_vars(sub_params: &[ParamDef], out: &mut Vec<String>) {
         let bare = strip_param_sigil(name);
         let declares = !(sp.named_alias
             || name.is_empty()
-            || matches!(name, "@" | "%" | "&" | "__subsig__")
+            || matches!(name, "@" | "%" | "&" | crate::ast::PARENS_PARAM)
             || bare.starts_with("__ANON_"));
         if declares {
             let display = if name.starts_with(['@', '%', '&']) || sp.sigilless {
@@ -99,9 +99,7 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
         if name.is_empty()
             || matches!(name.as_str(), "@" | "%" | "&")
             || name_without_sigil.starts_with("__ANON_")
-            || name == "__type_only__"
-            || name == "__literal__"
-            || name == "__subsig__"
+            || p.is_placeholder()
         {
             continue;
         }

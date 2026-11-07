@@ -193,7 +193,7 @@ impl Interpreter {
         let ty = self.usage_param_type(sp);
         let (constraints, literals, total) = usage_constraints(pd, sp, &ty);
         // A bare literal parameter (`'add'`) carries a placeholder name.
-        let anonymous = sp.name.is_empty() || sp.name == "__literal__";
+        let anonymous = sp.name.is_empty() || sp.name == crate::ast::LITERAL_PARAM;
         if sp.double_slurpy || (sp.slurpy && sp.sigil == '%') {
             // A named slurpy: `*%h` collects every other option.
             let argument = format!("--<{}>=...", sp.name);
