@@ -217,6 +217,10 @@ pub struct RuntimeErrorCold {
     /// Source text immediately after a parse failure's eject point (current
     /// line only, matching rakudo's `X::Comp.post`).
     pub post_context: Option<String>,
+    /// Character offset of a parse failure in the parsed source (rakudo's
+    /// `X::Comp.pos`); a REPL tells "input ended early" from a real error by
+    /// `.pos == $code.chars`.
+    pub parse_pos: Option<usize>,
     /// For a parse failure that occurred while parsing a `use`d module (or
     /// any other file distinct from the top-level entry point): the file
     /// that actually failed to compile, and its full source text. `line`/
@@ -448,6 +452,12 @@ impl RuntimeError {
         let cold = self.cold_mut();
         cold.pre_context = Some(pre);
         cold.post_context = Some(post);
+    }
+    pub(crate) fn set_parse_pos(&mut self, pos: usize) {
+        self.cold_mut().parse_pos = Some(pos);
+    }
+    pub(crate) fn parse_pos(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.parse_pos)
     }
     pub(crate) fn pre_context(&self) -> Option<&str> {
         self.cold.as_ref().and_then(|c| c.pre_context.as_deref())

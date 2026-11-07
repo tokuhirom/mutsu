@@ -2407,6 +2407,19 @@ impl Interpreter {
                     // Nil resets it to Any, as the SetLocal store does. Binds,
                     // raw parameter stores and declarations keep their value.
                     val = self.reset_nil_untyped_scalar(&name, val);
+                    // `given $x { $_ = Nil }` / `for $x { $_ = Nil }` assigns the
+                    // topic's SOURCE container, so the Nil decays to that
+                    // variable's default (`my $x is default(Nil)` stays Nil,
+                    // `is default(42)` becomes 42), not to `$_`'s own `Any`.
+                    if &*name == "_"
+                        && let Some(def) = self
+                            .topic_state
+                            .topic_source_var
+                            .as_deref()
+                            .and_then(|source| self.var_default(source))
+                    {
+                        val = def.clone();
+                    }
                 }
                 if self.module.lexical_fatal_mode
                     && !name.contains("__mutsu_")
@@ -3416,6 +3429,12 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::LoadEnterResult => {
                 let val = self.enter_result_stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            // Cost: O(1).
+            OpCode::LoadOutputResult => {
+                let val = self.take_output_handle_result().unwrap_or(Value::TRUE);
                 self.stack.push(val);
                 *ip += 1;
             }

@@ -52,7 +52,7 @@ impl Interpreter {
         let kind = crate::vm::OutputKind::from_name(name)
             .ok_or_else(|| RuntimeError::new(format!("not an output routine: {name}")))?;
         self.render_output(kind, args.to_vec())?;
-        Ok(Value::TRUE)
+        Ok(self.take_output_handle_result().unwrap_or(Value::TRUE))
     }
 
     pub(super) fn builtin_prompt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

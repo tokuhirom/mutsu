@@ -5367,7 +5367,7 @@ impl Compiler {
                             if self.unit_tail_on_stack =>
                         {
                             self.compile_stmt(stmt);
-                            self.compile_expr(&Expr::Literal(Value::TRUE));
+                            self.code.emit(OpCode::LoadOutputResult);
                             self.emit_unit_tail_result();
                             continue;
                         }

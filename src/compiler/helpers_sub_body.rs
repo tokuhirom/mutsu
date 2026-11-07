@@ -1234,7 +1234,7 @@ impl Compiler {
                         // `note`) prints and returns True, so leave True on the
                         // stack as the routine's implicit return.
                         sub_compiler.compile_stmt(stmt);
-                        sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
+                        sub_compiler.code.emit(OpCode::LoadOutputResult);
                         continue;
                     }
                     _ => {}
@@ -1796,7 +1796,7 @@ impl Compiler {
                     // A statement-form I/O builtin tail (`say`/`put`/`print`/`note`)
                     // prints and returns True — leave True as the implicit return.
                     sub_compiler.compile_stmt(stmt);
-                    sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
+                    sub_compiler.code.emit(OpCode::LoadOutputResult);
                     continue;
                 }
                 // The same value-position statement forms `compile_routine_body_stmts`
@@ -2029,7 +2029,7 @@ impl Compiler {
                             // `print`/`note`) prints and returns True, so leave True
                             // on the stack as the closure's implicit return.
                             sub_compiler.compile_stmt(stmt);
-                            sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
+                            sub_compiler.code.emit(OpCode::LoadOutputResult);
                             continue;
                         }
                         _ => {}

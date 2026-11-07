@@ -381,6 +381,11 @@ impl RuntimeError {
                 .entry("post".to_string())
                 .or_insert_with(|| Value::str_from(post));
         }
+        if let Some(pos) = self.parse_pos() {
+            attrs
+                .entry("pos".to_string())
+                .or_insert_with(|| Value::int(pos as i64));
+        }
         if let Some(line) = self.line() {
             attrs.insert("line".to_string(), Value::int(line as i64));
         }

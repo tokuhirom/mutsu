@@ -169,6 +169,7 @@ impl IoState {
                 is_thread_clone: true,
                 shared_thread_output: Some(shared_out),
                 shared_thread_stderr: Some(shared_err),
+                last_handle_result: None,
             }))
         };
         Self {

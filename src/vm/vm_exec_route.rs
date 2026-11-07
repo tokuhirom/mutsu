@@ -62,6 +62,7 @@ impl Interpreter {
             | OpCode::Itemize
             | OpCode::ItemizeVar(..)
             | OpCode::LoadEnterResult
+            | OpCode::LoadOutputResult
             | OpCode::MakeSlip
             | OpCode::Mod
             | OpCode::Mul
