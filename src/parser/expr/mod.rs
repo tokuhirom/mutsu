@@ -124,13 +124,13 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             // cannot distinguish it from a plain `V`. Detect it from the raw LHS
             // source text instead.
             let leading_colons = consumed.trim_start().starts_with("::");
-            let is_bareword =
-                !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            let is_bareword = !leading_colons
+                && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
             let left = match expr {
                 Expr::BareWord(ref name)
                     if !consumed.trim_start().starts_with('(')
                         && !leading_colons
-                        && !name.contains("::") =>
+                        && fat_arrow_quotable(name) =>
                 {
                     Expr::Literal(Value::str(name.clone()))
                 }
@@ -234,12 +234,12 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
-            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
         let left = match expr {
             Expr::BareWord(ref name)
                 if !consumed.trim_start().starts_with('(')
                     && !leading_colons
-                    && !name.contains("::") =>
+                    && fat_arrow_quotable(name) =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -296,12 +296,12 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
         let consumed = consumed_span(input, rest).unwrap_or(input);
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
-            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
         let left = match expr {
             Expr::BareWord(ref name)
                 if !consumed.trim_start().starts_with('(')
                     && !leading_colons
-                    && !name.contains("::") =>
+                    && fat_arrow_quotable(name) =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -349,12 +349,12 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
-            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
         let left = match expr {
             Expr::BareWord(ref name)
                 if !consumed.trim_start().starts_with('(')
                     && !leading_colons
-                    && !name.contains("::") =>
+                    && fat_arrow_quotable(name) =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -487,12 +487,12 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
-            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
         let left = match expr {
             Expr::BareWord(ref name)
                 if !consumed.trim_start().starts_with('(')
                     && !leading_colons
-                    && !name.contains("::") =>
+                    && fat_arrow_quotable(name) =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -559,12 +559,12 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
-            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if fat_arrow_quotable(name));
         let left = match expr {
             Expr::BareWord(ref name)
                 if !consumed.trim_start().starts_with('(')
                     && !leading_colons
-                    && !name.contains("::") =>
+                    && fat_arrow_quotable(name) =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -751,10 +751,18 @@ fn is_indexed_bind(expr: &Expr) -> bool {
     matches!(expr, Expr::IndexAssign { value, .. } if matches!(**value, Expr::IndexBindValue(_)))
 }
 
+/// Whether the bareword `name` before a `=>` is quoted into a string key: only
+/// a plain identifier is. A qualified name, or one that is not an identifier (a
+/// slang's `my 👍`, a `term:<☃>`), is a term whose value is the key.
+// Cost: O(1).
+fn fat_arrow_quotable(name: &str) -> bool {
+    !name.contains("::") && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+}
+
 fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {
-    let is_bareword = matches!(&left, Expr::BareWord(name) if !name.contains("::"));
+    let is_bareword = matches!(&left, Expr::BareWord(name) if fat_arrow_quotable(name));
     let left = match left {
-        Expr::BareWord(name) if !name.contains("::") => Expr::Literal(Value::str(name)),
+        Expr::BareWord(name) if fat_arrow_quotable(&name) => Expr::Literal(Value::str(name)),
         left => left,
     };
     let pair = Expr::Binary {

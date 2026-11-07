@@ -35,6 +35,12 @@ pub(crate) struct SlangModes {
     /// only when EXPR is true. Without the pragma the adverb is inert and the
     /// module loads unconditionally, as in stock Rakudo.
     pub use_if_adverb: bool,
+    /// `sigilless-variable` override whose token is `<.ident>+` (Slang::Nogil):
+    /// `my name = 42` declares a variable with no sigil, and `name` reads it.
+    pub sigilless_ident: bool,
+    /// `sigilless-variable` override whose token is `<.:So>` (Slang::Emoji):
+    /// one Symbol-other character names a variable (`my 👍 = 42`).
+    pub sigilless_symbol: bool,
 }
 
 thread_local! {
@@ -43,6 +49,8 @@ thread_local! {
         spaced_methodop: false,
         ident_trailing_punct: false,
         use_if_adverb: false,
+        sigilless_ident: false,
+        sigilless_symbol: false,
     }) };
 }
 
@@ -87,6 +95,54 @@ pub(crate) fn slang_ident_trailing_punct() -> bool {
 
 pub(crate) fn slang_use_if_adverb() -> bool {
     slang_modes().use_if_adverb
+}
+
+/// Whether `c` is a Symbol-other character (Unicode `So`: emoji, dingbats, ...),
+/// the class Slang::Emoji's `<.:So>` token accepts.
+// Cost: O(log n) in the size of the general-category table.
+pub(crate) fn is_symbol_other(c: char) -> bool {
+    use crate::ucd::gc::{GeneralCategory as Gc, general_category};
+    general_category(c) == Gc::So
+}
+
+/// The byte length of the variable name a slang's `sigilless-variable` token
+/// accepts at the start of `input` (`my NAME`), or `None`. A `<.:So>` slang
+/// takes one Symbol-other character; a `<.ident>+` slang takes an identifier
+/// that is not one of the keywords that open a declaration (Slang::Nogil's
+/// `check-keywords`).
+// Cost: O(n), n = length of the name.
+pub(crate) fn slang_sigilless_name_len(input: &str) -> Option<usize> {
+    let modes = slang_modes();
+    if !modes.sigilless_ident && !modes.sigilless_symbol {
+        return None;
+    }
+    let first = input.chars().next()?;
+    if is_symbol_other(first) {
+        return Some(first.len_utf8());
+    }
+    if !modes.sigilless_ident || !(first.is_alphabetic() || first == '_') {
+        return None;
+    }
+    let end = input
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(input.len());
+    let name = &input[..end];
+    const CORE: [&str; 13] = [
+        "class",
+        "constant",
+        "grammar",
+        "module",
+        "method",
+        "native",
+        "package",
+        "regex",
+        "role",
+        "rule",
+        "sub",
+        "submethod",
+        "token",
+    ];
+    (!CORE.contains(&name)).then_some(end)
 }
 
 /// Consume a single trailing `?`/`!` from `rest` for the `ident_trailing_punct`
@@ -157,6 +213,8 @@ mod tests {
         spaced_methodop: true,
         ident_trailing_punct: false,
         use_if_adverb: false,
+        sigilless_ident: false,
+        sigilless_symbol: false,
     };
 
     fn parse_with_modes(modes: SlangModes, input: &str) -> Result<Vec<Stmt>, String> {

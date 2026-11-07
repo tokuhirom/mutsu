@@ -203,6 +203,12 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         return parse_sigilless_decl(r, is_state, is_our, type_constraint, apply_modifier);
     }
 
+    // A slang's `sigilless-variable` token (Slang::Nogil, Slang::Emoji): `my NAME`
+    // declares the variable exactly as `my \NAME` does.
+    if crate::parser::stmt::simple::slang_sigilless_name_len(rest).is_some() {
+        return parse_sigilless_decl(rest, is_state, is_our, type_constraint, apply_modifier);
+    }
+
     // Signature-literal destructuring bind: `my :($a, $b) := expr`. The `:(...)`
     // is a Signature literal; for positional targets it binds exactly like
     // `my ($a, $b) := expr`, so strip the leading `:` and reuse the
