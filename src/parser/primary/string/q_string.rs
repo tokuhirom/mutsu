@@ -470,8 +470,8 @@ pub(crate) fn parse_q_quoted_content(
     // Non-bracket delimiter (e.g. q/.../, q|...|)
     if !first.is_alphanumeric() && !first.is_whitespace() {
         let rest = &input[first.len_utf8()..];
-        let end = rest
-            .find(first)
+        // A backslash escapes the delimiter (`Q :q $a\$b$`, `q !a\!b!`).
+        let end = super::helpers::find_unescaped(rest, first)
             .ok_or_else(|| PError::expected(format!("closing '{first}'")))?;
         let content = &rest[..end];
         let rest = &rest[end + first.len_utf8()..];
