@@ -5647,6 +5647,39 @@ fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
         .collect()
 }
 
+/// Names declared inside the loops (`for`/`while`/`loop`) at a class body's
+/// top level, except those the body also declares itself. A loop body is the
+/// whole scope of its `my`s: nothing outside it (no method) can read them, so
+/// their last-iteration copy in the env is stale, not a static. A bare block
+/// is left alone: its methods close over its lexicals.
+// Cost: O(n), n = size of the body's subtree outside nested routines and closures.
+fn class_nested_decl_names(body: &[Stmt]) -> Vec<Symbol> {
+    use crate::ast_visit::{Visit, walk_stmt};
+    struct LoopDecls(std::collections::HashSet<String>);
+    impl<'ast> Visit<'ast> for LoopDecls {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                Stmt::For { body, .. } | Stmt::While { body, .. } | Stmt::Loop { body, .. } => {
+                    crate::ast::collect_all_my_decl_names(body, &mut self.0);
+                }
+                _ => walk_stmt(self, stmt),
+            }
+        }
+    }
+    let mut v = LoopDecls(std::collections::HashSet::new());
+    for stmt in body {
+        v.visit_stmt(stmt);
+    }
+    // A name the body also declares at its own top level (any kind: `my`,
+    // `our`, `constant`) is that declaration's, not the loop's.
+    for stmt in crate::ast::scope_statements(body) {
+        if let Stmt::VarDecl { name, .. } = stmt {
+            v.0.remove(name.as_str());
+        }
+    }
+    v.0.iter().map(|n| Symbol::intern(n)).collect()
+}
+
 /// The declaring frame's lexicals a type's methods may capture, once the names
 /// the type body itself `my`/`state`-declares are taken out.
 ///
@@ -5897,6 +5930,11 @@ pub(crate) struct CompiledClassDeclPlan {
     /// `persist_class_body_statics` re-walking the raw body on every
     /// registration to decide which lexicals are body statics.
     pub(crate) declared_static_names: Vec<Symbol>,
+    /// Names declared by a `my`/`state` or a block parameter in a block NESTED
+    /// in the class body (a file-scope `for` of a `unit class`), precomputed at
+    /// plan lowering. They are the body's stale per-iteration copies, not
+    /// statics: `persist_class_body_statics` must not publish them (#17022).
+    pub(crate) nested_decl_names: Vec<Symbol>,
     /// Precompiled argument chunks for each bracketed `is Parent[Args]`/
     /// `does Role[Args]`/`hides Parent[Args]` parent (ADR-0019 D4-2), keyed
     /// by the same concatenated parent string that `parents`/`does_parents`/
@@ -13537,6 +13575,7 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
+        let nested_decl_names = class_nested_decl_names(body);
         let method_outer_lexical_slots =
             outer_lexical_slots_unshadowed(method_outer_lexical_slots, &declared_static_names);
         let body_bind_source_slots = body_bind_source_slots(
@@ -13585,6 +13624,7 @@ impl CompiledCode {
             method_outer_lexical_slots,
             body_bind_source_slots,
             declared_static_names,
+            nested_decl_names,
             parent_arg_chunks,
             body_plan,
         });
