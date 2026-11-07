@@ -1246,6 +1246,30 @@ impl Interpreter {
     /// outer type inside its declaring class, so the qualified probe runs
     /// first; an unresolvable name is returned unchanged.
     pub(crate) fn resolve_type_name_for_owner(&self, owner: &str, name: String) -> String {
+        let resolved = self.resolve_type_name_for_owner_in_chain(owner, name.clone());
+        if resolved != name || self.types.package_type_aliases.is_empty() {
+            return resolved;
+        }
+        // Nothing in the owner's own package chain: the owner's compunit may
+        // have imported the type under its short name (`use Bar::Thing;
+        // unit class Foo::Rep; has Thing $.t`), and the owner's `has Thing`
+        // means that import wherever the instance is constructed -- not the
+        // alias table of whichever package happens to be running.
+        if !name.is_empty()
+            && !name.contains(['[', ':'])
+            && !self.has_type_direct(&name)
+            && !Self::is_builtin_type(&name)
+            && let Some(target) =
+                Self::lookup_in_package_chain(&self.types.package_type_aliases, owner, &name)
+            && target != owner
+            && self.has_type_direct(target)
+        {
+            return target.clone();
+        }
+        resolved
+    }
+
+    fn resolve_type_name_for_owner_in_chain(&self, owner: &str, name: String) -> String {
         if name.is_empty() {
             return name;
         }
@@ -1260,7 +1284,7 @@ impl Interpreter {
             && name.ends_with(']')
         {
             let base = &name[..open];
-            let resolved = self.resolve_type_name_for_owner(owner, base.to_string());
+            let resolved = self.resolve_type_name_for_owner_in_chain(owner, base.to_string());
             if resolved == base {
                 return name;
             }

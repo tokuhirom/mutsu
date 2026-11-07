@@ -869,7 +869,11 @@ impl Interpreter {
             .or_else(|| {
                 (sigil.is_none()
                     && crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
-                    && self.is_declared_package(name))
+                    // A class/role named outside its module's own name
+                    // (`class A::B::EmptyCI is export` in `A/B/CI.rakumod`)
+                    // is exported under its full name as well; the importer
+                    // reaches it by the last part (`EmptyCI`).
+                    && (self.is_declared_package(name) || self.has_type_direct(name)))
                 .then(|| Value::package(crate::symbol::Symbol::intern(name)))
             })
             .or_else(|| {
