@@ -234,7 +234,7 @@ impl Interpreter {
             // An already-flagged list (an imported `our @A`) is bound as is, so
             // the importer indexes the very list the exporter's code does (#17035).
             ValueView::LazyList(list) if list.coroutine.is_some() || list.is_genuinely_lazy() => {
-                self.lazy_array_value_shared(&raw_popped, &list, name)
+                self.lazy_array_value_shared(raw_popped, &list, name)
             }
             ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
             ValueView::Seq(body) if body.is_io_lines_source() => {
