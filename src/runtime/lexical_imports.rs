@@ -677,8 +677,33 @@ impl Interpreter {
         if self.running_module_mainline() {
             return self.module_mainline_import_chain();
         }
-        if let Some(chain) = &self.module.eval_import_chain {
-            let mut chain = chain.clone();
+        if let Some(eval_chain) = &self.module.eval_import_chain {
+            // The sets the EVAL'd unit's own `use`s filled (its top level and
+            // the blocks open inside it) come before the sets around the
+            // `EVAL` call: `use P5substr; substr($s, 4) = 'dy'` in an EVAL
+            // finds the import.
+            let mut chain: Vec<Symbol> = Vec::new();
+            if let Some(region) = self.module.eval_unit_region {
+                let own = self
+                    .module
+                    .import_scope_stack
+                    .iter()
+                    .rposition(|scope| scope.region == Some(region));
+                if let Some(first) = own {
+                    chain.extend(
+                        self.module.import_scope_stack[first..]
+                            .iter()
+                            .rev()
+                            .flat_map(|scope| scope.lexical_sets.iter().rev())
+                            .copied(),
+                    );
+                }
+            }
+            for set in eval_chain {
+                if !chain.contains(set) {
+                    chain.push(*set);
+                }
+            }
             // A routine of another compunit the EVAL'd code called (a role
             // body composed in the EVAL, #14481) sees its own unit's
             // top-level `use`s, which the EVAL's chain cannot name.
