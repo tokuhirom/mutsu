@@ -817,8 +817,19 @@ impl Compiler {
             // Resolve variable names from both sides, including through
             // list-indexing patterns like ($foo, "x")[0] which preserves
             // the container of $foo.
-            let left_name = Self::resolve_container_var_name(left);
-            let right_name = Self::resolve_container_var_name(right);
+            // A sigilless parameter (`\p`) binds to the caller's container, and
+            // the binder records which variable it aliases: it is a named
+            // operand like a `$` variable, not a bare value.
+            let sigilless_name = |e: &Expr| match e.peel_parens() {
+                Expr::BareWord(n) if self.sigilless_locals.contains(n) => {
+                    self.container_eq_decont_name(e)
+                }
+                _ => None,
+            };
+            let left_name =
+                Self::resolve_container_var_name(left).or_else(|| sigilless_name(left));
+            let right_name =
+                Self::resolve_container_var_name(right).or_else(|| sigilless_name(right));
             if let (Some(ln), Some(rn)) = (&left_name, &right_name) {
                 self.compile_expr(left);
                 self.compile_expr(right);

@@ -75,6 +75,17 @@ impl Interpreter {
         args: &[Value],
         core_only: bool,
     ) -> Result<Value, RuntimeError> {
+        // `&infix:<=:=>($a, $b)` reached through a code object (`my &f =
+        // &[=:=]; f($a, $b)`): the operands arrive as values, but the call
+        // site named the variables it passed, and `=:=` asks whether those
+        // are one container. Two named scalar variables are identical only
+        // when they share a binding root.
+        if args.len() == 2
+            && matches!(op, "=:=" | "!=:=")
+            && let Some(same) = self.call_site_containers_identical()
+        {
+            return Ok(Value::truth(same == (op == "=:=")));
+        }
         // A plain binary operator on two operands needs none of the meta, set,
         // sequence or short-circuit handling below (#15847). The one operand
         // shape that still does is the parser's `method` marker.
@@ -539,4 +550,36 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
         return None;
     }
     Some((inner, dwim_left, dwim_right))
+}
+
+impl Interpreter {
+    /// Whether the two variables the current call site passed share one
+    /// container, or `None` when the call site did not name two variables.
+    // Cost: O(c), c = length of the `:=` alias chains of the two names.
+    fn call_site_containers_identical(&self) -> Option<bool> {
+        let sources = self.pending_call_arg_sources()?;
+        let [Some(left), Some(right)] = sources.as_slice() else {
+            return None;
+        };
+        let root = |name: &str| {
+            // A sigilless parameter is stored under its term key.
+            let direct = self.resolve_alias_root(name).into_owned();
+            if direct != name {
+                return direct;
+            }
+            let keyed = crate::term_names::term_key(name);
+            let resolved = self.resolve_alias_root(&keyed).into_owned();
+            if resolved == keyed { direct } else { resolved }
+        };
+        let (left_root, right_root) = (root(left), root(right));
+        let scalar = |name: &str| {
+            !name.starts_with(['@', '%', '&']) && crate::runtime::term_names::term_spelling(name).is_none()
+        };
+        if left_root == right_root {
+            return Some(true);
+        }
+        // Distinct roots: only two scalar variables are known to own distinct
+        // containers; anything else keeps the value comparison.
+        (scalar(&left_root) && scalar(&right_root)).then_some(false)
+    }
 }
