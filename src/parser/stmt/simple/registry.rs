@@ -246,7 +246,9 @@ pub(crate) fn register_user_test_assertion_sub(name: &str) {
 pub(crate) fn record_unit_sub_source(name: &str, source: &str) {
     SCOPES.with(|s| {
         if let Some(scope) = s.borrow_mut().last_mut() {
-            scope.sub_sources.insert(name.to_string(), source.to_string());
+            scope
+                .sub_sources
+                .insert(name.to_string(), source.to_string());
         }
     });
 }
