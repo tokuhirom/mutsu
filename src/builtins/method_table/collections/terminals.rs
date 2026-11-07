@@ -208,7 +208,17 @@ pub(crate) fn is_lazy_tail_target(target: &Value) -> bool {
 pub(crate) fn first_one(target: &Value) -> Value {
     match target.view() {
         ValueView::Instance { class_name, .. } if user_instance(class_name) => target.clone(),
-        ValueView::Array(items, ..) => items.first().cloned().unwrap_or(Value::NIL),
+        // A mutable `Array` hands out the element's container (`@a.first.VAR`
+        // is a `Scalar`), as `.head` does.
+        ValueView::Array(items, kind) => {
+            if !kind.is_immutable_list() && !items.is_empty() && !items.hole_at(0) {
+                target
+                    .array_slot_ref(0, true)
+                    .unwrap_or_else(|| items.first().cloned().unwrap_or(Value::NIL))
+            } else {
+                items.first().cloned().unwrap_or(Value::NIL)
+            }
+        }
         // A role mixed into a list (`(1, 2) but R`) lists as what it wraps.
         ValueView::Mixin(inner, _) => first_one(inner),
         _ => runtime::with_receiver_items(target, |items| {

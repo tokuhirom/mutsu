@@ -169,6 +169,17 @@ impl Interpreter {
             self.find_first_match_over_items(func, &items, has_end)?
         };
         if let Some((idx, value)) = found {
+            // On a mutable `Array` the plain answer is the element's own
+            // container (rakudo: `@a.first(*>1).VAR` is a `Scalar` and
+            // `my $x := @a.first(...)` binds into `@a`), as `.head` does; the
+            // `:k`/`:kv`/`:p` forms and a `List`/`Seq` answer values.
+            if !(has_k || has_kv || has_p)
+                && let ValueView::Array(_, kind) = target.view()
+                && !kind.is_immutable_list()
+                && let Some(cell) = target.array_slot_ref(idx, true)
+            {
+                return Ok(cell);
+            }
             return Ok(super::super::builtins_collection::format_first_result(
                 idx,
                 // `.first` answers the element's VALUE; the container above is
