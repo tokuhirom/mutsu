@@ -15,6 +15,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     // The node is read from the parse (`.AST`'s shapes), so the parse keeps the
     // term origins that reading wants.
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
+    if rule == "signature" {
+        return signature_production(text);
+    }
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
     let Ok((rest, stmt)) = parsed else {
@@ -22,6 +25,22 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     };
     let node = production_node(&stmt).map_err(|e| e.message.to_string())?;
     Ok(Some((text.len() - rest.len(), node)))
+}
+
+/// The `<signature>` core rule: the parameters at the start of `text` as a
+/// `RakuAST::Signature`.
+// Cost: O(n), n = size of the parameter list.
+fn signature_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, params, returns)) = crate::parser::parse_slang_signature(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node = super::routine_origins::anon_signature(&names, &params, returns.as_deref())
+        .map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
 }
 
 /// The node `stmt` stands for: the expression of its `Statement::Expression`
