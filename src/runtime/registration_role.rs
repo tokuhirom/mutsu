@@ -321,7 +321,7 @@ impl Interpreter {
                     let readonly_mark = self.enter_readonly_frame();
                     let saved_scope =
                         self.enter_role_declaring_scope(base_role_name, &candidate.role_def);
-                    let bound = self.bind_function_args_values(
+                    let bound = self.bind_role_type_args_values(
                         &candidate.type_param_defs,
                         &candidate_param_names,
                         &arg_values,
@@ -384,7 +384,7 @@ impl Interpreter {
                 .map(|pd| pd.name.clone())
                 .collect();
             let saved_scope = self.enter_role_declaring_scope(base_role_name, &selected.role_def);
-            let _ = self.bind_function_args_values(
+            let _ = self.bind_role_type_args_values(
                 &selected.type_param_defs,
                 &candidate_param_names,
                 &arg_values,

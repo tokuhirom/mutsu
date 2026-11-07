@@ -206,7 +206,7 @@ impl Interpreter {
                     let ok = if arity_ok {
                         let saved_env = self.env.clone();
                         let ok = self
-                            .bind_function_args_values(
+                            .bind_role_type_args_values(
                                 &candidate.type_param_defs,
                                 &candidate_param_names,
                                 type_args,
@@ -663,7 +663,7 @@ impl Interpreter {
             .map(|pd| pd.name.clone())
             .collect();
         let saved_env = self.env.clone();
-        let bound = self.bind_function_args_values(&candidate.type_param_defs, &sig_names, &[]);
+        let bound = self.bind_role_type_args_values(&candidate.type_param_defs, &sig_names, &[]);
         let mut bindings = Vec::new();
         if bound.is_ok() {
             for (i, sig_name) in sig_names.iter().enumerate() {
