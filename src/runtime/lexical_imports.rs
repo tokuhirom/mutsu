@@ -677,8 +677,36 @@ impl Interpreter {
         if self.running_module_mainline() {
             return self.module_mainline_import_chain();
         }
-        if let Some(chain) = &self.module.eval_import_chain {
-            let mut chain = chain.clone();
+        if let Some(eval_chain) = &self.module.eval_import_chain {
+            // The sets the EVAL'd unit's own `use`s filled (its top level and
+            // the blocks open inside it) come before the sets around the
+            // `EVAL` call: `use P5substr; substr($s, 4) = 'dy'` in an EVAL
+            // finds the import.
+            let mut chain: Vec<Symbol> = Vec::new();
+            // Only code of the EVAL'd unit itself: a routine of another
+            // compunit it called does not see the unit's imports.
+            let in_eval_unit = self.module.eval_import_unit == Some(self.executing_unit_sym());
+            if in_eval_unit && let Some(region) = self.module.eval_unit_region {
+                let own = self
+                    .module
+                    .import_scope_stack
+                    .iter()
+                    .rposition(|scope| scope.region == Some(region));
+                if let Some(first) = own {
+                    chain.extend(
+                        self.module.import_scope_stack[first..]
+                            .iter()
+                            .rev()
+                            .flat_map(|scope| scope.lexical_sets.iter().rev())
+                            .copied(),
+                    );
+                }
+            }
+            for set in eval_chain {
+                if !chain.contains(set) {
+                    chain.push(*set);
+                }
+            }
             // A routine of another compunit the EVAL'd code called (a role
             // body composed in the EVAL, #14481) sees its own unit's
             // top-level `use`s, which the EVAL's chain cannot name.
@@ -800,7 +828,18 @@ impl Interpreter {
         // top-level `use`s import (Rakudo reports a redeclaration there);
         // a block's own `use` still wins over the unit's routine.
         if self.running_unit_declares_routine(name) {
-            let unit_sets: Vec<Symbol> = self.running_unit_lexical_sets().collect();
+            let mut unit_sets: Vec<Symbol> = self.running_unit_lexical_sets().collect();
+            // An `EVAL`'d unit's own top-level `use`s are its unit sets too.
+            if let Some(region) = self.module.eval_unit_region
+                && let Some(scope) = self
+                    .module
+                    .import_scope_stack
+                    .iter()
+                    .rev()
+                    .find(|scope| scope.region == Some(region))
+            {
+                unit_sets.extend(scope.lexical_sets.iter().copied());
+            }
             chain.retain(|id| !unit_sets.contains(id));
         }
         if chain.is_empty() {

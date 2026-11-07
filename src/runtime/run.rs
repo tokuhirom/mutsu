@@ -1577,7 +1577,13 @@ impl Interpreter {
                 if let Some(fixtures) = &phaser.fixtures {
                     self.routine_stack.push_scoped_fixtures(fixtures.clone());
                 }
+                // An END an `EVAL`'d unit installed calls the routines that
+                // unit declared, which left the registry with the unit.
+                let unit_routines = self.reinstall_unit_routines(&phaser.unit_routines);
                 let body_result = self.run_block(body);
+                if let Some(snapshot) = unit_routines {
+                    self.restore_routine_registry(snapshot);
+                }
                 self.routine_stack.truncate_fixtures(fixtures_mark);
                 self.module.module_loading_unit_stack.pop();
                 self.current_unit = saved_unit;
