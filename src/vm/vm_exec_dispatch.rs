@@ -2022,6 +2022,15 @@ impl Interpreter {
                         }
                     } {
                         refilled
+                    } else if let ValueView::Slip(items) = raw_val.view()
+                        && items.len() == 1
+                        && let ValueView::LazyList(list) = items[0].view()
+                        && list.preserve_lazy_on_array_assign()
+                    {
+                        // `our @a = |(1..*)`: `|` rides an unreifiable lazy list
+                        // in a one-item Slip, which the array keeps lazy exactly
+                        // as `my @a = |(1..*)` does (`SetLocal`).
+                        self.lazy_array_value(&list, &name)
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }

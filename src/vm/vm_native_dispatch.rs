@@ -465,6 +465,27 @@ impl Interpreter {
                     Value::seq(items)
                 }));
             }
+            // `sum`/`min`/`max`/`minmax` read every element of a finite lazy
+            // argument: a `.map`/`.grep` pipe over a gather holds its elements
+            // in a coroutine, which the pure routine sees as empty (`sum(
+            // gather {...}.map({...}))` was 0, `max` was `-Inf`). An unending
+            // one stays lazy and gets the routine's own X::Cannot::Lazy.
+            if matches!(name.as_str(), "sum" | "min" | "max" | "minmax") {
+                let mut forced_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    if let ValueView::LazyList(ll) = arg.view()
+                        && !ll.is_genuinely_lazy()
+                    {
+                        match self.force_lazy_list_vm(&ll) {
+                            Ok(items) => forced_args.push(Value::seq(items)),
+                            Err(e) => return Some(Err(e)),
+                        }
+                    } else {
+                        forced_args.push(arg.clone());
+                    }
+                }
+                return crate::builtins::native_function(name_sym, &forced_args);
+            }
             if matches!(name.as_str(), "any" | "all" | "one" | "none") {
                 // Junction constructors need concrete eigenstates. In
                 // particular, a finite gather/map/grep pipeline must be
