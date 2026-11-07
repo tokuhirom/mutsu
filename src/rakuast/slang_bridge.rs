@@ -90,7 +90,8 @@ pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
 /// unit is finalized: each infix or prefix application becomes the node the
 /// slang's action attached (the core node, when it attached none).
 ///
-/// Only what follows the `use` of the activating module is touched.
+/// Only what follows the `use` of the activating module is touched, up to the
+/// end of the block that holds the `use`.
 // Cost: O(n) for the walk, plus the slang's own action per application, n =
 // size of the unit; O(1) when the unit has no override.
 pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
@@ -103,6 +104,12 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
         failed: Option<RuntimeError>,
     }
     impl crate::ast_visit::VisitMut for Pass {
+        // The refinement a `use` makes ends with the block that holds it.
+        fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+            let enclosing = self.enabled;
+            crate::ast_visit::walk_stmts_mut(self, body);
+            self.enabled = enclosing;
+        }
         fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
             crate::ast_visit::walk_stmt_mut(self, stmt);
             if matches!(stmt, Stmt::Use { module, .. } if *module == self.activator) {
