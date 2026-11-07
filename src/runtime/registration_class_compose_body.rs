@@ -105,18 +105,10 @@ impl Interpreter {
     /// ASN::META) are already registered as empty class shells. Reuse the
     /// same role composition machinery as a class-header does declaration,
     /// then publish the updated class metadata and MRO.
-    pub(crate) fn add_role_to_class(
-        &mut self,
-        class_name: &str,
-        role_name: &str,
-    ) -> Result<(), RuntimeError> {
-        self.add_role_to_class_with_args(class_name, role_name, None)
-    }
-
-    /// [`Self::add_role_to_class`] for a role APPLICATION value whose bracket
-    /// arguments are already evaluated (`Numish[* * 10]`): the type name alone
+    /// `pre_args` are the bracket arguments of a role APPLICATION value
+    /// (`Numish[* * 10]`) already evaluated: the type name alone
     /// (`Numish[WhateverCode]`) cannot carry non-type argument values, so they
-    /// travel as `pre_args` to the candidate resolution (#17007).
+    /// travel to the candidate resolution (#17007).
     // Cost: O(m), m = the members of the role and class composed.
     pub(crate) fn add_role_to_class_with_args(
         &mut self,
