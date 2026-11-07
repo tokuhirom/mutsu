@@ -1456,6 +1456,16 @@ impl Interpreter {
         Some(self.call_native_instance_method(qualifier, attrs, actual_method, args))
     }
 
+    /// The address of the array data behind `value` (`0` for a non-array), the
+    /// identity a pending Proxy-subclass attribute read is matched against.
+    // Cost: O(1).
+    pub(crate) fn proxy_attr_array_addr(value: &Value) -> usize {
+        match value.deref_container().view() {
+            ValueView::Array(items, _) => &*items as *const _ as usize,
+            _ => 0,
+        }
+    }
+
     /// Handle method calls on Proxy subclass values (accessing subclass attributes).
     pub(super) fn dispatch_proxy_subclass_method(
         &mut self,
@@ -1476,8 +1486,11 @@ impl Interpreter {
             if let Some(val) = val
                 && args.is_empty()
             {
-                self.types.pending_proxy_subclass_attr =
-                    Some((subclass_attrs.clone(), method.to_string()));
+                self.types.pending_proxy_subclass_attr = Some((
+                    subclass_attrs.clone(),
+                    method.to_string(),
+                    Self::proxy_attr_array_addr(&val),
+                ));
                 // A read through the accessor answers the attribute's value;
                 // a bound cell (`$!val := nqp::clone_nd($container)`) is not
                 // handed out, or a later store into it would change what the

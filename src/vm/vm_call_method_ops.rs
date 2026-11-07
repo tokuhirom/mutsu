@@ -2072,12 +2072,16 @@ impl Interpreter {
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
                 if matches!(target.view(), ValueView::Array(..))
-                    && self.types.pending_proxy_subclass_attr.is_some()
+                    && self
+                        .types
+                        .pending_proxy_subclass_attr
+                        .as_ref()
+                        .is_some_and(|(_, _, addr)| *addr == Self::proxy_attr_array_addr(&target))
                     && crate::builtins::method_table::names_a_mut_row(
                         Symbol::intern(method),
                         args.len(),
                     )
-                    && let Some((attrs_ref, attr_name)) =
+                    && let Some((attrs_ref, attr_name, _)) =
                         self.types.pending_proxy_subclass_attr.take()
                 {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(

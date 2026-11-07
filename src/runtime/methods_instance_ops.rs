@@ -2022,12 +2022,16 @@ impl Interpreter {
                 // Before giving up, check if this is a mutating array method
                 // and we have a pending Proxy subclass attribute reference.
                 if matches!(target.view(), ValueView::Array(..))
-                    && self.types.pending_proxy_subclass_attr.is_some()
+                    && self
+                        .types
+                        .pending_proxy_subclass_attr
+                        .as_ref()
+                        .is_some_and(|(_, _, addr)| *addr == Self::proxy_attr_array_addr(&target))
                     && crate::builtins::method_table::names_a_mut_row(
                         Symbol::intern(method),
                         args.len(),
                     )
-                    && let Some((attrs_ref, attr_name)) =
+                    && let Some((attrs_ref, attr_name, _)) =
                         self.types.pending_proxy_subclass_attr.take()
                 {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
