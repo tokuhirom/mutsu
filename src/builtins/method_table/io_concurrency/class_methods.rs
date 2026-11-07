@@ -129,6 +129,20 @@ pub(super) static ROWS: &[MethodRow] = &[
     // of one value, the list iterators of `()` and `($v,)`.
     row!("Rakudo::Iterator", "Empty", 0, rakudo_iterator_empty),
     row!("Rakudo::Iterator", "OneValue", 1, rakudo_iterator_one_value),
+    // `.ReifiedReverse($buffer, $what)` / `.ReifiedRotate($n, $buffer, $what)`:
+    // the iterators over a reified buffer's elements reversed / rotated.
+    row!(
+        "Rakudo::Iterator",
+        "ReifiedReverse",
+        2,
+        rakudo_iterator_reified_reverse
+    ),
+    row!(
+        "Rakudo::Iterator",
+        "ReifiedRotate",
+        3,
+        rakudo_iterator_reified_rotate
+    ),
     row!("Deprecation", "report", 0, deprecation_report),
     row!("CompUnit::Loader", "load-source", 0, load_source),
     row!("CompUnit::Loader", "load-source-file", 0, load_source_file),
@@ -414,6 +428,41 @@ fn rakudo_iterator_one_value(
 ) -> Answer {
     let value = args.first().cloned().unwrap_or(Value::NIL);
     Some(i.call_method_with_values(Value::array(vec![value]), "iterator", Vec::new()))
+}
+
+/// `Rakudo::Iterator.ReifiedReverse($buffer, $what)`: an iterator over the
+/// buffer's elements in reverse order.
+// Cost: O(n), n = elements of the buffer.
+fn rakudo_iterator_reified_reverse(
+    i: &mut Interpreter,
+    _: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Answer {
+    let buffer = args.first().cloned().unwrap_or(Value::NIL);
+    Some((|| {
+        let list = i.call_method_with_values(buffer, "List", Vec::new())?;
+        let reversed = i.call_method_with_values(list, "reverse", Vec::new())?;
+        i.call_method_with_values(reversed, "iterator", Vec::new())
+    })())
+}
+
+/// `Rakudo::Iterator.ReifiedRotate($n, $buffer, $what)`: an iterator over the
+/// buffer's elements rotated by `$n`.
+// Cost: O(n), n = elements of the buffer.
+fn rakudo_iterator_reified_rotate(
+    i: &mut Interpreter,
+    _: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Answer {
+    let rotate = args.first().cloned().unwrap_or(Value::int(0));
+    let buffer = args.get(1).cloned().unwrap_or(Value::NIL);
+    Some((|| {
+        let list = i.call_method_with_values(buffer, "List", Vec::new())?;
+        let rotated = i.call_method_with_values(list, "rotate", vec![rotate])?;
+        i.call_method_with_values(rotated, "iterator", Vec::new())
+    })())
 }
 
 /// `Deprecation.report`.
