@@ -43,6 +43,8 @@ impl Interpreter {
         // marker is consumed here; the loop's actual state lives in locals/env
         // so re-entering from the top (cond re-check) continues correctly.
         let mut resume_in_body = false;
+        // See `nested_loop_entry`: the resumed iteration re-enters at the nested loop op.
+        let mut body_entry: Option<usize> = None;
         if matches!(
             self.async_state.gather_for_loop_resume,
             Some(crate::value::ForLoopResumeState::CStyleLoop { .. })
@@ -54,6 +56,7 @@ impl Interpreter {
             {
                 resume_in_body = in_body;
                 self.async_state.gather_for_loop_resume = inner.map(|b| *b);
+                body_entry = self.nested_loop_entry(code, resume_in_body, body_start, step_begin);
             }
         } else if !code.state_locals.is_empty() {
             // Fresh entry to the loop statement: state variables declared in
@@ -105,7 +108,12 @@ impl Interpreter {
                 }
             }
             'body_redo: loop {
-                let body_res = self.run_range(code, body_start, step_begin, compiled_fns);
+                let body_res = self.run_range(
+                    code,
+                    body_entry.take().unwrap_or(body_start),
+                    step_begin,
+                    compiled_fns,
+                );
                 // State mutations persist on every exit path (`next`/`redo`/
                 // `last`/exception), not just normal completion.
                 if !code.state_locals.is_empty() {

@@ -28,6 +28,20 @@ pub(super) struct RegexQuoteCursor {
     pos: usize,
     open: Option<char>,
     escaped: bool,
+    /// Inside a `<[...]>` / `<-[...]>` character class, whose quote characters
+    /// are members, not delimiters (`<["\#]>`).
+    in_class: bool,
+}
+
+/// Whether the `[` at `chars[at]` opens a character class: `<[`, `<-[`, `<+[`,
+/// `<![` or `<?[`.
+// Cost: O(1).
+fn opens_char_class(chars: &[char], at: usize) -> bool {
+    match at.checked_sub(1).map(|p| chars[p]) {
+        Some('<') => true,
+        Some('+' | '-' | '!' | '?') => at >= 2 && chars[at - 2] == '<',
+        _ => false,
+    }
 }
 
 impl RegexQuoteCursor {
@@ -36,6 +50,7 @@ impl RegexQuoteCursor {
             pos: 0,
             open: None,
             escaped: false,
+            in_class: false,
         }
     }
 
@@ -48,13 +63,22 @@ impl RegexQuoteCursor {
             *self = Self::new();
         }
         let end = pos.min(chars.len());
-        for &ch in &chars[self.pos.min(end)..end] {
+        for at in self.pos.min(end)..end {
+            let ch = chars[at];
             if self.escaped {
                 self.escaped = false;
                 continue;
             }
             if ch == '\\' && self.open != Some('\u{FF62}') {
                 self.escaped = true;
+                continue;
+            }
+            if self.in_class {
+                self.in_class = ch != ']';
+                continue;
+            }
+            if self.open.is_none() && ch == '[' && opens_char_class(chars, at) {
+                self.in_class = true;
                 continue;
             }
             match self.open {

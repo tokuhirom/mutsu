@@ -225,7 +225,16 @@ impl Interpreter {
     /// `coerce_to_hash` already implements exactly that flattening (nested
     /// Hashes expand to their pairs, a later same-named entry wins).
     fn extract_env_option(value: &Value, opts: &mut ProcOptions) {
-        let coerced = crate::runtime::utils::coerce_to_hash(value.clone());
+        // An element of a hash that is splatted into the call
+        // (`run |@cmd, |%opts` with `%opts<env> = %env`) arrives wrapped in
+        // its container reference.
+        let value = value.unwrap_varref();
+        let value = if value.is_container_ref() {
+            value.deref_container()
+        } else {
+            value.clone()
+        };
+        let coerced = crate::runtime::utils::coerce_to_hash(value);
         if let ValueView::Hash(env_map) = coerced.view() {
             for (ek, ev) in env_map.iter() {
                 opts.env.insert(ek.clone(), ev.to_string_value());
