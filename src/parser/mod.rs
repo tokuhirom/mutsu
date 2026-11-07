@@ -811,6 +811,69 @@ fn names_missing_operand_after_operator(message: &str) -> bool {
     })
 }
 
+/// Whether `before` (the source up to the parse failure) ends in an infix
+/// operator that has no operand after it. Word operators must stand alone
+/// (`1 and`, not `1 band`), and a plain `=` after a declarator is rakudo's
+/// "Malformed initializer", not a missing term.
+// Cost: O(k) for the operator table plus the declarator probe, k = length of
+// the current statement.
+fn source_ends_with_infix(before: &str) -> bool {
+    const SYMBOLS: &[&str] = &[
+        "&&", "||", "^^", "//", ":=", "=>", "...^", "^...", "...", "R-", "R+", "R*", "=",
+    ];
+    const WORDS: &[&str] = &[
+        "and",
+        "or",
+        "xor",
+        "andthen",
+        "orelse",
+        "notandthen",
+        "Z",
+        "X",
+        "but",
+        "does",
+        "ff",
+        "fff",
+    ];
+    let before = before.trim_end();
+    let word_start_ok = |at: usize| {
+        !before[..at].chars().next_back().is_some_and(|c| {
+            c.is_alphanumeric() || c == '_' || c == '-' || c == '$' || c == '@' || c == '%'
+        })
+    };
+    for op in WORDS {
+        if before.ends_with(op) && word_start_ok(before.len() - op.len()) {
+            return true;
+        }
+    }
+    for op in SYMBOLS {
+        let Some(head) = before.strip_suffix(op) else {
+            continue;
+        };
+        // `==`, `<=`, `!=`, `+=` and friends are other operators ending in `=`.
+        if *op == "="
+            && head
+                .chars()
+                .next_back()
+                .is_some_and(|c| "=<>!~+-*/%&|^?:.x".contains(c))
+        {
+            continue;
+        }
+        if *op == "=" {
+            let statement = head.rsplit([';', '{', '}']).next().unwrap_or(head);
+            let declares = statement
+                .split_whitespace()
+                .next()
+                .is_some_and(|w| matches!(w, "my" | "our" | "state" | "has" | "let" | "temp"));
+            if declares {
+                continue;
+            }
+        }
+        return true;
+    }
+    false
+}
+
 fn parse_error_hint(message: &str) -> Option<&'static str> {
     if message.contains("method name") {
         Some("check method-call syntax after '.' (for example: '$obj.method').")
@@ -931,11 +994,16 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
         // operand parsers each fail with their own "expected expression after
         // ... operator" text; at the furthest failure position, with nothing
         // but a statement or bracket end after it, that is this diagnosis.
+        // Operators whose operand parser fails without an "after X operator"
+        // alternative (`1 and`, `1 =>`, `1 Z`) are recognised by the source
+        // text in front of the failure instead.
         let missing_term_after_infix = e.typed_convention_message().is_none()
             && tail.trim_start().starts_with([';', ')', ']', '}']) | tail.trim().is_empty()
-            && e.messages
+            && (e
+                .messages
                 .iter()
-                .any(|m| names_missing_operand_after_operator(m));
+                .any(|m| names_missing_operand_after_operator(m))
+                || source_ends_with_infix(&source[..consumed]));
         let missing_term_message = "X::Comp::AdHoc: Missing required term after infix";
         let typed_message = if missing_term_after_infix {
             Some(missing_term_message)
