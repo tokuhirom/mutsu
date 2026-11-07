@@ -1082,6 +1082,13 @@ impl Interpreter {
                     )
                 {
                     Value::package(Symbol::intern(name))
+                // `Packet::Sub::Inner` where `Packet::Sub` is the short name a
+                // `use` of a module's `our class Packet::Sub` installed: the
+                // class's stash carries its nested type under the real name
+                // (`M::Packet::Sub::Inner`), as it does in rakudo, whose
+                // GLOBAL merge exposes the whole `Packet::` stash.
+                } else if let Some(nested) = self.nested_type_via_package_binding(pkg, sym) {
+                    nested
                 // `MY::ENOENT`: the pseudo-package selects the scope, the bare
                 // name is a term the scope holds (an enum value or constant a
                 // `use` imported), read as the bare word is (#16562).
