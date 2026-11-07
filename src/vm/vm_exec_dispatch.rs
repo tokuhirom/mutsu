@@ -5757,6 +5757,11 @@ impl Interpreter {
                 )?;
                 *ip += 1;
             }
+            // Cost: O(1) for a single index/key; O(k) for a slice, k = indices.
+            OpCode::IndexTailElem { is_positional } => {
+                self.exec_index_tail_elem_op(*is_positional)?;
+                *ip += 1;
+            }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
             // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot, kind) => {

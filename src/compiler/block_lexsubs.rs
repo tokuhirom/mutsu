@@ -157,4 +157,11 @@ impl Compiler {
     pub(crate) fn compile_as_block_body(&mut self) {
         self.top_level_is_block_body = true;
     }
+
+    /// Compile the body's tail subscript as the element container it denotes
+    /// (`rw_tail`, subscripts only), as for a `.map` block (#16919).
+    pub(crate) fn compile_tail_subscript_as_container(&mut self) {
+        self.rw_tail = true;
+        self.rw_tail_elems_only = true;
+    }
 }

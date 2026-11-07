@@ -30,9 +30,28 @@ impl Compiler {
     /// outlives the callee frame because it is a GC'd `Gc<crate::value::ContainerCell>`, not a
     /// frame reference.
     pub(super) fn compile_return_rw_arg(&mut self, arg: &Expr) {
+        if !self.rw_tail_shape_is_container(arg) {
+            self.compile_expr(arg);
+            return;
+        }
         let saved_rw = self.rw_return_operand;
         self.rw_return_operand = true;
         match arg {
+            // A `.map` block's tail subscript (#16919): the receiver and the
+            // index are read as ordinary values (the subscript is not a bind),
+            // and only the final element read may hand back the container.
+            Expr::Index { .. } if self.rw_tail_elems_only => {
+                let saved_av = std::mem::replace(&mut self.scalar_bind_autovivify, false);
+                let saved_terminal = std::mem::replace(&mut self.bind_terminal, false);
+                self.compile_expr(arg);
+                self.scalar_bind_autovivify = saved_av;
+                self.bind_terminal = saved_terminal;
+                if let Some(last) = self.code.ops.last_mut()
+                    && let OpCode::Index { is_positional } = *last
+                {
+                    *last = OpCode::IndexTailElem { is_positional };
+                }
+            }
             Expr::Index { .. } | Expr::MultiDimIndex { .. } => {
                 let saved_av = self.scalar_bind_autovivify;
                 let saved_terminal = self.bind_terminal;

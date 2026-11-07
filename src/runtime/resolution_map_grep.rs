@@ -210,6 +210,14 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
 /// as its lazy tail (#14295).
 // Cost: O(1) (O(k) for a Slip, k = its elements).
 pub(crate) fn push_map_value(result: &mut Vec<Value>, val: Value) {
+    // A tail subscript compiled in container mode (#16919) hands back the
+    // deferred token of a MISSING entry; nothing exists to bind, so the map's
+    // result holds what the entry reads as (`Any`, the hash's default).
+    let val = if val.is_hash_entry_ref_value() {
+        val.hash_entry_read()
+    } else {
+        val
+    };
     match val.view() {
         ValueView::Slip(_) if val.is_lazy_tail_slip() => result.push(val),
         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
@@ -395,6 +403,10 @@ impl Interpreter {
             } else {
                 normalized_body
             };
+        // A block whose last statement is a plain subscript hands back the
+        // element's container (`.map({ %h<a> })` yields bindable element
+        // containers, #16919), as `rw_tail` compiles it for an `is rw` routine.
+        compiler.compile_tail_subscript_as_container();
         let (mut code, mut fns) = compiler.compile(&normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
