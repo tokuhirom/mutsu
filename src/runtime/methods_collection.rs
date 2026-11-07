@@ -144,10 +144,17 @@ impl Interpreter {
         // features (types, defaults, where, ...) still bind one element per
         // call in `eval_map_over_items`, so they stay eligible.
         if let ValueView::Sub(data) = func.view() {
-            let arity = data
-                .params
-                .len()
-                .saturating_sub(data.assumed_positional.len());
+            // `params` also lists the named parameters (`-> $n, :$k = 2`),
+            // which a `map` never feeds from the source.
+            let bound = if data.param_defs.is_empty() {
+                data.params.len()
+            } else {
+                data.param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.is_invocant)
+                    .count()
+            };
+            let arity = bound.saturating_sub(data.assumed_positional.len());
             let has_slurpy = data.param_defs.iter().any(|pd| pd.slurpy);
             if has_slurpy || (arity > 1 && is_grep) {
                 return None;
