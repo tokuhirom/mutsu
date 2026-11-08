@@ -39,7 +39,7 @@ impl Compiler {
             (false, false) => "postfix:<-->",
         };
         self.compile_expr(&Expr::Call {
-            name: Symbol::intern("__mutsu_incdec_named_sub_lvalue"),
+            name: Symbol::intern(crate::lvalue_call::INCDEC_NAMED_SUB),
             args: vec![
                 Expr::Literal(Value::str(name.resolve())),
                 Expr::ArrayLiteral(args.clone()),
@@ -106,7 +106,7 @@ impl Compiler {
         }
         self.code.emit(OpCode::Pop);
         let assign_expr = Expr::Call {
-            name: Symbol::intern("__mutsu_assign_method_lvalue"),
+            name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
             args: vec![
                 target_reeval,
                 Expr::Literal(Value::str(name.resolve())),
@@ -252,7 +252,7 @@ impl Compiler {
                 self.code.emit(OpCode::PostIncrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                 let assign_expr = Expr::Call {
-                    name: Symbol::intern("__mutsu_assign_method_lvalue"),
+                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
                     args: vec![
                         target_reeval,
                         Expr::Literal(Value::str(name.resolve())),
@@ -375,7 +375,7 @@ impl Compiler {
                 self.code.emit(OpCode::PostDecrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                 let assign_expr = Expr::Call {
-                    name: Symbol::intern("__mutsu_assign_method_lvalue"),
+                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
                     args: vec![
                         target_reeval,
                         Expr::Literal(Value::str(name.resolve())),

@@ -67,6 +67,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::VarDeclaration::Constant", "scope"),
     row!("RakuAST::VarDeclaration::Constant", "traits"),
     row!("RakuAST::VarDeclaration::Constant", "type"),
+    row!("RakuAST::VarDeclaration::Implicit", "name"),
     row!(
         "RakuAST::VarDeclaration::Placeholder::Named",
         "lexical-name"

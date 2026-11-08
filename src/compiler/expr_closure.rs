@@ -1087,7 +1087,7 @@ impl Compiler {
                 Expr::Literal(Value::str(writeback_name)),
             ]);
             let rewritten = Expr::Call {
-                name: Symbol::intern("__mutsu_index_assign_method_lvalue"),
+                name: Symbol::intern(crate::lvalue_call::INDEX_ASSIGN_METHOD),
                 args,
                 listop: false,
             };

@@ -2079,7 +2079,7 @@ impl Interpreter {
             // `__mutsu_assign_method_lvalue(...)` call rather than a literal
             // MethodCall AST node.
             Stmt::Expr(Expr::Call { name, args, .. })
-                if name.as_str() == "__mutsu_assign_method_lvalue"
+                if name.as_str() == crate::lvalue_call::ASSIGN_METHOD
                     && args.len() >= 3
                     && matches!(args[2], Expr::ArrayLiteral(_)) =>
             {

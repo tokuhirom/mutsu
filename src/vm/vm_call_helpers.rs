@@ -266,11 +266,11 @@ impl Interpreter {
                 | "die"
                 | "fail"
                 | "leave"
-                | "__mutsu_assign_method_lvalue"
+                | crate::lvalue_call::ASSIGN_METHOD
                 | "__mutsu_temp_method_save"
-                | "__mutsu_assign_callable_lvalue"
-                | "__mutsu_index_assign_method_lvalue"
-                | "__mutsu_index_delete_method_lvalue"
+                | crate::lvalue_call::ASSIGN_CALLABLE
+                | crate::lvalue_call::INDEX_ASSIGN_METHOD
+                | crate::lvalue_call::INDEX_DELETE_METHOD
                 | "__mutsu_index_var_meta"
                 | "__mutsu_anon_index_var_meta"
         )

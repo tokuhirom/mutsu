@@ -57,6 +57,25 @@ grammar Mutsu::Slang::Host::Base {
     # `<blorst>`: a block, or one statement (a `Statement::Expression`).
     method blorst() { __mutsu_slang_shim('blorst', self) }
     method arglist() { __mutsu_slang_shim('arglist', self) }
+    # `<blockoid>`: the braces and statements of a block, as a `Blockoid`.
+    method blockoid() { __mutsu_slang_shim('blockoid', self) }
+    # The name a declarator takes (`<.identifier>`).
+    token identifier { <.ident> [ <[\-']> <.ident> ]* }
+    # A type name (`Int`, `Foo::Bar`), as a `Type::Simple`.
+    token typename { <.identifier> [ '::' <.identifier> ]* }
+    # `:name`, `:!name`, `:name(...)`, `:name<...>`.
+    token colonpair {
+        ':' $<neg>='!'? <identifier>
+        [ '(' <-[)]>* ')' | '<' <-[>]>* '>' ]?
+    }
+    # The scope a declarator opens: `$*BLOCK` is the node it builds, a `kind`
+    # (`Method`, `Sub`, ...) with the signature and body a later step fills in.
+    token enter-block-scope($kind) {
+        <?{ $*BLOCK = ::("RakuAST::$kind").new; True }>
+    }
+    token leave-block-scope { <?> }
+    # `self.Nodify('ParseTime')`: the RakuAST class or role of that name.
+    method Nodify(Str $name) { ::("RakuAST::$name") }
     # `<.kok>`: the end of a declarator keyword, then whitespace.
     token kok { <.end-keyword> <.ws> }
     # `<.set_braid_from(self)>` hands the braid of the current cursor to the
@@ -64,7 +83,18 @@ grammar Mutsu::Slang::Host::Base {
     # zero-width success.
     token set_braid_from($) { <?> }
 }
+# The resolver and compilation unit a production reads (`$*R`, `$*CU`): the host
+# resolves names at run time, so declaring a lexical is a no-op and the
+# context is empty.
+class Mutsu::Slang::Host::Resolver {
+    method declare-lexical($declaration) { $declaration }
+    method create-scope-implicits() { }
+}
+class Mutsu::Slang::Host::CompUnit { method context() { Nil } }
 class Mutsu::Slang::Host::Actions {
+    method typename(Mu $/) {
+        $/.make(RakuAST::Type::Simple.new(RakuAST::Name.from-identifier(~$/)));
+    }
     method attach($/, $ast) { $/.make($ast); $ast }
     # The core actions a slang may override and `callsame` into: the core node
     # is the Match's `.ast` already, so they answer it.
@@ -108,6 +138,8 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
         $Mutsu::Slang::Host::A."$rule"($core);
         return ($core.to, $core.ast);
     }
+    my $*R = Mutsu::Slang::Host::Resolver.new;
+    my $*CU = Mutsu::Slang::Host::CompUnit.new;
     my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
     return Nil unless $m;
     return ($m.to, $m.ast) if $m.ast.defined;

@@ -1731,7 +1731,7 @@ impl Interpreter {
         // raw (`.snitch`, `method m(\S:) is raw`), box the caller's location into
         // a container here — this is the only site where the frame's `code`
         // (needed for slot resolution) and the invocant value are both in hand.
-        let args = if name == "__mutsu_assign_method_lvalue" {
+        let args = if name == crate::lvalue_call::ASSIGN_METHOD {
             let mut args = args;
             self.box_raw_lvalue_invocant(code, &mut args);
             args
@@ -1742,7 +1742,7 @@ impl Interpreter {
         // stores into a `$` attribute BY REFERENCE. The value argument's
         // compile-time source name is only known here, so keep what the
         // post-store share needs (`share_scalar_attr_store_with_source`).
-        let attr_share = if name == "__mutsu_assign_method_lvalue"
+        let attr_share = if name == crate::lvalue_call::ASSIGN_METHOD
             && args.len() >= 4
             && let Some(Some(source)) = arg_sources.as_ref().and_then(|s| s.get(3))
             && (source.starts_with('@') || source.starts_with('%'))
@@ -1751,7 +1751,7 @@ impl Interpreter {
         } else {
             None
         };
-        let package_index_lvalue = name == "__mutsu_index_assign_method_lvalue"
+        let package_index_lvalue = name == crate::lvalue_call::INDEX_ASSIGN_METHOD
             && args
                 .first()
                 .is_some_and(|target| matches!(target.view(), ValueView::Package(_)));
@@ -2230,7 +2230,7 @@ impl Interpreter {
         // cannot see a `&`-sigil lexical living in this frame's slots. Resolve
         // it here, the same way an ordinary call to `f(...)` does a few hundred
         // lines above, and hand the callable form the value.
-        if name == "__mutsu_assign_named_sub_lvalue"
+        if name == crate::lvalue_call::ASSIGN_NAMED_SUB
             && args.len() >= 3
             && let Some(callee) = args[0].as_str()
         {
@@ -3070,8 +3070,8 @@ impl Interpreter {
                 | "callsame"
                 | "nextwith"
                 | "nextsame"
-                | "__mutsu_assign_named_sub_lvalue"
-                | "__mutsu_assign_callable_lvalue"
+                | crate::lvalue_call::ASSIGN_NAMED_SUB
+                | crate::lvalue_call::ASSIGN_CALLABLE
         );
         let result = result?;
         if name == "make" {

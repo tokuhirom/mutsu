@@ -61,6 +61,7 @@ mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
 mod rakuast_operator_props;
 mod rakuast_parameter_queries;
+mod rakuast_phases;
 mod rakuast_rakudoc;
 mod rakuast_var_queries;
 mod rakuast_visit;
@@ -129,6 +130,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_operator_props::DEFAULT_ROWS,
     rakuast_literal_queries::ROWS,
     rakuast_var_queries::ROWS,
+    rakuast_phases::ROWS,
     rakuast_name_queries::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_apply_queries::ROWS,

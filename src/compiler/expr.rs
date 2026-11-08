@@ -43,7 +43,7 @@ impl Compiler {
             // Any other lvalue shape: fall back to the generic named-sub lvalue
             // assignment helper (mirrors the parser's `assign_to_target_expr`).
             other => Expr::Call {
-                name: crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
+                name: crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
                 args: vec![other, Expr::ArrayLiteral(Vec::new()), value],
                 listop: false,
             },

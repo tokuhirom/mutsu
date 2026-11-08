@@ -738,6 +738,7 @@ RakuAST::VarDeclaration::Constant	name	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	scope	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	traits	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	type	RakuAST::VarDeclaration::Constant
+RakuAST::VarDeclaration::Implicit::Self	name	RakuAST::VarDeclaration::Implicit
 RakuAST::VarDeclaration::Placeholder::Named	lexical-name	RakuAST::VarDeclaration::Placeholder::Named
 RakuAST::VarDeclaration::Placeholder::Positional	lexical-name	RakuAST::VarDeclaration::Placeholder::Positional
 RakuAST::VarDeclaration::Placeholder::SlurpyArray	lexical-name	RakuAST::VarDeclaration::Placeholder::SlurpyArray

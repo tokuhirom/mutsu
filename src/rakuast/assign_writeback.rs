@@ -111,7 +111,7 @@ pub(crate) fn method_lvalue_call(
         args.push(Expr::Literal(Value::TRUE));
     }
     Expr::Call {
-        name: Symbol::intern("__mutsu_assign_method_lvalue"),
+        name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
         args,
         listop: false,
     }
@@ -125,7 +125,7 @@ pub(crate) fn method_lvalue_call_parts(expr: &Expr) -> Option<MethodLvalueParts<
     let Expr::Call { name, args, .. } = expr else {
         return None;
     };
-    if name != "__mutsu_assign_method_lvalue" || args.len() < 4 {
+    if name != crate::lvalue_call::ASSIGN_METHOD || args.len() < 4 {
         return None;
     }
     let Expr::Literal(method_name) = &args[1] else {
@@ -220,7 +220,7 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
         },
     ];
     Expr::Call {
-        name: Symbol::intern("__mutsu_assign_method_lvalue"),
+        name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
         args,
         listop: false,
     }
@@ -286,7 +286,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
         }
     }
     Expr::Call {
-        name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+        name: Symbol::intern(crate::lvalue_call::ASSIGN_NAMED_SUB),
         args: vec![
             Expr::Literal(Value::str(name)),
             Expr::ArrayLiteral(call_args),
@@ -298,7 +298,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
 
 pub(crate) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+        name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
         listop: false,
     }

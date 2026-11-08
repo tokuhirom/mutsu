@@ -931,7 +931,7 @@ impl Compiler {
         matches!(
             expr,
             Expr::Call { name, args, .. }
-                if name.resolve() == "__mutsu_assign_callable_lvalue"
+                if name.resolve() == crate::lvalue_call::ASSIGN_CALLABLE
                     && args.len() == 3
                     && matches!(&args[0], Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
                         matches!(
@@ -5304,7 +5304,7 @@ impl Compiler {
                     _ => value.clone(),
                 };
                 let assign_expr = Expr::Call {
-                    name: Symbol::intern("__mutsu_assign_method_lvalue"),
+                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
                     args: vec![
                         invocant,
                         Expr::Literal(Value::str(method_name.clone())),

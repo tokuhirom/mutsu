@@ -77,7 +77,7 @@ impl Interpreter {
     /// by `nqp::gethllsym('Raku', 'DEPARSE')` (the unit that loads it does not
     /// mention `DEPARSE` itself, so no prelude was injected).
     // Cost: O(d) to parse and run the deparser the first time, d = its source size.
-    pub(super) fn ensure_deparse_class(&mut self) -> Result<(), RuntimeError> {
+    pub(crate) fn ensure_deparse_class(&mut self) -> Result<(), RuntimeError> {
         if !self.get_hll_sym("Raku", "DEPARSE").is_nil() {
             return Ok(());
         }
