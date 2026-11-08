@@ -2149,7 +2149,7 @@ pub(super) fn split_sigil(name: &str) -> (&str, &str) {
         Some(b'@') => ("@", &name[1..]),
         Some(b'%') => ("%", &name[1..]),
         Some(b'&') => ("&", &name[1..]),
-        _ => ("$", name),
+        _ => ("$", name.strip_prefix("__ANON_OPTIONAL__").unwrap_or(name)),
     }
 }
 
@@ -4868,7 +4868,6 @@ fn parameter(
         ParamTarget::Anonymous('$') => ("$", ""),
         ParamTarget::Anonymous('@') => ("@", ""),
         ParamTarget::Anonymous(_) => ("%", ""),
-        _ if pd.name == "__ANON_OPTIONAL__" => ("$", ""),
         _ => split_sigil(&pd.name),
     };
     let mut node = if pd.sigilless && pd.slurpy {
