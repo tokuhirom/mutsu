@@ -672,11 +672,13 @@ RakuAST::Type::Coercion	base-type	RakuAST::Type::Derived
 RakuAST::Type::Coercion	constraint	RakuAST::Type::Coercion
 RakuAST::Type::Definedness	base-type	RakuAST::Type::Derived
 RakuAST::Type::Definedness	definite	RakuAST::Type::Definedness
+RakuAST::Type::Enum	clean-clone	RakuAST::Type::Enum
 RakuAST::Type::Enum	default-scope	RakuAST::Type::Enum
 RakuAST::Type::Enum	name	RakuAST::Type::Enum
 RakuAST::Type::Enum	of	RakuAST::Type::Enum
 RakuAST::Type::Enum	scope	RakuAST::Type::Enum
 RakuAST::Type::Enum	term	RakuAST::Type::Enum
+RakuAST::Type::Enum	traits	RakuAST::Type::Enum
 RakuAST::Type::Parameterized	args	RakuAST::Type::Parameterized
 RakuAST::Type::Parameterized	base-type	RakuAST::Type::Derived
 RakuAST::Type::Setting	is-resolved	RakuAST::Type::Simple
@@ -710,6 +712,7 @@ RakuAST::Var::Lexical	is-resolved	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	name	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	resolution	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	sigil	RakuAST::Var::Lexical
+RakuAST::Var::NamedCapture	colonpairs	RakuAST::Var::NamedCapture
 RakuAST::Var::NamedCapture	index	RakuAST::Var::NamedCapture
 RakuAST::Var::NamedCapture	sigil	RakuAST::Var::NamedCapture
 RakuAST::Var::Package	name	RakuAST::Var::Package
@@ -717,9 +720,14 @@ RakuAST::Var::Package	sigil	RakuAST::Var::Package
 RakuAST::Var::PositionalCapture	index	RakuAST::Var::PositionalCapture
 RakuAST::VarDeclaration::Anonymous	default-scope	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	initializer	RakuAST::VarDeclaration::Simple
+RakuAST::VarDeclaration::Anonymous	original-type	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	scope	RakuAST::VarDeclaration::Simple
+RakuAST::VarDeclaration::Anonymous	shape	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	sigil	RakuAST::VarDeclaration::Simple
+RakuAST::VarDeclaration::Anonymous	traits	RakuAST::VarDeclaration::Simple
+RakuAST::VarDeclaration::Anonymous	twigil	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	type	RakuAST::VarDeclaration::Simple
+RakuAST::VarDeclaration::Anonymous	where	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Constant	compile-time-value	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	default-scope	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	initializer	RakuAST::VarDeclaration::Constant
