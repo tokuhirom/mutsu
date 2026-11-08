@@ -370,7 +370,12 @@ impl Interpreter {
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
             let names = crate::rakuast::frontend::lower_scope(&operators);
-            let stmts = crate::rakuast::lower(&names, node)?;
+            // Lowering reads the unit's `use v6.x` into the current revision;
+            // the calling unit's is put back afterwards.
+            let caller_version = crate::parser::current_language_version();
+            let lowered = crate::rakuast::lower(&names, node);
+            crate::parser::set_current_language_version(&caller_version);
+            let stmts = lowered?;
             // The tree is the unit `$*CU` names while it compiles.
             let _unit = crate::unit_source_text::UnitSourceTextGuard::enter_tree(first_arg.clone());
             // Pod blocks written into the tree are the unit's `$=pod`, which

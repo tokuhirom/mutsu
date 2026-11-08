@@ -337,6 +337,17 @@ pub(super) fn declares_export_sub(code: &str) -> bool {
     })
 }
 
+/// Is there a column-0 `package EXPORT::<tag>` (or `module`) stash? It fills
+/// the import set as a hook does, with names a scan cannot list.
+// Cost: O(n), n = source length.
+pub(super) fn declares_export_stash(code: &str) -> bool {
+    line_starts(code).any(|at| {
+        ["package EXPORT::", "module EXPORT::"]
+            .iter()
+            .any(|stash| code[at..].starts_with(stash))
+    })
+}
+
 #[cfg(test)]
 #[path = "source_scan_tests.rs"]
 mod tests;

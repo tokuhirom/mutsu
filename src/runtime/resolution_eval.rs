@@ -395,7 +395,21 @@ impl Interpreter {
         // compile by `builtin_eval`) for an `EVAL`'d one. Deriving it from
         // `?FILE` rather than minting a second identity is what keeps
         // `location_at` agreeing with the file a backtrace reports.
+        // The parse that read the unit's `use v6.x` has restored the calling
+        // unit's revision by now; the compile sees the unit's own (a revision
+        // gate such as 6.c's dynamic `Regex.Bool` topic).
+        let unit_version = is_eval_unit
+            .then(|| body.iter().find_map(crate::parser::language_version_of_use))
+            .flatten();
+        let saved_version = unit_version.as_ref().map(|version| {
+            let saved = crate::parser::current_language_version();
+            crate::parser::set_current_language_version(version);
+            saved
+        });
         let (mut code, mut fns) = compiler.compile(body);
+        if let Some(saved) = saved_version {
+            crate::parser::set_current_language_version(&saved);
+        }
         self.inherit_frame_lexical_for_body(body, &mut code, &mut fns);
         // ADR-0037 Slice 4: bake the resolved target callable id onto this
         // unit's own `CompiledCode` (not a `Compiler` field, and not an

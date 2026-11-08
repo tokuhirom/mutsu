@@ -152,6 +152,11 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
                 // the parser leaves beside the declaration.
                 let rest = take_unit_package_body(&mut stmt);
                 crate::parser::register_rakuast_user_sub_binding(&stmt);
+                // The rest of the unit is lowered under the revision it asks
+                // for (a tree has no parse that set it).
+                if let Some(version) = crate::parser::language_version_of_use(&stmt) {
+                    crate::parser::set_current_language_version(&version);
+                }
                 stmts.push(stmt);
                 stmts.extend(rest);
             }
@@ -4276,11 +4281,17 @@ pub(super) fn lower_regex_node(
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             let var = named_child(node, "var")?;
-            if !var.class.is_simple_variable() {
-                return Err(unsupported(node));
-            }
-            let name_value = positional_leaf(var)?;
-            let ValueView::Str(name) = name_value.view() else {
+            // `$Pkg::name` / `$OUR::name`: a package variable keeps its
+            // qualified name.
+            let name: String = if var.class == RakuAstClass::VarPackage {
+                variable_spelling(var)?
+            } else if var.class.is_simple_variable() {
+                let name_value = positional_leaf(var)?;
+                let ValueView::Str(name) = name_value.view() else {
+                    return Err(unsupported(node));
+                };
+                name.to_string()
+            } else {
                 return Err(unsupported(node));
             };
             let (array, name) = if let Some(name) = name.strip_prefix('$') {
