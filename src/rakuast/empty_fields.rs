@@ -39,6 +39,7 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
     use RakuAstClass as C;
     match class {
         C::CallName
+        | C::CallTerm
         | C::CallNameWithoutParentheses
         | C::CallMethod
         | C::CallPrivateMethod
