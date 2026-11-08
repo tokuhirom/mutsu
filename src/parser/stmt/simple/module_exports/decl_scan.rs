@@ -392,7 +392,11 @@ impl<'ast> Visit<'ast> for DeclScan {
                     };
                     for value in crate::parser::enum_value_names(variants)
                         .into_iter()
-                        .filter(|value| !value.is_empty())
+                        // `self` is a keyword: a key spelled so (`enum Sector
+                        // <self child>`) stays reachable as `Sector::self`, but is
+                        // no term of the importing block, where a method's `self`
+                        // would read it instead of its invocant.
+                        .filter(|value| !value.is_empty() && value != "self")
                     {
                         self.out
                             .exported_vars
