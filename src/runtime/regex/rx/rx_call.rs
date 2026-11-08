@@ -146,7 +146,10 @@ impl Interpreter {
         } else {
             // An argument that reads `self` (`<.helper(self)>`) sees the grammar
             // cursor at this position, as the code blocks of a rule do.
-            let self_mark = (spec.arg_exprs.iter().any(|e| e.contains("self"))
+            let self_mark = (spec
+                .arg_exprs
+                .iter()
+                .any(|e| crate::runtime::regex::regex_code_atom::code_needs_self(e))
                 && self.class_is_grammar(&pkg.resolve()))
             .then(|| {
                 let cursor = self.new_grammar_cursor(chars, pos, pkg);

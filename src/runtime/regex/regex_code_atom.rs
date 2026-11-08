@@ -458,7 +458,7 @@ impl Interpreter {
 /// twigil (`$!n`, `@.list`), which resolves against `self`. `$!` alone is the
 /// error variable, so a twigil counts only before an identifier.
 // Cost: O(n), n = the code's length.
-fn code_needs_self(code: &str) -> bool {
+pub(in crate::runtime) fn code_needs_self(code: &str) -> bool {
     if code.contains("self") {
         return true;
     }
