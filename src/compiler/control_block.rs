@@ -53,6 +53,10 @@ pub(super) enum BlockPosition {
         /// generic sequencing vehicle. Only the first owns a `let`/`temp` save
         /// frame — see [`crate::ast::DoBlockOrigin`] and GH-7635.
         origin: crate::ast::DoBlockOrigin,
+        /// A parser-built desugar node (`$( ... )`, a parenthesised statement
+        /// group) opens no scope for the routines it declares; the compiler's
+        /// own lowerings of real source blocks (a module's tail block) do.
+        node_in_enclosing_scope: bool,
     },
 }
 
@@ -94,6 +98,7 @@ impl BlockPosition {
             Self::Value {
                 isolate: false,
                 origin: crate::ast::DoBlockOrigin::Desugar,
+                node_in_enclosing_scope: true,
             }
         )
     }
