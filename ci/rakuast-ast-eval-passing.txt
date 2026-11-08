@@ -1751,6 +1751,7 @@ t/control/enter-phaser-sees-bare-declaration.t
 t/control/eval-begin-phaser.t
 t/control/eval-topic-write-through.t
 t/control/eval-type-decl-and-phaser-message.t
+t/control/eval-unit-exit-phasers.t
 t/control/for-array-destructure.t
 t/control/for-array-topic-alias-elision.t
 t/control/for-bind-typed-array-deitemize.t
@@ -5959,6 +5960,7 @@ t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
 t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
+t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-dunder-name.t
 t/oo/trait/variable-trait-object-mixin.t
 t/oo/trait/variable-trait-owning-code-object.t
@@ -6511,6 +6513,7 @@ t/rakuast/rakuast-regex-named-default-pointy.t
 t/rakuast/rakuast-regex-named-separator-capture.t
 t/rakuast/rakuast-regex-nul-followed-by-digit.t
 t/rakuast/rakuast-regex-outer-adverbs.t
+t/rakuast/rakuast-regex-package-var-interpolation.t
 t/rakuast/rakuast-regex-placeholders-and-callees.t
 t/rakuast/rakuast-regex-proto-multi.t
 t/rakuast/rakuast-regex-qualified-subrules.t
@@ -6725,6 +6728,7 @@ t/regex/bare-regex-undefined-topic.t
 t/regex/contains-regex.t
 t/regex/cool-instance-chars-comb.t
 t/regex/dir-test-bare-regex-predicate.t
+t/regex/eval-unit-language-version-regex-bool.t
 t/regex/gate-b-regex-interp-env-sync.t
 t/regex/handle-comb-no-matcher.t
 t/regex/handles-regex-raku-syntax.t
@@ -7080,6 +7084,7 @@ t/regex/regex-numbered-alias-static.t
 t/regex/regex-numbered-alias.t
 t/regex/regex-our-declarator-writeback.t
 t/regex/regex-overlap.t
+t/regex/regex-package-qualified-scalar-interp.t
 t/regex/regex-param-bake-string-context.t
 t/regex/regex-parse-cache.t
 t/regex/regex-perl5-adverb-not-allowed.t
@@ -7158,6 +7163,7 @@ t/regex/rx-delimiters-and-smiley-param.t
 t/regex/rx-ignoremark-adverb.t
 t/regex/rx-literal-in-block-topic.t
 t/regex/rx-value-bool-defining-topic.t
+t/regex/rx-value-bool-map-topic.t
 t/regex/rx-value-interpolation-not-cached-across-calls.t
 t/regex/self-in-regex-code-block.t
 t/regex/split-comb-named-regex-value.t

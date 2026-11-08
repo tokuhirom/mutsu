@@ -229,7 +229,7 @@ fn is_plain_sub_name(name: &str) -> bool {
         && !is_parser_keyword(name)
 }
 
-pub(super) fn normalize_language_version(version_token: &str) -> String {
+pub(crate) fn normalize_language_version(version_token: &str) -> String {
     if version_token.starts_with("v6.c") {
         "6.c".to_string()
     } else if version_token.starts_with("v6.e") || version_token.starts_with("v6.*") {

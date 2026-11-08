@@ -482,6 +482,7 @@ impl Interpreter {
         crate::runtime::begin_prologue::lift_package_var_traits(&mut stmts);
         crate::runtime::begin_prologue::lift_unit_var_traits(&mut stmts);
         crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
+        let (exit_success, exit_failure) = Self::take_unit_exit_phasers(&mut stmts);
         let prologue_len = crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
         // Everything before this marker is the unit's BEGIN-time prologue: a
         // closure compiled after it treats a binding the prologue only declared
@@ -603,6 +604,7 @@ impl Interpreter {
         self.begin_unit_capture();
         let mut outcome = self.eval_unit_value(&stmts, &mut free_var_writes);
         self.end_unit_capture();
+        self.run_unit_exit_phasers(&mut outcome, &exit_success, &exit_failure);
         // The free variables this snippet WROTE (`EVAL '$a = 32'`). They are
         // assignments to the caller's lexicals, not the snippet's own `my`,
         // so the leaked-lexical cleanup below must leave them alone.
