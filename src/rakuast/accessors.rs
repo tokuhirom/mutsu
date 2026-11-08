@@ -58,14 +58,13 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 _ => None,
             };
         }
-        return Some(Value::real_array(
-            positional
-                .filter_map(|f| match &f.value {
-                    RakuAstFieldValue::Node(v) => Some(v.clone()),
-                    _ => None,
-                })
-                .collect(),
-        ));
+        // `Nqp.args` is an `ArgList` node (the deparser prints it as the call's
+        // parenthesised arguments), not a plain list of the operands.
+        return Some(Value::rakuast(Box::new(super::RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::ArgList,
+            fields: positional.cloned().collect(),
+        })));
     }
     if method == "is-block-statement" {
         match node.class {

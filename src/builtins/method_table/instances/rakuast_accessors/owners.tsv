@@ -222,6 +222,7 @@ RakuAST::Native	is-resolved	RakuAST::Package
 RakuAST::Native	is-stub	RakuAST::Package
 RakuAST::Native	parameterization	RakuAST::Package
 RakuAST::Native	parsed-declarator	RakuAST::Package
+RakuAST::Native	repr	RakuAST::Package
 RakuAST::Native	resolution	RakuAST::Package
 RakuAST::Native	scope	RakuAST::Package
 RakuAST::Node	origin	RakuAST::Node
@@ -673,6 +674,7 @@ RakuAST::Type::Coercion	base-type	RakuAST::Type::Derived
 RakuAST::Type::Coercion	constraint	RakuAST::Type::Coercion
 RakuAST::Type::Definedness	base-type	RakuAST::Type::Derived
 RakuAST::Type::Definedness	definite	RakuAST::Type::Definedness
+RakuAST::Type::Definedness	through-pragma	RakuAST::Type::Definedness
 RakuAST::Type::Enum	clean-clone	RakuAST::Type::Enum
 RakuAST::Type::Enum	default-scope	RakuAST::Type::Enum
 RakuAST::Type::Enum	name	RakuAST::Type::Enum

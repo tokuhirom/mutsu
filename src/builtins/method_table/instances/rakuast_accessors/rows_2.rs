@@ -8,6 +8,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Type::Capture", "smiley"),
     row!("RakuAST::Type::Coercion", "constraint"),
     row!("RakuAST::Type::Definedness", "definite"),
+    row!("RakuAST::Type::Definedness", "through-pragma"),
     row!("RakuAST::Type::Derived", "base-type"),
     row!("RakuAST::Type::Enum", "clean-clone"),
     row!("RakuAST::Type::Enum", "default-scope"),
