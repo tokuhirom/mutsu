@@ -56,7 +56,11 @@ impl SlangDeclarator {
 /// The declarator keyword of a `package_declarator:sym<name>` grammar rule,
 /// or `None` for any other rule name.
 pub(crate) fn declarator_keyword(rule: &str) -> Option<&str> {
-    let rest = rule.strip_prefix("package_declarator:sym<")?;
+    // rakudo's RakuAST grammar spells the category with a hyphen; the legacy
+    // frontend's with an underscore.
+    let rest = rule
+        .strip_prefix("package_declarator:sym<")
+        .or_else(|| rule.strip_prefix("package-declarator:sym<"))?;
     let inner = rest.strip_suffix('>')?;
     (!inner.is_empty() && !inner.contains('<') && !inner.contains('>')).then_some(inner)
 }
@@ -319,5 +323,18 @@ mod tests {
             set_hows,
             vec![("bundle".to_string(), "Some::HOW".to_string())]
         );
+    }
+}
+
+#[cfg(test)]
+mod keyword_tests {
+    use super::declarator_keyword;
+
+    #[test]
+    fn both_spellings_of_the_category_name_a_declarator_keyword() {
+        assert_eq!(declarator_keyword("package_declarator:sym<widget>"), Some("widget"));
+        assert_eq!(declarator_keyword("package-declarator:sym<event>"), Some("event"));
+        assert_eq!(declarator_keyword("package-declarator:sym<>"), None);
+        assert_eq!(declarator_keyword("routine-declarator:sym<pattern>"), None);
     }
 }
