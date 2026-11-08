@@ -248,6 +248,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             && open_ch != ':'
             && !open_ch.is_whitespace()
             && (open_ch != '(' || had_ws)
+                // A closing bracket never opens a quote construct: `k(s)` is a
+                // call argument named `s`, not `s)...)` (#17176).
+                && !matches!(open_ch, ')' | ']' | '}')
             && !delim_is_identifier_continuation(spec);
         // Don't treat `rx.method` as a regex with a `.` delimiter when the `.`
         // is followed by an identifier (a method call on a bare `rx`).
@@ -417,6 +420,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
+                // (closing bracket: see the first `is_delim` above, #17176)
+                && !matches!(open_ch, ')' | ']' | '}')
                 && !delim_is_identifier_continuation(spec);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
@@ -512,6 +517,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
+                // (closing bracket: see the first `is_delim` above, #17176)
+                && !matches!(open_ch, ')' | ']' | '}')
                 && !delim_is_identifier_continuation(spec);
             // Don't treat s.identifier as substitution when the identifier is 2+ chars
             // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
@@ -678,6 +685,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
+                // (closing bracket: see the first `is_delim` above, #17176)
+                && !matches!(open_ch, ')' | ']' | '}')
                 && !delim_is_identifier_continuation(spec);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
@@ -947,6 +956,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
+                // (closing bracket: see the first `is_delim` above, #17176)
+                && !matches!(open_ch, ')' | ']' | '}')
                 && !delim_is_identifier_continuation(spec);
             if is_delim {
                 let (close_ch, is_paired) = match open_ch {
