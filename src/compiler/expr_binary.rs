@@ -921,9 +921,12 @@ impl Compiler {
             // `f($a) =:= $b` / `f($a) =:= g($b)` for a Block `f` returning its
             // tail's container: compare the cells, so a scalar variable
             // operand is captured as its cell and a call result is kept raw.
-            let is_call = |e: &Expr| matches!(e.peel_parens(), Expr::Call { .. } | Expr::CallOn { .. });
+            let is_call =
+                |e: &Expr| matches!(e.peel_parens(), Expr::Call { .. } | Expr::CallOn { .. });
             let cell_var = |c: &Self, e: &Expr| match e.peel_parens() {
-                Expr::Var(n) if c.local_map.contains_key(n.as_str()) && Self::is_plain_lexical_name(n) => {
+                Expr::Var(n)
+                    if c.local_map.contains_key(n.as_str()) && Self::is_plain_lexical_name(n) =>
+                {
                     Some(n.clone())
                 }
                 _ => None,
