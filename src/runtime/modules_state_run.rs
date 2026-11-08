@@ -32,6 +32,7 @@ mod run_prelude_array_typed;
 mod run_prelude_iterator;
 mod run_prelude_precomp;
 mod run_prelude_tappable;
+mod run_prelude_awaitable_handle;
 mod run_prelude_deparse;
 mod run_prelude_doc_markup;
 mod run_prelude_operator_properties;

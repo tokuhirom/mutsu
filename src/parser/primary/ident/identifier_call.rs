@@ -1293,92 +1293,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "sub" => {
-            let (r, _) = ws(rest)?;
-            let r = strip_null_decl_name_marker(r);
-            if r.starts_with('{') {
-                let (r, body) = parse_block_body_routine(r)?;
-                // `sub { }` is a routine boundary (unlike bare blocks)
-                return Ok((
-                    r,
-                    Expr::AnonSub {
-                        body,
-                        is_rw: false,
-                        is_raw: false,
-                        is_block: false,
-                        doc: Default::default(),
-                    },
-                ));
-            }
-            // A NAMED sub in expression position (`my $s = sub foo {...}`)
-            // is a full declaration in Raku: it installs `&foo` lexically AND
-            // evaluates to the routine object (whose `.name` is "foo").
-            // Delegate to the statement sub-decl parser and wrap in `DoStmt` —
-            // the compiler's do-expr `SubDecl` arm registers the routine and
-            // loads `&NAME` as the expression value.
-            if crate::parser::stmt::parse_sub_name_pub(r).is_ok()
-                && let Ok((r_decl, stmt)) = crate::parser::stmt::sub_decl_body_pub(r)
-            {
-                return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
-            }
-            if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
-                let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
-                let (r, mut body) = parse_block_body_routine(r)?;
-                crate::ast::routine_trait::attach(&mut body, traits.source_traits);
-                let mut expr = Expr::AnonSub {
-                    body,
-                    is_rw: traits.is_rw,
-                    is_raw: traits.is_raw,
-                    is_block: false,
-                    doc: Default::default(),
-                };
-                if traits.is_rw {
-                    expr = set_anon_sub_rw(expr, true);
-                }
-                return Ok((r, expr));
-            }
-            // sub with params: sub ($x, $y) { ... }
-            if r.starts_with('(') {
-                match parse_anon_sub_with_params(r) {
-                    Ok((r2, params_body)) => return Ok((r2, params_body)),
-                    Err(err) => {
-                        // `sub(` without whitespace can be a call to a routine named `sub`.
-                        // Keep anonymous-sub diagnostics for `sub (...)` forms, but fall through
-                        // for tight-call syntax so generic call parsing can handle it.
-                        if !rest.starts_with('(') {
-                            return Err(PError {
-                                messages: merge_expected_messages(
-                                    "expected anonymous sub parameter list/body",
-                                    &err.messages,
-                                ),
-                                remaining_len: err.remaining_len.or(Some(r.len())),
-                                exception: None,
-                            });
-                        }
-                    }
-                }
-            }
-            // sub not followed by { or ( in expression context — not valid.
-            if rest.starts_with('(') {
-                // Let generic identifier/call parsing handle `sub(...)` call syntax.
-            } else if crate::parser::stmt::parse_sub_name_pub(r).is_err() {
-                // A bare anonymous `sub` with neither a signature nor a block is a
-                // missing block (`for () { sub }` -> X::Syntax::Missing, what =>
-                // 'block'). A *named* forward sub without a body (`sub foo;`) is a
-                // separate X::UnitScope::Invalid handled by the statement path, so
-                // only fire here for the anonymous case.
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("what".to_string(), Value::str("block".to_string()));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str("Missing block".to_string()),
-                );
-                let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
-                return Err(PError::fatal_with_exception(
-                    "X::Syntax::Missing: Missing block".to_string(),
-                    Box::new(ex),
-                ));
-            } else {
-                return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+            if let Some(found) = sub_after_keyword(rest)? {
+                return Ok(found);
             }
         }
         "multi" => {
@@ -2956,4 +2872,101 @@ fn start_block_placeholder_error(placeholder: &str) -> PError {
         "X::Placeholder::Block: Placeholder variable '{placeholder}' may not be used here because the surrounding block does not take a signature."
     );
     PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// The rest of a `sub` after its keyword, in term position: an anonymous
+/// routine (`sub { }`, `sub ($x) { }`, `sub is rw { }`) or a named one
+/// (`sub foo { }`, which also declares it). `None` when `sub(` is a call of a
+/// routine named `sub`. Shared with a slang's `routine-def` shim, so a slang
+/// keyword (`lambda`, `λ`) reads the same forms.
+// Cost: the parse of the routine.
+pub(crate) fn sub_after_keyword(rest: &str) -> Result<Option<(&str, Expr)>, PError> {
+    let (r, _) = ws(rest)?;
+    let r = strip_null_decl_name_marker(r);
+    if r.starts_with('{') {
+        let (r, body) = parse_block_body_routine(r)?;
+        // `sub { }` is a routine boundary (unlike bare blocks)
+        return Ok(Some((
+            r,
+            Expr::AnonSub {
+                body,
+                is_rw: false,
+                is_raw: false,
+                is_block: false,
+                doc: Default::default(),
+            },
+        )));
+    }
+    // A NAMED sub in expression position (`my $s = sub foo {...}`)
+    // is a full declaration in Raku: it installs `&foo` lexically AND
+    // evaluates to the routine object (whose `.name` is "foo").
+    // Delegate to the statement sub-decl parser and wrap in `DoStmt` —
+    // the compiler's do-expr `SubDecl` arm registers the routine and
+    // loads `&NAME` as the expression value.
+    if crate::parser::stmt::parse_sub_name_pub(r).is_ok()
+        && let Ok((r_decl, stmt)) = crate::parser::stmt::sub_decl_body_pub(r)
+    {
+        return Ok(Some((r_decl, Expr::DoStmt(Box::new(stmt)))));
+    }
+    if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
+        let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
+        let (r, mut body) = parse_block_body_routine(r)?;
+        crate::ast::routine_trait::attach(&mut body, traits.source_traits);
+        let mut expr = Expr::AnonSub {
+            body,
+            is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
+            is_block: false,
+            doc: Default::default(),
+        };
+        if traits.is_rw {
+            expr = set_anon_sub_rw(expr, true);
+        }
+        return Ok(Some((r, expr)));
+    }
+    // sub with params: sub ($x, $y) { ... }
+    if r.starts_with('(') {
+        match parse_anon_sub_with_params(r) {
+            Ok((r2, params_body)) => return Ok(Some((r2, params_body))),
+            Err(err) => {
+                // `sub(` without whitespace can be a call to a routine named `sub`.
+                // Keep anonymous-sub diagnostics for `sub (...)` forms, but fall through
+                // for tight-call syntax so generic call parsing can handle it.
+                if !rest.starts_with('(') {
+                    return Err(PError {
+                        messages: merge_expected_messages(
+                            "expected anonymous sub parameter list/body",
+                            &err.messages,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
+                    });
+                }
+            }
+        }
+    }
+    // sub not followed by { or ( in expression context — not valid.
+    if rest.starts_with('(') {
+        // Let generic identifier/call parsing handle `sub(...)` call syntax.
+    } else if crate::parser::stmt::parse_sub_name_pub(r).is_err() {
+        // A bare anonymous `sub` with neither a signature nor a block is a
+        // missing block (`for () { sub }` -> X::Syntax::Missing, what =>
+        // 'block'). A *named* forward sub without a body (`sub foo;`) is a
+        // separate X::UnitScope::Invalid handled by the statement path, so
+        // only fire here for the anonymous case.
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("block".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Missing block".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+        return Err(PError::fatal_with_exception(
+            "X::Syntax::Missing: Missing block".to_string(),
+            Box::new(ex),
+        ));
+    } else {
+        return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+    }
+    Ok(None)
 }

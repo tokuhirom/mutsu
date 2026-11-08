@@ -3291,6 +3291,7 @@ t/modules/import-export/class-is-export-tag.t
 t/modules/import-export/custom-export-builtin-shadow.t
 t/modules/import-export/custom-export-hoisted-inner-use.t
 t/modules/import-export/custom-export-lowercase-all.t
+t/modules/import-export/custom-export-sub-lexical-stash.t
 t/modules/import-export/custom-export-sub-wraps-same-name.t
 t/modules/import-export/custom-export-tagged-stash-pairs.t
 t/modules/import-export/custom-export-use-args-not-tags.t
@@ -7909,6 +7910,7 @@ t/routines/eval-end-phaser-calls-unit-routine.t
 t/routines/eval-in-other-routine-lexicals.t
 t/routines/eval-in-routine-sees-unit-locals.t
 t/routines/eval-mainline-placeholder.t
+t/routines/eval-my-stash-hook-routine.t
 t/routines/eval-named-sub-placeholder-arity.t
 t/routines/eval-return-target-needs-a-real-routine.t
 t/routines/eval-routine-body-sub-shadows-outer.t
