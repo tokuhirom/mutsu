@@ -612,7 +612,17 @@ fn raku_value_as_element(v: &Value) -> String {
         ValueView::Hash(_) if v.hash_is_itemized() => {
             raku_value(&v.clone().with_hash_itemized(false))
         }
-        ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => raku_value(inner),
+        ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => {
+            // The Scalar IS the element's container: a Seq it holds that is
+            // itself itemized (`my @f = $seq` stores `Scalar(ItemSeq)`) must
+            // not print the `$` a second time (#17117).
+            match inner.view() {
+                ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemSeq => {
+                    raku_value(&Value::seq_body(body.as_bare_seq_view()))
+                }
+                _ => raku_value(inner),
+            }
+        }
         // A real-array element's Seq is itemized on the HANDLE (`SeqView::
         // ItemSeq`, ADR-0034), not wrapped in `Scalar` like the arm above —
         // see `itemize_value_for_element_store`. Same bare-render rule:
