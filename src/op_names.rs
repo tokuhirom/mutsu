@@ -158,6 +158,15 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "(^)" => TokenKind::SetSymDiff,
         "(elem)" => TokenKind::SetElem,
         "(cont)" => TokenKind::SetCont,
+        // The set-relation symbols the parser reads as the token of the ASCII
+        // spelling they alias (`3 ∈ @c` is a `SetElem`, which flattens a shaped
+        // array operand); as an `Ident` they call an undeclared infix.
+        "∈" => TokenKind::SetElem,
+        "∋" => TokenKind::SetCont,
+        "⊆" => TokenKind::SetSubset,
+        "⊇" => TokenKind::SetSuperset,
+        "⊂" => TokenKind::SetStrictSubset,
+        "⊃" => TokenKind::SetStrictSuperset,
         "(<=)" => TokenKind::SetSubset,
         "(>=)" => TokenKind::SetSuperset,
         "(<)" => TokenKind::SetStrictSubset,

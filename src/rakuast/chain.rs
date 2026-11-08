@@ -58,6 +58,23 @@ fn link(node: &RakuAstNode) -> Option<Link<'_>> {
     })
 }
 
+/// Whether `node` is the last comparison of a chain of at least two
+/// (`a eq b eq c`): the parser's `ChainedCompare`, which compares each pair
+/// through the operator's candidates, however the unit declares them.
+// Cost: O(1).
+pub(super) fn is_chain(node: &RakuAstNode) -> bool {
+    link(node)
+        .and_then(|_| named_child(node_of_link(node)?, "left").ok())
+        .is_some_and(|left| link(left).is_some())
+}
+
+/// The node holding the operands of the comparison `node` is (looking through
+/// a negation).
+// Cost: O(1).
+fn node_of_link(node: &RakuAstNode) -> Option<&RakuAstNode> {
+    link(node).map(|l| l.operands)
+}
+
 /// `a < b < c` -> `Expr::ChainedCompare`, or `None` when `node` is not a chain
 /// of at least two comparisons.
 // Cost: O(n), n = size of the chain's operands.

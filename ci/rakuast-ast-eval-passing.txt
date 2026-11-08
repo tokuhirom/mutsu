@@ -2674,6 +2674,7 @@ t/lang/double-sigil-hash-term.t
 t/lang/eval-add-check-code.t
 t/lang/eval-angle-list-whitespace.t
 t/lang/eval-assigns-caller-code-variable.t
+t/lang/eval-ast-infix-chains.t
 t/lang/eval-bare-block-hoisted-sub-cell.t
 t/lang/eval-callee-cannot-see-callers-my-sub-with-local-type.t
 t/lang/eval-callee-ignores-caller-my-sub-beside-type-decl.t
@@ -3412,6 +3413,7 @@ t/modules/import-export/imported-constant-visible-via-code-ref.t
 t/modules/import-export/imported-exception-when.t
 t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-increment-proxy-operand.t
+t/modules/import-export/imported-list-assoc-infix-chain.t
 t/modules/import-export/imported-listop-angle-arg.t
 t/modules/import-export/imported-multi-infix-unicode-mul-declines-to-core-numeric.t
 t/modules/import-export/imported-multi-return-spec.t
@@ -8014,6 +8016,7 @@ t/routines/rw-routine-tail-declaration-container.t
 t/routines/seq-arg-to-callable-variable.t
 t/routines/seq-cache-list-view-and-eqv-routine.t
 t/routines/seq-iterator-skip-callable.t
+t/routines/shaped-array-routine-and-set-operands.t
 t/routines/sibling-scope-routine-shadow.t
 t/routines/signature/aggregate-param-binds-list.t
 t/routines/signature/aggregate-param-shares-container.t
@@ -8681,6 +8684,7 @@ t/types/coercion/gist-circular-container.t
 t/types/coercion/instance-gist.t
 t/types/coercion/instance-stringify-identity.t
 t/types/coercion/is-eqv.t
+t/types/coercion/iterable-instance-quanthash-coerce.t
 t/types/coercion/lexical-class-coercion.t
 t/types/coercion/nil-cool-string-methods-coerce.t
 t/types/coercion/nil-hash-coercion.t
@@ -9319,6 +9323,7 @@ t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-null-name.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t
+t/vm/binding/declared-comparison-word-chains.t
 t/vm/binding/declared-constraint-incdec-bake.t
 t/vm/binding/declared-constraint-slot-bake.t
 t/vm/binding/declared-core-comparison-word-keeps-precedence.t
