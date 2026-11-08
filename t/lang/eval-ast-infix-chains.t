@@ -1,11 +1,11 @@
 use Test;
 use experimental :rakuast;
 
-plan 8;
+plan 11;
 
 # `EVAL($ast)` keeps what the parser's own tree does for an infix run: an
 # imported list-associative infix takes the whole chain, a declared comparison
-# word chains pair by pair, and a set-relation symbol is the set operator.
+# word chains pair by pair, and a set-relation symbol reads a shaped array through its leaves.
 
 my $list = Q|use lib 't/lib'; use ListAssocInfixChain; (1 lsx 2 lsx 3), (1 l3x 2 l3x 3), (1 lsx 2)|.AST;
 is-deeply EVAL($list).List, ("LS(1,2,3)", "L3(1,2,3)", "LS(1,2)"), 'imported list-assoc infixes take every operand';
@@ -24,3 +24,9 @@ is-deeply EVAL(Q|(1 min 2 min 3), (1 max 2 max 3), (True xor False xor False)|.A
 is-deeply EVAL(Q|(1 < 2 < 3), (1 < 3 < 2)|.AST).List, (True, False), 'a core chain is unchanged';
 is-deeply EVAL(Q|(1 ∈ (1,)), (2 ∈ (1,))|.AST).List, (True, False), 'membership through the symbol';
 is-deeply EVAL(Q|(1 lt 2 lt 3), ("a" lt "b" lt "a")|.AST).List, (True, False), 'a word comparison chain';
+
+# The routine form of a set operator reads a shaped array through its leaves too.
+my @shaped[2;2] = [1,2],[3,4];
+is infix:<∈>(3, @shaped), True, 'infix:<∈> over a shaped array';
+is &infix:<(elem)>(5, @shaped), False, '&infix:<(elem)> over a shaped array';
+is infix:<∋>(@shaped, 4), True, 'infix:<∋> over a shaped array';
