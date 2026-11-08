@@ -5165,6 +5165,25 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             }),
             _ => Err(unsupported(node)),
         },
+        // `Term::Declaration` over a `Declaration::ResolvedConstant`: the
+        // compile-time value itself, as a literal.
+        RakuAstClass::TermDeclaration => {
+            let declaration = positional_leaf(node)?;
+            match declaration.view() {
+                ValueView::RakuAst(inner)
+                    if inner.class == RakuAstClass::DeclarationResolvedConstant =>
+                {
+                    match inner.fields.iter().find(|f| f.name == Some("compile-time-value")) {
+                        Some(super::RakuAstField {
+                            value: RakuAstFieldValue::Node(v),
+                            ..
+                        }) => Ok(Expr::Literal(v.clone())),
+                        _ => Err(unsupported(node)),
+                    }
+                }
+                _ => Err(unsupported(node)),
+            }
+        }
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
         // `...` / `!!!` / `???` -> the parser's stub marker call, with the

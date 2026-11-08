@@ -699,6 +699,12 @@ impl Interpreter {
         {
             return crate::unit_source_text::check_phasers_list();
         }
+        if bare == "resolver"
+            && let ValueView::RakuAst(node) = obj.view()
+            && node.class == crate::rakuast::RakuAstClass::CompUnit
+        {
+            return Some(crate::runtime::attach_target::compile_resolver_handle());
+        }
         // Any other attribute of a hash answers with the hash itself.
         if let ValueView::Hash(_) = obj.view() {
             return Some(obj.clone());
