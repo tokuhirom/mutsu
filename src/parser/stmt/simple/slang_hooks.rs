@@ -276,11 +276,21 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
     }))
 }
 
-/// Try the slang's `term`, `value` and `number` productions at `input`, the
-/// start of a term, ahead of the built-in ones.
+/// Try the slang's `term`, `value`, `number`, `routine-declarator` and
+/// `scope-declarator` productions at `input`, the start of a term, ahead of the
+/// built-in ones.
 // Cost: as [`run_category`].
 pub(in crate::parser) fn term_hook(input: &str) -> Option<PResult<'_, Expr>> {
-    let found = run_category(&["term", "value", "number"], input)?;
+    let found = run_category(
+        &[
+            "term",
+            "value",
+            "number",
+            "routine-declarator",
+            "scope-declarator",
+        ],
+        input,
+    )?;
     Some(found.and_then(|(rest, node)| {
         crate::rakuast::slang_bridge::lower_expression(&node)
             .map(|expr| (rest, expr))
