@@ -1037,9 +1037,8 @@ mod tests {
             Expr::Hash(pairs, _) => {
                 assert_eq!(pairs.len(), 1);
                 assert_eq!(pairs[0].0, "a");
-                assert!(
-                    matches!(&pairs[0].1, Some(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Bool(true)))
-                );
+                // A bare colonpair keeps no value (it is `ColonPair::True`).
+                assert!(pairs[0].1.is_none());
             }
             _ => panic!("expected hash literal"),
         }

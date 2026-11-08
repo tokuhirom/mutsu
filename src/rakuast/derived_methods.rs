@@ -32,12 +32,14 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
     let specific: &[&'static str] = match class {
         Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
         CallMethod => &["dispatch", "dispatcher", "macroish"],
-        CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
-            &["dispatch", "dispatcher"]
-        }
+        CallQuotedMethod => &["dispatch", "dispatcher", "args"],
+        CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => &["dispatch", "dispatcher"],
+        TypeCoercion => &["constraint"],
+        TypeEnum => &["clean-clone"],
         InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
         ParameterTargetVar => &["declaration"],
         VarDeclarationSimple => &["original-type", "return-type"],
+        VarDeclarationAnonymous => &["original-type"],
         VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
         Sub | RegexDeclaration | TokenDeclaration | RuleDeclaration => &["declarator"],
@@ -139,7 +141,14 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         }
         // mutsu records only the written type, which is what rakudo's
         // `original-type` is before a `where`/coercion rewrite of `type`.
-        (VarDeclarationSimple, "original-type") => Some(field(node, "type").unwrap_or(Value::NIL)),
+        (VarDeclarationSimple | VarDeclarationAnonymous, "original-type") => {
+            // The type object `RakuAST::Type` when none was written, as `type`.
+            Some(
+                field(node, "type").unwrap_or_else(|| {
+                    Value::package(crate::symbol::Symbol::intern("RakuAST::Type"))
+                }),
+            )
+        }
         // The type written before a signature declaration (`my Int ($a, $b)`),
         // Nil when none was.
         (VarDeclarationSignature, "type") => Some(field(node, "type").unwrap_or(Value::NIL)),
@@ -226,13 +235,22 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             Some(field(node, "processors").unwrap_or_else(|| Value::array(Vec::new())))
         }
         // `$x.^name` with no arguments has an empty argument list.
-        (CallMetaMethod, "args") => Some(field(node, "args").unwrap_or_else(|| {
-            Value::rakuast(Box::new(RakuAstNode {
-                class: ArgList,
-                fields: Vec::new(),
-                origin: Default::default(),
+        // A coercion without a source type (`Int()`) constrains by `Any`.
+        (TypeCoercion, "constraint") => Some(
+            field(node, "constraint")
+                .unwrap_or_else(|| Value::rakuast(Box::new(super::view::type_setting_any()))),
+        ),
+        // The declaration without the compiler's attachments: the node itself.
+        (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(node.clone()))),
+        (CallMetaMethod | CallQuotedMethod, "args") => {
+            Some(field(node, "args").unwrap_or_else(|| {
+                Value::rakuast(Box::new(RakuAstNode {
+                    class: ArgList,
+                    fields: Vec::new(),
+                    origin: Default::default(),
+                }))
             }))
-        })),
+        }
         (StubFail, "name") => Some(Value::str_from("...")),
         (StubDie, "name") => Some(Value::str_from("!!!")),
         (StubWarn, "name") => Some(Value::str_from("???")),

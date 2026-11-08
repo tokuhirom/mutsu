@@ -82,7 +82,11 @@ case "${1:-}" in
     command -v raku >/dev/null || { echo "ast-text-corpus: golden needs raku" >&2; exit 1; }
     mkdir -p "$OUT" "$RATCHET_DIR"
     list="$OUT/golden-files.txt"
-    find roast -name '*.t' | LC_ALL=C sort | awk -v n="${2:-12}" 'NR % n == 0' > "$list"
+    # The S15-normalization files hold ~2000 one-line statements each and take
+    # about a minute apiece under .DEPARSE: they sit at the per-file timeout and
+    # would make the check depend on the machine's speed, so that corpus skips them.
+    find roast -name '*.t' | LC_ALL=C sort | { if [ "$CORPUS" = deparse ]; then grep -v '/S15-normalization/'; else cat; fi; } \
+      | awk -v n="${2:-12}" 'NR % n == 0' > "$list"
     export -f run_one
     export TOOLS MUTSU_BIN DUMP
     OUT="$OUT/golden-root" xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' rakudo {} < "$list"
