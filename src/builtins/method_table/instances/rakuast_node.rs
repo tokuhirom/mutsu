@@ -735,13 +735,23 @@ fn field_children(node: &RakuAstNode) -> Vec<Value> {
         !crate::rakuast::is_unvisited_field(node, field)
             && !crate::rakuast::is_unwalked_field(node, field)
     });
-    let fields: Vec<_> = if repeat {
+    let mut fields: Vec<_> = if repeat {
         let (condition, rest): (Vec<_>, Vec<_>) =
             visited.partition(|f| f.name == Some("condition"));
         condition.into_iter().chain(rest).collect()
     } else {
         visited.collect()
     };
+    // A declaration visits its initializer before its `shape` (`my @a[3] = 1,2,3`),
+    // though `.raku` lists the shape first.
+    if node.class == crate::rakuast::RakuAstClass::VarDeclarationSimple
+        && let Some(shape) = fields.iter().position(|f| f.name == Some("shape"))
+        && let Some(init) = fields.iter().position(|f| f.name == Some("initializer"))
+        && shape < init
+    {
+        let shape = fields.remove(shape);
+        fields.insert(init, shape);
+    }
     for field in fields {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
