@@ -31,6 +31,20 @@ fn replace_body(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeE
     target.rakuast_replace_body(args[0].clone())
 }
 
+// Cost: O(f), f = fields of the node.
+fn otherwise(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::for_otherwise::otherwise(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(f), f = fields of the node.
+fn replace_otherwise(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target.rakuast_edit(|node| crate::rakuast::for_otherwise::replace_otherwise(node, &args[0]))
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "RakuAST::PlaceholderParameterOwner",
@@ -72,6 +86,22 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "replace-body",
         arity: 1,
         handler: Handler::Narrow(replace_body),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Statement::For",
+        name: "otherwise",
+        arity: 0,
+        handler: Handler::Pure(otherwise),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Statement::For",
+        name: "replace-otherwise",
+        arity: 1,
+        handler: Handler::Narrow(replace_otherwise),
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
     },

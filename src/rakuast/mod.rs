@@ -49,6 +49,7 @@ pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 pub(crate) mod eval_docs;
 mod expr_origins;
+pub(crate) mod for_otherwise;
 mod fragment_origins;
 pub(crate) mod hyper_assign;
 mod if_branch;
@@ -3888,6 +3889,7 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
         || block_queries::is_bare_marker(node, field)
         || arg_invocant::is_hidden_invocant(node, field)
         || why_doc::is_hidden(node, field)
+        || for_otherwise::is_hidden(node, field)
         || unit_finish::is_hidden(node, field)
         || diagnostics::is_hidden(node, field)
         || regex_variable_alias::is_source_field(node, field)
