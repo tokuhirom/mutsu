@@ -53,6 +53,19 @@ fn check(value: &Value) -> Result<(), RuntimeError> {
     )))
 }
 
+/// Store the `otherwise` block of a constructor call.
+// Cost: O(1).
+pub(super) fn keep(fields: &mut Vec<RakuAstField>, block: Value) -> Result<(), RuntimeError> {
+    check(&block)?;
+    if matches!(block.view(), ValueView::RakuAst(_)) {
+        fields.push(RakuAstField {
+            name: Some(FIELD),
+            value: RakuAstFieldValue::Node(block),
+        });
+    }
+    Ok(())
+}
+
 /// `replace-otherwise($block)`: keep `$block` (a type object clears it) and
 /// answer `Nil`.
 // Cost: O(f), f = fields of the node.

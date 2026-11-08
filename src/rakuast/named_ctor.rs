@@ -41,10 +41,10 @@ const DEFAULT_SCOPES: &[(&str, &str)] = &[("RakuAST::VarDeclaration::Term", "my"
 type Arg = (&'static str, Kind, Missing);
 
 /// Names rakudo's `new` accepts that mutsu does not keep, so the bind-time
-/// refusal of an unknown name must let them through. (None today:
-/// `Statement::For`'s `otherwise` is kept as hidden state, see
-/// [`super::for_otherwise`].)
-const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[];
+/// refusal of an unknown name must let them through. `Statement::For`'s
+/// `otherwise` is kept as hidden state, stored after the build (see
+/// [`super::for_otherwise`]).
+const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[("RakuAST::Statement::For", "otherwise")];
 
 // Cost: O(f), f = declared constructor fields.
 #[cfg(test)]
@@ -199,8 +199,6 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("mode", Node, DefaultStr("serial")),
                 ("source", Node, Required),
                 ("body", Node, Required),
-                // Hidden state: `.raku` never prints it (`for_otherwise`).
-                ("otherwise", Node, Omit),
             ],
         ),
         "RakuAST::Statement::Given" => (
@@ -532,6 +530,11 @@ fn build(
     }
     if class == RakuAstClass::DocBlock {
         exclusive_flags(&mut fields);
+    }
+    if class == RakuAstClass::StatementFor
+        && let Some(block) = super::named_arg(args, "otherwise").filter(|v| !v.is_nil())
+    {
+        super::for_otherwise::keep(&mut fields, block)?;
     }
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
