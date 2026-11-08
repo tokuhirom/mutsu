@@ -230,6 +230,18 @@ impl Interpreter {
             }
             return Some(Ok(Value::array(items)));
         }
+        // A supply derived from a channel-backed live one (`Supply.interval(..)
+        // .head(N)`, `.grep`, `.map`) has no channel or values of its own: tap it
+        // and collect what it emits until it is done.
+        if !attrs.contains_key("proc_output") && attrs.contains_key("parent_supply_id") {
+            return Some(self.supply_collect_values(target, true).map(|items| {
+                if want_array {
+                    crate::runtime::utils::itemize_real_array_elements(Value::real_array(items))
+                } else {
+                    Value::array(items)
+                }
+            }));
+        }
         Some(self.supply_list_values(&attrs, true).map(Value::array))
     }
 }
