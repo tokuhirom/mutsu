@@ -28,9 +28,13 @@ fn literal_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
-// Cost: O(1).
-fn has_compile_time_value(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(Value::truth(true))
+// Cost: O(n), n = children of the node.
+fn has_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::compile_time_value::has_compile_time_value(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
 }
 
 // Cost: O(1).
@@ -56,7 +60,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
     MethodRow {
-        owner: "RakuAST::Literal",
+        owner: "RakuAST::Node",
         name: "has-compile-time-value",
         arity: 0,
         handler: Handler::Pure(has_compile_time_value),
