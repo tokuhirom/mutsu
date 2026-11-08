@@ -47,6 +47,47 @@ module MUTSU_AWAIT {
         }
         $promise
     }
+    # The handle `Promise.get-await-handle` and `Channel.get-await-handle`
+    # return (ADR-15519 unit 3): a settled source becomes an already-settled
+    # handle, a pending one a handle whose `subscribe-awaiter` waits on the
+    # source's own settlement.
+    class PromiseHandle does Awaitable::Handle {
+        has $!promise;
+        method set-promise($p) { $!promise = $p; self }
+        method subscribe-awaiter(&subscriber) {
+            $!promise.then(-> $p {
+                my $kept = $p.status ~~ Kept;
+                subscriber($kept, $kept ?? $p.result !! $p.cause);
+            });
+            Nil
+        }
+    }
+    our sub promise-handle(Mu \promise) {
+        given promise.status {
+            when Kept { PromiseHandle.already-success(promise.result) }
+            when Broken { PromiseHandle.already-failure(promise.cause) }
+            default { PromiseHandle.new(:!already).set-promise(promise) }
+        }
+    }
+    class ChannelHandle does Awaitable::Handle {
+        has $!channel;
+        method set-channel($c) { $!channel = $c; self }
+        method subscribe-awaiter(&subscriber) {
+            my $ch = $!channel;
+            start { $ch.receive }.then(-> $p {
+                my $kept = $p.status ~~ Kept;
+                subscriber($kept, $kept ?? $p.result !! $p.cause);
+            });
+            Nil
+        }
+    }
+    our sub channel-handle(Mu \channel) {
+        my $value := channel.poll;
+        return ChannelHandle.already-success($value) unless $value ~~ Nil;
+        return ChannelHandle.already-failure(X::Channel::ReceiveOnClosed.new(:channel(channel)))
+            if channel.closed.status ~~ Kept;
+        ChannelHandle.new(:!already).set-channel(channel)
+    }
 }
 "#;
 
@@ -57,7 +98,8 @@ impl Interpreter {
     /// only loads.
     // Cost: O(n), n = source bytes (one substring search when absent).
     pub(super) fn inject_awaitable_handle_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.contains("Awaitable::Handle") || source.contains("role Awaitable::Handle") {
+        if !(source.contains("Awaitable::Handle") || source.contains("get-await-handle"))
+            || source.contains("role Awaitable::Handle") {
             return;
         }
         use std::sync::OnceLock;
