@@ -1220,6 +1220,10 @@ impl Interpreter {
             // The singleton sentinel, so `nqp::eqaddr($it.pull-one,
             // IterationEnd)` sees the same object `pull-one` returned (#9333).
             Value::iteration_end()
+        } else if let Some(value) = Self::builtin_enum_variant_value(name) {
+            // A variant of a core enum (`Same`, `Kept`, `SIGINT`), when the
+            // frame's env does not carry it (a module routine's `EVAL`).
+            value
         } else if over_scalar {
             // The bare word only spells a `$`-scalar of this scope, and `$bar`
             // is not the term `bar` (#11898): rakudo's "Undeclared routine".

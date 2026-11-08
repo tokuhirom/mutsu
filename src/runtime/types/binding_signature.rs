@@ -953,7 +953,27 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         let saved_sources = self.take_pending_call_arg_sources();
-        let bound = self.bind_function_args_values(param_defs, params, args);
+        // A role's bare `::T` parameter takes any type object, `Mu` included
+        // (`R[Mu]`); a sub's bare `::T` is an `Any` parameter. Say so for the
+        // role's parameters, which bind through the sub machinery.
+        let needs_mu = param_defs
+            .iter()
+            .any(|pd| pd.is_bare_type_capture() && pd.type_constraint.is_none());
+        let bound = if needs_mu {
+            let widened: Vec<ParamDef> = param_defs
+                .iter()
+                .map(|pd| {
+                    let mut pd = pd.clone();
+                    if pd.is_bare_type_capture() && pd.type_constraint.is_none() {
+                        pd.type_constraint = Some("Mu".to_string());
+                    }
+                    pd
+                })
+                .collect();
+            self.bind_function_args_values(&widened, params, args)
+        } else {
+            self.bind_function_args_values(param_defs, params, args)
+        };
         self.set_pending_call_arg_sources(saved_sources);
         bound
     }

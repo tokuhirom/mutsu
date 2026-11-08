@@ -276,6 +276,9 @@ impl UndeclaredName<'_> {
             // declared (env), or a loaded module's top-level key visible from
             // the running package (`module_toplevel.enum_keys`, #11818).
             || interp.enum_bare_value(name).is_some()
+            // A variant of a core enum (`Same`) reads in every scope, a module
+            // routine's `EVAL` included, whose env is not the caller's.
+            || Interpreter::is_builtin_enum_variant(name)
             // An in-scope sigil-less constant (#9962).
             || interp.term_binding(name).is_some()
             // `our`-scoped constants/variables installed in the package

@@ -556,6 +556,8 @@ impl Interpreter {
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)
                 || self.registry().enum_types.contains_key(name)
+                // A variant of a core enum (`Same`) is a term in every scope.
+                || Self::is_builtin_enum_variant(name)
                 // A capitalised callee (only judged in `EVAL`) is a coercion
                 // when a type of that name exists, and a core term (`IterationEnd`)
                 // is not a routine call at all.
