@@ -8,7 +8,7 @@
 //! read, once per unit, with the same conversion `Str.AST` uses. Shaped like
 //! [`crate::unit_source_file`]: a thread-local stack, a guard per unit.
 
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -23,6 +23,10 @@ pub(crate) struct Unit {
     /// Closures `$*CU.add-check-code` queued, each with the `CompUnit` it was
     /// called on, for the unit's CHECK phase.
     check_code: Vec<(Value, Value)>,
+    /// The raw list `nqp::getattr($cu, RakuAST::CompUnit, '$!check-phasers')`
+    /// answers: closures pushed onto it run in the unit's CHECK phase, like
+    /// `add-check-code` ones. Created on first read.
+    check_phasers: Option<Value>,
     /// Exceptions `$*CU.add-sorry` / `add-worry` queued, reported when the
     /// unit's compile phase ends (`unit_diagnostics`).
     pub(crate) sorries: Vec<Value>,
@@ -52,6 +56,7 @@ impl UnitSourceTextGuard {
                 compiled: false,
                 cu: None,
                 check_code: Vec::new(),
+                check_phasers: None,
                 sorries: Vec::new(),
                 worries: Vec::new(),
                 in_export: false,
@@ -137,17 +142,48 @@ pub(crate) fn add_check_code(cu: Value, code: Value) {
     });
 }
 
+/// `$!check-phasers` of `$*CU`: the raw list of the innermost unit still in
+/// its compile phase, whose closures run with the unit's check code.
+/// `None` outside a compile phase.
+// Cost: O(1) amortized.
+pub(crate) fn check_phasers_list() -> Option<Value> {
+    UNITS.with(|units| {
+        let mut units = units.borrow_mut();
+        let index = active_index(&units);
+        let unit = index
+            .and_then(|i| units.get_mut(i))
+            .filter(|unit| !unit.compiled)?;
+        Some(
+            unit.check_phasers
+                .get_or_insert_with(|| Value::vm_array(Vec::new()))
+                .clone(),
+        )
+    })
+}
+
 /// The check code queued on the innermost unit, in the order it runs (last
-/// queued first, as CHECK phasers do); the queue is emptied.
+/// queued first, as CHECK phasers do), then the closures pushed onto its
+/// `$!check-phasers` list; both queues are emptied.
 // Cost: O(c), c = queued closures.
 pub(crate) fn take_check_code() -> Vec<(Value, Value)> {
     UNITS.with(|units| {
         let mut units = units.borrow_mut();
-        let mut queued = units
-            .last_mut()
-            .map(|unit| std::mem::take(&mut unit.check_code))
-            .unwrap_or_default();
+        let Some(unit) = units.last_mut() else {
+            return Vec::new();
+        };
+        let mut queued = std::mem::take(&mut unit.check_code);
         queued.reverse();
+        if let Some(list) = unit.check_phasers.take()
+            && let ValueView::Array(data, _) = list.view()
+        {
+            let cu = unit.cu.clone().unwrap_or(Value::NIL);
+            queued.extend(
+                data.as_slice()
+                    .iter()
+                    .rev()
+                    .map(|closure| (closure.clone(), cu.clone())),
+            );
+        }
         queued
     })
 }
