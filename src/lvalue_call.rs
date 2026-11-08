@@ -11,7 +11,7 @@
 //!
 //! | callee | arguments |
 //! | --- | --- |
-//! | [`ASSIGN_METHOD`] | invocant, method name, method arguments, value |
+//! | [`ASSIGN_METHOD`] | invocant, method name, method arguments, value, target variable or Nil, preserve-hash-entries flag, dot-twigil flag (the last three optional) |
 //! | [`ASSIGN_NAMED_SUB`] | routine name, call arguments, value |
 //! | [`ASSIGN_CALLABLE`] | callable, call arguments, value |
 //! | [`INCDEC_NAMED_SUB`] | routine name, call arguments, increment kind |
@@ -32,6 +32,84 @@ pub(crate) const INCDEC_NAMED_SUB: &str = "__mutsu_incdec_named_sub_lvalue";
 pub(crate) const INDEX_ASSIGN_METHOD: &str = "__mutsu_index_assign_method_lvalue";
 /// `$obj.method(...)[$i]:delete`.
 pub(crate) const INDEX_DELETE_METHOD: &str = "__mutsu_index_delete_method_lvalue";
+
+use crate::ast::Expr;
+use crate::symbol::Symbol;
+use crate::value::Value;
+
+/// The optional trailing arguments of an [`ASSIGN_METHOD`] call (ADR-17198).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AssignMethodHints {
+    /// The caller variable the result is written back to (`$x.attr = 1` over
+    /// `my $x`), or `None` when the invocant is no variable (an element, a
+    /// call result).
+    pub(crate) target_var: Option<String>,
+    /// `%h{...}.method = ...`: keep the hash entries the call returns.
+    pub(crate) preserve_hash_entries: bool,
+    /// The `$.attr = value` spelling: the accessor is checked for being
+    /// writable before it is assigned through.
+    pub(crate) dot_twigil: bool,
+}
+
+fn call(callee: &str, args: Vec<Expr>) -> Expr {
+    Expr::Call {
+        name: Symbol::intern(callee),
+        args,
+        listop: false,
+    }
+}
+
+/// An [`ASSIGN_METHOD`] call. The layout is `invocant, method, [method
+/// arguments], value, target variable (or Nil)`, then the preserve-hash-entries
+/// flag (`True`, or `Nil` when only the twigil flag follows), then the
+/// dot-twigil flag; a trailing argument that is not set is not emitted.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn assign_method(
+    invocant: Expr,
+    method: Expr,
+    method_args: Vec<Expr>,
+    value: Expr,
+    hints: AssignMethodHints,
+) -> Expr {
+    let mut args = vec![invocant, method, Expr::ArrayLiteral(method_args), value];
+    args.push(match hints.target_var {
+        Some(name) => Expr::Literal(Value::str(name)),
+        None => Expr::Literal(Value::NIL),
+    });
+    if hints.preserve_hash_entries || hints.dot_twigil {
+        args.push(Expr::Literal(if hints.preserve_hash_entries {
+            Value::TRUE
+        } else {
+            Value::NIL
+        }));
+    }
+    if hints.dot_twigil {
+        args.push(Expr::Literal(Value::TRUE));
+    }
+    call(ASSIGN_METHOD, args)
+}
+
+/// An [`ASSIGN_NAMED_SUB`] call: `routine(call arguments) = value`.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn assign_named_sub(routine: String, call_args: Vec<Expr>, value: Expr) -> Expr {
+    call(
+        ASSIGN_NAMED_SUB,
+        vec![
+            Expr::Literal(Value::str(routine)),
+            Expr::ArrayLiteral(call_args),
+            value,
+        ],
+    )
+}
+
+/// An [`ASSIGN_CALLABLE`] call: `callable(call arguments) = value`.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn assign_callable(callable: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
+    call(
+        ASSIGN_CALLABLE,
+        vec![callable, Expr::ArrayLiteral(call_args), value],
+    )
+}
 
 #[cfg(test)]
 mod tests {

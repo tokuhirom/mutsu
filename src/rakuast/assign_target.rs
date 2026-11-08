@@ -9,7 +9,6 @@ use super::assign_writeback::{
 use super::assignment_ro_expr;
 use crate::ast::{Expr, Stmt};
 use crate::parser::method_lvalue_target_name;
-use crate::symbol::Symbol;
 
 pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
     match target {
@@ -113,11 +112,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             )
         }
         Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, value),
-        Expr::CallOn { target, args } => Expr::Call {
-            name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
-            args: vec![*target, Expr::ArrayLiteral(args), value],
-            listop: false,
-        },
+        Expr::CallOn { target, args } => crate::lvalue_call::assign_callable(*target, args, value),
         // A compound assignment is transparent to the execution AST marker.
         // When its result is itself used as an lvalue (for example the RHS of
         // a reverse meta compound assignment), apply the writeback to the

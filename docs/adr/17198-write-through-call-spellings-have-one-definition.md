@@ -15,7 +15,7 @@ lowered, by the parser and by `rakuast`, into a **call whose callee is a reserve
 
 | callee | arguments |
 | --- | --- |
-| `__mutsu_assign_method_lvalue` | invocant, method name, method arguments, value |
+| `__mutsu_assign_method_lvalue` | invocant, method name, method arguments, value, target variable or Nil, preserve-hash-entries flag, dot-twigil flag (the last three optional) |
 | `__mutsu_assign_named_sub_lvalue` | routine name, call arguments, value |
 | `__mutsu_assign_callable_lvalue` | callable, call arguments, value |
 | `__mutsu_incdec_named_sub_lvalue` | routine name, call arguments, increment kind |
@@ -38,7 +38,7 @@ Three steps, one PR each; this ADR is accepted per step, the first being ready n
    ratchet in `check-frontend-debt` counts quoted spellings outside the module; its ceiling is 0.
    No behaviour change and no precompilation-cache bump (the name is serialized, its value is
    unchanged).
-2. **One constructor and one reader.** `lvalue_call` gains constructors for each form
+2. **One constructor and one reader.** (Constructors landed: `assign_method` with `AssignMethodHints`, `assign_named_sub`, `assign_callable`; the `INDEX_*` and `INCDEC_NAMED_SUB` producers and the readers are next.) `lvalue_call` gains constructors for each form
    (`method(invocant, name, args, value)`) and a classifier returning the form and a typed view of the
    arguments, so the argument order is written once and a consumer reads `view.value()` rather than
    `args[3]`. The producers (`parser`, `rakuast/assign_writeback.rs`, `assign_target.rs`,

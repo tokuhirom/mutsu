@@ -5292,23 +5292,18 @@ impl Compiler {
                     } => Expr::Grouped(Box::new(value.clone())),
                     _ => value.clone(),
                 };
-                let assign_expr = Expr::Call {
-                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-                    args: vec![
-                        invocant,
-                        Expr::Literal(Value::str(method_name.clone())),
-                        Expr::ArrayLiteral(method_args.clone()),
-                        value,
+                let assign_expr = crate::lvalue_call::assign_method(
+                    invocant,
+                    Expr::Literal(Value::str(method_name.clone())),
+                    method_args.clone(),
+                    value,
+                    crate::lvalue_call::AssignMethodHints {
                         // No variable to write the result back to for an
                         // element invocant.
-                        if invocant_expr.is_some() {
-                            Expr::Literal(Value::NIL)
-                        } else {
-                            Expr::Literal(Value::str(var_name.clone()))
-                        },
-                    ],
-                    listop: false,
-                };
+                        target_var: invocant_expr.is_none().then(|| var_name.clone()),
+                        ..Default::default()
+                    },
+                );
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
             }

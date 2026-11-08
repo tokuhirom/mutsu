@@ -97,24 +97,17 @@ pub(crate) fn method_lvalue_call(
     value: Expr,
     preserve_hash_entries: bool,
 ) -> Expr {
-    let mut args = vec![
+    crate::lvalue_call::assign_method(
         target,
         Expr::Literal(Value::str(method_name)),
-        Expr::ArrayLiteral(method_args),
+        method_args,
         value,
-    ];
-    args.push(match target_var_name {
-        Some(name) => Expr::Literal(Value::str(name)),
-        None => Expr::Literal(Value::NIL),
-    });
-    if preserve_hash_entries {
-        args.push(Expr::Literal(Value::TRUE));
-    }
-    Expr::Call {
-        name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-        args,
-        listop: false,
-    }
+        crate::lvalue_call::AssignMethodHints {
+            target_var: target_var_name,
+            preserve_hash_entries,
+            ..Default::default()
+        },
+    )
 }
 
 /// The pieces of a method-lvalue writeback call [`method_lvalue_call`] built,
@@ -209,21 +202,16 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
     } else {
         name_expr
     };
-    let args = vec![
+    crate::lvalue_call::assign_method(
         target,
         name_expr,
-        Expr::ArrayLiteral(method_args),
+        method_args,
         value,
-        match target_var_name {
-            Some(name) => Expr::Literal(Value::str(name)),
-            None => Expr::Literal(Value::NIL),
+        crate::lvalue_call::AssignMethodHints {
+            target_var: target_var_name,
+            ..Default::default()
         },
-    ];
-    Expr::Call {
-        name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-        args,
-        listop: false,
-    }
+    )
 }
 
 pub(crate) fn named_sub_lvalue_assign_expr(
@@ -285,23 +273,11 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             };
         }
     }
-    Expr::Call {
-        name: Symbol::intern(crate::lvalue_call::ASSIGN_NAMED_SUB),
-        args: vec![
-            Expr::Literal(Value::str(name)),
-            Expr::ArrayLiteral(call_args),
-            value,
-        ],
-        listop: false,
-    }
+    crate::lvalue_call::assign_named_sub(name, call_args, value)
 }
 
 pub(crate) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
-        args: vec![target, Expr::ArrayLiteral(call_args), value],
-        listop: false,
-    }
+    crate::lvalue_call::assign_callable(target, call_args, value)
 }
 
 pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {

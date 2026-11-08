@@ -105,17 +105,16 @@ impl Compiler {
             self.code.emit(OpCode::PreDecrement(tmp_value_idx, None));
         }
         self.code.emit(OpCode::Pop);
-        let assign_expr = Expr::Call {
-            name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-            args: vec![
-                target_reeval,
-                Expr::Literal(Value::str(name.resolve())),
-                Expr::ArrayLiteral(args.clone()),
-                Expr::Var(tmp_value_name.clone()),
-                Expr::Literal(Value::str(target_var)),
-            ],
-            listop: false,
-        };
+        let assign_expr = crate::lvalue_call::assign_method(
+            target_reeval,
+            Expr::Literal(Value::str(name.resolve())),
+            args.clone(),
+            Expr::Var(tmp_value_name.clone()),
+            crate::lvalue_call::AssignMethodHints {
+                target_var: Some(target_var),
+                ..Default::default()
+            },
+        );
         self.compile_expr(&assign_expr);
         self.code.emit(OpCode::Pop);
         self.compile_expr(&Expr::Var(tmp_value_name));
@@ -251,17 +250,16 @@ impl Compiler {
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
                 self.code.emit(OpCode::PostIncrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
-                let assign_expr = Expr::Call {
-                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-                    args: vec![
-                        target_reeval,
-                        Expr::Literal(Value::str(name.resolve())),
-                        Expr::ArrayLiteral(args.clone()),
-                        Expr::Var(tmp_value_name),
-                        Expr::Literal(Value::str(target_var)),
-                    ],
-                    listop: false,
-                };
+                let assign_expr = crate::lvalue_call::assign_method(
+                    target_reeval,
+                    Expr::Literal(Value::str(name.resolve())),
+                    args.clone(),
+                    Expr::Var(tmp_value_name),
+                    crate::lvalue_call::AssignMethodHints {
+                        target_var: Some(target_var),
+                        ..Default::default()
+                    },
+                );
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(&Expr::Var(tmp_result_name));
@@ -374,17 +372,16 @@ impl Compiler {
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
                 self.code.emit(OpCode::PostDecrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
-                let assign_expr = Expr::Call {
-                    name: Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-                    args: vec![
-                        target_reeval,
-                        Expr::Literal(Value::str(name.resolve())),
-                        Expr::ArrayLiteral(args.clone()),
-                        Expr::Var(tmp_value_name),
-                        Expr::Literal(Value::str(target_var)),
-                    ],
-                    listop: false,
-                };
+                let assign_expr = crate::lvalue_call::assign_method(
+                    target_reeval,
+                    Expr::Literal(Value::str(name.resolve())),
+                    args.clone(),
+                    Expr::Var(tmp_value_name),
+                    crate::lvalue_call::AssignMethodHints {
+                        target_var: Some(target_var),
+                        ..Default::default()
+                    },
+                );
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(&Expr::Var(tmp_result_name));
