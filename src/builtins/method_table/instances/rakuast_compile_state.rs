@@ -52,14 +52,15 @@ fn resolved_constant_value(target: &Value, _args: &[Value]) -> Result<Value, Run
 // Cost: O(f), f = fields of the node.
 fn named_field(target: &Value, field: &str) -> Option<Value> {
     native_node(target).and_then(|base| match base.view() {
-        ValueView::RakuAst(node) => node
-            .fields
-            .iter()
-            .find(|f| f.name == Some(field))
-            .and_then(|f| match &f.value {
-                crate::rakuast::RakuAstFieldValue::Node(v) => Some(v.clone()),
-                _ => None,
-            }),
+        ValueView::RakuAst(node) => {
+            node.fields
+                .iter()
+                .find(|f| f.name == Some(field))
+                .and_then(|f| match &f.value {
+                    crate::rakuast::RakuAstFieldValue::Node(v) => Some(v.clone()),
+                    _ => None,
+                })
+        }
         _ => None,
     })
 }
