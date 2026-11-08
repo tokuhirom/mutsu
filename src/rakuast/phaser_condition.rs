@@ -144,3 +144,96 @@ fn called_block(statement: &RakuAstNode) -> Option<&RakuAstNode> {
     let operand = super::lower::named_child(expression, "operand").ok()?;
     (operand.class == RakuAstClass::Block).then_some(operand)
 }
+
+/// `Phaser::Pre.blorst`: rakudo wraps the written statement into
+/// `X::Phaser::PrePost.new(condition => "SRC").throw unless <statement>`, so the
+/// statement becomes the `condition-modifier` (`RakuAST::Deparse` reads it back
+/// from there). `original-blorst` is the statement as written.
+///
+/// `None` for a node with no recorded source text (a hand-built one), which has
+/// nothing to quote.
+// Cost: O(n), n = size of the node.
+pub(super) fn wrapped_blorst(node: &RakuAstNode) -> Option<Value> {
+    let source = node.fields.iter().find(|f| f.name == Some(FIELD))?;
+    let RakuAstFieldValue::Node(text) = &source.value else {
+        return None;
+    };
+    let statement = named_child_or_positional(node).ok()?;
+    let written = super::lower::named_child(statement, "expression").ok()?;
+    let node_of = |class, fields| RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    };
+    let call = |name: &str, args: Option<RakuAstNode>| {
+        let mut fields = vec![node_field(
+            Some("name"),
+            super::view::name_from_identifier(name),
+        )];
+        fields.extend(args.map(|a| node_field(Some("args"), a)));
+        node_of(RakuAstClass::CallMethod, fields)
+    };
+    // `condition => "SRC"`, built as rakudo does: a `ColonPair::Value` over a
+    // plain `StrLiteral`.
+    let condition = node_of(
+        RakuAstClass::ColonPairValue,
+        vec![
+            super::view::leaf_field(Some("key"), Value::str("condition".to_string())),
+            node_field(
+                Some("value"),
+                node_of(
+                    RakuAstClass::StrLiteral,
+                    vec![super::view::leaf_field(None, text.clone())],
+                ),
+            ),
+        ],
+    );
+    let exception = node_of(
+        RakuAstClass::TypeSimple,
+        vec![node_field(
+            None,
+            super::name_parts::name_from_parts(
+                ["X", "Phaser", "PrePost"]
+                    .iter()
+                    .map(|part| super::name_parts::simple_part(part))
+                    .collect(),
+            ),
+        )],
+    );
+    let created = node_of(
+        RakuAstClass::ApplyPostfix,
+        vec![
+            node_field(Some("operand"), exception),
+            node_field(
+                Some("postfix"),
+                call(
+                    "new",
+                    Some(node_of(
+                        RakuAstClass::ArgList,
+                        vec![node_field(None, condition)],
+                    )),
+                ),
+            ),
+        ],
+    );
+    let throw = node_of(
+        RakuAstClass::ApplyPostfix,
+        vec![
+            node_field(Some("operand"), created),
+            node_field(Some("postfix"), call("throw", None)),
+        ],
+    );
+    let unless = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementModifierUnless,
+        fields: vec![node_field(None, written.clone())],
+    };
+    Some(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementExpression,
+        fields: vec![
+            node_field(Some("expression"), throw),
+            node_field(Some("condition-modifier"), unless),
+        ],
+    })))
+}

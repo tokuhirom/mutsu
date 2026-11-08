@@ -66,6 +66,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             fields: positional.cloned().collect(),
         })));
     }
+    if node.class == RakuAstClass::StatementPrefixPhaserPre && method == "blorst" {
+        return phaser_condition::wrapped_blorst(node);
+    }
     if method == "is-block-statement" {
         match node.class {
             // A statement ends where its block does, or at a semicolon.
