@@ -57,7 +57,8 @@ fn trait_production(text: &str) -> Result<Option<(usize, Value)>, String> {
         return Ok(None);
     };
     let names = NameScope::default();
-    let node = super::routine_source::trait_node(&names, &item).map_err(|e| e.message.to_string())?;
+    let node =
+        super::routine_source::trait_node(&names, &item).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),

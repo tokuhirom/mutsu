@@ -96,10 +96,7 @@ pub(crate) fn parse_sub_traits_upto(
         }
         let (r, _) = ws(input)?;
         trait_start = Some(r);
-        if r.starts_with('{')
-            || r.is_empty()
-            || limit.is_some_and(|n| source_traits.len() >= n)
-        {
+        if r.starts_with('{') || r.is_empty() || limit.is_some_and(|n| source_traits.len() >= n) {
             return Ok((
                 r,
                 SubTraits {
