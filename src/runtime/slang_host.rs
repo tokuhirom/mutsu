@@ -79,9 +79,13 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
         my %hash;
         if $rule eq 'numish' && $source.chars {
             my $part = Match.new(:orig($source), :from(0), :to($source.chars));
+            # Only an ASCII integer, decimal or radix literal has a capture; `NaN`,
+            # `Inf`, `∞`, a unum (`Ⅼ`, `⅔`), `<1/2>` and `<1+2i>` are numish alone.
             my $key = $source.starts-with(':') ?? 'radix-number'
-                !! $node ~~ RakuAST::IntLiteral ?? 'integer' !! 'decimal-number';
-            %hash{$key} = $part;
+                !! $source ~~ /^ [ 0 <[xXoObB]> <[0..9a..fA..F_]>+ | <[0..9]> <[0..9_]>* ] $/ ?? 'integer'
+                !! $source ~~ /^ <[0..9.]> <[0..9_.eE+\-]>* $/ ?? 'decimal-number'
+                !! Nil;
+            %hash{$key} = $part if $key;
         }
         my $core = Match.new(:orig($source), :from(0), :to($source.chars), :hash(%hash));
         $core.make($node);
