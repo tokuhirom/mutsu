@@ -665,6 +665,22 @@ jobs:
           MUTSU_BIN: target/release/mutsu
           JOBS: "4"
 
+      - name: RakuAST .DEPARSE text ratchet
+        # The `.AST` text ratchet's twin for `.DEPARSE` (#15792, ADR-14845
+        # section 2.5): rakudo 2026.09's `.DEPARSE` text of a pinned sample of
+        # roast files, hashed per top-level statement
+        # (ci/deparse-corpus/rakudo.tsv), must still equal rakudo's for every
+        # statement listed in ci/deparse-corpus/identical.tsv. The list only
+        # grows (`CORPUS=deparse scripts/ast-text-corpus.sh update`); a listed
+        # statement that stops matching is a regression in the tree the
+        # (vendored) deparser reads, fixed in the same PR.
+        run: |
+          mkdir -p tmp
+          CORPUS=deparse scripts/ast-text-corpus.sh check
+        env:
+          MUTSU_BIN: target/release/mutsu
+          JOBS: "4"
+
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the site (landing highlights +
         # tutorial lessons) runs under mutsu here and must match the output

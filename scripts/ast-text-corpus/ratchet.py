@@ -77,10 +77,14 @@ def read_identical(path):
     return out
 
 
+# The text the corpus holds: `.AST` by default, `.DEPARSE` for CORPUS=deparse (#15792).
+KIND = "`.DEPARSE`" if os.environ.get("CORPUS") == "deparse" else "`.AST`"
+
+
 def write_identical(path, entries):
     with open(path, "w") as handle:
         handle.write(
-            "# Statements whose `.AST` text equals rakudo's (scripts/ast-text-corpus.sh update).\n"
+            f"# Statements whose {KIND} text equals rakudo's (scripts/ast-text-corpus.sh update).\n"
             "# Only ever grows: scripts/ast-text-corpus.sh check fails when one stops matching.\n"
         )
         for file, idx in sorted(entries):
@@ -94,7 +98,7 @@ def main():
         rows = 0
         with open(sample) as files, open(out, "w") as handle:
             handle.write(
-                "# rakudo's `.AST` text, hashed: F file sha1-of-file, then S index sha1[:12]-of-text per statement.\n"
+                f"# rakudo's {KIND} text, hashed: F file sha1-of-file, then S index sha1[:12]-of-text per statement.\n"
                 "# Regenerate with scripts/ast-text-corpus.sh golden on the rakudo release in vendor.lock.\n"
             )
             for file in sorted(f.strip() for f in files if f.strip()):
