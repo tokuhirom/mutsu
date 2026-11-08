@@ -31,6 +31,21 @@ pub(crate) fn apply_slang_overrides(
         .map(|v| (*v).clone())
         .unwrap_or_default();
     for over in overrides {
+        // A re-statement of the stock `sub` declarator (Tuxic's) is a no-op mode;
+        // one that spells its own keywords and reads the core definition after
+        // them with `key-origin` (Slang::Mosdef's `lambda` / `λ`) is a production
+        // the host runs.
+        if matches!(
+            over.name.as_str(),
+            "routine-declarator:sym<sub>" | "routine_declarator:sym<sub>"
+        ) && over
+            .body
+            .as_deref()
+            .is_some_and(|body| body.contains("key-origin("))
+        {
+            register_hook(&over.name, over.body.as_deref());
+            continue;
+        }
         if apply_slang_rule_override(&mut modes, &over.name).is_some() {
             continue;
         }

@@ -42,8 +42,21 @@ pub(in crate::parser) struct SlangHooks {
     wrappers: Vec<String>,
 }
 
+/// What one hook attempt at a position answered: the length of the text left
+/// after the production and its node, `None` when no candidate matched.
+type HookMemoEntry = Option<(usize, Value)>;
+
 thread_local! {
     static HOOKS: RefCell<SlangHooks> = RefCell::new(SlangHooks::default());
+    /// The per-unit `position -> answer` table of ADR-15762 section 2.8: a hook
+    /// answer is a pure function of the category list, the position and the
+    /// grammar state, and backtracking asks the same position many times (a
+    /// slang production nested in another's block is parsed again by every
+    /// enclosing attempt, so without it the cost is exponential in the nesting).
+    /// Keyed by the address and length of the input; cleared whenever the
+    /// registry changes.
+    static HOOK_MEMO: RefCell<std::collections::HashMap<(usize, usize, usize, u64), HookMemoEntry>> =
+        RefCell::new(std::collections::HashMap::new());
     /// Set by the back-call that parses the core `<statementlist>` for a
     /// wrapper, and taken by the list parse it starts: that one list is not
     /// wrapped again (the wrapper's own delegation, as `callsame` skips the
@@ -61,6 +74,7 @@ pub(crate) fn slang_wrapper_rule(name: &str) -> bool {
 /// Register the wrapper of the core production `name`.
 // Cost: O(k), k = registered wrappers.
 pub(in crate::parser) fn register_wrapper(name: &str) {
+    clear_hook_memo();
     HOOKS.with(|h| {
         let mut hooks = h.borrow_mut();
         if !hooks.wrappers.iter().any(|w| w == name) {
@@ -208,6 +222,7 @@ fn leading_literal(body: &str) -> Option<String> {
 /// Register the hook for the override `name` with token source `body`.
 // Cost: O(n), n = body length.
 pub(in crate::parser) fn register_hook(name: &str, body: Option<&str>) {
+    clear_hook_memo();
     HOOKS.with(|h| {
         let mut hooks = h.borrow_mut();
         hooks.rules.retain(|r| r.rule != name);
@@ -220,10 +235,12 @@ pub(in crate::parser) fn register_hook(name: &str, body: Option<&str>) {
 
 /// The host that serves the registered hooks of this unit.
 pub(in crate::parser) fn set_host(host: SlangHost) {
+    clear_hook_memo();
     HOOKS.with(|h| h.borrow_mut().host = Some(Rc::new(host)));
 }
 
 pub(in crate::parser) fn reset_hooks() {
+    clear_hook_memo();
     HOOKS.with(|h| *h.borrow_mut() = SlangHooks::default());
 }
 
@@ -232,7 +249,18 @@ pub(in crate::parser) fn hooks_snapshot() -> SlangHooks {
 }
 
 pub(in crate::parser) fn restore_hooks(saved: SlangHooks) {
+    clear_hook_memo();
     HOOKS.with(|h| *h.borrow_mut() = saved);
+}
+
+// Cost: O(1) when the table is empty, O(n) otherwise, n = remembered answers.
+fn clear_hook_memo() {
+    HOOK_MEMO.with(|m| {
+        let mut memo = m.borrow_mut();
+        if !memo.is_empty() {
+            memo.clear();
+        }
+    });
 }
 
 /// The byte offset of character offset `chars` in `text`.
@@ -305,6 +333,44 @@ pub(in crate::parser) fn take_wrapper_back_call() -> bool {
 /// hook applies here (no slang, or no candidate matched).
 // Cost: O(1) with no hook registered; otherwise the slang's own run.
 fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str, Value), PError>> {
+    // The category list is one of a few constant slices: its address names it.
+    // The head of the text joins the key, so a freed temporary text another one
+    // reuses the address of cannot answer for it.
+    let head = input
+        .as_bytes()
+        .iter()
+        .take(64)
+        .fold(0xcbf29ce484222325u64, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        });
+    let key = (
+        input.as_ptr() as usize,
+        input.len(),
+        category.as_ptr() as usize,
+        head,
+    );
+    if let Some(known) = HOOK_MEMO.with(|m| m.borrow().get(&key).cloned()) {
+        return known.map(|(left, node)| Ok((&input[input.len() - left..], node)));
+    }
+    let found = run_category_uncached(category, input);
+    match &found {
+        Some(Ok((rest, node))) => {
+            HOOK_MEMO.with(|m| m.borrow_mut().insert(key, Some((rest.len(), node.clone()))));
+        }
+        None => {
+            HOOK_MEMO.with(|m| m.borrow_mut().insert(key, None));
+        }
+        // An error stands for a fatal parse failure; it is not remembered.
+        Some(Err(_)) => {}
+    }
+    found
+}
+
+// Cost: O(1) with no hook registered; otherwise the slang's own run.
+fn run_category_uncached<'a>(
+    category: &[&str],
+    input: &'a str,
+) -> Option<Result<(&'a str, Value), PError>> {
     let (rules, host) = HOOKS.with(|h| {
         let hooks = h.borrow();
         if hooks.rules.is_empty() {
@@ -410,7 +476,15 @@ pub(crate) fn parse_slang_shim_production<'a>(
         "routine-def" => Some(
             ws(text)
                 .and_then(|(text, _)| {
-                    crate::parser::stmt::sub::sub_decl_body(text, false, false, false)
+                    crate::parser::stmt::sub::sub_decl_body(text, false, false, false).or_else(
+                        |named| {
+                            // No name: the anonymous forms `λ ($n) { ... }`.
+                            match crate::parser::primary::ident::sub_after_keyword(text) {
+                                Ok(Some((rest, expr))) => Ok((rest, Stmt::Expr(expr))),
+                                _ => Err(named),
+                            }
+                        },
+                    )
                 })
                 .map_err(|e| e.to_string()),
         ),

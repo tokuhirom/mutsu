@@ -22,6 +22,7 @@ pub(super) fn identifier_or_call(
         .map(|(rest, expr)| (rest, crate::ast::Expr::source_identifier(expr, input)))
 }
 pub(crate) use identifier_call::slipped_control_stmt;
+pub(crate) use identifier_call::sub_after_keyword;
 pub(crate) use listop::{TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers};
 pub(in crate::parser) use listop::{
     colon_starts_colonpair, export_term_or_call, expr_is_colonpair, make_call_expr,
