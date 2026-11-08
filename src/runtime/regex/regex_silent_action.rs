@@ -45,4 +45,20 @@ impl Interpreter {
         let method = self.variant_action_method_name(Some(class_name), &spec.lookup_name, sym);
         self.has_user_method(class_name, &method)
     }
+
+    /// Whether the grammar's actions class has a method for `rule`, the rule a
+    /// user method delegated to (`<.key('thing')>` runs `thing`'s action, #17179).
+    // Cost: O(m) for the actions class's MRO of m classes.
+    pub(super) fn delegated_rule_has_action(&mut self, rule: Symbol) -> bool {
+        let Some(actions) = self.regex_state.current_grammar_actions.as_ref() else {
+            return false;
+        };
+        let class_sym: Symbol = match actions.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return true,
+        };
+        let class_name = class_sym.as_str();
+        self.has_user_method_sym(class_name, rule) || self.has_user_method(class_name, "FALLBACK")
+    }
 }

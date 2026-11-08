@@ -159,7 +159,7 @@ impl Interpreter {
             // writing it afterwards through `Arc::make_mut` deep-copied the
             // whole descendant subtree for every aliased subrule capture.
             let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
-            if is_alias {
+            if is_alias && subcap.action_name().is_none() {
                 subcap.set_action_name(Some(spec.action_sym));
             }
             let subcap = Arc::new(subcap.into_cap_node());
@@ -185,6 +185,9 @@ impl Interpreter {
         } else if !inner_caps.named.is_empty()
             || self
                 .silent_subrule_has_action(spec, inner_caps.sym().or(sym_key).map(|s| s.as_str()))
+            || inner_caps
+                .action_name()
+                .is_some_and(|rule| self.delegated_rule_has_action(rule))
         {
             // Silent subrule (`<.foo>`) that contains nested captures, or
             // whose OWN action method exists. The subrule is hidden from
@@ -209,7 +212,9 @@ impl Interpreter {
             if subcap.sym().is_none() && sym_key.is_some() {
                 subcap.set_sym(sym_key);
             }
-            subcap.set_action_name(Some(spec.action_sym));
+            if subcap.action_name().is_none() {
+                subcap.set_action_name(Some(spec.action_sym));
+            }
             // Keep the silent subrule's inline blocks on its own (marker) node
             // for the reduce-time walk to run once — see the non-silent branch.
             let subcap = Arc::new(subcap.into_cap_node());
