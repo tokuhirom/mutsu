@@ -20,9 +20,9 @@ fn literal_return_type(target: &Value, _args: &[Value]) -> Result<Value, Runtime
 // Cost: O(1).
 fn literal_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
-        ValueView::RakuAst(node) => {
-            Some(crate::rakuast::literal_queries::literal_compile_time_value(node))
-        }
+        ValueView::RakuAst(node) => Some(
+            crate::rakuast::literal_queries::literal_compile_time_value(node),
+        ),
         _ => None,
     });
     Ok(answer.unwrap_or(Value::NIL))
