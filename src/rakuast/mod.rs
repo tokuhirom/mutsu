@@ -79,6 +79,7 @@ mod stmt_call;
 mod trait_is_constructor;
 pub(crate) mod unit_finish;
 pub(crate) mod why_doc;
+pub(crate) mod var_queries;
 mod with_branch;
 use constructor_positional::single_positional_class;
 mod core_term_names;

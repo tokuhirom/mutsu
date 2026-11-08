@@ -56,6 +56,7 @@ mod rakuast_diagnostics;
 mod rakuast_doc_edit;
 mod rakuast_finish;
 mod rakuast_literal_queries;
+mod rakuast_var_queries;
 mod rakuast_locate;
 mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
@@ -127,6 +128,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_operator_props::ROWS,
     rakuast_operator_props::DEFAULT_ROWS,
     rakuast_literal_queries::ROWS,
+    rakuast_var_queries::ROWS,
     rakuast_name_queries::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_apply_queries::ROWS,
