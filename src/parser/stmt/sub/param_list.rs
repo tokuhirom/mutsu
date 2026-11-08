@@ -109,8 +109,8 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
             continue;
         }
         // Reconstruct the display name with sigil for error message
-        let display_name = if name.starts_with("__type_capture__") {
-            name.strip_prefix("__type_capture__")
+        let display_name = if name.starts_with(crate::ast::TYPE_CAPTURE_PREFIX) {
+            name.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX)
                 .unwrap_or(name)
                 .to_string()
         } else if name.starts_with('@')
