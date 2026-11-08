@@ -6626,6 +6626,7 @@ t/rakuast/rakuast-supply-done-payload.t
 t/rakuast/rakuast-supply-done-round-trip.t
 t/rakuast/rakuast-supply-lexical-emit.t
 t/rakuast/rakuast-supply-placeholder-rejection.t
+t/rakuast/rakuast-sym-adverb-name.t
 t/rakuast/rakuast-take-logical-tail.t
 t/rakuast/rakuast-temp-and-let.t
 t/rakuast/rakuast-temp-method-assign.t

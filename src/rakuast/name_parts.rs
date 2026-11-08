@@ -319,6 +319,99 @@ fn operator_colonpairs(symbol: &str) -> RakuAstField {
     }
 }
 
+/// `alt:sym<foo>` / `alt:sym«a b»` (a grammar alternative's or a method's
+/// `:sym` adverb, written as the flat name mutsu keeps) as the `Name` rakudo
+/// builds: the stem with one `ColonPair::Value(key => "sym", value => word
+/// quote)`. `None` for any other spelling, which stays one identifier string.
+// Cost: O(n), n = length of the name.
+pub(super) fn sym_name(name: &str) -> Option<RakuAstNode> {
+    let (stem, rest) = name.split_once(":sym")?;
+    if stem.is_empty() || !crate::parser::is_raku_identifier(stem) {
+        return None;
+    }
+    let angle = rest.strip_prefix('<').and_then(|r| r.strip_suffix('>'));
+    let french = rest
+        .strip_prefix('\u{00AB}')
+        .and_then(|r| r.strip_suffix('\u{00BB}'));
+    let (quotewords, text) = match (angle, french) {
+        (Some(inner), _) => (false, inner),
+        (None, Some(inner)) => (true, inner),
+        (None, None) => return None,
+    };
+    if text.is_empty()
+        || text
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\'))
+    {
+        return None;
+    }
+    let pair = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ColonPairValue,
+        fields: vec![
+            super::view::leaf_field(Some("key"), Value::str("sym".to_string())),
+            super::view::node_field(
+                Some("value"),
+                super::view::word_quote_with(quotewords, true, text),
+            ),
+        ],
+    };
+    Some(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Name,
+        fields: vec![
+            super::view::leaf_field(None, Value::str(stem.to_string())),
+            RakuAstField {
+                name: Some("colonpairs"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(pair))]),
+            },
+        ],
+    })
+}
+
+/// The flat `stem:sym<text>` / `stem:sym«text»` spelling of a name whose one
+/// colonpair is a `:sym` value (the inverse of [`sym_name`]).
+// Cost: O(1).
+fn sym_suffix(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(pairs) = &field.value else {
+        return None;
+    };
+    let [pair] = pairs.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(pair) = pair.view() else {
+        return None;
+    };
+    if pair.class != RakuAstClass::ColonPairValue {
+        return None;
+    }
+    let key = pair.fields.iter().find(|f| f.name == Some("key"))?;
+    let RakuAstFieldValue::Node(key) = &key.value else {
+        return None;
+    };
+    if key.as_str() != Some("sym") {
+        return None;
+    }
+    let value = pair.fields.iter().find(|f| f.name == Some("value"))?;
+    let RakuAstFieldValue::Node(value) = &value.value else {
+        return None;
+    };
+    let ValueView::RakuAst(value) = value.view() else {
+        return None;
+    };
+    let text = quoted_text(value)?;
+    let processors = value.fields.iter().find(|f| f.name == Some("processors"))?;
+    let RakuAstFieldValue::List(processors) = &processors.value else {
+        return None;
+    };
+    match processors.first()?.as_str()? {
+        "words" => Some(format!(":sym<{text}>")),
+        "quotewords" => Some(format!(":sym\u{00AB}{text}\u{00BB}")),
+        _ => None,
+    }
+}
+
 /// The symbol of a name's single operator adverb (the inverse of
 /// [`operator_name`]), or `None` when the name has no such adverb.
 // Cost: O(1).
@@ -403,6 +496,10 @@ pub(super) fn name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
         (NameShape::Identifier(name), Some(symbol)) => {
             Some(NameShape::Identifier(format!("{name}:<{symbol}>")))
         }
+        (NameShape::Identifier(name), None) => match sym_suffix(node) {
+            Some(suffix) => Some(NameShape::Identifier(format!("{name}{suffix}"))),
+            None => Some(NameShape::Identifier(name)),
+        },
         (shape, _) => Some(shape),
     }
 }

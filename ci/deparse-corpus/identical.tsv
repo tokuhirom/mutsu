@@ -50,6 +50,7 @@ roast/S02-literals/listquote.t	10
 roast/S02-literals/listquote.t	11
 roast/S02-literals/listquote.t	12
 roast/S02-literals/listquote.t	13
+roast/S02-literals/listquote.t	14
 roast/S02-literals/listquote.t	15
 roast/S02-literals/listquote.t	16
 roast/S02-literals/listquote.t	17
@@ -233,10 +234,19 @@ roast/S03-operators/ternary.t	5
 roast/S03-operators/ternary.t	6
 roast/S03-operators/ternary.t	7
 roast/S03-operators/ternary.t	8
+roast/S03-operators/ternary.t	9
+roast/S03-operators/ternary.t	10
+roast/S03-operators/ternary.t	11
+roast/S03-operators/ternary.t	12
+roast/S03-operators/ternary.t	13
+roast/S03-operators/ternary.t	14
+roast/S03-operators/ternary.t	15
+roast/S03-operators/ternary.t	16
 roast/S03-operators/ternary.t	18
 roast/S03-operators/ternary.t	19
 roast/S03-operators/ternary.t	20
 roast/S03-operators/ternary.t	21
+roast/S03-operators/ternary.t	22
 roast/S03-operators/ternary.t	23
 roast/S03-operators/ternary.t	25
 roast/S03-operators/ternary.t	26
