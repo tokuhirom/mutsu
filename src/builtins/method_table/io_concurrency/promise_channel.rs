@@ -133,11 +133,16 @@ fn channel(target: &Value) -> Option<SharedChannel> {
     Some(ch.clone())
 }
 
-/// `Promise.get-await-handle`: a promise is its own native await handle, so a
-/// user `Awaitable` class can delegate to one as it does on Rakudo.
+/// `Promise.get-await-handle`: an `Awaitable::Handle` (ADR-15519), built by the
+/// prelude's `MUTSU_AWAIT::promise-handle`. Without the prelude (no unit
+/// mentions the protocol) the promise itself stands in for the handle.
 // Cost: O(1).
-fn promise_await_handle(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    Some(Ok(Value::promise(promise(t)?)))
+fn promise_await_handle(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    let native = Value::promise(promise(t)?);
+    if i.has_function("MUTSU_AWAIT::promise-handle") {
+        return Some(i.call_function("MUTSU_AWAIT::promise-handle", vec![native]));
+    }
+    Some(Ok(native))
 }
 
 /// `Promise.result`.
@@ -238,8 +243,12 @@ fn vow_break(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> An
 
 /// `Channel.get-await-handle`.
 // Cost: O(1).
-fn channel_await_handle(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    Some(Ok(Value::channel(channel(t)?)))
+fn channel_await_handle(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    let native = Value::channel(channel(t)?);
+    if i.has_function("MUTSU_AWAIT::channel-handle") {
+        return Some(i.call_function("MUTSU_AWAIT::channel-handle", vec![native]));
+    }
+    Some(Ok(native))
 }
 
 /// `Channel.send($value)`.
