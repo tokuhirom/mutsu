@@ -31,7 +31,9 @@ fn literal_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, 
 // Cost: O(n), n = children of the node.
 fn has_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
-        ValueView::RakuAst(node) => Some(crate::rakuast::compile_time_value::has_compile_time_value(node)),
+        ValueView::RakuAst(node) => Some(
+            crate::rakuast::compile_time_value::has_compile_time_value(node),
+        ),
         _ => None,
     });
     Ok(answer.unwrap_or(Value::NIL))
