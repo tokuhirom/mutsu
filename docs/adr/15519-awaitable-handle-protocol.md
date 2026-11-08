@@ -1,6 +1,6 @@
 # ADR-15519: Support the core Awaitable::Handle protocol
 
-- **Status**: Proposed; the undocumented core-protocol exception requires the maintainer's decision.
+- **Status**: Accepted (maintainer decision 2026-11-08: the undocumented-protocol exception is granted for this role only)
 - **Date**: 2026-11-01
 - **Issue**: [#15519](https://github.com/tokuhirom/mutsu/issues/15519)
 - **Related**: `AGENTS.md`'s core-routine documentation rule; the existing native Promise/Channel await paths.
@@ -98,3 +98,27 @@ Distribution test files that require the legacy-only Test::Async remain
 `no_baseline` under the repository's RakuAST-oracle policy. Supporting this
 core protocol does not authorize a native replacement for an ecosystem module
 or a general structural/duck-typed substitute for named roles.
+
+## 5. Deprecation check (2026-11-08)
+
+Asked by the maintainer before granting the exception. Findings:
+
+- Rakudo 2026.09 still ships the role: `Awaitable::Handle.^methods(:local)` is
+  `already-success already-failure subscribe-awaiter`, and `get-await-handle` is compiled into
+  `CORE.c`, `CORE.d` and `CORE.e` settings alike, so it is available in every language revision.
+- It is not a leftover: the core `await` (`src/core.d/await.rakumod`) and the core Promise, Channel
+  and Supply coercers (`src/core.c/Promise.rakumod`, `Channel.rakumod`, `Supply-coercers.rakumod`)
+  consume or produce it. It came in with the non-blocking `await` of 6.d
+  (rakudo/rakudo PR #1004).
+- A search of rakudo/rakudo issues and pull requests for `Awaitable::Handle`, `get-await-handle`
+  and `Awaitable` plus "deprecate" finds no deprecation, removal or redesign proposal. The open
+  `Awaitable` items concern Promise helpers (#5892, #5919, #5917), not the handle protocol. Nothing
+  in Raku/problem-solving mentions it.
+- It is not documented in `raku-doc` or roast, which is why the exception is needed at all; the
+  absence of a deprecation is therefore evidence from rakudo's source and tracker, not from a
+  specification.
+
+Risk accepted: the protocol is an implementation detail that rakudo could change without a
+language-level deprecation. Mitigation: the implementation keeps the contract measured in §2, and
+the real-distribution load (Async::Workers) stays the acceptance test, so a rakudo change shows up
+in the ecosystem sweep as a baseline difference.
