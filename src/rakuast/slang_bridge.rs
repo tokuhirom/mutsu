@@ -261,7 +261,10 @@ mod method_def_tests {
         let found = super::parse_production("method-def", " bub { return 12 } }\n");
         match found {
             Ok(Some((len, _))) => assert!(len > 0),
-            other => panic!("method-def production: {:?}", other.map(|o| o.map(|(l, _)| l))),
+            other => panic!(
+                "method-def production: {:?}",
+                other.map(|o| o.map(|(l, _)| l))
+            ),
         }
     }
 }
