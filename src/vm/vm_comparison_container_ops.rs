@@ -180,7 +180,8 @@ impl Interpreter {
         };
         if std::env::var_os("MUTSU_DBG_EQ").is_some() && right.to_string_value() == "(Any)" && left.to_string_value() == "(Any)" {
             let own = self.find_local_slot(code, name).map(|slot| self.locals.get(slot).map(|v| v.is_container_ref()));
-            eprintln!("DBGEQ2 name={name} denotes={denotes_container} own_is_cell={own:?} left_cell={} right_cell={} ident={}", left.is_container_ref(), right.is_container_ref(), crate::runtime::values_identical(&left, &right));
+            let cellname = self.find_local_slot(code, name).and_then(|slot| self.locals.get(slot)).and_then(|v| match v.view() { ValueView::ContainerRef(c) => Some(format!("{:?}/{}", c.descriptor_name().map(|s| s.as_str()), c.load().to_string_value())), _ => None });
+            eprintln!("DBGEQ2 cellname={cellname:?} name={name} denotes={denotes_container} own_is_cell={own:?} left_cell={} right_cell={} ident={}", left.is_container_ref(), right.is_container_ref(), crate::runtime::values_identical(&left, &right));
         }
         let result = if denotes_container {
             false
