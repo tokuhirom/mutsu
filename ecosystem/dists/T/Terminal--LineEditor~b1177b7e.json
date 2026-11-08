@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.59,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 10.29,
+        "secs": 13.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 174,
         "plan": 174,
-        "secs": 0.16,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 174,
         "plan": 174,
-        "secs": 0.66,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 141,
         "plan": 141,
-        "secs": 0.15,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,6 +74,50 @@
         "nok": 0,
         "ok": 141,
         "plan": 141,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 251,
+        "plan": 251,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-single-line-text-input.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 251,
+        "plan": 251,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 44,
+        "plan": 44,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-duospace-layout.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 44,
+        "plan": 44,
         "secs": 0.66,
         "skip": 0,
         "todo": 0,
@@ -84,53 +128,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 251,
-        "plan": 251,
-        "secs": 0.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-single-line-text-input.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 251,
-        "plan": 251,
-        "secs": 0.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 44,
-        "plan": 44,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/10-duospace-layout.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 44,
-        "plan": 44,
-        "secs": 0.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 0.26,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 0.64,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,7 +160,7 @@
     "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

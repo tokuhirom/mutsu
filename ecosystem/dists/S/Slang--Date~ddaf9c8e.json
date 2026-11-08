@@ -9,16 +9,39 @@
     "unresolved": []
   },
   "dist": "Slang::Date",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Slang::Date": "Runtime error: slang activation for 'Slang::Date' failed: Slang activation NYI: grammar rule override 'value:sym<date>' is not supported by this implementation (recognized: term:sym<identifier>, metho"
+    "Slang::Date": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -29,12 +52,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANG_DATE/e5ddb56e864cb443e073a07b5f4589e9487b4888.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.4"

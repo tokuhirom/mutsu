@@ -42,7 +42,7 @@
         "nok": 3,
         "ok": 0,
         "plan": 3,
-        "secs": 32.92,
+        "secs": 44.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/10-Pleroma.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/UtFd6_zR_I: Read-only file system",
+        "first_failure": "Failed to open file /tmp/gIY23zWB_A: Read-only file system",
         "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 3.21,
+        "secs": 4.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
     "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

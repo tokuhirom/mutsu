@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,29 +26,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 8.72,
+        "secs": 10.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "PROCESSING: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-74oirqlk/dist/LIVR-2.3.0/t/test_suite/positive",
         "nok": 0,
-        "ok": 70,
-        "plan": 70,
-        "secs": 2.55,
+        "ok": 115,
+        "plan": null,
+        "secs": 7.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-livr-test-suite.t",
       "raku": {
         "nok": 0,
-        "ok": 70,
-        "plan": 70,
-        "secs": 3.91,
+        "ok": 331,
+        "plan": 331,
+        "secs": 16.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +61,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.34,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +71,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.06,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +83,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.38,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,28 +93,6 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/04-custom-filters.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
         "secs": 1.02,
         "skip": 0,
         "todo": 0,
@@ -126,7 +105,29 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.35,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-custom-filters.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +137,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.12,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +149,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.37,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +159,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.12,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +171,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +181,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.78,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +194,7 @@
         "nok": 0,
         "ok": 11,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +204,30 @@
         "nok": 0,
         "ok": 40,
         "plan": 40,
-        "secs": 2.64,
+        "secs": 2.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Meta rules and aliases use the same clock",
+        "nok": 2,
+        "ok": 10,
+        "plan": 12,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/10-livr-2.5.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,7 +237,11 @@
   "load": {
     "LIVR": "ok",
     "LIVR::Regex": "ok",
+    "LIVR::Rules::Checksum": "ok",
     "LIVR::Rules::Common": "ok",
+    "LIVR::Rules::Dates": "ok",
+    "LIVR::Rules::Format": "ok",
+    "LIVR::Rules::List": "ok",
     "LIVR::Rules::Meta": "ok",
     "LIVR::Rules::Modifiers": "ok",
     "LIVR::Rules::Numeric": "ok",
@@ -224,10 +252,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-06",
+    "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -236,15 +264,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/L/IV/LIVR/e06dac1b96ea7362aee4fc935ac50a289c838833.tar.gz"
+    "url": "https://360.zef.pm/L/IV/LIVR/12a95fcc2cc2bb9f62ce7f500c0c576d0591808c.tar.gz"
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 127,
-    "baseline_files": 9,
-    "mutsu_assertions": 98,
-    "parity_files": 8,
-    "regressed_files": 1
+    "baseline_assertions": 400,
+    "baseline_files": 10,
+    "mutsu_assertions": 153,
+    "parity_files": 7,
+    "regressed_files": 3
   },
-  "version": "2.2.1"
+  "version": "2.3.0"
 }

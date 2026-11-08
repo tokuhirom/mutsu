@@ -16,11 +16,11 @@
       "cmp": "no_baseline",
       "path": "t/01-smoke.rakutest",
       "raku": {
-        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fyw7i5rb/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
+        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-9x91bmo4/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 20.14,
+        "secs": 20.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,11 +30,11 @@
       "cmp": "no_baseline",
       "path": "t/02-known-inputs.rakutest",
       "raku": {
-        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fyw7i5rb/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
+        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-9x91bmo4/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.57,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,11 +44,11 @@
       "cmp": "no_baseline",
       "path": "t/03-edge-cases.rakutest",
       "raku": {
-        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fyw7i5rb/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
+        "first_failure": "[LLM::Classifiers::Emotions] Model not staged at /home/runner/.cache/mutsu-ecosystem/run/ecosweep-9x91bmo4/sbxhome/.local/share/LLM-Classifiers-Emotions/binaries-cohee-goemotions-d22488bc-r1. Reinstal",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.59,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -58,11 +58,11 @@
       "cmp": "no_baseline",
       "path": "t/04-notices.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/lce-notices-2-856128' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/lce-notices-2-592840' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.94,
+        "secs": 4.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,10 +74,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-06",
+    "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

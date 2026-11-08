@@ -11,14 +11,14 @@
   "dist": "T",
   "files": [],
   "load": {
-    "T": "Runtime error: slang activation for 'T' failed: Slang activation NYI: grammar rule override 'statement_control:sym<t>' is not supported by this implementation (recognized: term:sym<identifier>, method"
+    "T": "Runtime error: slang activation for 'T' failed: Slang activation NYI: grammar rule override 'test' is not supported by this implementation (recognized: term:sym<identifier>, methodop, routine-declarat"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5af4b0ee",
+    "mutsu_commit": "8e0cda90",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
