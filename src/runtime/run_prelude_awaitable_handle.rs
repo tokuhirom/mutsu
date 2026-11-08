@@ -30,6 +30,24 @@ role GLOBAL::Awaitable::Handle {
     }
     method subscribe-awaiter(&subscriber) {...}
 }
+# `await` turns a handle into a Promise and waits on that, so a settled
+# handle, a pending one and a failed one all go through the one Promise
+# settlement and `X::Await::Died` path.
+module MUTSU_AWAIT {
+    our sub handle-promise(Mu \handle) {
+        my $promise = Promise.new;
+        my $vow = $promise.vow;
+        if handle.already {
+            handle.success ?? $vow.keep(handle.result) !! $vow.break(handle.cause);
+        }
+        else {
+            handle.subscribe-awaiter(-> $success, $result {
+                $success ?? $vow.keep($result) !! $vow.break($result);
+            });
+        }
+        $promise
+    }
+}
 "#;
 
 impl Interpreter {
