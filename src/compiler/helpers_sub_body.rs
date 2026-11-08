@@ -958,7 +958,9 @@ impl Compiler {
             // (`{ @a[$s .. 2] }`, `{ @a[-> $n { ... }] }`) is evaluated as a
             // value so its exceptions are raised where raku raises them.
             return match expr {
-                Expr::Var(_) => true,
+                // A readonly parameter (`-> $y { $y }`) is a value, not a
+                // container to hand out: read it plainly.
+                Expr::Var(name) => !self.block_value_params.contains(name.as_str()),
                 Expr::Index { index, .. } => matches!(
                     index.peel_parens(),
                     Expr::Var(_) | Expr::Literal(_) | Expr::BareWord(_)
@@ -1071,7 +1073,10 @@ impl Compiler {
             }
         ) && (name == "__ANON_STATE#"
             || crate::ast::anon_state::is_scalar(name));
-        if self.rw_tail && !self.rw_tail_block && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
+        if self.rw_tail
+            && !self.rw_tail_block
+            && !is_bind_decl
+            && (Self::is_plain_lexical_name(name) || anonymous_scalar)
         {
             self.emit_wrap_var_ref(name);
             self.code.emit(OpCode::CaptureVarCell);
@@ -1091,7 +1096,10 @@ impl Compiler {
         binding_var: &Option<String>,
         is_statement_modifier: bool,
     ) {
-        let saved = std::mem::replace(&mut self.rw_tail_branch, self.rw_tail && !self.rw_tail_block);
+        let saved = std::mem::replace(
+            &mut self.rw_tail_branch,
+            self.rw_tail && !self.rw_tail_block,
+        );
         self.compile_if_value(
             cond,
             then_branch,
@@ -1107,7 +1115,8 @@ impl Compiler {
     /// taken `when`/`default` (or its own last statement) yields is the
     /// routine's return, so that tail compiles as a container (#9060).
     pub(super) fn compile_routine_stmt(&mut self, stmt: &Stmt, is_tail: bool) {
-        self.rw_tail_branch = is_tail && self.rw_tail && !self.rw_tail_block && matches!(stmt, Stmt::Given { .. });
+        self.rw_tail_branch =
+            is_tail && self.rw_tail && !self.rw_tail_block && matches!(stmt, Stmt::Given { .. });
         self.compile_stmt(stmt);
         self.rw_tail_branch = false;
     }
@@ -1529,6 +1538,32 @@ impl Compiler {
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.rw_tail_block = rw_tail_block;
+        if rw_tail_block {
+            sub_compiler.block_value_params = param_defs
+                .iter()
+                .filter(|pd| {
+                    !pd.name.is_empty()
+                        && !pd.sigilless
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.name.starts_with(['@', '%', '&'])
+                        && !pd
+                            .traits
+                            .iter()
+                            .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
+                })
+                .map(|pd| pd.name.clone())
+                .collect();
+            // A parameter with no `ParamDef` (a placeholder / simple pointy
+            // parameter) has no traits: it is a plain value parameter.
+            for p in params {
+                if !param_defs.iter().any(|pd| &pd.name == p) {
+                    sub_compiler
+                        .block_value_params
+                        .insert(p.trim_start_matches('$').to_string());
+                }
+            }
+        }
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
         sub_compiler.decl_initializer_aggregates = self.decl_initializer_aggregates.clone();
         self.inherit_fold_ctx(&mut sub_compiler);

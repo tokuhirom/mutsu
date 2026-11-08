@@ -242,6 +242,11 @@ impl Interpreter {
     // Cost: O(1) when `name` is not an alias (no allocation); O(c) for a chain
     // of c aliases.
     pub(crate) fn resolve_alias_root<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
+        // The topic is never itself the left side of a `:=` alias, and a block
+        // returning `$_` resolves it once per call.
+        if name == "_" {
+            return std::borrow::Cow::Borrowed(name);
+        }
         let key = crate::runtime::sigilless_alias_key(name);
         if !matches!(
             self.env().get_sym(key).map(Value::view),

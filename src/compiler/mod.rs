@@ -1695,6 +1695,9 @@ pub(crate) struct Compiler {
     /// denotes, as for an `is rw` routine, but no other tail shape is
     /// (an assignment, `if`/`given` branches and ternaries stay values).
     rw_tail_block: bool,
+    /// The plain (non-`rw`/`raw`/`copy`) scalar parameters of a Block body:
+    /// a bare tail naming one reads its value (see [`Self::rw_tail_block`]).
+    block_value_params: std::collections::HashSet<String>,
     /// ADR-0059 Slice 2, extended to conditionals (#9060): set while compiling
     /// the value-position branches of an `if`/`elsif`/`else` that IS the tail
     /// of an `is rw` routine body. The taken branch's own tail expression is
@@ -2235,6 +2238,7 @@ impl Compiler {
             rw_tail: false,
             rw_tail_elems_only: false,
             rw_tail_block: false,
+            block_value_params: std::collections::HashSet::new(),
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
