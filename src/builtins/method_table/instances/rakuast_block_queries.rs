@@ -32,6 +32,13 @@ fn replace_body(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeE
 }
 
 // Cost: O(f), f = fields of the node.
+fn replace_signature(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target.rakuast_edit(|node| {
+        crate::rakuast::block_queries::replace_signature(node, &args[0]).map(|()| Value::NIL)
+    })
+}
+
+// Cost: O(f), f = fields of the node.
 fn otherwise(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
         ValueView::RakuAst(node) => Some(crate::rakuast::for_otherwise::otherwise(node)),
@@ -46,6 +53,15 @@ fn replace_otherwise(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `Routine.replace-signature`; `Submethod` inherits `Method`'s.
+    MethodRow {
+        owner: "RakuAST::Routine",
+        name: "replace-signature",
+        arity: 1,
+        handler: Handler::Narrow(replace_signature),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::PlaceholderParameterOwner",
         name: "has-placeholder-parameters",

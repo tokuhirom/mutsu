@@ -32,6 +32,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "statement" || (rule == "blorst" && !text.starts_with('{')) {
         return statement_production(text);
     }
+    if rule == "blockoid" {
+        return blockoid_production(text);
+    }
     let rule = if rule == "blorst" { "block" } else { rule };
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
@@ -40,6 +43,24 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     };
     let node = production_node(&stmt).map_err(|e| e.message.to_string())?;
     Ok(Some((text.len() - rest.len(), node)))
+}
+
+/// The `<blockoid>` core rule: the braces and statements at the start of `text`
+/// as the `RakuAST::Blockoid` of the block they parse to.
+// Cost: O(n), n = size of the block (parse and conversion).
+fn blockoid_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((len, block)) = parse_production("block", text)? else {
+        return Ok(None);
+    };
+    let body = match block.view() {
+        ValueView::RakuAst(node) => node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+            (Some("body"), RakuAstFieldValue::Node(v)) => Some(v.clone()),
+            _ => None,
+        }),
+        _ => None,
+    };
+    body.map(|b| Some((len, b)))
+        .ok_or_else(|| "slang shim: the block has no body".to_string())
 }
 
 /// The `<statementlist>` core rule: the statements at the start of `text` as a
@@ -156,10 +177,20 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
     };
     let names = NameScope::default();
     let lowered = super::lower::lower_fragment(&names, node)?;
+    // A production that attaches an expression stands for a statement: rakudo's
+    // `statement` action wraps it in a `Statement::Expression`, so a tree that
+    // keeps the node (a block body a slang deparses) lists it as one.
+    let kept = if super::hierarchy::does(node.class.printed_name(), "RakuAST::Expression")
+        == Some(true)
+    {
+        super::view::statement_expression(RakuAstNode::clone(node))
+    } else {
+        RakuAstNode::clone(node)
+    };
     Ok(Stmt::Ast(Box::new(
         crate::ast::parsed::ParsedStmt::Lowered {
             stmt: Box::new(lowered),
-            node: Value::rakuast(Box::new(RakuAstNode::clone(node))),
+            node: Value::rakuast(Box::new(kept)),
         },
     )))
 }
