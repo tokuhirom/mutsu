@@ -487,6 +487,8 @@ impl Interpreter {
             stmts.insert(prologue_len, Stmt::BeginPrologueEnd);
         }
         Self::insert_run_check_code(&mut stmts, prologue_len);
+        // An `our` in a branch that never runs still has its package symbol.
+        self.preinstall_unit_our_symbols(&stmts);
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
         // of the snippet too (#13137), as for the mainline (#13091).

@@ -1,0 +1,3 @@
+# An EVAL'd unit installs the package symbol of an `our` in a dead branch
+
+`EVAL 'if False { our @a }; OUR::<@a>.elems'` answered 1 (a missing stash entry read as `Any`); rakudo installs the symbol when the unit is compiled, so the answer is 0, and a dead-branch `our %h`, `our $o` and one inside a `class` / `module` body are present too. The main program already did this before it ran (`EndWalker::install_our_symbol`); an EVAL'd unit, string or `EVAL($ast)`, now does the same walk over its statements before it runs (`preinstall_unit_our_symbols`; its ENDs still register when reached). Test: `t/lang/eval-dead-branch-our-symbol.t`; `our-in-dead-branch-is-installed.t` and `package-stash-keyed-read.t` join the `EVAL(.AST)` ratchet.
