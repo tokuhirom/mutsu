@@ -189,6 +189,9 @@ impl Interpreter {
         };
         // `.head(n)` / `.first` pull only the prefix they need from the Seq.
         let elements = match self.take_seq_prefix(&elements, method, args) {
+            Ok(Some(prefix)) if Self::is_lazy_head_result(&prefix, method, args) => {
+                return Some(Ok(prefix));
+            }
             Ok(Some(prefix)) => prefix,
             Ok(None) => elements,
             Err(err) => return Some(Err(err)),
