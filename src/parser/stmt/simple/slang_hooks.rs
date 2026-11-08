@@ -404,6 +404,24 @@ pub(crate) fn parse_slang_shim_production<'a>(
 ) -> Option<Result<(&'a str, Stmt), String>> {
     match rule {
         "block" => Some(super::block_stmt(text).map_err(|e| e.to_string())),
+        // `<routine-def=.key-origin('routine-def', 'sub')>`: the rest of a `sub`
+        // declaration after its keyword, which a slang spells as it likes
+        // (`lambda`, `λ`).
+        "routine-def" => Some(
+            ws(text)
+                .and_then(|(text, _)| {
+                    crate::parser::stmt::sub::sub_decl_body(text, false, false, false)
+                })
+                .map_err(|e| e.to_string()),
+        ),
+        // The same for the rest of a `method` declaration (`def`, `method`).
+        "method-def" => Some(
+            ws(text)
+                .and_then(|(text, _)| {
+                    crate::parser::stmt::sub_param::method_decl_body(text, false, false)
+                })
+                .map_err(|e| e.to_string()),
+        ),
         _ => None,
     }
 }

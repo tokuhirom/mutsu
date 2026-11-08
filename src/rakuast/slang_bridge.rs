@@ -252,3 +252,19 @@ fn apply_action(rule: &str, expr: &Expr, source: &str) -> Result<Expr, RuntimeEr
         .map_err(|e| RuntimeError::new(format!("slang action {rule}: {e}")))?;
     lower_expression(&attached)
 }
+
+#[cfg(test)]
+mod method_def_tests {
+    #[test]
+    fn a_method_definition_after_its_keyword_becomes_a_node() {
+        let _scan = crate::parser::term_origins::Wanted::enter();
+        let found = super::parse_production("method-def", " bub { return 12 } }\n");
+        match found {
+            Ok(Some((len, _))) => assert!(len > 0),
+            other => panic!(
+                "method-def production: {:?}",
+                other.map(|o| o.map(|(l, _)| l))
+            ),
+        }
+    }
+}
