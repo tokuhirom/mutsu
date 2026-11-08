@@ -12,7 +12,7 @@
 //!
 //! The `Int` answers are rakudo's own types and are kept.
 
-use super::{hierarchy, RakuAstClass, RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, hierarchy};
 use crate::value::{Value, ValueView};
 
 /// Classes (or roles) whose `needs-sink-call` is `False`.
