@@ -3306,6 +3306,7 @@ t/modules/import-export/enum-slip-value-term-without-use.t
 t/modules/import-export/eqv-hook-export-scoped-to-importer.t
 t/modules/import-export/eval-use-export-hook-before-check.t
 t/modules/import-export/eval-use-export-hook-term.t
+t/modules/import-export/eval-use-export-stash-names.t
 t/modules/import-export/eval-use-lib-before-export-hook-use.t
 t/modules/import-export/export-alias-resolution-cache.t
 t/modules/import-export/export-all-stash-scalar-keys.t
@@ -3349,6 +3350,7 @@ t/modules/import-export/export-stash-manual-our-sub.t
 t/modules/import-export/export-stash-named-keyed-assign.t
 t/modules/import-export/export-stash-our-bind-computed.t
 t/modules/import-export/export-stash-our-bind-literal.t
+t/modules/import-export/export-stash-our-var.t
 t/modules/import-export/export-sub-infix-operator-closure.t
 t/modules/import-export/export-sub-returns-stash.t
 t/modules/import-export/export-sub-selective-lexical-multi.t
@@ -3658,6 +3660,7 @@ t/modules/leading-colon-package-symbolic-scalar.t
 t/modules/lexical-class-trusts-in-module-file.t
 t/modules/lexical-package-kind-redeclared.t
 t/modules/lexsub-routine-frame-def-file-is-declaring-module.t
+t/modules/lowercase-module-use-at-begin.t
 t/modules/lvalue-accessor-assign-module-lexical-vs-caller-closure.t
 t/modules/method-body-package-nested-class-subs.t
 t/modules/method-lexical-package-type-collision.t
@@ -4841,6 +4844,7 @@ t/oo/method/date-method-rows.t
 t/oo/method/datetime-method-rows.t
 t/oo/method/declared-owner-method-rows.t
 t/oo/method/declares-method-on-mixed-in-how.t
+t/oo/method/definite-type-method-assign-v6c.t
 t/oo/method/definite-type-method-assign-v6d.t
 t/oo/method/depspec-method-rows.t
 t/oo/method/destroy-plain-method.t
@@ -6204,6 +6208,7 @@ t/rakuast/rakuast-eval-source-diagnostics.t
 t/rakuast/rakuast-eval-sub.t
 t/rakuast/rakuast-eval-subscript.t
 t/rakuast/rakuast-eval-ternary.t
+t/rakuast/rakuast-eval-tree-language-version.t
 t/rakuast/rakuast-eval-try.t
 t/rakuast/rakuast-eval-typed-param.t
 t/rakuast/rakuast-eval-typeterm.t
@@ -9330,6 +9335,7 @@ t/vm/binding/const-fold-infix-override.t
 t/vm/binding/const-fold.t
 t/vm/binding/const-inline-dce.t
 t/vm/binding/constant-alias-return-type.t
+t/vm/binding/constant-before-unit-visible-to-importer.t
 t/vm/binding/constant-begin-initializer.t
 t/vm/binding/constant-elsif-statement-boundary.t
 t/vm/binding/constant-hash-bound-to-hash-stays-mutable.t

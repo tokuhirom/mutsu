@@ -152,6 +152,11 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
                 // the parser leaves beside the declaration.
                 let rest = take_unit_package_body(&mut stmt);
                 crate::parser::register_rakuast_user_sub_binding(&stmt);
+                // The rest of the unit is lowered under the revision it asks
+                // for (a tree has no parse that set it).
+                if let Some(version) = crate::parser::language_version_of_use(&stmt) {
+                    crate::parser::set_current_language_version(&version);
+                }
                 stmts.push(stmt);
                 stmts.extend(rest);
             }

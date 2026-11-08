@@ -326,14 +326,20 @@ pub(super) fn unit_scope_routine_names(code: &str) -> Vec<String> {
     names
 }
 
-/// Is there a column-0 `[my|our] sub EXPORT\b`?
+/// Is there a column-0 `[my|our] sub EXPORT\b`, or a `package EXPORT::<tag>`
+/// stash?
 // Cost: O(n), n = source length.
 pub(super) fn declares_export_sub(code: &str) -> bool {
     line_starts(code).any(|at| {
-        line_start_sub(code, at, &[]).into_iter().any(|name_at| {
-            let end = name_at + "EXPORT".len();
-            code[name_at..].starts_with("EXPORT") && boundary(Some('T'), next_char(code, end))
-        })
+        // The manual export-stash idiom: `package EXPORT::DEFAULT { our $x }`
+        // fills the import set as a hook does, with names a scan cannot list.
+        ["package EXPORT::", "module EXPORT::"]
+            .iter()
+            .any(|stash| code[at..].starts_with(stash))
+            || line_start_sub(code, at, &[]).into_iter().any(|name_at| {
+                let end = name_at + "EXPORT".len();
+                code[name_at..].starts_with("EXPORT") && boundary(Some('T'), next_char(code, end))
+            })
     })
 }
 

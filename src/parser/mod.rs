@@ -427,7 +427,10 @@ pub(crate) fn language_version_of_use(stmt: &Stmt) -> Option<String> {
     let crate::value::ValueView::Str(written) = written.view() else {
         return None;
     };
-    Some(stmt::decl::normalize_language_version(&format!("v{}", written.as_str())))
+    Some(stmt::decl::normalize_language_version(&format!(
+        "v{}",
+        written.as_str()
+    )))
 }
 
 pub(crate) fn set_current_language_version(version: &str) {
