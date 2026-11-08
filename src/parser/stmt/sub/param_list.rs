@@ -101,10 +101,9 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
             || name_without_sigil.starts_with("__ANON_")
             // A bare `::T` is a placeholder too, but it declares `T`: two of
             // them are a redeclaration.
-            || matches!(
-                name.as_str(),
-                crate::ast::TYPE_ONLY_PARAM | crate::ast::LITERAL_PARAM | crate::ast::PARENS_PARAM
-            )
+            || p.is_type_only()
+            || p.is_literal()
+            || p.is_parens()
         {
             continue;
         }

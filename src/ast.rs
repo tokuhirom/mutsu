@@ -207,6 +207,8 @@ pub(crate) enum ParamTarget {
     Brackets,
     /// A bare sigil with no name: `$`, `@` or `%` (the character).
     Anonymous(char),
+    /// A literal-value parameter: `multi f(0)`, `-> 'add' { }`.
+    Literal,
 }
 
 impl ParamTarget {
@@ -218,6 +220,7 @@ impl ParamTarget {
             ANON_SCALAR_PARAM => ParamTarget::Anonymous('$'),
             ANON_ARRAY_PARAM => ParamTarget::Anonymous('@'),
             ANON_HASH_PARAM => ParamTarget::Anonymous('%'),
+            LITERAL_PARAM => ParamTarget::Literal,
             _ => ParamTarget::Variable,
         }
     }
@@ -550,6 +553,12 @@ impl ParamDef {
     // Cost: O(1).
     pub(crate) fn is_bare_type_capture(&self) -> bool {
         self.target == ParamTarget::TypeCapture
+    }
+
+    /// True for a literal-value parameter (`multi f(0)`).
+    // Cost: O(1).
+    pub(crate) fn is_literal(&self) -> bool {
+        self.target == ParamTarget::Literal
     }
 
     /// True for an anonymous `(…)` destructuring parameter.
@@ -4091,6 +4100,13 @@ pub struct PackageMarks {
 #[cfg(test)]
 mod placeholder_tests {
     use super::*;
+
+    #[test]
+    fn a_literal_placeholder_records_its_form() {
+        assert_eq!(ParamTarget::of_name(LITERAL_PARAM), ParamTarget::Literal);
+        assert!(ParamDef::blank(LITERAL_PARAM.to_string()).is_literal());
+        assert!(!ParamDef::blank("x".to_string()).is_literal());
+    }
 
     #[test]
     fn placeholder_names_are_recognised_in_one_place() {

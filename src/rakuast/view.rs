@@ -4813,13 +4813,8 @@ fn parameter(
     if let Some(value) = &pd.literal_value {
         return super::literal_parameter::view_node(names, pd, value);
     }
-    if let Some(num) = super::literal_parameter::special_num(pd) {
-        let literal = crate::ast::ParamDef {
-            name: super::literal_parameter::NAME.to_string(),
-            type_constraint: None,
-            ..pd.clone()
-        };
-        return super::literal_parameter::view_node(names, &literal, &Value::num(num));
+    if let Some(node) = super::literal_parameter::special_num_view(names, pd) {
+        return node;
     }
     let type_capture = match type_capture_name(pd) {
         Some(name) => Some(type_capture_node(names, name)?),

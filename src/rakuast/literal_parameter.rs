@@ -32,7 +32,7 @@ pub(super) fn view_node(
     pd: &ParamDef,
     value: &Value,
 ) -> Result<RakuAstNode, RuntimeError> {
-    if pd.name != NAME {
+    if !pd.is_literal() {
         return Err(unsupported("literal-value parameter of another kind"));
     }
     let inferred =
@@ -65,6 +65,23 @@ pub(super) fn special_num(pd: &ParamDef) -> Option<f64> {
         "NaN" => Some(f64::NAN),
         _ => None,
     }
+}
+
+/// The literal-parameter view of `sub f(Inf)` / `sub f(NaN)` (a type-only
+/// parameter of that type), or `None` for any other parameter.
+// Cost: O(1).
+pub(super) fn special_num_view(
+    names: &NameScope,
+    pd: &ParamDef,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
+    let num = special_num(pd)?;
+    let literal = ParamDef {
+        name: NAME.to_string(),
+        target: crate::ast::ParamTarget::Literal,
+        type_constraint: None,
+        ..pd.clone()
+    };
+    Some(view_node(names, &literal, &Value::num(num)))
 }
 
 /// The parser's type name for a `Num` literal parameter it reads as a type
