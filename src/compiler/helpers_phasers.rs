@@ -1,23 +1,25 @@
 use super::*;
 
 impl Compiler {
-    /// Whether `body` only applies the traits of a variable
-    /// (`begin_prologue::lift_unit_var_traits`): its `Stmt::VarTrait` steps,
-    /// possibly inside a block the lifter wrapped them in.
-    // Cost: O(n), n = statements of `body` and of the blocks wrapped in it.
+    /// Whether `body` applies the traits of a variable
+    /// (`begin_prologue::lift_unit_var_traits`): it holds a `Stmt::VarTrait`
+    /// step, possibly inside the blocks the lifter wrapped it in.
+    // Cost: O(n), n = size of `body`'s AST.
     pub(super) fn is_var_trait_application(body: &[Stmt]) -> bool {
-        body.iter().any(|s| match s {
-            Stmt::VarTrait { .. } => true,
-            Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
-                Self::is_var_trait_application(inner)
+        use crate::ast_visit::Visit;
+        struct Finder(bool);
+        impl<'ast> Visit<'ast> for Finder {
+            fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+                if matches!(stmt, Stmt::VarTrait { .. }) {
+                    self.0 = true;
+                } else if !self.0 {
+                    crate::ast_visit::walk_stmt(self, stmt);
+                }
             }
-            // The lifter's value slot: `my $tmp = do { ...steps... }`.
-            Stmt::Assign {
-                expr: Expr::DoBlock { body, .. },
-                ..
-            } => Self::is_var_trait_application(body),
-            _ => false,
-        })
+        }
+        let mut finder = Finder(false);
+        finder.visit_stmts(body);
+        finder.0
     }
 
     /// Compile a CHECK phaser body wrapped in error-catching logic.
