@@ -24,11 +24,28 @@ fn doc_type() -> Value {
     Value::package(crate::symbol::Symbol::intern("RakuAST::Doc::Declarator"))
 }
 
+/// The classes that do `RakuAST::Doc::DeclaratorTarget` on rakudo 2026.09 but
+/// take no `WHY` constructor argument (measured with `.^lookup('WHY')`).
+// Cost: O(1).
+fn is_declarator_target(class: &str) -> bool {
+    matches!(
+        class,
+        "RakuAST::VarDeclaration::Anonymous"
+            | "RakuAST::VarDeclaration::Constant"
+            | "RakuAST::VarDeclaration::Term"
+    )
+}
+
 /// `WHY`: the stored documentation; else, for a parsed declaration, the
 /// `Doc::Declarator` built from its `#|` / `#=` comments; else the
 /// `Doc::Declarator` type object.
 // Cost: O(f + l), f = fields of the node, l = lines of its comments.
 pub(crate) fn why(node: &RakuAstNode) -> Value {
+    // Only a `Doc::DeclaratorTarget` has docs; any other node answers `Nil`.
+    let class = node.class.printed_name();
+    if !is_declarator_target(class) && !super::ctor_names::declares(class, FIELD) {
+        return Value::NIL;
+    }
     if let Some(value) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
         (Some(FIELD), RakuAstFieldValue::Node(value)) => Some(value.clone()),
         _ => None,
@@ -47,20 +64,21 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::DocDeclarator,
-        fields: vec![
-            RakuAstField {
-                name: Some("WHEREFORE"),
-                value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
-            },
-            RakuAstField {
-                name: Some("leading"),
-                value: list(leading),
-            },
-            RakuAstField {
-                name: Some("trailing"),
-                value: list(trailing),
-            },
-        ],
+        fields: [RakuAstField {
+            name: Some("WHEREFORE"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
+        }]
+        .into_iter()
+        // Rakudo prints only the part the source wrote.
+        .chain((!leading.is_empty()).then(|| RakuAstField {
+            name: Some("leading"),
+            value: list(leading),
+        }))
+        .chain((!trailing.is_empty()).then(|| RakuAstField {
+            name: Some("trailing"),
+            value: list(trailing),
+        }))
+        .collect(),
     }))
 }
 
