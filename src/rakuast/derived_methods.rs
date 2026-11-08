@@ -143,9 +143,11 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         // `original-type` is before a `where`/coercion rewrite of `type`.
         (VarDeclarationSimple | VarDeclarationAnonymous, "original-type") => {
             // The type object `RakuAST::Type` when none was written, as `type`.
-            Some(field(node, "type").unwrap_or_else(|| {
-                Value::package(crate::symbol::Symbol::intern("RakuAST::Type"))
-            }))
+            Some(
+                field(node, "type").unwrap_or_else(|| {
+                    Value::package(crate::symbol::Symbol::intern("RakuAST::Type"))
+                }),
+            )
         }
         // The type written before a signature declaration (`my Int ($a, $b)`),
         // Nil when none was.
@@ -234,18 +236,21 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         }
         // `$x.^name` with no arguments has an empty argument list.
         // A coercion without a source type (`Int()`) constrains by `Any`.
-        (TypeCoercion, "constraint") => Some(field(node, "constraint").unwrap_or_else(|| {
-            Value::rakuast(Box::new(super::view::type_setting_any()))
-        })),
+        (TypeCoercion, "constraint") => Some(
+            field(node, "constraint")
+                .unwrap_or_else(|| Value::rakuast(Box::new(super::view::type_setting_any()))),
+        ),
         // The declaration without the compiler's attachments: the node itself.
         (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(node.clone()))),
-        (CallMetaMethod | CallQuotedMethod, "args") => Some(field(node, "args").unwrap_or_else(|| {
-            Value::rakuast(Box::new(RakuAstNode {
-                class: ArgList,
-                fields: Vec::new(),
-                origin: Default::default(),
+        (CallMetaMethod | CallQuotedMethod, "args") => {
+            Some(field(node, "args").unwrap_or_else(|| {
+                Value::rakuast(Box::new(RakuAstNode {
+                    class: ArgList,
+                    fields: Vec::new(),
+                    origin: Default::default(),
+                }))
             }))
-        })),
+        }
         (StubFail, "name") => Some(Value::str_from("...")),
         (StubDie, "name") => Some(Value::str_from("!!!")),
         (StubWarn, "name") => Some(Value::str_from("???")),
