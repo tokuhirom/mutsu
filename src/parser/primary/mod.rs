@@ -853,6 +853,19 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
             let source = &input[..input.len() - rest.len()];
             crate::parser::stmt::simple::numish_hook(expr, source).map(|expr| (rest, expr))
         }
+        // The numish forms that are not numbers to the Rust parser's number rules
+        // but are `numish` to the grammar: `NaN`, `Inf`, `∞`, `<1/2>`, `<1+2i>`.
+        fn numish_slang_literal<'a>(
+            input: &'a str,
+            parsed: PResult<'a, Expr>,
+        ) -> PResult<'a, Expr> {
+            let (rest, expr) = parsed?;
+            let source = &input[..input.len() - rest.len()];
+            if !is_special_numish_literal(source) {
+                return Ok((rest, expr));
+            }
+            crate::parser::stmt::simple::numish_hook(expr, source).map(|expr| (rest, expr))
+        }
         macro_rules! try_primary {
             ($expr:expr) => {
                 match $expr {
@@ -895,7 +908,7 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
         try_primary!(regex::version_lit(input));
-        try_primary!(ident::keyword_literal(input));
+        try_primary!(numish_slang_literal(input, ident::keyword_literal(input)));
         try_primary!(regex::topic_method_call(input));
         try_primary!(container::itemized_context_paren_expr(input));
         try_primary!(container::itemized_paren_expr(input));
@@ -915,7 +928,7 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
         try_primary!(misc::reduction_op(input));
         try_primary!(container::array_literal(input));
         try_primary!(container::double_angle_term(input));
-        try_primary!(container::angle_term(input));
+        try_primary!(numish_slang_literal(input, container::angle_term(input)));
         try_primary!(container::french_quote_term(input));
         try_primary!(ident::whatever(input));
         try_primary!(misc::capture_literal(input));
@@ -959,6 +972,33 @@ fn declare_keyword_term(input: &str) -> PResult<'_, Expr> {
     }
     let (rest, stmt) = crate::parser::stmt::class::declare_term_decl(input)?;
     Ok((rest, Expr::DoStmt(Box::new(stmt))))
+}
+
+/// Whether `source` is a numeric literal the grammar's `numish` covers without
+/// being an integer, decimal or radix number: `NaN`, `Inf`, `∞`, a rational
+/// `<1/2>` or a complex `<1+2i>`.
+// Cost: O(n), n = length of the literal.
+fn is_special_numish_literal(source: &str) -> bool {
+    if matches!(source, "NaN" | "Inf" | "∞") {
+        return true;
+    }
+    let Some(inner) = source.strip_prefix('<').and_then(|s| s.strip_suffix('>')) else {
+        return false;
+    };
+    let number = |s: &str| {
+        let s = s.strip_prefix(['+', '-']).unwrap_or(s);
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+    };
+    if let Some((num, den)) = inner.split_once('/') {
+        return number(num) && number(den);
+    }
+    inner.strip_suffix('i').is_some_and(|body| {
+        body.rfind(['+', '-'])
+            .filter(|at| *at > 0)
+            .is_some_and(|at| number(&body[..at]) && number(&body[at + 1..]))
+    })
 }
 
 #[cfg(test)]
