@@ -174,7 +174,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(
 /// the activation thread carries them. `None` when any argument is not a plain
 /// string/number/boolean literal or a `&sub` of the unit: such a `use` activates with no arguments, as
 /// it did before arguments were passed at all.
-use crate::runtime::slang_activation::SlangUseArg;
+use crate::runtime::slang_activation::{SlangRuleOverride, SlangUseArg};
 
 fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
     let items: &[Expr] = match arg.peel_parens() {
@@ -200,10 +200,7 @@ fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
 /// (`<name>`, `<.name>`, `<name=...>` and `$<x>=<name>` all contain `name>` or
 /// `name=` right after an opening `<`, optionally with a leading `.` or `?`/`!`).
 // Cost: O(r * n), r = overrides, n = size of a rule body.
-fn is_helper_of_other_rule(
-    name: &str,
-    overrides: &[crate::runtime::slang_activation::SlangRuleOverride],
-) -> bool {
+fn is_helper_of_other_rule(name: &str, overrides: &[SlangRuleOverride]) -> bool {
     let calls = [
         format!("<{name}>"),
         format!("<.{name}>"),
