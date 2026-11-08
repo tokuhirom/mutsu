@@ -119,6 +119,17 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Constant",
+        &[
+            "RakuAST::Constant",
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Contextualizer::Hash",
         &[
             "RakuAST::Contextualizer::Hash",
@@ -170,13 +181,5 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     (
         "RakuAST::Doc::Paragraph",
         &["RakuAST::Doc::Paragraph", "RakuAST::Doc", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::DottyInfix::Call",
-        &[
-            "RakuAST::DottyInfix::Call",
-            "RakuAST::DottyInfixish",
-            "RakuAST::Node",
-        ],
     ),
 ];
