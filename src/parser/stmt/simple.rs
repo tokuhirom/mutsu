@@ -130,12 +130,13 @@ pub(in crate::parser) use registry::{
 };
 pub(in crate::parser) use slang_hooks::{
     hooks_snapshot, numish_hook, register_action, register_hook, register_pointy_starters,
-    restore_hooks, set_activator, set_host as set_slang_host, statement_control_hook, term_hook,
+    register_wrapper, restore_hooks, set_activator, set_host as set_slang_host,
+    statement_control_hook, statementlist_wrapper, take_wrapper_back_call, term_hook,
 };
 pub(crate) use slang_hooks::{
     parse_pointy_starters, parse_slang_shim_production, parse_slang_signature,
     parse_slang_statementlist, pointy_starter, run_slang_action, slang_action_activator,
-    slang_action_rule, slang_hook_rule, slang_overrides_action,
+    slang_action_rule, slang_hook_rule, slang_overrides_action, slang_wrapper_rule,
 };
 pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};

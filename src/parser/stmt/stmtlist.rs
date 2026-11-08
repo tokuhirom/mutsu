@@ -306,7 +306,24 @@ pub(crate) fn stmt_list_with_mode(
     allow_mainline_capture: bool,
     emit_setline: bool,
 ) -> PResult<'_, Vec<Stmt>> {
+    // The list a slang's `statementlist` wrapper delegates to is not wrapped
+    // again; the lists nested in it are (ADR-16888 §2.2).
+    let suppressed = crate::parser::stmt::simple::take_wrapper_back_call();
+    stmt_list_inner(input, allow_mainline_capture, emit_setline, suppressed)
+}
+
+fn stmt_list_inner(
+    input: &str,
+    allow_mainline_capture: bool,
+    emit_setline: bool,
+    suppressed: bool,
+) -> PResult<'_, Vec<Stmt>> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
+    // A slang's `statementlist` wrapper parses the list from its start (not the
+    // rest of a list it was activated in, as in rakudo).
+    if let Some(wrapped) = crate::parser::stmt::simple::statementlist_wrapper(input, suppressed) {
+        return wrapped;
+    }
     let mut stmts = Vec::new();
     let mut rest = input;
     let mut saw_compunit_declarator = false;
@@ -366,7 +383,8 @@ pub(crate) fn stmt_list_with_mode(
                     "sub",
                 ));
             }
-            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
+            let (tail_rest, tail_stmts) =
+                stmt_list_inner(after_decl, false, emit_setline, suppressed)?;
             if let Stmt::SubDecl { body, .. } = &mut main_sub {
                 *body = tail_stmts;
             }
@@ -411,7 +429,8 @@ pub(crate) fn stmt_list_with_mode(
                 }
                 other => (Vec::new(), other, None),
             };
-            let (tail_rest, mut tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
+            let (tail_rest, mut tail_stmts) =
+                stmt_list_inner(after_decl, false, emit_setline, suppressed)?;
             match &mut decl {
                 Stmt::ClassDecl {
                     body,
@@ -588,7 +607,7 @@ pub(crate) fn stmt_list_with_mode(
                     && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
                     && !has_statement_separator(r)
                 {
-                    stmt_list_with_mode(r_ws, false, false)?;
+                    stmt_list_inner(r_ws, false, false, true)?;
                     return Err(PError::fatal_at(
                         "Confused. Two terms in a row".to_string(),
                         r_ws,

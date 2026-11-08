@@ -183,6 +183,27 @@ impl Interpreter {
         Ok(Some((end as usize, node)))
     }
 
+    /// `$grammar.HOW.find_method($grammar, 'statementlist')` on a slang grammar
+    /// handle: the core production's method, which a slang's override captures
+    /// and delegates to (ADR-16888 §2.3). A callable taking the cursor that
+    /// asks the parser to parse the core rule at it.
+    // Cost: O(1) (compiles a one-line closure).
+    pub(super) fn slang_core_method(&mut self, invocant: &Value, name: &str) -> Option<Value> {
+        if !crate::parser::slang_wrapper_rule(name) {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = invocant.view() else {
+            return None;
+        };
+        if class_name.as_str() != super::slang_activation::GRAMMAR_HANDLE_CLASS {
+            return None;
+        }
+        self.eval_code_string(&format!(
+            "-> Mu \\cursor {{ __mutsu_slang_shim('{name}', cursor) }}"
+        ))
+        .ok()
+    }
+
     /// `__mutsu_slang_shim($rule, $cursor)`: the grammar's shim for a core
     /// production. Asks the parser (a back-call) to parse `$rule` at the
     /// cursor's position and answers a cursor spanning it whose `.ast` is the
