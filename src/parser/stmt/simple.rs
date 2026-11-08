@@ -74,6 +74,7 @@ pub(super) use control_stmts::{
 pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
 // `pub(in crate::parser)` re-exports.
+pub(in crate::parser) use compile_consts::note_slang_activation_scope;
 pub(in crate::parser) use compile_consts::{
     anon_state_is_per_call, clear_current_scope_self_available, current_scope_anon_state_count,
     current_scope_anon_state_names_from, enable_experimental_cached, experimental_cached_enabled,
@@ -128,8 +129,8 @@ pub(in crate::parser) use registry::{
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_hooks::{
-    hooks_snapshot, register_action, register_hook, register_pointy_starters, restore_hooks,
-    set_activator, set_host as set_slang_host, statement_control_hook, term_hook,
+    hooks_snapshot, numish_hook, register_action, register_hook, register_pointy_starters,
+    restore_hooks, set_activator, set_host as set_slang_host, statement_control_hook, term_hook,
 };
 pub(crate) use slang_hooks::{
     parse_pointy_starters, parse_slang_shim_production, parse_slang_signature, pointy_starter,
@@ -162,6 +163,9 @@ enum TermBinding {
 #[derive(Clone, Default)]
 pub(in crate::parser) struct LexicalScope {
     user_subs: HashSet<String>,
+    /// The slang hooks as they were before a `use` in this scope activated a
+    /// slang: the activation ends with the scope, so leaving it restores them.
+    slang_hooks_before_use: Option<slang_hooks::SlangHooks>,
     /// Declaration text of the plain named subs of this scope (`use Slang &sub`, #17055).
     sub_sources: HashMap<String, String>,
     prefix_operator_subs: HashSet<String>,

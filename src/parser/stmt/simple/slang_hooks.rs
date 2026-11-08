@@ -298,6 +298,18 @@ pub(in crate::parser) fn term_hook(input: &str) -> Option<PResult<'_, Expr>> {
     }))
 }
 
+/// The slang's `numish` override over the numeric literal `expr` the parser just
+/// read from `source` (ADR-15762 slice 3): the lowered node its action attached,
+/// or `expr` itself when no slang overrides `numish` here.
+// Cost: O(1) with no override; otherwise the slang's own action.
+pub(in crate::parser) fn numish_hook(expr: Expr, source: &str) -> Result<Expr, PError> {
+    if !slang_overrides_action("numish") || slang_action_activator().is_none() {
+        return Ok(expr);
+    }
+    crate::rakuast::slang_bridge::lower_numish(&expr, source)
+        .map_err(|e| PError::fatal_at(e.message.to_string(), source))
+}
+
 /// Parse the core production `rule` at the start of `text` for a slang token
 /// that calls it (`<block>`, ADR-15762 §2.3): the text after it and the
 /// statement it stands for. `None` for a production with no shim yet.

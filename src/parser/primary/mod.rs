@@ -846,6 +846,13 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
         if let Some(hooked) = crate::parser::stmt::simple::term_hook(input) {
             return hooked;
         }
+        // A slang's `numish` override runs where the literal is read, with the
+        // text it was written as.
+        fn numish_slang<'a>(input: &'a str, parsed: PResult<'a, Expr>) -> PResult<'a, Expr> {
+            let (rest, expr) = parsed?;
+            let source = &input[..input.len() - rest.len()];
+            crate::parser::stmt::simple::numish_hook(expr, source).map(|expr| (rest, expr))
+        }
         macro_rules! try_primary {
             ($expr:expr) => {
                 match $expr {
@@ -860,12 +867,12 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
             };
         }
 
-        try_primary!(number::dot_decimal(input));
+        try_primary!(numish_slang(input, number::dot_decimal(input)));
         try_primary!(hexfloat::hex_float(input));
-        try_primary!(number::decimal(input));
-        try_primary!(number::integer(input));
-        try_primary!(number::generic_radix(input));
-        try_primary!(number::unicode_numeric_literal(input));
+        try_primary!(numish_slang(input, number::decimal(input)));
+        try_primary!(numish_slang(input, number::integer(input)));
+        try_primary!(numish_slang(input, number::generic_radix(input)));
+        try_primary!(numish_slang(input, number::unicode_numeric_literal(input)));
         // A declarator registered through a `use`d module's EXPORTHOW::DECLARE
         // block, as a term: `(model Foo { })`, `given model C is table<c> { } { }`.
         try_primary!(declare_keyword_term(input));

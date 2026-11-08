@@ -149,6 +149,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(
         crate::parser::invalidate_all_memos();
     }
     if let Some(host) = activation.host {
+        note_slang_activation_scope();
         set_slang_host(host);
         set_activator(module);
     }

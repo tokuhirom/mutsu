@@ -8,7 +8,7 @@ use Test;
 # text, and hands the result back as a `RakuAST::Constant`; the refinement ends
 # with the block holding the `use`.
 
-plan 6;
+plan 9;
 
 sub integer { "i$^a" }
 sub decimal { "d$^a" }
@@ -19,6 +19,9 @@ is 1, 1, 'before the use: untouched';
     is 42, 'i42', 'an Int literal goes to the integer handler';
     is 3.5, 'd3.5', 'a decimal literal goes to the decimal handler';
     is (7, 8).join(','), 'i7,i8', 'list elements too';
+    is 1e3, 'd1e3', 'the handler gets the text as written (scientific)';
+    is 0x2A, 'i0x2A', 'the handler gets the text as written (radix prefix)';
+    is 1_000, 'i1_000', 'the handler gets the text as written (underscores)';
 }
 is 9, 9, 'after the block: untouched';
 
