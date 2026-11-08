@@ -1087,6 +1087,11 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
 /// marker.
 // Cost: O(n), n = length of `input`.
 pub(crate) fn split_finish_section(input: &str) -> (&str, Option<String>) {
+    // `=finish` on the very first line: no code before it.
+    if input.starts_with("=finish") {
+        let content = input.find('\n').map_or("", |nl| &input[nl + 1..]);
+        return (&input[..0], Some(content.to_string()));
+    }
     let Some(idx) = finish_line_offset(input) else {
         return (input, None);
     };

@@ -1894,7 +1894,10 @@ pub fn str_dot_ast_checked(
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
-    pod_blocks::insert(names, &mut node, source, &stmts);
+    // The text from `=finish` on is `$=finish` (the unit's `finish-content`),
+    // not a Pod block of the statement list.
+    let (code, _) = crate::parser::split_finish_section(source);
+    pod_blocks::insert(names, &mut node, code, &stmts);
     named_docs::attach(&mut node, unit_docs);
     Ok(Value::rakuast(Box::new(node)))
 }
