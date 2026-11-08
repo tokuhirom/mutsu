@@ -329,17 +329,22 @@ pub(super) fn sym_name(name: &str) -> Option<RakuAstNode> {
     if stem.is_empty() || !crate::parser::is_raku_identifier(stem) {
         return None;
     }
-    let (quotewords, text) = if let Some(inner) = rest.strip_prefix('<').and_then(|r| r.strip_suffix('>')) {
-        (false, inner)
-    } else if let Some(inner) = rest
-        .strip_prefix('\u{00AB}')
-        .and_then(|r| r.strip_suffix('\u{00BB}'))
+    let (quotewords, text) =
+        if let Some(inner) = rest.strip_prefix('<').and_then(|r| r.strip_suffix('>')) {
+            (false, inner)
+        } else if let Some(inner) = rest
+            .strip_prefix('\u{00AB}')
+            .and_then(|r| r.strip_suffix('\u{00BB}'))
+        {
+            (true, inner)
+        } else {
+            return None;
+        };
+    if text.is_empty()
+        || text
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\'))
     {
-        (true, inner)
-    } else {
-        return None;
-    };
-    if text.is_empty() || text.chars().any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\')) {
         return None;
     }
     let pair = RakuAstNode {
