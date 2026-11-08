@@ -128,6 +128,14 @@ impl Interpreter {
             {
                 return Some(Ok(cell));
             }
+            // A `.map`/`.grep` Seq holds the cells its callback returned
+            // (`.map({ %h<a> })`); `.first` hands out that cell (#17094).
+            if let Ok(Some((_, cell))) = &found
+                && matches!(target.view(), ValueView::Seq(_))
+                && cell.is_container_ref()
+            {
+                return Some(Ok(cell.clone()));
+            }
             return answer(found);
         }
         // An unbounded range of any element type is stepped by `.succ` in
@@ -201,7 +209,13 @@ impl Interpreter {
             let (items, exhausted) = self.pull_map_grep_prefix(&mut source, 1)?;
             for item in items {
                 if VmFirstMatcher(self).item_matches(&matcher, &item)? {
-                    return Ok(Some(item.deref_container()));
+                    // The callback's own cell (`.map({ %h<a> })`) is the answer
+                    // (#17094); a plain value is returned bare.
+                    return Ok(Some(if item.is_container_ref() {
+                        item
+                    } else {
+                        item.deref_container()
+                    }));
                 }
             }
             if exhausted {

@@ -495,10 +495,20 @@ impl Interpreter {
                                     })
                                     .unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
-                                    vm.env()
+                                    let topic = vm
+                                        .env()
                                         .get_sym(topic_source_key)
                                         .cloned()
-                                        .unwrap_or_else(|| chunk[0].clone())
+                                        .unwrap_or_else(|| chunk[0].clone());
+                                    // The loop aliases a source item that has no
+                                    // container (a literal list) through a
+                                    // scratch cell: the result is its (possibly
+                                    // updated) value, not that cell.
+                                    if chunk[0].is_container_ref() {
+                                        topic
+                                    } else {
+                                        topic.deref_container()
+                                    }
                                 } else {
                                     chunk[0].clone()
                                 };
@@ -530,10 +540,20 @@ impl Interpreter {
                                 vm.set_when_matched(saved_when_matched);
                                 let pred = e.return_value.unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
-                                    vm.env()
+                                    let topic = vm
+                                        .env()
                                         .get_sym(topic_source_key)
                                         .cloned()
-                                        .unwrap_or_else(|| chunk[0].clone())
+                                        .unwrap_or_else(|| chunk[0].clone());
+                                    // The loop aliases a source item that has no
+                                    // container (a literal list) through a
+                                    // scratch cell: the result is its (possibly
+                                    // updated) value, not that cell.
+                                    if chunk[0].is_container_ref() {
+                                        topic
+                                    } else {
+                                        topic.deref_container()
+                                    }
                                 } else {
                                     chunk[0].clone()
                                 };

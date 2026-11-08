@@ -916,6 +916,31 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A `.map`/`.grep` Seq holds the cells its callback returned
+        // (`.map({ %h<a> })`): a `.VAR` subscript of one keeps the cell, like an
+        // Array element does above (#17094).
+        if is_positional
+            && self.stack.len() >= 2
+            && let ValueView::Int(i) = self.stack[self.stack.len() - 1].view()
+            && i >= 0
+            && let ValueView::Seq(body) = self.stack[self.stack.len() - 2].descalarize().view()
+            && !body.is_consumed()
+        {
+            let body = std::sync::Arc::clone(&body);
+            body.mark_cache_requested();
+            if body.needs_touch() {
+                self.reify_seq_body_prefix(&body, i as usize + 1)?;
+            }
+            if let Some(cell) = body.live_generation().get(i as usize)
+                && cell.is_container_ref()
+            {
+                let cell = cell.clone();
+                let n = self.stack.len();
+                self.stack.truncate(n - 2);
+                self.stack.push(cell);
+                return Ok(());
+            }
+        }
         // A package stash holds its `our` scalars as the variables' own cells;
         // a bind source or `.VAR` subscript of one keeps the cell, like an
         // Array element does above (#16920).

@@ -180,6 +180,14 @@ impl Interpreter {
             {
                 return Ok(cell);
             }
+            // A `.map`/`.grep` Seq holds the cells its callback returned; the
+            // matched element's own cell is the answer (#17094).
+            if !(has_k || has_kv || has_p)
+                && matches!(target.view(), ValueView::Seq(_))
+                && value.is_container_ref()
+            {
+                return Ok(value);
+            }
             return Ok(super::super::builtins_collection::format_first_result(
                 idx,
                 // `.first` answers the element's VALUE; the container above is

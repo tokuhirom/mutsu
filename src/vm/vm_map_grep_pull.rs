@@ -431,6 +431,16 @@ impl Interpreter {
             // into `@a`. That whole arm runs here now instead of at the
             // `.grep` call. See `MapGrepMode::GrepArray`.
             MapGrepMode::GrepArray(source) => match source.view() {
+                // A `List` literal's elements have no container of their own
+                // (`(1,2,3).grep(...)[0].VAR` is `Int`): promoting its slots would
+                // mint scratch cells and hand them out. A list whose elements
+                // ARE cells (`($x, $y).grep`) keeps the promoting path.
+                ValueView::Array(source_items, crate::value::ArrayKind::List)
+                    if !source_items.iter().any(|v| v.is_container_ref()) =>
+                {
+                    self.grep_map_grep_items(func, items, start, end, max_matches, plan, out)
+                        .map(|grep_end| consumed_end = grep_end)
+                }
                 ValueView::Array(source_items, _) => self
                     .grep_over_array_promoting_range(
                         source_items.clone(),
