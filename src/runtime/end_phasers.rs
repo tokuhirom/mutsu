@@ -83,6 +83,24 @@ impl Interpreter {
             lexicals: Vec::new(),
             depth: 0,
             package_path: Vec::new(),
+            install_ends: true,
+        };
+        walker.stmts(stmts);
+    }
+
+    /// Install the package symbol of every `our` declared anywhere in an
+    /// `EVAL` unit, reached or not: rakudo installs it when the unit is
+    /// compiled (`EVAL 'if False { our @a }; OUR::<@a>.elems'` is 0).
+    // Cost: O(n), n = nodes of the unit.
+    pub(crate) fn preinstall_unit_our_symbols(&mut self, stmts: &[Stmt]) {
+        let package = self.current_package();
+        let mut walker = EndWalker {
+            interp: self,
+            package,
+            lexicals: Vec::new(),
+            depth: 0,
+            package_path: Vec::new(),
+            install_ends: false,
         };
         walker.stmts(stmts);
     }
@@ -456,6 +474,10 @@ struct EndWalker<'a> {
     /// [`EndWalker::install_our_symbol`] reads it -- see
     /// [`EndWalker::in_package`].
     package_path: Vec<String>,
+    /// Whether an `END` found is installed (the main compunit's walk); an
+    /// `EVAL` unit's walk installs only its `our` symbols, its ENDs register
+    /// when they are reached.
+    install_ends: bool,
 }
 
 impl EndWalker<'_> {
@@ -712,7 +734,7 @@ impl<'ast> Visit<'ast> for EndWalker<'_> {
                 end_index,
                 ..
             } => {
-                if let Some(index) = *end_index {
+                if let Some(index) = (*end_index).filter(|_| self.install_ends) {
                     // Only at `GLOBAL`: inside a `class`/`role`/`package` body
                     // the compiler package-qualifies a lexical's env key
                     // (`Compiler::qualify_variable_name`), and this walker does

@@ -2686,6 +2686,7 @@ t/lang/eval-code-var-infix-minus.t
 t/lang/eval-compile-checks-nested-positions.t
 t/lang/eval-context-live-target.t
 t/lang/eval-core-term-constant-call-undeclared-class.t
+t/lang/eval-dead-branch-our-symbol.t
 t/lang/eval-imported-constant-term.t
 t/lang/eval-imported-lowercase-constant.t
 t/lang/eval-imported-main.t
@@ -3761,6 +3762,7 @@ t/modules/our-container-decl-preserves-value.t
 t/modules/our-guillemet-symbol-bind.t
 t/modules/our-hash-bind.t
 t/modules/our-hash-element-store-in-module-sub.t
+t/modules/our-in-dead-branch-is-installed.t
 t/modules/our-multi-in-a-package-body.t
 t/modules/our-only-declarator.t
 t/modules/our-package-qualified-shared-cell.t
@@ -3815,6 +3817,7 @@ t/modules/package-rw-method-index-assign.t
 t/modules/package-scalar-push-vivify.t
 t/modules/package-scope-outer-lexical-preserved.t
 t/modules/package-short-name-alias-scope.t
+t/modules/package-stash-keyed-read.t
 t/modules/package-stash-members-from-index.t
 t/modules/package-stash-missing-package.t
 t/modules/package-stash-routine-identity.t
