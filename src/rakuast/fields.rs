@@ -220,6 +220,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("required-topic", Absent::TypeObject("Bool")),
             ("exception", Absent::TypeObject("Bool")),
         ],
+        // `through-pragma` is set when a `use :D` default made the type definite;
+        // a smiley the source wrote leaves it False.
+        TypeDefinedness => &[("through-pragma", Absent::False)],
         Blockoid => &[("statement-list", Absent::Required)],
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => {
             &[("lexical-name", Absent::Required)]
@@ -340,6 +343,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("signature", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
+        // A subset without a `where` clause answers an undefined expression.
+        TypeSubset => &[("where", EXPRESSION)],
+        // `is repr(...)` is read back off the declaration; absent it is an undefined Str.
+        Native => &[("repr", Absent::TypeObject("Str"))],
         TypeSimple | TypeSetting | TypeCapture => &[("name", Absent::Required)],
         // `R[]` has no `args` field in rakudo (the renderer elides the empty list).
         TypeParameterized => &[
