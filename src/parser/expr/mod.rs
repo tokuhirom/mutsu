@@ -25,6 +25,7 @@ use std::cell::RefCell;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use crate::value::ValueView;
 
 use super::helpers::ws;
 pub(crate) use postfix::atomic_elem_update;
@@ -625,7 +626,40 @@ fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
     {
         return Expr::curry(pair);
     }
-    Expr::PositionalPair(Box::new(pair))
+    Expr::PositionalPair(Box::new(mark_quoted_key(pair)))
+}
+
+/// `"a" => 1`: a pair whose key is a quoted string literal is rakudo's
+/// `ApplyInfix` over a `QuotedString`, not a `FatArrow`
+/// ([`crate::ast::BinaryForm::QuotedKey`]).
+// Cost: O(1).
+fn mark_quoted_key(pair: Expr) -> Expr {
+    let Expr::Binary {
+        left,
+        op: TokenKind::FatArrow,
+        right,
+        form,
+    } = pair
+    else {
+        return pair;
+    };
+    // A quoted key may be wrapped to record where it was written.
+    let quoted = match &*left {
+        Expr::Spelled(spelled) => &spelled.expr,
+        other => other,
+    };
+    let form = match quoted {
+        Expr::Literal(key) if matches!(key.view(), ValueView::Str(_)) => {
+            crate::ast::BinaryForm::QuotedKey
+        }
+        _ => form,
+    };
+    Expr::Binary {
+        left,
+        op: TokenKind::FatArrow,
+        right,
+        form,
+    }
 }
 
 fn is_loose_word_logical(op: &TokenKind) -> bool {
