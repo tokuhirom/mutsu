@@ -3171,6 +3171,7 @@ t/modules/compunit/compunit-depspec-subclass.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
 t/modules/compunit/compunit-handle-export-how-package.t
 t/modules/compunit/compunit-handle-export-package.t
+t/modules/compunit/compunit-in-check-phaser.t
 t/modules/compunit/compunit-loader-class-rows.t
 t/modules/compunit/compunit-loader-source-file.t
 t/modules/compunit/compunit-method-rows.t
@@ -5991,6 +5992,7 @@ t/rakuast/rakuast-anonymous-callable-typed-slurpy.t
 t/rakuast/rakuast-anonymous-declaration-provenance.t
 t/rakuast/rakuast-anonymous-optional-parameter.t
 t/rakuast/rakuast-anonymous-packages.t
+t/rakuast/rakuast-anonymous-subset-variable.t
 t/rakuast/rakuast-anonymous-subsig-modifiers.t
 t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
@@ -6051,10 +6053,12 @@ t/rakuast/rakuast-colonpair-literal.t
 t/rakuast/rakuast-comma-declarations.t
 t/rakuast/rakuast-comma-decls-tail.t
 t/rakuast/rakuast-comment-semicolon-is-no-statement.t
+t/rakuast/rakuast-compile-time-value-declarations.t
 t/rakuast/rakuast-compiler-variables.t
 t/rakuast/rakuast-complex-literal-parameters.t
 t/rakuast/rakuast-compound-assign-node.t
 t/rakuast/rakuast-compound-assign.t
+t/rakuast/rakuast-compunit-fileline.t
 t/rakuast/rakuast-compunit.t
 t/rakuast/rakuast-computed-package-adverbs.t
 t/rakuast/rakuast-constant-initializer-terms.t
@@ -6227,6 +6231,7 @@ t/rakuast/rakuast-for.t
 t/rakuast/rakuast-formatter.t
 t/rakuast/rakuast-frontend-decl-postfix-argument.t
 t/rakuast/rakuast-frontend-empty-statement.t
+t/rakuast/rakuast-generic-capture-and-enum-constant.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
 t/rakuast/rakuast-goto-statement.t
@@ -6239,6 +6244,7 @@ t/rakuast/rakuast-has-embedded-attribute.t
 t/rakuast/rakuast-hash-contextualizer-bare-colonpair.t
 t/rakuast/rakuast-hash-literal.t
 t/rakuast/rakuast-hash-literalize-nested-array.t
+t/rakuast/rakuast-hash-shape-and-native-how.t
 t/rakuast/rakuast-heredoc-finalize.t
 t/rakuast/rakuast-heredoc-spelling.t
 t/rakuast/rakuast-hyper-assign-shape.t
@@ -6316,6 +6322,7 @@ t/rakuast/rakuast-members-traits.t
 t/rakuast/rakuast-meta-assignment-forms.t
 t/rakuast/rakuast-method-binding-values.t
 t/rakuast/rakuast-method-call-assign.t
+t/rakuast/rakuast-method-compile-time-value.t
 t/rakuast/rakuast-method-flags.t
 t/rakuast/rakuast-method-handles.t
 t/rakuast/rakuast-method-implicit-signature.t
@@ -6326,6 +6333,7 @@ t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-model-rows-reflection.t
 t/rakuast/rakuast-modifier-equal-terms-origins.t
 t/rakuast/rakuast-module-names.t
+t/rakuast/rakuast-multi-candidates-and-parameterized-containers.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-multidim-dynamic-adverbs.t
 t/rakuast/rakuast-multidim-splat.t
@@ -6367,6 +6375,7 @@ t/rakuast/rakuast-operators.t
 t/rakuast/rakuast-origin-absent-type-object.t
 t/rakuast/rakuast-origin-anonymous-parameters.t
 t/rakuast/rakuast-origin-arglists.t
+t/rakuast/rakuast-origin-as-match.t
 t/rakuast/rakuast-origin-assigning-subscript.t
 t/rakuast/rakuast-origin-attribute-compound-lhs.t
 t/rakuast/rakuast-origin-block-statements.t
@@ -6448,6 +6457,7 @@ t/rakuast/rakuast-postfix-grouping.t
 t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-private-code-var-finalize.t
+t/rakuast/rakuast-private-method-and-package-values.t
 t/rakuast/rakuast-private-quoted-method.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-pseudo-type-coercion-param.t
@@ -6522,6 +6532,7 @@ t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-reverse-set-compound-node.t
 t/rakuast/rakuast-roast-tap-cohort.t
 t/rakuast/rakuast-role-arg-blocks.t
+t/rakuast/rakuast-role-body-tree.t
 t/rakuast/rakuast-role-composition-boundaries.t
 t/rakuast/rakuast-role-deparse-method-body.t
 t/rakuast/rakuast-role-hidden-traits.t
@@ -6586,6 +6597,7 @@ t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
 t/rakuast/rakuast-statementlist-code-statements.t
+t/rakuast/rakuast-static-analysis-api.t
 t/rakuast/rakuast-string-item-segment.t
 t/rakuast/rakuast-string-return-literal.t
 t/rakuast/rakuast-structural-exprs-finalize.t
@@ -6664,6 +6676,7 @@ t/rakuast/rakuast-use-require-ctor.t
 t/rakuast/rakuast-use-statement.t
 t/rakuast/rakuast-user-control-keyword-subroutines.t
 t/rakuast/rakuast-user-routine-shadows-statement.t
+t/rakuast/rakuast-var-attribute-return-type.t
 t/rakuast/rakuast-var-doc.t
 t/rakuast/rakuast-var-dynamic.t
 t/rakuast/rakuast-var-package.t
@@ -9393,6 +9406,7 @@ t/vm/codegen/adr0051-one-ancestry-oracle.t
 t/vm/codegen/adr0110-trir-fallback-user-sub-shadows-core.t
 t/vm/codegen/adr14632-index-assign-local.t
 t/vm/codegen/bench-det-warmup.t
+t/vm/codegen/compile-time-cu-dynamic.t
 t/vm/codegen/compile-time-vars.t
 t/vm/codegen/compiler-eval-dynamic-and-sigilless-tail.t
 t/vm/codegen/compiler-id.t
