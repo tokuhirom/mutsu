@@ -24,13 +24,26 @@ fn doc_type() -> Value {
     Value::package(crate::symbol::Symbol::intern("RakuAST::Doc::Declarator"))
 }
 
+/// The classes that do `RakuAST::Doc::DeclaratorTarget` on rakudo 2026.09 but
+/// take no `WHY` constructor argument (measured with `.^lookup('WHY')`).
+// Cost: O(1).
+fn is_declarator_target(class: &str) -> bool {
+    matches!(
+        class,
+        "RakuAST::VarDeclaration::Anonymous"
+            | "RakuAST::VarDeclaration::Constant"
+            | "RakuAST::VarDeclaration::Term"
+    )
+}
+
 /// `WHY`: the stored documentation; else, for a parsed declaration, the
 /// `Doc::Declarator` built from its `#|` / `#=` comments; else the
 /// `Doc::Declarator` type object.
 // Cost: O(f + l), f = fields of the node, l = lines of its comments.
 pub(crate) fn why(node: &RakuAstNode) -> Value {
     // Only a `Doc::DeclaratorTarget` has docs; any other node answers `Nil`.
-    if !super::ctor_names::declares(node.class.printed_name(), FIELD) {
+    let class = node.class.printed_name();
+    if !is_declarator_target(class) && !super::ctor_names::declares(class, FIELD) {
         return Value::NIL;
     }
     if let Some(value) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
