@@ -96,9 +96,12 @@ pub(crate) fn apply_slang_overrides(
         // when that token does, so the parser has nothing to register. A new rule
         // nothing of the slang's refers to is still refused, as is a `:sym<...>`
         // production of a category the parser does not hook.
-        if over.body.is_some()
-            && !over.name.contains(':')
-            && is_helper_of_other_rule(&over.name, overrides)
+        // A rule the core grammar lacks is the slang's own whatever its body (embedded
+        // code makes the body something other than one regex literal).
+        if !over.name.contains(':')
+            && over.aliases.is_empty()
+            && ((over.body.is_some() && is_helper_of_other_rule(&over.name, overrides))
+                || !is_core_grammar_rule(&over.name))
         {
             continue;
         }
@@ -200,6 +203,24 @@ fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
             _ => None,
         })
         .collect()
+}
+
+/// Whether `name` is a rule of rakudo's own main grammar (without a `:sym<>`
+/// adverb). A colon-free rule a slang declares that is not one is its own helper:
+/// a method of the slang's grammar role calls it (`self.eel-body`), which is
+/// not visible from the rule bodies.
+// Cost: O(log n), n = core rules.
+fn is_core_grammar_rule(name: &str) -> bool {
+    static RULES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    RULES
+        .get_or_init(|| {
+            include_str!("core_grammar_rules.txt")
+                .lines()
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect()
+        })
+        .binary_search(&name)
+        .is_ok()
 }
 
 /// Whether another rule of `overrides` calls the rule `name` as a subrule
