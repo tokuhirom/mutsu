@@ -89,10 +89,13 @@ pub(crate) fn replace_signature(
 ) -> Result<(), RuntimeError> {
     if !matches!(
         node.class,
-        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod
+        RakuAstClass::Sub
+            | RakuAstClass::Method
+            | RakuAstClass::Submethod
+            | RakuAstClass::PointyBlock
     ) {
         return Err(RuntimeError::new(
-            "replace-signature is only available on RakuAST::Routine",
+            "replace-signature is only available on RakuAST::Routine and RakuAST::PointyBlock",
         ));
     }
     if !matches!(new_signature.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::Signature)
@@ -110,6 +113,34 @@ pub(crate) fn replace_signature(
             name: Some("signature"),
             value,
         }),
+    }
+    Ok(())
+}
+
+/// `set-implicit-topic($on, :required, :exception)` on a block: marks it as
+/// taking the topic of its statement. Turning it off drops the three flags.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn set_implicit_topic(
+    node: &mut RakuAstNode,
+    on: bool,
+    required: bool,
+    exception: bool,
+) -> Result<(), RuntimeError> {
+    if !matches!(node.class, RakuAstClass::Block | RakuAstClass::PointyBlock) {
+        return Err(RuntimeError::new(
+            "set-implicit-topic is only available on RakuAST::Block",
+        ));
+    }
+    let flags = [
+        ("implicit-topic", on),
+        ("required-topic", on && required),
+        ("exception", on && exception),
+    ];
+    for (name, set) in flags {
+        node.fields.retain(|f| f.name != Some(name));
+        if set {
+            node.fields.push(super::view::true_field(name));
+        }
     }
     Ok(())
 }

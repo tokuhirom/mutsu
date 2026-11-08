@@ -39,6 +39,22 @@ fn replace_signature(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 }
 
 // Cost: O(f), f = fields of the node.
+fn set_implicit_topic(
+    _interp: &mut crate::runtime::Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: super::super::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let on = args.first().is_none_or(Value::truthy);
+    let required = named.get("required").is_some_and(|v| v.truthy());
+    let exception = named.get("exception").is_some_and(|v| v.truthy());
+    target.rakuast_edit(|node| {
+        crate::rakuast::block_queries::set_implicit_topic(node, on, required, exception)
+            .map(|()| Value::NIL)
+    })
+}
+
+// Cost: O(f), f = fields of the node.
 fn otherwise(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
         ValueView::RakuAst(node) => Some(crate::rakuast::for_otherwise::otherwise(node)),
@@ -61,6 +77,23 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Narrow(replace_signature),
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
+    },
+    // `PointyBlock` takes a new signature too (rakudo: `Block`'s subclass).
+    MethodRow {
+        owner: "RakuAST::PointyBlock",
+        name: "replace-signature",
+        arity: 1,
+        handler: Handler::Narrow(replace_signature),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "set-implicit-topic",
+        arity: 1,
+        handler: Handler::Interp(set_implicit_topic),
+        flags: RowFlags::OWNER_ONLY,
+        named: &["required", "exception"],
     },
     MethodRow {
         owner: "RakuAST::PlaceholderParameterOwner",
