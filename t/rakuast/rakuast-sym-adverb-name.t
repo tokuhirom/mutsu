@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 9;
+plan 10;
 
 # A grammar alternative's or a method's `:sym` adverb is a colonpair of the
 # declaration's Name, as rakudo builds it, not part of one identifier string.
@@ -27,3 +27,7 @@ my $ast = Q[class P2 { method m:sym<z>() { 42 } }].AST;
 EVAL $ast;
 is ::('P2').new."m:sym<z>"(), 42, 'an EVAL of the tree keeps the :sym method name';
 is Q[class P3 { method n:sym«a b»() { 7 } }].AST.find-nodes(RakuAST::Method)[0].name.colonpairs[0].value.processors[0], 'quotewords', 'a «» method adverb';
+
+# A grammar's :sym alternatives dispatch through the proto after the round trip.
+EVAL Q[grammar P4 { token TOP { <alt> }; proto token alt {*}; token alt:sym<foo> { foo }; token alt:sym<bar> { bar } }].AST;
+is ::('P4').parse('bar').Str, 'bar', 'an EVAL of the tree dispatches the :sym grammar alternatives';

@@ -135,14 +135,21 @@ pub(super) fn strip(
         && name.class == RakuAstClass::Name
         && name.fields.iter().any(|f| f.name == Some("colonpairs"))
     {
-        for pair in list_field(name, "colonpairs")? {
-            let ValueView::RakuAst(pair) = pair.view() else {
+        // A `:sym` pair is part of the declared name (`token alt:sym<foo>`),
+        // spelled back into the flat name by `name_shape`, not a header adverb.
+        let mut kept_pairs = Vec::new();
+        for pair_value in list_field(name, "colonpairs")? {
+            let ValueView::RakuAst(pair) = pair_value.view() else {
                 return Err(super::lower::unsupported(node));
             };
             if pair.class != RakuAstClass::ColonPairValue {
                 return Err(super::lower::unsupported(node));
             }
             let key = super::lower::leaf_str(pair, "key")?;
+            if key == "sym" {
+                kept_pairs.push(pair_value.clone());
+                continue;
+            }
             let value = named_child(pair, "value")?;
             header
                 .adverbs
@@ -150,6 +157,12 @@ pub(super) fn strip(
         }
         let mut bare = name.clone();
         bare.fields.retain(|f| f.name != Some("colonpairs"));
+        if !kept_pairs.is_empty() {
+            bare.fields.push(RakuAstField {
+                name: Some("colonpairs"),
+                value: RakuAstFieldValue::List(kept_pairs),
+            });
+        }
         *field = node_field(Some("name"), bare);
     }
     // `is export`, which the parser keeps as a registration, not a trait.
