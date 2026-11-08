@@ -14,6 +14,21 @@ pub(super) fn view_node(
     name: &str,
     args: &[Expr],
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
+    // `@a>>++`: the hyper of a postfix operator, `MetaPostfix::Hyper(Postfix)`.
+    if args.is_empty()
+        && let Some(op) = name
+            .strip_prefix("postfix:<")
+            .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return Some(Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Postfix,
+            fields: vec![super::view::leaf_field(
+                Some("operator"),
+                crate::value::Value::str(op.to_string()),
+            )],
+        }));
+    }
     let class = match name {
         "postcircumfix:<[ ]>" => RakuAstClass::PostcircumfixArrayIndex,
         "postcircumfix:<{ }>" => RakuAstClass::PostcircumfixHashIndex,
@@ -66,6 +81,23 @@ pub(super) fn lower(
             "postcircumfix:<{ }>"
         }),
         args: vec![lower_expr(names, statement)?],
+        modifier: None,
+        quoted: false,
+    })
+}
+
+/// `@a>>++`: the `Postfix` inside a `MetaPostfix::Hyper`, as the call the parser
+/// builds for the hyper of a postfix operator.
+// Cost: O(n), n = size of the operand.
+pub(super) fn lower_postfix_operator(
+    operand: Expr,
+    node: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
+    let op = super::lower::leaf_str(node, "operator")?;
+    Ok(Expr::HyperMethodCall {
+        target: Box::new(operand),
+        name: Symbol::intern(&format!("postfix:<{op}>")),
+        args: Vec::new(),
         modifier: None,
         quoted: false,
     })

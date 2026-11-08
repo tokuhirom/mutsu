@@ -5551,6 +5551,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     if super::hyper_subscript::is_subscript(inner) {
                         return super::hyper_subscript::lower(names, operand, inner);
                     }
+                    if inner.class == RakuAstClass::Postfix {
+                        return super::hyper_subscript::lower_postfix_operator(operand, inner);
+                    }
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(names, operand, inner);
                     }

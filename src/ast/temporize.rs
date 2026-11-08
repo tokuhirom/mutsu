@@ -59,14 +59,14 @@ pub(crate) fn variable_expr(key: &str) -> Expr {
 /// A positional (array) subscript is told by the container's sigil, or by an
 /// index that is not a string literal; the parser keeps the index only.
 // Cost: O(n), n = size of the index (it is cloned).
-pub(crate) fn element_expr(name: &str, index: &Expr) -> Expr {
+pub(crate) fn element_expr(name: &str, index: &Expr, spelling: super::IndexSpelling) -> Expr {
     let is_positional =
         name.starts_with('@') || !matches!(index, Expr::Literal(v) if v.as_str().is_some());
     Expr::Index {
         target: Box::new(variable_expr(name)),
         index: Box::new(index.clone()),
         is_positional,
-        spelling: Default::default(),
+        spelling,
     }
 }
 

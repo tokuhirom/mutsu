@@ -507,6 +507,7 @@ fn parse_variable_traits<'a>(
             }
             let is_builtin = is_supported_variable_trait(&trait_name);
             if is_hash && (trait_name == "Mix" || trait_name == "MixHash") {
+                marks.type_from_trait = type_constraint.is_none();
                 *type_constraint = Some(trait_name.clone());
             }
             if trait_name == "dynamic" {

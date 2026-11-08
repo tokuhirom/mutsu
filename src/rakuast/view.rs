@@ -1724,7 +1724,7 @@ pub(super) fn var_decl_statement(
     let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), marks);
     let type_name = match keyed {
         Some((value, _)) => value,
-        None => type_constraint.as_deref(),
+        None => marks.written_type(type_constraint),
     };
     let scope = if is_our {
         Some("our")

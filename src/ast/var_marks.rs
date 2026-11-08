@@ -20,6 +20,10 @@ pub(crate) struct VarMarks {
     /// A key-typed hash (`my %h{Str}`) whose `Any` value type the parser
     /// supplied; `my Any %h{Str}` writes it, and RakuAST tells them apart.
     pub(crate) implicit_value_type: bool,
+    /// The hash's `Mix` / `MixHash` type came from an `is Mix` trait, not from
+    /// a type written before the name: the RakuAST view renders the trait only.
+    /// Not part of [`Self::is_plain`]: it changes no execution path.
+    pub(crate) type_from_trait: bool,
     /// In a `.AST` parse, the colonpairs of the declared name as written
     /// (`:foo<g h>` of `my $today:foo<g h>`); the name itself is canonical.
     pub(crate) name_colonpairs: Option<Box<str>>,
@@ -92,6 +96,13 @@ pub(crate) enum TermMark {
 }
 
 impl VarMarks {
+    /// The type the source wrote before the name: `type_constraint`, unless it
+    /// is the one an `is Mix` trait implied.
+    // Cost: O(1).
+    pub(crate) fn written_type<'a>(&self, type_constraint: &'a Option<String>) -> Option<&'a str> {
+        type_constraint.as_deref().filter(|_| !self.type_from_trait)
+    }
+
     /// True for a declaration the parser built without any of these marks,
     /// which every "plain `my` declaration" test needs (a guard spelled
     /// `custom_traits.is_empty()` once excluded the marked ones by accident).
