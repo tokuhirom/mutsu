@@ -1757,7 +1757,9 @@ fn is_special_numish_literal(source: &str) -> bool {
     };
     let number = |s: &str| {
         let s = s.strip_prefix(['+', '-']).unwrap_or(s);
-        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
     };
     if let Some((num, den)) = inner.split_once('/') {
         return number(num) && number(den);
