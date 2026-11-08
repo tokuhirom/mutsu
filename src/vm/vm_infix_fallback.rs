@@ -43,6 +43,21 @@ impl Interpreter {
                 crate::runtime::incdec_rw_sub::core_infix_named_argument_error(op_name, &call_args),
             );
         }
+        // A set operand is walked through its elements, as in the operator
+        // form (`3 ∈ @c`): a user `Iterable` instance, and a multi-dimensional
+        // shaped array through its leaves (#14308).
+        let call_args = if call_args.len() == 2 && crate::runtime::is_set_operator(name) {
+            let mut walked = Vec::with_capacity(2);
+            for arg in call_args {
+                let arg = self.iterable_instance_elements(arg)?;
+                walked.push(
+                    crate::value::shaped_array::shaped_array_leaves_list(&arg).unwrap_or(arg),
+                );
+            }
+            walked
+        } else {
+            call_args
+        };
         if call_args.len() == 2
             && infix_name.is_none_or(|op| !self.is_candidate_less_proto(op))
             && let Some(value) = self.core_infix_values(name, &call_args[0], &call_args[1], code)?

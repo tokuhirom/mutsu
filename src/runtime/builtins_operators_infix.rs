@@ -8,6 +8,45 @@ use crate::rakuast::hyper_assign::assignment_metaop_base;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+/// Whether `op` names a built-in set operator (ASCII or Unicode spelling).
+// Cost: O(1).
+pub(crate) fn is_set_operator(op: &str) -> bool {
+    matches!(
+        op,
+        "(-)"
+            | "∖"
+            | "(|)"
+            | "∪"
+            | "(&)"
+            | "∩"
+            | "(.)"
+            | "⊍"
+            | "(+)"
+            | "⊎"
+            | "(^)"
+            | "⊖"
+            | "(elem)"
+            | "∈"
+            | "(cont)"
+            | "∋"
+            | "(<=)"
+            | "⊆"
+            | "(>=)"
+            | "⊇"
+            | "⊈"
+            | "⊉"
+            | "⊄"
+            | "⊅"
+            | "(<)"
+            | "⊂"
+            | "(>)"
+            | "⊃"
+            | "(==)"
+            | "≡"
+            | "≢"
+    )
+}
+
 impl Interpreter {
     /// Whether `callable` is the captured multi family bound as `&{infix_name}`
     /// whose candidates `try_user_infix` has just declined: dispatching the
@@ -116,46 +155,25 @@ impl Interpreter {
             self.env.insert(source_name, result.clone());
             return Ok(result);
         }
-        let is_set_op = matches!(
-            op,
-            "(-)"
-                | "∖"
-                | "(|)"
-                | "∪"
-                | "(&)"
-                | "∩"
-                | "(.)"
-                | "⊍"
-                | "(+)"
-                | "⊎"
-                | "(^)"
-                | "⊖"
-                | "(elem)"
-                | "∈"
-                | "(cont)"
-                | "∋"
-                | "(<=)"
-                | "⊆"
-                | "(>=)"
-                | "⊇"
-                | "⊈"
-                | "⊉"
-                | "⊄"
-                | "⊅"
-                | "(<)"
-                | "⊂"
-                | "(>)"
-                | "⊃"
-                | "(==)"
-                | "≡"
-                | "≢"
-        );
+        let is_set_op = is_set_operator(op);
         // Numeric operators whose only one-arg CORE candidate is `(\a)`: the lone
         // operand is numified as is (`infix:<+>($[1,2])` is 2), never spread.
         let is_one_arg_numify_op = matches!(op, "+" | "-" | "*" | "/" | "**" | "%" | "gcd" | "lcm");
         // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
         // which coerce their single argument to a QuantHash instead, nor for the
         // numeric operators above
+        // A multi-dimensional shaped array is a set operand through its
+        // leaves, as in the operator form (`3 ∈ @c`, #14308).
+        let leaves;
+        let args = if is_set_op {
+            leaves = args
+                .iter()
+                .map(|arg| crate::value::shaped_array::shaped_array_leaves_list(arg).unwrap_or_else(|| arg.clone()))
+                .collect::<Vec<_>>();
+            &leaves[..]
+        } else {
+            args
+        };
         let args: Vec<Value> = if args.len() == 1 && !is_set_op && !is_one_arg_numify_op {
             match args[0].view() {
                 ValueView::Array(items, ..) => items.to_vec(),

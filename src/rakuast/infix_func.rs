@@ -347,11 +347,32 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
             Ok(call)
         }));
     }
+    // A chain of comparisons keeps the parser's `ChainedCompare`, which asks
+    // the declared candidates pair by pair.
+    if node.class == RakuAstClass::ApplyInfix && super::chain::is_chain(node) {
+        return None;
+    }
     let overloaded = is_declared(names, &name) && !keeps_native_dispatch(&name);
-    if !is_flip_flop(&name) && !overloaded {
+    if !is_flip_flop(&name) && !overloaded && !is_imported_list_chain(node, &name) {
         return None;
     }
     Some(fold(names, node, name))
+}
+
+/// A list-associative chain (`1 op 2 op 3`) of a word the lowering cannot
+/// resolve to a core operator: an infix a `use` in the tree imports, which the
+/// scopes above never saw. The routine takes the whole chain
+/// ([`Expr::InfixFunc`]); folding it left would call it pairwise. `min`, `max`
+/// and `xor` are core list infixes the parser keeps as `Binary` nodes.
+// Cost: O(n), n = operands.
+fn is_imported_list_chain(node: &RakuAstNode, name: &str) -> bool {
+    node.class == RakuAstClass::ApplyListInfix
+        && !matches!(name, "min" | "max" | "xor")
+        && matches!(
+            crate::op_names::op_name_to_token_kind(name),
+            Some(crate::token_kind::TokenKind::Ident(_))
+        )
+        && list_field(node, "operands").is_ok_and(|operands| operands.len() > 2)
 }
 
 fn fold(names: &NameScope, node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
