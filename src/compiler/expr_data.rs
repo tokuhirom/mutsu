@@ -120,21 +120,18 @@ impl Compiler {
             // stack operands by hand bypasses those call-site invariants and
             // lets the synthetic lvalue call disturb the enclosing method's
             // `self` slot when a dynamic accessor invokes a Proxy callback.
-            self.compile_expr(&Expr::Call {
-                name: crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-                args: vec![
-                    // `self` is the immutable method invocant, not a caller
-                    // variable whose container should be passed to the helper.
-                    Expr::BareWord("self".to_string()),
-                    Expr::Literal(Value::str(attr_name.to_string())),
-                    Expr::ArrayLiteral(Vec::new()),
-                    value,
-                    Expr::Literal(Value::NIL),
-                    Expr::Literal(Value::NIL),
-                    Expr::Literal(Value::TRUE),
-                ],
-                listop: false,
-            });
+            self.compile_expr(&crate::lvalue_call::assign_method(
+                // `self` is the immutable method invocant, not a caller
+                // variable whose container should be passed to the helper.
+                Expr::BareWord("self".to_string()),
+                Expr::Literal(Value::str(attr_name.to_string())),
+                Vec::new(),
+                value,
+                crate::lvalue_call::AssignMethodHints {
+                    dot_twigil: true,
+                    ..Default::default()
+                },
+            ));
             return;
         }
         // A genuine assignment to a never-declared dynamic var (`$*x = ...` in

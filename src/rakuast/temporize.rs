@@ -498,16 +498,17 @@ fn type_method_assign(
         Some(meta) => (meta, Some('^')),
         None => (method_name, None),
     };
-    let writeback = |value: Expr| Expr::Call {
-        name: crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
-        args: vec![
+    let writeback = |value: Expr| {
+        crate::lvalue_call::assign_method(
             Expr::BareWord(type_name.to_string()),
             Expr::Literal(Value::str(method_name.to_string())),
-            Expr::ArrayLiteral(method_args.to_vec()),
+            method_args.to_vec(),
             value,
-            Expr::Literal(Value::str(format!("\\{type_name}"))),
-        ],
-        listop: false,
+            crate::lvalue_call::AssignMethodHints {
+                target_var: Some(format!("\\{type_name}")),
+                ..Default::default()
+            },
+        )
     };
     let read = Expr::MethodCall {
         target: Box::new(Expr::BareWord(type_name.to_string())),

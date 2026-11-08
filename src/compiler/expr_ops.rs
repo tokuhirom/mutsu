@@ -267,11 +267,7 @@ impl Compiler {
                 dwim_left,
                 dwim_right,
             };
-            let assign_call = Expr::Call {
-                name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
-                args: vec![left.clone(), Expr::ArrayLiteral(vec![]), value_expr],
-                listop: false,
-            };
+            let assign_call = crate::lvalue_call::assign_callable(left.clone(), vec![], value_expr);
             self.compile_expr(&assign_call);
             return;
         }
@@ -734,15 +730,11 @@ impl Compiler {
             let result_name = format!("__mutsu_meta_assign_result_{}", self.code.constants.len());
             let result_idx = self.code.add_constant(Value::str(result_name));
             self.code.emit(OpCode::SetGlobal(result_idx));
-            let assign_call = Expr::Call {
-                name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
-                args: vec![
-                    Expr::ArrayLiteral(targets.clone()),
-                    Expr::ArrayLiteral(Vec::new()),
-                    Expr::Var(tmp_name),
-                ],
-                listop: false,
-            };
+            let assign_call = crate::lvalue_call::assign_callable(
+                Expr::ArrayLiteral(targets.clone()),
+                Vec::new(),
+                Expr::Var(tmp_name),
+            );
             self.compile_expr(&assign_call);
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(result_idx));

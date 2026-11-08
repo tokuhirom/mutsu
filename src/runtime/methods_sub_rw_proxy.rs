@@ -146,14 +146,11 @@ impl Interpreter {
             env.clone(),
         );
 
-        let mut store_body = vec![Stmt::Expr(Expr::Call {
-            name: Symbol::intern(crate::lvalue_call::ASSIGN_NAMED_SUB),
-            args: vec![
-                Expr::Literal(Value::str(rw_routine.to_string())),
-                Expr::ArrayLiteral([vec![target_expr()], window()].concat()),
-                Expr::Var(STORE_VALUE_VAR.to_string()),
-            ], listop: false,
-        })];
+        let mut store_body = vec![Stmt::Expr(crate::lvalue_call::assign_named_sub(
+            rw_routine.to_string(),
+            [vec![target_expr()], window()].concat(),
+            Expr::Var(STORE_VALUE_VAR.to_string()),
+        ))];
         if track_len {
             store_body.push(Stmt::Assign {
                 name: LEN_VAR.to_string(),
