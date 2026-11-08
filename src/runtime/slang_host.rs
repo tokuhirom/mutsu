@@ -46,6 +46,12 @@ grammar Mutsu::Slang::Host::Base {
     method block() { __mutsu_slang_shim('block', self) }
     method signature() { __mutsu_slang_shim('signature', self) }
     method trait() { __mutsu_slang_shim('trait', self) }
+    method routine-def() { __mutsu_slang_shim('routine-def', self) }
+    method method-def() { __mutsu_slang_shim('method-def', self) }
+    # `<name=.key-origin('rule', 'keyword')>`: the core definition rule `rule`
+    # (`routine-def`, `method-def`), matched where the cursor is; `keyword` names the
+    # declarator whose origin it records.
+    method key-origin(Str $rule, Str $keyword) { self."$rule"() }
     method statementlist() { __mutsu_slang_shim('statementlist', self) }
 }
 class Mutsu::Slang::Host::Actions {
@@ -93,7 +99,16 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
         return ($core.to, $core.ast);
     }
     my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
-    $m ?? ($m.to, $m.ast) !! Nil
+    return Nil unless $m;
+    return ($m.to, $m.ast) if $m.ast.defined;
+    # A production whose slang attached no node stands for the core definition it
+    # read (rakudo's own `routine-declarator` action answers it): `Slang::Mosdef`
+    # has no actions role at all.
+    for <routine-def method-def package-def> -> $key {
+        my $part = $m.hash{$key};
+        return ($m.to, $part.ast) if $part.defined && $part.ast.defined;
+    }
+    ($m.to, $m.ast)
 }
 &mutsu-slang-host-run
 "#;
