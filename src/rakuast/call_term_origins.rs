@@ -12,6 +12,12 @@ use crate::ast::SrcSpan;
 // Cost: O(n), n = length of the call's source.
 pub(super) fn place(node: &mut RakuAstNode, operand_end: usize, span: SrcSpan) {
     let to = span.to as usize;
+    // `$f.(1)`: the call starts at the `(` after the dot.
+    let dot = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
+        Some(usize::from(text.starts_with(".(")))
+    })
+    .unwrap_or(0);
+    let operand_end = operand_end + dot;
     let Some(inner) = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
         let body = text.strip_prefix('(')?.strip_suffix(')')?;
         // The first `(` must close at the very end.
@@ -38,6 +44,13 @@ pub(super) fn place(node: &mut RakuAstNode, operand_end: usize, span: SrcSpan) {
             super::infix_origins::with_child(call, "args", |args| {
                 super::origin::set_span(args, SrcSpan::new(inner.0, inner.1))
             });
+        } else {
+            // `$f()`: the (absent) empty `ArgList` sits just inside the parentheses.
+            super::empty_fields::set_span(
+                call,
+                "args",
+                SrcSpan::new(operand_end + 1, operand_end + 1),
+            );
         }
     });
 }
