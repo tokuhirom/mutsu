@@ -61,11 +61,13 @@ impl Interpreter {
     }
 
     /// Whether any `name` (`trait_mod:<is>`) handler is reachable from the
-    /// running scope: a registered proto or multi, or an imported dispatcher.
+    /// running scope: a registered proto, multi or plain sub, or an imported
+    /// dispatcher.
     // Cost: as `has_multi_candidates`, plus O(1).
     pub(crate) fn has_trait_mod_handler(&mut self, name: &str) -> bool {
         self.has_proto(name)
             || self.has_multi_candidates(name)
+            || self.has_function(name)
             || self.imported_trait_dispatcher(name).is_some()
     }
 

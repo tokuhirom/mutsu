@@ -1,6 +1,27 @@
 use super::*;
 
 impl Compiler {
+    /// Whether `body` applies the traits of a variable
+    /// (`begin_prologue::lift_unit_var_traits`): it holds a `Stmt::VarTrait`
+    /// step, possibly inside the blocks the lifter wrapped it in.
+    // Cost: O(n), n = size of `body`'s AST.
+    pub(super) fn is_var_trait_application(body: &[Stmt]) -> bool {
+        use crate::ast_visit::Visit;
+        struct Finder(bool);
+        impl<'ast> Visit<'ast> for Finder {
+            fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+                if matches!(stmt, Stmt::VarTrait { .. }) {
+                    self.0 = true;
+                } else if !self.0 {
+                    crate::ast_visit::walk_stmt(self, stmt);
+                }
+            }
+        }
+        let mut finder = Finder(false);
+        finder.visit_stmts(body);
+        finder.0
+    }
+
     /// Compile a CHECK phaser body wrapped in error-catching logic.
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
     pub(super) fn compile_check_phaser(&mut self, body: &[Stmt], is_begin: bool) {

@@ -22,6 +22,11 @@ impl Compiler {
         our_names: &[String],
         decl: PackageRuntimeDecl,
     ) {
+        // A package body takes no signature: a placeholder directly in it is
+        // `X::Placeholder::Block`, as for a body that was not split.
+        if self.emit_block_placeholder_die(body) {
+            return;
+        }
         let qualified_name = match decl {
             PackageRuntimeDecl::Class {
                 is_lexical,
@@ -52,6 +57,14 @@ impl Compiler {
         let saved_package = std::mem::replace(&mut self.current_package, qualified_name);
         let saved_in_unit = std::mem::replace(&mut self.in_unit_package, false);
         let saved_package_kind = self.current_package_kind.take();
+        // In an EVAL'd unit a bare variable the body does not declare is the
+        // caller's lexical (the unit has no slot for it): keep it bare.
+        let saved_our_names = if self.in_eval_unit && !self.eval_unit_lax {
+            self.package_runtime_our_names
+                .replace(our_names.iter().cloned().collect())
+        } else {
+            self.package_runtime_our_names.take()
+        };
         let saved_lexicals = std::mem::replace(
             &mut self.package_body_lexicals,
             lexicals.iter().cloned().collect(),
@@ -104,6 +117,7 @@ impl Compiler {
             .collect();
         self.set_package_scope_own_slots(pkg_idx, locals_from, declared);
         self.package_body_lexicals = saved_lexicals;
+        self.package_runtime_our_names = saved_our_names;
         self.current_package = saved_package;
         self.in_unit_package = saved_in_unit;
         self.current_package_kind = saved_package_kind;

@@ -4125,7 +4125,18 @@ impl Compiler {
                 // CheckPhaserStart/End opcodes raise the `check_phaser_depth`
                 // counter, and a throw at depth > 0 is wrapped). The opcodes don't
                 // touch the stack, so the body's value/side-effects are preserved.
-                self.compile_check_phaser(body, true);
+                //
+                // The application of a variable's traits, lifted to BEGIN time
+                // by `begin_prologue::lift_unit_var_traits`, is no BEGIN block
+                // the program wrote: rakudo raises an unknown trait or a
+                // handler's own exception as it is, not as a BeginTime wrapper.
+                if Self::is_var_trait_application(body) {
+                    for s in body {
+                        self.compile_stmt(s);
+                    }
+                } else {
+                    self.compile_check_phaser(body, true);
+                }
             }
             Stmt::Phaser {
                 kind: PhaserKind::Init | PhaserKind::Enter,

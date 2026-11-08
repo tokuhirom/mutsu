@@ -2721,6 +2721,7 @@ t/lang/eval-trailing-constant-unit-value.t
 t/lang/eval-type-arg-from-use-import.t
 t/lang/eval-undeclared-block-assign.t
 t/lang/eval-unit-builtin-prelude-by-names.t
+t/lang/eval-unit-class-body-composed.t
 t/lang/eval-unit-deparse-prelude.t
 t/lang/eval-unit-named-sub-sees-use-imports.t
 t/lang/eval-unit-trailing-constant-value.t
@@ -4511,6 +4512,7 @@ t/oo/class/class-body-in-routine-writes-outer-lexical.t
 t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-my-lexical-scope.t
 t/oo/class/class-body-my-shadows-outer-lexical.t
+t/oo/class/class-body-statements-see-composed-class.t
 t/oo/class/class-body-static-compound-assignment.t
 t/oo/class/class-body-static-in-named-sub.t
 t/oo/class/class-body-static-in-sub.t
@@ -5927,6 +5929,7 @@ t/oo/trait/param-trait-mixin-persists.t
 t/oo/trait/param-trait-word-quote-arg.t
 t/oo/trait/parameter-trait-mixin-per-declaration.t
 t/oo/trait/parameter-trait-mod-on-method-signature.t
+t/oo/trait/plain-sub-trait-mod-variable-handler.t
 t/oo/trait/precedence-trait-reference-guillemet-operator.t
 t/oo/trait/proto-method-trait-is-dispatcher.t
 t/oo/trait/return-type-trait-undeclared-class.t
@@ -5942,6 +5945,7 @@ t/oo/trait/superseded-how-keeps-attr-trait-mixin.t
 t/oo/trait/trait-arg-closure-writes-outer-lexical.t
 t/oo/trait/trait-arg-declaration-phase.t
 t/oo/trait/trait-argless-declaration-phase.t
+t/oo/trait/trait-decl-kinds-declaration-phase.t
 t/oo/trait/trait-does-captured-variable.t
 t/oo/trait/trait-mod-does-callable.t
 t/oo/trait/trait-mod-is-handler-die-fails-method-declaration.t

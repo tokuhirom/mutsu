@@ -286,6 +286,9 @@ impl Interpreter {
         compiler.static_class_hidden = self.current_class_is_hidden();
         if is_eval_unit {
             compiler.mark_as_eval_unit();
+            compiler.eval_unit_lax = body
+                .iter()
+                .any(|s| matches!(s, Stmt::No { module, .. } if module == "strict"));
             // An `EVAL` inside a block that `use`s a module sees what the
             // block imported (ADR-8751): its bareword calls read the sets of
             // the blocks running around it.
