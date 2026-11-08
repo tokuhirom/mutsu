@@ -28,6 +28,9 @@ impl Interpreter {
                  represent an empty list",
             ));
         }
+        // The EVAL is the unit `$*CU` names while its BEGIN prologue and CHECK
+        // phase run.
+        let _unit = crate::unit_source_text::UnitSourceTextGuard::enter(trimmed);
         self.isolated_eval_unit(|interp| interp.eval_eval_source(trimmed))
     }
 

@@ -14,6 +14,9 @@ use std::rc::Rc;
 
 pub(crate) struct Unit {
     pub(crate) source: Rc<str>,
+    /// The tree of a unit that is an EVAL'd RakuAST (it has no source text):
+    /// `$*CU` is this tree wrapped as a `CompUnit`.
+    tree: Option<Value>,
     /// The unit's compile phase is over (its BEGIN prologue has run).
     pub(crate) compiled: bool,
     cu: Option<Value>,
@@ -45,6 +48,7 @@ impl UnitSourceTextGuard {
         UNITS.with(|units| {
             units.borrow_mut().push(Unit {
                 source: Rc::from(source),
+                tree: None,
                 compiled: false,
                 cu: None,
                 check_code: Vec::new(),
@@ -55,6 +59,20 @@ impl UnitSourceTextGuard {
             });
         });
         Self
+    }
+}
+
+impl UnitSourceTextGuard {
+    /// Publishes an EVAL'd RakuAST tree as the unit being compiled.
+    // Cost: O(1).
+    pub(crate) fn enter_tree(tree: Value) -> Self {
+        let guard = Self::enter("");
+        UNITS.with(|units| {
+            if let Some(unit) = units.borrow_mut().last_mut() {
+                unit.tree = Some(tree);
+            }
+        });
+        guard
     }
 }
 
@@ -153,19 +171,31 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
     enum Step {
         Built(Value),
         Build(Rc<str>),
+        BuildTree(Value),
     }
     let step = UNITS.with(|units| {
         let units = units.borrow();
         let unit = active_index(&units)
             .and_then(|i| units.get(i))
             .filter(|unit| !unit.compiled)?;
-        Some(match &unit.cu {
-            Some(cu) => Step::Built(cu.clone()),
-            None => Step::Build(unit.source.clone()),
+        Some(match (&unit.cu, &unit.tree) {
+            (Some(cu), _) => Step::Built(cu.clone()),
+            (None, Some(tree)) => Step::BuildTree(tree.clone()),
+            (None, None) => Step::Build(unit.source.clone()),
         })
     })?;
     match step {
         Step::Built(cu) => Some(cu),
+        Step::BuildTree(tree) => {
+            let cu = crate::rakuast::compunit_of_tree(&tree, imported);
+            UNITS.with(|units| {
+                let mut units = units.borrow_mut();
+                if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
+                    unit.cu = Some(cu.clone());
+                }
+            });
+            Some(cu)
+        }
         Step::Build(source) => {
             let cu = crate::rakuast::compile_time_compunit(
                 &crate::scope::NameScope::default(),
