@@ -37,10 +37,9 @@ pub(crate) fn otherwise(node: &RakuAstNode) -> Value {
 // Cost: O(1).
 fn check(value: &Value) -> Result<(), RuntimeError> {
     let ok = match value.view() {
-        ValueView::RakuAst(node) => matches!(
-            node.class,
-            RakuAstClass::Block | RakuAstClass::PointyBlock
-        ),
+        ValueView::RakuAst(node) => {
+            matches!(node.class, RakuAstClass::Block | RakuAstClass::PointyBlock)
+        }
         ValueView::Package(name) => name.as_str() == "RakuAST::Block",
         _ => false,
     };
