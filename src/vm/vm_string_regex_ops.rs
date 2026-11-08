@@ -264,30 +264,3 @@ fn samespace_replace(replacement: &str, matched: &str) -> String {
     }
     result
 }
-
-/// Expand positional capture references ($0, $1, ...) in a substitution
-/// replacement string.  Called after the regex match so capture values are known.
-pub(crate) fn expand_capture_refs(template: &str, captures: &[String]) -> String {
-    let mut out = String::new();
-    let bytes = template.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
-            // Parse the digit(s) following $
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j].is_ascii_digit() {
-                j += 1;
-            }
-            if let Ok(idx) = template[i + 1..j].parse::<usize>()
-                && let Some(cap) = captures.get(idx)
-            {
-                out.push_str(cap);
-            }
-            i = j;
-        } else {
-            out.push(template[i..].chars().next().unwrap());
-            i += template[i..].chars().next().unwrap().len_utf8();
-        }
-    }
-    out
-}

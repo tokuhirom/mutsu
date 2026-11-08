@@ -3,8 +3,8 @@
 //! `"...".subst(/pat/, "repl")` previously always fell back to the interpreter's
 //! `dispatch_subst` (see docs/vm-decoupling.md, lever A; `.subst` is the
 //! highest-frequency residual method fallback). The substitution *engine* —
-//! regex matching (`regex_find_first_from_with_captures`), `$0`/`$1` capture
-//! expansion (`expand_capture_refs`) and Match-object construction — already
+//! regex matching (`regex_find_first_from_with_captures`) and Match-object
+//! construction — already
 //! lives Interpreter-side because the operator form `s/.../.../ ` compiles to
 //! `OpCode::Subst` and runs natively in `exec_subst_op`. This routes the common
 //! `.subst` *method* call through the same building blocks instead of the
@@ -12,9 +12,8 @@
 //! handling (closure replacements, regex-with-adverbs objects, the
 //! `:nth`/`:x`/`:c`/`:p`/`:ii`/`:mm`/`:ss` adverbs, non-`Str` invocants, …).
 //!
-//! The output is built to match `dispatch_subst` byte-for-byte (including
-//! mutsu's literal-`$0` expansion in string replacements and its `$/` policy:
-//! set on a single non-global match, left untouched on a global match, set to
+//! The output is built to match `dispatch_subst` byte-for-byte (including its
+//! `$/` policy: set on a single non-global match, left untouched on a global match, set to
 //! `Nil` on no match), so this is a pure decoupling change with no behavioral
 //! difference.
 
@@ -168,19 +167,10 @@ impl Interpreter {
         let chars: Vec<char> = text.chars().collect();
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0usize;
-        for (start, end, caps, _) in selected {
+        for (start, end, _, _) in selected {
             result.extend(chars[last_end..*start].iter());
-            // Expand `$0`/`$1`/… only when the match actually captured groups,
-            // matching `eval_subst_replacement` (a literal `$0` with no capture
-            // group is kept verbatim).
-            if caps.is_empty() {
-                result.push_str(replacement_str);
-            } else {
-                result.push_str(&crate::vm::vm_string_regex_ops::expand_capture_refs(
-                    replacement_str,
-                    caps,
-                ));
-            }
+            // The replacement string is literal: `'$0'` stays `$0` (Rakudo).
+            result.push_str(replacement_str);
             last_end = *end;
         }
         result.extend(chars[last_end..].iter());

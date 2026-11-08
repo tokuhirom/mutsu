@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # Basic $0 in substitution replacement
 {
@@ -42,8 +42,11 @@ plan 8;
 # Non-destructive S/// with $0
 {
     my $x = 'hello123world';
+    # The method's replacement is the string the caller built: a single-quoted
+    # `$0` is a literal (Rakudo), only `s///` and closures see the captures.
     my $result = $x.subst(/(\d+)/, 'num:$0');
-    is $result, 'hellonum:123world', '.subst with $0 backreference';
+    is $result, 'hellonum:$0world', '.subst with a literal $0 replacement';
+    is $x.subst(/(\d+)/, { "num:$0" }), 'hellonum:123world', '.subst closure with $0';
 }
 
 # Global substitution with $0
