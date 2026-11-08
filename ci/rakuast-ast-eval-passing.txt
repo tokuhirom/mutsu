@@ -3058,6 +3058,7 @@ t/lang/word-logical-loosest-precedence.t
 t/lang/word-logical-lvalue-precedence.t
 t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
+t/modules/add-method-module-lexical-type.t
 t/modules/add-multi-method-closure-sees-declaring-module-imports.t
 t/modules/anon-package-decl-no-symbol.t
 t/modules/anon-package-expr.t
@@ -3235,6 +3236,7 @@ t/modules/eval-require-declares-module.t
 t/modules/eval-sees-global-stash-bound-module-type.t
 t/modules/eval-stub-package-does-not-leak.t
 t/modules/eval-unit-package-scope.t
+t/modules/eval-use-module-lexical-class.t
 t/modules/for-code-param-shadows-module-routine.t
 t/modules/for-loop-param-in-package-body.t
 t/modules/fx-hashed-module-visibility-tables.t

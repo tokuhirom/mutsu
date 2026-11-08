@@ -1531,6 +1531,7 @@ impl Interpreter {
                 )
                 .cloned()
                 .collect();
+            self.record_unit_lexical_types(module_unit_for_loading_stack, registered_here.iter());
             let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
             // A type a `package EXPORT::<tag>` block declared is imported under
             // its short name: bind it where the importer reads it (#16332).
