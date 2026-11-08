@@ -29,6 +29,10 @@ fn doc_type() -> Value {
 /// `Doc::Declarator` type object.
 // Cost: O(f + l), f = fields of the node, l = lines of its comments.
 pub(crate) fn why(node: &RakuAstNode) -> Value {
+    // Only a `Doc::DeclaratorTarget` has docs; any other node answers `Nil`.
+    if !super::ctor_names::declares(node.class.printed_name(), FIELD) {
+        return Value::NIL;
+    }
     if let Some(value) = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
         (Some(FIELD), RakuAstFieldValue::Node(value)) => Some(value.clone()),
         _ => None,
@@ -47,20 +51,23 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::DocDeclarator,
-        fields: vec![
+        fields: [
             RakuAstField {
                 name: Some("WHEREFORE"),
                 value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
             },
-            RakuAstField {
-                name: Some("leading"),
-                value: list(leading),
-            },
-            RakuAstField {
-                name: Some("trailing"),
-                value: list(trailing),
-            },
-        ],
+        ]
+        .into_iter()
+        // Rakudo prints only the part the source wrote.
+        .chain((!leading.is_empty()).then(|| RakuAstField {
+            name: Some("leading"),
+            value: list(leading),
+        }))
+        .chain((!trailing.is_empty()).then(|| RakuAstField {
+            name: Some("trailing"),
+            value: list(trailing),
+        }))
+        .collect(),
     }))
 }
 
