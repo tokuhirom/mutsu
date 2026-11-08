@@ -1,13 +1,23 @@
 //! Bounded composition of the parser's type spellings into source nodes.
 
 use super::bareword::simple_type_node;
-use super::view::{is_pseudo_type, node_field, unsupported};
+use super::view::{node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
 use crate::ast::{Expr, Stmt};
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) const MAX_TYPE_DEPTH: usize = 128;
+
+/// `::?CLASS`, `::?ROLE`, `::?PACKAGE`, with an optional smiley.
+pub(super) fn is_pseudo_type(t: &str) -> bool {
+    let base = t
+        .strip_suffix(":D")
+        .or_else(|| t.strip_suffix(":U"))
+        .or_else(|| t.strip_suffix(":_"))
+        .unwrap_or(t);
+    matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
+}
 
 /// A simple type uses exactly the parser's identifier grammar, including
 /// internal hyphens, apostrophes, Unicode and qualified segments.

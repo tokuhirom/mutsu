@@ -1395,6 +1395,10 @@ pub(crate) enum BinaryForm {
     ColonPairNumber,
     /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
     CaretPrefix,
+    /// `"a" => 1`: a fat arrow whose key is a quoted string, which rakudo keeps
+    /// as an `ApplyInfix` over a `QuotedString` (a bare `a => 1` is a
+    /// `FatArrow`). Spelled like [`BinaryForm::Infix`] everywhere else.
+    QuotedKey,
     /// The `%h does R` of `my %h does R = init`: the declaration's own
     /// initializer assignment follows, so the role's `STORE` receives it with
     /// `:INITIALIZE`. Spelled like [`BinaryForm::Infix`] everywhere else.

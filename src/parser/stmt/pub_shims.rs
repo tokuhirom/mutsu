@@ -45,6 +45,17 @@ pub(crate) fn parse_one_trait_pub(input: &str) -> PResult<'_, sub::SubTraits> {
     sub::parse_sub_traits_upto(input, Some(1))
 }
 
+/// The argument list at the start of `input` (a slang token's `<arglist>`),
+/// without its parentheses: empty when a `)` follows.
+// Cost: O(n), n = size of the list.
+pub(crate) fn parse_arglist_pub(input: &str) -> PResult<'_, Vec<crate::ast::CallArg>> {
+    let (rest, _) = ws(input)?;
+    if rest.starts_with(')') || rest.is_empty() {
+        return Ok((rest, Vec::new()));
+    }
+    args::parse_remaining_call_args(rest)
+}
+
 pub(crate) fn parse_sub_traits_pub(input: &str) -> PResult<'_, sub::SubTraits> {
     sub::parse_sub_traits(input)
 }

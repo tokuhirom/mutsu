@@ -2083,7 +2083,7 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
     }
 }
 
-pub(super) use super::type_build::{build_type_node, is_simple_type};
+pub(super) use super::type_build::{build_type_node, is_pseudo_type, is_simple_type};
 
 /// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
 /// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
@@ -3459,7 +3459,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             op: crate::token_kind::TokenKind::FatArrow,
             right,
             form,
-        } if matches!(&**left,
+        } if *form != crate::ast::BinaryForm::QuotedKey
+            && matches!(&**left,
             Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_))) =>
         {
             // A colonpair (`:a(1)`, `:a`, `:!a`, `:$a`) is its own node class;
@@ -5097,16 +5098,6 @@ pub(super) fn type_capture_name(pd: &ParamDef) -> Option<&str> {
     })
 }
 
-/// `::?CLASS`, `::?ROLE`, `::?PACKAGE`, with an optional smiley.
-pub(super) fn is_pseudo_type(t: &str) -> bool {
-    let base = t
-        .strip_suffix(":D")
-        .or_else(|| t.strip_suffix(":U"))
-        .or_else(|| t.strip_suffix(":_"))
-        .unwrap_or(t);
-    matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
-}
-
 /// The built-in parameter traits that take no argument.
 fn is_parameter_is_trait(name: &str) -> bool {
     matches!(name, "copy" | "rw" | "raw" | "readonly")
@@ -6225,7 +6216,8 @@ fn colonpair_spelling(
         BinaryForm::ColonPairValue => colonpair_value_expr(names, expr),
         BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(names, expr),
         BinaryForm::ColonPairNumber => colonpair_number_expr(names, expr),
-        BinaryForm::Infix | BinaryForm::CaretPrefix | BinaryForm::DoesDeclInit => return None,
+        BinaryForm::Infix | BinaryForm::QuotedKey | BinaryForm::CaretPrefix => return None,
+        BinaryForm::DoesDeclInit => return None,
     }
     .ok()
 }
@@ -6467,7 +6459,7 @@ fn literal_hash_index_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
 /// A statement call's `CallArg`s in the argument-expression form an
 /// `Expr::Call` carries: a named argument is the `name => value` pair the
 /// expression parser builds for it (a bare `:name` being `name => True`).
-pub(super) fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
+pub(crate) fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
     use crate::ast::CallArg;
     args.iter()
         .map(|arg| match arg {

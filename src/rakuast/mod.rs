@@ -78,6 +78,7 @@ pub(crate) mod signature_expand;
 mod stmt_call;
 mod trait_is_constructor;
 pub(crate) mod unit_finish;
+pub(crate) mod var_queries;
 pub(crate) mod why_doc;
 mod with_branch;
 use constructor_positional::single_positional_class;
