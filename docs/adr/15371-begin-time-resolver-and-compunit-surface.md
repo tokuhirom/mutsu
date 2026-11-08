@@ -1,6 +1,6 @@
 # ADR-15371: The BEGIN-time resolver (`$*R`) and compunit (`$*CU`) surface a module may call
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision 2026-11-08; builds on ADR-15762)
 - **Date**: 2026-11-08
 - **Deciders**: ecosystem inventory worker, for the maintainer's review
 - **Issue**: [#15371](https://github.com/tokuhirom/mutsu/issues/15371) (CompUnit::Util,

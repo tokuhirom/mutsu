@@ -1,6 +1,6 @@
 # ADR-15762: Slangs by execution — production hooks into the Rust parser, user tokens and actions run on the slang host
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision 2026-11-08; proposed 2026-11-07)
 - **Date**: 2026-11-07
 - **Deciders**: Claude (lane:rakuast worker 15), for the maintainer's review
 - **Issue**: [#15762](https://github.com/tokuhirom/mutsu/issues/15762); first consumers
