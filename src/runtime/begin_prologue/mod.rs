@@ -60,10 +60,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         value_tail_begin(stmts);
     }
     let unit_names = unit_lexical_names(stmts);
-    let mut unit = nested::UnitContext {
-        is_eval,
-        strict_off: false,
-    };
+    let mut unit = nested::UnitContext { strict_off: false };
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
     let mut package_effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
