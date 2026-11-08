@@ -103,16 +103,9 @@ impl Interpreter {
     ) -> Result<String, RuntimeError> {
         let cased = |s: String| -> String { transforms.apply(&s, matched_text) };
         if !is_closure {
-            // Expand $0, $1, ... capture references in string replacements
-            if let Some(caps) = captures
-                && !caps.positional.is_empty()
-            {
-                let texts: Vec<String> =
-                    caps.positional.iter().map(|s| caps.slot_text(s)).collect();
-                let expanded =
-                    crate::vm::vm_string_regex_ops::expand_capture_refs(replacement_str, &texts);
-                return Ok(cased(expanded));
-            }
+            // The replacement of the METHOD forms is the string the caller built:
+            // `'$0'` is a literal `$0`, as in Rakudo. (`s///` expands its own
+            // captures in `vm_subst_repl`.)
             return Ok(cased(replacement_str.to_string()));
         }
         // A declared sub passed as `&name` is stored as a Sub carrying its
