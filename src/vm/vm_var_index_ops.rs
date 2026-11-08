@@ -451,6 +451,23 @@ impl Interpreter {
         let target = self.stack.pop().unwrap();
         let index = self.resolve_whatever_index_on_undefined(index, &target, is_positional);
 
+        // A typed-key object hash checks the key, and a shaped / native array
+        // the bounds, on the plain read; the deferred container path below
+        // never visits that check (`sub f() is rw { %h{'foo'} }` on `%h{Int}`).
+        // Run the plain read first for those receivers and keep its error.
+        if !Self::lazy_index_selects_many(&index) {
+            let inner = target.deref_container();
+            let checked = self.hash_key_type(inner.descalarize()).is_some()
+                || (matches!(inner.view(), ValueView::Array(..))
+                    && (crate::value::shaped_array::is_shaped_array(&inner)));
+            if checked {
+                self.stack.push(inner.descalarize().clone());
+                self.stack.push(index.clone());
+                self.exec_index_op_with_positional(is_positional)?;
+                self.stack.pop();
+            }
+        }
+
         // A subscript that selects several elements (a slice, a `Junction`, a
         // `*`/`WhateverCode` not resolvable to one position) names no single
         // location, so the deferred-path walk below cannot describe it: a
