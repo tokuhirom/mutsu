@@ -65,6 +65,7 @@ impl Interpreter {
         }
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
+        self.resolve_unit_lexical_type(code, name_idx);
         if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
             && sym == name
             && bareword_memoizable(name)
@@ -73,6 +74,26 @@ impl Interpreter {
             code.bareword_sites.remember(sites, idx, generation, sym);
         }
         Ok(())
+    }
+
+    /// A bare word that resolved to nothing but its own name, read by a loaded
+    /// module's code, is the `my` class / role that module's compunit declared,
+    /// when it has one: the load may have bound it in a tier the code's static
+    /// link skips (a `use` under an `EVAL`'s import region, #17129).
+    // Cost: O(1).
+    fn resolve_unit_lexical_type(&mut self, code: &CompiledCode, name_idx: u32) {
+        let Some(unit) = code.source_file else {
+            return;
+        };
+        let name = code.const_sym(name_idx);
+        if !matches!(self.stack.last().map(Value::view), Some(ValueView::Str(s)) if s.as_str() == name.as_str())
+        {
+            return;
+        }
+        if let Some(storage) = self.unit_lexical_type(unit, name) {
+            self.stack.pop();
+            self.stack.push(Value::package(storage));
+        }
     }
 
     /// `OpCode::GetBareWordOverScalar`: the bare word resolution minus the

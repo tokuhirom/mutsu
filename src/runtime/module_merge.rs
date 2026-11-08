@@ -94,6 +94,12 @@ pub(crate) struct ModuleVisibility {
     /// own compunit, not to the program scope
     /// (`Interpreter::code_is_foreign_unit`, ADR-12529).
     pub(crate) loaded_unit_set: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
+    /// The `my` class / role a loaded compunit declared, by `(compunit, bare
+    /// name)`, to its registry storage name (`Name\0<decl-id>`). The module's own
+    /// routines and closures read the name through their compunit even when
+    /// the load bound it in a tier their static link skips (a `use` run
+    /// under an `EVAL`'s import region, #17129).
+    pub(crate) unit_lexical_types: std::sync::Arc<rustc_hash::FxHashMap<(Symbol, Symbol), Symbol>>,
     /// ADR-11136: the modules a compunit merged at its top level. A
     /// block-level merge lives in the block's env tier instead
     /// (`MetaNs::ModuleMerge`).
@@ -142,6 +148,39 @@ impl Interpreter {
         for name in names {
             table.entry(name).or_insert(module_sym);
         }
+    }
+
+    /// Remember the lexical types (`Name\0<decl-id>` registry keys) a module's
+    /// body declared, under its compunit `unit`.
+    // Cost: O(n), n = keys given.
+    pub(crate) fn record_unit_lexical_types<'a>(
+        &mut self,
+        unit: Symbol,
+        keys: impl IntoIterator<Item = &'a String>,
+    ) {
+        for key in keys {
+            let Some((bare, _)) = key.split_once('\u{0}') else {
+                continue;
+            };
+            if bare.is_empty() || bare.contains("::") {
+                continue;
+            }
+            let table = crate::runtime::cow_table_mut(
+                &mut self.module.module_visibility.unit_lexical_types,
+            );
+            table.insert((unit, Symbol::intern(bare)), Symbol::intern(key));
+        }
+    }
+
+    /// The registry storage name of the lexical type `name` that the compunit
+    /// `unit` declared, if it is a loaded module.
+    // Cost: O(1).
+    pub(crate) fn unit_lexical_type(&self, unit: Symbol, name: Symbol) -> Option<Symbol> {
+        self.module
+            .module_visibility
+            .unit_lexical_types
+            .get(&(unit, name))
+            .copied()
     }
 
     /// Attribute the package-less `our sub`s a module's own body published
