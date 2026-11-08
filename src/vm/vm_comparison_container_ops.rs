@@ -16,6 +16,20 @@ impl Interpreter {
     pub(super) fn exec_container_eq_op(&mut self, flags: u8) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Bit 4: an operand is a call that may hand back a container (a Block
+        // returns its tail's cell) and the other a variable's captured cell:
+        // two cells are identical only if they are the same cell, a cell and
+        // a plain value never are.
+        if flags & 4 != 0
+            && (matches!(left.view(), ValueView::ContainerRef(_))
+                || matches!(right.view(), ValueView::ContainerRef(_)))
+        {
+            let result = Self::containers_same_slot(&left, &right)
+                || Self::containers_same_slot(&right, &left);
+            self.stack.push(Value::truth(result));
+            return;
+        }
+        let flags = flags & 3;
         let any_fresh = flags != 0;
         let result = if any_fresh && Self::is_value_non_reference(&left, &right) {
             // A fresh container (e.g. from `[$x][0]`) holding a non-reference

@@ -916,8 +916,33 @@ impl Compiler {
             }
             let left_fresh = Self::expr_is_fresh_container(left);
             let right_fresh = Self::expr_is_fresh_container(right);
-            let flags =
+            let mut flags =
                 (if left_fresh { 1u8 } else { 0u8 }) | (if right_fresh { 2u8 } else { 0u8 });
+            // `f($a) =:= $b` / `f($a) =:= g($b)` for a Block `f` returning its
+            // tail's container: compare the cells, so a scalar variable
+            // operand is captured as its cell and a call result is kept raw.
+            let is_call = |e: &Expr| matches!(e.peel_parens(), Expr::Call { .. } | Expr::CallOn { .. });
+            let cell_var = |c: &Self, e: &Expr| match e.peel_parens() {
+                Expr::Var(n) if c.local_map.contains_key(n.as_str()) && Self::is_plain_lexical_name(n) => {
+                    Some(n.clone())
+                }
+                _ => None,
+            };
+            let (lv, rv) = (cell_var(self, left), cell_var(self, right));
+            if (is_call(left) && (is_call(right) || rv.is_some()))
+                || (is_call(right) && lv.is_some())
+            {
+                flags |= 4;
+                for (e, v) in [(left, &lv), (right, &rv)] {
+                    self.compile_expr(e);
+                    if let Some(n) = v {
+                        self.emit_wrap_var_ref(n);
+                        self.code.emit(OpCode::CaptureVarCell);
+                    }
+                }
+                self.code.emit(OpCode::ContainerEq(flags));
+                return;
+            }
             self.compile_expr(left);
             self.compile_expr(right);
             self.code.emit(OpCode::ContainerEq(flags));
