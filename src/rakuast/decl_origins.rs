@@ -44,6 +44,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         with_child(node, "type", |ty| type_origin(ty, at));
     }
     traits(names, node, &parts.traits);
+    super::decl_shape_origins::key_types(node, &variable);
 }
 
 /// What the text of a declaration says about where its parts are.
