@@ -31,18 +31,23 @@ closure's captured set).
    - `ParamDef::is_placeholder(&self)` (a later slice; not yet defined) — for every consumer that holds a `ParamDef`; it is
      defined over the placeholder name in the first slice and moves to `target` once the binding
      keys no longer depend on the name;
-   - `ast::is_placeholder_name(&str)` — the single name-based test, for the consumers that only
+   - `ast::is_param_placeholder_name(&str)` — the single name-based test, for the consumers that only
      ever receive a name (a `VarDecl` name in the compiler, `SigParam` rendering in `value`).
 2. **No consumer spells a placeholder.** `src/compiler`, `src/vm`, `src/runtime`, `src/value`,
    `src/light_closure_shape.rs` and `src/rakuast` call the predicates; only `src/ast.rs` and the
    parser makers contain the spellings. A shrinking ratchet (like
    `check-frontend-debt`) counting the quoted spellings outside those files follows once the remaining
    name-only consumers are gone.
-3. **Name-only consumers shrink over time.** Where a consumer can be handed the `ParamDef` (or a
+3. **`target` must be total before it is read.** Today `ParamTarget::of_name` derives a form only for the
+   anonymous sigils; `__literal__` has no `ParamTarget` at all, and `rakuast::lower` rewrites a
+   parameter's name after construction. A consumer reads `target` only once every constructor and every
+   such rewrite sets it (a `ParamTarget::Literal` is added with that slice), or its verdict would differ
+   from the name's.
+4. **Name-only consumers shrink over time.** Where a consumer can be handed the `ParamDef` (or a
    `ParamTarget`) instead of a name, it is; the compiler's pointy-parameter selection is the first
-   (its `VarDecl` already originates from a `ParamDef`). `is_placeholder_name` is the residue that
+   (its `VarDecl` already originates from a `ParamDef`). `is_param_placeholder_name` is the residue that
    a later slice removes by carrying the target on `SigParam`.
-4. **No behaviour change, no cache bump in slice 1.** Placeholder *names* stay as they are in this
+5. **No behaviour change, no cache bump in slice 1.** Placeholder *names* stay as they are in this
    family's first slices (they are the binding keys for destructuring); only who recognises them
    changes. A slice that changes a name or the serialized `ParamDef` shape bumps the precompilation
    cache version in the same PR.

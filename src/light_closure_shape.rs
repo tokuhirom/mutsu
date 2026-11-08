@@ -228,5 +228,5 @@ pub(crate) fn is_plain_scalar_param_name(name: &str) -> bool {
     chars.all(|c| c.is_alphanumeric() || c == '_')
         && name != "_"
         && name != "self"
-        && !crate::ast::is_placeholder_name(name)
+        && !crate::ast::is_param_placeholder_name(name)
 }

@@ -455,7 +455,7 @@ pub(crate) const LITERAL_PARAM: &str = "__literal__";
 /// variable executes under (ADR-15761): the one name-based test, for consumers
 /// that only receive a name.
 // Cost: O(1).
-pub(crate) fn is_placeholder_name(name: &str) -> bool {
+pub(crate) fn is_param_placeholder_name(name: &str) -> bool {
     matches!(name, PARENS_PARAM | TYPE_ONLY_PARAM | LITERAL_PARAM)
         || name.starts_with(TYPE_CAPTURE_PREFIX)
 }
@@ -4100,15 +4100,15 @@ mod placeholder_tests {
             LITERAL_PARAM,
             "__type_capture__T",
         ] {
-            assert!(is_placeholder_name(name), "{name}");
+            assert!(is_param_placeholder_name(name), "{name}");
         }
         for name in ["x", "@", "@xs", "_", ""] {
-            assert!(!is_placeholder_name(name), "{name}");
+            assert!(!is_param_placeholder_name(name), "{name}");
         }
-        assert!(is_placeholder_name(
+        assert!(is_param_placeholder_name(
             &ParamDef::destructure(Vec::new(), false).name
         ));
-        assert!(!is_placeholder_name(
+        assert!(!is_param_placeholder_name(
             &ParamDef::destructure(Vec::new(), true).name
         ));
     }
