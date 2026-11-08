@@ -85,6 +85,17 @@ pub(crate) fn apply_slang_overrides(
             }
             continue;
         }
+        // A helper token of the slang's own productions (`eel-marker`, called as
+        // `<.eel-marker>` from another token it defines): it runs on the slang host
+        // when that token does, so the parser has nothing to register. A new rule
+        // nothing of the slang's refers to is still refused, as is a `:sym<...>`
+        // production of a category the parser does not hook.
+        if over.body.is_some()
+            && !over.name.contains(':')
+            && is_helper_of_other_rule(&over.name, overrides)
+        {
+            continue;
+        }
         return Err(format!(
             "Slang activation NYI: grammar rule override '{}' is not supported by this \
              implementation (recognized: {}, and the L10N vocabulary token categories)",
@@ -183,4 +194,32 @@ fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
             _ => None,
         })
         .collect()
+}
+
+/// Whether another rule of `overrides` calls the rule `name` as a subrule
+/// (`<name>`, `<.name>`, `<name=...>` and `$<x>=<name>` all contain `name>` or
+/// `name=` right after an opening `<`, optionally with a leading `.` or `?`/`!`).
+// Cost: O(r * n), r = overrides, n = size of a rule body.
+fn is_helper_of_other_rule(
+    name: &str,
+    overrides: &[crate::runtime::slang_activation::SlangRuleOverride],
+) -> bool {
+    let calls = [
+        format!("<{name}>"),
+        format!("<.{name}>"),
+        format!("<?{name}>"),
+        format!("<!{name}>"),
+        format!("<{name} "),
+        format!("<.{name} "),
+        format!("<{name}("),
+        format!("<.{name}("),
+        format!("=<{name}>"),
+    ];
+    overrides.iter().any(|other| {
+        other.name != name
+            && other
+                .body
+                .as_deref()
+                .is_some_and(|body| calls.iter().any(|call| body.contains(call.as_str())))
+    })
 }

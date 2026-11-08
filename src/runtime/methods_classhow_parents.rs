@@ -91,6 +91,11 @@ impl Interpreter {
     /// only, never composed roles.
     fn parent_is_role(&self, name: &str) -> bool {
         let base = name.split_once('[').map(|(b, _)| b).unwrap_or(name);
+        // The core `Grammar` every grammar inherits stays a class parent beside a
+        // user role group of the same name (`role Grammar[...]`, #16888).
+        if base == "Grammar" && !name.contains('[') {
+            return false;
+        }
         self.is_role_type_name(base)
     }
 

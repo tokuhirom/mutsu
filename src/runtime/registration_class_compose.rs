@@ -151,9 +151,18 @@ impl Interpreter {
                     None => None,
                 }
             };
-            if let Some(resolved) =
+            // The `Grammar` every `grammar` inherits by default (and `is Grammar`)
+            // is the core class: a user role group of the same name (`role
+            // Grammar[...]`) is not an `is` parent, so reading `Grammar` as a role
+            // here asked it for a candidate with no arguments (EEL's
+            // `EEL::Slang::Grammar`, #16888).
+            let core_grammar_parent = base_role_name == "Grammar" && !does_parents.contains(parent);
+            let resolved_role = if core_grammar_parent {
+                None
+            } else {
                 self.resolve_role_candidate_with_args(&resolved_parent_name, pre_args.as_deref())?
-            {
+            };
+            if let Some(resolved) = resolved_role {
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
                 self.compose_role_into_class(
