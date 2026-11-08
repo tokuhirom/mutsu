@@ -98,37 +98,38 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String, esc: &mut EscapedOri
         && !map.is_empty()
     {
         // Deterministic output: the rendered pairs sorted as text. The text of a
-        // pair starts `(:key(`, so the order is the keys' unless a key holds a
+        // pair starts `:key(`, so the order is the keys' unless a key holds a
         // `(`; only then is the text itself compared.
         let mut entries: Vec<_> = map.iter().collect();
         if entries.iter().any(|(k, _)| k.contains('(')) {
             let mut pairs: Vec<String> = entries
                 .iter()
                 .map(|(k, v)| {
-                    let mut pair = format!("(:{k}(");
+                    let mut pair = format!(":{k}(");
                     write_value_raku(v, &mut pair, esc);
-                    pair.push_str("))");
+                    pair.push(')');
                     pair
                 })
                 .collect();
             pairs.sort();
-            let _ = write!(out, ", :hash(Map.new({}))", pairs.join(", "));
+            // Rakudo: `Map.new((:a(1),:b(2)))`, one list of pairs.
+            let _ = write!(out, ", :hash(Map.new(({})))", pairs.join(","));
         } else {
             entries.sort_by(|a, b| {
                 a.0.bytes()
                     .chain(Some(b'('))
                     .cmp(b.0.bytes().chain(Some(b'(')))
             });
-            out.push_str(", :hash(Map.new(");
+            out.push_str(", :hash(Map.new((");
             for (i, (k, v)) in entries.into_iter().enumerate() {
                 if i > 0 {
-                    out.push_str(", ");
+                    out.push(',');
                 }
-                let _ = write!(out, "(:{k}(");
+                let _ = write!(out, ":{k}(");
                 write_value_raku(v, out, esc);
-                out.push_str("))");
+                out.push(')');
             }
-            out.push_str("))");
+            out.push_str(")))");
         }
     }
 
