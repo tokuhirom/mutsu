@@ -94,7 +94,7 @@ impl Compiler {
     /// computed at run time (`$c.v."$name"() = 9`), which the gate must let
     /// through.
     fn lvalue_invocant_wants_accessor_ref(name: Symbol, args: &[Expr]) -> Option<Option<String>> {
-        if name.resolve() != "__mutsu_assign_method_lvalue" || args.len() < 4 {
+        if name.resolve() != crate::lvalue_call::ASSIGN_METHOD || args.len() < 4 {
             return None;
         }
         if !matches!(
@@ -133,7 +133,7 @@ impl Compiler {
             || args.len() < 3
             || !matches!(
                 name.resolve().as_str(),
-                "__mutsu_assign_named_sub_lvalue" | "__mutsu_incdec_named_sub_lvalue"
+                crate::lvalue_call::ASSIGN_NAMED_SUB | crate::lvalue_call::INCDEC_NAMED_SUB
             )
         {
             return None;
@@ -345,7 +345,7 @@ impl Compiler {
     /// -- the same hint `__mutsu_assign_method_lvalue` carries for the method
     /// form (`$t.substr-rw(...) = v`).
     fn named_sub_lvalue_with_target_var(name: &Symbol, args: &[Expr]) -> Option<Vec<Expr>> {
-        if name.resolve() != "__mutsu_assign_named_sub_lvalue" || args.len() != 3 {
+        if name.resolve() != crate::lvalue_call::ASSIGN_NAMED_SUB || args.len() != 3 {
             return None;
         }
         let Expr::Literal(callee) = &args[0] else {
@@ -494,7 +494,7 @@ impl Compiler {
         // assigns through it does not capture it at all. Retarget the call at
         // the code variable itself, the same way the bare-call branch just
         // above does for a plain `f(...)`.
-        if name == "__mutsu_assign_named_sub_lvalue"
+        if name == crate::lvalue_call::ASSIGN_NAMED_SUB
             && args.len() == 3
             && let Expr::Literal(callee) = &args[0]
             && let Some(callee) = callee.as_str()
@@ -507,7 +507,7 @@ impl Compiler {
                 args[2].clone(),
             ];
             self.compile_expr_call_inner(
-                &crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
+                &crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
                 &rewritten,
                 suppress_listop_rewrite,
             );
@@ -597,7 +597,7 @@ impl Compiler {
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
         // We compile this as: declare the state var, then unconditionally assign the RHS.
-        if name == "__mutsu_assign_callable_lvalue"
+        if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::DoStmt(stmt) = &args[0]
             && let Stmt::VarDecl {
@@ -649,7 +649,7 @@ impl Compiler {
                 self.emit_assign_local_or_name(&var_name);
             }
             return;
-        } else if name == "__mutsu_assign_callable_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::AssignExpr {
                 name: var_name,
@@ -668,7 +668,7 @@ impl Compiler {
             let var_name = var_name.clone();
             self.emit_assign_local_or_name(&var_name);
             return;
-        } else if name == "__mutsu_assign_callable_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::IndexAssign {
                 target,
@@ -695,7 +695,7 @@ impl Compiler {
             };
             self.compile_expr(&outer);
             return;
-        } else if name == "__mutsu_assign_callable_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::Ternary {
                 cond,
@@ -719,7 +719,7 @@ impl Compiler {
             };
             self.compile_expr(&desugared);
             return;
-        } else if name == "__mutsu_assign_callable_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::Binary {
                 left, op, right, ..
@@ -788,7 +788,7 @@ impl Compiler {
             ]);
             self.compile_expr(&desugared);
             return;
-        } else if name == "__mutsu_assign_callable_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::ArrayLiteral(targets) = &args[0]
             && targets.iter().all(|t| {
@@ -1108,7 +1108,7 @@ impl Compiler {
                 .collect();
             self.compile_expr(&Expr::ArrayLiteral(result_targets));
             return;
-        } else if name == "__mutsu_assign_method_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_METHOD
             && args.len() >= 4
             && let Expr::Index {
                 target: index_target,
@@ -1169,7 +1169,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;
-        } else if name == "__mutsu_assign_method_lvalue"
+        } else if name == crate::lvalue_call::ASSIGN_METHOD
             && args.len() >= 4
             && let Expr::Index {
                 target: index_target,

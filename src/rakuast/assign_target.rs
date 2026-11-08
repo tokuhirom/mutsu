@@ -114,7 +114,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
         }
         Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, value),
         Expr::CallOn { target, args } => Expr::Call {
-            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+            name: Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
             args: vec![*target, Expr::ArrayLiteral(args), value],
             listop: false,
         },

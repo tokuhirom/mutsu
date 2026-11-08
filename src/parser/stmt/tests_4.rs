@@ -186,7 +186,7 @@ fn expr_stmt_non_lvalue_assignment_is_not_silently_ignored() {
     assert_eq!(rest, "");
     match stmt {
         Stmt::Expr(Expr::Call { name, .. }) => {
-            assert_eq!(name, "__mutsu_assign_callable_lvalue");
+            assert_eq!(name, crate::lvalue_call::ASSIGN_CALLABLE);
         }
         other => panic!("expected assignment call expression, got {other:?}"),
     }

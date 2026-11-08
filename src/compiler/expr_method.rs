@@ -776,7 +776,7 @@ impl Compiler {
                 // the modified container back to the attribute (mirrors the
                 // `$obj.attr<key> = v` lvalue path).
                 self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("__mutsu_index_delete_method_lvalue"),
+                    name: Symbol::intern(crate::lvalue_call::INDEX_DELETE_METHOD),
                     args: vec![
                         (**method_target).clone(),
                         Expr::Literal(Value::str(method_name.resolve())),

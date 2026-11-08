@@ -499,7 +499,7 @@ fn type_method_assign(
         None => (method_name, None),
     };
     let writeback = |value: Expr| Expr::Call {
-        name: crate::symbol::Symbol::intern("__mutsu_assign_method_lvalue"),
+        name: crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_METHOD),
         args: vec![
             Expr::BareWord(type_name.to_string()),
             Expr::Literal(Value::str(method_name.to_string())),

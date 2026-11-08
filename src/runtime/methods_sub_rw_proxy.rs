@@ -147,7 +147,7 @@ impl Interpreter {
         );
 
         let mut store_body = vec![Stmt::Expr(Expr::Call {
-            name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+            name: Symbol::intern(crate::lvalue_call::ASSIGN_NAMED_SUB),
             args: vec![
                 Expr::Literal(Value::str(rw_routine.to_string())),
                 Expr::ArrayLiteral([vec![target_expr()], window()].concat()),

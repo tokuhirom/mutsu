@@ -744,7 +744,7 @@ impl Compiler {
             args,
             listop: false,
         } = arg
-            && name.resolve() == "__mutsu_assign_callable_lvalue"
+            && name.resolve() == crate::lvalue_call::ASSIGN_CALLABLE
             && args.len() == 3
             && let Expr::Ternary {
                 cond,
