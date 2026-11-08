@@ -18,6 +18,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "signature" {
         return signature_production(text);
     }
+    if rule == "trait" {
+        return trait_production(text);
+    }
     if rule == "statementlist" {
         return statementlist_production(text);
     }
@@ -40,6 +43,22 @@ fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String
     let names = NameScope::default();
     let node =
         super::statements::statement_list(&names, &stmts).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<trait>` core rule: the one trait at the start of `text` as a
+/// `RakuAST::Trait::*` node.
+// Cost: O(n), n = size of the trait.
+fn trait_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, item)) = crate::parser::parse_slang_trait(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node =
+        super::routine_source::trait_node(&names, &item).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),

@@ -38,13 +38,14 @@ const MAX_HOOK_DEPTH: u32 = 64;
 
 /// The Raku side of the host: the base grammar and actions the slang's roles
 /// are composed onto, and the entry the loop calls (ADR-15762 §2.3, §2.4).
-/// `block` and `signature` are shims: the core production is the Rust parser's, reached by a
+/// `block`, `signature` and `trait` are shims: the core production is the Rust parser's, reached by a
 /// back-call. `end-keyword` is rakudo's own token.
 const HOST_PRELUDE: &str = r#"
 grammar Mutsu::Slang::Host::Base {
     token end-keyword { » <!before \h* '=>'> }
     method block() { __mutsu_slang_shim('block', self) }
     method signature() { __mutsu_slang_shim('signature', self) }
+    method trait() { __mutsu_slang_shim('trait', self) }
     method statementlist() { __mutsu_slang_shim('statementlist', self) }
 }
 class Mutsu::Slang::Host::Actions {

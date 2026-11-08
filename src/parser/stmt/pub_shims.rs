@@ -39,6 +39,12 @@ pub(crate) fn parse_return_type_annotation_pub(input: &str) -> PResult<'_, Strin
     sub::parse_return_type_annotation(input)
 }
 
+/// One trait at the start of `input` (a slang token's `<trait>`).
+// Cost: O(n), n = size of the trait.
+pub(crate) fn parse_one_trait_pub(input: &str) -> PResult<'_, sub::SubTraits> {
+    sub::parse_sub_traits_upto(input, Some(1))
+}
+
 pub(crate) fn parse_sub_traits_pub(input: &str) -> PResult<'_, sub::SubTraits> {
     sub::parse_sub_traits(input)
 }

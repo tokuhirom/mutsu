@@ -426,3 +426,16 @@ pub(crate) fn parse_slang_signature(
         crate::parser::stmt::parse_param_list_with_return_pub(text).ok()?;
     Some((rest, params, returns))
 }
+
+/// Parse the one trait at the start of `text` for a slang token that calls the
+/// core `<trait>`: the text after it and the trait as the source wrote it.
+// Cost: the parse of the trait.
+pub(crate) fn parse_slang_trait(
+    text: &str,
+) -> Option<(&str, crate::ast::routine_trait::RoutineTrait)> {
+    let (rest, mut traits) = crate::parser::stmt::parse_one_trait_pub(text).ok()?;
+    if traits.source_traits.len() != 1 {
+        return None;
+    }
+    Some((rest, traits.source_traits.remove(0)))
+}
