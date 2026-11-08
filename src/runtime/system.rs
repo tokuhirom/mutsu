@@ -201,6 +201,14 @@ impl Interpreter {
                     Prerun::Keep
                 }
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
+                    // Past a BEGIN the arguments may read what it computed:
+                    // only literal ones are safe to evaluate ahead of it.
+                    Some(_)
+                        if first_begin.is_some_and(|b| idx > b)
+                            && !arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) =>
+                    {
+                        Prerun::No
+                    }
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
                         if arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) {
