@@ -1,6 +1,6 @@
 # ADR-16451: Whether a `CompUnit::Repository::FileSystem` root gets a `.precomp` directory
 
-- **Status**: Proposed (needs the maintainer's call; recommendation in §4)
+- **Status**: Accepted (maintainer decision 2026-11-08: option (c))
 - **Date**: 2026-11-08
 - **Deciders**: ecosystem inventory worker, for the maintainer's review
 - **Issue**: [#16451](https://github.com/tokuhirom/mutsu/issues/16451) (Template::HAML
@@ -34,9 +34,9 @@ a hardcoded artefact to satisfy one assertion. Rejected by the "no stubs" rule.
 `ecosystem/accepted-divergences.toml` (shape: Template::HAML `t/0510`, test 1), exactly the
 ADR-0130 case (a rakudo implementation artefact the language does not require).
 
-## 3. Recommendation
+## 3. Decision
 
-Choose **(c)**. The store location is an implementation detail; mutsu's per-user cache is the
+Option **(c)** (maintainer decision, 2026-11-08). The store location is an implementation detail; mutsu's per-user cache is the
 decision ADR-11756 already took, and (a) weakens the "no runtime-written files in user trees"
 posture for one assertion. Revisit only if a second distribution is found that reads `.precomp`
 as data rather than as an existence check.
