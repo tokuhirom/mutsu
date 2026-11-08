@@ -19,6 +19,7 @@
 #                                                 #   ci/ast-text-corpus/identical.tsv stopped matching
 #   scripts/ast-text-corpus.sh update             # add the statements that match now (never removes)
 #
+#   CORPUS     ast (default) or deparse: the `.DEPARSE` corpus lives in ci/deparse-corpus (#15792)
 #   MUTSU_BIN  interpreter to run (default target/debug/mutsu)
 #   JOBS       parallel jobs (default: nproc)
 #
@@ -29,7 +30,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-OUT=tmp/ast-text
+# CORPUS=deparse switches every mode to the `.DEPARSE` text (#15792): the dump
+# script, the scratch directory and the pinned golden/identical lists change,
+# the machinery is the same.
+CORPUS="${CORPUS:-ast}"
+case "$CORPUS" in
+  ast) DUMP=dump.raku; OUT=tmp/ast-text; RATCHET_DIR=ci/ast-text-corpus ;;
+  deparse) DUMP=dump-deparse.raku; OUT=tmp/deparse-text; RATCHET_DIR=ci/deparse-corpus ;;
+  *) echo "ast-text-corpus: CORPUS must be ast or deparse" >&2; exit 2 ;;
+esac
 SAMPLE="$OUT/sample.txt"
 MUTSU_BIN="${MUTSU_BIN:-target/debug/mutsu}"
 JOBS="${JOBS:-$(nproc)}"
@@ -43,17 +52,16 @@ run_one() {
   mkdir -p "$dir"
   if [ "$which" = rakudo ]; then
     [ -e "$dir/$name.out" ] && return 0
-    if timeout 60 raku "$TOOLS/dump.raku" "$file" > "$dir/$name.tmp" 2> "$dir/$name.err"; then
+    if timeout 60 raku "$TOOLS/$DUMP" "$file" > "$dir/$name.tmp" 2> "$dir/$name.err"; then
       mv "$dir/$name.tmp" "$dir/$name.out"
     else
       rm -f "$dir/$name.tmp"
     fi
   else
-    timeout 60 "$MUTSU_BIN" "$TOOLS/dump.raku" "$file" > "$dir/$name.out" 2> "$dir/$name.err" || true
+    timeout 60 "$MUTSU_BIN" "$TOOLS/$DUMP" "$file" > "$dir/$name.out" 2> "$dir/$name.err" || true
   fi
 }
 
-RATCHET_DIR=ci/ast-text-corpus
 GOLDEN="$RATCHET_DIR/rakudo.tsv"
 IDENTICAL="$RATCHET_DIR/identical.tsv"
 
@@ -64,7 +72,7 @@ ratchet_run() {
   grep '^F' "$GOLDEN" | cut -f2 | LC_ALL=C sort -u > "$list"
   rm -rf "$OUT/ratchet-root/mutsu"
   export -f run_one
-  export TOOLS MUTSU_BIN
+  export TOOLS MUTSU_BIN DUMP
   OUT="$OUT/ratchet-root" xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' mutsu {} < "$list"
   echo "$OUT/ratchet-root/mutsu"
 }
@@ -76,7 +84,7 @@ case "${1:-}" in
     list="$OUT/golden-files.txt"
     find roast -name '*.t' | LC_ALL=C sort | awk -v n="${2:-12}" 'NR % n == 0' > "$list"
     export -f run_one
-    export TOOLS MUTSU_BIN
+    export TOOLS MUTSU_BIN DUMP
     OUT="$OUT/golden-root" xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' rakudo {} < "$list"
     python3 -I "$TOOLS/ratchet.py" golden "$OUT/golden-root/rakudo" "$list" "$GOLDEN"
     ;;
@@ -94,7 +102,7 @@ case "${1:-}" in
     which="${2:?rakudo or mutsu}"
     [ -e "$SAMPLE" ] || "$0" sample
     export -f run_one
-    export OUT TOOLS MUTSU_BIN
+    export OUT TOOLS MUTSU_BIN DUMP
     xargs -P "$JOBS" -I{} bash -c 'run_one "$0" "$1"' "$which" {} < "$SAMPLE"
     ;;
   compare)
