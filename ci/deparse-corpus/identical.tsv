@@ -96,6 +96,7 @@ roast/S02-types/array-shapes.t	15
 roast/S02-types/array-shapes.t	16
 roast/S02-types/array-shapes.t	17
 roast/S02-types/array-shapes.t	18
+roast/S02-types/array-shapes.t	19
 roast/S02-types/array-shapes.t	20
 roast/S02-types/nan.t	0
 roast/S02-types/nan.t	1
@@ -1353,6 +1354,7 @@ roast/S14-traits/routines.t	5
 roast/S14-traits/routines.t	6
 roast/S14-traits/routines.t	7
 roast/S14-traits/routines.t	8
+roast/S14-traits/routines.t	9
 roast/S15-nfg/concatenation.t	0
 roast/S15-nfg/concatenation.t	1
 roast/S15-nfg/concatenation.t	2
@@ -1583,6 +1585,7 @@ roast/S26-documentation/block-trailing.t	57
 roast/S26-documentation/block-trailing.t	58
 roast/S26-documentation/block-trailing.t	59
 roast/S26-documentation/block-trailing.t	60
+roast/S26-documentation/block-trailing.t	61
 roast/S26-documentation/block-trailing.t	62
 roast/S26-documentation/block-trailing.t	63
 roast/S26-documentation/block-trailing.t	64
@@ -2081,6 +2084,7 @@ roast/integration/advent2009-day05.t	12
 roast/integration/advent2009-day05.t	13
 roast/integration/advent2009-day05.t	14
 roast/integration/advent2009-day05.t	15
+roast/integration/advent2009-day05.t	16
 roast/integration/advent2009-day05.t	17
 roast/integration/advent2009-day05.t	18
 roast/integration/advent2009-day05.t	19
@@ -2103,6 +2107,7 @@ roast/integration/advent2009-day17.t	9
 roast/integration/advent2009-day17.t	10
 roast/integration/advent2009-day17.t	11
 roast/integration/advent2009-day17.t	12
+roast/integration/advent2009-day17.t	13
 roast/integration/advent2010-day08.t	0
 roast/integration/advent2010-day08.t	1
 roast/integration/advent2010-day08.t	2
