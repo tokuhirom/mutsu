@@ -45,6 +45,7 @@ grammar Mutsu::Slang::Host::Base {
     token end-keyword { » <!before \h* '=>'> }
     method block() { __mutsu_slang_shim('block', self) }
     method signature() { __mutsu_slang_shim('signature', self) }
+    method statementlist() { __mutsu_slang_shim('statementlist', self) }
 }
 class Mutsu::Slang::Host::Actions {
     method attach($/, $ast) { $/.make($ast); $ast }

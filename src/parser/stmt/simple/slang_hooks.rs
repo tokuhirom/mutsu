@@ -324,6 +324,13 @@ pub(crate) fn parse_slang_shim_production<'a>(
     }
 }
 
+/// Parse the statement list at the start of `text` for a slang token that calls
+/// the core `<statementlist>` (ADR-16888): the text after it and its statements.
+// Cost: the parse of the list.
+pub(crate) fn parse_slang_statementlist(text: &str) -> Option<(&str, Vec<Stmt>)> {
+    crate::parser::stmt::stmtlist::stmt_list_with_mode(text, false, false).ok()
+}
+
 /// Parse the parameters of a slang token's `<signature>` at the start of `text`
 /// (what stands between the parentheses of `sub f(...)`): the text after them,
 /// the parameters and the return type.

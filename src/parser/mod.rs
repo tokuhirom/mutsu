@@ -291,7 +291,9 @@ pub(crate) use stmt::simple::{
     slang_overrides_action,
 };
 
-pub(crate) use stmt::simple::{parse_slang_shim_production, parse_slang_signature};
+pub(crate) use stmt::simple::{
+    parse_slang_shim_production, parse_slang_signature, parse_slang_statementlist,
+};
 
 /// The module search paths a parse-time slang activation must run under — the
 /// paths this parse itself resolves `use` against.

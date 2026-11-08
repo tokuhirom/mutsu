@@ -18,6 +18,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "signature" {
         return signature_production(text);
     }
+    if rule == "statementlist" {
+        return statementlist_production(text);
+    }
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
     let Ok((rest, stmt)) = parsed else {
@@ -25,6 +28,22 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     };
     let node = production_node(&stmt).map_err(|e| e.message.to_string())?;
     Ok(Some((text.len() - rest.len(), node)))
+}
+
+/// The `<statementlist>` core rule: the statements at the start of `text` as a
+/// `RakuAST::StatementList` (ADR-16888).
+// Cost: O(n), n = size of the list (parse and conversion).
+fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, stmts)) = crate::parser::parse_slang_statementlist(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node =
+        super::statements::statement_list(&names, &stmts).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
 }
 
 /// The `<signature>` core rule: the parameters at the start of `text` as a
