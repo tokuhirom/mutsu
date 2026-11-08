@@ -260,9 +260,9 @@ impl Interpreter {
     /// by the prelude's `MUTSU_AWAIT::handle-promise`: an already-settled
     /// handle keeps or breaks it at once, a pending one through
     /// `subscribe-awaiter`. Anything else is returned unchanged.
-    // TODO: compile to bytecode -- this reaches the prelude routine through
-    // `call_function`, like the DEPARSE entry; a native handle adapter for
-    // Promise/Channel would avoid it.
+    // TODO: the prelude routine is reached through `call_function`, like the
+    // DEPARSE entry; a native handle adapter for Promise/Channel would avoid
+    // that hop.
     fn await_handle_to_promise(&mut self, v: Value) -> Result<Value, RuntimeError> {
         let is_handle = matches!(v.view(), ValueView::Instance { .. })
             && self.type_matches_value("Awaitable::Handle", &v);
