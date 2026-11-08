@@ -13,6 +13,27 @@
 
 use super::*;
 
+/// Whether a `routine-declarator:sym<sub>` token body spells a keyword other
+/// than the stock `<.routine-sub>` and reads the definition with `key-origin`.
+// Cost: O(n), n = body length.
+fn respells_sub_keyword(body: &str) -> bool {
+    let Some(at) = body.find("key-origin(") else {
+        return false;
+    };
+    // The keyword group is what precedes the definition (`<routine-def=.`).
+    let head = body[..at]
+        .rsplit_once('<')
+        .map_or(&body[..at], |(head, _)| head);
+    let keywords: String = head
+        .replace(":ratchet", "")
+        .replace(":sigspace", "")
+        .replace("<.end-keyword>?", "")
+        .replace("<.end-keyword>", "")
+        .split_whitespace()
+        .collect();
+    !keywords.is_empty() && keywords != "<.routine-sub>"
+}
+
 /// Apply one slang registration's overrides to the current unit's parser
 /// state: production overrides become [`SlangModes`] flags, and `L10N::XX`
 /// vocabulary tokens / `<category>2ast` mappings become the unit's
@@ -31,6 +52,18 @@ pub(crate) fn apply_slang_overrides(
         .map(|v| (*v).clone())
         .unwrap_or_default();
     for over in overrides {
+        // A re-statement of the stock `sub` declarator (Tuxic's, whose only
+        // keyword is `<.routine-sub>`) is a no-op mode; one that spells keywords
+        // of its own and reads the core definition after them with `key-origin`
+        // (Slang::Mosdef's `lambda` / `λ`) is a production the host runs.
+        if matches!(
+            over.name.as_str(),
+            "routine-declarator:sym<sub>" | "routine_declarator:sym<sub>"
+        ) && over.body.as_deref().is_some_and(respells_sub_keyword)
+        {
+            register_hook(&over.name, over.body.as_deref());
+            continue;
+        }
         if apply_slang_rule_override(&mut modes, &over.name).is_some() {
             continue;
         }
@@ -251,4 +284,33 @@ fn is_helper_of_other_rule(name: &str, overrides: &[SlangRuleOverride]) -> bool 
                 .as_deref()
                 .is_some_and(|body| calls.iter().any(|call| body.contains(call.as_str())))
     })
+}
+
+#[cfg(test)]
+mod respell_tests {
+    use super::respells_sub_keyword;
+
+    #[test]
+    fn tuxic_shape_is_the_stock_keyword() {
+        let tuxic = "\n        <.routine-sub>\n        <.end-keyword>?\n        <routine-def=.key-origin('routine-def', 'sub')>\n    ";
+        assert!(!respells_sub_keyword(tuxic));
+    }
+
+    #[test]
+    fn tuxic_body_as_the_activation_reads_it() {
+        // The adverb of a `token` is part of the body text.
+        let tuxic = ":ratchet <.routine-sub>\n        <.end-keyword>?\n        <routine-def=.key-origin('routine-def', 'sub')>\n    ";
+        assert!(!respells_sub_keyword(tuxic));
+    }
+
+    #[test]
+    fn mosdef_shape_respells_the_keyword() {
+        let mosdef = "\n        [ <.routine-sub> | lambda | 'λ' ]\n        <.end-keyword>\n        <routine-def=.key-origin('routine-def', 'sub')>\n    ";
+        assert!(respells_sub_keyword(mosdef));
+    }
+
+    #[test]
+    fn a_body_without_key_origin_is_not_a_respelling() {
+        assert!(!respells_sub_keyword("'sub' <.end-keyword> <routine-def>"));
+    }
 }
