@@ -714,11 +714,11 @@ impl Interpreter {
                             Ok(Value::package(crate::symbol::wk::any()))
                         } else if name.starts_with('*')
                             && !runtime::utils::is_builtin_dynamic_var(name)
-                            && !code
-                                .dynamic_toplevel_declared_sym
-                                .contains(&crate::symbol::Symbol::intern(
+                            && !code.dynamic_toplevel_declared_sym.contains(
+                                &crate::symbol::Symbol::intern(
                                     name.trim_start_matches(['$', '@', '%', '&']),
-                                ))
+                                ),
+                            )
                         {
                             // A `$*x`/`@*x`/`%*x` that resolved through NONE of
                             // the stores above (env, a caller's `my $*x`,
