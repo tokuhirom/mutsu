@@ -25,6 +25,8 @@ fn respells_sub_keyword(body: &str) -> bool {
         .rsplit_once('<')
         .map_or(&body[..at], |(head, _)| head);
     let keywords: String = head
+        .replace(":ratchet", "")
+        .replace(":sigspace", "")
         .replace("<.end-keyword>?", "")
         .replace("<.end-keyword>", "")
         .split_whitespace()
@@ -291,6 +293,13 @@ mod respell_tests {
     #[test]
     fn tuxic_shape_is_the_stock_keyword() {
         let tuxic = "\n        <.routine-sub>\n        <.end-keyword>?\n        <routine-def=.key-origin('routine-def', 'sub')>\n    ";
+        assert!(!respells_sub_keyword(tuxic));
+    }
+
+    #[test]
+    fn tuxic_body_as_the_activation_reads_it() {
+        // The adverb of a `token` is part of the body text.
+        let tuxic = ":ratchet <.routine-sub>\n        <.end-keyword>?\n        <routine-def=.key-origin('routine-def', 'sub')>\n    ";
         assert!(!respells_sub_keyword(tuxic));
     }
 
