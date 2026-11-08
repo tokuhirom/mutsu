@@ -1467,6 +1467,16 @@ pub(crate) struct Compiler {
     /// it bare, so it resolves through the package's static store
     /// (`package_lexicals`) as it does from the body's methods.
     pub(crate) package_body_lexicals: HashSet<String>,
+    /// While compiling the run-time part of a split package body
+    /// ([`Compiler::compile_package_runtime_body`]): the `our` names the body
+    /// declares. Any other bare variable in that part is an enclosing lexical
+    /// (or a caller's, in an `EVAL`), never a package variable, so
+    /// [`Self::qualify_variable_name`] keeps it bare. `None` elsewhere.
+    pub(crate) package_runtime_our_names: Option<HashSet<String>>,
+    /// An EVAL'd unit that says `no strict` at its top level: its undeclared
+    /// bare variables may be package variables, so the run-time part of a
+    /// split package body keeps qualifying them.
+    pub(crate) eval_unit_lax: bool,
     /// The class whose body lexically encloses this code, for a `$?CLASS`
     /// outside a method (a class-body `sub`). It is known at compile time, so
     /// it does not depend on whichever class body ran last. `None` in a role
@@ -2198,6 +2208,8 @@ impl Compiler {
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
             package_body_lexicals: HashSet::new(),
+            package_runtime_our_names: None,
+            eval_unit_lax: false,
             static_class: None,
             static_class_hidden: false,
             type_aliases: HashMap::new(),
@@ -2481,6 +2493,10 @@ impl Compiler {
             || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
             || self.package_body_lexicals.contains(name)
+            || self
+                .package_runtime_our_names
+                .as_ref()
+                .is_some_and(|ours| !ours.contains(name))
         {
             return name.to_string();
         }

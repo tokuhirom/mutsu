@@ -1,6 +1,25 @@
 use super::*;
 
 impl Compiler {
+    /// Whether `body` only applies the traits of a variable
+    /// (`begin_prologue::lift_unit_var_traits`): its `Stmt::VarTrait` steps,
+    /// possibly inside a block the lifter wrapped them in.
+    // Cost: O(n), n = statements of `body` and of the blocks wrapped in it.
+    pub(super) fn is_var_trait_application(body: &[Stmt]) -> bool {
+        body.iter().any(|s| match s {
+            Stmt::VarTrait { .. } => true,
+            Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                Self::is_var_trait_application(inner)
+            }
+            // The lifter's value slot: `my $tmp = do { ...steps... }`.
+            Stmt::Assign {
+                expr: Expr::DoBlock { body, .. },
+                ..
+            } => Self::is_var_trait_application(body),
+            _ => false,
+        })
+    }
+
     /// Compile a CHECK phaser body wrapped in error-catching logic.
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
     pub(super) fn compile_check_phaser(&mut self, body: &[Stmt], is_begin: bool) {
