@@ -715,7 +715,7 @@ impl Interpreter {
                         } else if name.starts_with('*')
                             && !runtime::utils::is_builtin_dynamic_var(name)
                             && !code
-                                .dynamic_declared_sym
+                                .dynamic_toplevel_declared_sym
                                 .contains(&crate::symbol::Symbol::intern(
                                     name.trim_start_matches(['$', '@', '%', '&']),
                                 ))

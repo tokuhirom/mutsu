@@ -1302,6 +1302,11 @@ impl Compiler {
                     // restoring/skipping only the bare key would leave the
                     // declaration readable through the twin.
                     self.code.dynamic_declared_sym.insert(Symbol::intern(name));
+                    if self.decl_scope_depth == 0 {
+                        self.code
+                            .dynamic_toplevel_declared_sym
+                            .insert(Symbol::intern(name));
+                    }
                     self.code
                         .dynamic_declared_sym
                         .insert(Symbol::intern(&format!("${}", name)));

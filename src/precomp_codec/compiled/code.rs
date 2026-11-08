@@ -84,6 +84,7 @@ impl Encode for CompiledCode {
             block_scope_protected_slots,
             my_declared_sym,
             dynamic_declared_sym,
+            dynamic_toplevel_declared_sym,
             my_declared_enum_sym,
             for_loop_param_syms,
             expr_declared_syms,
@@ -252,6 +253,7 @@ impl Encode for CompiledCode {
         encode_map(block_scope_protected_slots, encoder)?;
         encode_sym_set(my_declared_sym, encoder)?;
         encode_sym_set(dynamic_declared_sym, encoder)?;
+        encode_sym_set(dynamic_toplevel_declared_sym, encoder)?;
         encode_sym_set(my_declared_enum_sym, encoder)?;
         encode_sym_set(for_loop_param_syms, encoder)?;
         encode_sym_set(expr_declared_syms, encoder)?;
@@ -407,6 +409,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             block_scope_protected_slots: decode_map(decoder)?,
             my_declared_sym: decode_set(decoder)?,
             dynamic_declared_sym: decode_set(decoder)?,
+            dynamic_toplevel_declared_sym: decode_set(decoder)?,
             my_declared_enum_sym: decode_set(decoder)?,
             for_loop_param_syms: decode_set(decoder)?,
             expr_declared_syms: decode_set(decoder)?,

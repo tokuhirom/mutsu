@@ -237,6 +237,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         multi_scope_slots,
         my_declared_sym,
         dynamic_declared_sym,
+        dynamic_toplevel_declared_sym,
         my_declared_enum_sym,
         for_loop_param_syms,
         expr_declared_syms,
