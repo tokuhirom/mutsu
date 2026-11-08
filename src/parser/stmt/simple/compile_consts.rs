@@ -210,6 +210,23 @@ pub(crate) fn pop_scope() {
             && let Some(scope) = scopes.pop()
         {
             scope.note_bound_names();
+            if let Some(before) = scope.slang_hooks_before_use {
+                restore_hooks(before);
+            }
+        }
+    });
+}
+
+/// Note, in the current scope, the slang hooks as they stand now: a slang the
+/// scope activates ends with it. Only the first activation of a scope records.
+// Cost: O(h), h = registered hooks.
+pub(in crate::parser) fn note_slang_activation_scope() {
+    let before = hooks_snapshot();
+    SCOPES.with(|s| {
+        if let Some(scope) = s.borrow_mut().last_mut()
+            && scope.slang_hooks_before_use.is_none()
+        {
+            scope.slang_hooks_before_use = Some(before);
         }
     });
 }
