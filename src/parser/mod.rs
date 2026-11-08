@@ -292,8 +292,8 @@ pub(crate) use stmt::simple::{
 };
 
 pub(crate) use stmt::simple::{
-    parse_slang_arglist, parse_slang_shim_production, parse_slang_signature, parse_slang_statementlist,
-    parse_slang_trait,
+    parse_slang_arglist, parse_slang_shim_production, parse_slang_signature,
+    parse_slang_statementlist, parse_slang_trait,
 };
 
 /// The module search paths a parse-time slang activation must run under — the

@@ -70,7 +70,11 @@ pub(crate) fn slang_host_wrapped_rule(name: &str) -> bool {
     slang_wrapper_rule(name)
         || matches!(
             name,
-            "arglist" | "block" | "circumfix:sym<( )>" | "circumfix:sym<[ ]>" | "circumfix:sym<{ }>"
+            "arglist"
+                | "block"
+                | "circumfix:sym<( )>"
+                | "circumfix:sym<[ ]>"
+                | "circumfix:sym<{ }>"
         )
 }
 
