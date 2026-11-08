@@ -72,9 +72,16 @@ fn let_subscript_stmt<'a>(
     full_name: &str,
     is_temp: bool,
 ) -> Option<PResult<'a, Stmt>> {
+    let spelling = if rest.starts_with('<') {
+        crate::ast::IndexSpelling::Angle
+    } else {
+        crate::ast::IndexSpelling::Subscript
+    };
     let (after_index, index) = if let Some(key_rest) = rest.strip_prefix('<')
         && let Some(end_pos) = key_rest.find('>')
     {
+        // TODO: a word list (`temp %h<a b>`) is a slice; it is still saved as the
+        // one key "a b", and its deparse says so.
         let key = Expr::Literal(Value::str(key_rest[..end_pos].to_string()));
         (Ok(&key_rest[end_pos + 1..]), key)
     } else {
@@ -104,7 +111,7 @@ fn let_subscript_stmt<'a>(
         if r.starts_with(".=") || crate::parser::stmt::assign::parse_compound_assign_op(r).is_some()
         {
             let (r, assign_expr) = expression(var_start)?;
-            let element = crate::ast::temporize::element_expr(full_name, &index);
+            let element = crate::ast::temporize::element_expr(full_name, &index, spelling);
             return parse_statement_modifier(
                 r,
                 temporize(
@@ -121,7 +128,7 @@ fn let_subscript_stmt<'a>(
         } else {
             (r, Assigned::No)
         };
-        let element = crate::ast::temporize::element_expr(full_name, &index);
+        let element = crate::ast::temporize::element_expr(full_name, &index, spelling);
         parse_statement_modifier(r, temporize(is_temp, Target::Element(element), value)?)
     })())
 }

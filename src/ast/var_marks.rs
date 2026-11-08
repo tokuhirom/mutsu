@@ -20,6 +20,10 @@ pub(crate) struct VarMarks {
     /// A key-typed hash (`my %h{Str}`) whose `Any` value type the parser
     /// supplied; `my Any %h{Str}` writes it, and RakuAST tells them apart.
     pub(crate) implicit_value_type: bool,
+    /// The hash's `Mix` / `MixHash` type came from an `is Mix` trait, not from
+    /// a type written before the name: the RakuAST view renders the trait only.
+    /// Not part of [`Self::is_plain`]: it changes no execution path.
+    pub(crate) type_from_trait: bool,
     /// In a `.AST` parse, the colonpairs of the declared name as written
     /// (`:foo<g h>` of `my $today:foo<g h>`); the name itself is canonical.
     pub(crate) name_colonpairs: Option<Box<str>>,
