@@ -365,6 +365,61 @@ impl Interpreter {
     /// writing them through `registry_mut()` from `Interpreter::new` took a
     /// write guard on the shared registry and so deep-cloned all ~450 built-in
     /// `ClassDef`s on every single construction (#7572).
+    /// Whether `name` is a variant of an enum the core declares (`Same`, `Kept`,
+    /// `LittleEndian`, `SIGINT`), which every scope reads as a bare term.
+    // Cost: O(1) expected after the first call, which builds the set once.
+    pub(in crate::runtime) fn is_builtin_enum_variant(name: &str) -> bool {
+        static VARIANTS: std::sync::LazyLock<std::collections::HashSet<String>> =
+            std::sync::LazyLock::new(|| {
+                [
+                    Interpreter::endian_enum_variants(),
+                    Interpreter::protocol_family_enum_variants(),
+                    Interpreter::order_enum_variants(),
+                    Interpreter::seek_type_enum_variants(),
+                    Interpreter::signal_enum_variants(),
+                    Interpreter::file_change_event_enum_variants(),
+                    Interpreter::promise_status_enum_variants(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(|(variant, _)| variant)
+                .collect()
+            });
+        VARIANTS.contains(name)
+    }
+
+    /// The value of the core enum variant spelled `name` (`Same` is
+    /// `Order::Same`), or `None` when no core enum has such a variant.
+    // Cost: O(v), v = variants of the core enums (about 100).
+    pub(crate) fn builtin_enum_variant_value(name: &str) -> Option<Value> {
+        if !Self::is_builtin_enum_variant(name) {
+            return None;
+        }
+        let enums = [
+            ("Endian", Interpreter::endian_enum_variants()),
+            ("ProtocolFamily", Interpreter::protocol_family_enum_variants()),
+            ("Order", Interpreter::order_enum_variants()),
+            ("SeekType", Interpreter::seek_type_enum_variants()),
+            ("Signal", Interpreter::signal_enum_variants()),
+            ("FileChangeEvent", Interpreter::file_change_event_enum_variants()),
+            ("PromiseStatus", Interpreter::promise_status_enum_variants()),
+        ];
+        enums.into_iter().find_map(|(enum_name, variants)| {
+            variants
+                .into_iter()
+                .enumerate()
+                .find(|(_, (variant, _))| variant == name)
+                .map(|(index, (variant, value))| {
+                    Value::enum_parts(
+                        Symbol::intern(enum_name),
+                        Symbol::intern(&variant),
+                        value,
+                        index,
+                    )
+                })
+        })
+    }
+
     pub(in crate::runtime) fn seed_builtin_enum_types(registry: &mut Registry) {
         registry
             .enum_types

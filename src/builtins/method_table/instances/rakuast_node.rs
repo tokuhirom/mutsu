@@ -1014,5 +1014,14 @@ fn deparse(
     let mut call_args = Vec::with_capacity(args.len() + 1);
     call_args.push(target.clone());
     call_args.extend(args.iter().cloned());
+    // The deparser is declared per interpreter: a unit that mentions `DEPARSE`
+    // carries it as a prelude, but another interpreter (the slang host's, which
+    // a production's action runs in) has not seen that unit. Declare it there
+    // on first use.
+    if !interp.has_function("MUTSU_DEPARSE::run")
+        && let Err(e) = interp.ensure_deparse_class()
+    {
+        return Some(Err(e));
+    }
     Some(interp.call_function("MUTSU_DEPARSE::run", call_args))
 }

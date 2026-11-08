@@ -80,6 +80,40 @@ pub(crate) fn replace_body(node: &mut RakuAstNode, new_body: Value) -> Result<()
     Ok(())
 }
 
+/// `replace-signature($new-signature)`: the routine's `signature` field becomes
+/// `$new-signature`, which must be a `RakuAST::Signature`.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn replace_signature(
+    node: &mut RakuAstNode,
+    new_signature: &Value,
+) -> Result<(), RuntimeError> {
+    if !matches!(
+        node.class,
+        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod
+    ) {
+        return Err(RuntimeError::new(
+            "replace-signature is only available on RakuAST::Routine",
+        ));
+    }
+    if !matches!(new_signature.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::Signature)
+    {
+        return Err(RuntimeError::new(format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
+             '$new-signature'; expected RakuAST::Signature but got {}",
+            crate::value::type_name::value_type_name(new_signature)
+        )));
+    }
+    let value = RakuAstFieldValue::Node(new_signature.clone());
+    match node.fields.iter_mut().find(|f| f.name == Some("signature")) {
+        Some(slot) => slot.value = value,
+        None => node.fields.push(super::RakuAstField {
+            name: Some("signature"),
+            value,
+        }),
+    }
+    Ok(())
+}
+
 /// The hidden field marking a statement-level block. Rakudo's `bare-block` is
 /// parse-time state (`Block.new(:bare-block)` is rejected), `True` for a block
 /// that is a whole statement (`{ 2 };`, also nested ones) and `False` for every

@@ -674,6 +674,9 @@ pub enum RakuAstClass {
     Submethod,
     // `self` — a term with no fields of its own.
     TermSelf,
+    /// `self` as the declaration a method scope makes of it (a slang's
+    /// `VarDeclaration::Implicit::Self.new`): it carries only its name.
+    VarDeclarationImplicitSelf,
     TermDeclaration,
     /// `...` / `!!!` / `???` (the yada-yada stubs).
     StubFail,
@@ -994,6 +997,7 @@ impl RakuAstClass {
             Package => "RakuAST::Package",
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
+            VarDeclarationImplicitSelf => "RakuAST::VarDeclaration::Implicit::Self",
             TermDeclaration => "RakuAST::Term::Declaration",
             StubFail => "RakuAST::Stub::Fail",
             StubDie => "RakuAST::Stub::Die",
@@ -1531,6 +1535,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Package,
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
+    RakuAstClass::VarDeclarationImplicitSelf,
     RakuAstClass::TermDeclaration,
     RakuAstClass::StubFail,
     RakuAstClass::StubDie,
