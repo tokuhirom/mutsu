@@ -409,6 +409,30 @@ pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
     stmt::simple::current_language_version_starts_with(prefix)
 }
 
+/// The language revision (`6.c`, `6.d`, `6.e`) a `use v6.x` statement selects,
+/// for code compiled after the parse that read the statement.
+// Cost: O(1).
+pub(crate) fn language_version_of_use(stmt: &Stmt) -> Option<String> {
+    let Stmt::Use {
+        module,
+        arg: Some(crate::ast::Expr::Literal(written)),
+        ..
+    } = stmt
+    else {
+        return None;
+    };
+    if module != "v6" {
+        return None;
+    }
+    let crate::value::ValueView::Str(written) = written.view() else {
+        return None;
+    };
+    Some(stmt::decl::normalize_language_version(&format!(
+        "v{}",
+        written.as_str()
+    )))
+}
+
 pub(crate) fn set_current_language_version(version: &str) {
     stmt::simple::set_current_language_version(version);
 }

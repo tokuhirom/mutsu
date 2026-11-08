@@ -8,6 +8,7 @@ mod has_decl;
 mod has_trait_argument;
 pub(crate) use has_decl::attribute_type_seed;
 mod helpers;
+pub(crate) use helpers::normalize_language_version;
 mod my_decl;
 mod my_decl_assign;
 mod my_decl_dispatch;

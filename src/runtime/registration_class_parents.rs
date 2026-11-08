@@ -260,7 +260,15 @@ impl Interpreter {
                 base_parent.strip_prefix("CORE::").is_some_and(|core| {
                     crate::builtin_types::catalog::builtin_type_info(core).is_some()
                 });
+            // A parent another thread composed (a pun or mixin type reached
+            // through a value cached in a shared Map) is composed here from
+            // its published recipe before the name is judged unknown. Its
+            // full spelling is the class name (`R[Int]`), not the stripped base.
+            let names_adopted_class = !names_cataloged_core_type
+                && !self.registry().classes.contains_key(base_parent)
+                && self.adopt_published_mixin(resolved_parent_name.as_str());
             if !names_cataloged_core_type
+                && !names_adopted_class
                 && !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
                 && !crate::runtime::types::is_builtin_role_name(base_parent)

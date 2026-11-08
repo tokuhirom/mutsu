@@ -64,6 +64,7 @@ mod rakuast_operator_props;
 mod rakuast_parameter_queries;
 mod rakuast_phases;
 mod rakuast_rakudoc;
+mod rakuast_set_origin;
 mod rakuast_var_queries;
 mod rakuast_visit;
 mod rakuast_walk;
@@ -132,6 +133,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_literal_queries::ROWS,
     rakuast_var_queries::ROWS,
     rakuast_phases::ROWS,
+    rakuast_set_origin::ROWS,
     rakuast_name_queries::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_apply_queries::ROWS,

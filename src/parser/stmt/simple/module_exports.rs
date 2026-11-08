@@ -262,7 +262,8 @@ fn note_scan_guard_skip() {
 /// `use`'s arguments, so no source scan can list them (#11062).
 // Cost: O(n), n = source length.
 pub(crate) fn source_declares_export_hook(source: &str) -> bool {
-    source_scan::declares_export_sub(&source_scan::code_text(source))
+    let code = source_scan::code_text(source);
+    source_scan::declares_export_sub(&code) || source_scan::declares_export_stash(&code)
 }
 
 /// Register exported function names for a module (called when parsing `use` statements).

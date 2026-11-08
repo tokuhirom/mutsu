@@ -136,6 +136,12 @@ impl UndeclaredVars<'_> {
             {
                 self.declare(&var.name);
             }
+            // A module whose exports the scan cannot list (`package
+            // EXPORT::DEFAULT { our $answer }`) may bring in any variable:
+            // no use after it is judged, as under `no strict`.
+            if crate::parser::scanned_exported_vars_complete(module).is_none() {
+                self.strict = false;
+            }
             return;
         };
         if forward.bail {
