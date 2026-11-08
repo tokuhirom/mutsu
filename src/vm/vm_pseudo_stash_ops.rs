@@ -440,7 +440,14 @@ impl Interpreter {
         };
         self.add_merged_module_packages(merged_modules, &mut entries);
         match own_imports {
-            None => self.add_visible_routines_to_pseudo_stash(&mut entries),
+            None => {
+                self.add_visible_routines_to_pseudo_stash(&mut entries);
+                // Every scope still open sees what its imports bound only in
+                // their sets (an `EVAL`'s `sub EXPORT` hook routine).
+                for scope in (0..self.import_scopes().len()).rev() {
+                    self.add_scope_import_set_code(scope, &mut entries);
+                }
+            }
             Some(Some(scope)) => self.add_scope_imported_routines(scope, &mut entries),
             Some(None) if package_block_imports => self.add_package_imported_routines(&mut entries),
             Some(None) => {}
@@ -488,9 +495,15 @@ impl Interpreter {
                 entries.entry(format!("&{name}")).or_insert(value);
             }
         }
-        // A code object a `use` bound only in the scope's import sets (an
-        // exported `&name` variable, a `sub EXPORT` hook's routine) has no
-        // routine alias to list it by: the sets are the record.
+        self.add_scope_import_set_code(scope, entries);
+    }
+
+    /// Add the code objects a `use` bound only in the import sets of
+    /// `import_scopes()[scope]` (an exported `&name` variable, a `sub EXPORT`
+    /// hook's routine), which have no routine alias to list them by: the
+    /// sets are the record.
+    // Cost: O(b), b = bindings in the scope's import sets.
+    fn add_scope_import_set_code(&self, scope: usize, entries: &mut ValueMap) {
         for set in self.import_scopes()[scope].lexical_sets.iter().rev() {
             let Some(bindings) = self.module_lexical_import_set(*set) else {
                 continue;

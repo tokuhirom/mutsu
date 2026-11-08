@@ -1,0 +1,3 @@
+# `MY::` inside an EVAL lists a `sub EXPORT` hook's routine
+
+`EVAL 'use M; MY::<&hook-routine>:exists'` answered False when `M` hands its routines out through a `sub EXPORT` hook, although the routine was callable by name. The pad of a unit whose `MY::` reads every open import scope listed the routines the imports aliased but not a code object bound only in a scope's lexical import sets, which is where a hook's routine lives. That case now lists the sets' code objects of each open scope, as a block's `MY::` already did. Test: `t/routines/eval-my-stash-hook-routine.t` (string and tree EVAL); `t/modules/import-export/custom-export-sub-lexical-stash.t` joins the `EVAL(.AST)` ratchet.
