@@ -171,6 +171,16 @@ impl Interpreter {
                 let leaves = crate::runtime::utils::shaped_array_leaves(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), leaves, &grep_adverb)
             }
+            // A `List` literal's elements have no container of their own
+            // (`(1,2,3).grep(...)[0].VAR` is `Int`): promoting its slots would
+            // mint scratch cells and hand them out as the result. A list whose
+            // elements ARE cells (`($x, $y).grep`) keeps the promoting path.
+            ValueView::Array(items, crate::value::ArrayKind::List)
+                if !items.iter().any(|v| v.is_container_ref()) =>
+            {
+                let list: Vec<Value> = items.iter().cloned().collect();
+                self.eval_grep_with_adverb(args.first().cloned(), list, &grep_adverb)
+            }
             ValueView::Array(items, _arr_kind) => {
                 // ADR-0058 step 3b: with the default `:v` adverb the callback
                 // runs when the Seq is CONSUMED, not here. The adverbed forms
