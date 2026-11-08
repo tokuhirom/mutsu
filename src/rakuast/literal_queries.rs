@@ -20,3 +20,9 @@ pub(crate) fn literal_return_type(node: &RakuAstNode) -> Value {
 pub(crate) fn string_return_type() -> Value {
     Value::package(crate::symbol::Symbol::intern("Str"))
 }
+
+/// `Literal.compile-time-value`: the value the literal holds.
+// Cost: O(1).
+pub(crate) fn literal_compile_time_value(node: &RakuAstNode) -> Value {
+    node_accessor(node, "value").unwrap_or(Value::NIL)
+}
