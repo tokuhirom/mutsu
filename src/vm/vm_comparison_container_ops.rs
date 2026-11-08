@@ -178,11 +178,6 @@ impl Interpreter {
         } else {
             self.name_denotes_scalar_container(name)
         };
-        if std::env::var_os("MUTSU_DBG_EQ").is_some() && right.to_string_value() == "(Any)" && left.to_string_value() == "(Any)" {
-            let own = self.find_local_slot(code, name).map(|slot| self.locals.get(slot).map(|v| v.is_container_ref()));
-            let cellname = self.find_local_slot(code, name).and_then(|slot| self.locals.get(slot)).and_then(|v| match v.view() { ValueView::ContainerRef(c) => Some(format!("{:?}/{}", c.descriptor_name().map(|s| s.as_str()), c.load().to_string_value())), _ => None });
-            eprintln!("DBGEQ2 cellname={cellname:?} name={name} denotes={denotes_container} own_is_cell={own:?} left_cell={} right_cell={} ident={}", left.is_container_ref(), right.is_container_ref(), crate::runtime::values_identical(&left, &right));
-        }
         let result = if denotes_container {
             false
         } else {
@@ -205,16 +200,11 @@ impl Interpreter {
         };
         // A raw parameter aliasing a caller's `$` variable: that variable's
         // cell is the container.
-        // A sigilless source (`\hit`) owns no Scalar of its own, so its env
-        // entry cannot name a container the parameter did not already bind
-        // (`own_cell` above): looking it up by name from the callee's frame can
-        // only reach another frame's or thread's variable of the same name.
         own_cell
             || self
                 .env()
                 .get_sym(crate::runtime::sigilless_alias_key(name))
                 .and_then(|src| src.as_str().map(str::to_string))
-                .filter(|src| crate::term_names::term_spelling(src).is_none())
                 .and_then(|src| self.env().get(&src).cloned())
                 .is_some_and(|v| is_cell(&v))
     }

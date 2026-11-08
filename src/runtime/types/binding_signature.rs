@@ -3343,23 +3343,6 @@ impl Interpreter {
                         && arg_source_name
                             .as_deref()
                             .is_some_and(|name| self.name_is_readonly_binding(name));
-                    if std::env::var_os("MUTSU_DBG_EQ").is_some()
-                        && is_raw
-                        && let Some(sn) = arg_source_name.as_deref()
-                        && sn.starts_with('\\')
-                        && !raw_readonly_source
-                    {
-                        eprintln!(
-                            "DBGBIND src={sn} is_readonly={} possible={} marker={:?} veto={} arg={}",
-                            self.is_readonly(sn),
-                            crate::env::sigilless_readonly_keys_possible(),
-                            self.env()
-                                .get_sym(crate::runtime::utils::sigilless_readonly_key(sn))
-                                .map(|v| v.to_string_value()),
-                            implicit_raw_veto,
-                            args[positional_idx].unwrap_varref().to_string_value()
-                        );
-                    }
                     if is_rw || (is_raw && !implicit_raw_veto && !raw_readonly_source) {
                         // A `$x is raw` parameter that took a literal is bound to
                         // the value itself (`Immutable`, no Scalar behind it);
