@@ -113,6 +113,7 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
         "statement-control" | "statement_control" => Some("statement-control"),
         "routine-declarator" | "routine_declarator" => Some("routine-declarator"),
         "scope-declarator" | "scope_declarator" => Some("scope-declarator"),
+        "statement-prefix" | "statement_prefix" => Some("statement-prefix"),
         "term" => Some("term"),
         "value" => Some("value"),
         "number" => Some("number"),
@@ -436,6 +437,7 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
             "statement-control",
             "routine-declarator",
             "scope-declarator",
+            "statement-prefix",
         ],
         input,
     )?;
@@ -458,6 +460,7 @@ pub(in crate::parser) fn term_hook(input: &str) -> Option<PResult<'_, Expr>> {
             "number",
             "routine-declarator",
             "scope-declarator",
+            "statement-prefix",
         ],
         input,
     )?;
