@@ -2407,6 +2407,10 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::Blockoid" && method == "new" {
+        // No argument: rakudo builds the empty `StatementList` itself.
+        if args.is_empty() {
+            return Ok(Some(empty_blockoid()));
+        }
         if args.len() != 1 {
             return Err(RuntimeError::new(
                 "RakuAST::Blockoid.new expects a single StatementList argument",
