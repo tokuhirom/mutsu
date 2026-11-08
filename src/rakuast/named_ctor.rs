@@ -258,6 +258,10 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
             C::VarDeclarationImplicitSelf,
             &[("name", Node, DefaultStr("self"))],
         ),
+        "RakuAST::Declaration::ResolvedConstant" => (
+            C::DeclarationResolvedConstant,
+            &[("compile-time-value", Node, Required)],
+        ),
         "RakuAST::Term::Self" => (C::TermSelf, &[("variable", Node, Omit)]),
         "RakuAST::Type::Subset" => (
             C::TypeSubset,

@@ -488,6 +488,7 @@ RakuAST::Heredoc
 RakuAST::Heredoc::InterpolatedWhiteSpace
 RakuAST::HyperPrimeThunk
 RakuAST::IMPL
+RakuAST::IMPL::QASTContext
 RakuAST::ImplicitBlockSemanticsProvider
 RakuAST::ImplicitDeclarations
 RakuAST::ImplicitLookups

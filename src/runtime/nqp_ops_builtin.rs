@@ -691,6 +691,20 @@ impl Interpreter {
         {
             return obj.raw_storage_view();
         }
+        // `$*CU`'s `$!check-phasers`: the raw list whose closures run in the
+        // unit's CHECK phase (Qwiratry's `BodyRewrite.install` pushes onto it).
+        if bare == "check-phasers"
+            && let ValueView::RakuAst(node) = obj.view()
+            && node.class == crate::rakuast::RakuAstClass::CompUnit
+        {
+            return crate::unit_source_text::check_phasers_list();
+        }
+        if bare == "resolver"
+            && let ValueView::RakuAst(node) = obj.view()
+            && node.class == crate::rakuast::RakuAstClass::CompUnit
+        {
+            return Some(crate::runtime::attach_target::compile_resolver_handle());
+        }
         // Any other attribute of a hash answers with the hash itself.
         if let ValueView::Hash(_) = obj.view() {
             return Some(obj.clone());

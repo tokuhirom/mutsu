@@ -52,6 +52,7 @@ pub(crate) mod rakuast_accessors;
 mod rakuast_apply_queries;
 mod rakuast_arg_list_queries;
 mod rakuast_block_queries;
+mod rakuast_compile_state;
 mod rakuast_diagnostics;
 mod rakuast_doc_edit;
 mod rakuast_finish;
@@ -141,6 +142,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_why::ROWS,
     rakuast_finish::ROWS,
     rakuast_diagnostics::ROWS,
+    rakuast_compile_state::ROWS,
     rakuast_parameter_queries::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,

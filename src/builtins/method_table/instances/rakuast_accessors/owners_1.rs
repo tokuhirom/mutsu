@@ -163,6 +163,13 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Declaration::ResolvedConstant",
+        &[
+            "RakuAST::Declaration::ResolvedConstant",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Doc::Block",
         &["RakuAST::Doc::Block", "RakuAST::Doc", "RakuAST::Node"],
     ),

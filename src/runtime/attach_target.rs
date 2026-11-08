@@ -89,6 +89,16 @@ fn target_handle(kind: &str, depth: usize) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern(ATTACH_TARGET_CLASS), attrs)
 }
 
+/// The resolver object `$*CU.resolver` and `$!resolver` answer: the same
+/// opaque handle `$*R` is, standing for the unit's own scope.
+// Cost: O(1).
+pub(crate) fn compile_resolver_handle() -> Value {
+    let mut attrs = HashMap::new();
+    attrs.insert("depth".to_string(), Value::int(-1));
+    attrs.insert("compunit".to_string(), Value::int(0));
+    Value::make_instance(crate::symbol::Symbol::intern(RESOLVER_CLASS), attrs)
+}
+
 impl Interpreter {
     /// Bind `$*R` for the duration of a `sub EXPORT` call, recording the
     /// in-position `use` it answers for (see the module docs). Always a fresh

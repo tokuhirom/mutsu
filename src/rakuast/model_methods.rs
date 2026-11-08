@@ -117,6 +117,7 @@ pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
             | RakuAstClass::Module
             | RakuAstClass::Package
             | RakuAstClass::RoleBody
+            | RakuAstClass::DeclarationResolvedConstant
     ) {
         names.push("compile-time-value");
     }
