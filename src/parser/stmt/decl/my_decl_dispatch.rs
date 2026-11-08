@@ -187,6 +187,7 @@ pub(super) fn try_keyword_dispatch(
             .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
             .unwrap_or(r);
         let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
+        crate::parser::stmt::sub::mark_only(&mut stmt);
         if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
             *scope = crate::ast::SubScope::Our;
         }

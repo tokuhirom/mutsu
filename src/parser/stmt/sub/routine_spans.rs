@@ -28,6 +28,7 @@ pub(crate) fn routine_spans(
         signature,
         block,
         traits,
+        only: false,
     }))
 }
 
@@ -58,4 +59,14 @@ pub(crate) fn package_spans(
     let brace = brace.trim_start();
     let block = crate::parser::stmt::control::parsed_block::block_spans(brace, brace, rest, body);
     Some(Box::new(PackageSpans { name, block }))
+}
+
+/// Mark a parsed routine declaration as written with the `only` declarator.
+// Cost: O(1).
+pub(crate) fn mark_only(stmt: &mut Stmt) {
+    if let Stmt::SubDecl { spans, .. } | Stmt::MethodDecl { spans, .. } = stmt
+        && let Some(spans) = spans
+    {
+        spans.only = true;
+    }
 }

@@ -551,6 +551,11 @@ pub(crate) struct RoutineSpans {
     /// trait the `.AST` parse records (`ast::routine_trait`).
     #[serde(default)]
     pub(crate) traits: Vec<TraitSpans>,
+    /// The declarator was written `only` (`only sub f`): it is the default
+    /// dispatch, so nothing else of the declaration records it, but the
+    /// RakuAST node says `multiness => "only"`.
+    #[serde(default)]
+    pub(crate) only: bool,
 }
 
 /// Where a trait was written (`is copy`, `returns Int`): all of it, and the
