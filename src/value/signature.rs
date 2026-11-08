@@ -1176,6 +1176,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
 
     // capture
     attrs.insert("capture".to_string(), Value::Bool(p.is_capture));
+    attrs.insert("sigilless".to_string(), Value::Bool(p.sigilless));
 
     // named_names
     let named_names_val: Vec<Value> = p
@@ -1414,14 +1415,44 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
     if !prefix.is_empty() {
         param_str.push_str(&prefix);
     }
-    if is_named && !name.is_empty() {
-        param_str.push(':');
+    let is_capture = attrs.get("capture").map(Value::truthy).unwrap_or(false);
+    let is_sigilless = !is_capture && attrs.get("sigilless").map(Value::truthy).unwrap_or(false);
+    // `:key($var)`: a named parameter whose key differs from its variable name.
+    let renamed_key = if is_named && prefix.is_empty() && !name.is_empty() {
+        let var = name.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '_');
+        match attrs.get("named_names").map(Value::view) {
+            Some(ValueView::Array(keys, _)) => keys
+                .first()
+                .map(Value::to_string_value)
+                .filter(|k| !k.is_empty() && k != var),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(key) = renamed_key {
+        // `:key($var)`, the variable keeping its sigil.
+        param_str.push_str(&format!(":{key}({name})"));
+    } else {
+        // A slurpy hash is "named" in mutsu's model but is spelled `*%h`, not
+        // `*:%h`.
+        if is_named && !name.is_empty() && prefix.is_empty() {
+            param_str.push(':');
+        }
+        // A capture is spelled `|c` (`|` alone when anonymous); it is raw
+        // implicitly, so no `is raw` follows.
+        if is_capture && prefix.is_empty() && !name.starts_with('|') {
+            param_str.push('|');
+        }
+        // A sigilless parameter is spelled `\x`; likewise implicitly raw.
+        if is_sigilless && !name.starts_with('\\') {
+            param_str.push('\\');
+        }
+        param_str.push_str(&name);
     }
-    param_str.push_str(&name);
     // An anonymous parameter still shows the sigil it was declared with: `Int $`,
     // `@`, and the invocant's `K:D $:`. Captures (`|`) and sigilless parameters
     // carry their own spelling in `name`, so they are left alone.
-    let is_capture = attrs.get("capture").map(Value::truthy).unwrap_or(false);
     if name.is_empty() && !is_capture && !sigil.is_empty() {
         param_str.push_str(&sigil);
     }
@@ -1446,7 +1477,7 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
 
     parts.push(param_str);
 
-    if is_raw {
+    if is_raw && !is_capture && !is_sigilless {
         parts.push("is raw".to_string());
     }
     if is_rw {
