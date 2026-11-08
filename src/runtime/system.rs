@@ -411,6 +411,53 @@ impl Interpreter {
         result
     }
 
+    /// Marks where the closures `$*CU.add-check-code` queued run: after the
+    /// unit's last CHECK phaser, or at the end of its BEGIN prologue when it
+    /// has none (as the main unit does, `run.rs`). A unit with neither queued
+    /// nothing.
+    // Cost: O(s), s = statements of the unit.
+    fn insert_run_check_code(stmts: &mut Vec<Stmt>, prologue_len: usize) {
+        let is_check = |stmt: &Stmt| {
+            matches!(
+                stmt,
+                Stmt::Phaser {
+                    kind: crate::ast::PhaserKind::Check,
+                    ..
+                }
+            )
+        };
+        if let Some(last) = stmts.iter().rposition(is_check) {
+            stmts.insert(last + 1, Stmt::RunCheckCode);
+        } else if prologue_len > 0 {
+            stmts.insert(prologue_len + 1, Stmt::RunCheckCode);
+        } else if let Some(last) = stmts.iter().rposition(|stmt| match stmt {
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Begin,
+                ..
+            } => true,
+            // A final `BEGIN { ... }` with no `;` parses as an expression.
+            Stmt::Expr(expr) => {
+                let mut expr = expr;
+                while let crate::ast::Expr::Grouped(inner) = expr {
+                    expr = inner;
+                }
+                matches!(
+                    expr,
+                    crate::ast::Expr::PhaserExpr {
+                        kind: crate::ast::PhaserKind::Begin,
+                        ..
+                    }
+                )
+            }
+            _ => false,
+        }) {
+            // A BEGIN that reads a name the unit does not declare stays in
+            // place (it is not lifted into the prologue) and runs with the
+            // body; what it queued runs right after it.
+            stmts.insert(last + 1, Stmt::RunCheckCode);
+        }
+    }
+
     fn run_eval_unit_stmts_body(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
@@ -439,6 +486,7 @@ impl Interpreter {
         if prologue_len > 0 {
             stmts.insert(prologue_len, Stmt::BeginPrologueEnd);
         }
+        Self::insert_run_check_code(&mut stmts, prologue_len);
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
         // of the snippet too (#13137), as for the mainline (#13091).

@@ -1942,10 +1942,42 @@ pub fn str_dot_ast_compunit(
     source: &str,
     unit_check: UnitCheck<'_>,
 ) -> Result<Value, RuntimeError> {
+    let statement_list = str_dot_ast_checked(names, source, unit_check)?;
+    Ok(wrap_compunit(statement_list, source))
+}
+
+/// The `RakuAST::CompUnit` of an EVAL'd tree, as `$*CU` answers it while the
+/// tree compiles: a tree that is a CompUnit already is its own, a statement
+/// list is wrapped as `Str.AST(:compunit)` wraps a parse. Its lookups carry
+/// their resolution, as for [`compile_time_compunit`].
+// Cost: O(n * d), n = nodes of the tree, d = scope depth.
+pub fn compunit_of_tree(tree: &Value, imported: &dyn Fn(&str) -> bool) -> Value {
+    let ValueView::RakuAst(node) = tree.view() else {
+        return tree.clone();
+    };
+    let cu = if matches!(node.class, RakuAstClass::CompUnit) {
+        tree.clone()
+    } else if matches!(node.class, RakuAstClass::StatementList) {
+        wrap_compunit(tree.clone(), "")
+    } else {
+        return tree.clone();
+    };
+    let ValueView::RakuAst(node) = cu.view() else {
+        return cu;
+    };
+    let mut node = RakuAstNode::clone(node);
+    shadowed_terms::scan(&node);
+    resolve::annotate(&mut node, imported);
+    Value::rakuast(Box::new(node))
+}
+
+/// `statement_list` wrapped in a `RakuAST::CompUnit` with rakudo's fresh
+/// 40-hex-digit name (derived from `source` and a process-wide counter).
+// Cost: O(1).
+fn wrap_compunit(statement_list: Value, source: &str) -> Value {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
-    let statement_list = str_dot_ast_checked(names, source, unit_check)?;
     let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
     let mut words = [0u64; 3];
     for (salt, word) in words.iter_mut().enumerate() {
@@ -1965,11 +1997,11 @@ pub fn str_dot_ast_compunit(
         },
     ];
     unit_finish::record(&mut fields, source);
-    Ok(Value::rakuast(Box::new(RakuAstNode {
+    Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CompUnit,
         fields,
-    })))
+    }))
 }
 
 /// Entry point for `Str.AST($slang)`: parse the source under the localized
