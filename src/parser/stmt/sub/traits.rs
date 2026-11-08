@@ -59,7 +59,17 @@ pub(crate) struct SubTraits {
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
 /// Returns `SubTraits` indicating which traits were found.
-pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
+pub(crate) fn parse_sub_traits(input: &str) -> PResult<'_, SubTraits> {
+    parse_sub_traits_upto(input, None)
+}
+
+/// [`parse_sub_traits`] stopping after `limit` traits (a slang token's
+/// `<trait>` is one trait, ADR-15762 §2.3).
+// Cost: O(n), n = size of the traits read.
+pub(crate) fn parse_sub_traits_upto(
+    mut input: &str,
+    limit: Option<usize>,
+) -> PResult<'_, SubTraits> {
     use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
     let mut source_traits = Vec::new();
     let mut is_export = false;
@@ -86,7 +96,10 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         let (r, _) = ws(input)?;
         trait_start = Some(r);
-        if r.starts_with('{') || r.is_empty() {
+        if r.starts_with('{')
+            || r.is_empty()
+            || limit.is_some_and(|n| source_traits.len() >= n)
+        {
             return Ok((
                 r,
                 SubTraits {

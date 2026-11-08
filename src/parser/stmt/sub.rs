@@ -52,7 +52,7 @@ pub(crate) use sub_decl::{INDIRECT_DECL_NAME, op_prec_trait};
 
 // Trait parsing (traits.rs).
 pub(crate) use traits::SubTraits;
-pub(super) use traits::parse_sub_traits;
+pub(super) use traits::{parse_sub_traits, parse_sub_traits_upto};
 pub(crate) use traits::{
     invocant_not_allowed_error, reject_attr_params_in_sub, reject_invocant_in_sub,
 };
