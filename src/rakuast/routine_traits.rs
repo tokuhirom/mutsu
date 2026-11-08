@@ -189,7 +189,13 @@ pub(super) fn export_tags(argument: &RakuAstNode) -> Result<Option<Vec<String>>,
 /// Add a routine's `multiness` and `private` to the node `routine_node` built;
 /// its traits are the ones the source wrote (`routine_source::apply`).
 // Cost: O(f), f = fields of `node`.
-pub(super) fn add_flags(node: &mut RakuAstNode, multi: bool, only: bool, private: bool) {
+pub(super) fn add_flags(
+    node: &mut RakuAstNode,
+    multi: bool,
+    spans: Option<&crate::ast::parsed::RoutineSpans>,
+    private: bool,
+) {
+    let only = spans.is_some_and(|s| s.only);
     if private {
         node.fields
             .insert(0, leaf_field(Some("private"), Value::truth(true)));
