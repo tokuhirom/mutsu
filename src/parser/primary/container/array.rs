@@ -282,7 +282,7 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
                 left,
                 op: TokenKind::FatArrow,
                 right,
-                ..
+                form,
             } => {
                 let key = match *left {
                     Expr::Literal(lit) => match lit.view() {
@@ -292,7 +292,10 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
                     },
                     _ => return Err(PError::expected("hash pair key")),
                 };
-                (key, Some(*right))
+                // A bare `:name` keeps no value, as in a `{ :name }` composer
+                // (RakuAST spells it `ColonPair::True`).
+                let bare = form == crate::ast::BinaryForm::ColonPairTrue;
+                (key, (!bare).then_some(*right))
             }
             _ => return Err(PError::expected("hash pair")),
         };
