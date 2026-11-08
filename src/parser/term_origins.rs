@@ -332,14 +332,18 @@ impl Walk {
     /// lies inside the nearest attached enclosing term.
     // Cost: O(1).
     fn claim(&mut self, print: u64) -> Option<SrcSpan> {
-        let span = self
-            .ranges
-            .get_mut(&key(self.statement, print))?
-            .pop_front()?;
+        let ranges = self.ranges.get_mut(&key(self.statement, print))?;
+        let span = ranges.pop_front()?;
         let inside = self
             .enclosing
             .last()
             .is_none_or(|outer| outer.from <= span.from && span.to <= outer.to);
+        if !inside {
+            // Not this term's: a later term of the same shape (a curried
+            // `*.head` written twice, whose marker and body fingerprint alike)
+            // may be the one it belongs to.
+            ranges.push_front(span);
+        }
         inside.then_some(span)
     }
 }
