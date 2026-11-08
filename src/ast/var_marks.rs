@@ -96,6 +96,13 @@ pub(crate) enum TermMark {
 }
 
 impl VarMarks {
+    /// The type the source wrote before the name: `type_constraint`, unless it
+    /// is the one an `is Mix` trait implied.
+    // Cost: O(1).
+    pub(crate) fn written_type<'a>(&self, type_constraint: &'a Option<String>) -> Option<&'a str> {
+        type_constraint.as_deref().filter(|_| !self.type_from_trait)
+    }
+
     /// True for a declaration the parser built without any of these marks,
     /// which every "plain `my` declaration" test needs (a guard spelled
     /// `custom_traits.is_empty()` once excluded the marked ones by accident).
