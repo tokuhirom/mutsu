@@ -53,6 +53,10 @@ pub(super) enum BlockPosition {
         /// generic sequencing vehicle. Only the first owns a `let`/`temp` save
         /// frame — see [`crate::ast::DoBlockOrigin`] and GH-7635.
         origin: crate::ast::DoBlockOrigin,
+        /// A parser-built desugar node (`$( ... )`, a parenthesised statement
+        /// group) opens no scope for the routines it declares; the compiler's
+        /// own lowerings of real source blocks (a module's tail block) do.
+        node_in_enclosing_scope: bool,
     },
 }
 
@@ -84,6 +88,21 @@ impl BlockPosition {
     /// only when the parser minted it from source braces; a desugar's node
     /// opens no scope, so a save inside it belongs to whatever real block
     /// encloses it.
+    /// Whether a `sub`/`proto` declared directly in the body is lexical to THIS
+    /// block. A desugar that does not ask for the interpolation policy opens no
+    /// scope, so `my \x = $( sub foo { 1 }; 2 ); foo()` and `( sub bar { 2 }; 3 );
+    /// bar()` keep the routine in the enclosing scope, as rakudo does (#17087).
+    fn scopes_routines(self) -> bool {
+        !matches!(
+            self,
+            Self::Value {
+                isolate: false,
+                origin: crate::ast::DoBlockOrigin::Desugar,
+                node_in_enclosing_scope: true,
+            }
+        )
+    }
+
     fn owns_let_scope(self) -> bool {
         match self {
             Self::Statement => true,
@@ -158,7 +177,8 @@ impl BlockPlan {
         Self {
             shape,
             import_scope: Compiler::has_use_stmt(stmts),
-            declares_routines: Compiler::stmts_declare_routines(stmts),
+            declares_routines: position.scopes_routines()
+                && Compiler::stmts_declare_routines(stmts),
             let_needs_value: shape == BlockShape::LetScope && Compiler::has_real_let_deep(stmts),
             succeed_barrier: !position.is_value() && Compiler::body_has_toplevel_when(stmts),
         }

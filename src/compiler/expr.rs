@@ -1486,7 +1486,7 @@ impl Compiler {
                 label,
                 origin,
             } => {
-                self.compile_do_block_expr(body, label, *origin);
+                self.compile_do_block_node(body, label, *origin);
             }
             Expr::DoStmt(stmt) => {
                 self.compile_expr_do_stmt(stmt);

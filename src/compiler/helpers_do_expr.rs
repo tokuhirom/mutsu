@@ -21,6 +21,28 @@ impl Compiler {
             crate::compiler::control_block::BlockPosition::Value {
                 isolate: false,
                 origin,
+                node_in_enclosing_scope: false,
+            },
+        );
+    }
+
+    /// [`Compiler::compile_do_block_expr`] for an `Expr::DoBlock` node the
+    /// parser built: a desugar node (`$( ... )`, a parenthesised statement
+    /// group) opens no scope, so a `sub` it declares stays visible in the
+    /// enclosing scope (#17087).
+    pub(super) fn compile_do_block_node(
+        &mut self,
+        body: &[Stmt],
+        label: &Option<String>,
+        origin: crate::ast::DoBlockOrigin,
+    ) {
+        self.compile_block_construct(
+            body,
+            label,
+            crate::compiler::control_block::BlockPosition::Value {
+                isolate: false,
+                origin,
+                node_in_enclosing_scope: true,
             },
         );
     }
@@ -40,6 +62,7 @@ impl Compiler {
             crate::compiler::control_block::BlockPosition::Value {
                 isolate: true,
                 origin,
+                node_in_enclosing_scope: false,
             },
         );
     }
