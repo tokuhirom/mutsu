@@ -28,7 +28,6 @@ pub(crate) mod dispatch_resolve;
 mod end_phasers;
 mod eval_check;
 mod eval_decl_scans;
-mod eval_exit_phasers;
 mod eval_import_scope;
 mod eval_name_scans;
 mod eval_lowered_use_exports;

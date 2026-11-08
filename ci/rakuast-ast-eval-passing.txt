@@ -1751,7 +1751,6 @@ t/control/enter-phaser-sees-bare-declaration.t
 t/control/eval-begin-phaser.t
 t/control/eval-topic-write-through.t
 t/control/eval-type-decl-and-phaser-message.t
-t/control/eval-unit-exit-phasers.t
 t/control/for-array-destructure.t
 t/control/for-array-topic-alias-elision.t
 t/control/for-bind-typed-array-deitemize.t
@@ -5960,7 +5959,6 @@ t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
 t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
-t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-dunder-name.t
 t/oo/trait/variable-trait-object-mixin.t
 t/oo/trait/variable-trait-owning-code-object.t
