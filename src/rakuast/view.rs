@@ -6459,7 +6459,7 @@ fn literal_hash_index_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
 /// A statement call's `CallArg`s in the argument-expression form an
 /// `Expr::Call` carries: a named argument is the `name => value` pair the
 /// expression parser builds for it (a bare `:name` being `name => True`).
-pub(super) fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
+pub(crate) fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
     use crate::ast::CallArg;
     args.iter()
         .map(|arg| match arg {

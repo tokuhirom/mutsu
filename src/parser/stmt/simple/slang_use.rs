@@ -79,6 +79,11 @@ pub(crate) fn apply_slang_overrides(
             register_wrapper(&over.name);
             continue;
         }
+        // A core production only the slang's own tokens call: the host runs the
+        // override when one does, the parser has nothing to register.
+        if slang_host_wrapped_rule(&over.name) && over.body.is_none() {
+            continue;
+        }
         // Its token must be written by the slang: an actions-only method names
         // a production nothing declares, which stays an error.
         if slang_hook_rule(&over.name).is_some()
