@@ -180,13 +180,12 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
     // A production that attaches an expression stands for a statement: rakudo's
     // `statement` action wraps it in a `Statement::Expression`, so a tree that
     // keeps the node (a block body a slang deparses) lists it as one.
-    let kept = if super::hierarchy::does(node.class.printed_name(), "RakuAST::Expression")
-        == Some(true)
-    {
-        super::view::statement_expression(RakuAstNode::clone(node))
-    } else {
-        RakuAstNode::clone(node)
-    };
+    let kept =
+        if super::hierarchy::does(node.class.printed_name(), "RakuAST::Expression") == Some(true) {
+            super::view::statement_expression(RakuAstNode::clone(node))
+        } else {
+            RakuAstNode::clone(node)
+        };
     Ok(Stmt::Ast(Box::new(
         crate::ast::parsed::ParsedStmt::Lowered {
             stmt: Box::new(lowered),
