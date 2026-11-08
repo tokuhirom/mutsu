@@ -108,7 +108,10 @@ pub(crate) fn sub_decl_with_semicolon_mode(
     input: &str,
     allow_main_semicolon_decl: bool,
 ) -> PResult<'_, Stmt> {
-    let (rest, stmt) = sub_decl_head(input, allow_main_semicolon_decl)?;
+    let (rest, mut stmt) = sub_decl_head(input, allow_main_semicolon_decl)?;
+    if keyword("only", input).is_some() {
+        super::mark_only(&mut stmt);
+    }
     // A plain named sub's text is kept for the rest of the unit: a slang
     // activation can hand it to the slang host (`use Slang &sub`, #17055).
     if let Stmt::SubDecl {

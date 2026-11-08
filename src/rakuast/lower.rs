@@ -1945,6 +1945,8 @@ pub(super) fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
         None => Ok(false),
         Some(_) => match leaf_str(node, "multiness")?.as_str() {
             "multi" => Ok(true),
+            // `only` is the default dispatch: the same declaration as no word.
+            "only" => Ok(false),
             _ => Err(unsupported(node)),
         },
     }

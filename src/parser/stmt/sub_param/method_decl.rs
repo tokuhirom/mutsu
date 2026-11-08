@@ -36,7 +36,17 @@ fn ws_before_method_name(r: &str) -> PResult<'_, ()> {
 
 /// Parse `method` declaration.
 pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
+    let written = input;
     let input = skip_only_declarator(input, "method");
+    let only = input.len() != written.len();
+    let (rest, mut stmt) = method_decl_after_only(input)?;
+    if only {
+        super::super::sub::mark_only(&mut stmt);
+    }
+    Ok((rest, stmt))
+}
+
+fn method_decl_after_only(input: &str) -> PResult<'_, Stmt> {
     let (rest, multi) = if let Some(r) = super::super::keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("method", r)
@@ -55,7 +65,17 @@ pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse `submethod` declaration (treated like method, not inherited by subclasses).
 /// Accepts an optional `multi` declarator prefix (`multi submethod foo(...) {...}`).
 pub(crate) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
+    let written = input;
     let input = skip_only_declarator(input, "submethod");
+    let only = input.len() != written.len();
+    let (rest, mut stmt) = submethod_decl_after_only(input)?;
+    if only {
+        super::super::sub::mark_only(&mut stmt);
+    }
+    Ok((rest, stmt))
+}
+
+fn submethod_decl_after_only(input: &str) -> PResult<'_, Stmt> {
     let (r, multi) = if let Some(r) = super::super::keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("submethod", r)

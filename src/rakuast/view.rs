@@ -636,7 +636,12 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             {
                 return Err(unsupported("sub with traits and no written-trait record"));
             }
-            routine_traits::add_flags(&mut node, *multi, false);
+            routine_traits::add_flags(
+                &mut node,
+                *multi,
+                spans.as_deref().is_some_and(|s| s.only),
+                false,
+            );
             // `scope => "our"` / `"anon"` leads the node; `my` is the default
             // scope and renders no field.
             let written_scope = match scope {
@@ -732,7 +737,12 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     "method with traits and no written-trait record",
                 ));
             }
-            routine_traits::add_flags(&mut node, *multi, *is_private);
+            routine_traits::add_flags(
+                &mut node,
+                *multi,
+                spans.as_deref().is_some_and(|s| s.only),
+                *is_private,
+            );
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             // Submethod's constructor rendering omits even a written scope,
             // but its accessor still distinguishes `my` and `our`. Keep the
