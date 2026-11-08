@@ -673,13 +673,13 @@ pub(crate) fn cache_sub_signature(key: SubSignatureKey, signature: Value) {
 /// rakudo does -- as a bare sigil, or as `<anon>` -- never as the placeholder.
 pub fn is_anonymous_param_name(name: &str) -> bool {
     name == "_capture"
-        || name == "__type_only__"
+        || name == crate::ast::TYPE_ONLY_PARAM
         // A bare `::T` / `::T:` capture carries a synthetic parameter name; the
         // parameter itself is anonymous, and rakudo renders it as a bare `$`.
-        || name.starts_with("__type_capture__")
+        || name.starts_with(crate::ast::TYPE_CAPTURE_PREFIX)
         || name.starts_with("__ANON_STATE#")
         || name == "__ANON_OPTIONAL__"
-        || name == "__subsig__"
+        || name == crate::ast::PARENS_PARAM
         || name == "__ANON_ARRAY__"
         || name == "__ANON_HASH__"
         || name == "@__ANON_ARRAY__"
