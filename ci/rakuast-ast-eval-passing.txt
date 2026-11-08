@@ -1676,6 +1676,7 @@ t/control/begin-prologue-inner-subs.t
 t/control/begin-prologue-inner-typed-vars.t
 t/control/begin-prologue-nested-positions.t
 t/control/begin-prologue-nested.t
+t/control/begin-prologue-no-strict-auto-declared.t
 t/control/begin-static-definite-scalar.t
 t/control/begin-time-region-unwind.t
 t/control/begin-time-sub-visibility.t
@@ -2697,6 +2698,7 @@ t/lang/eval-late-class-forward-code-var.t
 t/lang/eval-line-unicode-line-breaks.t
 t/lang/eval-my-constant-stays-in-eval.t
 t/lang/eval-named-sub-why-after-eval.t
+t/lang/eval-nested-begin-no-strict.t
 t/lang/eval-nested-hook-use-prerun.t
 t/lang/eval-nested-hook-use-stays-in-block.t
 t/lang/eval-nested-my-sub-same-name.t

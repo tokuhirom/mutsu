@@ -306,14 +306,15 @@ impl Walker<'_> {
             None => {
                 // A name nothing in the unit declares is refused: in an EVAL it
                 // may be a lexical of the EVAL's caller, which the prologue
-                // cannot supply. Outside an EVAL, with `strict` off where the
-                // BEGIN sits, it can only be an auto-declared package variable,
-                // which the lifted block (repeating `no strict`) declares the
-                // same way: a package variable, which outlives that block
-                // (#10622).
+                // cannot supply. With `strict` off where the BEGIN sits it is
+                // either that lexical (the prologue runs in the EVAL's frame,
+                // so a by-name read finds the caller's) or an auto-declared
+                // package variable, which the lifted block (repeating
+                // `no strict`) declares the same way: a package variable,
+                // which outlives that block (#10622).
                 if !self.unit_names.contains(&name)
                     && crate::env::is_plain_user_lexical(&name)
-                    && !(scope.is_none() && !self.unit.is_eval && self.strict_is_off())
+                    && !(scope.is_none() && self.strict_is_off())
                 {
                     return None;
                 }
