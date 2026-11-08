@@ -6,7 +6,7 @@ plan 8;
 # settled handle, a failed one and a pending one settled by its subscriber.
 class Settled does Awaitable::Handle { method subscribe-awaiter(&s) { s(True, 7) } }
 class Later does Awaitable::Handle {
-    method subscribe-awaiter(&done) { done(True, 'late') }
+    method subscribe-awaiter(&notify) { notify(True, 'late') }
 }
 class Threaded does Awaitable::Handle {
     method subscribe-awaiter(&s) { start { sleep 0.01; s(True, 'from thread') }; Nil }
