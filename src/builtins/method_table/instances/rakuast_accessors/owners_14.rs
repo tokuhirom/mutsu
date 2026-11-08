@@ -201,20 +201,17 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
-        "RakuAST::VarDeclaration::Placeholder::Named",
+        "RakuAST::VarDeclaration::Implicit::Self",
         &[
-            "RakuAST::VarDeclaration::Placeholder::Named",
-            "RakuAST::VarDeclaration::Placeholder",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
+            "RakuAST::VarDeclaration::Implicit::Self",
+            "RakuAST::VarDeclaration::Implicit",
             "RakuAST::Node",
         ],
     ),
     (
-        "RakuAST::VarDeclaration::Placeholder::Positional",
+        "RakuAST::VarDeclaration::Placeholder::Named",
         &[
-            "RakuAST::VarDeclaration::Placeholder::Positional",
+            "RakuAST::VarDeclaration::Placeholder::Named",
             "RakuAST::VarDeclaration::Placeholder",
             "RakuAST::Term",
             "RakuAST::Termish",
