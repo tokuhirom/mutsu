@@ -145,7 +145,7 @@ pub(crate) fn pointy_starter(input: &str) -> Option<(bool, usize)> {
 /// Whether `name` is a core action a slang may override (ADR-15762 slice 3).
 // Cost: O(1).
 pub(crate) fn slang_action_rule(name: &str) -> bool {
-    matches!(name, "INFIX-EXPR" | "PREFIX-EXPR" | "numish")
+    matches!(name, "INFIX-EXPR" | "PREFIX-EXPR" | "POSTFIX-EXPR" | "numish")
 }
 
 /// Register the override of the core action `name`.
