@@ -39,6 +39,15 @@ fn has_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, Runt
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+// Cost: O(d), d = depth of the class's MRO plus the meta-operator nesting.
+fn needs_sink_call(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::sink_call::needs_sink_call(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
 // Cost: O(1).
 fn string_return_type(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(crate::rakuast::literal_queries::string_return_type())
@@ -66,6 +75,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "has-compile-time-value",
         arity: 0,
         handler: Handler::Pure(has_compile_time_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "needs-sink-call",
+        arity: 0,
+        handler: Handler::Pure(needs_sink_call),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
