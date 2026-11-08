@@ -143,7 +143,7 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             let rule = match expr {
                 Expr::Binary { .. } => "INFIX-EXPR",
                 Expr::Unary { .. } => "PREFIX-EXPR",
-                Expr::Literal(value)
+                Expr::Literal(value) | Expr::LiteralSrc(value, _)
                     if matches!(
                         value.view(),
                         ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..)
@@ -173,13 +173,25 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
     pass.failed.map_or(Ok(()), Err)
 }
 
+/// The text a numeric literal was written as: its recorded source, else the
+/// value's own spelling. Empty for any other expression.
+// Cost: O(n), n = length of the spelling.
+fn numeric_source(expr: &Expr) -> String {
+    match expr {
+        Expr::LiteralSrc(_, src) => src.to_string(),
+        Expr::Literal(value) => value.to_string_value(),
+        _ => String::new(),
+    }
+}
+
 /// Run the slang's override of `rule` over the node of `expr`.
 // Cost: O(n) in the application, plus the slang's action.
 fn apply_action(rule: &str, expr: &Expr) -> Result<Expr, RuntimeError> {
     let names = NameScope::default();
     let node = super::view::view_expr(&names, expr)?;
     let core = Value::rakuast(Box::new(node));
-    let attached = crate::parser::run_slang_action(rule, core)
+    let source = numeric_source(expr);
+    let attached = crate::parser::run_slang_action(rule, core, &source)
         .map_err(|e| RuntimeError::new(format!("slang action {rule}: {e}")))?;
     lower_expression(&attached)
 }

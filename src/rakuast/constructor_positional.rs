@@ -18,6 +18,7 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::NumLiteral", "new") => RakuAstClass::NumLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::VersionLiteral", "new") => RakuAstClass::VersionLiteral,
+        ("RakuAST::Constant", "new") => RakuAstClass::Constant,
         ("RakuAST::ComplexLiteral", "new") => RakuAstClass::ComplexLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,

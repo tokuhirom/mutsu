@@ -158,11 +158,11 @@ pub(crate) fn slang_overrides_action(rule: &str) -> bool {
 
 /// Run the slang's override of the core action `rule` over `node`.
 // Cost: the slang's own action.
-pub(crate) fn run_slang_action(rule: &str, node: Value) -> Result<Value, String> {
+pub(crate) fn run_slang_action(rule: &str, node: Value, source: &str) -> Result<Value, String> {
     let host = HOOKS
         .with(|h| h.borrow().host.clone())
         .ok_or_else(|| "no slang host is running".to_string())?;
-    host.run_action(rule, node)
+    host.run_action(rule, node, source)
 }
 
 /// The literal a token body starts with: `'twice' ...` or `"twice" ...`.

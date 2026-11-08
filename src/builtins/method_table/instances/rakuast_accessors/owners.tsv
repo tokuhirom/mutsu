@@ -103,6 +103,7 @@ RakuAST::CompUnit	sorries	RakuAST::CompUnit
 RakuAST::CompUnit	statement-list	RakuAST::CompUnit
 RakuAST::CompUnit	worries	RakuAST::CompUnit
 RakuAST::ComplexLiteral	value	RakuAST::Literal
+RakuAST::Constant	value	RakuAST::Literal
 RakuAST::Contextualizer::Hash	sigil	RakuAST::Contextualizer::Hash
 RakuAST::Contextualizer::Hash	target	RakuAST::Contextualizer
 RakuAST::Contextualizer::Item	sigil	RakuAST::Contextualizer::Item

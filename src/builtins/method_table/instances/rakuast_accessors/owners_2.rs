@@ -3,6 +3,14 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::DottyInfix::Call",
+        &[
+            "RakuAST::DottyInfix::Call",
+            "RakuAST::DottyInfixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::DottyInfix::CallAssign",
         &[
             "RakuAST::DottyInfix::CallAssign",
@@ -162,15 +170,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::MetaInfix::Reverse",
         &[
             "RakuAST::MetaInfix::Reverse",
-            "RakuAST::MetaInfix",
-            "RakuAST::Infixish",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::MetaInfix::Zip",
-        &[
-            "RakuAST::MetaInfix::Zip",
             "RakuAST::MetaInfix",
             "RakuAST::Infixish",
             "RakuAST::Node",
