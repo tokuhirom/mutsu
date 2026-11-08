@@ -5173,7 +5173,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 ValueView::RakuAst(inner)
                     if inner.class == RakuAstClass::DeclarationResolvedConstant =>
                 {
-                    match inner.fields.iter().find(|f| f.name == Some("compile-time-value")) {
+                    match inner
+                        .fields
+                        .iter()
+                        .find(|f| f.name == Some("compile-time-value"))
+                    {
                         Some(super::RakuAstField {
                             value: RakuAstFieldValue::Node(v),
                             ..
