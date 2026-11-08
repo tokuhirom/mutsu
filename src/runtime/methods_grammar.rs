@@ -1217,6 +1217,18 @@ impl Interpreter {
                 self.env
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
+            // A `.subparse(:rule)` made by an instance call (`self.rule`, `self."$name"`)
+            // leaves its captures for a regex atom that called the user method
+            // delegating to it (#17179).
+            if method == "subparse" && actions_obj.is_none() {
+                super::regex::regex_token_method::stash_delegate_caps(
+                    &start_rule,
+                    package_name,
+                    captures.from,
+                    captures.to,
+                    captures.clone(),
+                );
+            }
             let alias_map = captures.take_capture_alias_map();
             let cursor = captures.take_cursor();
             let match_obj = Value::make_match_object_full_with_regex_vars(

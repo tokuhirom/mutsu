@@ -43,6 +43,28 @@ pub(crate) fn record_token_delegate(name: &str, from: usize, to: usize) {
     LAST_TOKEN_DELEGATE.with(|slot| *slot.borrow_mut() = Some((name.to_string(), from, to)));
 }
 
+/// Leave the captures of the rule a `subparse` instance call just ran, for a
+/// regex atom that called a user method delegating to it (#17179).
+pub(crate) fn stash_delegate_caps(name: &str, pkg: &str, from: usize, to: usize, caps: RegexCaptures) {
+    LAST_TOKEN_METHOD_MATCH.with(|slot| {
+        *slot.borrow_mut() = Some(TokenMethodMatch {
+            pkg: pkg.to_string(),
+            name: name.to_string(),
+            from,
+            to,
+            caps,
+        });
+    });
+}
+
+/// The captures [`stash_delegate_caps`] left for the rule `name` over `from..to`.
+pub(crate) fn take_delegate_caps(name: &str, from: usize, to: usize) -> Option<RegexCaptures> {
+    LAST_TOKEN_METHOD_MATCH
+        .with(|slot| slot.borrow_mut().take())
+        .filter(|t| t.name == name && t.from == from && t.to == to)
+        .map(|t| t.caps)
+}
+
 /// Forget the delegate recorded by an earlier token-method call.
 pub(crate) fn clear_last_token_delegate() {
     LAST_TOKEN_DELEGATE.with(|slot| slot.borrow_mut().take());

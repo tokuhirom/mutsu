@@ -735,6 +735,7 @@ impl Interpreter {
                                         let slot = frame
                                             .map_or(&root_cursor, |f| &frames[f as usize].cursor);
                                         let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
+                                        super::super::regex_token_method::clear_last_token_delegate();
                                         match self.regex_grammar_method_end(
                                             &name.spec().lookup_name,
                                             chars,
@@ -749,10 +750,31 @@ impl Interpreter {
                                                 // `$<foo>`) like a token's own match;
                                                 // `<.foo>` files nothing.
                                                 // (A Match it built carries its `.ast`.)
-                                                let inner = RegexCaptures {
+                                                let mut inner = RegexCaptures {
                                                     ast,
                                                     ..RegexCaptures::default()
                                                 };
+                                                // A method that delegates to a rule
+                                                // returns that rule's Match, so the
+                                                // rule's action fires on it (#17179).
+                                                if let Some(rule) =
+                                                    super::super::regex_token_method::last_token_delegate_for(
+                                                        pos, end,
+                                                    )
+                                                {
+                                                    // Its sub-captures travel with it.
+                                                    if let Some(mut caps) =
+                                                        super::super::regex_token_method::take_delegate_caps(
+                                                            &rule, pos, end,
+                                                        )
+                                                    {
+                                                        if inner.ast.is_some() {
+                                                            caps.ast = inner.ast.take();
+                                                        }
+                                                        inner = caps;
+                                                    }
+                                                    inner.set_action_name(Some(Symbol::intern(&rule)));
+                                                }
                                                 let (end, delta) = self
                                                     .build_named_candidate_from_inner(
                                                         end,
