@@ -7293,6 +7293,11 @@ pub(crate) struct CompiledCode {
     /// so a declared-and-read dynamic always looks like a free var, and the
     /// exemption would swallow the set whole.
     pub(crate) dynamic_declared_sym: rustc_hash::FxHashSet<Symbol>,
+    /// The subset of [`Self::dynamic_declared_sym`] declared in this chunk's own
+    /// top scope (not inside a nested block): only a read before such a
+    /// declaration is the `X::Dynamic::Postdeclaration` case; a read before a
+    /// block-nested `my $*x` is an ordinary not-found `Failure` (#17113).
+    pub(crate) dynamic_toplevel_declared_sym: rustc_hash::FxHashSet<Symbol>,
     /// The subset of `my_declared_sym` bound by a `my enum` — its type name and
     /// every variant name. Unlike a `my` variable these get no local slot, so
     /// every bareword read of one looks like a free variable to
@@ -8639,6 +8644,7 @@ impl CompiledCode {
             supply_emitter_sym: None,
             my_declared_sym: rustc_hash::FxHashSet::default(),
             dynamic_declared_sym: rustc_hash::FxHashSet::default(),
+            dynamic_toplevel_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
             for_loop_param_syms: rustc_hash::FxHashSet::default(),
             expr_declared_syms: rustc_hash::FxHashSet::default(),
