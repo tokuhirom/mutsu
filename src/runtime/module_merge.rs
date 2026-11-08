@@ -162,7 +162,7 @@ impl Interpreter {
             let Some((bare, _)) = key.split_once('\u{0}') else {
                 continue;
             };
-            if bare.is_empty() || bare.contains("::") {
+            if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
                 continue;
             }
             let table = crate::runtime::cow_table_mut(
