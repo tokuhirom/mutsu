@@ -51,12 +51,10 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::DocDeclarator,
-        fields: [
-            RakuAstField {
-                name: Some("WHEREFORE"),
-                value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
-            },
-        ]
+        fields: [RakuAstField {
+            name: Some("WHEREFORE"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node.clone()))),
+        }]
         .into_iter()
         // Rakudo prints only the part the source wrote.
         .chain((!leading.is_empty()).then(|| RakuAstField {

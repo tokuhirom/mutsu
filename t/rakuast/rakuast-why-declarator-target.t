@@ -8,11 +8,11 @@ use Test;
 plan 10;
 
 my $name = RakuAST::Name.from-identifier("f");
-is RakuAST::IntLiteral.new(1).WHY.gist, 'Nil', 'a literal has no docs';
-is RakuAST::Statement::Expression.new(expression => RakuAST::IntLiteral.new(1)).WHY.gist, 'Nil',
+is RakuAST::IntLiteral.new(1).WHY.raku, 'Nil', 'a literal has no docs';
+is RakuAST::Statement::Expression.new(expression => RakuAST::IntLiteral.new(1)).WHY.raku, 'Nil',
     'a statement has no docs';
-is $name.WHY.gist, 'Nil', 'a name has no docs';
-is RakuAST::StatementList.new.WHY.gist, 'Nil', 'a statement list has no docs';
+is $name.WHY.raku, 'Nil', 'a name has no docs';
+is RakuAST::StatementList.new.WHY.raku, 'Nil', 'a statement list has no docs';
 is RakuAST::Sub.new(name => $name).WHY.^name, 'RakuAST::Doc::Declarator',
     'a sub answers the Doc::Declarator type object';
 nok RakuAST::Sub.new(name => $name).WHY.defined, 'which is undefined';
