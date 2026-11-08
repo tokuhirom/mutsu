@@ -288,7 +288,7 @@ pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_mod
 
 pub(crate) use stmt::simple::{
     run_slang_action, slang_action_activator, slang_action_rule, slang_hook_rule,
-    slang_overrides_action,
+    slang_overrides_action, slang_wrapper_rule,
 };
 
 pub(crate) use stmt::simple::{

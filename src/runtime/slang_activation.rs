@@ -256,6 +256,7 @@ pub(crate) fn run_slang_activation(
                     .any(|r| {
                         crate::parser::slang_hook_rule(&r.name).is_some()
                             || crate::parser::slang_action_rule(&r.name)
+                            || crate::parser::slang_wrapper_rule(&r.name)
                     })
             });
             if !hooks {

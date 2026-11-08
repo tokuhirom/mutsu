@@ -73,6 +73,12 @@ pub(crate) fn apply_slang_overrides(
             register_action(&over.name);
             continue;
         }
+        // A core production the slang wraps with a method of its name
+        // (ADR-16888): the parser asks the host where it parses the production.
+        if slang_wrapper_rule(&over.name) && over.body.is_none() {
+            register_wrapper(&over.name);
+            continue;
+        }
         // Its token must be written by the slang: an actions-only method names
         // a production nothing declares, which stays an error.
         if slang_hook_rule(&over.name).is_some()

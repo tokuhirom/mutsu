@@ -37,10 +37,36 @@ pub(in crate::parser) struct SlangHooks {
     /// `->` / `<->` (Slang::Lambda's `λ`), with whether each is the `<->`
     /// (read-write) form.
     pointy_starters: Vec<(String, bool)>,
+    /// Core productions a slang's grammar role wraps with a method of the same
+    /// name (`statementlist`, ADR-16888).
+    wrappers: Vec<String>,
 }
 
 thread_local! {
     static HOOKS: RefCell<SlangHooks> = RefCell::new(SlangHooks::default());
+    /// Set by the back-call that parses the core `<statementlist>` for a
+    /// wrapper, and taken by the list parse it starts: that one list is not
+    /// wrapped again (the wrapper's own delegation, as `callsame` skips the
+    /// method it is in), the lists nested in it are.
+    static WRAPPER_BACK_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether `name` is a core production a slang may wrap with a grammar-role
+/// method of that name (ADR-16888 §2.1).
+// Cost: O(1).
+pub(crate) fn slang_wrapper_rule(name: &str) -> bool {
+    matches!(name, "statementlist")
+}
+
+/// Register the wrapper of the core production `name`.
+// Cost: O(k), k = registered wrappers.
+pub(in crate::parser) fn register_wrapper(name: &str) {
+    HOOKS.with(|h| {
+        let mut hooks = h.borrow_mut();
+        if !hooks.wrappers.iter().any(|w| w == name) {
+            hooks.wrappers.push(name.to_string());
+        }
+    });
 }
 
 /// The category and symbol of a hookable token name (`statement-control:sym<x>`,
@@ -214,6 +240,63 @@ fn byte_offset(text: &str, chars: usize) -> usize {
         .map_or(text.len(), |(at, _)| at)
 }
 
+/// Parse the core production `rule` at character offset `pos` of `input` for
+/// the slang host: the character offset it ends at and its node.
+// Cost: the parse of the production.
+fn serve_back_call(input: &str, rule: &str, pos: usize) -> crate::slang_link::HostAnswer {
+    let start = byte_offset(input, pos);
+    crate::rakuast::slang_bridge::parse_production(rule, &input[start..])
+        .map(|found| found.map(|(len, node)| (input[..start + len].chars().count(), node)))
+}
+
+/// The statement list at `input` as the slang's `statementlist` wrapper parses it
+/// (ADR-16888 §2.2): the text after it and its statements. `None` when no
+/// wrapper applies here (none registered, this list is the wrapper's own
+/// delegation, or the wrapper declined).
+// Cost: O(1) with no wrapper; otherwise the slang's own method plus the parse
+// of the list.
+pub(in crate::parser) fn statementlist_wrapper(
+    input: &str,
+    suppressed: bool,
+) -> Option<PResult<'_, Vec<Stmt>>> {
+    if suppressed {
+        return None;
+    }
+    let host = HOOKS.with(|h| {
+        let hooks = h.borrow();
+        hooks
+            .wrappers
+            .iter()
+            .any(|w| w == "statementlist")
+            .then(|| hooks.host.clone())
+            .flatten()
+    })?;
+    let fail = |message: String| {
+        Some(Err(PError::fatal_at(
+            format!("slang method 'statementlist': {message}"),
+            input,
+        )))
+    };
+    let answer = host.run_hook("statementlist", input, &mut |rule, pos| {
+        serve_back_call(input, rule, pos)
+    });
+    match answer {
+        Ok(None) => None,
+        Ok(Some((end, node))) => match crate::rakuast::slang_bridge::lower_statements(&node) {
+            Ok(stmts) => Some(Ok((&input[byte_offset(input, end)..], stmts))),
+            Err(e) => fail(e.message.to_string()),
+        },
+        Err(message) => fail(message),
+    }
+}
+
+/// Whether the list parse being entered is a wrapper's own delegation; clears
+/// the mark.
+// Cost: O(1).
+pub(in crate::parser) fn take_wrapper_back_call() -> bool {
+    WRAPPER_BACK_CALL.with(|f| f.replace(false))
+}
+
 /// Run the slang's productions of `category` at the start of `input`: the text
 /// after the first one that matches and the node its action attached. `None`: no
 /// hook applies here (no slang, or no candidate matched).
@@ -238,9 +321,7 @@ fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str
     let host = host?;
     for candidate in rules {
         let answer = host.run_hook(&candidate.rule, input, &mut |rule, pos| {
-            let start = byte_offset(input, pos);
-            crate::rakuast::slang_bridge::parse_production(rule, &input[start..])
-                .map(|found| found.map(|(len, node)| (input[..start + len].chars().count(), node)))
+            serve_back_call(input, rule, pos)
         });
         match answer {
             Ok(None) => continue,
@@ -328,7 +409,10 @@ pub(crate) fn parse_slang_shim_production<'a>(
 /// the core `<statementlist>` (ADR-16888): the text after it and its statements.
 // Cost: the parse of the list.
 pub(crate) fn parse_slang_statementlist(text: &str) -> Option<(&str, Vec<Stmt>)> {
-    crate::parser::stmt::stmtlist::stmt_list_with_mode(text, false, false).ok()
+    WRAPPER_BACK_CALL.with(|f| f.set(true));
+    let parsed = crate::parser::stmt::stmtlist::stmt_list_with_mode(text, false, false);
+    WRAPPER_BACK_CALL.with(|f| f.set(false));
+    parsed.ok()
 }
 
 /// Parse the parameters of a slang token's `<signature>` at the start of `text`

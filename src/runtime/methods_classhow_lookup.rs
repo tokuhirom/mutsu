@@ -849,6 +849,9 @@ impl Interpreter {
         invocant: &Value,
         method_name: &str,
     ) -> Option<Value> {
+        if let Some(core) = self.slang_core_method(invocant, method_name) {
+            return Some(core);
+        }
         // `false`: `.^find_method` (and `.can` on a Package receiver, which
         // routes through this function) is stricter than `.^lookup` about
         // ancestor submethods -- see `classhow_lookup_impl`'s doc comment.

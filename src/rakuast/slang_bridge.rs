@@ -102,6 +102,37 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
     )))
 }
 
+/// Lower the node a slang's `statementlist` wrapper answered (ADR-16888): the
+/// statements of a `RakuAST::StatementList`, each as it is lowered at a hook,
+/// or the one statement of any other node.
+// Cost: O(n), n = size of the node.
+pub(crate) fn lower_statements(node: &Value) -> Result<Vec<Stmt>, RuntimeError> {
+    let ValueView::RakuAst(list) = node.view() else {
+        return Err(RuntimeError::new(
+            "slang production produced no RakuAST node",
+        ));
+    };
+    if list.class != super::RakuAstClass::StatementList {
+        return Ok(vec![lower_statement(node)?]);
+    }
+    let mut stmts = Vec::new();
+    for field in &list.fields {
+        if super::origin::is_origin(field) {
+            continue;
+        }
+        let RakuAstFieldValue::Node(child) = &field.value else {
+            continue;
+        };
+        if let ValueView::RakuAst(inner) = child.view()
+            && inner.class == super::RakuAstClass::StatementEmpty
+        {
+            continue;
+        }
+        stmts.push(lower_statement(child)?);
+    }
+    Ok(stmts)
+}
+
 /// Lower the expression node a slang action attached into the expression it
 /// stands for at the hook (a `term`, `value` or `number` production).
 // Cost: O(n), n = size of the node.
