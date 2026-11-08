@@ -445,7 +445,6 @@ pub(crate) fn parse_slang_shim_production<'a>(
         // `<statement>`: one statement, without its terminating `;`.
         "statement" => Some(
             crate::parser::stmt::statement_pub(text)
-                .map(|(rest, stmt)| (rest, stmt))
                 .map_err(|e| e.to_string()),
         ),
         _ => None,
