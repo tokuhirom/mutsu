@@ -280,9 +280,13 @@ impl UndeclaredVars<'_> {
                 ValueView::Package(_) | ValueView::Routine { .. } | ValueView::Sub(_)
             )
         });
+        // A class of the same spelling does not hide it either: the bare entry
+        // holds the variable's value, not the type object (`class Out {}` in
+        // the caller, `my $Out = []` in a saved REPL context, #17087).
         if (env.contains_key(name) || self.unit_lexical_declares(name))
-            && !self.interp.registry().classes.contains_key(name)
-            && (bare_holds_variable || !self.interp.has_function(name))
+            && (bare_holds_variable
+                || (!self.interp.registry().classes.contains_key(name)
+                    && !self.interp.has_function(name)))
         {
             return None;
         }
