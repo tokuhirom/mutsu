@@ -4868,6 +4868,7 @@ fn parameter(
         ParamTarget::Anonymous('$') => ("$", ""),
         ParamTarget::Anonymous('@') => ("@", ""),
         ParamTarget::Anonymous(_) => ("%", ""),
+        _ if pd.name == "__ANON_OPTIONAL__" => ("$", ""),
         _ => split_sigil(&pd.name),
     };
     let mut node = if pd.sigilless && pd.slurpy {
