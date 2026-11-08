@@ -124,6 +124,26 @@ fn line_in(value: &Value) -> Option<i64> {
     }
 }
 
+/// `set-origin($origin)`: the node's origin becomes `$origin` (a
+/// `RakuAST::Origin`, or its type object, which reads as none), answered back.
+// Cost: O(1).
+pub(crate) fn set_origin(node: &mut RakuAstNode, origin: &Value) -> Result<Value, RuntimeError> {
+    let is_origin = match origin.view() {
+        ValueView::Instance { class_name, .. } => class_name.as_str() == "RakuAST::Origin",
+        ValueView::Package(name) => name.as_str() == "RakuAST::Origin",
+        _ => false,
+    };
+    if !is_origin {
+        return Err(RuntimeError::new(format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
+             '$origin'; expected RakuAST::Origin but got {}",
+            crate::value::type_name::value_type_name(origin)
+        )));
+    }
+    node.origin.0 = Some(origin.clone());
+    Ok(origin.clone())
+}
+
 /// The `RakuAST::Origin` a node carries, if it has one.
 // Cost: O(1).
 pub(super) fn origin_of(node: &RakuAstNode) -> Option<Value> {

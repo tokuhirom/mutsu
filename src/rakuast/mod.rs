@@ -162,7 +162,7 @@ mod negated_set;
 mod nesting;
 mod nf_quote;
 mod operator_origins;
-mod origin;
+pub(crate) mod origin;
 mod package_header;
 mod package_traits;
 mod parameter_destructure;
