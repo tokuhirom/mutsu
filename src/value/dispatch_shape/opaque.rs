@@ -116,6 +116,7 @@ pub(super) const fn opaque(
                 "RakuAST::Doc::Declarator",
                 "RakuAST::Name",
                 "RakuAST::Block",
+                "RakuAST::Statement::For",
                 "RakuAST::Doc::DeclaratorTarget",
                 "RakuAST::CheckTime",
                 "RakuAST::PlaceholderParameterOwner",

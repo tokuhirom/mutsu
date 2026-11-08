@@ -41,9 +41,10 @@ const DEFAULT_SCOPES: &[(&str, &str)] = &[("RakuAST::VarDeclaration::Term", "my"
 type Arg = (&'static str, Kind, Missing);
 
 /// Names rakudo's `new` accepts that mutsu does not keep, so the bind-time
-/// refusal of an unknown name must let them through. `Statement::For`'s
-/// `otherwise` is dropped by rakudo too (`For` has no such attribute).
-const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[("RakuAST::Statement::For", "otherwise")];
+/// refusal of an unknown name must let them through. (None today:
+/// `Statement::For`'s `otherwise` is kept as hidden state, see
+/// [`super::for_otherwise`].)
+const ACCEPTED_AND_DROPPED: &[(&str, &str)] = &[];
 
 // Cost: O(f), f = declared constructor fields.
 #[cfg(test)]
@@ -197,9 +198,9 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 LABELS,
                 ("mode", Node, DefaultStr("serial")),
                 ("source", Node, Required),
-                // The signature also takes `:$otherwise`, which rakudo
-                // 2026.09 accepts and drops: `For` has no such attribute.
                 ("body", Node, Required),
+                // Hidden state: `.raku` never prints it (`for_otherwise`).
+                ("otherwise", Node, Omit),
             ],
         ),
         "RakuAST::Statement::Given" => (
