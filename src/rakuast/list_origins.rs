@@ -185,10 +185,15 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some(subscript) = child(node, "postfix") else {
         return;
     };
+    // `%h<k> = v`: the subscript's range runs through the assigned value, but
+    // its brackets and adverbs end before the `=`.
+    let scan_to = assigned_start(subscript, from).unwrap_or(to);
     let brackets = match subscript.class {
         RakuAstClass::PostcircumfixArrayIndex => ('[', ']'),
         RakuAstClass::PostcircumfixHashIndex => ('{', '}'),
-        RakuAstClass::PostcircumfixLiteralHashIndex => return literal_hash_index(node, from, to),
+        RakuAstClass::PostcircumfixLiteralHashIndex => {
+            return literal_hash_index(node, from, to, scan_to);
+        }
         _ => return,
     };
     if subscript.origin.0.is_some() {
@@ -196,7 +201,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     }
     // The subscript's adverbs (`@a[0] :v`) are part of its range.
     let close = brackets.1.to_string();
-    let Some((close_end, adverbs)) = super::adverb_origins::split(from, to, &close) else {
+    let Some((close_end, adverbs)) = super::adverb_origins::split(from, scan_to, &close) else {
         return;
     };
     let Some(inside) = bracketed(from, close_end, brackets) else {
@@ -213,14 +218,14 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
 /// to the application's (its adverbs included), and its word quote is the text
 /// between the brackets, kept raw.
 // Cost: O(n), n = length of the subscript's source.
-fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
+fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize, scan_to: usize) {
     let Some(subscript) = child(node, "postfix") else {
         return;
     };
     if subscript.origin.0.is_some() {
         return;
     }
-    let inner = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+    let inner = super::unit_source::with_text(SrcSpan::new(from, scan_to), |text| {
         let (open, close) = super::origin::word_brackets_open(text)?;
         let end = open + text.get(open..)?.find(close)?;
         Some((from + open, from + end, close.to_string()))
@@ -229,7 +234,7 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
         return;
     };
     // What follows the closing bracket is the subscript's adverbs.
-    let Some((close_end, adverbs)) = super::adverb_origins::split(from, to, &close) else {
+    let Some((close_end, adverbs)) = super::adverb_origins::split(from, scan_to, &close) else {
         return;
     };
     if close_end != inner_to + close.len() {
@@ -242,6 +247,18 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
             super::origin::word_quote_inner(quote, SrcSpan::new(inner_from, inner_to))
         });
     });
+}
+
+/// Where the `=` of an assigning subscript (`%h<k> = v`) begins, when the
+/// subscript carries an `assignee`: the end of the text before it, whitespace
+/// and the `=` dropped.
+// Cost: O(n), n = length of the text between the subscript's start and the value.
+fn assigned_start(subscript: &RakuAstNode, from: usize) -> Option<usize> {
+    let (value_from, _) = child(subscript, "assignee").and_then(byte_range)?;
+    super::unit_source::with_text(SrcSpan::new(from, value_from), |text| {
+        let head = text.trim_end().strip_suffix('=')?.trim_end();
+        Some(from + head.len())
+    })
 }
 
 /// The text between `open` and `close` of the brackets written at
