@@ -792,6 +792,10 @@ impl Interpreter {
             let target = Self::lazy_slip_receiver(target, method);
             let target = Self::shaped_iteration_receiver(target, method);
             let target = match self.take_seq_prefix(&target, method, &args)? {
+                Some(prefix) if Self::is_lazy_head_result(&prefix, method, &args) => {
+                    self.stack.push(prefix);
+                    return Ok(());
+                }
                 Some(prefix) => prefix,
                 None => target,
             };

@@ -96,6 +96,47 @@ impl Interpreter {
             out.produced.extend(items);
             return Ok(());
         }
+        // A lazy `Seq.new($iterator).head(n)`: pull the wrapped iterator only
+        // while the shared remaining-count allows, as rakudo's head iterator
+        // does, so nothing is pulled before the result is consumed.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterator.view()
+            && class_name == "HeadIterator"
+        {
+            let (src, left) = {
+                let attrs = attributes.as_map();
+                (
+                    attrs.get("head_src").cloned().unwrap_or(Value::NIL),
+                    attrs.get("head_left").cloned().unwrap_or(Value::NIL),
+                )
+            };
+            let ValueView::ContainerRef(cell) = left.view() else {
+                return Ok(());
+            };
+            let mut pulled = 0usize;
+            while pulled < limit {
+                let remaining = match cell.load().view() {
+                    ValueView::Int(n) => n,
+                    _ => 0,
+                };
+                if remaining <= 0 {
+                    break;
+                }
+                cell.store(Value::int(remaining - 1));
+                let mut one = PullOut::default();
+                self.pull_iterator_prefix_into(&src, 1, &mut one)?;
+                let Some(val) = one.produced.pop() else {
+                    cell.store(Value::int(0));
+                    break;
+                };
+                out.produced.push(val);
+                pulled += 1;
+            }
+            return Ok(());
+        }
         let mut pulled = 0usize;
         while pulled < limit {
             let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
@@ -1300,6 +1341,24 @@ impl Interpreter {
                 self.close_if_seq_private_handle(&handle);
                 items?.0
             }
+            // `.head(n)` is a lazy Seq over the iterator: rakudo pulls nothing
+            // until the result is consumed (BinaryHeap `extract(n)`).
+            Some(crate::value::PrefixSource::Iterator(iterator))
+                if method == "head" && args.len() == 1 =>
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("head_src".to_string(), iterator);
+                attrs.insert(
+                    "head_left".to_string(),
+                    Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                        Value::int(n as i64),
+                    ))),
+                );
+                let head = Value::make_instance(Symbol::intern("HeadIterator"), attrs);
+                return Ok(Some(Value::seq_deferred(
+                    crate::value::SeqSource::Iterator(head),
+                )));
+            }
             Some(crate::value::PrefixSource::Iterator(iterator)) => {
                 self.pull_iterator_prefix_to_vec(&iterator, n)?
             }
@@ -1323,6 +1382,23 @@ impl Interpreter {
             None => return Ok(None),
         };
         Ok(Some(Value::seq(items)))
+    }
+
+    /// Whether `result` is the lazy Seq `take_seq_prefix` answers
+    /// `.head(n)` with on a `Seq.new($iterator)`: it is the method's final
+    /// answer, so the caller must not dispatch `head` on it a second time.
+    // Cost: O(1).
+    pub(crate) fn is_lazy_head_result(result: &Value, method: &str, args: &[Value]) -> bool {
+        if method != "head" || args.len() != 1 {
+            return false;
+        }
+        let ValueView::Seq(body) = result.view() else {
+            return false;
+        };
+        matches!(
+            body.unpulled_iterator().as_ref().map(Value::view),
+            Some(ValueView::Instance { class_name, .. }) if class_name == "HeadIterator"
+        )
     }
 
     pub(super) fn gather_head_bound(method: &str, args: &[Value]) -> Option<usize> {
