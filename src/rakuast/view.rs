@@ -4816,6 +4816,7 @@ fn parameter(
     if let Some(num) = super::literal_parameter::special_num(pd) {
         let literal = crate::ast::ParamDef {
             name: super::literal_parameter::NAME.to_string(),
+            target: crate::ast::ParamTarget::Literal,
             type_constraint: None,
             ..pd.clone()
         };

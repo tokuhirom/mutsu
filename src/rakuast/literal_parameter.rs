@@ -32,7 +32,7 @@ pub(super) fn view_node(
     pd: &ParamDef,
     value: &Value,
 ) -> Result<RakuAstNode, RuntimeError> {
-    if pd.name != NAME {
+    if !pd.is_literal() {
         return Err(unsupported("literal-value parameter of another kind"));
     }
     let inferred =
