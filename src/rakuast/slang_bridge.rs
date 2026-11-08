@@ -212,9 +212,7 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             let rule = match expr {
                 Expr::Binary { .. } => "INFIX-EXPR",
                 Expr::Unary { .. } => "PREFIX-EXPR",
-                Expr::PostfixOp { .. } => {
-                    "POSTFIX-EXPR"
-                }
+                Expr::PostfixOp { .. } => "POSTFIX-EXPR",
                 _ => return,
             };
             if !crate::parser::slang_overrides_action(rule) {
