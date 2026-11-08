@@ -105,6 +105,7 @@ pub(crate) mod apply_queries;
 pub(crate) mod arg_invocant;
 pub(crate) mod arg_list_queries;
 pub(crate) mod block_queries;
+pub(crate) mod compile_time_value;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
