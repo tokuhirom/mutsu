@@ -974,6 +974,33 @@ fn declare_keyword_term(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::DoStmt(Box::new(stmt))))
 }
 
+/// Whether `source` is a numeric literal the grammar's `numish` covers without
+/// being an integer, decimal or radix number: `NaN`, `Inf`, `∞`, a rational
+/// `<1/2>` or a complex `<1+2i>`.
+// Cost: O(n), n = length of the literal.
+fn is_special_numish_literal(source: &str) -> bool {
+    if matches!(source, "NaN" | "Inf" | "∞") {
+        return true;
+    }
+    let Some(inner) = source.strip_prefix('<').and_then(|s| s.strip_suffix('>')) else {
+        return false;
+    };
+    let number = |s: &str| {
+        let s = s.strip_prefix(['+', '-']).unwrap_or(s);
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+    };
+    if let Some((num, den)) = inner.split_once('/') {
+        return number(num) && number(den);
+    }
+    inner.strip_suffix('i').is_some_and(|body| {
+        body.rfind(['+', '-'])
+            .filter(|at| *at > 0)
+            .is_some_and(|at| number(&body[..at]) && number(&body[at + 1..]))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1742,31 +1769,4 @@ mod tests {
             Expr::Call { ref name, ref args, .. } if name == "QX" && args.len() == 1
         ));
     }
-}
-
-/// Whether `source` is a numeric literal the grammar's `numish` covers without
-/// being an integer, decimal or radix number: `NaN`, `Inf`, `∞`, a rational
-/// `<1/2>` or a complex `<1+2i>`.
-// Cost: O(n), n = length of the literal.
-fn is_special_numish_literal(source: &str) -> bool {
-    if matches!(source, "NaN" | "Inf" | "∞") {
-        return true;
-    }
-    let Some(inner) = source.strip_prefix('<').and_then(|s| s.strip_suffix('>')) else {
-        return false;
-    };
-    let number = |s: &str| {
-        let s = s.strip_prefix(['+', '-']).unwrap_or(s);
-        !s.is_empty()
-            && s.chars()
-                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
-    };
-    if let Some((num, den)) = inner.split_once('/') {
-        return number(num) && number(den);
-    }
-    inner.strip_suffix('i').is_some_and(|body| {
-        body.rfind(['+', '-'])
-            .filter(|at| *at > 0)
-            .is_some_and(|at| number(&body[..at]) && number(&body[at + 1..]))
-    })
 }
