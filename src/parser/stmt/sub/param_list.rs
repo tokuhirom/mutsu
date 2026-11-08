@@ -66,7 +66,8 @@ fn collect_sub_signature_vars(sub_params: &[ParamDef], out: &mut Vec<String>) {
         let bare = strip_param_sigil(name);
         let declares = !(sp.named_alias
             || name.is_empty()
-            || matches!(name, "@" | "%" | "&" | crate::ast::PARENS_PARAM)
+            || matches!(name, "@" | "%" | "&")
+            || sp.is_parens()
             || bare.starts_with("__ANON_"));
         if declares {
             let display = if name.starts_with(['@', '%', '&']) || sp.sigilless {

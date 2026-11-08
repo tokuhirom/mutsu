@@ -224,9 +224,7 @@ impl Interpreter {
         let mut out = Vec::new();
         for (i, pd) in candidate.type_param_defs.iter().enumerate() {
             let Some(value) = values.get(i) else { break };
-            if pd.captured_type_name().is_none()
-                || pd.name.starts_with(crate::ast::TYPE_CAPTURE_PREFIX)
-            {
+            if pd.captured_type_name().is_none() || pd.is_bare_type_capture() {
                 continue;
             }
             let key = pd.storage_name().into_owned();
