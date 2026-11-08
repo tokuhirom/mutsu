@@ -1147,18 +1147,49 @@ impl Interpreter {
                         && on_demand_quit.is_none()
                     {
                         if !outer_tap_registered && Self::supply_has_active_callback(&tap_cb) {
-                            Self::register_outer_tap_with_do_callbacks(
-                                &attrs,
-                                emitter_supplier_id,
-                                &tap_cb,
-                                delay_seconds,
-                            );
+                            // The producer returned before emitting (a derive
+                            // shim), so another thread may already have emitted
+                            // while no tap listened. Registering the tap and
+                            // reading the history is one step against every
+                            // emit (`emit_gate`): a value lands either in the
+                            // history read here or in the registered tap,
+                            // never in neither (#17167).
+                            let missed = {
+                                let _gate = emit_gate();
+                                Self::register_outer_tap_with_do_callbacks(
+                                    &attrs,
+                                    emitter_supplier_id,
+                                    &tap_cb,
+                                    delay_seconds,
+                                );
+                                let (history, _, _) = supplier_snapshot(emitter_supplier_id);
+                                history.into_iter().skip(streamed).collect::<Vec<_>>()
+                            };
                             outer_tap_registered = true;
                             if let Some(tid) = last_supplier_tap_id(emitter_supplier_id) {
                                 upstream_taps.push(Value::array(vec![
                                     Value::int(emitter_supplier_id as i64),
                                     Value::int(tid as i64),
                                 ]));
+                            }
+                            // TODO: a tick emitted while this replay runs is
+                            // delivered live from the emitting thread; the two
+                            // can interleave. A per-tap delivery lock would
+                            // order them.
+                            let missed_do_cbs = Self::supply_do_callbacks(&attrs);
+                            let missed_throttle = Self::supply_throttle_limit(&attrs);
+                            for (idx, v) in missed.iter().enumerate() {
+                                match self.deliver_tap_value(
+                                    &tap_cb,
+                                    &missed_do_cbs,
+                                    delay_seconds,
+                                    missed_throttle,
+                                    streamed + idx,
+                                    v,
+                                )? {
+                                    TapStep::Continue => {}
+                                    TapStep::Stop => break,
+                                }
                             }
                         }
                         producer_done_supplier = Some(emitter_supplier_id);
