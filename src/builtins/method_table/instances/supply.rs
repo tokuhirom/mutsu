@@ -199,8 +199,13 @@ pub(crate) fn listify(target: &Value, want_array: bool) -> Option<Result<Value, 
         }
     };
     // An on-demand supply has no materialized values; its body must be run by
-    // the stateful slow path (`supply_list_values`).
-    if attributes.as_map().contains_key("on_demand_callback") {
+    // the stateful slow path (`supply_list_values`). Likewise a supply derived
+    // from a channel-backed live one (`Supply.interval(..).head(2)`): its
+    // values arrive on the parent's channel.
+    if attributes.as_map().contains_key("on_demand_callback")
+        || (attributes.as_map().contains_key("parent_supply_id")
+            && !attributes.as_map().contains_key("proc_output"))
+    {
         return None;
     }
     // Likewise `.list` on a live, channel-backed supply (an `IO::Socket::Async`
