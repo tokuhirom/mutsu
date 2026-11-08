@@ -2226,9 +2226,10 @@ impl Interpreter {
                 // `self.some-rule` (issue #8752) — restarting on `""` would
                 // throw away the actual text and position. Continue from the
                 // cursor's own `orig`/position instead.
-                if args.is_empty()
-                    && let ValueView::Instance { class_name, .. } = target.view()
-                {
+                //
+                // The arguments of a rule with a signature (`token t($kw)`,
+                // `self."$name"($kw)`) travel as the start rule's `:args`.
+                if let ValueView::Instance { class_name, .. } = target.view() {
                     let cn = class_name.resolve();
                     let qualified = crate::qualified::qualified_text(&cn, method)
                         .as_str()
@@ -2254,6 +2255,12 @@ impl Interpreter {
                             "rule".to_string(),
                             Value::str(method.to_string()),
                         ));
+                        if !args.is_empty() {
+                            call_args.push(Value::pair(
+                                "args".to_string(),
+                                Value::array(args.to_vec()),
+                            ));
+                        }
                         let result = self.dispatch_package_parse(&cn, "subparse", &call_args)?;
                         // Remember which rule produced this Match, so a
                         // method-shaped start rule that returns it fires that

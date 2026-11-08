@@ -46,14 +46,16 @@ grammar Mutsu::Slang::Host::Base {
     method block() { __mutsu_slang_shim('block', self) }
     method signature() { __mutsu_slang_shim('signature', self) }
     method trait() { __mutsu_slang_shim('trait', self) }
-    method routine-def() { __mutsu_slang_shim('routine-def', self) }
-    method method-def() { __mutsu_slang_shim('method-def', self) }
+    method routine-def($d?) { __mutsu_slang_shim('routine-def', self) }
+    method method-def($d?) { __mutsu_slang_shim('method-def', self) }
     # `<name=.key-origin('rule', 'keyword')>`: the core definition rule `rule`
     # (`routine-def`, `method-def`), matched where the cursor is; `keyword` names the
     # declarator whose origin it records.
-    method key-origin(Str $rule, Str $keyword) { self."$rule"() }
+    method key-origin(Str $rule, Str $keyword) { self."$rule"($keyword) }
     method statementlist() { __mutsu_slang_shim('statementlist', self) }
     method statement() { __mutsu_slang_shim('statement', self) }
+    # `<blorst>`: a block, or one statement (a `Statement::Expression`).
+    method blorst() { __mutsu_slang_shim('blorst', self) }
     method arglist() { __mutsu_slang_shim('arglist', self) }
     # `<.kok>`: the end of a declarator keyword, then whitespace.
     token kok { <.end-keyword> <.ws> }

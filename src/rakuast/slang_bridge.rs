@@ -27,6 +27,12 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "arglist" {
         return arglist_production(text);
     }
+    // `<statement>` is the statement node itself (a `Statement::Expression`),
+    // and `<blorst>` a block or such a statement.
+    if rule == "statement" || (rule == "blorst" && !text.starts_with('{')) {
+        return statement_production(text);
+    }
+    let rule = if rule == "blorst" { "block" } else { rule };
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
     let Ok((rest, stmt)) = parsed else {
@@ -50,6 +56,24 @@ fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),
     )))
+}
+
+/// The `<statement>` core rule: the one statement at the start of `text`, as the
+/// node rakudo's `statement` action makes (not unwrapped to its expression).
+// Cost: O(n), n = size of the statement (parse and conversion).
+fn statement_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let parsed = crate::parser::parse_slang_shim_production("statement", text)
+        .ok_or_else(|| "the core rule <statement> has no slang shim".to_string())?;
+    let Ok((rest, stmt)) = parsed else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let list = super::statements::statement_list(&names, std::slice::from_ref(&stmt))
+        .map_err(|e| e.message.to_string())?;
+    let Some(RakuAstFieldValue::Node(first)) = list.fields.first().map(|f| &f.value) else {
+        return Err("slang shim: the statement has no node".to_string());
+    };
+    Ok(Some((text.len() - rest.len(), first.clone())))
 }
 
 /// The `<arglist>` core rule: the arguments at the start of `text` as a
