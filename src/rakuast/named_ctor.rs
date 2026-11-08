@@ -258,6 +258,14 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
             C::VarDeclarationImplicitSelf,
             &[("name", Node, DefaultStr("self"))],
         ),
+        "RakuAST::VarDeclaration::Implicit::Constant" => (
+            C::VarDeclarationImplicitConstant,
+            &[
+                ("scope", Node, Omit),
+                ("name", Node, Required),
+                ("value", Node, Required),
+            ],
+        ),
         "RakuAST::Declaration::ResolvedConstant" => (
             C::DeclarationResolvedConstant,
             &[("compile-time-value", Node, Required)],

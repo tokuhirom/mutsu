@@ -739,6 +739,9 @@ RakuAST::VarDeclaration::Constant	name	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	scope	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	traits	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	type	RakuAST::VarDeclaration::Constant
+RakuAST::VarDeclaration::Implicit::Constant	name	RakuAST::VarDeclaration::Implicit::Constant
+RakuAST::VarDeclaration::Implicit::Constant	scope	RakuAST::VarDeclaration::Implicit::Constant
+RakuAST::VarDeclaration::Implicit::Constant	value	RakuAST::VarDeclaration::Implicit::Constant
 RakuAST::VarDeclaration::Implicit::Self	name	RakuAST::VarDeclaration::Implicit
 RakuAST::VarDeclaration::Placeholder::Named	lexical-name	RakuAST::VarDeclaration::Placeholder::Named
 RakuAST::VarDeclaration::Placeholder::Positional	lexical-name	RakuAST::VarDeclaration::Placeholder::Positional
