@@ -120,8 +120,12 @@ impl Interpreter {
             } if class_name == "Supply" => {
                 // On-demand source: the filtered supply taps it per tap of its
                 // own (see `native_methods::supply_derive`).
+                // A `head(N)` stage over a channel-backed source keeps its limit
+                // in `head_limit` and counts at tap time, so a filter stacked
+                // on it taps that stage (see `dispatch_supply_map`).
                 if attributes.as_map().contains_key("on_demand_callback")
                     || Self::is_channel_backed_source(&attributes.as_map())
+                    || attributes.as_map().contains_key("head_limit")
                 {
                     return Ok(Self::make_on_demand_derived_supply(
                         target.clone(),

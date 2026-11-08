@@ -39,8 +39,17 @@ impl Interpreter {
     /// its (empty) `values`.
     // Cost: O(1).
     pub(in crate::runtime) fn is_channel_backed_source(attributes: &AttrMap) -> bool {
+        if attributes.contains_key("supplier_id") {
+            return false;
+        }
         attributes.get("proc_output").is_some_and(Value::truthy)
-            && !attributes.contains_key("supplier_id")
+            // A Supply that owns an event channel itself (`Supply.interval`,
+            // a socket's): it delivers nothing until tapped, so a transform
+            // over it taps it per tap of its own like an on-demand one.
+            || attributes
+                .get("supply_id")
+                .and_then(Value::as_int)
+                .is_some_and(|id| id > 0 && crate::runtime::native_methods::has_supply_channel(id as u64))
     }
 
     /// A `whenever` over `map`/`grep`/`do`/`reduce` stages stacked on a

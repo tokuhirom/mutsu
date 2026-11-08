@@ -50,7 +50,13 @@ impl Interpreter {
                             .unwrap_or_default()
                             .values
                     } else if attributes.as_map().get("values").is_some() {
-                        self.supply_list_values(&attributes.as_map(), true)?
+                        // The same path `.list` takes, so a channel-backed or
+                        // derived live Supply (`Supply.interval(..).head(3)`)
+                        // is tapped and drained instead of read as `values`.
+                        match self.supply_materialize(&target, false) {
+                            Some(r) => crate::runtime::value_to_list(&r?),
+                            None => self.supply_list_values(&attributes.as_map(), true)?,
+                        }
                     } else {
                         Vec::new()
                     };

@@ -557,8 +557,12 @@ impl Interpreter {
         }
         // On-demand source: the mapped supply taps it per tap of its own
         // (see `native_methods::supply_derive`).
+        // A `head(N)` stage over a channel-backed source (`Supply.interval`)
+        // keeps its limit in `head_limit` and only counts at tap time, so a
+        // transform stacked on it taps that stage instead of snapshotting it.
         if attributes.contains_key("on_demand_callback")
             || Self::is_channel_backed_source(attributes)
+            || attributes.contains_key("head_limit")
         {
             return Ok(Self::make_on_demand_derived_supply(
                 target.clone(),
