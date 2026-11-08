@@ -5578,7 +5578,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 }
                 // `(1 + 2)i` / `$x\i`: the imaginary-unit operator over a term
                 // is the call the parser builds for it.
-                RakuAstClass::Postfix if leaf_str(postfix, "operator").is_ok_and(|op| op == "i") => {
+                RakuAstClass::Postfix
+                    if leaf_str(postfix, "operator").is_ok_and(|op| op == "i") =>
+                {
                     Ok(Expr::Call {
                         name: crate::symbol::Symbol::intern("postfix:<i>"),
                         args: vec![operand],

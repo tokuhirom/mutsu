@@ -2775,27 +2775,6 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             if let Some(atomic) = super::atomic_op::view_node(names, name.as_str(), args) {
                 return atomic;
             }
-            // `(NaN)i` / `$x\i`: the imaginary-unit postfix operator over a
-            // term, `ApplyPostfix(operand, Postfix "i")` like `2i`.
-            if name.as_str() == "postfix:<i>"
-                && let [operand] = args.as_slice()
-            {
-                return Ok(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::ApplyPostfix,
-                    fields: vec![
-                        node_field(Some("operand"), postfix_operand(names, operand)?),
-                        node_field(
-                            Some("postfix"),
-                            RakuAstNode {
-                                origin: Default::default(),
-                                class: RakuAstClass::Postfix,
-                                fields: vec![leaf_field(Some("operator"), Value::str_from("i"))],
-                            },
-                        ),
-                    ],
-                });
-            }
             if name.as_str() == crate::ast::quote_processing::FORMAT {
                 return super::quoted_string::view_format(names, args);
             }

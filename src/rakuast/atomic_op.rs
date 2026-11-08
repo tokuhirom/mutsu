@@ -72,6 +72,22 @@ pub(super) fn view_node(
     name: &str,
     args: &[Expr],
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
+    // `(NaN)i` / `$x\i`: the imaginary-unit postfix operator over a term,
+    // `ApplyPostfix(operand, Postfix "i")` like the literal `2i`.
+    if name == "postfix:<i>"
+        && let [operand] = args
+    {
+        return Some(
+            super::view::postfix_operand(names, operand).map(|operand| RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::ApplyPostfix,
+                fields: vec![
+                    node_field(Some("operand"), operand),
+                    node_field(Some("postfix"), postfix_op("i")),
+                ],
+            }),
+        );
+    }
     let atomic = atomic_op::recognize(name, args)?;
     Some((|| match atomic {
         Atomic::Unary {
