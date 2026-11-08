@@ -3,7 +3,7 @@
 //!
 //! `$a.snitch = 5` already compiles to
 //! `GetLocal(0); ContainerizePair; WrapVarRef{name_idx, slot}; ...
-//! CallFunc "__mutsu_assign_method_lvalue"`, so the invocant arrives tagged with
+//! CallFunc crate::lvalue_call::ASSIGN_METHOD`, so the invocant arrives tagged with
 //! its source name. The missing step is the one a `return-rw` tail emits right
 //! after such a tag: boxing the named slot into a shared cell.
 //!

@@ -40,9 +40,9 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn lvalue_writeback_arg_index(name: &str, argc: usize) -> Option<usize> {
         match name {
-            "__mutsu_assign_method_lvalue" => Some(4),
-            "__mutsu_index_assign_method_lvalue" => Some(if argc >= 6 { 5 } else { 4 }),
-            "__mutsu_index_delete_method_lvalue" => Some(3),
+            crate::lvalue_call::ASSIGN_METHOD => Some(4),
+            crate::lvalue_call::INDEX_ASSIGN_METHOD => Some(if argc >= 6 { 5 } else { 4 }),
+            crate::lvalue_call::INDEX_DELETE_METHOD => Some(3),
             _ => None,
         }
     }

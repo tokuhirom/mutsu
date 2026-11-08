@@ -353,7 +353,7 @@ fn parse_parenthesized_assign_lvalue_stmt() {
     // The callable-lvalue assignment: the inner assignment and the stored value.
     match &stmts[0] {
         Stmt::Expr(Expr::Call { name, args, .. })
-            if name.resolve().as_str() == "__mutsu_assign_callable_lvalue" =>
+            if name.resolve().as_str() == crate::lvalue_call::ASSIGN_CALLABLE =>
         {
             assert!(matches!(
                 &args[0],

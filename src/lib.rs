@@ -32,6 +32,7 @@ mod interpreter;
 pub(crate) mod known_types;
 mod lexical_builtin_op;
 mod light_closure_shape;
+pub(crate) mod lvalue_call;
 pub(crate) mod meta_ns;
 pub(crate) mod method_signature_shared;
 pub mod native_exit_gate;

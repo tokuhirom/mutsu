@@ -7,6 +7,7 @@
 #   synthetic-block-sites   lines in src/parser naming `SyntheticBlock` (producers and matchers)
 #   internal-name-literals  distinct `"__...` literals in src/parser
 #   param-placeholder-spellings  quoted placeholder-name spellings outside src/ast.rs (ADR-15761)
+#   lvalue-call-spellings  quoted `__mutsu_*lvalue` call spellings outside src/lvalue_call.rs (ADR-17198)
 #   view-lines           lines of src/rakuast/view.rs
 #
 # ADR-15334 Amendment 5: the counts are executable IR and the .AST view, not debt; the ceilings are
@@ -21,6 +22,10 @@ count_internal_name_literals() { { grep -rhoE '"__[A-Za-z0-9_]+' src/parser || t
 # Quoted spellings of a parameter placeholder name outside src/ast.rs (ADR-15761).
 count_param_placeholder_spellings() {
     { git grep -nE '"__(subsig|type_only|literal|type_capture)__' -- src ':!src/ast.rs' || true; } | wc -l
+}
+# Quoted spellings of a write-through call name outside src/lvalue_call.rs (ADR-17198).
+count_lvalue_call_spellings() {
+    { git grep -nE '"__mutsu_(assign|incdec|index_assign|index_delete)_[a-z_]*lvalue"' -- src ':!src/lvalue_call.rs' || true; } | wc -l
 }
 count_view_lines() { wc -l <src/rakuast/view.rs; }
 
@@ -54,5 +59,6 @@ rc=0
 check_metric synthetic-block-sites "$(count_synthetic_block_sites)" || rc=1
 check_metric internal-name-literals "$(count_internal_name_literals)" || rc=1
 check_metric param-placeholder-spellings "$(count_param_placeholder_spellings)" || rc=1
+check_metric lvalue-call-spellings "$(count_lvalue_call_spellings)" || rc=1
 check_metric view-lines "$(count_view_lines)" || rc=1
 exit $rc
