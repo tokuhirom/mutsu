@@ -144,7 +144,19 @@ impl Interpreter {
         let args = if spec.arg_exprs.is_empty() {
             None
         } else {
-            let values = self.eval_regex_call_args(&spec.arg_exprs, caps, chars, pos)?;
+            // An argument that reads `self` (`<.helper(self)>`) sees the grammar
+            // cursor at this position, as the code blocks of a rule do.
+            let self_mark = (spec.arg_exprs.iter().any(|e| e.contains("self"))
+                && self.class_is_grammar(&pkg.resolve()))
+            .then(|| {
+                let cursor = self.new_grammar_cursor(chars, pos, pkg);
+                self.begin_scoped_invocant(cursor)
+            });
+            let evaluated = self.eval_regex_call_args(&spec.arg_exprs, caps, chars, pos);
+            if let Some(mark) = self_mark {
+                self.end_scoped_fixtures(mark);
+            }
+            let values = evaluated?;
             Some(self.mark_rw_regex_args(spec, pkg, values))
         };
         let window = self.rx_call_window(name, pkg, args.as_deref().unwrap_or(&[]));

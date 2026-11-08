@@ -58,6 +58,22 @@ pub(crate) fn slang_wrapper_rule(name: &str) -> bool {
     matches!(name, "statementlist")
 }
 
+/// Whether `name` is a core production a slang's grammar role may override
+/// with a method that delegates back to the core one (`$grammar.HOW.find_method`
+/// answers the shim): `statementlist`, which the parser also hands to the host
+/// ([`slang_wrapper_rule`]), and the productions only a slang's own tokens
+/// call, whose override runs when such a token does (`arglist`, `block`, the
+/// `circumfix` forms). The Rust parser's own uses of those never see the
+/// override, as the override only sets dynamics the slang's tokens read.
+// Cost: O(1).
+pub(crate) fn slang_host_wrapped_rule(name: &str) -> bool {
+    slang_wrapper_rule(name)
+        || matches!(
+            name,
+            "arglist" | "block" | "circumfix:sym<( )>" | "circumfix:sym<[ ]>" | "circumfix:sym<{ }>"
+        )
+}
+
 /// Register the wrapper of the core production `name`.
 // Cost: O(k), k = registered wrappers.
 pub(in crate::parser) fn register_wrapper(name: &str) {
@@ -422,8 +438,21 @@ pub(crate) fn parse_slang_shim_production<'a>(
                 })
                 .map_err(|e| e.to_string()),
         ),
+        // `<statement>`: one statement, without its terminating `;`.
+        "statement" => Some(
+            crate::parser::stmt::statement_pub(text)
+                .map(|(rest, stmt)| (rest, stmt))
+                .map_err(|e| e.to_string()),
+        ),
         _ => None,
     }
+}
+
+/// Parse the argument list at the start of `text` for a slang token that calls
+/// the core `<arglist>`: the text after it and its arguments.
+// Cost: the parse of the list.
+pub(crate) fn parse_slang_arglist(text: &str) -> Option<(&str, Vec<crate::ast::CallArg>)> {
+    crate::parser::stmt::parse_arglist_pub(text).ok()
 }
 
 /// Parse the statement list at the start of `text` for a slang token that calls

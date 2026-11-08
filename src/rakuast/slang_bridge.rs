@@ -24,6 +24,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "statementlist" {
         return statementlist_production(text);
     }
+    if rule == "arglist" {
+        return arglist_production(text);
+    }
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
     let Ok((rest, stmt)) = parsed else {
@@ -43,6 +46,22 @@ fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String
     let names = NameScope::default();
     let node =
         super::statements::statement_list(&names, &stmts).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<arglist>` core rule: the arguments at the start of `text` as a
+/// `RakuAST::ArgList`.
+// Cost: O(n), n = size of the list (parse and conversion).
+fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, args)) = crate::parser::parse_slang_arglist(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
+    let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),

@@ -119,7 +119,7 @@ impl Interpreter {
                 }),
                 // A grammar role's method named after a core production the
                 // parser can hand to the host wraps it (ADR-16888).
-                None if crate::parser::slang_wrapper_rule(method_name) => {
+                None if crate::parser::slang_host_wrapped_rule(method_name) => {
                     names.push(SlangRuleOverride {
                         name: method_name.clone(),
                         body: None,

@@ -53,6 +53,14 @@ grammar Mutsu::Slang::Host::Base {
     # declarator whose origin it records.
     method key-origin(Str $rule, Str $keyword) { self."$rule"() }
     method statementlist() { __mutsu_slang_shim('statementlist', self) }
+    method statement() { __mutsu_slang_shim('statement', self) }
+    method arglist() { __mutsu_slang_shim('arglist', self) }
+    # `<.kok>`: the end of a declarator keyword, then whitespace.
+    token kok { <.end-keyword> <.ws> }
+    # `<.set_braid_from(self)>` hands the braid of the current cursor to the
+    # production's sub-parse; the host grammar has one braid, so it is a
+    # zero-width success.
+    token set_braid_from($) { <?> }
 }
 class Mutsu::Slang::Host::Actions {
     method attach($/, $ast) { $/.make($ast); $ast }
@@ -206,11 +214,12 @@ impl Interpreter {
 
     /// `$grammar.HOW.find_method($grammar, 'statementlist')` on a slang grammar
     /// handle: the core production's method, which a slang's override captures
-    /// and delegates to (ADR-16888 §2.3). A callable taking the cursor that
-    /// asks the parser to parse the core rule at it.
-    // Cost: O(1) (compiles a one-line closure).
+    /// and delegates to (ADR-16888 §2.3). A `Method` (EEL tests `~~ Method`)
+    /// invoked with the cursor as its invocant, which asks the parser to parse
+    /// the core rule at it; extra arguments (`arglist(|args)`) are ignored.
+    // Cost: O(1) (compiles a one-line method).
     pub(super) fn slang_core_method(&mut self, invocant: &Value, name: &str) -> Option<Value> {
-        if !crate::parser::slang_wrapper_rule(name) {
+        if !crate::parser::slang_host_wrapped_rule(name) {
             return None;
         }
         let ValueView::Instance { class_name, .. } = invocant.view() else {
@@ -220,7 +229,7 @@ impl Interpreter {
             return None;
         }
         self.eval_code_string(&format!(
-            "-> Mu \\cursor {{ __mutsu_slang_shim('{name}', cursor) }}"
+            "method (*@) {{ __mutsu_slang_shim('{name}', self) }}"
         ))
         .ok()
     }
