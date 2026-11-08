@@ -1690,6 +1690,11 @@ pub(crate) struct Compiler {
     /// subscripts) denotes a container; every other tail is an ordinary value.
     /// A `.map` block's tail is such a tail (#16919).
     rw_tail_elems_only: bool,
+    /// A plain Block / pointy block body (not a routine): its bare variable or
+    /// subscript tail (`{ $x }`, `{ @a[0] }`, `{ $_ }`) is the container it
+    /// denotes, as for an `is rw` routine, but no other tail shape is
+    /// (an assignment, `if`/`given` branches and ternaries stay values).
+    rw_tail_block: bool,
     /// ADR-0059 Slice 2, extended to conditionals (#9060): set while compiling
     /// the value-position branches of an `if`/`elsif`/`else` that IS the tail
     /// of an `is rw` routine body. The taken branch's own tail expression is
@@ -2229,6 +2234,7 @@ impl Compiler {
             rw_return_operand: false,
             rw_tail: false,
             rw_tail_elems_only: false,
+            rw_tail_block: false,
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,

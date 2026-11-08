@@ -633,7 +633,28 @@ impl Interpreter {
         self.call_captured_candidates(dispatcher, &candidates, family.as_deref(), args)
     }
 
+    /// Call a code object from native code. A plain Block hands back the
+    /// container its tail denotes; only the lvalue-assignment path
+    /// (`in_lvalue_assignment`) wants that container, so every other native
+    /// caller (`splice`/`sort`/`reduce` callbacks, ...) reads the value.
+    // Cost: O(1) plus the call.
     pub(crate) fn call_sub_value(
+        &mut self,
+        func: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let is_block = !self.in_lvalue_assignment
+            && matches!(func.view(), ValueView::Sub(ref d)
+                if d.is_bare_block || d.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine));
+        let result = self.call_sub_value_container(func, args)?;
+        Ok(if is_block {
+            result.deref_container()
+        } else {
+            result
+        })
+    }
+
+    fn call_sub_value_container(
         &mut self,
         func: Value,
         args: Vec<Value>,

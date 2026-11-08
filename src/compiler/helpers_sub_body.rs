@@ -8,6 +8,8 @@ struct BodyKind<'a> {
     /// The routine is `is rw` / `is raw`: its bare tail compiles to the
     /// container it denotes (ADR-0059 Slice 2).
     rw_tail: bool,
+    /// A plain Block body: see `Compiler::rw_tail_block`.
+    rw_tail_block: bool,
     /// The declarations a WhateverCode body shares with the surrounding source
     /// block.
     promoted_decls: &'a [String],
@@ -951,6 +953,19 @@ impl Compiler {
     /// container: always for an `is rw` routine, only for a subscript-shaped
     /// tail when `rw_tail_elems_only` (a `.map` block, #16919).
     pub(super) fn rw_tail_shape_is_container(&self, expr: &Expr) -> bool {
+        if self.rw_tail_block {
+            // Only a single-element subscript: a slice / range / closure index
+            // (`{ @a[$s .. 2] }`, `{ @a[-> $n { ... }] }`) is evaluated as a
+            // value so its exceptions are raised where raku raises them.
+            return match expr {
+                Expr::Var(_) => true,
+                Expr::Index { index, .. } => matches!(
+                    index.peel_parens(),
+                    Expr::Var(_) | Expr::Literal(_) | Expr::BareWord(_)
+                ),
+                _ => false,
+            };
+        }
         !self.rw_tail_elems_only
             || matches!(
                 expr,
@@ -975,6 +990,21 @@ impl Compiler {
             self.compile_literal_constant_with_topic(v, topic);
         } else {
             self.with_stmt_root(|c| c.compile_expr(expr));
+            // A `.map` callback whose tail is a call (`{ { ...; $_ }($q) }`)
+            // gets the callee's container back; the eager map would keep that
+            // live cell for every element, where rakudo copies each value as it
+            // is pulled. Only a subscript tail is kept as a container.
+            // A non-rw routine decontainerizes what it hands back, so a tail
+            // call to a container-returning Block (`sub apply(&op, $v) { op($v) }`)
+            // leaks no container to the caller either.
+            if (self.rw_tail_elems_only || (self.is_routine && !self.rw_tail))
+                && matches!(
+                    expr,
+                    Expr::Call { .. } | Expr::CallOn { .. } | Expr::MethodCall { .. }
+                )
+            {
+                self.code.emit(OpCode::DerefContainer);
+            }
         }
     }
 
@@ -1041,7 +1071,7 @@ impl Compiler {
             }
         ) && (name == "__ANON_STATE#"
             || crate::ast::anon_state::is_scalar(name));
-        if self.rw_tail && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
+        if self.rw_tail && !self.rw_tail_block && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
         {
             self.emit_wrap_var_ref(name);
             self.code.emit(OpCode::CaptureVarCell);
@@ -1061,7 +1091,7 @@ impl Compiler {
         binding_var: &Option<String>,
         is_statement_modifier: bool,
     ) {
-        let saved = std::mem::replace(&mut self.rw_tail_branch, self.rw_tail);
+        let saved = std::mem::replace(&mut self.rw_tail_branch, self.rw_tail && !self.rw_tail_block);
         self.compile_if_value(
             cond,
             then_branch,
@@ -1077,7 +1107,7 @@ impl Compiler {
     /// taken `when`/`default` (or its own last statement) yields is the
     /// routine's return, so that tail compiles as a container (#9060).
     pub(super) fn compile_routine_stmt(&mut self, stmt: &Stmt, is_tail: bool) {
-        self.rw_tail_branch = is_tail && self.rw_tail && matches!(stmt, Stmt::Given { .. });
+        self.rw_tail_branch = is_tail && self.rw_tail && !self.rw_tail_block && matches!(stmt, Stmt::Given { .. });
         self.compile_stmt(stmt);
         self.rw_tail_branch = false;
     }
@@ -1379,7 +1409,14 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
-        self.compile_closure_body_of_kind(params, param_defs, body, BodyKind::default())
+        // A plain Block / pointy block hands back the container its last
+        // statement denotes (`{ $x }`, `{ @a[0] }`, `{ $_ }`), unlike a `sub`.
+        let kind = BodyKind {
+            rw_tail: true,
+            rw_tail_block: true,
+            ..BodyKind::default()
+        };
+        self.compile_closure_body_of_kind(params, param_defs, body, kind)
     }
 
     /// Compile the body of a sigilless pointy block (`-> \x { }`): `term_param`
@@ -1481,6 +1518,7 @@ impl Compiler {
         let BodyKind {
             is_routine,
             rw_tail,
+            rw_tail_block,
             promoted_decls,
             term_param,
             frame_lexicals,
@@ -1490,6 +1528,7 @@ impl Compiler {
         let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
+        sub_compiler.rw_tail_block = rw_tail_block;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
         sub_compiler.decl_initializer_aggregates = self.decl_initializer_aggregates.clone();
         self.inherit_fold_ctx(&mut sub_compiler);

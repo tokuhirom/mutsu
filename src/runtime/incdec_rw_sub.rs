@@ -125,6 +125,10 @@ impl Interpreter {
     pub(crate) fn sub_is_rw_capable(data: &SubData) -> bool {
         data.is_rw
             || data.is_raw
+            // A plain Block / pointy block hands back the container its tail
+            // denotes (`my &b = { $x }; b() = 7`); a `sub` decontainerizes.
+            || data.is_bare_block
+            || data.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine)
             || data
                 .compiled_routine
                 .as_ref()

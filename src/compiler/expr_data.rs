@@ -1009,6 +1009,14 @@ impl Compiler {
                     self.callframe_block_depth += 1;
                     self.compile_expr(part);
                     self.callframe_block_depth -= 1;
+                    // Each part is stringified as it is evaluated: a block part
+                    // whose tail is a variable yields that variable's
+                    // container, and a later part must not see its write.
+                    self.code.emit(OpCode::DerefContainer);
+                }
+                Expr::CallOn { .. } | Expr::Call { .. } => {
+                    self.compile_expr(part);
+                    self.code.emit(OpCode::DerefContainer);
                 }
                 _ => self.compile_expr(part),
             }

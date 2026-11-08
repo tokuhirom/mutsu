@@ -40,7 +40,7 @@ impl Compiler {
             // A `.map` block's tail subscript (#16919): the receiver and the
             // index are read as ordinary values (the subscript is not a bind),
             // and only the final element read may hand back the container.
-            Expr::Index { .. } if self.rw_tail_elems_only => {
+            Expr::Index { .. } if self.rw_tail_elems_only || self.rw_tail_block => {
                 let saved_av = std::mem::replace(&mut self.scalar_bind_autovivify, false);
                 let saved_terminal = std::mem::replace(&mut self.bind_terminal, false);
                 self.compile_expr(arg);
@@ -224,7 +224,10 @@ impl Compiler {
     /// chokepoints.
     pub(super) fn return_rw_container_name(&self, arg: &Expr) -> Option<String> {
         if let Some(name) = Self::scalar_container_alias_name(arg)
-            && (Self::is_plain_lexical_name(name) || Self::is_minted_anon_state_name(name))
+            && (Self::is_plain_lexical_name(name)
+                || Self::is_minted_anon_state_name(name)
+                // A Block's bare `{ $_ }` tail hands back the topic's container.
+                || (name == "_" && self.rw_tail_block))
         {
             return Some(name.to_string());
         }
