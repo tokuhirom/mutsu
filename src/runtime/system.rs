@@ -152,8 +152,7 @@ impl Interpreter {
             .iter()
             .position(|stmt| {
                 !is_literal_use_lib(stmt)
-                    && (super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
-                        || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. }))
+                    && super::undeclared_routines::contains_use_lib(std::slice::from_ref(stmt))
             })
             .unwrap_or(stmts.len());
         #[derive(Clone, Copy, PartialEq)]
@@ -173,6 +172,11 @@ impl Interpreter {
         // loaded: one the unit declares itself does not exist yet.
         let mut loaded: HashSet<&str> = HashSet::new();
         let mut after_use_lib = false;
+        // Past a BEGIN only a hook module runs ahead, like after a `use lib`:
+        // a plain module's load must keep its place relative to the block.
+        let first_begin = stmts.iter().position(|stmt| {
+            matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+        });
         let mut plan: Vec<Prerun> = Vec::with_capacity(stmts.len());
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
@@ -197,6 +201,14 @@ impl Interpreter {
                     Prerun::Keep
                 }
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
+                    // Past a BEGIN the arguments may read what it computed:
+                    // only literal ones are safe to evaluate ahead of it.
+                    Some(_)
+                        if first_begin.is_some_and(|b| idx > b)
+                            && !arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) =>
+                    {
+                        Prerun::No
+                    }
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
                         if arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) {
@@ -210,7 +222,9 @@ impl Interpreter {
                     // names are known without running it, and loading it
                     // before the unit registers its own declarations lets the
                     // module's `trait_mod` candidates outrank the unit's.
-                    Some(module) if arg.is_none() && !after_use_lib => {
+                    Some(module)
+                        if arg.is_none() && !after_use_lib && first_begin.is_none_or(|b| idx < b) =>
+                    {
                         loaded.insert(module);
                         Prerun::Keep
                     }
