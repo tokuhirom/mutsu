@@ -1,6 +1,6 @@
 # ADR-16451: Whether a `CompUnit::Repository::FileSystem` root gets a `.precomp` directory
 
-- **Status**: Accepted (maintainer decision 2026-11-08: option (c))
+- **Status**: Accepted (maintainer decision 2026-11-08: option (c), widened to excluding the distribution)
 - **Date**: 2026-11-08
 - **Deciders**: ecosystem inventory worker, for the maintainer's review
 - **Issue**: [#16451](https://github.com/tokuhirom/mutsu/issues/16451) (Template::HAML
@@ -43,5 +43,7 @@ as data rather than as an existence check.
 
 ## 4. Consequences
 
-Template::HAML `t/0510` leaves the KPI denominator as `accepted` (it still fails if it starts
-failing differently). #16451 closes with the entry; no code change.
+The maintainer widened (c) on 2026-11-08: Template::HAML is not supported at all, so it is listed in
+`ecosystem/exclude.txt` (per distribution) instead of a per-file `accepted-divergences.toml` entry. It leaves
+the ledger's work queue and bulk sweeps; `--only Template::HAML` still measures it. #16451 closes with
+the entry; no code change.

@@ -99,14 +99,3 @@ reason = """the test's own helper t/CompileTestLib.rakumod dispatches on `$*VM.n
 and dies on anything else; mutsu reports 'mutsu' and will not claim 'moar' (same decision as \
 LibraryMake, user decision 2026-09-25). With the helper's check bypassed all 34 assertions pass \
 under mutsu."""
-
-[[divergence]]
-dist = "Template::HAML"
-file = "t/0510-precomp-cross-process.rakutest"
-shape = { verdict = "fail", ok = 5, nok = 1, plan = 6, first_failure = ".precomp directory created after first render" }
-issue = 16451
-reason = """test 1 asserts that `<root>/.precomp` exists after a `require` through a \
-`CompUnit::Repository::FileSystem`. That is rakudo's storage layout, not something the language \
-or roast specifies; mutsu keeps its precompilation store in a per-user, content-keyed cache and \
-will not write into the user's source tree (ADR-11756, docs/security.md). Tests 2-6 pass \
-(maintainer decision 2026-11-08, ADR-16451 option (c))."""
