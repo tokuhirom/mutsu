@@ -443,10 +443,7 @@ pub(crate) fn parse_slang_shim_production<'a>(
                 .map_err(|e| e.to_string()),
         ),
         // `<statement>`: one statement, without its terminating `;`.
-        "statement" => Some(
-            crate::parser::stmt::statement_pub(text)
-                .map_err(|e| e.to_string()),
-        ),
+        "statement" => Some(crate::parser::stmt::statement_pub(text).map_err(|e| e.to_string())),
         _ => None,
     }
 }
