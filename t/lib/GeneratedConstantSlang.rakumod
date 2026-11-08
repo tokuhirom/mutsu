@@ -5,18 +5,17 @@
 use v6.e.PREVIEW;
 
 our role GeneratedConstantGrammar {
-    token statement-control:sym<defconst> {
+    token routine-declarator:sym<defconst> {
         'defconst' <.end-keyword> <.ws> $<name>=<.identifier> <.ws> $<value>=[\d+]
     }
 }
 
 our role GeneratedConstantActions {
-    method statement-control:sym<defconst>(Mu $/) {
+    method routine-declarator:sym<defconst>(Mu $/) {
         my $decl := RakuAST::VarDeclaration::Implicit::Constant.new(
             :name(~$<name>), :value(+~$<value>), :scope('our'));
         $*R.current-scope.merge-generated-lexical-declaration($decl, :resolver($*R));
-        self.attach: $/, RakuAST::Statement::Expression.new(
-            expression => RakuAST::Term::Name.new(RakuAST::Name.from-identifier('Nil')));
+        self.attach: $/, RakuAST::Term::Name.new(RakuAST::Name.from-identifier('Nil'));
     }
 }
 
