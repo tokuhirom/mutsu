@@ -387,7 +387,24 @@ impl Interpreter {
             .and_then(|at| self.stack.get(at))
             .is_some_and(|target| {
                 let inner = target.deref_container();
+                // A typed-key object hash and a native / shaped array check
+                // their subscript on the plain read (`%h{'foo'}` on `%h{Int}`
+                // and `@native[10]` die); keep that path for them.
+                if self.hash_key_type(inner.descalarize()).is_some() {
+                    return false;
+                }
+                // An `is raw` reduce callback autovivifies through the plain
+                // read (`-> $h is raw, $k { $h{$k} }`).
+                if self.hash_autovivify {
+                    return false;
+                }
                 match inner.view() {
+                    ValueView::Array(..)
+                        if crate::value::shaped_array::is_shaped_array(&inner)
+                            || inner.native_container_type().is_some() =>
+                    {
+                        false
+                    }
                     ValueView::Hash(..) | ValueView::Array(..) => true,
                     ValueView::Instance { class_name, .. } => class_name.as_str() == "Stash",
                     _ => false,

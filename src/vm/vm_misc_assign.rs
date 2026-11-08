@@ -1200,14 +1200,18 @@ impl Interpreter {
                     .cloned()
             })
             .or_else(|| {
-                self.get_env_with_main_alias(&source_name)
+                // The topic is never `:=`-bound to a `Proxy` by name.
+                if source_name == "_" {
+                    return None;
+                }
+                self.get_env_with_main_alias_sym(&source_name, name)
                     .filter(Value::is_proxy_value)
             });
         if let Some(proxy) = bound_proxy {
             self.stack.push(proxy);
             return;
         }
-        if self.name_is_readonly_binding(&source_name) {
+        if self.name_is_readonly_binding_for(&source_name, Some(name)) {
             self.stack.push(inner.into_deref());
             return;
         }
@@ -1261,7 +1265,7 @@ impl Interpreter {
         // name, so the returned container and the variable are one container.
         let current = self
             .env()
-            .get(&source_name)
+            .get_sym(name)
             .cloned()
             .unwrap_or_else(|| inner.clone());
         // Already a location: a shared cell, or the deferred entry token a
@@ -1273,7 +1277,7 @@ impl Interpreter {
             return;
         }
         let cell = current.into_descalarized().into_container_ref();
-        self.set_env_with_main_alias(&source_name, cell.clone());
+        self.set_env_with_main_alias_sym(&source_name, Some(name), cell.clone());
         self.stack.push(cell);
     }
 

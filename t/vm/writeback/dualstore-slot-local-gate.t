@@ -38,7 +38,9 @@ is $seq, "FXNXNXNL", 'FIRST/NEXT/LAST loop phasers preserved';
 
 # Closure capturing and mutating an outer local (needs_env_sync path).
 sub make-counter() { my $n = 0; my $inc = -> { $n = $n + 1; $n }; ($inc(), $inc(), $inc()) }
-is-deeply make-counter().list, (1, 2, 3).list, 'closure capture+mutate of outer local';
+# A pointy block returns the container of its tail variable, so the three
+# calls hand back the same `$n` cell (raku prints (3 3 3) too).
+is-deeply make-counter().list, (3, 3, 3).list, 'closure capture+mutate of outer local';
 
 # ENTER/LEAVE block phasers.
 my $out = "";

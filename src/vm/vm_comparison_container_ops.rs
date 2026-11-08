@@ -242,7 +242,13 @@ impl Interpreter {
     // Cost: O(1) when `name` is not an alias (no allocation); O(c) for a chain
     // of c aliases.
     pub(crate) fn resolve_alias_root<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
-        let key = crate::runtime::sigilless_alias_key(name);
+        // The topic (a block returning `$_`, a smartmatch binding it) reuses the
+        // memoized key instead of interning `_` per call.
+        let key = if name == "_" {
+            crate::meta_ns::MetaNs::SigillessAlias.key(crate::symbol::wk::topic())
+        } else {
+            crate::runtime::sigilless_alias_key(name)
+        };
         if !matches!(
             self.env().get_sym(key).map(Value::view),
             Some(ValueView::Str(_))
