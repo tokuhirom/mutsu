@@ -678,6 +678,7 @@ pub enum RakuAstClass {
     /// `VarDeclaration::Implicit::Self.new`): it carries only its name.
     VarDeclarationImplicitSelf,
     DeclarationResolvedConstant,
+    VarDeclarationImplicitConstant,
     TermDeclaration,
     /// `...` / `!!!` / `???` (the yada-yada stubs).
     StubFail,
@@ -1000,6 +1001,7 @@ impl RakuAstClass {
             TermSelf => "RakuAST::Term::Self",
             VarDeclarationImplicitSelf => "RakuAST::VarDeclaration::Implicit::Self",
             DeclarationResolvedConstant => "RakuAST::Declaration::ResolvedConstant",
+            VarDeclarationImplicitConstant => "RakuAST::VarDeclaration::Implicit::Constant",
             TermDeclaration => "RakuAST::Term::Declaration",
             StubFail => "RakuAST::Stub::Fail",
             StubDie => "RakuAST::Stub::Die",
@@ -1539,6 +1541,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TermSelf,
     RakuAstClass::VarDeclarationImplicitSelf,
     RakuAstClass::DeclarationResolvedConstant,
+    RakuAstClass::VarDeclarationImplicitConstant,
     RakuAstClass::TermDeclaration,
     RakuAstClass::StubFail,
     RakuAstClass::StubDie,

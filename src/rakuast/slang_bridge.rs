@@ -175,6 +175,21 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             "slang production produced no RakuAST node",
         ));
     };
+    // A production standing for one statement may hand it over inside the
+    // `StatementList` it built (a constant it installed is such a statement).
+    if node.class == super::RakuAstClass::StatementList {
+        let mut children = node
+            .fields
+            .iter()
+            .filter(|f| !super::origin::is_origin(f))
+            .filter_map(|f| match &f.value {
+                RakuAstFieldValue::Node(child) => Some(child),
+                _ => None,
+            });
+        if let (Some(only), None) = (children.next(), children.next()) {
+            return lower_statement(only);
+        }
+    }
     let names = NameScope::default();
     let lowered = super::lower::lower_fragment(&names, node)?;
     // A production that attaches an expression stands for a statement: rakudo's

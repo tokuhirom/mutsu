@@ -87,8 +87,16 @@ grammar Mutsu::Slang::Host::Base {
 # resolves names at run time, so declaring a lexical is a no-op and the
 # context is empty.
 class Mutsu::Slang::Host::Resolver {
+    has @.generated;
     method declare-lexical($declaration) { $declaration }
     method create-scope-implicits() { }
+    # `$*R.current-scope.merge-generated-lexical-declaration($decl)`: a constant
+    # a production installs for the unit (Qwiratry's `aggsub` class). The host
+    # keeps it; the run binds it in the unit beside the statement it returns.
+    method current-scope() { self }
+    method merge-generated-lexical-declaration($declaration, :$resolver) {
+        @!generated.push($declaration);
+    }
 }
 class Mutsu::Slang::Host::CompUnit { method context() { Nil } }
 class Mutsu::Slang::Host::Actions {
@@ -142,6 +150,22 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     my $*CU = Mutsu::Slang::Host::CompUnit.new;
     my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
     return Nil unless $m;
+    # Constants the production installed become `my constant NAME = VALUE`
+    # declarations of the unit, standing for the statement.
+    if $*R.generated.elems && $m.ast.defined {
+        my @decls = $*R.generated.map: -> $d {
+            RakuAST::Statement::Expression.new(expression => RakuAST::VarDeclaration::Constant.new(
+                name => $d.name,
+                initializer => RakuAST::Initializer::Assign.new(RakuAST::Term::Declaration.new(
+                    RakuAST::Declaration::ResolvedConstant.new(:compile-time-value($d.value))))))
+        };
+        # TODO: a production installing several constants needs a statement
+        # group the hook can lower; none exists, so it is refused rather than
+        # dropping all but one.
+        die "slang production installed {@decls.elems} generated lexicals; only one is supported" if @decls.elems > 1;
+        my $stmt := @decls.head;
+        return ($m.to, RakuAST::StatementList.new($stmt));
+    }
     return ($m.to, $m.ast) if $m.ast.defined;
     # A production whose slang attached no node stands for the core definition it
     # read (rakudo's own `routine-declarator` action answers it): `Slang::Mosdef`
@@ -238,6 +262,12 @@ impl Interpreter {
             .filter(|n| *n >= 0)
             .ok_or_else(|| "slang token answered no end position".to_string())?;
         let node = items.get(1).cloned().unwrap_or(Value::NIL);
+        // A node a class wrapped (an instance over a `RakuAst` base) stands for
+        // that base.
+        let node = match node.view() {
+            ValueView::Instance { attributes, .. } => attributes.rakuast_base().unwrap_or(node),
+            _ => node,
+        };
         if !matches!(node.view(), ValueView::RakuAst(_)) {
             return Err(format!(
                 "slang production '{rule}' produced no RakuAST node (its action must attach one)"
