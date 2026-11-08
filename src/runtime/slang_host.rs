@@ -70,7 +70,17 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
         $Mutsu::Slang::Host::A = $a.new;
     }
     if $node.defined {
-        my $core = Match.new(:orig(''), :from(0), :to(0));
+        # A numeric literal's `$/` is the text it was written as, holding the
+        # capture the core grammar's `numish` has (`integer`, `decimal-number`,
+        # `radix-number`), which an override reads by key.
+        my %hash;
+        if $rule eq 'numish' && $source.chars {
+            my $part = Match.new(:orig($source), :from(0), :to($source.chars));
+            my $key = $source.starts-with(':') ?? 'radix-number'
+                !! $node ~~ RakuAST::IntLiteral ?? 'integer' !! 'decimal-number';
+            %hash{$key} = $part;
+        }
+        my $core = Match.new(:orig($source), :from(0), :to($source.chars), :hash(%hash));
         $core.make($node);
         $Mutsu::Slang::Host::A."$rule"($core);
         return ($core.to, $core.ast);

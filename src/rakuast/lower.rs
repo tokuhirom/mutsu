@@ -4492,6 +4492,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral
         | RakuAstClass::VersionLiteral
+        | RakuAstClass::Constant
         | RakuAstClass::ComplexLiteral
         | RakuAstClass::StrLiteral => Ok(Expr::Literal(positional_leaf(node)?)),
         // `"..."` parses to a QuotedString wrapping StrLiteral segments; a single

@@ -93,12 +93,19 @@ impl SlangHost {
 
     /// Run the slang's override of the core action `rule` (`INFIX-EXPR`) over
     /// the `node` the core action built, and answer the node it attached.
+    /// `source` is the text the node was parsed from (the `Match`'s `.Str`),
+    /// empty when the caller has none.
     // Cost: the slang's own action.
-    pub(crate) fn run_action(&self, rule: &str, node: Value) -> Result<Value, String> {
+    pub(crate) fn run_action(
+        &self,
+        rule: &str,
+        node: Value,
+        source: &str,
+    ) -> Result<Value, String> {
         self.to_host
             .send(ToHost::Hook {
                 rule: rule.to_string(),
-                source: String::new(),
+                source: source.to_string(),
                 node: Some(node),
             })
             .map_err(|_| "the slang host is gone".to_string())?;

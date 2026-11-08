@@ -304,6 +304,8 @@ pub enum RakuAstClass {
     RatLiteral,
     // `v6.d` / `<1+2i>`: the value is the node's one positional field.
     VersionLiteral,
+    // `Constant.new($value)`: a compile-time value, its one positional field.
+    Constant,
     ComplexLiteral,
     // `:(Int $x)`: a signature literal, `Signature` as its one positional field.
     FakeSignature,
@@ -707,6 +709,7 @@ impl RakuAstClass {
             NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
             VersionLiteral => "RakuAST::VersionLiteral",
+            Constant => "RakuAST::Constant",
             ComplexLiteral => "RakuAST::ComplexLiteral",
             FakeSignature => "RakuAST::FakeSignature",
             StrLiteral => "RakuAST::StrLiteral",
@@ -1241,6 +1244,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
     RakuAstClass::VersionLiteral,
+    RakuAstClass::Constant,
     RakuAstClass::ComplexLiteral,
     RakuAstClass::FakeSignature,
     RakuAstClass::StrLiteral,
@@ -3970,6 +3974,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::NumLiteral
             | RakuAstClass::RatLiteral
             | RakuAstClass::VersionLiteral
+            | RakuAstClass::Constant
             | RakuAstClass::ComplexLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix
