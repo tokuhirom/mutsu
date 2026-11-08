@@ -1355,9 +1355,9 @@ impl Interpreter {
                     ))),
                 );
                 let head = Value::make_instance(Symbol::intern("HeadIterator"), attrs);
-                return Ok(Some(Value::seq_deferred(crate::value::SeqSource::Iterator(
-                    head,
-                ))));
+                return Ok(Some(Value::seq_deferred(
+                    crate::value::SeqSource::Iterator(head),
+                )));
             }
             Some(crate::value::PrefixSource::Iterator(iterator)) => {
                 self.pull_iterator_prefix_to_vec(&iterator, n)?
