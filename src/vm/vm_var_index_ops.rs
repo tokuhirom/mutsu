@@ -184,7 +184,7 @@ impl Interpreter {
         let base = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
             ValueView::Scalar(inner) => inner.clone(),
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => target.clone(),
         };
         if !matches!(base.view(), ValueView::Nil | ValueView::Package(_)) {
@@ -528,7 +528,7 @@ impl Interpreter {
             // shared cell to hold a Hash or Array. Continue the lazy walk from
             // that inner container; leaving the cell wrapped sends the bind to
             // the non-container fallback and loses aliases between entries.
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => target.clone(),
         };
         let index = self.resolve_whatever_container_index(index, &resolved);

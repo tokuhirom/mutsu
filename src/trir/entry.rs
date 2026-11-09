@@ -404,7 +404,7 @@ impl Interpreter {
             self.locals[idx] = cell;
         }
         if let ValueView::ContainerRef(cell) = self.locals[idx].view() {
-            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let inner = cell.load();
             let raw = kind.unbox_native(&inner)?;
             return Some((raw, RwTarget::Cell(slot, kind)));
         }
@@ -508,7 +508,7 @@ impl Interpreter {
 #[inline]
 pub(super) fn deref_cell(v: &Value) -> Value {
     match v.view() {
-        ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        ValueView::ContainerRef(cell) => cell.load(),
         _ => v.clone(),
     }
 }

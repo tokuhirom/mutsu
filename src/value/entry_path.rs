@@ -124,7 +124,7 @@ impl EntryRoot {
                 .accepts(want)
                 .then(|| Level::Array(arc.clone())),
             EntryRoot::Cell(cell) => {
-                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let inner = cell.load();
                 Level::of(&inner).filter(|l| l.accepts(want))
             }
         }
@@ -361,7 +361,7 @@ impl Value {
                     // intermediate is descended rather than clobbered.
                     let inner = match v.view() {
                         ValueView::ContainerRef(cell) => {
-                            cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
+                            cell.load()
                         }
                         _ => v,
                     };

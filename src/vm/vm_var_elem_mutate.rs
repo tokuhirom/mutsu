@@ -101,7 +101,7 @@ impl Interpreter {
             let assigned = self.stack.pop().unwrap_or(Value::NIL);
             let mut container = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
             if let ValueView::ContainerRef(cell) = container.view() {
-                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let inner = cell.load();
                 container = inner;
             }
             self.stack.push(container);

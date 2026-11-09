@@ -20,7 +20,7 @@ impl Interpreter {
         };
         // A dynamic variable's slot is a shared cell around the binding.
         let token = match token.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => token,
         };
         if !matches!(token.view(), ValueView::HashEntryRef { .. }) {

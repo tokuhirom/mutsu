@@ -1386,7 +1386,7 @@ impl Value {
             // the element cell. Writing through the alias must materialize
             // that token's terminal entry, rather than replacing the token
             // inside the cell and severing the source alias.
-            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let current = cell.load();
             if matches!(current.view(), ValueView::HashEntryRef { .. }) {
                 current.hash_entry_write(val);
             } else {
@@ -1623,7 +1623,7 @@ impl Value {
             return terminal.unwritten_read();
         };
         match entry.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ if eager => entry.clone(),
             _ => terminal.unwritten_read(),
         }

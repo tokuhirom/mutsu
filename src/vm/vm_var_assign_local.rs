@@ -1043,7 +1043,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Mixin(inner, _) => Self::tied_instance_type_name(inner),
             ValueView::ContainerRef(cell) => {
-                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let inner = cell.load();
                 Self::tied_instance_type_name(&inner)
             }
             _ => None,

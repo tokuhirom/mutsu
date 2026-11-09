@@ -378,7 +378,7 @@ impl Interpreter {
                 {
                     // The caller's binding may be a shared cell that holds the token.
                     let token = match held.view() {
-                        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                        ValueView::ContainerRef(cell) => cell.load(),
                         _ => held,
                     };
                     if matches!(token.view(), ValueView::HashEntryRef { .. }) {

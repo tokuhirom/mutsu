@@ -1274,7 +1274,7 @@ impl Interpreter {
             // The cell an attribute was `:=`-bound to (`$!rc := Thing`) as an
             // accessor read hands it back from a `but`-mixin invocant: the item
             // is the cell's content, so `$.rc.^name` / `$.rc.new` see the value.
-            ValueView::ContainerRef(cell) => Self::itemize_value(cell.lock().unwrap().clone()),
+            ValueView::ContainerRef(cell) => Self::itemize_value(cell.load()),
             _ => val,
         }
     }

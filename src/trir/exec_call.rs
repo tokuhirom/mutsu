@@ -319,7 +319,7 @@ impl Interpreter {
             let ValueView::ContainerRef(cell) = args[i].view() else {
                 continue;
             };
-            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let inner = cell.load();
             match arg {
                 TrArg::Native(s, kind) => {
                     if let Some(n) = kind.unbox_native(&inner) {

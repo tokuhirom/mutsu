@@ -3491,7 +3491,7 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cell) = cell {
-                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let inner = cell.load();
                 let tagged = self.tag_container_metadata(inner, info);
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = tagged;
             } else {
