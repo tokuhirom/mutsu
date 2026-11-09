@@ -1157,6 +1157,10 @@ impl Interpreter {
                 crate::value::next_instance_id(),
             ))),
             ValueView::Package(class_name) => Some(Ok(self.create_instance(class_name))),
+            // `Mu.CREATE` is `nqp::create(self)`: on a defined invocant it
+            // allocates a fresh, uninitialised object of the same class
+            // (`self.CREATE!SET-SELF(...)` inside a `clone` override).
+            ValueView::Instance { class_name, .. } => Some(Ok(self.create_instance(class_name))),
             _ => None,
         }
     }

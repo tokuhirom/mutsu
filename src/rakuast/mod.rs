@@ -205,6 +205,7 @@ mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
 mod string_origins;
+mod stub_package;
 mod subclass;
 mod subscript_adverb;
 mod substitution;
@@ -576,6 +577,8 @@ pub enum RakuAstClass {
     TermWhatever,
     // The `∅` empty-set term.
     TermEmptySet,
+    // The `rand` term.
+    TermRand,
     // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
     // (`* + 1`'s left operand) vs a bare Whatever value.
     WhateverCodeArgument,
@@ -939,6 +942,7 @@ impl RakuAstClass {
             StatementSequence => "RakuAST::StatementSequence",
             TermWhatever => "RakuAST::Term::Whatever",
             TermEmptySet => "RakuAST::Term::EmptySet",
+            TermRand => "RakuAST::Term::Rand",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
             TermHyperWhatever => "RakuAST::Term::HyperWhatever",
             FatArrow => "RakuAST::FatArrow",
@@ -1478,6 +1482,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
     RakuAstClass::TermEmptySet,
+    RakuAstClass::TermRand,
     RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
     RakuAstClass::TermHyperWhatever,
@@ -3844,6 +3849,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Term::EmptySet", "new") => RakuAstClass::TermEmptySet,
+        ("RakuAST::Term::Rand", "new") => RakuAstClass::TermRand,
         ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
@@ -4170,6 +4176,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TermTopicCall
             | RakuAstClass::TermWhatever
             | RakuAstClass::TermEmptySet
+            | RakuAstClass::TermRand
             | RakuAstClass::TermHyperWhatever
             | RakuAstClass::CallName
             | RakuAstClass::CallNameWithoutParentheses
@@ -4211,5 +4218,25 @@ pub(crate) use word_list::{word_list_expr, words_atom_expr};
 /// Whether a setting term name is `Term::Named` in rakudo (`now`, `time`).
 // Cost: O(1).
 pub(crate) fn is_named_term(name: &str) -> bool {
-    matches!(name, "now" | "time")
+    matches!(name, "now" | "time" | "rand")
+}
+
+/// The node of the setting term `name`: `Term::Named` (`now`, `time`) or
+/// `Term::Rand` (`rand`, which has no name field).
+// Cost: O(1).
+pub(crate) fn named_term_node(name: &str) -> RakuAstNode {
+    let rand = name == "rand";
+    RakuAstNode {
+        origin: Default::default(),
+        class: if rand {
+            RakuAstClass::TermRand
+        } else {
+            RakuAstClass::TermNamed
+        },
+        fields: if rand {
+            Vec::new()
+        } else {
+            vec![view::leaf_field(None, Value::str(name.to_string()))]
+        },
+    }
 }

@@ -15,6 +15,7 @@ mod unmerged_package_vars;
 /// the name filter that lets a failed package-chain walk cost one hash probe
 /// instead of one per tier per candidate. See the module.
 pub(crate) use package_keyed::PackageKeyed;
+pub(crate) use registration_class_decl::BUILTIN_PARENT_TYPES;
 pub(crate) use tolerance::approx_eq_f64;
 /// The compunit / package-block lexical stores (`unit_lexicals`,
 /// `package_lexicals`): see [`PackageKeyed`].

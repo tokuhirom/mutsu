@@ -417,6 +417,9 @@ fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
 /// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
 /// expression-position declaration lowers differently.
 pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if let Some(restored) = super::stub_package::restore(node) {
+        return lower_stmt_kept(names, &restored);
+    }
     // A feed keeps declarations as operands until compiler lowering. The
     // loose-tail declaration splitter would turn a leftwards sink into an
     // initializer executed on every modifier iteration.
@@ -2990,9 +2993,10 @@ fn lower_assign_parts(
         return Ok((name, lower_expr(names, named_child(node, "right")?)?));
     }
     let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
+    // The user lexical `$self` keeps its sigil as the key (ADR-0061).
     let name = match raw.strip_prefix('$') {
-        Some(bare) => bare.to_string(),
-        None => raw,
+        Some(bare) if raw != crate::env::LEX_SELF => bare.to_string(),
+        _ => raw,
     };
     let expr = lower_expr(names, named_child(node, "right")?)?;
     Ok((name, expr))
@@ -3404,7 +3408,10 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
     };
     let twigil = if is_dynamic { "*" } else { "" };
     let is_dynamic = is_dynamic || dynamic_trait.is_some();
-    let name = if sigil == "$" {
+    let name = if sigil == "$" && twigil.is_empty() && desigil == "self" {
+        // The user lexical `$self` is keyed apart from the invocant (ADR-0061).
+        crate::env::LEX_SELF.to_string()
+    } else if sigil == "$" {
         format!("{twigil}{desigil}")
     } else {
         format!("{sigil}{twigil}{desigil}")
@@ -4934,6 +4941,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::TermEmptySet => {
             Ok(Expr::Literal(Value::set(std::collections::HashSet::new())))
         }
+        RakuAstClass::TermRand => Ok(Expr::Call {
+            name: Symbol::intern("rand"),
+            args: vec![],
+            listop: false,
+        }),
         RakuAstClass::TermHyperWhatever => Ok(Expr::HyperWhatever),
         // The `*` priming-argument leaf (`* + 1`, `* > 3`). ADR-0033 splits the
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
@@ -5265,6 +5277,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 "@" => Expr::ArrayVar(bare.to_string()),
                 "%" => Expr::HashVar(bare.to_string()),
                 "&" => Expr::CodeVar(bare.to_string()),
+                // The user lexical `$self` is keyed apart from the invocant (ADR-0061).
+                "$" if bare == "self" => Expr::Var(crate::env::LEX_SELF.to_string()),
                 _ => Expr::Var(bare.to_string()),
             })
         }
