@@ -523,6 +523,8 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
         && rest.starts_with('$')
         && let Ok((r2, expr)) = scalar_var(rest)
     {
+        // `sugar`: the contextualizer spelling, which `.AST` shows as
+        // `Contextualizer::Hash` and not as a written `.hash` call.
         return Ok((
             r2,
             Expr::MethodCall {
@@ -531,7 +533,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                sugar: false,
+                sugar: true,
             },
         ));
     }

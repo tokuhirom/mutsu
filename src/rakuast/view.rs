@@ -3686,13 +3686,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 {
                     return prefix;
                 }
-                if name.as_str() == "item" && !matches!(&**target, Expr::Var(topic) if topic == "_")
+                if let Some(node) =
+                    super::contextualizer::view_sugar_call(names, name.as_str(), target)
                 {
-                    return super::contextualizer::view_item_call(names, target);
-                }
-                if name.as_str() == "list" && !matches!(&**target, Expr::Var(topic) if topic == "_")
-                {
-                    return super::contextualizer::view_list_call(names, target);
+                    return node;
                 }
             }
             let postfix = method_call_postfix(names, name.as_str(), args, *modifier, *quoted)?;
