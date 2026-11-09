@@ -21,6 +21,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "trait" {
         return trait_production(text);
     }
+    if rule == "variable" {
+        return variable_production(text);
+    }
     if rule == "statementlist" {
         return statementlist_production(text);
     }
@@ -107,6 +110,21 @@ fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     let names = NameScope::default();
     let exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
     let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<variable>` core rule: the variable at the start of `text` as its
+/// `RakuAST::Var::*` node.
+// Cost: O(n), n = size of the variable.
+fn variable_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, expr)) = crate::parser::parse_slang_variable(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),
@@ -291,6 +309,20 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             if matches!(stmt, Stmt::Use { module, .. } if *module == self.activator) {
                 self.enabled = true;
             }
+            if !self.enabled || self.failed.is_some() {
+                return;
+            }
+            let Some(keyword) = statement_control_keyword(stmt) else {
+                return;
+            };
+            let rule = format!("statement-control:sym<{keyword}>");
+            if !crate::parser::slang_overrides_action(&rule) {
+                return;
+            }
+            match apply_statement_action(&rule, stmt) {
+                Ok(lowered) => *stmt = lowered,
+                Err(e) => self.failed = Some(e),
+            }
         }
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
             crate::ast_visit::walk_expr_mut(self, expr);
@@ -321,6 +353,41 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
         crate::ast_visit::VisitMut::visit_stmt_mut(&mut pass, stmt);
     }
     pass.failed.map_or(Ok(()), Err)
+}
+
+/// The keyword of the `statement-control` production the block statement `stmt`
+/// is (a statement modifier is not one).
+// Cost: O(1).
+fn statement_control_keyword(stmt: &Stmt) -> Option<&'static str> {
+    use crate::ast::parsed::{ConditionalKind, ParsedStmt};
+    match stmt {
+        // The parser keeps the block forms as typed nodes; a statement modifier
+        // is a plain `Stmt` and not one of them.
+        Stmt::Ast(parsed) => match &**parsed {
+            ParsedStmt::Given { .. } => Some("given"),
+            ParsedStmt::For { .. } => Some("for"),
+            ParsedStmt::WhileLoop(w) if !w.until => Some("while"),
+            ParsedStmt::Conditional(c) if c.kind == ConditionalKind::If => Some("if"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Run the slang's override of the `statement-control` action `rule` over the
+/// node of `stmt`: the statement for the node its action attached.
+// Cost: O(n) in the statement, plus the slang's action.
+fn apply_statement_action(rule: &str, stmt: &Stmt) -> Result<Stmt, RuntimeError> {
+    let names = NameScope::default();
+    let list = super::statements::statement_list(&names, std::slice::from_ref(stmt))?;
+    let Some(RakuAstFieldValue::Node(core)) = list.fields.first().map(|f| &f.value) else {
+        return Err(RuntimeError::new(format!(
+            "slang action {rule}: the statement has no node"
+        )));
+    };
+    let attached = crate::parser::run_slang_action(rule, core.clone(), "")
+        .map_err(|e| RuntimeError::new(format!("slang action {rule}: {e}")))?;
+    lower_statement(&attached)
 }
 
 /// The slang's `numish` override over the numeric literal `expr`, read by the

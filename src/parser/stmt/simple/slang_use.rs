@@ -102,7 +102,11 @@ pub(crate) fn apply_slang_overrides(
         // runs its token and action where the parser reaches it.
         // A core action the slang overrides (ADR-15762 slice 3): the
         // expressions the parse builds go through it before the unit is finalized.
-        if slang_action_rule(&over.name) {
+        // (A `statement-control` keyword the slang also writes a token for is a
+        // production of its own, handled below.)
+        if slang_action_rule(&over.name)
+            && !(statement_action_keyword(&over.name).is_some() && over.body.is_some())
+        {
             register_action(&over.name);
             continue;
         }

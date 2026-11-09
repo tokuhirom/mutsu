@@ -39,6 +39,20 @@ fn replace_signature(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 }
 
 // Cost: O(f), f = fields of the node.
+fn replace_scope(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target.rakuast_edit(|node| {
+        crate::rakuast::block_queries::replace_scope(node, &args[0]).map(|()| Value::NIL)
+    })
+}
+
+// Cost: O(f), f = fields of the node.
+fn replace_name(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target.rakuast_edit(|node| {
+        crate::rakuast::block_queries::replace_name(node, &args[0]).map(|()| Value::NIL)
+    })
+}
+
+// Cost: O(f), f = fields of the node.
 fn set_implicit_topic(
     _interp: &mut crate::runtime::Interpreter,
     target: &Value,
@@ -75,6 +89,22 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "replace-signature",
         arity: 1,
         handler: Handler::Narrow(replace_signature),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Declaration",
+        name: "replace-scope",
+        arity: 1,
+        handler: Handler::Narrow(replace_scope),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Routine",
+        name: "replace-name",
+        arity: 1,
+        handler: Handler::Narrow(replace_name),
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
     },
