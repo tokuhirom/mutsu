@@ -84,7 +84,7 @@ impl Interpreter {
         // A narrow native-int array refuses before the block ever runs (#12008).
         self.refuse_narrow_element(name)?;
         loop {
-            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let current = cell.load();
             let new_val = {
                 let call_args = if let ValueView::Sub(sub) = code.view() {
                     if sub.params.is_empty() && sub.empty_sig {

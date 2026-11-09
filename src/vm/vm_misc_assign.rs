@@ -278,7 +278,7 @@ impl Interpreter {
             let self_value = self.frame_invocant();
             let (cell, current) = match self_value.as_ref().map(Value::view) {
                 Some(ValueView::ContainerRef(cell)) => {
-                    let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let current = cell.load();
                     (Some(cell), current)
                 }
                 Some(_) => (None, self_value.clone().unwrap_or(Value::NIL)),

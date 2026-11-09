@@ -189,7 +189,7 @@ impl Env {
             && bound.is_container_ref()
             && let ValueView::ContainerRef(cell) = bound.view()
         {
-            let old = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let old = cell.load();
             Value::store_through_cell(&cell, &value.deref_container());
             return SavedMatchVar::Cell(cell.clone(), old);
         }

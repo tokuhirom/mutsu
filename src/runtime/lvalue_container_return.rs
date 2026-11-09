@@ -42,7 +42,7 @@ impl Interpreter {
             ValueView::ContainerRef(cell) => {
                 // An attribute cell around a bound Proxy (`$!a := Proxy.new(...)`):
                 // the Proxy is the container, so assigning runs its STORE.
-                let held = cell.lock().unwrap().clone();
+                let held = cell.load();
                 if held.is_proxy_value() {
                     return Some(self.store_proxy_lvalue(&held, value).map(|_| held));
                 }

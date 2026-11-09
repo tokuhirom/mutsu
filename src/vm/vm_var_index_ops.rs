@@ -184,7 +184,7 @@ impl Interpreter {
         let base = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
             ValueView::Scalar(inner) => inner.clone(),
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => target.clone(),
         };
         if !matches!(base.view(), ValueView::Nil | ValueView::Package(_)) {
@@ -528,7 +528,7 @@ impl Interpreter {
             // shared cell to hold a Hash or Array. Continue the lazy walk from
             // that inner container; leaving the cell wrapped sends the bind to
             // the non-container fallback and loses aliases between entries.
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => target.clone(),
         };
         let index = self.resolve_whatever_container_index(index, &resolved);
@@ -566,6 +566,15 @@ impl Interpreter {
                     // nothing can later autovivify it: `my $x := %map<z>` binds
                     // that `Nil`, not a deferred entry that reads back as `Any`.
                     self.stack.push(Value::NIL);
+                } else if resolved.is_immutable_map() {
+                    // An immutable Map has no writable slot to alias, and
+                    // promoting one rewrites the published, thread-shared
+                    // node in place (#17149): bind the element's value.
+                    let value = match map.map.get(&key) {
+                        Some(v) => v.clone(),
+                        None => Value::NIL,
+                    };
+                    self.stack.push(value);
                 } else if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {

@@ -790,7 +790,7 @@ impl Interpreter {
         match v.view() {
             ValueView::Scalar(inner) if Self::is_buf_value(inner) => (*inner).clone(),
             ValueView::ContainerRef(cell) => {
-                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let inner = cell.load();
                 if Self::is_buf_value(&inner) { inner } else { v }
             }
             _ => v,

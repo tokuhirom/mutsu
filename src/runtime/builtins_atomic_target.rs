@@ -338,7 +338,7 @@ impl Interpreter {
                 .cloned()
         };
         let value = value.map(|v| match v.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => v.clone(),
         });
         value.map_or_else(|| "Any:U".to_string(), |v| Self::typed_arg_label(&v))

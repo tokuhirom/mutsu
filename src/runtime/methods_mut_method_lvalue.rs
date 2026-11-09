@@ -1795,7 +1795,7 @@ impl Interpreter {
                     map.get(attr_name.as_str())
                         .or_else(|| map.get(format!("{attr_name}!").as_str()))
                         .map(|held| match held.view() {
-                            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                            ValueView::ContainerRef(cell) => cell.load(),
                             _ => held.clone(),
                         })
                         .filter(Value::is_proxy_value)

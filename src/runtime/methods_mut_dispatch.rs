@@ -60,7 +60,7 @@ impl Interpreter {
         // migration path; also every second call once the state write-through
         // keeps the cell current).
         if let ValueView::ContainerRef(cell) = target.view() {
-            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let inner = cell.load();
             if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmutwithvalues",
@@ -84,7 +84,7 @@ impl Interpreter {
         // its value): a method call deconts its invocant, and a plain scalar
         // has no aggregate to fold back into the cell.
         if let ValueView::ContainerRef(cell) = target.view() {
-            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let inner = cell.load();
             if matches!(
                 inner.view(),
                 ValueView::Int(_)

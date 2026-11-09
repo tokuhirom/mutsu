@@ -2147,7 +2147,7 @@ impl Interpreter {
             unreachable!("assign_through_cell caller checked is_container_ref");
         };
         let cell = c.clone();
-        let mut inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut inner = cell.load();
         let r = f(self, &mut inner);
         *cell.lock().unwrap_or_else(|e| e.into_inner()) = inner;
         r
