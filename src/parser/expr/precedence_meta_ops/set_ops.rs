@@ -168,9 +168,46 @@ fn is_iffy_set_op(tok: &TokenKind) -> bool {
     }
 }
 
+/// The junctive-and set operators (`(&)`, `∩`), which bind tighter than the
+/// other set operators (`∪`, `(|)`, `(-)`, ...), as in rakudo (`q=` vs `p=`).
+// Cost: O(n), n = the operands' length.
+fn junctive_and_set_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = concat_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r, &left) {
+            break;
+        }
+        let Some((tok, len)) = parse_set_op(r) else {
+            break;
+        };
+        let is_and = matches!(&tok, TokenKind::SetIntersect)
+            || matches!(&tok, TokenKind::Ident(name) if name == "\u{2229}");
+        if !is_and {
+            break;
+        }
+        let after_op = &r[len..];
+        if after_op.starts_with('=') && !after_op.starts_with("==") && !after_op.starts_with("=>") {
+            break;
+        }
+        let (r, _) = ws(after_op)?;
+        let (r, right) = concat_expr(r).map_err(|err| {
+            enrich_expected_error(err, "expected expression after set operator", r.len())
+        })?;
+        left = Expr::Binary {
+            left: Box::new(left),
+            op: tok,
+            right: Box::new(right),
+            form: Default::default(),
+        };
+        rest = r;
+    }
+    Ok((rest, left))
+}
+
 /// Structural infix: but, does, set operators
 pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = concat_expr(input)?;
+    let (mut rest, mut left) = junctive_and_set_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if block_newline_terminates(input, rest, r, &left) {
@@ -305,7 +342,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
             }
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = concat_expr(r).map_err(|err| {
+            let (r, right) = junctive_and_set_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after set operator", r.len())
             })?;
             left = Expr::Binary {
