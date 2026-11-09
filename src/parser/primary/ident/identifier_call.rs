@@ -1461,8 +1461,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // takes the rest of the expression as its one argument.
             if let Some(inner) = rest.strip_prefix('(') {
                 let (inner, _) = ws(inner)?;
-                if inner.starts_with(')') {
-                    let (r, _) = ws(&inner[1..])?;
+                if let Some(closed) = inner.strip_prefix(')') {
+                    let (r, _) = ws(closed)?;
                     return Ok((r, make_call_expr(name, input, vec![])));
                 }
                 if let Ok((after, args)) = crate::parser::primary::parse_call_arg_list(inner) {
