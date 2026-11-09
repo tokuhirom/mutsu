@@ -137,6 +137,8 @@ fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
         "*" | "/" | "%" | "div" | "mod" | "gcd" | "lcm" => Some(PREC_MULTIPLICATIVE),
         "**" => Some(PREC_POWER),
         "~" => Some(PREC_CONCAT),
+        // The replication level sits between the additive and concatenation ones.
+        "x" | "xx" => Some(PREC_REPLICATION),
         "but" | "does" => Some(PREC_STRUCTURAL),
         "&&" => Some(PREC_AND_AND),
         "||" | "^^" | "//" => Some(PREC_OR_OR),
