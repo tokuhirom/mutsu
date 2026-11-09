@@ -27,7 +27,7 @@ plan 11;
 
 # --- .^methods (default) sees the class's own model methods ------------------
 my @m = RakuAST::IntLiteral.^methods.map(*.name).sort;
-is @m, <DEPARSE EVAL IMPL-BEGIN IMPL-CHECK clear-worries compile-time-value fileline find-nodes first grep has-compile-time-value literalize locate-node map needs-sink-call new origin parent promote-worries-to-sorries rakudoc return-type set-origin to-begin-time to-parse-time value visit visit-children visit-dfs>,
+is @m, <DEPARSE EVAL IMPL-BEGIN IMPL-CHECK add-sorry add-worry clear-worries compile-time-value fileline find-nodes first grep has-check-time-problems has-compile-time-value literalize locate-node map needs-sink-call new origin parent promote-worries-to-sorries rakudoc return-type set-origin sorries to-begin-time to-parse-time value visit visit-children visit-dfs worries>,
     '.^methods lists the model constructor, accessor and inherited tree helpers';
 
 # --- .^methods(:local) excludes methods inherited from RakuAST::Node --------
