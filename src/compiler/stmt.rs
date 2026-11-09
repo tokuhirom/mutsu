@@ -931,9 +931,10 @@ impl Compiler {
         matches!(
             expr,
             Expr::Call { name, args, .. }
-                if name.resolve() == crate::lvalue_call::ASSIGN_CALLABLE
-                    && args.len() == 3
-                    && matches!(&args[0], Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
+                if matches!(
+                    crate::lvalue_call::classify(name.resolve().as_str(), args),
+                    Some(crate::lvalue_call::LvalueCall::AssignCallable(call))
+                        if matches!(call.callable, Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
                         matches!(
                             t,
                             Expr::Var(_)
@@ -946,6 +947,7 @@ impl Compiler {
                                 | Expr::DynamicMethodCall { .. }
                         ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
                     }))
+                )
         )
     }
 

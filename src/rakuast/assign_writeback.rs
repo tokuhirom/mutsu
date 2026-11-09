@@ -118,20 +118,22 @@ pub(crate) fn method_lvalue_call_parts(expr: &Expr) -> Option<MethodLvalueParts<
     let Expr::Call { name, args, .. } = expr else {
         return None;
     };
-    if name != crate::lvalue_call::ASSIGN_METHOD || args.len() < 4 {
-        return None;
-    }
-    let Expr::Literal(method_name) = &args[1] else {
+    let Some(crate::lvalue_call::LvalueCall::AssignMethod(call)) =
+        crate::lvalue_call::classify(name.as_str(), args)
+    else {
         return None;
     };
-    let Expr::ArrayLiteral(method_args) = &args[2] else {
+    let Expr::Literal(method_name) = call.method else {
+        return None;
+    };
+    let Expr::ArrayLiteral(method_args) = call.method_args else {
         return None;
     };
     Some(MethodLvalueParts {
-        invocant: &args[0],
+        invocant: call.invocant,
         method_name: method_name.as_str()?,
         method_args,
-        value: &args[3],
+        value: call.value,
     })
 }
 

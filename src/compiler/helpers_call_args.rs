@@ -744,13 +744,13 @@ impl Compiler {
             args,
             listop: false,
         } = arg
-            && name.resolve() == crate::lvalue_call::ASSIGN_CALLABLE
-            && args.len() == 3
+            && let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+                crate::lvalue_call::classify(name.resolve().as_str(), args)
             && let Expr::Ternary {
                 cond,
                 then_expr,
                 else_expr,
-            } = &args[0]
+            } = call.callable
             && let (Expr::Var(then_var), Expr::Var(else_var)) =
                 (then_expr.as_ref(), else_expr.as_ref())
             && self.native_rw_params.contains(then_var)

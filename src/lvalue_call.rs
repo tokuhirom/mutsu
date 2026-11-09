@@ -165,6 +165,78 @@ pub(crate) fn index_delete_method(
     )
 }
 
+/// The arguments of an [`ASSIGN_METHOD`] call, named (ADR-17198 step 2b).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AssignMethodArgs<'a> {
+    pub(crate) invocant: &'a Expr,
+    pub(crate) method: &'a Expr,
+    /// The bracketed array of method arguments.
+    pub(crate) method_args: &'a Expr,
+    pub(crate) value: &'a Expr,
+}
+
+/// The arguments of an [`ASSIGN_NAMED_SUB`] or [`INCDEC_NAMED_SUB`] call.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct NamedSubArgs<'a> {
+    pub(crate) routine: &'a Expr,
+    /// The bracketed array of call arguments.
+    pub(crate) call_args: &'a Expr,
+    /// The assigned value, or the operator label of an increment/decrement.
+    pub(crate) last: &'a Expr,
+    /// A fourth argument a later compile step appended (the caller variable of
+    /// a `substr-rw`-style first argument).
+    pub(crate) target_var: Option<&'a Expr>,
+}
+
+/// The arguments of an [`ASSIGN_CALLABLE`] call.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CallableArgs<'a> {
+    pub(crate) callable: &'a Expr,
+    pub(crate) value: &'a Expr,
+}
+
+/// A write-through call, classified by its callee with its arguments named.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum LvalueCall<'a> {
+    AssignMethod(AssignMethodArgs<'a>),
+    AssignNamedSub(NamedSubArgs<'a>),
+    AssignCallable(CallableArgs<'a>),
+    IncDecNamedSub(NamedSubArgs<'a>),
+}
+
+/// Read the call `callee(args)` as a write-through call, `None` when the callee
+/// is no such name or the argument count does not match the layout in the module
+/// docs (the index forms are read by the VM from run-time values, not here).
+// Cost: O(1).
+pub(crate) fn classify<'a>(callee: &str, args: &'a [Expr]) -> Option<LvalueCall<'a>> {
+    match callee {
+        ASSIGN_METHOD if args.len() >= 4 => Some(LvalueCall::AssignMethod(AssignMethodArgs {
+            invocant: &args[0],
+            method: &args[1],
+            method_args: &args[2],
+            value: &args[3],
+        })),
+        ASSIGN_NAMED_SUB | INCDEC_NAMED_SUB if args.len() >= 3 => {
+            let named = NamedSubArgs {
+                routine: &args[0],
+                call_args: &args[1],
+                last: &args[2],
+                target_var: args.get(3),
+            };
+            Some(if callee == ASSIGN_NAMED_SUB {
+                LvalueCall::AssignNamedSub(named)
+            } else {
+                LvalueCall::IncDecNamedSub(named)
+            })
+        }
+        ASSIGN_CALLABLE if args.len() == 3 => Some(LvalueCall::AssignCallable(CallableArgs {
+            callable: &args[0],
+            value: &args[2],
+        })),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +258,48 @@ mod tests {
                 assert_ne!(a, b);
             }
         }
+    }
+
+    #[test]
+    fn the_reader_names_the_arguments_each_constructor_wrote() {
+        let lit = |text: &str| Expr::Literal(Value::str(text.to_string()));
+        let Expr::Call { name, args, .. } = assign_method(
+            lit("inv"),
+            lit("meth"),
+            vec![lit("a")],
+            lit("val"),
+            AssignMethodHints {
+                target_var: Some("x".to_string()),
+                ..Default::default()
+            },
+        ) else {
+            panic!("a call");
+        };
+        let Some(LvalueCall::AssignMethod(view)) = classify(name.resolve().as_str(), &args) else {
+            panic!("an assign-method call");
+        };
+        assert!(matches!(view.invocant, Expr::Literal(v) if v.as_str() == Some("inv")));
+        assert!(matches!(view.method, Expr::Literal(v) if v.as_str() == Some("meth")));
+        assert!(matches!(view.method_args, Expr::ArrayLiteral(items) if items.len() == 1));
+        assert!(matches!(view.value, Expr::Literal(v) if v.as_str() == Some("val")));
+
+        let Expr::Call { name, args, .. } =
+            assign_named_sub("f".to_string(), vec![lit("a")], lit("v"))
+        else {
+            panic!("a call");
+        };
+        let Some(LvalueCall::AssignNamedSub(view)) = classify(name.resolve().as_str(), &args)
+        else {
+            panic!("an assign-named-sub call");
+        };
+        assert!(matches!(view.routine, Expr::Literal(v) if v.as_str() == Some("f")));
+        assert!(view.target_var.is_none());
+
+        assert!(
+            classify(ASSIGN_CALLABLE, &args[..2]).is_none(),
+            "arity is checked"
+        );
+        assert!(classify("unrelated", &args).is_none());
     }
 
     #[test]
