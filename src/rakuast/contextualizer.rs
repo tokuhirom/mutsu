@@ -208,12 +208,30 @@ pub(super) fn lower(
         // The sugared call is rebuilt as the parser spelled it: `@$h` keeps
         // the `Grouped` target the `for` lowering keys on, and `sugar: true`
         // keeps it the re-reading contextualizer.
+        // `%$h`: the hash contextualizer over a bare scalar, the parser's
+        // sugared `.hash` call.
+        RakuAstClass::VarLexical if kind == ContextKind::Hash => {
+            let term = lower_expr(names, target)?;
+            if !matches!(term, Expr::Var(_)) {
+                return Err(unsupported(node));
+            }
+            return Ok(Expr::MethodCall {
+                target: Box::new(term),
+                name: crate::symbol::Symbol::intern("hash"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+                sugar: true,
+            });
+        }
         _ if kind == ContextKind::List => {
             let grouped = target.class == RakuAstClass::CircumfixParentheses;
             let term = match lower_expr(names, target)? {
                 Expr::Grouped(inner) => *inner,
                 other => other,
             };
+            // The bare scalar of `@$x` is the parser's `Grouped(Var)` again.
+            let grouped = grouped || matches!(term, Expr::Var(_));
             return Ok(Expr::MethodCall {
                 target: Box::new(if grouped {
                     Expr::Grouped(Box::new(term))
@@ -271,9 +289,27 @@ pub(super) fn view_item_call(names: &NameScope, inner: &Expr) -> Result<RakuAstN
 /// which consumes a `Seq` (#9930).
 // Cost: O(n), n = nodes of the term.
 pub(super) fn view_list_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    // `@$x`: the parser keeps the scalar as `Grouped` (so the subscript-assign
+    // lvalue path treats it like `@($x)`), but rakudo's node holds the bare
+    // variable, not a `Circumfix::Parentheses`.
+    let term = match inner {
+        Expr::Grouped(var) if matches!(var.as_ref(), Expr::Var(_)) => var.as_ref(),
+        other => other,
+    };
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ContextualizerList,
+        fields: vec![node_field(None, view_expr(names, term)?)],
+    })
+}
+
+/// The hash contextualizer of a scalar (`%$h`), which the parser spells as a
+/// sugared `.hash` call, as `Contextualizer::Hash` over the variable itself.
+// Cost: O(n), n = nodes of the term.
+pub(super) fn view_hash_call(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ContextualizerHash,
         fields: vec![node_field(None, view_expr(names, inner)?)],
     })
 }

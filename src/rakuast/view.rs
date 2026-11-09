@@ -3694,6 +3694,11 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 {
                     return super::contextualizer::view_list_call(names, target);
                 }
+                if name.as_str() == "hash"
+                    && matches!(&**target, Expr::Var(var) if var != "_")
+                {
+                    return super::contextualizer::view_hash_call(names, target);
+                }
             }
             let postfix = method_call_postfix(names, name.as_str(), args, *modifier, *quoted)?;
             // `.say` / `.foo(1)`: a call on the topic written without an
