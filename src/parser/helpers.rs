@@ -215,6 +215,21 @@ fn pod_begin_without_identifier_error(construct: &str) -> PError {
     err
 }
 
+/// `=begin finish` / `=for end` ...: `X::Syntax::Pod::BeginWithDirective`.
+// Cost: O(1).
+fn pod_begin_with_directive_error(construct: &str, keyword: &str, directive: &str) -> PError {
+    let msg = format!("={keyword} may not be followed by directive '{directive}'");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let ex = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Pod::BeginWithDirective"),
+        attrs,
+    );
+    let mut err = PError::fatal_with_exception(msg, Box::new(ex));
+    err.remaining_len = Some(construct.len());
+    err
+}
+
 /// Parse and skip a Pod block.
 /// Handles `=begin ... =end`, `=for ...`, `=head ...`, `=item ...`, `=comment ...`, etc.
 fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
@@ -251,6 +266,18 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
         return Err(pod_begin_without_identifier_error(input));
     } else {
         return Err(PError::expected("pod directive"));
+    }
+
+    if keyword == "begin" || keyword == "for" {
+        // `=begin finish`, `=for end`, ...: a Pod directive is no block name.
+        let named = rest.trim_start_matches([' ', '\t']);
+        let word_end = named
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(named.len());
+        let word = &named[..word_end];
+        if matches!(word, "begin" | "end" | "for" | "config" | "alias" | "finish") {
+            return Err(pod_begin_with_directive_error(input, keyword, word));
+        }
     }
 
     if keyword == "begin" {
