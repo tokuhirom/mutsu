@@ -2268,6 +2268,11 @@ impl Interpreter {
             // an unending source are plain iterators, as in rakudo. The class
             // name is the same for both, so the attributes decide
             // (`dispatch_shape::iterator_kind`).
+            // The `Seq.from-loop(&body)` iterator is an internal class that is
+            // still an `Iterator` (rakudo's `Rakudo::Iterator::Loop`).
+            if cn == "FromLoopIterator" && matches!(constraint, "Iterator" | "Iterator:D") {
+                return true;
+            }
             if cn == "Iterator"
                 && constraint == "PredictiveIterator"
                 && value.receiver_shape() == Some(crate::value::DispatchShape::PredictiveIterator)

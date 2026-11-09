@@ -159,7 +159,7 @@ impl Interpreter {
     /// never stops itself hangs there too.
     // Cost: O(limit) body calls (unbounded when `limit` is `usize::MAX` and
     // the body never raises `last`).
-    fn pull_from_loop_iterator_to_vec(
+    pub(crate) fn pull_from_loop_iterator_to_vec(
         &mut self,
         iterator: &Value,
         limit: usize,
@@ -171,6 +171,11 @@ impl Interpreter {
         let Some(body_callable) = attrs.get("from_loop_body").cloned() else {
             return Ok(Vec::new());
         };
+        // An iterator that ended (its body answered `IterationEnd` or raised
+        // `last`) stays ended.
+        if attrs.get("from_loop_done").is_some_and(Value::truthy) {
+            return Ok(Vec::new());
+        }
         let label = match attrs.get("from_loop_label").map(Value::view) {
             Some(ValueView::Str(s)) => Some(s.to_string()),
             _ => None,
@@ -183,9 +188,16 @@ impl Interpreter {
         // of surfacing as a bare `X::ControlFlow`.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let mut items = Vec::new();
+        let mut done = false;
         'from_loop: while items.len() < limit {
             'body_redo: loop {
                 match self.call_sub_value(body_callable.clone(), vec![]) {
+                    // A body that answers `IterationEnd` ends the iterator, as
+                    // `pull-one` of any iterator does.
+                    Ok(value) if value.is_iteration_end() => {
+                        done = true;
+                        break 'from_loop;
+                    }
                     Ok(value) => {
                         if !value.is_nil() {
                             items.push(value);
@@ -194,10 +206,18 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && label_matches(&e.label) => continue 'body_redo,
                     Err(e) if e.is_next() && label_matches(&e.label) => break 'body_redo,
-                    Err(e) if e.is_last() && label_matches(&e.label) => break 'from_loop,
+                    Err(e) if e.is_last() && label_matches(&e.label) => {
+                        done = true;
+                        break 'from_loop;
+                    }
                     Err(e) => return Err(e),
                 }
             }
+        }
+        if done {
+            // The read guard on the attributes must be gone before the write.
+            drop(attrs);
+            attributes.insert("from_loop_done", Value::TRUE);
         }
         Ok(items)
     }
