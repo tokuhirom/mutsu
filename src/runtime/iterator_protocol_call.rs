@@ -91,7 +91,7 @@ impl crate::Interpreter {
             return None;
         };
         if class_name == "FromLoopIterator" {
-            return Some(self.from_loop_iterator_call(target, op));
+            return Some(self.step_loop_iterator(target, op));
         }
         if let Some(result) = self.map_grep_stream_protocol_call(&attributes, op, args) {
             return Some(result);
@@ -109,7 +109,7 @@ impl crate::Interpreter {
     /// Only the stepping methods are implemented; the `push-*` family needs a
     /// target array and is left to the rows' generic fallbacks.
     // Cost: one body call per element pulled.
-    fn from_loop_iterator_call(
+    fn step_loop_iterator(
         &mut self,
         target: &Value,
         op: IterOp,
