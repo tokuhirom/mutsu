@@ -840,6 +840,27 @@ fn loop_label(node: &RakuAstNode, args: Vec<Expr>) -> Result<Option<String>, Run
 /// parameters land where the parser puts them: one in `param` / `param_def`
 /// (keeping its type and traits), several in `params` / `params_def`.
 fn lower_for(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let for_loop = lower_for_loop(names, node)?;
+    // `for ... otherwise { ... }` (rakudo 2026.09): the block runs when the loop
+    // produced nothing, the loop's own result otherwise -- `(for ...) || do { ... }`.
+    let block = super::for_otherwise::otherwise(node);
+    let ValueView::RakuAst(otherwise) = block.view() else {
+        return Ok(for_loop);
+    };
+    let body = lower_block(names, otherwise)?;
+    Ok(Stmt::Expr(Expr::Binary {
+        left: Box::new(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(for_loop))))),
+        op: crate::token_kind::TokenKind::OrOr,
+        right: Box::new(Expr::DoBlock {
+            body,
+            label: None,
+            origin: crate::ast::DoBlockOrigin::SourceBlock,
+        }),
+        form: Default::default(),
+    }))
+}
+
+fn lower_for_loop(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let iterable = lower_expr(names, named_child(node, "source")?)?;
     let mode = match leaf_str(node, "mode")?.as_str() {
         "serial" => crate::ast::ForMode::Normal,

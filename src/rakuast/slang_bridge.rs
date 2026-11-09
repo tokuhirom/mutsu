@@ -30,6 +30,12 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "arglist" {
         return arglist_production(text);
     }
+    if rule == "EXPR" {
+        return for_expr_production(text);
+    }
+    if rule == "pointy-block" {
+        return pointy_block_production(text);
+    }
     // `<statement>` is the statement node itself (a `Statement::Expression`),
     // and `<blorst>` a block or such a statement.
     if rule == "statement" || (rule == "blorst" && !text.starts_with('{')) {
@@ -110,6 +116,36 @@ fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     let names = NameScope::default();
     let exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
     let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<EXPR>` core rule as a `for` reads its iterable: the expression at the
+/// start of `text`, up to the block that follows.
+// Cost: O(n), n = size of the expression (parse and conversion).
+fn for_expr_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, expr)) = crate::parser::parse_slang_for_expr(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<pointy-block>` core rule: a pointy block (`-> $x { ... }`) or a bare
+/// block at the start of `text`, as its `RakuAST::PointyBlock` / `Block`.
+// Cost: O(n), n = size of the block (parse and conversion).
+fn pointy_block_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, expr)) = crate::parser::parse_slang_pointy_block(text) else {
+        return parse_production("block", text);
+    };
+    let names = NameScope::default();
+    let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),
