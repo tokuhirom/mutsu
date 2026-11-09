@@ -4484,6 +4484,12 @@ pub(crate) enum OpCode {
         /// them in *value* position, where resuming would leave their consumer a
         /// value short.
         user_throw: bool,
+        /// The payload is the ONE argument of a `die` statement
+        /// (`die <x y>`, `die @a`, `die (1, 2)`), not a several-argument list
+        /// (`die 1, 2`): a List there is a single value whose message is its
+        /// `.Str` (`x y`), where several arguments are each stringified and
+        /// concatenated (`12`).
+        list_arg: bool,
     },
     /// `fail EXPR`. Stack: `[payload] → …`; the op never falls through.
     ///

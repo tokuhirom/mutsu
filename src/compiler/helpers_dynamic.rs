@@ -284,7 +284,7 @@ impl Compiler {
         let err = Value::make_instance(Symbol::intern("X::Dynamic::Package"), attrs);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw: false });
+        self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
     }
 
     /// Compile a `Stmt::SyntheticBlock`'s already-flattened inner statements
@@ -339,7 +339,7 @@ impl Compiler {
             let err = Value::make_instance(Symbol::intern("X::Dynamic::Postdeclaration"), attrs);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
+            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
             return true;
         }
         false

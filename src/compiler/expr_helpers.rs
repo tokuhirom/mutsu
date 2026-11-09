@@ -851,7 +851,7 @@ impl Compiler {
                 let err = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                 let idx = self.code.add_constant(err);
                 self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die { user_throw: false });
+                self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
                 return;
             }
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));

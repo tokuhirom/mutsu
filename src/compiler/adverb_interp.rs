@@ -312,7 +312,7 @@ impl Compiler {
         let idx = self.code.add_constant(value);
         self.code.emit(crate::opcode::OpCode::LoadConst(idx));
         self.code
-            .emit(crate::opcode::OpCode::Die { user_throw: false });
+            .emit(crate::opcode::OpCode::Die { user_throw: false, list_arg: false });
     }
 }
 

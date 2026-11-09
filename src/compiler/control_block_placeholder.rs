@@ -31,7 +31,7 @@ impl Compiler {
         {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
+            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
             return true;
         }
         // ADR-0048 D3/D6: a bare `{ ... }` STATEMENT is a Block raku invokes
@@ -95,7 +95,7 @@ impl Compiler {
         let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw: false });
+        self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
         true
     }
 
@@ -112,7 +112,7 @@ impl Compiler {
         let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw: false });
+        self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
         true
     }
 
@@ -128,7 +128,7 @@ impl Compiler {
         let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw: false });
+        self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
         true
     }
 }

@@ -379,11 +379,24 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             std::slice::from_ref(expr),
         )?))),
         // `die`/`fail EXPR` are also modelled as bare calls.
-        Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
-            names,
-            "die",
-            std::slice::from_ref(expr),
-        )?))),
+        Stmt::Die(expr) => {
+            // The parser groups a lone `<x y>` argument to tell it from several
+            // arguments; the written form has no parentheses.
+            let written = match expr {
+                Expr::Grouped(inner)
+                    if matches!(&**inner, Expr::Spelled(s)
+                        if matches!(s.spelling, crate::ast::spelled::Spelling::Words(_))) =>
+                {
+                    &**inner
+                }
+                other => other,
+            };
+            Ok(Some(statement_expression(control_call(
+                names,
+                "die",
+                std::slice::from_ref(written),
+            )?)))
+        }
         Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
             names,
             "fail",

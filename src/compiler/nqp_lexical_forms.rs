@@ -39,7 +39,7 @@ impl Compiler {
             let msg = format!("No lexical found with name '{}'", name.as_str());
             let idx = self.code.add_constant(Value::str(msg));
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
+            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
             return true;
         }
         false

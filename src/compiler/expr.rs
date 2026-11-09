@@ -1019,7 +1019,7 @@ impl Compiler {
                 let msg = format!("Use of Nil.{} not allowed", name.resolve());
                 let idx = self.code.add_constant(Value::str(msg));
                 self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die { user_throw: false });
+                self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
             }
             // Method call on nested-index target with mutating method — chained
             // element-for-mutation loads, no writeback (container identity §3.2).

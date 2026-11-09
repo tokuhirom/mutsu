@@ -119,12 +119,30 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // `die "a", "b"`: several arguments are one list payload (the message
-        // joins them), as the parenthesised form `die(("a", "b"))` passes.
-        let listed;
+        // Several arguments are one list of messages (`die "a", "b"` is `ab`);
+        // a single List argument (`die <x y>`, `die @a`) is one value whose
+        // message is its `.Str` (`x y`).
+        let rewritten;
         let args = if args.len() > 1 {
-            listed = [Value::array(args.to_vec())];
-            &listed[..]
+            rewritten = [Value::array(args.to_vec())];
+            &rewritten[..]
+        } else if let [one] = args
+            && let ValueView::Array(items, _) = one.view()
+            && !items.is_empty()
+        {
+            let mut parts = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                let s = self
+                    .call_method_with_values(item.clone(), "Str", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| item.to_string_value());
+                parts.push(s);
+            }
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("payload".to_string(), one.clone());
+            attrs.insert("message".to_string(), Value::str(parts.join(" ")));
+            rewritten = [Value::make_instance(Symbol::intern("X::AdHoc"), attrs)];
+            &rewritten[..]
         } else {
             args
         };
