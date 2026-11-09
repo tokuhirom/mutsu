@@ -275,7 +275,10 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
             .find(|c: char| c.is_whitespace())
             .unwrap_or(named.len());
         let word = &named[..word_end];
-        if matches!(word, "begin" | "end" | "for" | "config" | "alias" | "finish") {
+        if matches!(
+            word,
+            "begin" | "end" | "for" | "config" | "alias" | "finish"
+        ) {
             return Err(pod_begin_with_directive_error(input, keyword, word));
         }
     }
