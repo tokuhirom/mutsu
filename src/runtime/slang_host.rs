@@ -110,6 +110,11 @@ class Mutsu::Slang::Host::Actions {
     method PREFIX-EXPR(Mu $/) { $/.ast }
     method POSTFIX-EXPR(Mu $/) { $/.ast }
     method numish(Mu $/) { $/.ast }
+    # The block statements a slang's actions may override.
+    method statement-control:sym<given>(Mu $/) { $/.ast }
+    method statement-control:sym<for>(Mu $/) { $/.ast }
+    method statement-control:sym<if>(Mu $/) { $/.ast }
+    method statement-control:sym<while>(Mu $/) { $/.ast }
 }
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::A;

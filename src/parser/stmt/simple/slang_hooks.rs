@@ -183,7 +183,24 @@ pub(crate) fn slang_action_rule(name: &str) -> bool {
     matches!(
         name,
         "INFIX-EXPR" | "PREFIX-EXPR" | "POSTFIX-EXPR" | "numish"
-    )
+    ) || statement_action_keyword(name).is_some()
+}
+
+/// The keyword of a core `statement-control` production a slang's actions role
+/// may override (`method statement-control:sym<given>(Mu $/)`, which `callsame`s
+/// into the core action): the statement the Rust parser built for that keyword is
+/// handed to the override as a RakuAST node, and the node it attaches replaces
+/// the statement. Only the block forms; a statement modifier is not the
+/// production.
+// Cost: O(1).
+pub(crate) fn statement_action_keyword(name: &str) -> Option<&'static str> {
+    let rest = name
+        .strip_prefix("statement-control:sym<")
+        .or_else(|| name.strip_prefix("statement_control:sym<"))?
+        .strip_suffix('>')?;
+    ["given", "for", "if", "while"]
+        .into_iter()
+        .find(|keyword| *keyword == rest)
 }
 
 /// Register the override of the core action `name`.
