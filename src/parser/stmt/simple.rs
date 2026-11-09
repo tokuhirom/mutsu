@@ -406,6 +406,8 @@ pub(in crate::parser) const PREC_OR_OR: i32 = 12;
 pub(in crate::parser) const PREC_AND_AND: i32 = 14;
 pub(in crate::parser) const PREC_STRUCTURAL: i32 = 20;
 pub(in crate::parser) const PREC_CONCAT: i32 = 30;
+/// `x` / `xx`: looser than the additive level, tighter than concatenation.
+pub(in crate::parser) const PREC_REPLICATION: i32 = 35;
 pub(in crate::parser) const PREC_ADDITIVE: i32 = 40;
 pub(in crate::parser) const PREC_MULTIPLICATIVE: i32 = 50;
 pub(in crate::parser) const PREC_POWER: i32 = 60;
