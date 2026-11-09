@@ -117,6 +117,60 @@ pub(crate) fn replace_signature(
     Ok(())
 }
 
+/// `replace-scope($scope)` on a declaration: the `scope` field becomes `$scope`
+/// (`'my'`, `'our'`, `'has'`, ...), written first as the constructor prints it.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn replace_scope(node: &mut RakuAstNode, scope: &Value) -> Result<(), RuntimeError> {
+    let Some(text) = scope.as_str() else {
+        return Err(RuntimeError::new(format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
+             '$scope'; expected Str but got {}",
+            crate::value::type_name::value_type_name(scope)
+        )));
+    };
+    let value = RakuAstFieldValue::Node(Value::str(text.to_string()));
+    match node.fields.iter_mut().find(|f| f.name == Some("scope")) {
+        Some(slot) => slot.value = value,
+        None => node.fields.insert(
+            0,
+            super::RakuAstField {
+                name: Some("scope"),
+                value,
+            },
+        ),
+    }
+    Ok(())
+}
+
+/// `replace-name($name)` on a routine: the `name` field becomes `$name`, which
+/// must be a `RakuAST::Name`.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn replace_name(node: &mut RakuAstNode, name: &Value) -> Result<(), RuntimeError> {
+    if !matches!(name.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::Name) {
+        return Err(RuntimeError::new(format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
+             '$name'; expected RakuAST::Name but got {}",
+            crate::value::type_name::value_type_name(name)
+        )));
+    }
+    let value = RakuAstFieldValue::Node(name.clone());
+    match node.fields.iter_mut().find(|f| f.name == Some("name")) {
+        Some(slot) => slot.value = value,
+        None => {
+            // After a leading `scope`, as the constructor prints the fields.
+            let at = usize::from(node.fields.first().is_some_and(|f| f.name == Some("scope")));
+            node.fields.insert(
+                at,
+                super::RakuAstField {
+                    name: Some("name"),
+                    value,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
 /// `set-implicit-topic($on, :required, :exception)` on a block: marks it as
 /// taking the topic of its statement. Turning it off drops the three flags.
 // Cost: O(f), f = fields of the node.
