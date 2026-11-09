@@ -386,13 +386,14 @@ def queue(records, *, exclude=(), accepted=None, clusters=None):
     is skipped for looking hard, the queue is simply worked top-down.
 
     Left out, with the reason counted in the second return value:
-    - `exclude`  -- ecosystem/exclude.txt, confirmed dead ends;
+    - `exclude`  -- ecosystem/exclude.txt, confirmed dead ends (a `load_exclude`
+      table; a bare collection of names excludes every version of each);
     - `raku-also-fails` -- a `blocked_load` whose every load error rakudo shares;
     - `accepted` -- a red/partial dist whose every failing file is an accepted
       divergence (ecosystem/accepted-divergences.toml, matched by shape).
     """
     accepted = accepted or {}
-    exclude = set(exclude)
+    exclude = dict(exclude) if isinstance(exclude, dict) else {d: (None, "") for d in exclude}
     n_dependents = dependents(records)
     by_sig = {c["signature"]: c for c in (clusters if clusters is not None else cluster(records))}
     rows, dropped = [], collections.Counter()
@@ -401,7 +402,7 @@ def queue(records, *, exclude=(), accepted=None, clusters=None):
         if status not in QUEUE_STATUSES:
             continue
         dist = r["dist"]
-        if dist in exclude:
+        if eco.is_excluded(exclude, dist, r.get("version")):
             dropped["exclude"] += 1
             continue
         load_errors = [(m, v) for m, v in sorted((r.get("load") or {}).items())
@@ -507,6 +508,14 @@ def _queue_self_test() -> int:
     if [q["rank"] for q in rows] != list(range(1, len(rows) + 1)):
         fails += 1
         print("FAIL queue ranks")
+    # A version-pinned exclusion drops only the pinned release: once the
+    # ledger records a newer one, the dist is back in the queue.
+    pinned = [dict(rec("Old", "red", files=[("t/a.t", "regression", "x")]), version="1.0"),
+              dict(rec("New", "red", files=[("t/a.t", "regression", "x")]), version="1.1")]
+    rows, dropped = queue(pinned, exclude={"Old": ("1.0", ""), "New": ("1.0", "")})
+    if [q["dist"] for q in rows] != ["New"] or dict(dropped) != {"exclude": 1}:
+        fails += 1
+        print(f"FAIL pinned exclusion: {[q['dist'] for q in rows]}, {dict(dropped)}")
     return fails
 
 
