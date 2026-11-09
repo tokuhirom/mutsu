@@ -2705,6 +2705,7 @@ t/lang/eval-nested-my-sub-same-name.t
 t/lang/eval-nested-use-imports.t
 t/lang/eval-nosuchlang.t
 t/lang/eval-parse-failure-propagates-through-block-call.t
+t/lang/eval-prelude-type-named-only-in-eval.t
 t/lang/eval-prerun-hook-past-use-lib-with-test.t
 t/lang/eval-private-and-stubs.t
 t/lang/eval-repeated-use-runs-hook-each-time.t
@@ -5363,6 +5364,7 @@ t/oo/mop/metamodel-archetypes-new-flags.t
 t/oo/mop/metamodel-classhow.t
 t/oo/mop/metamodel-compose-return.t
 t/oo/mop/metamodel-declares-method.t
+t/oo/mop/metamodel-enumhow-mop-api.t
 t/oo/mop/metamodel-enumhow-rows.t
 t/oo/mop/metamodel-find-method-during-compose.t
 t/oo/mop/metamodel-how-callsame-under-outer-multi.t
@@ -5818,6 +5820,7 @@ t/oo/role/sequence-role-prefix-pulls-lazily.t
 t/oo/role/sequence-role-user-iterator.t
 t/oo/role/set-op-role-mixin-scalar-operand.t
 t/oo/role/slang-parametric-lexical-role.t
+t/oo/role/tappable-role.t
 t/oo/role/tied-container-attribute-and-role.t
 t/oo/role/trait-named-like-role-param-stays-a-named-trait.t
 t/oo/role/tweak-role-param-name-clash-with-caller-variable.t
@@ -6382,6 +6385,7 @@ t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operator-properties-lookup.t
+t/rakuast/rakuast-operator-properties.t
 t/rakuast/rakuast-operators.t
 t/rakuast/rakuast-origin-absent-type-object.t
 t/rakuast/rakuast-origin-anonymous-parameters.t

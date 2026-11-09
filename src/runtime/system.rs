@@ -394,7 +394,16 @@ impl Interpreter {
         // read them (`Logic::Ternary`'s `True`, #15770).
         let prerun_region =
             crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
-        let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+        let ran = self.run_eval_hook_uses(stmts).and_then(|mut stmts| {
+            // The preludes the unit asks for are part of it before it is
+            // judged: its names include the classes they declare.
+            let before = stmts.len();
+            Self::inject_unit_preludes(
+                &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
+                &mut stmts,
+            );
+            let added = stmts.len() - before;
+            self.drop_declared_prelude_types(&mut stmts, added);
             let validated = self.validate_eval_source_with(&stmts, imports_unseen);
             self.module.eval_prerun_modules.clear();
             self.module.eval_prerun_sets.clear();
@@ -472,17 +481,41 @@ impl Interpreter {
         }
     }
 
+    /// Drop the first `added` statements' class and role declarations that an
+    /// earlier unit already declared: a prelude is global, so a second `EVAL`
+    /// asking for it must not declare it again.
+    // Cost: O(a), a = added prelude statements.
+    fn drop_declared_prelude_types(&self, stmts: &mut Vec<Stmt>, added: usize) {
+        if added == 0 {
+            return;
+        }
+        let mut index = 0;
+        stmts.retain(|stmt| {
+            let keep = index >= added
+                || match stmt {
+                    Stmt::ClassDecl { name, .. } => {
+                        let name = name.resolve();
+                        !self.has_class(name.strip_prefix("GLOBAL::").unwrap_or(&name))
+                    }
+                    Stmt::RoleDecl { name, .. } => {
+                        let name = name.resolve();
+                        !self
+                            .registry()
+                            .roles
+                            .contains_key(name.strip_prefix("GLOBAL::").unwrap_or(&name))
+                    }
+                    _ => true,
+                };
+            index += 1;
+            keep
+        });
+    }
+
     fn run_eval_unit_stmts_body(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
         Self::inject_deparse_prelude_for_unit(&mut stmts);
-        // The unit has no source text of its own (it may be a tree): the
-        // preludes it needs are asked of the names its tree uses (#16203).
-        Self::inject_unit_preludes(
-            &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
-            &mut stmts,
-        );
         // Reorder so the top-level BEGINs run first, in the EVAL unit's
         // prologue (ADR-0134): a read textually preceding a BEGIN sees
         // its side effects and a later initializer still clobbers it,
