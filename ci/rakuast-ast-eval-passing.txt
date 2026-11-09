@@ -2680,6 +2680,7 @@ t/lang/eval-bare-block-hoisted-sub-cell.t
 t/lang/eval-callee-cannot-see-callers-my-sub-with-local-type.t
 t/lang/eval-callee-ignores-caller-my-sub-beside-type-decl.t
 t/lang/eval-caller-frames.t
+t/lang/eval-callframe-frameless-call-line.t
 t/lang/eval-check-imports.t
 t/lang/eval-class-redeclaration-cross-boundary.t
 t/lang/eval-class-redeclaration.t
@@ -9472,6 +9473,7 @@ t/vm/frames/callframe-block-statement-line.t
 t/vm/frames/callframe-file-line-same-frame.t
 t/vm/frames/callframe-for-block-code-defined.t
 t/vm/frames/callframe-for-block-frame.t
+t/vm/frames/callframe-light-call-frames.t
 t/vm/frames/callframe-marker-not-passed-to-shadowing-user-sub.t
 t/vm/frames/callframe-qq-interpolation-block-frame.t
 t/vm/frames/deferred-bind-positional-step.t

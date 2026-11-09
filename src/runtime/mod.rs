@@ -1594,6 +1594,9 @@ pub(crate) struct CallFrameEntry {
     pub routine: Option<RoutineFrame>,
     /// True for the synthetic EVAL frames, which have no code object at all.
     pub synthetic: bool,
+    /// One of the three frames an `EVAL` inserts (`push_eval_caller_frames`):
+    /// they stand for the `EVAL` itself, so they claim no routine frame.
+    pub eval_frame: bool,
     /// `routine_stack.len()` when the entry was pushed: the index the callee's
     /// routine frame takes. A routine frame no entry claims was reached through
     /// a frameless light call path (see `Interpreter::effective_callframes`).
