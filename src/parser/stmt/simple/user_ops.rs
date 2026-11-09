@@ -226,8 +226,10 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                 }
                 // A `multi` redeclaring a core set operator extends it and keeps
                 // its precedence, so the core parser keeps the token.
-                if matches!(op, "\u{222a}" | "\u{2229}" | "\u{228d}" | "\u{228e}" | "\u{2216}" | "\u{2296}")
-                    && !scope.op_precedence.contains_key(name.as_str())
+                if matches!(
+                    op,
+                    "\u{222a}" | "\u{2229}" | "\u{228d}" | "\u{228e}" | "\u{2216}" | "\u{2296}"
+                ) && !scope.op_precedence.contains_key(name.as_str())
                 {
                     continue;
                 }
