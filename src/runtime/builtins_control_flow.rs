@@ -119,13 +119,12 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // `die "a", "b"` is `die "ab"`: several arguments make one message.
-        let joined;
+        // `die "a", "b"`: several arguments are one list payload (the message
+        // joins them), as the parenthesised form `die(("a", "b"))` passes.
+        let listed;
         let args = if args.len() > 1 {
-            joined = [Value::str(
-                args.iter().map(Value::to_string_value).collect::<String>(),
-            )];
-            &joined[..]
+            listed = [Value::array(args.to_vec())];
+            &listed[..]
         } else {
             args
         };
