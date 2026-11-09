@@ -907,13 +907,11 @@ impl Interpreter {
             // For `require`, force a full reload if the module was previously loaded
             // but its functions were cleaned up by pop_import_scope (e.g. when
             // a previous `require` happened inside a block that has since exited).
-            let prefix = format!("{module}::");
-            if self.module.loaded_modules.contains(module)
-                && !self
-                    .registry()
-                    .functions
-                    .keys()
-                    .any(|k| k.as_str().starts_with(&prefix))
+            // A module that defines only types (a role, a class: `Monad::Maybe`)
+            // has no `Module::`-prefixed routine, yet it is plainly still
+            // loaded while its package is known; judging by routines alone
+            // re-parsed and re-ran it on every `require` (~14 ms each, #17228).
+            if self.module.loaded_modules.contains(module) && !self.module_still_registered(module)
             {
                 crate::runtime::cow_table_mut(&mut self.module.loaded_modules).remove(module);
             }

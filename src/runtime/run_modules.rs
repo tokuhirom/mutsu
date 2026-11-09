@@ -819,7 +819,7 @@ impl Interpreter {
     /// under its package, or the package itself (`require` reloads a module
     /// whose routines an import scope's pop dropped).
     // Cost: O(f), f = registered routines (a prefix scan, stopping at the first hit).
-    fn module_still_registered(&self, module: &str) -> bool {
+    pub(super) fn module_still_registered(&self, module: &str) -> bool {
         let prefix = format!("{module}::");
         self.is_known_package(module)
             || self
