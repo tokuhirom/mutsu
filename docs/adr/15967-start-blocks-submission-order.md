@@ -1,11 +1,11 @@
 # ADR-15967: mutsu's thread model: what a `start` is, what it costs, and what it does not promise
 
-- **Status**: Proposed (needs the maintainer's call; recommendation in §6)
+- **Status**: Accepted (user decision 2026-11-09: §6's four recommendations as written)
 - **Revision**: 2026-11-09 widens the first draft (2026-11-08), which asked only "must two
   `start` blocks begin in submission order?" and rested on a premise §2 refutes. A second
   revision the same day withdrew a scheduler change that ADR-0105 §5 had already rejected.
 - **Date**: 2026-11-08, revised 2026-11-09
-- **Deciders**: the maintainer
+- **Deciders**: tokuhirom (maintainer)
 - **Issue**: [#15967](https://github.com/tokuhirom/mutsu/issues/15967); the issue map in §5
   places every open `lane:threads` issue and the related ones.
 - **Related**: [ADR-0020](0020-shared-worker-pool.md) (shared worker pool, blocking `await`),
