@@ -1488,7 +1488,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if name == "die" {
                 let (r, items) = if let Some(inner) = rest.strip_prefix('(') {
                     let (inner, _) = ws(inner)?;
-                    let (inner, items) = die_call_args(inner)?;
+                    let (inner, items) = if inner.starts_with(')') {
+                        (inner, Vec::new())
+                    } else {
+                        die_call_args(inner)?
+                    };
                     let (inner, _) = ws(inner)?;
                     let inner = inner
                         .strip_prefix(')')
