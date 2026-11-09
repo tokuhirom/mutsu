@@ -3679,6 +3679,18 @@ fn is_fixed_frame_name(name: &str) -> bool {
     matches!(name, "self" | "?CLASS" | "?ROLE")
 }
 
+/// A role method run on its own role (a pun) keeps `::?CLASS` / `::?ROLE` in
+/// its return type, since only a consuming class resolves them at composition;
+/// the pun is the role itself.
+// Cost: O(len), len = the return spec's length.
+fn pun_pseudo_type<'a>(spec: &'a str, owner: &str) -> std::borrow::Cow<'a, str> {
+    if spec.contains("::?") {
+        std::borrow::Cow::Owned(spec.replace("::?CLASS", owner).replace("::?ROLE", owner))
+    } else {
+        std::borrow::Cow::Borrowed(spec)
+    }
+}
+
 #[cfg(test)]
 mod cheaply_unchanged_tests {
     use super::cheaply_unchanged;
@@ -3737,17 +3749,5 @@ mod cheaply_unchanged_tests {
             Value::array(vec![Value::int(1)]),
         )));
         assert!(!cheaply_unchanged(&a, &b));
-    }
-}
-
-/// A role method run on its own role (a pun) keeps `::?CLASS` / `::?ROLE` in
-/// its return type, since only a consuming class resolves them at composition;
-/// the pun is the role itself.
-// Cost: O(len), len = the return spec's length.
-fn pun_pseudo_type<'a>(spec: &'a str, owner: &str) -> std::borrow::Cow<'a, str> {
-    if spec.contains("::?") {
-        std::borrow::Cow::Owned(spec.replace("::?CLASS", owner).replace("::?ROLE", owner))
-    } else {
-        std::borrow::Cow::Borrowed(spec)
     }
 }
