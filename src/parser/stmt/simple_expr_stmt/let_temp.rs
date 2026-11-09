@@ -215,7 +215,10 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
 /// path below cannot spell, so they go through the nested-lvalue lowering.
 // Cost: O(1).
 fn is_compound_elem_container(target: &Expr) -> bool {
-    matches!(target, Expr::Index { .. } | Expr::Grouped(_))
+    matches!(
+        target,
+        Expr::Index { .. } | Expr::Grouped(_) | Expr::MethodCall { .. }
+    )
 }
 
 /// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.
@@ -322,7 +325,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             ..
         } = &expr
             && is_compound_elem_container(target)
-            && crate::ast::temporize::base_name(target).is_some()
+            && (crate::ast::temporize::base_name(target).is_some()
+                || matches!(target.as_ref(), Expr::MethodCall { .. }))
         {
             let element = Expr::Index {
                 target: target.clone(),
@@ -344,7 +348,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // element expression itself and the compiler saves that element.
         if let Expr::Index { target, .. } = &expr
             && is_compound_elem_container(target)
-            && crate::ast::temporize::base_name(target).is_some()
+            && (crate::ast::temporize::base_name(target).is_some()
+                || matches!(target.as_ref(), Expr::MethodCall { .. }))
         {
             return parse_statement_modifier(
                 expr_rest,
