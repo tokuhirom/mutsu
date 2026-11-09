@@ -11,46 +11,44 @@
   "dist": "Slang::Mosdef",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<method>': No such method 'key-origin' for invocant of type 'Match' [at Slang-Mosdef-0.0.4/t/01-basic.rakutest:6]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.05,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.88,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at Slang-Mosdef-0.0.4/t/02-y-combinator.rakutest:10]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.09,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-y-combinator.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.25,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-07",
+    "date": "2026-11-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e0cda90",
+    "mutsu_commit": "08e9a4a4",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -76,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANG_MOSDEF/c3e76ebdf3a567597f6862c8a9faf60231e236bc.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 6,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 6,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

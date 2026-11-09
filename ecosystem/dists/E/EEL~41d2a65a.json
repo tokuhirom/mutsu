@@ -9,12 +9,923 @@
     "unresolved": []
   },
   "dist": "EEL",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-slang.t",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 49.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-memory-storage.t",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/06-runner.t:12]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-runner.t",
+      "raku": {
+        "nok": 0,
+        "ok": 83,
+        "plan": 83,
+        "secs": 8.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/07-goal.t:19]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 20.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-goal.t",
+      "raku": {
+        "nok": 0,
+        "ok": 83,
+        "plan": 83,
+        "secs": 13.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/08-supply-match.t:9]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-supply-match.t",
+      "raku": {
+        "nok": 0,
+        "ok": 85,
+        "plan": 85,
+        "secs": 7.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/09-window.t:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-window.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 5.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "objects runs",
+        "nok": 69,
+        "ok": 0,
+        "plan": 69,
+        "secs": 6.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/10-examples.t",
+      "raku": {
+        "nok": 0,
+        "ok": 69,
+        "plan": 69,
+        "secs": 23.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Two terms in a row [at EEL-0.3/t/11-predicates.t:34]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-predicates.t",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-cli.t",
+      "raku": {
+        "first_failure": "at end of input: expected a json object",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/13-metadata.t:23]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/13-metadata.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-cli-merge.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/eel-merge-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/15-colon-calls.t:5]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-colon-calls.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/16-capture-delegation.t:27]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-capture-delegation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/17-subpattern-captures.t:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-subpattern-captures.t",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/18-leading-alternative.t:8]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/18-leading-alternative.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/19-proto.t:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/19-proto.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 4.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: X::Undeclared::Symbols: Undeclared routine:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/20-proto-scenarios.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/21-runtime-features.t:13]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/21-runtime-features.t",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-cli-transform.t",
+      "raku": {
+        "first_failure": "at end of input: expected a json object",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/23-runtime-edge-cases.t:12]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/23-runtime-edge-cases.t",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Missing required term after infix [at EEL-0.3/t/24-interleave.t:10]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/24-interleave.t",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ... [at EEL-0.3/t/25-selection.t:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/25-selection.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-event-time.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/eel-late-2.txt: Read-only file system",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/27-indexes.t:88]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 30.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/27-indexes.t",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 5.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/28-index-runtime.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 8.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/29-optimizations.t:73]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/29-optimizations.t",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 7.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/30-assertions.t:14]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/30-assertions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/31-assertion-integration.t:12]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/31-assertion-integration.t",
+      "raku": {
+        "nok": 0,
+        "ok": 50,
+        "plan": 50,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Missing required term after infix [at EEL-0.3/t/32-assertion-shuffle.t:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/32-assertion-shuffle.t",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/33-cli-eval.t",
+      "raku": {
+        "first_failure": "at end of input: expected a json object",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Confused: Two terms in a row",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/34-per-event-selection.t",
+      "raku": {
+        "nok": 0,
+        "ok": 161,
+        "plan": 161,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/35-candidate-identity.t",
+      "raku": {
+        "first_failure": "The spawned command '/home/runner/.local/rakudo/rakudo-moar-2026.09-01-linux-x86_64-gcc/bin/rakudo' exited unsuccessfully (exit code: 1, signal: 0)",
+        "nok": 0,
+        "ok": 32,
+        "plan": null,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/36-lookaround.t:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/36-lookaround.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/36-presence-index.t:10]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/36-presence-index.t",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 85,
+        "plan": 85,
+        "secs": 12.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/37-index-intersection.t",
+      "raku": {
+        "nok": 0,
+        "ok": 85,
+        "plan": 85,
+        "secs": 5.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/38-prefix-index.t:9]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/38-prefix-index.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/39-suffix-index.t:9]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/39-suffix-index.t",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/40-range-intersection.t:47]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/40-range-intersection.t",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/41-grammar-extensions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      },
+      "path": "t/42-cuts.t",
+      "raku": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Missing required term after infix [at EEL-0.3/t/43-window-anchors.t:12]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/43-window-anchors.t",
+      "raku": {
+        "nok": 0,
+        "ok": 51,
+        "plan": 51,
+        "secs": 3.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/44-actions-dynamic-repeat.t:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/44-actions-dynamic-repeat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "EEL": "Runtime error: slang activation for 'EEL' failed: Slang activation NYI: grammar rule override 'package-declarator:sym<event>' is not supported by this implementation (recognized: term:sym<identifier>,",
+    "EEL": "ok",
     "EEL::Absence": "ok",
     "EEL::Assertion": "ok",
-    "EEL::CLI": "Runtime error: Failed to parse module 'EEL::CLI': slang activation for 'EEL' failed: Slang activation NYI: grammar rule override 'package-declarator:sym<event>' is not supported by this implementation",
+    "EEL::CLI": "ok",
     "EEL::Clock": "ok",
     "EEL::Condition": "ok",
     "EEL::Continuation": "ok",
@@ -38,10 +949,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-07",
+    "date": "2026-11-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e0cda90",
+    "mutsu_commit": "08e9a4a4",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -52,13 +963,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/EL/EEL/7e879f6dc33c78e5763db959f51098125890643f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 1454,
+    "baseline_files": 36,
+    "mutsu_assertions": 115,
+    "parity_files": 2,
+    "regressed_files": 34
   },
   "version": "0.3"
 }

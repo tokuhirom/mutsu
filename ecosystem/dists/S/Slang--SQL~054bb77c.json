@@ -11,16 +11,31 @@
     "unresolved": []
   },
   "dist": "Slang::SQL",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01_basic.t",
+      "raku": {
+        "first_failure": "Two terms in a row [at dist/t/01_basic.t:45]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Slang::SQL": "Runtime error: slang activation for 'Slang::SQL' failed: Slang activation NYI: grammar rule override 'sql' is not supported by this implementation (recognized: term:sym<identifier>, methodop, routine-"
+    "Slang::SQL": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-07",
+    "date": "2026-11-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e0cda90",
+    "mutsu_commit": "08e9a4a4",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -31,7 +46,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANG_SQL/7303e67e559b3e08e93bed5fbab2678728459684.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
