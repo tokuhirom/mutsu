@@ -1221,7 +1221,8 @@ impl Interpreter {
             if self.is_definite_return_spec(spec) {
                 return spec.to_string();
             }
-            let spec = loan_env!(self, resolved_type_capture_name(spec));
+            let spec = pun_pseudo_type(spec, owner_class);
+            let spec = loan_env!(self, resolved_type_capture_name(&spec));
             self.resolve_method_type_name(owner_class, &spec)
         });
 
@@ -3086,7 +3087,8 @@ impl Interpreter {
                 if self.is_definite_return_spec(spec) {
                     return spec.to_string();
                 }
-                let spec = loan_env!(self, resolved_type_capture_name(spec));
+                let spec = pun_pseudo_type(spec, owner_class);
+                let spec = loan_env!(self, resolved_type_capture_name(&spec));
                 self.resolve_method_type_name(owner_class, &spec)
             });
 
@@ -3675,6 +3677,18 @@ fn merge_method_env(
 /// stores them (ADR-14843).
 fn is_fixed_frame_name(name: &str) -> bool {
     matches!(name, "self" | "?CLASS" | "?ROLE")
+}
+
+/// A role method run on its own role (a pun) keeps `::?CLASS` / `::?ROLE` in
+/// its return type, since only a consuming class resolves them at composition;
+/// the pun is the role itself.
+// Cost: O(len), len = the return spec's length.
+fn pun_pseudo_type<'a>(spec: &'a str, owner: &str) -> std::borrow::Cow<'a, str> {
+    if spec.contains("::?") {
+        std::borrow::Cow::Owned(spec.replace("::?CLASS", owner).replace("::?ROLE", owner))
+    } else {
+        std::borrow::Cow::Borrowed(spec)
+    }
 }
 
 #[cfg(test)]

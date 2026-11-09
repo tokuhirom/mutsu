@@ -85,6 +85,11 @@ impl Interpreter {
         if s.contains('[') && s.ends_with(']') {
             return false;
         }
+        // `::?CLASS` / `::?ROLE` (also with a smiley) name a type; a role method
+        // keeps the pseudo-type until a pun or a consuming class gives it a meaning.
+        if s.starts_with("::?CLASS") || s.starts_with("::?ROLE") {
+            return false;
+        }
         if Self::return_spec_scalar_name(s).is_some() {
             return true;
         }
