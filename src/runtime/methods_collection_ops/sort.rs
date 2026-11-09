@@ -392,6 +392,13 @@ where
 
 /// Map a comparator block's return value to an `Ordering`.
 pub(crate) fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
+    // A block hands back the container of its last statement (#17094), so a
+    // comparator ending in `$r` returns `$r`'s cell: read the value in it, not
+    // the cell, or every comparison looked "equal" (Template::Jinja2's
+    // `sort(attribute=...)`).
+    if result.is_container_ref() {
+        return sort_result_to_ordering(&result.deref_container());
+    }
     match result.view() {
         ValueView::Int(n) => n.cmp(&0),
         // Bool comparators: True means "swap" (a > b), False means "don't swap".
