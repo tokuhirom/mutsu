@@ -91,6 +91,33 @@ const fn unit_query(
     }
 }
 
+/// The same query on the `CheckTime` role: rakudo declares each of these on both
+/// `CompUnit` and the role every node composes, so every node `can` them.
+const fn check_time_query(
+    name: &'static str,
+    f: fn(&Value, &[Value]) -> Result<Value, RuntimeError>,
+) -> MethodRow {
+    MethodRow {
+        owner: "RakuAST::CheckTime",
+        name,
+        arity: 0,
+        handler: Handler::Pure(f),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    }
+}
+
+const fn check_time_add(name: &'static str, f: super::super::NarrowFn) -> MethodRow {
+    MethodRow {
+        owner: "RakuAST::CheckTime",
+        name,
+        arity: 1,
+        handler: Handler::Narrow(f),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    }
+}
+
 const fn edit(name: &'static str, arity: u8, f: super::super::NarrowFn) -> MethodRow {
     MethodRow {
         owner: "RakuAST::CheckTime",
@@ -134,6 +161,11 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
     },
+    check_time_query("sorries", sorries),
+    check_time_query("worries", worries),
+    check_time_query("has-check-time-problems", has_problems),
+    check_time_add("add-sorry", add_sorry),
+    check_time_add("add-worry", add_worry),
     edit("clear-worries", 0, clear_worries),
     edit("promote-worries-to-sorries", 0, promote),
 ];

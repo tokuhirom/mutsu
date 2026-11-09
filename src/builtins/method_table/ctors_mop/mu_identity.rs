@@ -243,6 +243,8 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
             crate::builtins::method_table::collection_clone::container_clone(target).map(Ok)
         }
         ValueView::Seq(items) => Some(Ok(Value::seq(items.to_vec()))),
+        // A RakuAST node is copied; its children are shared.
+        ValueView::RakuAst(node) => Some(Ok(Value::rakuast(Box::new(node.clone())))),
         ValueView::Slip(items) => Some(Ok(
             Value::slip(items.to_vec()).with_slip_itemized(target.slip_is_itemized())
         )),
