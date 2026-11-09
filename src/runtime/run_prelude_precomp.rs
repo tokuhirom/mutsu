@@ -58,6 +58,7 @@ class GLOBAL::CompUnit::PrecompilationStore::FileSystem is CompUnit::Precompilat
 
 class GLOBAL::CompUnit::PrecompilationRepository::Default {
     has $.store;
+    my %units;
     method load(CompUnit::PrecompilationId $id, |) { Nil }
     method may-precomp { True }
     method try-load(
@@ -71,11 +72,20 @@ class GLOBAL::CompUnit::PrecompilationRepository::Default {
             // $source;
         fail "Cannot find the source of the unit to load" unless $path.defined && $path.IO.e;
         my $code = $path.IO.slurp;
-        my @pod = EVAL($code ~ "\n\$=pod");
-        my %unit;
-        %unit<$=pod> := @pod;
-        %unit<$?PACKAGE> = GLOBAL;
-        CompUnit::Handle.new(:unit(%unit))
+        # A unit is compiled once per source text, as a precompilation
+        # repository does: loading the same file again hands back the same
+        # unit, instead of compiling it again (which redeclared its classes,
+        # Pod::To::HTML `render`ing a second file that declares `class Foo`).
+        my $key = nqp::sha1($code);
+        unless %units{$key}:exists {
+            my @pod = EVAL($code ~ "\n\$=pod");
+            my %unit;
+            %unit<$=pod> := @pod;
+            %unit<$?PACKAGE> = GLOBAL;
+            %units{$key} = %unit;
+        }
+        my %cached = %units{$key};
+        CompUnit::Handle.new(:unit(%cached))
     }
 }
 "#;
