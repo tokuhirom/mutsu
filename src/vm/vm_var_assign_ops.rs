@@ -1171,7 +1171,13 @@ impl Interpreter {
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                if !is_anon_container && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                if !is_anon_container
+                    && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc)
+                    // A `Map` is immutable: overwriting its published node in
+                    // place frees the table under a lock-free reader on
+                    // another thread (and changes every alias of the Map), so
+                    // the cell just takes the new value (#17149).
+                    && old_gc.declared_type.as_deref() != Some("Map") =>
             {
                 Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
             }

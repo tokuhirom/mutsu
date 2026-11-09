@@ -566,6 +566,15 @@ impl Interpreter {
                     // nothing can later autovivify it: `my $x := %map<z>` binds
                     // that `Nil`, not a deferred entry that reads back as `Any`.
                     self.stack.push(Value::NIL);
+                } else if resolved.is_immutable_map() {
+                    // An immutable Map has no writable slot to alias, and
+                    // promoting one rewrites the published, thread-shared
+                    // node in place (#17149): bind the element's value.
+                    let value = match map.map.get(&key) {
+                        Some(v) => v.clone(),
+                        None => Value::NIL,
+                    };
+                    self.stack.push(value);
                 } else if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {
