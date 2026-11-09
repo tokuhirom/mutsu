@@ -313,3 +313,20 @@ pub(super) fn view_hash_call(names: &NameScope, inner: &Expr) -> Result<RakuAstN
         fields: vec![node_field(None, view_expr(names, inner)?)],
     })
 }
+
+/// The sugared `.item` / `.list` / `.hash` call of a term (`$@a`, `@$x`, `%$h`) as its
+/// contextualizer node; `None` for any other call.
+// Cost: O(n), n = nodes of the term.
+pub(super) fn view_sugar_call(
+    names: &NameScope,
+    method: &str,
+    target: &Expr,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
+    match (method, target) {
+        (_, Expr::Var(topic)) if topic == "_" => None,
+        ("item", _) => Some(view_item_call(names, target)),
+        ("list", _) => Some(view_list_call(names, target)),
+        ("hash", Expr::Var(_)) => Some(view_hash_call(names, target)),
+        _ => None,
+    }
+}
