@@ -29,9 +29,7 @@ fn arg_binding_value(arg: &Value) -> std::borrow::Cow<'_, Value> {
         return std::borrow::Cow::Borrowed(v);
     }
     match v.view() {
-        ValueView::ContainerRef(cell) => {
-            std::borrow::Cow::Owned(cell.load())
-        }
+        ValueView::ContainerRef(cell) => std::borrow::Cow::Owned(cell.load()),
         _ => std::borrow::Cow::Borrowed(v),
     }
 }

@@ -360,9 +360,7 @@ impl Value {
                     // See through a `:=`-bound cell so an already-materialized
                     // intermediate is descended rather than clobbered.
                     let inner = match v.view() {
-                        ValueView::ContainerRef(cell) => {
-                            cell.load()
-                        }
+                        ValueView::ContainerRef(cell) => cell.load(),
                         _ => v,
                     };
                     match Level::of(&inner) {
