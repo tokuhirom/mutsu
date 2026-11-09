@@ -5273,6 +5273,7 @@ fn simple_parameter(
     type_setting: bool,
     where_constraint: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let desigil = super::signature_decl::parameter_desigil(desigil);
     let target = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ParameterTargetVar,

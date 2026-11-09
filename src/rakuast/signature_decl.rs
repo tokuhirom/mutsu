@@ -513,6 +513,17 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
     Ok(var)
 }
 
+/// The name a `$` parameter's target spells: the parser's internal name of an
+/// anonymous `$` is no name (`-> $, $v`).
+// Cost: O(1).
+pub(super) fn parameter_desigil(desigil: &str) -> &str {
+    if desigil == super::view::ANONYMOUS_SCALAR_PARAM {
+        ""
+    } else {
+        desigil
+    }
+}
+
 /// The bare sigil an anonymous element (`my ($, @) = ...`) is written as,
 /// for the parser's internal name of it.
 // Cost: O(1).
