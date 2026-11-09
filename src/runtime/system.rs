@@ -394,17 +394,27 @@ impl Interpreter {
         // read them (`Logic::Ternary`'s `True`, #15770).
         let prerun_region =
             crate::compiler::Compiler::has_use_stmt(&stmts).then(|| self.open_import_region());
-        let ran = self.run_eval_hook_uses(stmts).and_then(|mut stmts| {
-            // The preludes the unit asks for are part of it before it is
-            // judged: its names include the classes they declare.
-            let before = stmts.len();
+        let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+            // The preludes the unit asks for are part of it when it is judged:
+            // its names include the classes they declare. Only the judged copy
+            // carries them; the unit gets them where it runs
+            // (`run_eval_unit_stmts_body`), as it always did.
+            let mut prelude = Vec::new();
             Self::inject_unit_preludes(
                 &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
-                &mut stmts,
+                &mut prelude,
             );
-            let added = stmts.len() - before;
-            self.drop_declared_prelude_types(&mut stmts, added);
-            let validated = self.validate_eval_source_with(&stmts, imports_unseen);
+            // A prelude type an earlier unit declared is already known.
+            self.drop_declared_prelude_types(&mut prelude);
+            let judged;
+            let to_judge: &[Stmt] = if prelude.is_empty() {
+                &stmts
+            } else {
+                prelude.extend(stmts.iter().cloned());
+                judged = prelude;
+                &judged
+            };
+            let validated = self.validate_eval_source_with(to_judge, imports_unseen);
             self.module.eval_prerun_modules.clear();
             self.module.eval_prerun_sets.clear();
             validated?;
@@ -481,33 +491,24 @@ impl Interpreter {
         }
     }
 
-    /// Drop the first `added` statements' class and role declarations that an
-    /// earlier unit already declared: a prelude is global, so a second `EVAL`
-    /// asking for it must not declare it again.
-    // Cost: O(a), a = added prelude statements.
-    fn drop_declared_prelude_types(&self, stmts: &mut Vec<Stmt>, added: usize) {
-        if added == 0 {
-            return;
-        }
-        let mut index = 0;
-        stmts.retain(|stmt| {
-            let keep = index >= added
-                || match stmt {
-                    Stmt::ClassDecl { name, .. } => {
-                        let name = name.resolve();
-                        !self.has_class(name.strip_prefix("GLOBAL::").unwrap_or(&name))
-                    }
-                    Stmt::RoleDecl { name, .. } => {
-                        let name = name.resolve();
-                        !self
-                            .registry()
-                            .roles
-                            .contains_key(name.strip_prefix("GLOBAL::").unwrap_or(&name))
-                    }
-                    _ => true,
-                };
-            index += 1;
-            keep
+    /// Drop the class and role declarations of the judged copy's prelude that
+    /// the interpreter already holds: judging them again would call the second
+    /// declaration a redeclaration.
+    // Cost: O(a), a = prelude statements.
+    fn drop_declared_prelude_types(&self, prelude: &mut Vec<Stmt>) {
+        prelude.retain(|stmt| match stmt {
+            Stmt::ClassDecl { name, .. } => {
+                let name = name.resolve();
+                !self.has_class(name.strip_prefix("GLOBAL::").unwrap_or(&name))
+            }
+            Stmt::RoleDecl { name, .. } => {
+                let name = name.resolve();
+                !self
+                    .registry()
+                    .roles
+                    .contains_key(name.strip_prefix("GLOBAL::").unwrap_or(&name))
+            }
+            _ => true,
         });
     }
 
@@ -516,6 +517,12 @@ impl Interpreter {
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
         Self::inject_deparse_prelude_for_unit(&mut stmts);
+        // The unit has no source text of its own (it may be a tree): the
+        // preludes it needs are asked of the names its tree uses (#16203).
+        Self::inject_unit_preludes(
+            &crate::runtime::source_code_text::CodeText::from_unit(&stmts),
+            &mut stmts,
+        );
         // Reorder so the top-level BEGINs run first, in the EVAL unit's
         // prologue (ADR-0134): a read textually preceding a BEGIN sees
         // its side effects and a later initializer still clobbers it,
