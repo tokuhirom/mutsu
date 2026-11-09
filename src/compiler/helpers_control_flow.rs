@@ -475,13 +475,19 @@ impl Compiler {
         if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         }
         if let Some(err) = self.check_heredoc_scope_errors(else_branch) {
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         }
         // A statement modifier has no block, so its `@_` is the routine's own.
@@ -1173,7 +1179,10 @@ impl Compiler {
                 Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::Multiple"), attrs);
             let idx = self.code.add_constant(exc);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             self.pop_dynamic_scope_lexical(saved);
             return;
         }

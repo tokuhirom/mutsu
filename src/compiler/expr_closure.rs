@@ -25,7 +25,10 @@ impl Compiler {
             let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             true
         } else {
             false
@@ -45,7 +48,10 @@ impl Compiler {
         };
         let idx = self.code.add_constant(thrown);
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw, list_arg: false });
+        self.code.emit(OpCode::Die {
+            user_throw,
+            list_arg: false,
+        });
     }
 
     /// Compile AnonSub expression.
@@ -138,7 +144,10 @@ impl Compiler {
             {
                 let idx = self.code.add_constant(err_val);
                 self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+                self.code.emit(OpCode::Die {
+                    user_throw: false,
+                    list_arg: false,
+                });
                 return;
             }
             let placeholders = crate::ast::collect_placeholders_shallow(body);
@@ -180,13 +189,19 @@ impl Compiler {
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         }
         if let Some(err_val) = Self::check_native_readonly_param_assignment(param_defs, body) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         }
         let compiled =
@@ -747,7 +762,10 @@ impl Compiler {
             );
             let idx = self.code.add_constant(exception);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         }
         // Binding (`:=`) to a WhateverCode subscript (`@a[*-1] := 42`) is illegal:

@@ -687,7 +687,10 @@ impl Compiler {
                 .code
                 .add_constant(Value::str(format!("Unknown meta operator: {}", meta)));
             self.code.emit(OpCode::LoadConst(msg_idx));
-            self.code.emit(OpCode::Die { user_throw: false, list_arg: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return;
         };
         // X/Z meta-assignment: `@a X[+=] @b`, `@a Z[+=] @b`. The inner op is an

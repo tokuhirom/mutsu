@@ -280,7 +280,8 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Spelled(spelled) => matches!(spelled.expr, Expr::ArrayLiteral(_)),
             _ => false,
         }
-        && let Ok((after_first, _)) = crate::parser::expr::expression_no_word_logical(rest_before_arg)
+        && let Ok((after_first, _)) =
+            crate::parser::expr::expression_no_word_logical(rest_before_arg)
         && !ws(after_first).is_ok_and(|(r, _)| r.starts_with(','))
     {
         Expr::Grouped(Box::new(expr))
