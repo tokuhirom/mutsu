@@ -1,6 +1,6 @@
 # ADR-13370: A class a slang production installs reaches the importing unit by replay
 
-- **Status**: Proposed
+- **Status**: Accepted (amended 2026-11-09: the replay is of the metamodel calls, not of the production, see §3a)
 - **Date**: 2026-11-08
 - **Issue**: [#13370](https://github.com/tokuhirom/mutsu/issues/13370) (Qwiratry `aggsub`)
 - **Related**: ADR-15762 (slangs by execution), ADR-0026
@@ -50,6 +50,28 @@ touched the resolver's generated-lexical list is replayed in the unit's
 interpreter at BEGIN time to produce the real values. The generated-constant
 mechanism landed here becomes the replay's output channel: the replay binds the
 constants it collects in the unit's scope.
+
+## 3a. Amendment: replay the metamodel calls, not the production
+
+Re-running the production in the unit's interpreter does not work as the
+decision above reads: the production's nested pieces (`<blockoid>`, `<signature>`,
+and the `statement-prefix` hooks whose actions stash their phasers into dynamic
+variables the `aggsub-def` action reads) are served by the parser thread and the
+host, so a second run in the unit would need a second parser link, and the phasers
+would still be stashed in the host. What the unit needs is only what the production
+*built*, which is a sequence of metamodel calls on a type the hook minted.
+
+So the host records, while a hook runs, every `new_type` and every
+`add_method` / `add_private_method` / `add_multi_method` / `add_fallback` /
+`add_role` / `add_parent` / `add_attribute` / `compose` whose target the hook
+minted (`src/runtime/slang_class_replay.rs`). The statement the host returns for a
+production that installed a generated constant whose value is such a type is
+`my constant NAME = __mutsu_slang_replay_class(<log>, <type>)`: the unit applies the
+same calls in its own interpreter and binds the type it minted. The method values
+in the log are closures and run in the unit like any other closure; a role is
+named, and the unit has loaded it (the module that installed the slang is `use`d
+there too). Anything the production built outside the metamodel (a hash it
+filled, a package stash) is not replayed.
 
 ## 4. Consequences
 

@@ -207,6 +207,8 @@ impl Interpreter {
                 .class_how_values
                 .insert(name.clone(), instance);
         }
-        Ok(Value::package(Symbol::intern(&name)))
+        let minted = Value::package(Symbol::intern(&name));
+        self.record_slang_new_type(how_class, args, &minted);
+        Ok(minted)
     }
 }
