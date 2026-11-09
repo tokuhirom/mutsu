@@ -1074,23 +1074,14 @@ impl Compiler {
             } else {
                 var_name
             };
-            let mut args = vec![
+            let rewritten = crate::lvalue_call::index_assign_method(
                 (**method_target).clone(),
-                Expr::Literal(Value::str(method_name.resolve())),
-            ];
-            if !method_args.is_empty() {
-                args.push(Expr::BracketArray(method_args.clone(), false));
-            }
-            args.extend([
+                &method_name.resolve(),
+                method_args,
                 index.clone(),
                 value.clone(),
-                Expr::Literal(Value::str(writeback_name)),
-            ]);
-            let rewritten = Expr::Call {
-                name: Symbol::intern(crate::lvalue_call::INDEX_ASSIGN_METHOD),
-                args,
-                listop: false,
-            };
+                writeback_name,
+            );
             self.compile_expr(&rewritten);
         } else if let Some(arr_name) = self.map_rw_identity_target_name(target) {
             // @arr.map(-> $v is rw {$v})[idx] = val  →  @arr[idx] = val
