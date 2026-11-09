@@ -101,7 +101,8 @@ impl Interpreter {
     /// frame; its lexicals are unavailable (empty env).
     // Cost: O(r + c), r = routine_stack depth, c = callframe_stack depth.
     fn effective_callframes(&self) -> std::borrow::Cow<'_, [CallFrameEntry]> {
-        let claimed = |k: usize| self.callframe_stack.iter().any(|e| e.routine_depth == k);
+        let claimed =
+            |k: usize| self.callframe_stack.iter().any(|e| !e.eval_frame && e.routine_depth == k);
         let missing = |f: &RoutineFrame| {
             !f.is_block && !f.is_inlined_block && !f.is_method && !f.name.is_empty()
         };
@@ -131,6 +132,7 @@ impl Interpreter {
                     package: f.package,
                     routine: k.checked_sub(1).and_then(|p| self.routine_stack.get(p)).copied(),
                     synthetic: false,
+                    eval_frame: false,
                     routine_depth: k,
                     flushed: Vec::new(),
                     flushed_frame: None,

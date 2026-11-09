@@ -116,6 +116,7 @@ impl Interpreter {
             package: self.current_package_sym(),
             routine: self.routine_stack.last().copied(),
             synthetic: false,
+            eval_frame: false,
             routine_depth: self.routine_stack.len(),
             flushed_frame: (!flushed.is_empty()).then_some(frame),
             flushed,
@@ -178,6 +179,9 @@ impl Interpreter {
     /// frame's env (the depth-3 target), then two empty frames.
     pub(crate) fn push_eval_caller_frames(&mut self) {
         self.push_caller_env();
+        if let Some(invoker) = self.callframe_stack.last_mut() {
+            invoker.eval_frame = true;
+        }
         for _ in 0..2 {
             self.caller_env_stack.push(Env::new());
             self.callframe_stack.push(CallFrameEntry {
@@ -188,6 +192,7 @@ impl Interpreter {
                 package: self.current_package_sym(),
                 routine: None,
                 synthetic: true,
+                eval_frame: true,
                 routine_depth: self.routine_stack.len(),
                 flushed: Vec::new(),
                 flushed_frame: None,
