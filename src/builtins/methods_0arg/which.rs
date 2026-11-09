@@ -6,6 +6,7 @@
 
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::identity::type_identity_name;
 use crate::value::{Value, ValueView};
 
 /// Whether `v`'s own identity is VALUE-based (`ValueObjAt`, a content digest)
@@ -103,11 +104,20 @@ pub(crate) fn which_of(target: &Value) -> Value {
     // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
     let is_value_type = has_value_identity(target);
     let which_str = match target.view() {
-        ValueView::Package(name) => format!(
-            "{}|U{}",
-            crate::value::user_facing_type_name(&name.resolve()),
-            crate::value::which_id::shown(name.id() as u64)
-        ),
+        ValueView::Package(name) => {
+            let resolved = name.resolve();
+            let key = type_identity_name(&resolved);
+            let id = if key.len() == resolved.len() {
+                name.id()
+            } else {
+                Symbol::intern(&key).id()
+            };
+            format!(
+                "{}|U{}",
+                crate::value::user_facing_type_name(&resolved),
+                crate::value::which_id::shown(id as u64)
+            )
+        }
         ValueView::CustomType(c) => {
             format!(
                 "{}|U{}",
@@ -328,6 +338,18 @@ pub(crate) fn which_of(target: &Value) -> Value {
         }
         // A `but`-mixed object keeps the identity of the object it wraps under
         // the mixin's own type name (`G+{R}|<id>`, rakudo's format).
+        // A mixed-in TYPE OBJECT is keyed like the composed class its
+        // instances carry (`Box+{Marker}|U<id of that name>`), so
+        // `T.WHICH eq T.make(1).WHAT.WHICH` (#17206).
+        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Package(_)) => {
+            let composed = crate::value::types::what_type_name(target);
+            let key = type_identity_name(&composed);
+            format!(
+                "{}|U{}",
+                composed,
+                crate::value::which_id::shown(Symbol::intern(&key).id() as u64)
+            )
+        }
         ValueView::Mixin(inner, _) => {
             let inner_which = which_of(inner).to_string_value();
             let id = inner_which

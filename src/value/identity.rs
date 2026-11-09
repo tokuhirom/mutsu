@@ -17,6 +17,35 @@ use crate::value::{Value, ValueView};
 /// Values mutsu stores unboxed (small integers, nums, rationals) have no
 /// identity of their own and compare by value, as MoarVM's cached small
 /// integers do.
+/// The name a type object's identity is keyed by: the pun class of a role
+/// with defaulted parameters is registered as `Box\0default[Any]`, but it is
+/// the very type `Box.^pun` answers, so both key as `Box` (#17206). The
+/// composed name of a `but`-mixed type object (`Box\0default[Any]+{Marker}`)
+/// loses the same segment, so `T.WHICH` and `T.make(1).WHAT.WHICH` agree.
+// Cost: O(n), n = length of the name.
+pub(crate) fn type_identity_name(name: &str) -> std::borrow::Cow<'_, str> {
+    const MARK: &str = "\u{0}default[";
+    let Some(start) = name.find(MARK) else {
+        return std::borrow::Cow::Borrowed(name);
+    };
+    let mut depth = 0usize;
+    for (i, c) in name[start + MARK.len() - 1..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    let end = start + MARK.len() - 1 + i + 1;
+                    let rest = type_identity_name(&name[end..]);
+                    return std::borrow::Cow::Owned(format!("{}{}", &name[..start], rest));
+                }
+            }
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Borrowed(name)
+}
+
 // Cost: O(1).
 pub(crate) fn values_same_object(left: &Value, right: &Value) -> bool {
     // A raw `VMArray`/`VMHash` and the `List`/`Hash` `nqp::hllize` made from
@@ -59,6 +88,23 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let a_name = a.resolve();
             let b_name = b.resolve();
             canonical_meta_name(&a_name) == canonical_meta_name(&b_name)
+        }
+        // A `but`-mixed type object (`Box.^pun but Marker`) is the composed
+        // class its instances' `.WHAT` answers (#17206).
+        (ValueView::Mixin(inner, mixins), ValueView::Package(name))
+        | (ValueView::Package(name), ValueView::Mixin(inner, mixins))
+            if matches!(inner.view(), ValueView::Package(_))
+                && crate::value::role_mixin_suffix(mixins).is_some() =>
+        {
+            let composed = if left.is_mixin_value() {
+                crate::value::types::what_type_name(left)
+            } else {
+                crate::value::types::what_type_name(right)
+            };
+            let other = name.resolve();
+            // Only a composed class (`Box\0default[Any]+{Marker}`) is the
+            // mixin's type; a bare name is the role/class it was made from.
+            other.contains("+{") && type_identity_name(&composed) == type_identity_name(&other)
         }
         // A parameterized role type object is one type per distinct argument
         // list (`R[Str, Int] === R[Str, Int]`).

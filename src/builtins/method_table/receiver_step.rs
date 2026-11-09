@@ -396,6 +396,16 @@ pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep
         };
         return Some(MixinStep::Answer(Ok(Value::str(rendered))));
     }
+    // A `but`-mixed type object has its own identity, keyed like the composed
+    // class of its instances (`T.WHICH eq T.make(1).WHAT.WHICH`, #17206).
+    if method == "WHICH"
+        && matches!(inner.view(), ValueView::Package(_))
+        && crate::value::role_mixin_suffix(mixins).is_some()
+    {
+        return Some(MixinStep::Answer(Ok(
+            crate::builtins::methods_0arg::which::which_of(target),
+        )));
+    }
     // `^name` is deliberately not answered here (ADR-0060): a rename can live
     // on the composition-keyed shared `.WHAT` node, which needs the interpreter.
     //
