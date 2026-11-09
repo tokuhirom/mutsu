@@ -111,6 +111,60 @@ pub(crate) fn assign_callable(callable: Expr, call_args: Vec<Expr>, value: Expr)
     )
 }
 
+/// An [`INCDEC_NAMED_SUB`] call: `routine(call arguments)` incremented or
+/// decremented in place; `op_label` is the operator (`postfix:<++>`, ...).
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn incdec_named_sub(routine: String, call_args: Vec<Expr>, op_label: &str) -> Expr {
+    call(
+        INCDEC_NAMED_SUB,
+        vec![
+            Expr::Literal(Value::str(routine)),
+            Expr::ArrayLiteral(call_args),
+            Expr::Literal(Value::str_from(op_label)),
+        ],
+    )
+}
+
+/// An [`INDEX_ASSIGN_METHOD`] call: `invocant.method(args)[index] = value`,
+/// written back to the caller variable `writeback`. The method arguments are
+/// one bracket-array argument, left out when there are none.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn index_assign_method(
+    invocant: Expr,
+    method: &str,
+    method_args: &[Expr],
+    index: Expr,
+    value: Expr,
+    writeback: String,
+) -> Expr {
+    let mut args = vec![invocant, Expr::Literal(Value::str(method.to_string()))];
+    if !method_args.is_empty() {
+        args.push(Expr::BracketArray(method_args.to_vec(), false));
+    }
+    args.extend([index, value, Expr::Literal(Value::str(writeback))]);
+    call(INDEX_ASSIGN_METHOD, args)
+}
+
+/// An [`INDEX_DELETE_METHOD`] call: `invocant.method[index]:delete`, written
+/// back to the caller variable `writeback`.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn index_delete_method(
+    invocant: Expr,
+    method: &str,
+    index: Expr,
+    writeback: String,
+) -> Expr {
+    call(
+        INDEX_DELETE_METHOD,
+        vec![
+            invocant,
+            Expr::Literal(Value::str(method.to_string())),
+            index,
+            Expr::Literal(Value::str(writeback)),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

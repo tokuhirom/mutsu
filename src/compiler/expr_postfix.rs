@@ -38,15 +38,11 @@ impl Compiler {
             (false, true) => "postfix:<++>",
             (false, false) => "postfix:<-->",
         };
-        self.compile_expr(&Expr::Call {
-            name: Symbol::intern(crate::lvalue_call::INCDEC_NAMED_SUB),
-            args: vec![
-                Expr::Literal(Value::str(name.resolve())),
-                Expr::ArrayLiteral(args.clone()),
-                Expr::Literal(Value::str_from(op_label)),
-            ],
-            listop: false,
-        });
+        self.compile_expr(&crate::lvalue_call::incdec_named_sub(
+            name.resolve(),
+            args.clone(),
+            op_label,
+        ));
         true
     }
 

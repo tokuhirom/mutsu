@@ -775,16 +775,12 @@ impl Compiler {
                 // `$obj.attr<key>:delete` — delete through an accessor and write
                 // the modified container back to the attribute (mirrors the
                 // `$obj.attr<key> = v` lvalue path).
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern(crate::lvalue_call::INDEX_DELETE_METHOD),
-                    args: vec![
-                        (**method_target).clone(),
-                        Expr::Literal(Value::str(method_name.resolve())),
-                        (**delete_index).clone(),
-                        Expr::Literal(Value::str(var_name)),
-                    ],
-                    listop: false,
-                });
+                self.compile_expr(&crate::lvalue_call::index_delete_method(
+                    (**method_target).clone(),
+                    &method_name.resolve(),
+                    (**delete_index).clone(),
+                    var_name,
+                ));
             } else {
                 // Last resort: the delete target is an arbitrary expression, most
                 // often an `is rw`/`return-rw` CALL whose result is the very
