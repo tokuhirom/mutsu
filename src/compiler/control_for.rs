@@ -133,7 +133,7 @@ impl Compiler {
         // what decides whether the phaser lowering must preserve it across appended
         // NEXT/LEAVE bodies.
         let (pre_stmts, loop_body, post_stmts) =
-            self.expand_loop_phasers(body, label.as_deref(), collect);
+            self.expand_loop_phasers(body, label.as_deref(), collect, params);
         for s in &pre_stmts {
             self.compile_stmt(s);
         }

@@ -187,6 +187,7 @@ impl Compiler {
         body: &[Stmt],
         label: Option<&str>,
         wants_value: bool,
+        loop_params: &[String],
     ) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
         if !Self::has_phasers(body) && !Self::stmts_have_enter_phaser_expr(body) {
             return (Vec::new(), body.to_vec(), Vec::new());
@@ -360,6 +361,37 @@ impl Compiler {
                 where_constraint: None,
             });
         }
+        // The multi-parameter loop parameters (`-> $k, $v`) are lexicals of the
+        // body, gone when the LAST phaser runs after the loop. Each iteration
+        // copies them into a temp the LAST body re-declares them from.
+        let last_param_copies: Vec<(String, String)> = if last_ph.is_empty() {
+            Vec::new()
+        } else {
+            loop_params
+                .iter()
+                .filter(|p| !p.is_empty() && !p.starts_with(['\\', '&', '|', ':']))
+                .map(|p| (p.clone(), self.next_tmp_name("__mutsu_loop_last_param_")))
+                .collect()
+        };
+        for (_, tmp) in &last_param_copies {
+            pre.push(Stmt::VarDecl {
+                marks: Default::default(),
+                anonymous: false,
+                name: tmp.clone(),
+                expr: Expr::Literal(Value::NIL),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
+                where_constraint: None,
+            });
+        }
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
                 marks: Default::default(),
@@ -431,6 +463,14 @@ impl Compiler {
             loop_body.push(Stmt::Assign {
                 name: last_topic_var,
                 expr: Expr::Var("_".to_string()),
+                op: AssignOp::Assign,
+                target_is_sigilless: false,
+            });
+        }
+        for (param, tmp) in &last_param_copies {
+            loop_body.push(Stmt::Assign {
+                name: tmp.clone(),
+                expr: Expr::Var(param.clone()),
                 op: AssignOp::Assign,
                 target_is_sigilless: false,
             });
@@ -679,6 +719,30 @@ impl Compiler {
             loop_body.push(Stmt::Expr(Expr::Var(capture_var)));
         }
 
+        if !last_param_copies.is_empty() {
+            let mut scoped = Vec::new();
+            for (param, tmp) in &last_param_copies {
+                scoped.push(Stmt::VarDecl {
+                    marks: Default::default(),
+                    anonymous: false,
+                    name: param.clone(),
+                    expr: Expr::Var(tmp.clone()),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    has_initializer: true,
+                    constant: None,
+                    bind: None,
+                    where_constraint: None,
+                });
+            }
+            scoped.append(&mut last_ph);
+            last_ph = vec![Stmt::Block(scoped)];
+        }
         let post = if last_ph.is_empty() {
             Vec::new()
         } else if let Some(last_topic_var) = last_topic_var {
