@@ -275,8 +275,7 @@ mod tests {
         ) else {
             panic!("a call");
         };
-        let Some(LvalueCall::AssignMethod(view)) = classify(name.resolve().as_str(), &args)
-        else {
+        let Some(LvalueCall::AssignMethod(view)) = classify(name.resolve().as_str(), &args) else {
             panic!("an assign-method call");
         };
         assert!(matches!(view.invocant, Expr::Literal(v) if v.as_str() == Some("inv")));
@@ -296,7 +295,10 @@ mod tests {
         assert!(matches!(view.routine, Expr::Literal(v) if v.as_str() == Some("f")));
         assert!(view.target_var.is_none());
 
-        assert!(classify(ASSIGN_CALLABLE, &args[..2]).is_none(), "arity is checked");
+        assert!(
+            classify(ASSIGN_CALLABLE, &args[..2]).is_none(),
+            "arity is checked"
+        );
         assert!(classify("unrelated", &args).is_none());
     }
 
