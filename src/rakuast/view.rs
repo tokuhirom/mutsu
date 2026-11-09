@@ -2736,9 +2736,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             fields: Vec::new(),
         }),
         // `now` / `time` are `Term::Named`, not calls.
-        Expr::Call { name, args, .. }
-            if args.is_empty() && matches!(name.as_str(), "now" | "time") =>
-        {
+        Expr::Call { name, args, .. } if args.is_empty() && super::is_named_term(name.as_str()) => {
             Ok(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::TermNamed,

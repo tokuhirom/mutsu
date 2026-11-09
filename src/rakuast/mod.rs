@@ -4207,3 +4207,9 @@ pub(crate) use assign_writeback::{
 pub(crate) use hash_literal::object_hash_expr;
 pub(crate) use hyper_prefix::hyper_prefix_expr;
 pub(crate) use word_list::{word_list_expr, words_atom_expr};
+
+/// Whether a setting term name is `Term::Named` in rakudo (`now`, `time`).
+// Cost: O(1).
+pub(crate) fn is_named_term(name: &str) -> bool {
+    matches!(name, "now" | "time")
+}
