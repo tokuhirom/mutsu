@@ -286,22 +286,27 @@ pub(super) fn view_require(
     names: &NameScope,
     args: &[Expr],
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let (Expr::Literal(target), rest) = (match args {
-        [first, rest @ ..] => (first, rest),
-        [] => return Ok(None),
-    }) else {
+    let Some((first, rest)) = args.split_first() else {
         return Ok(None);
     };
-    let ValueView::Package(module) = target.view() else {
-        return Ok(None);
+    // `Foo` / `::($name)` name the module; any other operand is the `file`.
+    let target = match first {
+        Expr::Literal(target) => match target.view() {
+            ValueView::Package(module) => Some(name_from_identifier(&module.resolve())),
+            _ => None,
+        },
+        Expr::IndirectTypeLookup(inner) => {
+            Some(super::symbolic_deref::indirect_name(names, inner)?)
+        }
+        _ => None,
     };
     let mut node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::StatementRequire,
-        fields: vec![node_field(
-            Some("module-name"),
-            name_from_identifier(&module.resolve()),
-        )],
+        fields: vec![match target {
+            Some(name) => node_field(Some("module-name"), name),
+            None => node_field(Some("file"), view_expr(names, first)?),
+        }],
     };
     match rest {
         [] => {}
@@ -316,18 +321,26 @@ pub(super) fn view_require(
 /// Lower `Statement::Require` to the parser's package-valued call operand.
 // Cost: O(1).
 pub(super) fn lower_require(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    if node
-        .fields
-        .iter()
-        .any(|field| matches!(field.name, Some("file")))
-    {
-        return Err(super::lower::unsupported(node));
-    }
-    let module = match name_parts::name_shape(named_child(node, "module-name")?) {
-        Some(NameShape::Identifier(name)) => name,
-        _ => return Err(super::lower::unsupported(node)),
+    // `file` form: the operand is any expression (`require "x.pm6"`, `require $f`).
+    // Otherwise `module-name`: a static name or a dynamic `::(EXPR)` lookup.
+    let first = if let Ok(file) = named_child(node, "file") {
+        super::lower::lower_expr(names, file)?
+    } else {
+        match name_parts::name_shape(named_child(node, "module-name")?) {
+            Some(NameShape::Identifier(name)) => {
+                Expr::Literal(Value::package(Symbol::intern(&name)))
+            }
+            Some(NameShape::Indirect {
+                expr,
+                tail,
+                trailing: false,
+            }) if tail.is_empty() => {
+                Expr::IndirectTypeLookup(Box::new(super::lower::lower_expr(names, expr)?))
+            }
+            _ => return Err(super::lower::unsupported(node)),
+        }
     };
-    let mut args = vec![Expr::Literal(Value::package(Symbol::intern(&module)))];
+    let mut args = vec![first];
     if let Ok(import_list) = named_child(node, "argument") {
         args.push(lower_expr(names, import_list)?);
     }

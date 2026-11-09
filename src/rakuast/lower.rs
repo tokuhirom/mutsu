@@ -4934,6 +4934,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::TermEmptySet => {
             Ok(Expr::Literal(Value::set(std::collections::HashSet::new())))
         }
+        RakuAstClass::TermRand => Ok(Expr::Call {
+            name: Symbol::intern("rand"),
+            args: vec![],
+            listop: false,
+        }),
         RakuAstClass::TermHyperWhatever => Ok(Expr::HyperWhatever),
         // The `*` priming-argument leaf (`* + 1`, `* > 3`). ADR-0033 splits the
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
