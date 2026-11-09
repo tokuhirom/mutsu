@@ -211,6 +211,9 @@ impl Interpreter {
         name_idx: u32,
         target_slot: Option<u32>,
     ) -> Option<PlainHashTarget> {
+        if std::env::var_os("MUTSU_EXP_NO_HASH_LANE").is_some() {
+            return None;
+        }
         // Reject if there are any local bind pairs (`:=` bindings in scope)
         if !self.local_bind_pairs.is_empty() {
             return None;
