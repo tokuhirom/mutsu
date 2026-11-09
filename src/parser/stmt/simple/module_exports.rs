@@ -140,6 +140,9 @@ struct ModuleScanResult {
     stamp: Option<crate::scan_cache::FileStamp>,
 }
 
+/// A scan a `use` cycle truncated: the loading modules it skipped, and its result.
+type TruncatedScan = (HashSet<String>, Rc<ModuleScanResult>);
+
 thread_local! {
     /// The type names each `use`d module declared (stubs included), by module
     /// name, as the scan that registered its imports saw them. Not scoped to
@@ -168,7 +171,7 @@ thread_local! {
     /// cycle must scan afresh. Without this memo every `use` path through a
     /// cycle re-parses each module of it, which is exponential in the size of
     /// the cycle (Qwiratry's `Walker::Factory` took 87 s to load).
-    static TRUNCATED_SCAN_CACHE: RefCell<HashMap<String, Vec<(HashSet<String>, Rc<ModuleScanResult>)>>> =
+    static TRUNCATED_SCAN_CACHE: RefCell<HashMap<String, Vec<TruncatedScan>>> =
         RefCell::new(HashMap::new());
     /// The outcome of the `use` statement scan that just ran: module name →
     /// does it activate a slang. Written by `register_module_exports` on
