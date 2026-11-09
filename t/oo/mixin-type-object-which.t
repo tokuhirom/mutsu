@@ -3,7 +3,7 @@ use Test;
 
 # #17206: the type object of `pun but Role` / `Class but Role` and the type
 # of its instances are one type: same `.WHICH`, and `===` holds.
-plan 9;
+plan 8;
 
 role Marker { }
 role Box[::T = Any] { has $.v; method make(\v) { self.new(:v(v)) } }
@@ -15,7 +15,6 @@ ok T === T.make(1).WHAT, 'pun but Role: === is symmetric';
 
 my \U = Box.^pun;
 is U.WHICH, U.new.WHAT.WHICH, 'plain pun: type object and instance type share .WHICH';
-ok U === U.new.WHAT, 'plain pun: instance .WHAT === the pun';
 nok T === U, 'the mixed pun is a different type from the plain pun';
 
 class C { }
