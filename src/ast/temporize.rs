@@ -156,7 +156,15 @@ pub(crate) fn expand(t: Temporized) -> Option<Stmt> {
             else {
                 return None;
             };
-            let name = base_name(target)?;
+            // `temp $obj.attr<k> = v`: the container is whatever the method call
+            // yields (the shared hash behind an accessor), not a variable, so
+            // there is no base name; the compiled save addresses the container
+            // value itself.
+            let name = match base_name(target) {
+                Some(name) => name,
+                None if matches!(target.as_ref(), Expr::MethodCall { .. }) => String::new(),
+                None => return None,
+            };
             if single_level(&element) {
                 (None, name, Some(index.as_ref().clone()))
             } else {
