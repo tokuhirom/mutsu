@@ -137,16 +137,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // `RakuAST::Routine.meta-object`: the routine the unit declares, else the
-    // closure a slang-built node stands for.
-    MethodRow {
-        owner: "RakuAST::Routine",
-        name: "meta-object",
-        arity: 0,
-        handler: Handler::Interp(routine_meta_object),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     // An imported routine (`use Test; plan`) and a unit-declared package.
     MethodRow {
         owner: "RakuAST::Declaration::Import",
@@ -425,6 +415,17 @@ pub(super) fn parameter_meta_object(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // A routine's meta-object is the routine itself; one row serves every class
+    // (the dispatch shape holds one `meta-object` row), so the routine classes
+    // are answered here too.
+    if matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::Sub
+            | crate::rakuast::RakuAstClass::Method
+            | crate::rakuast::RakuAstClass::Submethod
+    ) {
+        return routine_meta_object(interp, target, _args, _named);
+    }
     // A block's meta-object is its closure, as its `compile-time-value`.
     if matches!(
         node.class,
