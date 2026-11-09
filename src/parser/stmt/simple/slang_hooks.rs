@@ -261,6 +261,9 @@ fn leading_literal(body: &str) -> Option<String> {
 // Cost: O(n), n = body length.
 pub(in crate::parser) fn register_hook(name: &str, body: Option<&str>) {
     clear_hook_memo();
+    // A statement parsed ahead of the `use` that activates the slang, under the grammar
+    // without this production, must not be replayed.
+    crate::parser::invalidate_all_memos();
     HOOKS.with(|h| {
         let mut hooks = h.borrow_mut();
         hooks.rules.retain(|r| r.rule != name);
@@ -598,4 +601,24 @@ pub(crate) fn parse_slang_trait(
         return None;
     }
     Some((rest, traits.source_traits.remove(0)))
+}
+
+/// Parse the expression a `for` iterates (`for EXPR {`) at the start of `text`
+/// for a slang token that calls the core `<EXPR>` as `for` does: the text after
+/// it and the expression. The block that follows is not part of it.
+// Cost: the parse of the expression.
+pub(crate) fn parse_slang_for_expr(text: &str) -> Option<(&str, Expr)> {
+    super::super::assign::parse_comma_or_expr(text).ok()
+}
+
+/// Parse a pointy block (`-> $x { ... }`) at the start of `text` for a slang
+/// token that calls the core `<pointy-block>`: the text after it and the block
+/// as the lambda expression it is. `None` for a bare block, which the caller
+/// parses with the `<block>` shim.
+// Cost: the parse of the block.
+pub(crate) fn parse_slang_pointy_block(text: &str) -> Option<(&str, Expr)> {
+    if !(text.starts_with("->") || text.starts_with("<->")) {
+        return None;
+    }
+    crate::parser::primary::misc::arrow_lambda(text).ok()
 }

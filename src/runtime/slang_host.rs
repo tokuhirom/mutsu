@@ -59,6 +59,13 @@ grammar Mutsu::Slang::Host::Base {
     # `<variable>`: `$x`, `@a`, `%h`, `&f`.
     method variable(*@) { __mutsu_slang_shim('variable', self) }
     method arglist(*@) { __mutsu_slang_shim('arglist', self) }
+    # The `for` header's pieces: its keyword, the iterated expression (up to the
+    # block) and the block, which may be a pointy one.
+    token block-for { 'for' }
+    # The checks for Perl 5 `for` spellings are the core parser's; here nothing to vet.
+    token vetPerlForSyntax { <?> }
+    method EXPR(*@) { __mutsu_slang_shim('EXPR', self) }
+    method pointy-block(*@) { __mutsu_slang_shim('pointy-block', self) }
     # `<blockoid>`: the braces and statements of a block, as a `Blockoid`.
     method blockoid(*@) { __mutsu_slang_shim('blockoid', self) }
     # The name a declarator takes (`<.identifier>`).
@@ -114,11 +121,21 @@ class Mutsu::Slang::Host::Actions {
     method numish(Mu $/) { $/.ast }
     # The block statements a slang's actions may override.
     method statement-control:sym<given>(Mu $/) { $/.ast }
-    method statement-control:sym<for>(Mu $/) { $/.ast }
+    # A `for` a slang's own token matched (its header is the shims' nodes) has
+    # no core node yet; one the core parser matched is the Match's `.ast`.
+    method statement-control:sym<for>(Mu $/) {
+        return $/.ast unless $<EXPR>.defined && $<pointy-block>.defined;
+        my $node = RakuAST::Statement::For.new(
+            source => $<EXPR>.ast, body => $<pointy-block>.ast);
+        $/.make($node);
+        $Mutsu::Slang::Host::Built = $node;
+        $node
+    }
     method statement-control:sym<if>(Mu $/) { $/.ast }
     method statement-control:sym<while>(Mu $/) { $/.ast }
 }
 our $Mutsu::Slang::Host::G;
+our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
 sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     unless $Mutsu::Slang::Host::G.defined {
@@ -155,8 +172,20 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     }
     my $*R = Mutsu::Slang::Host::Resolver.new;
     my $*CU = Mutsu::Slang::Host::CompUnit.new;
+    $Mutsu::Slang::Host::Built = Nil;
     my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
     return Nil unless $m;
+    # A node the core action built for a production the slang's own token matched
+    # (a `for` with the slang's extra clause) stands for it: a slang action that
+    # only `callsame`s into the core one, or that attached nothing, leaves it.
+    # (A shim leaves the last core production's node on the cursor, so `.ast`
+    # alone cannot tell.)
+    if !$Mutsu::Slang::Host::Built.defined && !$m.ast.defined && Mutsu::Slang::Host::Actions.can($rule) {
+        Mutsu::Slang::Host::Actions.new."$rule"($m);
+    }
+    if $Mutsu::Slang::Host::Built.defined {
+        return ($m.to, $Mutsu::Slang::Host::Built);
+    }
     # Constants the production installed become `my constant NAME = VALUE`
     # declarations of the unit, standing for the statement.
     if $*R.generated.elems && $m.ast.defined {

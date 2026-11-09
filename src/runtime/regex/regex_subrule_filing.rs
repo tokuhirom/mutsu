@@ -183,6 +183,9 @@ impl Interpreter {
                 sink.file_node(spec.lookup_sym, orig_subcap);
             }
         } else if !inner_caps.named.is_empty()
+            // A silent call that carries a node (a core production a slang shim
+            // parsed) keeps it for an alias over the call (`$<x>=<.pointy-block>`).
+            || inner_caps.ast.is_some()
             || self
                 .silent_subrule_has_action(spec, inner_caps.sym().or(sym_key).map(|s| s.as_str()))
             || inner_caps

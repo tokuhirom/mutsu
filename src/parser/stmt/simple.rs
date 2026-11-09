@@ -134,10 +134,11 @@ pub(in crate::parser) use slang_hooks::{
     statement_control_hook, statementlist_wrapper, take_wrapper_back_call, term_hook,
 };
 pub(crate) use slang_hooks::{
-    parse_pointy_starters, parse_slang_arglist, parse_slang_shim_production, parse_slang_signature,
-    parse_slang_statementlist, parse_slang_trait, parse_slang_variable, pointy_starter,
-    run_slang_action, slang_action_activator, slang_action_rule, slang_hook_rule,
-    slang_host_wrapped_rule, slang_overrides_action, slang_wrapper_rule, statement_action_keyword,
+    parse_pointy_starters, parse_slang_arglist, parse_slang_for_expr, parse_slang_pointy_block,
+    parse_slang_shim_production, parse_slang_signature, parse_slang_statementlist,
+    parse_slang_trait, parse_slang_variable, pointy_starter, run_slang_action,
+    slang_action_activator, slang_action_rule, slang_hook_rule, slang_host_wrapped_rule,
+    slang_overrides_action, slang_wrapper_rule, statement_action_keyword,
 };
 pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
