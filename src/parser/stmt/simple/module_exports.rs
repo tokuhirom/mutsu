@@ -158,6 +158,18 @@ thread_local! {
     /// an importer outside the cycle would otherwise be pinned to the
     /// truncated view forever.
     static SCAN_GUARD_SKIPS: Cell<u64> = const { Cell::new(0) };
+    /// The modules each running scan found already loading (the guard
+    /// skipped them), innermost scan last; a scan merges its set into its
+    /// parent's when it ends.
+    static SCAN_SKIP_FRAMES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+    /// Scans a `use` cycle truncated, by file path: the result and the loading
+    /// modules it skipped. Such a result is only valid while all of those are
+    /// still loading (a fresh scan would skip them again); an importer outside the
+    /// cycle must scan afresh. Without this memo every `use` path through a
+    /// cycle re-parses each module of it, which is exponential in the size of
+    /// the cycle (Qwiratry's `Walker::Factory` took 87 s to load).
+    static TRUNCATED_SCAN_CACHE: RefCell<HashMap<String, Vec<(HashSet<String>, Rc<ModuleScanResult>)>>> =
+        RefCell::new(HashMap::new());
     /// The outcome of the `use` statement scan that just ran: module name →
     /// does it activate a slang. Written by `register_module_exports` on
     /// every path (including the ones that deliberately do NOT scan), read
@@ -252,8 +264,13 @@ fn record_use_scan_outcome(module: &str, activates: bool) {
     });
 }
 
-fn note_scan_guard_skip() {
+fn note_scan_guard_skip(module: &str) {
     SCAN_GUARD_SKIPS.with(|c| c.set(c.get() + 1));
+    SCAN_SKIP_FRAMES.with(|frames| {
+        if let Some(top) = frames.borrow_mut().last_mut() {
+            top.insert(module.to_string());
+        }
+    });
 }
 
 /// Does a module's source compute its import set in a unit-scope `sub EXPORT`
@@ -315,7 +332,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
     // Check for infinite recursion
     let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
     if already_loading {
-        note_scan_guard_skip();
+        note_scan_guard_skip(module);
         return;
     }
     LOADING_MODULES.with(|m| {
@@ -576,7 +593,7 @@ pub(crate) fn import_inline_module_exports(module: &str) {
 pub(crate) fn register_module_type_names(module: &str) {
     let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
     if already_loading {
-        note_scan_guard_skip();
+        note_scan_guard_skip(module);
         return;
     }
     LOADING_MODULES.with(|m| {
@@ -639,25 +656,72 @@ fn scan_module_at(module: &str, path: String) -> Option<Rc<ModuleScanResult>> {
         record_scan_result_as_dep(module, &path, &hit);
         return Some(hit);
     }
+    if let Some(hit) = truncated_scan_hit(&path) {
+        record_scan_result_as_dep(module, &path, &hit);
+        return Some(hit);
+    }
     let source = std::fs::read_to_string(&path).ok()?;
-    let skips_before = SCAN_GUARD_SKIPS.with(|c| c.get());
     SCAN_DEP_FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
+    SCAN_SKIP_FRAMES.with(|frames| frames.borrow_mut().push(HashSet::new()));
     let mut result = scan_module_source(&source, &path);
     result.deps = SCAN_DEP_FRAMES
         .with(|frames| frames.borrow_mut().pop())
         .unwrap_or_default();
+    let mut skipped = SCAN_SKIP_FRAMES
+        .with(|frames| frames.borrow_mut().pop())
+        .unwrap_or_default();
+    // The scan of the module a cycle starts at skipped only itself: complete.
+    skipped.remove(module);
     result.stamp = FileStamp::of_source(std::path::Path::new(&path), &source);
     let result = Rc::new(result);
-    // Only a scan the recursion guard never truncated is complete enough to
-    // cache (see SCAN_GUARD_SKIPS).
-    if SCAN_GUARD_SKIPS.with(|c| c.get()) == skips_before {
+    if skipped.is_empty() {
+        // Only a scan the recursion guard never truncated is complete enough
+        // to cache (see SCAN_GUARD_SKIPS).
         MODULE_SCAN_CACHE.with(|c| {
             c.borrow_mut().insert(path.clone(), Rc::clone(&result));
         });
         save_scan_to_disk(&path, &source, &result);
+    } else {
+        // A truncated scan is valid again where the modules it skipped are
+        // loading too, and it truncates its callers the same way.
+        SCAN_SKIP_FRAMES.with(|frames| {
+            if let Some(top) = frames.borrow_mut().last_mut() {
+                top.extend(skipped.iter().cloned());
+            }
+        });
+        TRUNCATED_SCAN_CACHE.with(|c| {
+            c.borrow_mut()
+                .entry(path.clone())
+                .or_default()
+                .push((skipped, Rc::clone(&result)));
+        });
     }
     record_scan_result_as_dep(module, &path, &result);
     Some(result)
+}
+
+/// A memoized truncated scan of `path` whose skipped modules are all loading
+/// now; its skip set joins the running scan's, as a fresh scan's would.
+// Cost: O(e + s), e = memoized truncations of the file, s = modules they skipped.
+fn truncated_scan_hit(path: &str) -> Option<Rc<ModuleScanResult>> {
+    let (skipped, hit) = TRUNCATED_SCAN_CACHE.with(|c| {
+        let cache = c.borrow();
+        LOADING_MODULES.with(|loading| {
+            let loading = loading.borrow();
+            cache.get(path)?.iter().find_map(|(skipped, result)| {
+                skipped
+                    .iter()
+                    .all(|m| loading.contains(m))
+                    .then(|| (skipped.clone(), Rc::clone(result)))
+            })
+        })
+    })?;
+    SCAN_SKIP_FRAMES.with(|frames| {
+        if let Some(top) = frames.borrow_mut().last_mut() {
+            top.extend(skipped);
+        }
+    });
+    Some(hit)
 }
 
 /// Record a resolved module, and everything its own scan resolved, into the
