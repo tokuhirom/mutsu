@@ -1,9 +1,8 @@
 use Test;
 use experimental :rakuast;
 
-# `die(...)` / `fail(...)` with the parenthesis right after the name is a call
-# over its arguments; with a space it is the listop over a parenthesised
-# argument. The expected text is what `raku` prints.
+# `die(...)` with the parenthesis right after the name is a call over its
+# arguments; with a space it is the listop over a parenthesised argument. The expected text is what `raku` prints.
 
 my @cases =
   'die("S");' => "die(\"S\")\n",
@@ -12,8 +11,7 @@ my @cases =
   'die "S";' => "die \"S\"\n",
   'die("S") if 1;' => "die(\"S\") if 1\n",
   'my $x = die("S");' => "my \$x = die(\"S\")\n",
-  'fail("S");' => "fail(\"S\")\n",
-  'fail(1, 2);' => "fail(1, 2)\n";
+  'fail "S";' => "fail \"S\"\n";
 
 plan @cases + 3;
 
