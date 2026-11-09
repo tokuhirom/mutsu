@@ -1482,31 +1482,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 };
                 return Ok((r, call));
             }
-            // `die` takes a LIST of arguments (`die "a", "b"` and `die("a", "b")`
-            // are two arguments, concatenated; `die ("a", "b")` and `die <a b>`
-            // are one List argument), so keep the items apart for it.
-            if name == "die" {
-                let (r, items) = if let Some(inner) = rest.strip_prefix('(') {
-                    let (inner, _) = ws(inner)?;
-                    let (inner, items) = if inner.starts_with(')') {
-                        (inner, Vec::new())
-                    } else {
-                        die_call_args(inner)?
-                    };
-                    let (inner, _) = ws(inner)?;
-                    let inner = inner
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("')' closing die arguments"))?;
-                    (inner, items)
-                } else {
-                    die_call_args(r)?
-                };
-                let call = if rest.starts_with('(') {
-                    make_call_expr(name, input, items)
-                } else {
-                    make_listop_expr(name, input, items)
-                };
-                return Ok((r, call));
+            // A listop `die` takes a LIST of arguments (`die "a", "b"` is two
+            // arguments, concatenated; `die ("a", "b")` and `die <a b>` are one
+            // List argument), so keep the items apart for it.
+            if name == "die" && !rest.starts_with('(') {
+                let (r, items) = die_call_args(r)?;
+                return Ok((r, make_listop_expr(name, input, items)));
             }
             let (r, arg) = expression(r)?;
             let call = if rest.starts_with('(') {
