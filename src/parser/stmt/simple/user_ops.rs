@@ -224,6 +224,15 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                 if !input.starts_with(op) {
                     continue;
                 }
+                // A `multi` redeclaring a core set operator extends it and keeps
+                // its precedence, so the core parser keeps the token.
+                if matches!(
+                    op,
+                    "\u{222a}" | "\u{2229}" | "\u{228d}" | "\u{228e}" | "\u{2216}" | "\u{2296}"
+                ) && !scope.op_precedence.contains_key(name.as_str())
+                {
+                    continue;
+                }
                 let consumed = op.len();
                 // A declared bare `X` / `Z` does not claim the front of a longer
                 // metaoperator token (`X+`, `Z~`, `X[&f]`): that token wins.

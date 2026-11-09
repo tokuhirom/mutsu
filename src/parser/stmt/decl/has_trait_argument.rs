@@ -17,21 +17,9 @@ pub(super) fn parse(input: &str) -> PResult<'_, Option<Expr>> {
         ));
     }
     if let Some(stripped) = input.strip_prefix('(') {
-        let mut depth = 1u32;
-        let mut end = 0;
-        for (i, ch) in stripped.char_indices() {
-            match ch {
-                '(' => depth += 1,
-                ')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
+        let end = closing_paren(stripped).ok_or_else(|| {
+            crate::parser::parse_result::PError::expected("closing paren in trait argument")
+        })?;
         return Ok((&stripped[end + 1..], call_args(stripped[..end].trim())));
     }
     // A single quote word is a Str; multiple words are one List argument.
@@ -83,4 +71,39 @@ fn call_args(inner: &str) -> Option<Expr> {
         rest = r;
     }
     rest.is_empty().then_some(Expr::ArrayLiteral(items))
+}
+
+/// The byte index of the `)` that closes a trait argument list (`input` starts
+/// after the opening `(`), skipping quoted strings: `is index(:opclass('x)'))`
+/// holds a `)` inside a Str that is not the end of the argument list (Red's
+/// `t/100-schema-constraints`). A `'` right after an identifier character is an
+/// apostrophe, not a quote.
+// Cost: O(n), n = length of the argument text.
+fn closing_paren(input: &str) -> Option<usize> {
+    let mut depth = 1u32;
+    let mut chars = input.char_indices().peekable();
+    let mut prev: Option<char> = None;
+    while let Some((i, ch)) = chars.next() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            '\'' | '"' if !prev.is_some_and(|p| p.is_alphanumeric() || p == '_' || p == '-') => {
+                while let Some((_, c)) = chars.next() {
+                    if c == '\\' {
+                        chars.next();
+                    } else if c == ch {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+        prev = Some(ch);
+    }
+    None
 }
