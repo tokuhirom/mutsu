@@ -94,11 +94,13 @@ impl Compiler {
     /// computed at run time (`$c.v."$name"() = 9`), which the gate must let
     /// through.
     fn lvalue_invocant_wants_accessor_ref(name: Symbol, args: &[Expr]) -> Option<Option<String>> {
-        if name.resolve() != crate::lvalue_call::ASSIGN_METHOD || args.len() < 4 {
+        let Some(crate::lvalue_call::LvalueCall::AssignMethod(call)) =
+            crate::lvalue_call::classify(name.resolve().as_str(), args)
+        else {
             return None;
-        }
+        };
         if !matches!(
-            &args[0],
+            call.invocant,
             Expr::MethodCall {
                 args: invocant_args,
                 modifier: None,
@@ -108,7 +110,7 @@ impl Compiler {
         ) {
             return None;
         }
-        Some(match &args[1] {
+        Some(match call.method {
             Expr::Literal(lit) => match lit.view() {
                 crate::value::ValueView::Str(s) => Some(s.to_string()),
                 _ => None,
@@ -129,19 +131,18 @@ impl Compiler {
     /// literal. Both helpers put the routine name at argument 0 and the
     /// argument list at argument 1.
     fn relayed_rw_arg_callee(name: Symbol, args: &[Expr], i: usize) -> Option<String> {
-        if i != 1
-            || args.len() < 3
-            || !matches!(
-                name.resolve().as_str(),
-                crate::lvalue_call::ASSIGN_NAMED_SUB | crate::lvalue_call::INCDEC_NAMED_SUB
-            )
-        {
+        if i != 1 {
             return None;
         }
-        if !matches!(&args[1], Expr::ArrayLiteral(_)) {
+        let call = match crate::lvalue_call::classify(name.resolve().as_str(), args)? {
+            crate::lvalue_call::LvalueCall::AssignNamedSub(call)
+            | crate::lvalue_call::LvalueCall::IncDecNamedSub(call) => call,
+            _ => return None,
+        };
+        if !matches!(call.call_args, Expr::ArrayLiteral(_)) {
             return None;
         }
-        match &args[0] {
+        match call.routine {
             Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
             _ => None,
         }
@@ -345,16 +346,22 @@ impl Compiler {
     /// -- the same hint `__mutsu_assign_method_lvalue` carries for the method
     /// form (`$t.substr-rw(...) = v`).
     fn named_sub_lvalue_with_target_var(name: &Symbol, args: &[Expr]) -> Option<Vec<Expr>> {
-        if name.resolve() != crate::lvalue_call::ASSIGN_NAMED_SUB || args.len() != 3 {
+        let Some(crate::lvalue_call::LvalueCall::AssignNamedSub(call)) =
+            crate::lvalue_call::classify(name.resolve().as_str(), args)
+        else {
+            return None;
+        };
+        // (One that already carries its caller variable is left as it is.)
+        if call.target_var.is_some() {
             return None;
         }
-        let Expr::Literal(callee) = &args[0] else {
+        let Expr::Literal(callee) = call.routine else {
             return None;
         };
         if !matches!(callee.as_str(), Some("substr-rw" | "subbuf-rw")) {
             return None;
         }
-        let Expr::ArrayLiteral(call_args) = &args[1] else {
+        let Expr::ArrayLiteral(call_args) = call.call_args else {
             return None;
         };
         let Some(Expr::Var(var)) = call_args.first() else {
@@ -494,17 +501,18 @@ impl Compiler {
         // assigns through it does not capture it at all. Retarget the call at
         // the code variable itself, the same way the bare-call branch just
         // above does for a plain `f(...)`.
-        if name == crate::lvalue_call::ASSIGN_NAMED_SUB
+        if let Some(crate::lvalue_call::LvalueCall::AssignNamedSub(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
-            && let Expr::Literal(callee) = &args[0]
+            && let Expr::Literal(callee) = call.routine
             && let Some(callee) = callee.as_str()
             && self.amp_binding_in_active_scope(callee)
         {
             self.note_amp_shadowed_call(crate::symbol::Symbol::intern(callee));
             let rewritten = [
                 Expr::CodeVar(callee.to_string()),
-                args[1].clone(),
-                args[2].clone(),
+                call.call_args.clone(),
+                call.last.clone(),
             ];
             self.compile_expr_call_inner(
                 &crate::symbol::Symbol::intern(crate::lvalue_call::ASSIGN_CALLABLE),
@@ -597,9 +605,10 @@ impl Compiler {
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
         // We compile this as: declare the state var, then unconditionally assign the RHS.
-        if name == crate::lvalue_call::ASSIGN_CALLABLE
+        if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
-            && let Expr::DoStmt(stmt) = &args[0]
+            && let Expr::DoStmt(stmt) = call.callable
             && let Stmt::VarDecl {
                 name: var_name,
                 is_state,
@@ -611,7 +620,7 @@ impl Compiler {
             self.compile_stmt(stmt);
             // VarDecl doesn't push to stack, so no pop needed.
             // 2. Compile the RHS value
-            self.compile_expr(&args[2]);
+            self.compile_expr(call.value);
             // 3. Assign to the variable. AssignExpr/AssignExprLocal pop the
             //    value and PUSH the assignment result themselves (assignment
             //    is an expression), so no Dup — an extra copy here leaks a
@@ -649,33 +658,35 @@ impl Compiler {
                 self.emit_assign_local_or_name(&var_name);
             }
             return;
-        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
             && let Expr::AssignExpr {
                 name: var_name,
                 is_bind: false,
                 ..
-            } = &args[0]
+            } = call.callable
         {
             // `($c = 3) = 4`: an assignment yields the assigned container as an
             // lvalue, so the outer assignment writes through to the same
             // variable. Run the inner assignment for its side effect, then
             // assign the RHS to the same variable. (No Dup: the assign op
             // pushes its own result — see the VarDecl arm above.)
-            self.compile_expr(&args[0]);
+            self.compile_expr(call.callable);
             self.code.emit(OpCode::Pop);
-            self.compile_expr(&args[2]);
+            self.compile_expr(call.value);
             let var_name = var_name.clone();
             self.emit_assign_local_or_name(&var_name);
             return;
-        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
             && let Expr::IndexAssign {
                 target,
                 index,
                 is_positional,
                 ..
-            } = &args[0]
+            } = call.callable
         {
             // `(@a[i] = v) = w` / `(@a[i,j] = @x) = @y` (the S02-types/array.t
             // "hat trick"): an index/slice assignment yields the assigned
@@ -684,24 +695,25 @@ impl Compiler {
             // then assign the RHS to `@a[i]` again — mirroring the scalar
             // `($c = 3) = 4` case above. The re-assignment's own result stays on
             // the stack (assignment is an expression).
-            self.compile_expr(&args[0]);
+            self.compile_expr(call.callable);
             self.code.emit(OpCode::Pop);
             let outer = Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
-                value: Box::new(args[2].clone()),
+                value: Box::new(call.value.clone()),
                 is_positional: *is_positional,
                 spelling: Default::default(),
             };
             self.compile_expr(&outer);
             return;
-        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
             && let Expr::Ternary {
                 cond,
                 then_expr,
                 else_expr,
-            } = &args[0]
+            } = call.callable
         {
             // `(cond ?? $a !! $b) = rhs`: the ternary yields whichever branch is
             // the selected lvalue, then the assignment writes through to it.
@@ -710,8 +722,8 @@ impl Compiler {
             // non-lvalue branch (`cond ?? 9 !! $x = rhs`) desugars to an RO-error
             // form via `ternary_branch_assign`, raising only if that branch is
             // selected -- raku accepts the assignment when the lvalue branch wins.
-            let then_assign = Self::ternary_branch_assign(then_expr, &args[2]);
-            let else_assign = Self::ternary_branch_assign(else_expr, &args[2]);
+            let then_assign = Self::ternary_branch_assign(then_expr, call.value);
+            let else_assign = Self::ternary_branch_assign(else_expr, call.value);
             let desugared = Expr::Ternary {
                 cond: cond.clone(),
                 then_expr: Box::new(then_assign),
@@ -719,11 +731,12 @@ impl Compiler {
             };
             self.compile_expr(&desugared);
             return;
-        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
             && let Expr::Binary {
                 left, op, right, ..
-            } = &args[0]
+            } = call.callable
             && matches!(
                 op,
                 crate::token_kind::TokenKind::SlashSlash
@@ -738,9 +751,9 @@ impl Compiler {
             // that gets picked is refused like `(cond ?? 9 !! $x) = v`.
             let tmp = format!("__mutsu_logical_lvalue_{}", self.code.constants.len());
             let tmp_var = Expr::Var(tmp.clone());
-            let left_assign = Self::assign_expr_for_lvalue(left, &args[2]).unwrap_or_else(|| {
+            let left_assign = Self::assign_expr_for_lvalue(left, call.value).unwrap_or_else(|| {
                 Expr::desugar_block(vec![
-                    Stmt::Expr(args[2].clone()),
+                    Stmt::Expr(call.value.clone()),
                     Stmt::Expr(Expr::Call {
                         name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
@@ -748,7 +761,7 @@ impl Compiler {
                     }),
                 ])
             });
-            let right_assign = Self::ternary_branch_assign(right, &args[2]);
+            let right_assign = Self::ternary_branch_assign(right, call.value);
             let (cond, then_assign, else_assign) = match op {
                 crate::token_kind::TokenKind::SlashSlash => (
                     Expr::Call {
@@ -788,9 +801,10 @@ impl Compiler {
             ]);
             self.compile_expr(&desugared);
             return;
-        } else if name == crate::lvalue_call::ASSIGN_CALLABLE
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignCallable(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() == 3
-            && let Expr::ArrayLiteral(targets) = &args[0]
+            && let Expr::ArrayLiteral(targets) = call.callable
             && targets.iter().all(|t| {
                 matches!(
                     t,
@@ -812,7 +826,7 @@ impl Compiler {
             // inherit it — its own result value is genuinely consumed here.
             let sunk_result = std::mem::take(&mut self.sunk_list_assign_result);
             // 1. Compile the RHS and flatten to a list
-            self.compile_expr(&args[2]);
+            self.compile_expr(call.value);
             // Store RHS in a temp variable for indexing
             let tmp_name = format!(
                 "__mutsu_destructure_assign_tmp_{}",
@@ -1108,14 +1122,15 @@ impl Compiler {
                 .collect();
             self.compile_expr(&Expr::ArrayLiteral(result_targets));
             return;
-        } else if name == crate::lvalue_call::ASSIGN_METHOD
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignMethod(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() >= 4
             && let Expr::Index {
                 target: index_target,
                 index: index_key,
                 is_positional: index_is_positional,
                 ..
-            } = &args[0]
+            } = call.invocant
             && let Some(var_name) = self.postfix_index_name(index_target)
         {
             let target_slot = self.local_map.get(&var_name).copied();
@@ -1132,13 +1147,13 @@ impl Compiler {
             let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
             let var_name_idx = self.code.add_constant(Value::str(var_name));
 
-            self.compile_expr(&args[0]);
+            self.compile_expr(call.invocant);
             self.code.emit(OpCode::SetGlobal(tmp_target_idx));
 
             self.code.emit(OpCode::GetGlobal(tmp_target_idx));
-            self.compile_expr(&args[1]);
-            self.compile_expr(&args[2]);
-            self.compile_expr(&args[3]);
+            self.compile_expr(call.method);
+            self.compile_expr(call.method_args);
+            self.compile_expr(call.value);
             self.code.emit(OpCode::LoadConst(tmp_target_idx));
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,
@@ -1169,12 +1184,13 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;
-        } else if name == crate::lvalue_call::ASSIGN_METHOD
+        } else if let Some(crate::lvalue_call::LvalueCall::AssignMethod(call)) =
+            crate::lvalue_call::classify(name.as_str(), args)
             && args.len() >= 4
             && let Expr::Index {
                 target: index_target,
                 ..
-            } = &args[0]
+            } = call.invocant
             && matches!(index_target.as_ref(), Expr::Index { .. })
             && index_target.index_root().container_var_key().is_some()
         {
@@ -1194,13 +1210,13 @@ impl Compiler {
             let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name));
             let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
 
-            self.compile_expr(&args[0]);
+            self.compile_expr(call.invocant);
             self.code.emit(OpCode::SetGlobal(tmp_target_idx));
 
             self.code.emit(OpCode::GetGlobal(tmp_target_idx));
-            self.compile_expr(&args[1]);
-            self.compile_expr(&args[2]);
-            self.compile_expr(&args[3]);
+            self.compile_expr(call.method);
+            self.compile_expr(call.method_args);
+            self.compile_expr(call.value);
             self.code.emit(OpCode::LoadConst(tmp_target_idx));
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,

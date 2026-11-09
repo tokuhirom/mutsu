@@ -38,7 +38,7 @@ Three steps, one PR each; this ADR is accepted per step, the first being ready n
    ratchet in `check-frontend-debt` counts quoted spellings outside the module; its ceiling is 0.
    No behaviour change and no precompilation-cache bump (the name is serialized, its value is
    unchanged).
-2. **One constructor and one reader.** (Constructors landed: `assign_method` with `AssignMethodHints`, `assign_named_sub`, `assign_callable`; the `INDEX_*` and `INCDEC_NAMED_SUB` producers and the readers are next.) `lvalue_call` gains constructors for each form
+2. **One constructor and one reader.** (Constructors landed for all six forms. The compile-side reader landed too: `lvalue_call::classify` answers an `LvalueCall` with named arguments for the assign-method, assign-named-sub, assign-callable and incdec forms, and the compiler, the TRIR front end and `rakuast/assign_writeback.rs` use it instead of `args[n]`. The VM and the runtime builtins read run-time values and the two index forms, which are next.) `lvalue_call` gains constructors for each form
    (`method(invocant, name, args, value)`) and a classifier returning the form and a typed view of the
    arguments, so the argument order is written once and a consumer reads `view.value()` rather than
    `args[3]`. The producers (`parser`, `rakuast/assign_writeback.rs`, `assign_target.rs`,

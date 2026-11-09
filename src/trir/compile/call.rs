@@ -58,8 +58,9 @@ impl TrirCompiler<'_> {
         // must not), and the builtin decides it from the parameter's readonly
         // mark, which only the VM's binder records. Leave the routine to the
         // VM, as a plain assignment to a read-only parameter already is (#10893).
-        if name == crate::lvalue_call::ASSIGN_METHOD
-            && let Some(Expr::Var(n)) = args.first()
+        if let Some(crate::lvalue_call::LvalueCall::AssignMethod(call)) =
+            crate::lvalue_call::classify(name, args)
+            && let Expr::Var(n) = call.invocant
             && let Some(Binding { slot, kind }) = self.binding_of(n)
             && self.slot_is_readonly_param(slot, kind)
         {
