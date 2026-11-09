@@ -147,7 +147,9 @@ pub(super) const fn opaque(
 
 /// The built-in classes whose instances have an opaque shape, beyond the one
 /// each shape is named after: `Lock::Soft` is answered by `Lock`'s methods.
-pub(super) const ALIASES: [(&str, DispatchShape); 2] = [
+pub(super) const ALIASES: [(&str, DispatchShape); 3] = [
     ("Lock::Soft", DispatchShape::Lock),
+    // `Seq.from-loop(&body)`'s iterator: an `Iterator` whose state is its body.
+    ("FromLoopIterator", DispatchShape::Iterator),
     ("Perl", DispatchShape::RakuSystemic),
 ];

@@ -82,9 +82,17 @@ impl crate::Interpreter {
         op: IterOp,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ValueView::Instance { attributes, .. } = target.view() else {
+        let ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } = target.view()
+        else {
             return None;
         };
+        if class_name == "FromLoopIterator" {
+            return Some(self.from_loop_iterator_call(target, op));
+        }
         if let Some(result) = self.map_grep_stream_protocol_call(&attributes, op, args) {
             return Some(result);
         }
@@ -94,6 +102,39 @@ impl crate::Interpreter {
             return Some(result);
         }
         Some(self.array_iterator_call(&attributes, op, args))
+    }
+
+    /// A protocol call on the iterator of `Seq.from-loop(&body)`: each pull runs
+    /// the body once (a body answering `IterationEnd`, or a `last`, ends it).
+    /// Only the stepping methods are implemented; the `push-*` family needs a
+    /// target array and is left to the rows' generic fallbacks.
+    // Cost: one body call per element pulled.
+    fn from_loop_iterator_call(
+        &mut self,
+        target: &Value,
+        op: IterOp,
+    ) -> Result<Value, RuntimeError> {
+        match op {
+            IterOp::PullOne => {
+                let mut pulled = self.pull_from_loop_iterator_to_vec(target, 1)?;
+                Ok(if pulled.is_empty() {
+                    Value::iteration_end()
+                } else {
+                    pulled.remove(0)
+                })
+            }
+            IterOp::SkipOne => {
+                let pulled = self.pull_from_loop_iterator_to_vec(target, 1)?;
+                Ok(Value::int(i64::from(!pulled.is_empty())))
+            }
+            IterOp::SinkAll => {
+                self.pull_from_loop_iterator_to_vec(target, usize::MAX)?;
+                Ok(Value::iteration_end())
+            }
+            _ => Err(RuntimeError::new(
+                "this Seq.from-loop iterator supports pull-one, skip-one and sink-all only",
+            )),
+        }
     }
 
     /// A protocol call on an array-backed iterator.
