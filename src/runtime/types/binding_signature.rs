@@ -4209,6 +4209,18 @@ impl Interpreter {
                                     .cloned();
                                 value = match existing {
                                     Some(cell) => cell,
+                                    // A sigilless caller variable (`my \hit = ...`)
+                                    // owns no Scalar: unless it already holds a
+                                    // cell, binding the parameter to it must not
+                                    // mint one and install it under the caller's
+                                    // name -- a later `=:=` on the parameter would
+                                    // compare a container Rakudo does not have
+                                    // (Monad's `absent(hit)`, racing with threads).
+                                    None if cell_key.starts_with(crate::runtime::term_names::TERM_PREFIX)
+                                        && !value.is_container_ref() =>
+                                    {
+                                        value
+                                    }
                                     None => {
                                         let fresh = !matches!(value.view(), ValueView::ContainerRef(_));
                                         let cell = if fresh {
