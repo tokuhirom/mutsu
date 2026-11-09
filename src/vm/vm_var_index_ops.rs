@@ -566,6 +566,15 @@ impl Interpreter {
                     // nothing can later autovivify it: `my $x := %map<z>` binds
                     // that `Nil`, not a deferred entry that reads back as `Any`.
                     self.stack.push(Value::NIL);
+                } else if resolved.is_immutable_map() {
+                    // A present key of an immutable Map binds the value itself.
+                    // Promoting the slot to a shared cell would rewrite the
+                    // Map's storage in place, and a published Map (a cache
+                    // replaced under a Lock, read lock-free by other threads)
+                    // is read concurrently: the promotion raced with those
+                    // readers' clones of the old slot word (#17149).
+                    self.stack
+                        .push(map.map.get(&key).cloned().unwrap_or(Value::NIL));
                 } else if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {
