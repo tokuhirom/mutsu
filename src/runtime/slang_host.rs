@@ -43,22 +43,24 @@ const MAX_HOOK_DEPTH: u32 = 64;
 const HOST_PRELUDE: &str = r#"
 grammar Mutsu::Slang::Host::Base {
     token end-keyword { » <!before \h* '=>'> }
-    method block() { __mutsu_slang_shim('block', self) }
-    method signature() { __mutsu_slang_shim('signature', self) }
-    method trait() { __mutsu_slang_shim('trait', self) }
+    method block(*@) { __mutsu_slang_shim('block', self) }
+    method signature(*@) { __mutsu_slang_shim('signature', self) }
+    method trait(*@) { __mutsu_slang_shim('trait', self) }
     method routine-def($d?) { __mutsu_slang_shim('routine-def', self) }
     method method-def($d?) { __mutsu_slang_shim('method-def', self) }
     # `<name=.key-origin('rule', 'keyword')>`: the core definition rule `rule`
     # (`routine-def`, `method-def`), matched where the cursor is; `keyword` names the
     # declarator whose origin it records.
     method key-origin(Str $rule, Str $keyword) { self."$rule"($keyword) }
-    method statementlist() { __mutsu_slang_shim('statementlist', self) }
-    method statement() { __mutsu_slang_shim('statement', self) }
+    method statementlist(*@) { __mutsu_slang_shim('statementlist', self) }
+    method statement(*@) { __mutsu_slang_shim('statement', self) }
     # `<blorst>`: a block, or one statement (a `Statement::Expression`).
-    method blorst() { __mutsu_slang_shim('blorst', self) }
-    method arglist() { __mutsu_slang_shim('arglist', self) }
+    method blorst(*@) { __mutsu_slang_shim('blorst', self) }
+    # `<variable>`: `$x`, `@a`, `%h`, `&f`.
+    method variable(*@) { __mutsu_slang_shim('variable', self) }
+    method arglist(*@) { __mutsu_slang_shim('arglist', self) }
     # `<blockoid>`: the braces and statements of a block, as a `Blockoid`.
-    method blockoid() { __mutsu_slang_shim('blockoid', self) }
+    method blockoid(*@) { __mutsu_slang_shim('blockoid', self) }
     # The name a declarator takes (`<.identifier>`).
     token identifier { <.ident> [ <[\-']> <.ident> ]* }
     # A type name (`Int`, `Foo::Bar`), as a `Type::Simple`.

@@ -21,6 +21,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     if rule == "trait" {
         return trait_production(text);
     }
+    if rule == "variable" {
+        return variable_production(text);
+    }
     if rule == "statementlist" {
         return statementlist_production(text);
     }
@@ -107,6 +110,21 @@ fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     let names = NameScope::default();
     let exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
     let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
+    Ok(Some((
+        text.len() - rest.len(),
+        Value::rakuast(Box::new(node)),
+    )))
+}
+
+/// The `<variable>` core rule: the variable at the start of `text` as its
+/// `RakuAST::Var::*` node.
+// Cost: O(n), n = size of the variable.
+fn variable_production(text: &str) -> Result<Option<(usize, Value)>, String> {
+    let Some((rest, expr)) = crate::parser::parse_slang_variable(text) else {
+        return Ok(None);
+    };
+    let names = NameScope::default();
+    let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
     Ok(Some((
         text.len() - rest.len(),
         Value::rakuast(Box::new(node)),

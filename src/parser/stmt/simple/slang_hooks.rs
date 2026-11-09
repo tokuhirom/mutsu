@@ -542,6 +542,22 @@ pub(crate) fn parse_slang_shim_production<'a>(
     }
 }
 
+/// Parse the variable (`$x`, `@a`, `%h`, `&f`, with its twigil) at the start of
+/// `text` for a slang token that calls the core `<variable>`: the text after it
+/// and its expression.
+// Cost: the parse of the variable.
+pub(crate) fn parse_slang_variable(text: &str) -> Option<(&str, Expr)> {
+    use crate::parser::primary::var::{array_var, code_var, hash_var, scalar_var};
+    let parser = match text.chars().next()? {
+        '$' => scalar_var,
+        '@' => array_var,
+        '%' => hash_var,
+        '&' => code_var,
+        _ => return None,
+    };
+    parser(text).ok()
+}
+
 /// Parse the argument list at the start of `text` for a slang token that calls
 /// the core `<arglist>`: the text after it and its arguments.
 // Cost: the parse of the list.
