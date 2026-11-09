@@ -1456,6 +1456,22 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "die" | "fail" => {
+            // `die(1, 2)`: the parentheses are the call's own, so the arguments
+            // are the call's (`die((1, 2))` is the grouped one). A listop `die`
+            // takes the rest of the expression as its one argument.
+            if let Some(inner) = rest.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                if let Some(closed) = inner.strip_prefix(')') {
+                    let (r, _) = ws(closed)?;
+                    return Ok((r, make_call_expr(name, input, vec![])));
+                }
+                if let Ok((after, args)) = crate::parser::primary::parse_call_arg_list(inner) {
+                    let (after, _) = ws(after)?;
+                    if let Ok((after, _)) = parse_char(after, ')') {
+                        return Ok((after, make_call_expr(name, input, args)));
+                    }
+                }
+            }
             let (r, _) = ws(rest)?;
             // die/fail with no argument
             if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {

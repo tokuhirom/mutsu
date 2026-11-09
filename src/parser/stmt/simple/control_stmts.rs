@@ -238,6 +238,16 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     if is_user_declared_sub(listop_name) || is_imported_function(listop_name) {
         return Err(PError::expected("die/fail shadowed by user sub"));
     }
+    // `die(...)` with the parenthesis right after the name is a call: the
+    // general call parser takes it, which keeps `die("S")` apart from
+    // `die ("S")` (RakuAST: `Call::Name` over the arguments, not over a
+    // parenthesised one).
+    // TODO: `fail(...)` stays `Stmt::Fail` -- its opcode records the failure's
+    // origin backtrace, which the call form does not -- so `fail("S")` still
+    // deparses as `fail ("S")`.
+    if !is_fail && rest.starts_with('(') {
+        return Err(PError::expected("die call"));
+    }
     let (rest, _) = ws(rest)?;
     // `die`/`fail` with no argument: followed by `;`, end, `}`, or a statement modifier
     let no_arg = rest.starts_with(';')

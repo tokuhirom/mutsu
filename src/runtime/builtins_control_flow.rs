@@ -119,6 +119,15 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `die "a", "b"`: several arguments are one list payload (the message
+        // joins them), as the parenthesised form `die(("a", "b"))` passes.
+        let listed;
+        let args = if args.len() > 1 {
+            listed = [Value::array(args.to_vec())];
+            &listed[..]
+        } else {
+            args
+        };
         // Check if we have actual arguments (not just an empty array from die())
         let has_real_args = match args.first().map(Value::view) {
             Some(ValueView::Array(items, _)) if items.is_empty() => false,
