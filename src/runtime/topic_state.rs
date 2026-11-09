@@ -48,6 +48,10 @@ pub(crate) struct TopicState {
     pub(crate) in_smartmatch_rhs: bool,
     pub(crate) transliterate_in_smartmatch: bool,
     pub(crate) substitution_in_smartmatch: bool,
+    /// A non-destructive `S///` / `TR///` ran as the right side of a `~~`: the
+    /// copy it made is the smartmatch's value, as for `s///` (never matched
+    /// against the left side).
+    pub(crate) copy_in_smartmatch: bool,
     /// How many regexes with a captured `$_` are being matched right now
     /// (`install_regex_closure_scope`). While non-zero, `$_` inside the regex
     /// is that captured topic, not the match subject.

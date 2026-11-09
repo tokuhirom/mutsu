@@ -349,6 +349,7 @@ impl Interpreter {
         let slash = outcome.slash.clone();
         self.env_mut().assign_match_var(slash.clone());
         self.publish_subst_capture_env(&slash);
+        self.topic_state.copy_in_smartmatch = self.topic_state.in_smartmatch_rhs;
         self.stack.push(Value::str(outcome.text));
         Ok(())
     }

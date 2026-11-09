@@ -198,12 +198,14 @@ impl Interpreter {
         self.topic_state.in_smartmatch_rhs = true;
         self.topic_state.transliterate_in_smartmatch = false;
         self.topic_state.substitution_in_smartmatch = false;
+        self.topic_state.copy_in_smartmatch = false;
         let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
         self.topic_state.in_smartmatch_rhs = saved_in_smartmatch_rhs;
         let was_transliterate = self.topic_state.transliterate_in_smartmatch;
         let was_substitution = self.topic_state.substitution_in_smartmatch;
         self.topic_state.transliterate_in_smartmatch = false;
         self.topic_state.substitution_in_smartmatch = false;
+        let was_copy = std::mem::take(&mut self.topic_state.copy_in_smartmatch);
         // Restore the topic's readonly flag (overridden above for an aliased LHS
         // variable) on every path, including the error path below.
         if let Some(saved) = topic_ro_override {
@@ -411,7 +413,11 @@ impl Interpreter {
         }
         // When RHS was a transliterate (tr///), return the result directly.
         // In Raku, $x ~~ tr/a/b/ returns a StrDistance that stringifies to the after-string.
-        let out = if was_transliterate {
+        let out = if was_copy && !negate {
+            // `S///` / `TR///` over the left side: the copy is the value. (`!~~`
+            // compares the copy with the left side like any other value.)
+            right
+        } else if was_transliterate {
             if negate {
                 // !~~ tr/// — negate the truthiness of the result
                 Value::truth(!right.truthy())

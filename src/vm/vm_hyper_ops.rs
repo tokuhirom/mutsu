@@ -66,6 +66,9 @@ impl Interpreter {
         if self.topic_state.in_smartmatch_rhs && !non_destructive {
             self.topic_state.transliterate_in_smartmatch = true;
         }
+        if self.topic_state.in_smartmatch_rhs && non_destructive {
+            self.topic_state.copy_in_smartmatch = true;
+        }
         // tr/// (destructive) returns a StrDistance object holding both the
         // original and the transliterated string; it stringifies to `after`.
         // TR/// (non-destructive) returns a plain Str with the translated text.
