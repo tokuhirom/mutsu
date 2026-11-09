@@ -2684,11 +2684,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 super::composition_source::view_node(names, source, &spelled.expr)
             }
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
-            Spelling::CompilerVar(written) => {
-                super::compiler_var::view_folded(written, &spelled.expr)
-            }
-            // Only a hash literal entry reads this (`hash_literal`); anywhere
-            // else the value is just the expression.
+            Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
             Spelling::ColonPairValue(_) => view_expr(names, &spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
