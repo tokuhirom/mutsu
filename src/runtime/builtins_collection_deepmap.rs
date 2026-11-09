@@ -794,8 +794,13 @@ impl Interpreter {
                 }
                 Ok(Value::hash_with_data(mapped_hash(&map, result)))
             }
-            // Single value: apply the block directly
-            _ => self.call_sub_value(block.clone(), vec![target.clone()]),
+            // A single value is a one-element list for nodemap (rakudo:
+            // `5.nodemap(*+1)` is `(6,)`), also for a RakuAST node.
+            _ => match self.call_sub_value(block.clone(), vec![target.clone()]) {
+                Ok(v) => Ok(Value::array(vec![v])),
+                Err(e) if e.is_next() => Ok(Value::array(Vec::new())),
+                Err(e) => Err(e),
+            },
         }
     }
 
