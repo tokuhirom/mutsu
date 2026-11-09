@@ -3088,7 +3088,7 @@ impl Interpreter {
                     return spec.to_string();
                 }
                 let spec = pun_pseudo_type(spec, owner_class);
-            let spec = loan_env!(self, resolved_type_capture_name(&spec));
+                let spec = loan_env!(self, resolved_type_capture_name(&spec));
                 self.resolve_method_type_name(owner_class, &spec)
             });
 
