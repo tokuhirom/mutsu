@@ -118,13 +118,44 @@ impl Interpreter {
         err
     }
 
+    /// The payload of `die LIST` with ONE list argument (`die <x y>`,
+    /// `die @a`, `die (1, 2)`): an `X::AdHoc` whose payload is the list and
+    /// whose message is the list's `.Str` (`x y`). Several arguments
+    /// (`die 1, 2`) never get here -- they are concatenated by the caller.
+    // Cost: O(n), n = elements of the list.
+    pub(crate) fn die_single_list_arg(&mut self, val: Value) -> Value {
+        let ValueView::Array(items, _) = val.view() else {
+            return val;
+        };
+        if items.is_empty() {
+            return val;
+        }
+        let mut parts = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            let s = self.call_method_with_values(item.clone(), "Str", vec![])
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|_| item.to_string_value());
+            parts.push(s);
+        }
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("payload".to_string(), val.clone());
+        attrs.insert("message".to_string(), Value::str(parts.join(" ")));
+        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+    }
+
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // `die "a", "b"`: several arguments are one list payload (the message
-        // joins them), as the parenthesised form `die(("a", "b"))` passes.
-        let listed;
+        // Several arguments are one list of messages (`die "a", "b"` is `ab`);
+        // a single List argument (`die <x y>`, `die @a`) is one value whose
+        // message is its `.Str` (`x y`).
+        let rewritten;
         let args = if args.len() > 1 {
-            listed = [Value::array(args.to_vec())];
-            &listed[..]
+            rewritten = [Value::array(args.to_vec())];
+            &rewritten[..]
+        } else if let [one] = args
+            && matches!(one.view(), ValueView::Array(items, _) if !items.is_empty())
+        {
+            rewritten = [self.die_single_list_arg(one.clone())];
+            &rewritten[..]
         } else {
             args
         };

@@ -6647,8 +6647,12 @@ impl Interpreter {
             // Cost: O(1) amortized at the throw: the backtrace string and structured Backtrace
             // are captured as a shared stack snapshot and rendered only when read
             // (attach_lazy_backtrace_to_error).
-            OpCode::Die { user_throw } => {
+            OpCode::Die {
+                user_throw,
+                list_arg,
+            } => {
                 let user_throw = *user_throw;
+                let list_arg = *list_arg;
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support
@@ -6664,6 +6668,11 @@ impl Interpreter {
                     } else {
                         Value::NIL
                     }
+                } else {
+                    val
+                };
+                let val = if list_arg {
+                    self.die_single_list_arg(val)
                 } else {
                     val
                 };

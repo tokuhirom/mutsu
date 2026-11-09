@@ -1,0 +1,18 @@
+use Test;
+plan 14;
+try die "a", "b"; is $!.message, "ab", 'die "a","b" with try';
+try die <x y>; is $!.message, "x y", 'die <x y>';
+try die (1,2); is $!.message, "1 2", 'die (1,2)';
+my @a = <p q>;
+try die @a; is $!.message, "p q", 'die @a';
+try die <x y>, "z"; is $!.message, "x yz", 'die <x y>, "z"';
+try { die "a", "b" }; is $!.message, "ab", 'statement several args';
+try { die <x y> }; is $!.message, "x y", 'statement qw list';
+try { die (1,2) }; is $!.message, "1 2", 'statement paren list';
+try { die @a }; is $!.message, "p q", 'statement array';
+try { die("a", "b") }; is $!.message, "ab", 'call form several args';
+try { die((1,2)) }; is $!.message, "1 2", 'call form one list';
+my $p = 1;
+try { die($p, 42) }; is $!.payload[0], 1, 'payload keeps the argument list';
+try { die "plain" }; is $!.payload, "plain", 'single scalar payload';
+my $r = (try die "q", "r"); is $!.message, "qr", 'expression form value position';

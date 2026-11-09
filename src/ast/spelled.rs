@@ -141,6 +141,18 @@ impl Expr {
 }
 
 impl Expr {
+    /// The argument of a `die` as written: the parser groups a lone `<x y>`
+    /// to tell it from several arguments, but the source has no parentheses.
+    // Cost: O(1).
+    pub(crate) fn written_list_arg(&self) -> &Expr {
+        match self {
+            Expr::Grouped(inner) if matches!(&**inner, Expr::Spelled(s) if matches!(s.spelling, Spelling::Words(_))) => {
+                inner
+            }
+            other => other,
+        }
+    }
+
     /// The term itself, without the origin a `.AST` parse attaches around
     /// it once the unit is parsed (ADR-10723 Stage 2, `parser::term_origins`).
     // Cost: O(d), d = nested origin wrappers.

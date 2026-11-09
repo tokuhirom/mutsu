@@ -1482,6 +1482,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 };
                 return Ok((r, call));
             }
+            // A listop `die` takes a LIST of arguments (`die "a", "b"` is two
+            // arguments, concatenated; `die ("a", "b")` and `die <a b>` are one
+            // List argument), so keep the items apart for it.
+            if name == "die" && !rest.starts_with('(') {
+                let (r, items) = die_call_args(r)?;
+                return Ok((r, make_listop_expr(name, input, items)));
+            }
             let (r, arg) = expression(r)?;
             let call = if rest.starts_with('(') {
                 make_call_expr(name, input, vec![arg])
@@ -2985,4 +2992,29 @@ pub(crate) fn sub_after_keyword(rest: &str) -> Result<Option<(&str, Expr)>, PErr
         return Err(PError::expected_at("anonymous sub body '{' or '('", r));
     }
     Ok(None)
+}
+
+/// The comma-separated arguments of a `die` call, each one expression; a
+/// trailing comma ends the list.
+// Cost: O(n), n = source length of the arguments.
+fn die_call_args(input: &str) -> PResult<'_, Vec<Expr>> {
+    let mut items = Vec::new();
+    let (mut r, first) = expression(input)?;
+    items.push(first);
+    loop {
+        let (r2, _) = ws(r)?;
+        let Some(after) = r2.strip_prefix(',') else {
+            return Ok((r, items));
+        };
+        if after.starts_with(',') {
+            return Ok((r, items));
+        }
+        let (after, _) = ws(after)?;
+        if crate::parser::stmt::assign::comma_list_ends_here(after) {
+            return Ok((after, items));
+        }
+        let (next_r, next) = expression(after)?;
+        items.push(next);
+        r = next_r;
+    }
 }

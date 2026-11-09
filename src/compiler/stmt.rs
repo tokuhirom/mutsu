@@ -1430,7 +1430,10 @@ impl Compiler {
                         let err = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
                         let idx = self.code.add_constant(err);
                         self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Die { user_throw: false });
+                        self.code.emit(OpCode::Die {
+                            user_throw: false,
+                            list_arg: false,
+                        });
                         return;
                     }
                     self.constant_vars.insert(spelled.clone());
@@ -1465,7 +1468,10 @@ impl Compiler {
                     );
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // Raku: redeclaring an existing same-scope `my` variable WITHOUT
@@ -2375,7 +2381,10 @@ impl Compiler {
                         );
                         let idx = self.code.add_constant(err);
                         self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Die { user_throw: false });
+                        self.code.emit(OpCode::Die {
+                            user_throw: false,
+                            list_arg: false,
+                        });
                         return;
                     }
                     // `is default(expr)` with a type constraint: check that the
@@ -2418,7 +2427,10 @@ impl Compiler {
                         );
                         let idx = self.code.add_constant(err);
                         self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Die { user_throw: false });
+                        self.code.emit(OpCode::Die {
+                            user_throw: false,
+                            list_arg: false,
+                        });
                         return;
                     }
                     if trait_name == "default" && preapply_container_default {
@@ -2605,7 +2617,10 @@ impl Compiler {
                 {
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // A genuine `$*x = ...` assignment to a never-declared dynamic var
@@ -2837,13 +2852,19 @@ impl Compiler {
                 if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 if let Some(err) = self.check_heredoc_scope_errors(else_branch) {
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // Check if the then_branch uses @_ (bare if blocks receive
@@ -3316,13 +3337,18 @@ impl Compiler {
             }
             Stmt::Die(expr) => {
                 self.compile_expr(expr);
+                // A bare comma list is several arguments; anything else is one.
+                let list_arg = !matches!(expr, Expr::ArrayLiteral(_));
                 // ADR-0072: a user `die` statement. Marked so a resume-capable
                 // CATCH several frames up can be run INLINE here, at the throw
                 // site, and `.resume` simply continues with the next statement.
                 // The other `OpCode::Die` sites are compiler-generated errors,
                 // some of them in value position (their consumer expects one
                 // stack value), so resuming those would leave the stack short.
-                self.code.emit(OpCode::Die { user_throw: true });
+                self.code.emit(OpCode::Die {
+                    user_throw: true,
+                    list_arg,
+                });
             }
             Stmt::Fail(expr) => {
                 // A failed value is stored/propagated -> closure escapes.
@@ -4294,7 +4320,10 @@ impl Compiler {
                 if let Some(err_val) = Self::check_special_form_override(&name.resolve()) {
                     let idx = self.code.add_constant(err_val);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // Validate placeholder conflicts for subs with implicit params
@@ -4305,7 +4334,10 @@ impl Compiler {
                 {
                     let idx = self.code.add_constant(err_val);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // Compile-time check: assignment to native-typed read-only
@@ -4315,7 +4347,10 @@ impl Compiler {
                 {
                     let idx = self.code.add_constant(err_val);
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
+                    self.code.emit(OpCode::Die {
+                        user_throw: false,
+                        list_arg: false,
+                    });
                     return;
                 }
                 // The hoist pass registers its copy of a body-local declaration
@@ -5066,7 +5101,10 @@ impl Compiler {
                         let err = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
                         let cidx = self.code.add_constant(err);
                         self.code.emit(OpCode::LoadConst(cidx));
-                        self.code.emit(OpCode::Die { user_throw: false });
+                        self.code.emit(OpCode::Die {
+                            user_throw: false,
+                            list_arg: false,
+                        });
                         return;
                     }
                     self.class_names_current_scope

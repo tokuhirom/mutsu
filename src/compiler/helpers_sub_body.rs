@@ -294,7 +294,10 @@ impl Compiler {
         if let Some(err) = self.check_heredoc_scope_errors(body) {
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
+            self.code.emit(OpCode::Die {
+                user_throw: false,
+                list_arg: false,
+            });
             return None;
         }
         // Only a spec the parser can classify sinks the body here; an

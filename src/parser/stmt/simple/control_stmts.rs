@@ -269,7 +269,25 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     // word-logical would run: `die X and Y` is `(die X) and Y`, so `die` throws
     // (or `fail` returns a Failure) with `X` and the tail is dead code. Parse the
     // argument no-word-logical and consume (discard) any trailing tail.
+    let rest_before_arg = rest;
     let (rest, expr) = parse_comma_or_expr_item_no_word_logical(rest)?;
+    // `die <x y>` is ONE List argument, `die "x", "y"` is two: both parse to an
+    // `ArrayLiteral`, so mark a lone bare list as a group when no comma follows
+    // its first item.
+    let expr = if !is_fail
+        && match &expr {
+            Expr::ArrayLiteral(_) => true,
+            Expr::Spelled(spelled) => matches!(spelled.expr, Expr::ArrayLiteral(_)),
+            _ => false,
+        }
+        && let Ok((after_first, _)) =
+            crate::parser::expr::expression_no_word_logical(rest_before_arg)
+        && !ws(after_first).is_ok_and(|(r, _)| r.starts_with(','))
+    {
+        Expr::Grouped(Box::new(expr))
+    } else {
+        expr
+    };
     // `die $x:` / `fail $x:` is the listop invocant colon: `$x.die` / `$x.fail`.
     // Neither method exists on `Str`, so Rakudo raises X::Method::NotFound —
     // which is the whole point. Dropping the colon and dying with `$x` instead
