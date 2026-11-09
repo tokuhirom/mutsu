@@ -1278,6 +1278,13 @@ impl Interpreter {
                 &args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
             )
             .unwrap_or(Value::NIL)),
+            // Cost: O(1) plus the MAIN call.
+            "__mutsu_dispatch_main" => {
+                if !self.is_halted() {
+                    self.dispatch_main(&crate::opcode::CompiledFns::default())?;
+                }
+                Ok(Value::NIL)
+            }
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(&args),

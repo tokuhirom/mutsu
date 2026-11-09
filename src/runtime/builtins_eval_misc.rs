@@ -375,7 +375,21 @@ impl Interpreter {
             let caller_version = crate::parser::current_language_version();
             let lowered = crate::rakuast::lower(&names, node);
             crate::parser::set_current_language_version(&caller_version);
-            let stmts = lowered?;
+            let mut stmts = lowered?;
+            // A whole unit (`.AST` of a program) that declares `sub MAIN` runs
+            // it after its mainline, inside the unit, as rakudo does.
+            if matches!(
+                node.class,
+                crate::rakuast::RakuAstClass::CompUnit | crate::rakuast::RakuAstClass::StatementList
+            ) && stmts.iter().any(|s| {
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+            }) {
+                stmts.push(Stmt::Expr(crate::ast::Expr::Call {
+                    name: crate::symbol::Symbol::intern("__mutsu_dispatch_main"),
+                    args: Vec::new(),
+                    listop: false,
+                }));
+            }
             // The tree is the unit `$*CU` names while it compiles.
             let _unit = crate::unit_source_text::UnitSourceTextGuard::enter_tree(first_arg.clone());
             // Pod blocks written into the tree are the unit's `$=pod`, which
