@@ -250,8 +250,43 @@ fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
     }
 }
 
-/// Parse a colon pair entry inside a hash literal: :name(expr), :name, :!name, :Nname
+/// One `:name...` entry of a hash literal body: the key and its value, the
+/// value wrapped to remember the colonpair form it was written as (`:2b`,
+/// `:!b`, `:b(1)`, `:b<x>`, ...), which a `(key, value)` entry cannot say.
+// Cost: O(n), n = size of the entry.
 fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
+    use crate::ast::BinaryForm;
+    let (rest, pair) = crate::parser::primary::misc::colonpair::colonpair_expr(input)?;
+    if let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        right,
+        form,
+    } = pair
+        && let Expr::Literal(key) = &*left
+        && let ValueView::Str(key) = key.view()
+    {
+        let key = key.to_string();
+        return Ok(match form {
+            BinaryForm::ColonPairTrue => (rest, (key, None)),
+            BinaryForm::Infix => (rest, (key, Some(*right))),
+            form => (
+                rest,
+                (
+                    key,
+                    Some(Expr::spelled(*right, || {
+                        crate::ast::spelled::Spelling::ColonPairValue(form)
+                    })),
+                ),
+            ),
+        });
+    }
+    parse_colon_pair_entry_legacy(input)
+}
+
+/// The entry parser for a colonpair shape `colonpair_expr` does not build.
+/// Parse a colon pair entry inside a hash literal: :name(expr), :name, :!name, :Nname
+fn parse_colon_pair_entry_legacy(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let r = input
         .strip_prefix(':')
         .ok_or_else(|| PError::expected("':'"))?;

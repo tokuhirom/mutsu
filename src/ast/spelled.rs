@@ -90,6 +90,10 @@ pub(crate) enum Spelling {
     /// `$?LINE`, `$?FILE`, `$?TABSTOP`: a compiler variable the parser folded
     /// into its literal; the written name.
     CompilerVar(Box<str>),
+    /// The value of a colonpair written inside a hash literal (`{:2b, :!c}`),
+    /// whose `(key, value)` entry keeps no pair node: the colonpair family
+    /// (`ColonPair::Number`, `::False`, ...) the entry was written as.
+    ColonPairValue(crate::ast::BinaryForm),
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

@@ -2684,9 +2684,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 super::composition_source::view_node(names, source, &spelled.expr)
             }
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
-            Spelling::CompilerVar(written) => {
-                super::compiler_var::view_folded(written, &spelled.expr)
-            }
+            Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
+            Spelling::ColonPairValue(_) => view_expr(names, &spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -6203,7 +6202,7 @@ pub(super) fn regex_arg_list(
 /// The colonpair node `form` says `expr` was written as, or `None` for a pair
 /// the dedicated helpers cannot render (the `=>` rendering then applies).
 // Cost: O(n), n = size of the pair.
-fn colonpair_spelling(
+pub(super) fn colonpair_spelling(
     names: &NameScope,
     expr: &Expr,
     form: crate::ast::BinaryForm,
