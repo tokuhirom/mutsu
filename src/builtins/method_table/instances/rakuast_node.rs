@@ -137,6 +137,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // `RakuAST::Routine.meta-object`: the routine the unit declares, else the
+    // closure a slang-built node stands for.
+    MethodRow {
+        owner: "RakuAST::Routine",
+        name: "meta-object",
+        arity: 0,
+        handler: Handler::Interp(routine_meta_object),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // An imported routine (`use Test; plan`) and a unit-declared package.
     MethodRow {
         owner: "RakuAST::Declaration::Import",
@@ -1024,4 +1034,28 @@ fn deparse(
         return Some(Err(e));
     }
     Some(interp.call_function("MUTSU_DEPARSE::run", call_args))
+}
+
+/// `Routine.meta-object` of a `RakuAST::Sub` / `Method` / `Submethod`: the
+/// routine the unit declares, else (a node a slang built and has not attached
+/// yet) the routine the node stands for as a closure of its own, which a tool
+/// can call or read the signature of.
+// Cost: O(size of the routine node).
+pub(super) fn routine_meta_object(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    if let Some(Ok(declared)) = sub_value(interp, target, args, named)
+        && !declared.is_nil()
+    {
+        return Some(Ok(declared));
+    }
+    let mut anonymous = node.clone();
+    anonymous.fields.retain(|f| f.name != Some("name"));
+    Some(interp.eval_rakuast_node(&Value::rakuast(Box::new(anonymous))))
 }

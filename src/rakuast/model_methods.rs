@@ -136,7 +136,12 @@ pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
     }
     if matches!(
         class,
-        RakuAstClass::Parameter | RakuAstClass::Block | RakuAstClass::PointyBlock
+        RakuAstClass::Parameter
+            | RakuAstClass::Block
+            | RakuAstClass::PointyBlock
+            | RakuAstClass::Sub
+            | RakuAstClass::Method
+            | RakuAstClass::Submethod
     ) {
         names.push("meta-object");
     }
