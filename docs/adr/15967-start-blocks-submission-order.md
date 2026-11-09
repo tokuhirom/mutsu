@@ -246,3 +246,11 @@ ADR-0105 §5 also rejected.
   true while lexicals reached threads by name; ADR-16595 removes that reason, and §2.2/§2.3 show
   the clone is both the cost and a divergence.
 - **A single-threaded pool for `start` bursts**, or a GIL: removes real parallelism.
+
+## 9. Amendment (2026-11-09): MCP::Server 0.7.2 is not a test target
+
+User decision after acceptance: because `t/21`'s outcome depends on the test environment (§2.1),
+the current MCP::Server release (0.7.2) is excluded from the ecosystem sweep and queue rather
+than kept as a nondeterministic `partial` (§5's #14684 row and §7's last bullet). The exclusion
+is pinned to that release (`MCP::Server@0.7.2` in `ecosystem/exclude.txt`, a version-pinned
+entry form added for it), so a new release is measured again automatically.

@@ -29,7 +29,7 @@ scripts/ecosystem-ledger.sh status   # which ledger commit you have
 | `index-snapshot.json` | `ecosystem-data` | which ecosystem index snapshot the run drew from (fez + REA, with digests) |
 | `summary.json` / `summary.md` | `ecosystem-data` | generated rollup — **do not edit**, regenerate with `--rollup` |
 | `history.tsv` / `history.svg` | `ecosystem-data` | one row per full sweep, and its chart — the KPI over time |
-| `exclude.txt` | `main` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering |
+| `exclude.txt` | `main` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering; a `Name@version` entry excludes one release only |
 | `accepted-divergences.toml` | `main` | hand-maintained — single test files whose rakudo pass rests on an artefact mutsu decided not to copy, pinned to the exact failure shape (ADR-0130) |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
@@ -166,6 +166,15 @@ already rejected outright ever spoofing `.name`) — add it to `exclude.txt` wit
 a one-line reason citing the issue/ADR, alongside filing the finding as a
 `tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the queue
 re-offers it and the next agent re-investigates the same dead end from scratch.
+
+**When a release's own suite depends on rakudo's implementation state** — it
+passes on rakudo only by accident (a pool size, a scheduling order) and fails
+there too when that state differs, so it is a test assumption rather than a
+mutsu gap — and the user decides the release is not a test target, pin the
+entry to that release: `Dist::Name@<version> <reason>`. The tools skip that
+version only; once the index carries a new release it is measured and queued
+again, and the stale line can be deleted then. Worked example: `MCP::Server@0.7.2`
+(its `t/21` subtest fails 3/10 on a warm-pool rakudo, ADR-15967 §2.1).
 
 **The `MoarVM::` namespace is out of scope** (user decision 2026-10-23). Those
 distributions inspect or drive MoarVM itself (its bytecode files, its profiler

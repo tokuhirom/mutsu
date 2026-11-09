@@ -16,7 +16,14 @@
 # its own): every entry here is a distribution rakudo passes and mutsu,
 # correctly, cannot -- see each reason below and the ADR/issue it cites.
 #
+# A second kind of entry pins one release: a distribution whose own suite rakudo
+# passes only by accident of rakudo's implementation state (a test-side
+# assumption, not a mutsu gap), excluded until a new release may have fixed it.
+# The pin stops applying as soon as the index shows another version, so the
+# next release is measured again with no one having to delete the line.
+#
 # Format: <Dist::Name> <one-line reason, ideally citing an issue and/or ADR>
+#     or: <Dist::Name>@<version> <one-line reason>   (that release only)
 # Blank lines and lines whose first non-blank character is `#` are ignored.
 # Keep sorted by name.
 
@@ -24,6 +31,7 @@ App::MoarVM::Debug -- the MoarVM:: namespace is out of scope (user decision 2026
 App::MoarVM::HeapAnalyzer::Model #15808 -- the MoarVM:: namespace is out of scope (user decision 2026-10-31): it analyses MoarVM heap snapshots (and relies on rakudo's hidden deprecated core `from-json`, which mutsu will not add); mutsu is not a MoarVM.
 Gauge #15266 -- its first statement dies on `$*VM.version < v2022.04`, the MoarVM release coordinate; mutsu is not a MoarVM and will not report one, and the module is not handled until it supports mutsu (user decision 2026-10-29). `--only Gauge` still measures it for a re-check once the module changes.
 LibraryMake #12829 -- get-vars dispatches on $*VM.name (moar/jvm) and dies on anything else; mutsu reports 'mutsu' and will not report 'moar' (same principle as ADR-0104; user decision 2026-09-25, see uniprop).
+MCP::Server@0.7.2 #14684 -- its t/21-elicitation-dispatch subtest "A round that answers only some of the questions" depends on rakudo's thread-pool state, not on a language guarantee: it passes 10/10 on a cold rakudo (one worker, FIFO) and 7/10 on rakudo once the pool is warm, the same subtest failing (ADR-15967 §2.1/§3). The current release is not a test target (user decision 2026-11-09); a new release is measured again.
 MoarVM::Bytecode #13511 -- its suite parses CORE.c.setting.moarvm found under $*EXECUTABLE.parent(3) (the running compiler's install tree); mutsu is not a MoarVM and ships no .moarvm files, so it can only pass by pointing at a rakudo install.
 MoarVM::Profile -- the MoarVM:: namespace is out of scope (user decision 2026-10-23): it reads MoarVM's own profiler output; mutsu is not a MoarVM.
 MoarVM::Remote -- the MoarVM:: namespace is out of scope (user decision 2026-10-23): it drives MoarVM's remote debug protocol (its suite spawns `nqp`/moar); mutsu is not a MoarVM.

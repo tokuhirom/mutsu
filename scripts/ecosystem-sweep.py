@@ -632,7 +632,8 @@ def select(index, args):
     excluded = eco.load_exclude(EXCLUDE_LIST)
     if excluded:
         before = len(names)
-        names = [n for n in names if n not in excluded]
+        names = [n for n in names
+                 if not eco.is_excluded(excluded, n, index.targets[n].get("version"))]
         if before != len(names):
             log(f"excluding {before - len(names)} distribution(s) listed in "
                 f"ecosystem/exclude.txt (use --only to measure one anyway)")
@@ -877,12 +878,17 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         EXCLUDE_LIST = os.path.join(tmp, "exclude.txt")
         with open(EXCLUDE_LIST, "w", encoding="utf-8") as fh:
-            fh.write("Excluded::Dist reason\n")
-        index = eco.Index({"Good::Dist": {}, "Excluded::Dist": {}}, {}, {}, {})
+            fh.write("Excluded::Dist reason\n"
+                     "Pinned::Old@1.0 reason\n"
+                     "Pinned::New@1.0 reason\n")
+        index = eco.Index({"Good::Dist": {}, "Excluded::Dist": {},
+                           "Pinned::Old": {"version": "1.0"},
+                           "Pinned::New": {"version": "1.1"}}, {}, {}, {})
         base_args = dict(only=[], prefix=None, status=None, stale=False)
         got = select(index, argparse.Namespace(**base_args))
-        check("a bulk selection drops the excluded distribution",
-              got == ["Good::Dist"])
+        check("a bulk selection drops the excluded distribution and the pinned release, "
+              "but measures a newer release of a pinned one",
+              got == ["Good::Dist", "Pinned::New"])
         got = select(index, argparse.Namespace(**{**base_args, "only": ["Excluded::Dist"]}))
         check("--only still measures an excluded distribution",
               got == ["Excluded::Dist"])

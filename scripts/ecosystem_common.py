@@ -670,14 +670,21 @@ def record_filename(dist: str) -> str:
     return f"{stem}~{digest}.json"
 
 
-def load_exclude(path: str) -> dict[str, str]:
+def load_exclude(path: str) -> dict[str, tuple[str | None, str]]:
     """Distributions the ecosystem tools must never pick automatically.
 
-    One entry per line: `<Dist::Name>  <freeform reason...>`. A line whose
-    first non-blank character is `#`, and every blank line, is ignored -- so
-    the file can carry a header comment and per-entry context the way
+    One entry per line: `<Dist::Name>  <freeform reason...>`, or
+    `<Dist::Name>@<version>  <freeform reason...>` to exclude only that
+    release: the entry stops applying once the index (or a record) shows any
+    other version, so a new release is measured and queued again without
+    anyone having to remember to delete the line. A line whose first
+    non-blank character is `#`, and every blank line, is ignored -- so the
+    file can carry a header comment and per-entry context the way
     `flaky-tests.txt` does. Missing file means no exclusions, so a fresh
     checkout needs nothing special.
+
+    Returns `{dist: (version or None, reason)}`; test membership with
+    [`is_excluded`], never with `in`, so a version-pinned entry is honoured.
 
     An entry belongs here only when the distribution was investigated and
     found permanently unfixable without a decision the project has already
@@ -693,18 +700,34 @@ def load_exclude(path: str) -> dict[str, str]:
     """
     if not os.path.isfile(path):
         return {}
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str | None, str]] = {}
     with open(path, encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            name, _, reason = line.partition(" ")
-            name = name.strip()
+            key, _, reason = line.partition(" ")
+            name, at, version = key.strip().partition("@")
+            if at and not version:
+                raise SystemExit(f"{path}:{lineno}: {key} names no version after '@'")
             if name in out:
                 raise SystemExit(f"{path}:{lineno}: {name} is listed twice")
-            out[name] = reason.strip()
+            out[name] = (version or None, reason.strip())
     return out
+
+
+def is_excluded(exclude: dict[str, tuple[str | None, str]], dist: str,
+                version: str | None) -> bool:
+    """Whether `dist` at `version` is excluded by a [`load_exclude`] table.
+
+    A bare-name entry excludes every version; a `name@version` entry only that
+    exact version string (an unknown version is not that version).
+    """
+    entry = exclude.get(dist)
+    if entry is None:
+        return False
+    pinned, _reason = entry
+    return pinned is None or pinned == version
 
 
 # The keys of a `shape` in `ecosystem/accepted-divergences.toml`: the fields of
@@ -964,10 +987,12 @@ def _self_test() -> int:
             fh.write("# header comment\n\n"
                      "Rakudo::Version  #8945  gates on .name; ADR-0104\n"
                      "BareName\n"
+                     "Pinned::Dist@1.2.3 #1 its suite depends on the pool state\n"
                      "  # indented comment\n")
         got = load_exclude(excl)
-        want = {"Rakudo::Version": "#8945  gates on .name; ADR-0104",
-                "BareName": ""}
+        want = {"Rakudo::Version": (None, "#8945  gates on .name; ADR-0104"),
+                "BareName": (None, ""),
+                "Pinned::Dist": ("1.2.3", "#1 its suite depends on the pool state")}
         if got != want:
             print(f"load_exclude: want {want!r}, got {got!r}", file=sys.stderr)
             failures += 1
@@ -977,6 +1002,36 @@ def _self_test() -> int:
         try:
             load_exclude(excl)
             print("load_exclude: a duplicate name did not raise", file=sys.stderr)
+            failures += 1
+        except SystemExit:
+            pass
+
+        # A pinned entry excludes only its own release; a bare name excludes
+        # every release; an unlisted name nothing.
+        for dist, version, expect in (("Pinned::Dist", "1.2.3", True),
+                                      ("Pinned::Dist", "1.2.4", False),
+                                      ("Pinned::Dist", None, False),
+                                      ("BareName", "9", True),
+                                      ("Other", "1.2.3", False)):
+            if is_excluded(got, dist, version) != expect:
+                print(f"is_excluded({dist!r}, {version!r}) != {expect}", file=sys.stderr)
+                failures += 1
+
+        with open(excl, "w", encoding="utf-8") as fh:
+            fh.write("Dup@1 one\nDup two\n")
+        try:
+            load_exclude(excl)
+            print("load_exclude: a name listed twice (one pinned) did not raise",
+                  file=sys.stderr)
+            failures += 1
+        except SystemExit:
+            pass
+
+        with open(excl, "w", encoding="utf-8") as fh:
+            fh.write("NoVersion@ reason\n")
+        try:
+            load_exclude(excl)
+            print("load_exclude: an empty pinned version did not raise", file=sys.stderr)
             failures += 1
         except SystemExit:
             pass
