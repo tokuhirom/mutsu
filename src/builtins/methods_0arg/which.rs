@@ -58,6 +58,35 @@ pub(crate) fn has_value_identity(v: &Value) -> bool {
     }
 }
 
+/// The name a type object's identity is keyed by: the pun class of a role
+/// with defaulted parameters is registered as `Box\0default[Any]`, but it is
+/// the very type `Box.^pun` answers, so both key as `Box` (#17206). The
+/// composed name of a `but`-mixed type object (`Box\0default[Any]+{Marker}`)
+/// loses the same segment, so `T.WHICH` and `T.make(1).WHAT.WHICH` agree.
+// Cost: O(n), n = length of the name.
+pub(crate) fn type_identity_name(name: &str) -> std::borrow::Cow<'_, str> {
+    const MARK: &str = "\u{0}default[";
+    let Some(start) = name.find(MARK) else {
+        return std::borrow::Cow::Borrowed(name);
+    };
+    let mut depth = 0usize;
+    for (i, c) in name[start + MARK.len() - 1..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    let end = start + MARK.len() - 1 + i + 1;
+                    let rest = type_identity_name(&name[end..]);
+                    return std::borrow::Cow::Owned(format!("{}{}", &name[..start], rest));
+                }
+            }
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Borrowed(name)
+}
+
 /// The identity of `target`: `ValueObjAt` for a value type (content-keyed),
 /// `ObjAt` for a reference type.
 // Cost: O(1) for a scalar or a container (a per-container id); O(n) for a
@@ -103,11 +132,20 @@ pub(crate) fn which_of(target: &Value) -> Value {
     // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
     let is_value_type = has_value_identity(target);
     let which_str = match target.view() {
-        ValueView::Package(name) => format!(
-            "{}|U{}",
-            crate::value::user_facing_type_name(&name.resolve()),
-            crate::value::which_id::shown(name.id() as u64)
-        ),
+        ValueView::Package(name) => {
+            let resolved = name.resolve();
+            let key = type_identity_name(&resolved);
+            let id = if key.len() == resolved.len() {
+                name.id()
+            } else {
+                Symbol::intern(&key).id()
+            };
+            format!(
+                "{}|U{}",
+                crate::value::user_facing_type_name(&resolved),
+                crate::value::which_id::shown(id as u64)
+            )
+        }
         ValueView::CustomType(c) => {
             format!(
                 "{}|U{}",
@@ -328,6 +366,18 @@ pub(crate) fn which_of(target: &Value) -> Value {
         }
         // A `but`-mixed object keeps the identity of the object it wraps under
         // the mixin's own type name (`G+{R}|<id>`, rakudo's format).
+        // A mixed-in TYPE OBJECT is keyed like the composed class its
+        // instances carry (`Box+{Marker}|U<id of that name>`), so
+        // `T.WHICH eq T.make(1).WHAT.WHICH` (#17206).
+        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Package(_)) => {
+            let composed = crate::value::types::what_type_name(target);
+            let key = type_identity_name(&composed);
+            format!(
+                "{}|U{}",
+                composed,
+                crate::value::which_id::shown(Symbol::intern(&key).id() as u64)
+            )
+        }
         ValueView::Mixin(inner, _) => {
             let inner_which = which_of(inner).to_string_value();
             let id = inner_which

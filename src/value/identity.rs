@@ -58,7 +58,27 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             }
             let a_name = a.resolve();
             let b_name = b.resolve();
-            canonical_meta_name(&a_name) == canonical_meta_name(&b_name)
+            // The pun class of a role with defaulted parameters is the type
+            // `R.^pun` answers (#17206).
+            use crate::builtins::methods_0arg::which::type_identity_name;
+            type_identity_name(canonical_meta_name(&a_name))
+                == type_identity_name(canonical_meta_name(&b_name))
+        }
+        // A `but`-mixed type object (`Box.^pun but Marker`) is the composed
+        // class its instances' `.WHAT` answers (#17206).
+        (ValueView::Mixin(inner, mixins), ValueView::Package(name))
+        | (ValueView::Package(name), ValueView::Mixin(inner, mixins))
+            if matches!(inner.view(), ValueView::Package(_))
+                && crate::value::role_mixin_suffix(&mixins).is_some() =>
+        {
+            use crate::builtins::methods_0arg::which::type_identity_name;
+            let composed = if left.is_mixin_value() {
+                crate::value::types::what_type_name(left)
+            } else {
+                crate::value::types::what_type_name(right)
+            };
+            let other = name.resolve();
+            type_identity_name(&composed) == type_identity_name(&other)
         }
         // A parameterized role type object is one type per distinct argument
         // list (`R[Str, Int] === R[Str, Int]`).
