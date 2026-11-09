@@ -502,7 +502,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         StatementUse => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
         StatementRequire => &[
-            ("module-name", Absent::Required),
+            ("module-name", Absent::TypeObject("RakuAST::Name")),
             ("file", EXPRESSION),
             ("argument", EXPRESSION),
         ],

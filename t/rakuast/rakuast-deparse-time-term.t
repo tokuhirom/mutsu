@@ -1,7 +1,12 @@
 use Test;
-plan 4;
+plan 8;
 is Q[say time].AST.DEPARSE.chomp, "say time", '`time` is a named term, not a call';
 is Q[my $x = now - time].AST.DEPARSE.chomp, "my \$x = now - time", '`now - time`';
 is Q[time].AST.statements[0].expression.^name, "RakuAST::Term::Named", 'Term::Named';
 my $t = EVAL(Q[time].AST);
 ok $t ~~ Int && $t > 0, 'EVAL of the AST still calls time';
+is Q[say rand * 2].AST.DEPARSE.chomp, "say rand * 2", '`rand` is a term, not a call';
+is Q[rand].AST.statements[0].expression.^name, "RakuAST::Term::Rand", 'Term::Rand';
+is RakuAST::Term::Rand.new.DEPARSE.chomp, "rand", 'Term::Rand.new deparses';
+my $r = EVAL(Q[rand].AST);
+ok $r ~~ Num && 0 <= $r < 1, 'EVAL of the AST still calls rand';

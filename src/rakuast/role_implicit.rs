@@ -59,7 +59,7 @@ fn is_resolve_instantiations(field: &RakuAstField) -> bool {
 }
 
 /// The closing `nqp::list(MetaObject, nqp::curlexpad)` statement.
-fn is_closing(field: &RakuAstField) -> bool {
+pub(super) fn is_closing(field: &RakuAstField) -> bool {
     held(field).is_some_and(|stmt| {
         stmt.class == C::StatementExpression
             && stmt.fields.iter().any(|f| {

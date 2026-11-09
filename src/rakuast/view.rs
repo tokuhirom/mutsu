@@ -101,7 +101,7 @@ pub(super) fn view_stmt(
     names: &NameScope,
     stmt: &Stmt,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    view_stmt_node(names, stmt)
+    Ok(view_stmt_node(names, stmt)?.map(|node| super::stub_package::apply(stmt, node)))
 }
 
 fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -2152,6 +2152,7 @@ pub(super) fn split_sigil(name: &str) -> (&str, &str) {
         Some(b'@') => ("@", &name[1..]),
         Some(b'%') => ("%", &name[1..]),
         Some(b'&') => ("&", &name[1..]),
+        _ if name == crate::env::LEX_SELF => ("$", "self"),
         _ => ("$", name.strip_prefix("__ANON_OPTIONAL__").unwrap_or(name)),
     }
 }
@@ -2735,13 +2736,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             class: RakuAstClass::OnlyStar,
             fields: Vec::new(),
         }),
-        // `now` / `time` are `Term::Named`, not calls.
+        // `now` / `time` / `rand` are terms, not calls.
         Expr::Call { name, args, .. } if args.is_empty() && super::is_named_term(name.as_str()) => {
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TermNamed,
-                fields: vec![leaf_field(None, Value::str(name.as_str().to_string()))],
-            })
+            Ok(super::named_term_node(name.as_str()))
         }
         Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
             super::substitution::view_node(names, expr)

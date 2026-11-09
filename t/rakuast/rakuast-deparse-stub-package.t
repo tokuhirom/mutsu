@@ -1,0 +1,14 @@
+use Test;
+plan 9;
+is Q[class Stubbed {...}; class Stubbed { }].AST.DEPARSE.chomp, "class Stubbed \{...}\nclass Stubbed \{ }", 'a stub class';
+is Q[role R {...}; role R { }].AST.DEPARSE.chomp, "role R \{...}\nrole R \{ }", 'a stub role';
+is Q[my class S {...}; my class S { }].AST.DEPARSE.chomp, "my class S \{...}\nmy class S \{ }", 'a lexical stub class';
+my $stub = Q[class C {...}; class C { }].AST.statements[0].expression;
+ok $stub.is-stub, 'is-stub';
+is $stub.body.body.statement-list.statements.elems, 0, 'the stub body is empty';
+nok Q[class D { method m {...} }].AST.statements[0].expression.is-stub, 'a class with a stub method is not a stub';
+is Q[role R {...}; role R { method m { 5 } }].AST.statements.elems, 2, 'stub and definition';
+my $ast = Q[class B {...}; class B { has $.x }; B.new(x => 3).x].AST;
+is EVAL($ast), 3, 'EVAL of a stub completed later';
+my $r = Q[role Rq {...}; role Rq { method m { 5 } }; class Cq does Rq { }; Cq.m].AST;
+is EVAL($r), 5, 'EVAL of a stub role completed later';
