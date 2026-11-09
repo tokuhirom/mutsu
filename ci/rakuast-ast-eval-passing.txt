@@ -2676,6 +2676,7 @@ t/lang/eval-add-check-code.t
 t/lang/eval-angle-list-whitespace.t
 t/lang/eval-assigns-caller-code-variable.t
 t/lang/eval-ast-infix-chains.t
+t/lang/eval-ast-runs-main-after-mainline.t
 t/lang/eval-bare-block-hoisted-sub-cell.t
 t/lang/eval-callee-cannot-see-callers-my-sub-with-local-type.t
 t/lang/eval-callee-ignores-caller-my-sub-beside-type-decl.t
@@ -8584,6 +8585,7 @@ t/tooling/main-argfiles-is-stdin.t
 t/tooling/main-args-to-capture-hook.t
 t/tooling/main-enum-subset.t
 t/tooling/main-literal-positional-dispatch.t
+t/tooling/main-semicolon.t
 t/tooling/main-sub.t
 t/tooling/main-usage-format.t
 t/tooling/missing-test-module-use-warns.t
