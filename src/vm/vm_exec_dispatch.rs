@@ -22,31 +22,6 @@ impl Interpreter {
         }
     }
 
-    /// The payload of `die LIST` with ONE list argument (`die <x y>`,
-    /// `die @a`, `die (1, 2)`): an `X::AdHoc` whose payload is the list and
-    /// whose message is the list's `.Str` (`x y`). Several arguments
-    /// (`die 1, 2`) never get here -- they are concatenated by the caller.
-    // Cost: O(n), n = elements of the list.
-    fn die_single_list_arg(&mut self, val: Value) -> Value {
-        let ValueView::Array(items, _) = val.view() else {
-            return val;
-        };
-        if items.is_empty() {
-            return val;
-        }
-        let mut parts = Vec::with_capacity(items.len());
-        for item in items.iter() {
-            let s = loan_env!(self, call_method_with_values(item.clone(), "Str", vec![]))
-                .map(|v| v.to_string_value())
-                .unwrap_or_else(|_| item.to_string_value());
-            parts.push(s);
-        }
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("payload".to_string(), val.clone());
-        attrs.insert("message".to_string(), Value::str(parts.join(" ")));
-        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-    }
-
     fn runtime_error_from_exception_value(
         &mut self,
         value: Value,
