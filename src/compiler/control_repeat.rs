@@ -13,7 +13,7 @@ impl Compiler {
         is_until: bool,
     ) {
         let (pre_stmts, loop_body, post_stmts) =
-            self.expand_loop_phasers(body, label.as_deref(), false);
+            self.expand_loop_phasers(body, label.as_deref(), false, &[]);
         if let Some(init_stmt) = init {
             self.compile_stmt(init_stmt);
         }
