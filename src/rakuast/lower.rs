@@ -2990,9 +2990,10 @@ fn lower_assign_parts(
         return Ok((name, lower_expr(names, named_child(node, "right")?)?));
     }
     let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
+    // The user lexical `$self` keeps its sigil as the key (ADR-0061).
     let name = match raw.strip_prefix('$') {
-        Some(bare) => bare.to_string(),
-        None => raw,
+        Some(bare) if raw != crate::env::LEX_SELF => bare.to_string(),
+        _ => raw,
     };
     let expr = lower_expr(names, named_child(node, "right")?)?;
     Ok((name, expr))
@@ -3404,7 +3405,10 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
     };
     let twigil = if is_dynamic { "*" } else { "" };
     let is_dynamic = is_dynamic || dynamic_trait.is_some();
-    let name = if sigil == "$" {
+    let name = if sigil == "$" && twigil.is_empty() && desigil == "self" {
+        // The user lexical `$self` is keyed apart from the invocant (ADR-0061).
+        crate::env::LEX_SELF.to_string()
+    } else if sigil == "$" {
         format!("{twigil}{desigil}")
     } else {
         format!("{sigil}{twigil}{desigil}")
