@@ -16,7 +16,9 @@
 //! source wrote as its [`HashSpelling`]; both directions read and restore it.
 
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
-use super::view::{colonpair_spelling, leaf_field, node_field, plain_infix, statement_expression, view_expr};
+use super::view::{
+    colonpair_spelling, leaf_field, node_field, plain_infix, statement_expression, view_expr,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::spelled::Spelling;
 use crate::ast::{Expr, HashSpelling};
