@@ -1174,6 +1174,19 @@ impl Interpreter {
             return self.call_method_with_values((**inner).clone(), method, args);
         }
 
+        // A mixin type object over a pun another thread composed (a type
+        // cached in a shared Map): compose the pun here from its published
+        // recipe and dispatch again, so the base class's methods run with
+        // `self` bound to the mixin type instead of its bare base (ADR-11456).
+        if let ValueView::Mixin(inner, _) = target.view()
+            && let ValueView::Package(base) = inner.view()
+            && self.types.published_mixins.may_hold_pun(base.as_str())
+            && !self.registry().classes.contains_key(base.as_str())
+            && self.adopt_published_mixin(base.as_str())
+        {
+            return self.call_method_with_values_unviewed(target, method, args);
+        }
+
         // Mixin dispatch
         if let ValueView::Mixin(..) = target.view()
             && let Some(result) = self.dispatch_mixin_method_call(&target, method, args.clone())

@@ -49,6 +49,51 @@ fn resolved_constant_value(target: &Value, _args: &[Value]) -> Result<Value, Run
     Ok(value.unwrap_or(Value::NIL))
 }
 
+// Cost: O(f), f = fields of the node.
+fn named_field(target: &Value, field: &str) -> Option<Value> {
+    native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => {
+            node.fields
+                .iter()
+                .find(|f| f.name == Some(field))
+                .and_then(|f| match &f.value {
+                    crate::rakuast::RakuAstFieldValue::Node(v) => Some(v.clone()),
+                    _ => None,
+                })
+        }
+        _ => None,
+    })
+}
+
+// Cost: O(f).
+fn implicit_constant_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(named_field(target, "name").unwrap_or(Value::NIL))
+}
+
+// Cost: O(f).
+fn implicit_constant_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(named_field(target, "value").unwrap_or(Value::NIL))
+}
+
+// Cost: O(f).
+fn implicit_constant_scope(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(named_field(target, "scope").unwrap_or_else(|| Value::str_from("my")))
+}
+
+const fn implicit_constant_row(
+    name: &'static str,
+    f: fn(&Value, &[Value]) -> Result<Value, RuntimeError>,
+) -> MethodRow {
+    MethodRow {
+        owner: "RakuAST::VarDeclaration::Implicit::Constant",
+        name,
+        arity: 0,
+        handler: Handler::Pure(f),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    }
+}
+
 const fn unit_row(
     name: &'static str,
     arity: u8,
@@ -89,6 +134,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    implicit_constant_row("name", implicit_constant_name),
+    implicit_constant_row("scope", implicit_constant_scope),
+    implicit_constant_row("value", implicit_constant_value),
     node_row("IMPL-BEGIN", phase_hook),
     node_row("IMPL-CHECK", phase_hook),
 ];
