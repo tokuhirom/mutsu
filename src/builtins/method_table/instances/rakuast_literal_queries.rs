@@ -48,15 +48,6 @@ fn needs_sink_call(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
     Ok(answer.unwrap_or(Value::NIL))
 }
 
-// Cost: O(f), f = fields of the node (the children are shared, not copied).
-fn node_clone(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    let answer = native_node(target).and_then(|base| match base.view() {
-        ValueView::RakuAst(node) => Some(Value::rakuast(Box::new(node.clone()))),
-        _ => None,
-    });
-    Ok(answer.unwrap_or(Value::NIL))
-}
-
 // Cost: O(1).
 fn string_return_type(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(crate::rakuast::literal_queries::string_return_type())
@@ -92,14 +83,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "needs-sink-call",
         arity: 0,
         handler: Handler::Pure(needs_sink_call),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
-    MethodRow {
-        owner: "RakuAST::Node",
-        name: "clone",
-        arity: 0,
-        handler: Handler::Pure(node_clone),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
