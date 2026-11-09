@@ -5171,8 +5171,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // `Term::Named.new("now")` -> the argument-less `now` call the parser
         // produces for the term.
         RakuAstClass::TermNamed => match positional_leaf(node)?.view() {
-            ValueView::Str(s) if s.as_str() == "now" => Ok(Expr::Call {
-                name: Symbol::intern("now"),
+            ValueView::Str(s) if matches!(s.as_str(), "now" | "time") => Ok(Expr::Call {
+                name: Symbol::intern(s.as_str()),
                 args: vec![],
                 listop: false,
             }),

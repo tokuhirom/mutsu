@@ -2735,12 +2735,12 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             class: RakuAstClass::OnlyStar,
             fields: Vec::new(),
         }),
-        // `now` is `Term::Named`, not a call.
-        Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "now" => {
+        // `now` / `time` are `Term::Named`, not calls.
+        Expr::Call { name, args, .. } if args.is_empty() && super::is_named_term(name.as_str()) => {
             Ok(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::TermNamed,
-                fields: vec![leaf_field(None, Value::str("now".to_string()))],
+                fields: vec![leaf_field(None, Value::str(name.as_str().to_string()))],
             })
         }
         Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
