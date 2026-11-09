@@ -2152,7 +2152,6 @@ pub(super) fn split_sigil(name: &str) -> (&str, &str) {
         Some(b'@') => ("@", &name[1..]),
         Some(b'%') => ("%", &name[1..]),
         Some(b'&') => ("&", &name[1..]),
-        _ if name == ANONYMOUS_SCALAR_PARAM => ("$", ""),
         _ => ("$", name.strip_prefix("__ANON_OPTIONAL__").unwrap_or(name)),
     }
 }
@@ -5274,6 +5273,7 @@ fn simple_parameter(
     type_setting: bool,
     where_constraint: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let desigil = super::signature_decl::parameter_desigil(desigil);
     let target = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ParameterTargetVar,
