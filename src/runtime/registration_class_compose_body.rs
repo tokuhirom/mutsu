@@ -195,6 +195,10 @@ impl Interpreter {
         if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
             class_def.mro = mro;
         }
+        // The role's public attributes are the class's now: their accessors answer
+        // before a built-in method of the same name (`has $.sort` over `Any.sort`).
+        self.registry_mut()
+            .sync_accessor_entries(Symbol::intern(class_name));
         self.caches.native_ctor_plan_cache.clear();
         Ok(())
     }
