@@ -5270,6 +5270,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 "@" => Expr::ArrayVar(bare.to_string()),
                 "%" => Expr::HashVar(bare.to_string()),
                 "&" => Expr::CodeVar(bare.to_string()),
+                // The user lexical `$self` is keyed apart from the invocant (ADR-0061).
+                "$" if bare == "self" => Expr::Var(crate::env::LEX_SELF.to_string()),
                 _ => Expr::Var(bare.to_string()),
             })
         }

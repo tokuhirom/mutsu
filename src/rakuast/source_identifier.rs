@@ -44,6 +44,12 @@ pub(super) fn named_routine_call(
 /// A source-written name is never an anonymous parser temporary.
 // Cost: O(n), n = identifier length.
 pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
+    // The user lexical `$self` is keyed `"$self"` (ADR-0061); it reads `$self`.
+    let name = if sigil == "$" && name == crate::env::LEX_SELF {
+        "self"
+    } else {
+        name
+    };
     // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
     // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
     // spelling too (measured on 2026.09).
