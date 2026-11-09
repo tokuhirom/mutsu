@@ -293,9 +293,16 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
                     _ => return Err(PError::expected("hash pair key")),
                 };
                 // A bare `:name` keeps no value, as in a `{ :name }` composer
-                // (RakuAST spells it `ColonPair::True`).
-                let bare = form == crate::ast::BinaryForm::ColonPairTrue;
-                (key, (!bare).then_some(*right))
+                // (RakuAST spells it `ColonPair::True`). Any other colonpair
+                // remembers its written form: the entry is only a (key, value).
+                let value = match form {
+                    crate::ast::BinaryForm::ColonPairTrue => None,
+                    crate::ast::BinaryForm::Infix => Some(*right),
+                    form => Some(Expr::spelled(*right, || {
+                        crate::ast::spelled::Spelling::ColonPairValue(form)
+                    })),
+                };
+                (key, value)
             }
             _ => return Err(PError::expected("hash pair")),
         };

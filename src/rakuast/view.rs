@@ -2687,6 +2687,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CompilerVar(written) => {
                 super::compiler_var::view_folded(written, &spelled.expr)
             }
+            // Only a hash literal entry reads this (`hash_literal`); anywhere
+            // else the value is just the expression.
+            Spelling::ColonPairValue(_) => view_expr(names, &spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -6203,7 +6206,7 @@ pub(super) fn regex_arg_list(
 /// The colonpair node `form` says `expr` was written as, or `None` for a pair
 /// the dedicated helpers cannot render (the `=>` rendering then applies).
 // Cost: O(n), n = size of the pair.
-fn colonpair_spelling(
+pub(super) fn colonpair_spelling(
     names: &NameScope,
     expr: &Expr,
     form: crate::ast::BinaryForm,

@@ -16,8 +16,9 @@
 //! source wrote as its [`HashSpelling`]; both directions read and restore it.
 
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
-use super::view::{leaf_field, node_field, plain_infix, statement_expression, view_expr};
+use super::view::{colonpair_spelling, leaf_field, node_field, plain_infix, statement_expression, view_expr};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::ast::spelled::Spelling;
 use crate::ast::{Expr, HashSpelling};
 use crate::scope::NameScope;
 use crate::token_kind::TokenKind;
@@ -73,6 +74,23 @@ fn contents_node(
             });
             continue;
         };
+        // `{:2b, :!c, :d<x>}`: the parser wrapped the value to remember the
+        // colonpair form; rebuild the pair and render its node.
+        if let Expr::Spelled(spelled) = value
+            && let Spelling::ColonPairValue(form) = &spelled.spelling
+        {
+            let pair = Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(key.clone()))),
+                op: TokenKind::FatArrow,
+                right: Box::new(spelled.expr.clone()),
+                form: *form,
+            };
+            if let Some(mut node) = colonpair_spelling(names, &pair, *form) {
+                super::infix_origins::derive(names, &mut node);
+                fatarrows.push(node);
+                continue;
+            }
+        }
         let mut pair = RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::FatArrow,
