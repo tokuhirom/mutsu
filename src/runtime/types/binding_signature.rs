@@ -3506,16 +3506,6 @@ impl Interpreter {
                                 other.name != pd.name
                                     && other.storage_name().as_ref() == source_name.as_str()
                             });
-                            // A sigilless caller variable (`my \hit = ...`) owns no
-                            // Scalar: unless it was bound to one (the argument
-                            // arrives as that cell), binding the parameter to it
-                            // must not mint a cell and install it under the
-                            // caller's name -- the next `=:=` on the parameter
-                            // would then compare a container that Rakudo does not
-                            // have (Monad's `absent(hit)`, racing with threads).
-                            let source_is_unbound_sigilless = source_name
-                                .starts_with(crate::runtime::term_names::TERM_PREFIX)
-                                && !arg_is_container_ref;
                             if param_is_plain_scalar
                                 && !bare_topic_value
                                 && source_is_plain_scalar
@@ -3523,7 +3513,6 @@ impl Interpreter {
                                 && !implicit_raw_veto
                                 && !raw_readonly_source
                                 && !source_names_other_param
-                                && !source_is_unbound_sigilless
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
                             }
@@ -4220,6 +4209,18 @@ impl Interpreter {
                                     .cloned();
                                 value = match existing {
                                     Some(cell) => cell,
+                                    // A sigilless caller variable (`my \hit = ...`)
+                                    // owns no Scalar: unless it already holds a
+                                    // cell, binding the parameter to it must not
+                                    // mint one and install it under the caller's
+                                    // name -- a later `=:=` on the parameter would
+                                    // compare a container Rakudo does not have
+                                    // (Monad's `absent(hit)`, racing with threads).
+                                    None if cell_key.starts_with(crate::runtime::term_names::TERM_PREFIX)
+                                        && !value.is_container_ref() =>
+                                    {
+                                        value
+                                    }
                                     None => {
                                         let fresh = !matches!(value.view(), ValueView::ContainerRef(_));
                                         let cell = if fresh {
