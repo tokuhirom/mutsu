@@ -938,7 +938,13 @@ impl Interpreter {
             // (`module_name_hidden_here`) follows the executing unit, not the
             // unit of whoever calls `.build`.
             let entered = self.enter_source_file(data.source_file.as_deref());
+            // A frame of its own: the thunk is lexical to the unit that declared
+            // it, so the calling routine's frame (a module's top-level sub) must
+            // not hide that unit's block-scoped imports from it.
+            let caller_env = self.env().clone();
+            *self.env_mut() = crate::env::Env::scoped_child(caller_env.clone());
             let result = self.run_decl_code(&cc, fns);
+            *self.env_mut() = caller_env;
             self.leave_source_file(entered);
             return result;
         }

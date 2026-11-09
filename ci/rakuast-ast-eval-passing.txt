@@ -4296,6 +4296,7 @@ t/oo/attribute/attribute-bind-proxy-array-hash.t
 t/oo/attribute/attribute-bind-proxy.t
 t/oo/attribute/attribute-bound-type-object-read-through-mixin-invocant.t
 t/oo/attribute/attribute-build-thunk-is-method.t
+t/oo/attribute/attribute-build-thunk-unit-scope.t
 t/oo/attribute/attribute-build-unset-is-mu.t
 t/oo/attribute/attribute-built-trait-raku.t
 t/oo/attribute/attribute-coercion-type-dot-assign-new.t
