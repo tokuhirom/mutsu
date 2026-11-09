@@ -9627,6 +9627,7 @@ t/vm/protect-block-self.t
 t/vm/rakulib-env.t
 t/vm/say-env-roundtrip.t
 t/vm/scope/add-parent-lexically-imported-class.t
+t/vm/scope/amp-name-ignores-caller-lexical-same-unit.t
 t/vm/scope/amp-name-ignores-caller-lexical.t
 t/vm/scope/bind-rebind-outer-lexical-leaves-earlier-alias.t
 t/vm/scope/caller-lexical-assign.t

@@ -367,6 +367,10 @@ impl Interpreter {
         compiler.seed_prebound_placeholders(&self.pending_eval_placeholder_params);
         if is_eval_unit {
             compiler.seed_outer_code_var_names(self.eval_site_amp_lexicals());
+            // The EVAL unit's enclosing scopes are the seeded names, so a
+            // `&name` read that none of them binds names the unit's routine,
+            // never a caller's `my &name` (#10997).
+            compiler.lexical_scope_known = true;
         }
         // ADR-0059 Slice 2: an `is rw`/`is raw` routine body recompiled here
         // still hands its caller its tail's container.
