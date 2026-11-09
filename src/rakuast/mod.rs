@@ -205,6 +205,7 @@ mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
 mod string_origins;
+mod stub_package;
 mod subclass;
 mod subscript_adverb;
 mod substitution;

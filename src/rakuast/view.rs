@@ -101,7 +101,7 @@ pub(super) fn view_stmt(
     names: &NameScope,
     stmt: &Stmt,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    view_stmt_node(names, stmt)
+    Ok(view_stmt_node(names, stmt)?.map(|node| super::stub_package::apply(stmt, node)))
 }
 
 fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {

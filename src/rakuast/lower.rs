@@ -417,6 +417,9 @@ fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
 /// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
 /// expression-position declaration lowers differently.
 pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if let Some(restored) = super::stub_package::restore(node) {
+        return lower_stmt_kept(names, &restored);
+    }
     // A feed keeps declarations as operands until compiler lowering. The
     // loose-tail declaration splitter would turn a leftwards sink into an
     // initializer executed on every modifier iteration.
