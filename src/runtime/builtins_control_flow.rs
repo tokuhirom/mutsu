@@ -119,6 +119,16 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `die "a", "b"` is `die "ab"`: several arguments make one message.
+        let joined;
+        let args = if args.len() > 1 {
+            joined = [Value::str(
+                args.iter().map(Value::to_string_value).collect::<String>(),
+            )];
+            &joined[..]
+        } else {
+            args
+        };
         // Check if we have actual arguments (not just an empty array from die())
         let has_real_args = match args.first().map(Value::view) {
             Some(ValueView::Array(items, _)) if items.is_empty() => false,
