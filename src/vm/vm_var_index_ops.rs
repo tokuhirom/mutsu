@@ -413,8 +413,13 @@ impl Interpreter {
         if has_elem_containers {
             self.exec_index_autovivify_lazy_op_raw_list_elem(true, is_positional, true)?;
             // A missing entry came back as a deferred token: nothing exists to
-            // bind, so read what it reads as.
-            if let Some(top) = self.stack.last_mut()
+            // bind, so read what it reads as -- unless the block is being
+            // called as an assignment target (`&f(k) = v`, which sets
+            // `in_lvalue_assignment`): then the token is the location the
+            // write creates, as for an `is rw` routine's tail (Test::Mock's
+            // `overriding => { a => -> $i { state %a; %a{$i} } }`).
+            if !self.in_lvalue_assignment
+                && let Some(top) = self.stack.last_mut()
                 && top.is_hash_entry_ref_value()
             {
                 *top = top.hash_entry_read();
