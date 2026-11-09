@@ -9582,6 +9582,7 @@ t/vm/nqp-nd-ops-on-containers.t
 t/vm/nqp-object-ops-parity.t
 t/vm/nqp-object-ops.t
 t/vm/nqp-op-call-assign.t
+t/vm/nqp-p6-frame-state-ops.t
 t/vm/nqp-p6-ops.t
 t/vm/nqp-p6scalarwithvalue-bool-container.t
 t/vm/nqp-pointer-ops.t
