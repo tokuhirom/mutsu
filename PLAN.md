@@ -340,7 +340,11 @@ from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whit
       (`$*AWAITER`) and returns the worker to a *capped* pool. Doing the same here means turning
       every blocking point (`await`, channel receive, lock, sleep) into a suspension point and
       teaching the VM to unwind and restore native Rust stack frames — VM-scale, hence still
-      deferred. **No roast pressure remains** (all 99 S17 files are whitelisted); the motive is
+      deferred. [ADR-15967](docs/adr/15967-start-blocks-submission-order.md) §4.2 (Accepted
+      2026-11-09) records the measured trigger (one OS thread per pending `await`: 303 vs rakudo's 4
+      at nested depth 300) and the chosen mechanism when the axis opens (stackful tasks pinned to
+      their worker, not heap frames); starting it still takes its own ADR, after ADR-15967 §4.1's
+      shared-world / per-worker execution context. **No roast pressure remains** (all 99 S17 files are whitelisted); the motive is
       thread consumption under heavy concurrency, so start this only on a measured trigger and an
       updated ADR. **The [#8380](https://github.com/tokuhirom/mutsu/issues/8380) `Test::Scheduler`
       deadlock is NOT that trigger**: [ADR-0105](docs/adr/0105-promise-resolution-dispatches-through-the-promise-scheduler.md)
