@@ -1288,6 +1288,25 @@ impl Interpreter {
         args: &[Value],
         skip_native: bool,
     ) -> Result<(Value, Value), RuntimeError> {
+        // An element that is an array slot's cell (`($x[0], $x[1])`, an
+        // element read off a `Match`'s capture array) is dispatched on what it
+        // holds, as the top-level loop does: handing the cell itself to the
+        // leaf lookup left a `Match` unable to find `.made` / `.ast` / `.from`
+        // (Net::NetRC's `...map({ ... })».made`). An in-place mutation of the
+        // leaf (`@a>>++`) is written back through the cell. Tag-probed: this
+        // runs per element.
+        if item.is_container_ref()
+            && let ValueView::ContainerRef(cell) = item.view()
+        {
+            let cell = cell.clone();
+            let inner = cell.load();
+            let (result, updated) =
+                self.hyper_method_apply_recursive(&inner, method, method_sym, args, skip_native)?;
+            if !crate::value::identity::values_identical(&updated, &inner) {
+                crate::value::Value::store_through_cell(&cell, &updated);
+            }
+            return Ok((result, item.clone()));
+        }
         match item.view() {
             ValueView::Array(elems, kind) => {
                 let mut results = Vec::with_capacity(elems.len());
