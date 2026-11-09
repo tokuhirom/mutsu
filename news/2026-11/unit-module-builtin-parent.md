@@ -7,5 +7,5 @@ types into the enclosing package, so `unit module M; class NOT-SET is Nil` looke
 same one the parent validation uses. A module-defined class named like a built-in
 (`class Version`) still wins, as on rakudo.
 
-Also fixed: `Sub ~~ Nil` for a user subclass of `Nil` (`class NS is Nil`) answered
+Also fixed: `~~ Nil` for a user subclass of `Nil` (`class NS is Nil`) answered
 `False`; rakudo answers `True`.
