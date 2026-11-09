@@ -261,7 +261,10 @@ fn leading_literal(body: &str) -> Option<String> {
             break;
         }
         // A case- or mark-insensitive literal is not matched by `starts_with`.
-        if matches!(&word[..end], "i" | "ignorecase" | "ii" | "m" | "ignoremark" | "mm") {
+        if matches!(
+            &word[..end],
+            "i" | "ignorecase" | "ii" | "m" | "ignoremark" | "mm"
+        ) {
             return None;
         }
         body = word[end..].trim_start();
@@ -645,7 +648,10 @@ mod prefix_tests {
 
     #[test]
     fn the_literal_after_regex_adverbs_is_the_prefix() {
-        assert_eq!(leading_literal("'mold' <.end-keyword>"), Some("mold".into()));
+        assert_eq!(
+            leading_literal("'mold' <.end-keyword>"),
+            Some("mold".into())
+        );
         assert_eq!(
             leading_literal(":ratchet 'aggsub'\n\t\t<.end-keyword>"),
             Some("aggsub".into())
