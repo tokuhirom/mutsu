@@ -508,8 +508,14 @@ impl Interpreter {
             // and `{}`.
             (_, ValueView::Nil) => match left.view() {
                 ValueView::Nil => true,
-                ValueView::Instance { class_name, .. } => class_name.as_str() == "Failure",
-                ValueView::Package(name) => name == "Nil",
+                ValueView::Instance { class_name, .. } => {
+                    class_name.as_str() == "Failure"
+                        || self.class_mro(class_name.as_str()).iter().any(|c| c.as_str() == "Nil")
+                }
+                ValueView::Package(name) => {
+                    name == "Nil"
+                        || self.class_mro(name.as_str()).iter().any(|c| c.as_str() == "Nil")
+                }
                 _ => false,
             },
             // A Match on the RHS is an already-decided match result, so it

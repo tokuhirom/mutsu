@@ -38,49 +38,8 @@ impl Compiler {
             // "MyModule::Grammar".
             if crate::runtime::types::is_builtin_role_name(
                 p.split_once('[').map(|(base, _)| base).unwrap_or(p),
-            ) || matches!(
-                p.as_str(),
-                "Any"
-                    | "Cool"
-                    | "Mu"
-                    | "Grammar"
-                    | "Match"
-                    | "Int"
-                    | "Str"
-                    | "Num"
-                    | "Rat"
-                    | "Bool"
-                    | "IO"
-                    | "Exception"
-                    | "Stash"
-                    | "PseudoStash"
-                    | "Array"
-                    | "Hash"
-                    | "List"
-                    | "Map"
-                    | "Set"
-                    | "Bag"
-                    | "Mix"
-                    | "Range"
-                    | "Pair"
-                    | "Regex"
-                    | "FatRat"
-                    | "Complex"
-                    | "Callable"
-                    | "Numeric"
-                    | "Real"
-                    | "Stringy"
-                    | "Positional"
-                    | "Associative"
-                    | "Proc"
-                    | "Supply"
-                    | "Supplier"
-                    | "Date"
-                    | "DateTime"
-                    | "Capture"
-                    | "Parameter"
-                    | "Signature"
-            ) {
+            ) || crate::runtime::BUILTIN_PARENT_TYPES.contains(&p.as_str())
+            {
                 return p.clone();
             }
             format!("{}::{}", pkg, p)
