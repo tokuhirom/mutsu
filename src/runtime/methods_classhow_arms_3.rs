@@ -312,6 +312,7 @@ impl Interpreter {
 
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_role(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_role", &args);
             let class_name = match args[0].view() {
                 ValueView::Package(name) => name.resolve(),
                 ValueView::Str(name) => name.to_string(),

@@ -7,6 +7,7 @@ use super::*;
 impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_multi_method(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_multi_method", &args);
             // Same as add_method but marks the method as multi
             let class_name = match args[0].view() {
                 ValueView::Package(name) => name.resolve(),
@@ -85,6 +86,7 @@ impl Interpreter {
 
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_fallback(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_fallback", &args);
             // ^add_fallback($type, &condition, &calculator): register a
             // dynamic method fallback. When a method is not found on a value
             // of this class, `&condition($obj, $name)` is checked; the first
@@ -111,6 +113,7 @@ impl Interpreter {
         // Cost: O(d), d = target type's MRO depth.
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_compose(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("compose", &args);
             // ^compose recomposes the class (e.g. after add_method)
             // Rebuild the MRO for the class
             let class_name = match args[0].view() {
@@ -187,6 +190,7 @@ impl Interpreter {
         // duplicate it) and recomputes the MRO.
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_parent(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_parent", &args);
             let class_name = match args[0].view() {
                 ValueView::Package(name) => name.resolve(),
                 ValueView::Str(name) => name.to_string(),
@@ -232,6 +236,7 @@ impl Interpreter {
 
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_attribute(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_attribute", &args);
             // ^add_attribute($type, $attr)
             // Adds an Attribute object to a dynamically created class
             let class_name = match args[0].view() {

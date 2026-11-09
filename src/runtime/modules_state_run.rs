@@ -64,6 +64,7 @@ mod sequence_closure_call;
 pub(crate) mod shared_store;
 pub(crate) mod signal_watcher;
 pub(crate) mod slang_activation;
+pub(crate) mod slang_class_replay;
 pub(crate) mod slang_host;
 pub(crate) mod slang_declarator;
 mod slang_productions;

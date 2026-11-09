@@ -1269,6 +1269,8 @@ impl Interpreter {
                 .try_native_lex_ref_routine(name, &args)
                 .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
             "__mutsu_slang_shim" => self.builtin_slang_shim(&args),
+            "__mutsu_slang_class_log" => self.builtin_slang_class_log(),
+            "__mutsu_slang_replay_class" => self.builtin_slang_replay_class(&args),
             "__mutsu_grammar_match" => self.builtin_grammar_match(&args),
             // Cost: O(log n), n = built-in operator count.
             "__mutsu_operator_properties" => Ok(crate::rakuast::operator_props::lookup(

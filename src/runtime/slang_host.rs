@@ -153,11 +153,21 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     # Constants the production installed become `my constant NAME = VALUE`
     # declarations of the unit, standing for the statement.
     if $*R.generated.elems && $m.ast.defined {
+        # A type the production minted is rebuilt in the unit by replaying the
+        # recorded metamodel calls (ADR-13370); other values travel as they are.
+        my $log := __mutsu_slang_class_log();
         my @decls = $*R.generated.map: -> $d {
+            my sub literal($value) {
+                RakuAST::Term::Declaration.new(RakuAST::Declaration::ResolvedConstant.new(:compile-time-value($value)))
+            }
+            my $init := $log.elems && !$d.value.defined
+                ?? RakuAST::Call::Name.new(
+                    name => RakuAST::Name.from-identifier('__mutsu_slang_replay_class'),
+                    args => RakuAST::ArgList.new(literal($log), literal($d.value)))
+                !! literal($d.value);
             RakuAST::Statement::Expression.new(expression => RakuAST::VarDeclaration::Constant.new(
                 name => $d.name,
-                initializer => RakuAST::Initializer::Assign.new(RakuAST::Term::Declaration.new(
-                    RakuAST::Declaration::ResolvedConstant.new(:compile-time-value($d.value))))))
+                initializer => RakuAST::Initializer::Assign.new($init)))
         };
         # TODO: a production installing several constants needs a statement
         # group the hook can lower; none exists, so it is refused rather than
@@ -210,7 +220,9 @@ impl Interpreter {
             ))
         } else {
             HOOK_DEPTH.with(|d| d.set(depth + 1));
+            super::slang_class_replay::begin_class_log();
             let answer = self.run_slang_hook(rule, source, node);
+            super::slang_class_replay::end_class_log();
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
         };

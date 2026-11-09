@@ -7,6 +7,7 @@ use super::*;
 impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_method(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_method", &args);
         self.mop_add_method_kind(args, false)
     }
 
@@ -17,6 +18,7 @@ impl Interpreter {
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        self.record_slang_mop("add_private_method", &args);
         self.mop_add_method_kind(args, true)
     }
 
