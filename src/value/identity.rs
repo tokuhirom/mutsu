@@ -97,7 +97,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         (ValueView::Mixin(inner, mixins), ValueView::Package(name))
         | (ValueView::Package(name), ValueView::Mixin(inner, mixins))
             if matches!(inner.view(), ValueView::Package(_))
-                && crate::value::role_mixin_suffix(&mixins).is_some() =>
+                && crate::value::role_mixin_suffix(mixins).is_some() =>
         {
             let composed = if left.is_mixin_value() {
                 crate::value::types::what_type_name(left)
