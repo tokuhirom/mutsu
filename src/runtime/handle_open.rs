@@ -575,6 +575,16 @@ impl Interpreter {
         exclusive: bool,
         display_path: Option<&Path>,
     ) -> Result<Value, RuntimeError> {
+        // The path `-` is the process's standard stream, as in Rakudo: STDOUT to
+        // write or append, STDIN to read.
+        if display_path.is_some_and(|d| d.as_os_str() == "-") && !(read && write) {
+            let (target, mode, name) = if write || append {
+                (IoHandleTarget::Stdout, IoHandleMode::Write, "STDOUT")
+            } else {
+                (IoHandleTarget::Stdin, IoHandleMode::Read, "STDIN")
+            };
+            return Ok(self.create_handle(target, mode, Some(name.to_string())));
+        }
         // Opening a directory as a file handle is an error in Raku: `IO::Handle.open`
         // checks `.d` first and fails with `X::IO::Directory`, naming the path
         // as written.
