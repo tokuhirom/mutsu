@@ -38,7 +38,14 @@ impl Interpreter {
             if name.is_empty() || !seen.insert(name) || name.starts_with("__") {
                 continue;
             }
-            let value = self.resolve_code_var_unshadowed(name);
+            // A name the program (or an import) also declares must still be the
+            // CORE routine here, never the user's (`CORE::<&not>` under a
+            // `sub not`); only those pay for a captured-env Sub.
+            let value = if self.user_declares_routine(name) {
+                self.core_routine_sub(name)
+            } else {
+                self.resolve_code_var_unshadowed(name)
+            };
             if !value.is_nil() {
                 symbols.insert(format!("&{name}"), value);
             }
