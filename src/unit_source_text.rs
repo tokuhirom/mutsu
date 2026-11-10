@@ -37,6 +37,9 @@ pub(crate) struct Unit {
     /// Routines the unit imported after `$*CU` was built, which the tree's
     /// calls of them resolve to now (`publish_late_imports`).
     late_imports: std::collections::HashSet<String>,
+    /// The types a slang minted (or the unit imported) after `$*CU` was built:
+    /// a bareword naming one is a type by the time the check code reads it.
+    late_types: std::collections::HashSet<String>,
     /// The unit is the lowered, CHECK-rewritten tree of a unit whose check
     /// closures already ran: its own (second) `use` lines queue the same
     /// closures again, which must not rewrite the tree twice.
@@ -68,6 +71,7 @@ impl UnitSourceTextGuard {
                 worries: Vec::new(),
                 in_export: false,
                 late_imports: std::collections::HashSet::new(),
+                late_types: std::collections::HashSet::new(),
                 rewritten: false,
             });
         });
@@ -276,20 +280,41 @@ pub(crate) fn compile_time_cu(
 pub(crate) fn publish_late_imports<'a>(
     cus: impl Iterator<Item = &'a Value>,
     imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
 ) {
     let mut names: Vec<String> = cus
         .flat_map(crate::rakuast::unresolved_call_names)
         .collect();
     names.sort();
     names.dedup();
-    let late: std::collections::HashSet<String> =
-        names.into_iter().filter(|name| imported(name)).collect();
+    let late: std::collections::HashSet<String> = names
+        .iter()
+        .filter(|name| imported(name))
+        .cloned()
+        .collect();
+    let late_types: std::collections::HashSet<String> = names
+        .into_iter()
+        .filter(|name| imported_type(name))
+        .collect();
     UNITS.with(|units| {
         let mut units = units.borrow_mut();
         if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
             unit.late_imports = late;
+            unit.late_types = late_types;
         }
     });
+}
+
+/// Whether the unit being compiled has the type `name` by now, though `$*CU`
+/// was built before it existed.
+// Cost: O(1).
+pub(crate) fn is_late_type(name: &str) -> bool {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        active_index(&units)
+            .and_then(|i| units.get(i))
+            .is_some_and(|unit| unit.late_types.contains(name))
+    })
 }
 
 /// Whether the unit being compiled imported `name` after `$*CU` was built.

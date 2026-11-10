@@ -19,6 +19,15 @@ impl Interpreter {
                 .is_some()
     }
 
+    /// Whether `name` is a type object bound in the running scope that the
+    /// class table does not know: a class a slang production minted and bound
+    /// as a constant (Qwiratry's `aggsub Tally`).
+    // Cost: O(1) expected, a few hashed lookups.
+    pub(crate) fn slang_minted_type(&self, name: &str) -> bool {
+        self.get_env_with_main_alias(name)
+            .is_some_and(|value| matches!(value.view(), crate::value::ValueView::Package(_)))
+    }
+
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
     /// currently a scoped overlay. No-op (O(1)) for a flat env. Used at every
     /// boundary that would otherwise let a transient scoped env survive into code
