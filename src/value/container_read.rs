@@ -164,17 +164,18 @@ pub(crate) fn shared_snapshot(container: &Value) -> Option<Value> {
     match container.view() {
         ValueView::Hash(map) => {
             let _guard = ContainerStructGuard::acquire_for(None, container)?;
+            let copy = HashData::clone(&map);
+            copy.which_id.adopt(&map.which_id);
             Some(Value::hash_with_data_itemized(
-                crate::gc::Gc::new(HashData::clone(&map)),
+                crate::gc::Gc::new(copy),
                 container.hash_is_itemized(),
             ))
         }
         ValueView::Array(items, kind) => {
             let _guard = ContainerStructGuard::acquire_for(None, container)?;
-            Some(Value::array_with_kind(
-                crate::gc::Gc::new(ArrayData::clone(&items)),
-                kind,
-            ))
+            let copy = ArrayData::clone(&items);
+            copy.which_id.adopt(&items.which_id);
+            Some(Value::array_with_kind(crate::gc::Gc::new(copy), kind))
         }
         _ => None,
     }

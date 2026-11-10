@@ -134,7 +134,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         {
             true
         }
-        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => {
+            crate::gc::Gc::ptr_eq(&a, &b) || a.which_id.get() == b.which_id.get()
+        }
         (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(&a, &b),
         (ValueView::Slip(a), ValueView::Slip(b)) => {
             // Empty is a singleton semantic value in Raku even when represented
@@ -143,7 +145,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         // A Hash's identity is its never-reused `.WHICH` id, which a
-        // copy of the node keeps: `%h === @p[0]` after `my @p = %h, %h`.
+        // read snapshot of the node keeps (`shared_snapshot`).
         (ValueView::Hash(a), ValueView::Hash(b)) => {
             crate::gc::Gc::ptr_eq(&a, &b) || a.which_id.get() == b.which_id.get()
         }

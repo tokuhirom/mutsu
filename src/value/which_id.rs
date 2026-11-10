@@ -82,6 +82,19 @@ impl WhichId {
     }
 }
 
+impl WhichId {
+    /// Make this (still unminted) id the same object identity as `source`: a
+    /// read-only snapshot of a shared container is that container, not a new
+    /// object.
+    // Cost: O(1).
+    pub fn adopt(&self, source: &WhichId) {
+        let id = source.get();
+        let _ = self
+            .0
+            .compare_exchange(0, id, Ordering::Relaxed, Ordering::Relaxed);
+    }
+}
+
 impl Clone for WhichId {
     fn clone(&self) -> Self {
         Self::default()
