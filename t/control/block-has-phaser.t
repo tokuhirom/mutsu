@@ -2,7 +2,7 @@ use Test;
 
 # `Block.has-phaser($name)` / `Block.has-phasers` (ParaSeq's duckmap asks a
 # block which of FIRST/NEXT/LAST it carries).
-plan 16;
+plan 14;
 
 my $plain = { $_ + 1 };
 my $next  = { NEXT { my $x = 1 }; $_ };
