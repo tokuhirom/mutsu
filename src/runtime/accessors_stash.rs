@@ -415,7 +415,23 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn make_stash_instance(package: &str, symbols: ValueMap) -> Value {
+    // Cost: O(1), plus O(t) when `package` is CORE / SETTING, t = builtin types.
+    pub(crate) fn make_stash_instance(package: &str, mut symbols: ValueMap) -> Value {
+        // `CORE::` / `SETTING::` list the core types as type objects (rakudo
+        // lists the routines and variables too; those resolve lazily by name).
+        if matches!(package.trim_end_matches("::"), "CORE" | "SETTING") {
+            for name in ["Mu", "Any"]
+                .into_iter()
+                .chain(crate::builtin_types::catalog::all_builtin_type_names())
+            {
+                if !symbols.contains_key(name) {
+                    symbols.insert(
+                        name.to_string(),
+                        Value::package(Symbol::intern(name)),
+                    );
+                }
+            }
+        }
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
         // A stash is a `Map` of symbols, not a `Hash` of element containers:

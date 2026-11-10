@@ -1204,7 +1204,19 @@ impl Interpreter {
                 _ => idx += 1,
             }
         }
-        constraint[..end].to_string()
+        // The unset parameter binds the type object of the core type: a
+        // `CORE::` pin (`CORE::Int`) or a revision package (`CORE::v6c::Int`)
+        // is only a spelling of where to look it up.
+        let name = &constraint[..end];
+        for revision in ["CORE::v6c::", "CORE::v6d::", "CORE::v6e::"] {
+            if let Some(plain) = name.strip_prefix(revision) {
+                return plain.to_string();
+            }
+        }
+        match name.strip_prefix("CORE::") {
+            Some(plain) if !plain.contains("::") => plain.to_string(),
+            _ => name.to_string(),
+        }
     }
 
     pub(crate) fn missing_optional_param_value(pd: &ParamDef) -> Value {

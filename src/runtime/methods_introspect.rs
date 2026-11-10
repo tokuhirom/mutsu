@@ -662,7 +662,11 @@ impl Interpreter {
                 || crate::runtime::types::is_builtin_role_name(&type_name))
             {
                 "Perl6::Metamodel::ParametricRoleGroupHOW".to_string()
-            } else if self.registry().enum_types.contains_key(&type_name) {
+            } else if self.registry().enum_types.contains_key(&type_name)
+                // `Bool` is the core enumeration (`Bool.^name` is `Bool`, its HOW
+                // `EnumHOW`), though mutsu keeps it as a builtin class.
+                || (is_type_object && type_name == "Bool")
+            {
                 "Perl6::Metamodel::EnumHOW".to_string()
             } else if self.registry().subsets.contains_key(&type_name)
                 || matches!(type_name.as_str(), "UInt" | "NativeInt")
