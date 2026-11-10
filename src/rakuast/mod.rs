@@ -10,7 +10,7 @@ mod adverb_origins;
 mod model_methods;
 mod positional_fields;
 pub use accessors::node_accessor;
-pub(crate) use doc_source::pod_source;
+pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
