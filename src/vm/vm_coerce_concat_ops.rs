@@ -247,10 +247,14 @@ impl Interpreter {
                 let typed = map.has_typed_keys();
                 map.iter()
                     .map(|(k, v)| {
+                        // A hash stores each value in its own `Scalar`; a named
+                        // argument carries the bare value, so built-in methods
+                        // that match `:p(True)` by value see it (#17293).
+                        let v = v.clone().into_descalarized();
                         if typed {
-                            Self::namify_pair_item(map.typed_pair(k, v.clone()))
+                            Self::namify_pair_item(map.typed_pair(k, v))
                         } else {
-                            Value::pair(k.clone(), v.clone())
+                            Value::pair(k.clone(), v)
                         }
                     })
                     .collect()
