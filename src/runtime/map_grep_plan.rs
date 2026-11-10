@@ -119,6 +119,24 @@ pub(crate) struct MapGrepPlanSlot {
     /// its `LAST` phaser runs with. A pull that finds the source already read
     /// to its end has no call of its own to take them from (#14196).
     pub(crate) last_call_args: Option<Vec<Value>>,
+    /// The Seq's source is an immutable `List` value (not an `Array`), so a
+    /// plain callback's implicit `$_` has no container to assign into even when
+    /// the callback itself arrived as a value (`$list.map(&f)`); set where the
+    /// receiver is known (`dispatch_map_method`) and OR-ed into
+    /// `InlineLoopPlan::immutable_topic`.
+    pub(crate) immutable_source: bool,
+}
+
+impl MapGrepPlanSlot {
+    /// An empty slot for a Seq whose source is `immutable` (an immutable
+    /// `List` value); see [`MapGrepPlanSlot::immutable_source`].
+    // Cost: O(1).
+    pub(crate) fn for_source(immutable: bool) -> Self {
+        Self {
+            immutable_source: immutable,
+            ..Self::default()
+        }
+    }
 }
 
 /// The address a plan is keyed by.
@@ -220,7 +238,14 @@ impl Interpreter {
         }
         let origin = sub_origin(data);
         let lexically_in_routine = !self.routine_stack.is_empty();
-        let plan = Arc::new(self.build_inline_loop_plan(data, kind, origin, lexically_in_routine));
+        let mut plan = self.build_inline_loop_plan(data, kind, origin, lexically_in_routine);
+        let site_decided = data
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.topic_site_decided);
+        plan.immutable_topic |=
+            slot.immutable_source && !plan.keeps_outer_topic && !site_decided;
+        let plan = Arc::new(plan);
         slot.inline = Some(plan.clone());
         plan
     }

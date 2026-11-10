@@ -528,50 +528,79 @@ impl Interpreter {
         Ok(guards)
     }
 
+    /// Whether the call `name` resolves to something in scope (the checks shared by
+    /// the mainline guard and the `EVAL` listing).
+    // Cost: O(1) registry/env probes.
+    fn call_resolves_in_scope(&self, name: &str, found: &Unexplained) -> bool {
+        // Everything beyond the static tables is per-interpreter registry
+        // state, which is why the analysis frontend can skip it entirely.
+        let registered = !found.body_scoped.contains(name)
+            && (self.has_function(name)
+                || self.has_multi_function_unindexed(name)
+                || self.has_proto(name));
+        if registered
+            // A routine an enclosing block's `use` bound lexically
+            // (ADR-8751): an `EVAL` in that block calls it.
+            || self.lexically_imported_routine(name)
+            || self.env().contains_key(&format!("&{}", name))
+            || self.env().contains_key(name)
+            || self.get_our_var(name).is_some()
+            // A sigilless constant in scope: an `EVAL` of a bare term
+            // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
+            || self.term_binding(name).is_some()
+            // An enum key (`enum E <aa bb>; EVAL 'aa'`, #11818) -- a
+            // module's own key only where that module is merged
+            // (ADR-11136), like its classes.
+            || (self.enum_bare_value(name).is_some() && !self.module_name_hidden_here(name))
+            || self.registry().classes.contains_key(name)
+            || self.registry().roles.contains_key(name)
+            || self.registry().subsets.contains_key(name)
+            || self.registry().enum_types.contains_key(name)
+            // A variant of a core enum (`Same`) is a term in every scope.
+            || Self::is_builtin_enum_variant(name)
+            // A capitalised callee (only judged in `EVAL`) is a coercion
+            // when a type of that name exists, and a core term (`IterationEnd`)
+            // is not a routine call at all.
+            // A parameterized type used as an invocant (`array[uint8].new`)
+            // is a type, whatever the case of its base.
+            || name.split_once('[').is_some_and(|(base, _)| {
+                base == "array" || self.has_type(base) || Self::is_builtin_type(base)
+            })
+            || (name.starts_with(|c: char| c.is_ascii_uppercase())
+                && (self.has_type(name)
+                    || self.has_class(name)
+                    || Self::is_builtin_type(name)
+                    || super::eval_name_scans::is_core_term(name)))
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Every call of an `EVAL` unit that resolves to nothing, by name and line.
+    // Cost: O(n + c * r), as `check_eval_unit_routines`.
+    pub(crate) fn undeclared_eval_calls(
+        &self,
+        stmts: &[Stmt],
+        explained: impl Fn(&str) -> bool,
+    ) -> Vec<(String, i64)> {
+        let Some(mut found) = unexplained_calls(stmts, ScanMode::Eval) else {
+            return Vec::new();
+        };
+        found.calls.retain(|(name, _)| !explained(name));
+        found
+            .calls
+            .iter()
+            .filter(|(name, _)| !self.call_resolves_in_scope(name, &found))
+            .cloned()
+            .collect()
+    }
+
     // Cost: O(c * r), as `guards_for_recorded_calls`.
     fn judge_found(&self, found: &Unexplained, guards: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
         let mut guarded: HashSet<&str> = HashSet::new();
         for (name, line) in &found.calls {
-            // Everything beyond the static tables is per-interpreter registry
-            // state, which is why the analysis frontend can skip it entirely.
-            let registered = !found.body_scoped.contains(name)
-                && (self.has_function(name)
-                    || self.has_multi_function_unindexed(name)
-                    || self.has_proto(name));
-            if registered
-                // A routine an enclosing block's `use` bound lexically
-                // (ADR-8751): an `EVAL` in that block calls it.
-                || self.lexically_imported_routine(name)
-                || self.env().contains_key(&format!("&{}", name))
-                || self.env().contains_key(name.as_str())
-                || self.get_our_var(name).is_some()
-                // A sigilless constant in scope: an `EVAL` of a bare term
-                // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
-                || self.term_binding(name).is_some()
-                // An enum key (`enum E <aa bb>; EVAL 'aa'`, #11818) -- a
-                // module's own key only where that module is merged
-                // (ADR-11136), like its classes.
-                || (self.enum_bare_value(name).is_some() && !self.module_name_hidden_here(name))
-                || self.registry().classes.contains_key(name)
-                || self.registry().roles.contains_key(name)
-                || self.registry().subsets.contains_key(name)
-                || self.registry().enum_types.contains_key(name)
-                // A variant of a core enum (`Same`) is a term in every scope.
-                || Self::is_builtin_enum_variant(name)
-                // A capitalised callee (only judged in `EVAL`) is a coercion
-                // when a type of that name exists, and a core term (`IterationEnd`)
-                // is not a routine call at all.
-                // A parameterized type used as an invocant (`array[uint8].new`)
-                // is a type, whatever the case of its base.
-                || name.split_once('[').is_some_and(|(base, _)| {
-                    base == "array" || self.has_type(base) || Self::is_builtin_type(base)
-                })
-                || (name.starts_with(|c: char| c.is_ascii_uppercase())
-                    && (self.has_type(name)
-                        || self.has_class(name)
-                        || Self::is_builtin_type(name)
-                        || super::eval_name_scans::is_core_term(name)))
-            {
+            if self.call_resolves_in_scope(name, found) {
                 continue;
             }
             // Rakudo suggests the unit's own routines, not just core ones:
