@@ -919,8 +919,8 @@ impl Interpreter {
         out
     }
 
-    /// Whether `s` has a `{` that is regex code rather than a literal
-    /// character. Tracks single quotes, double quotes, backslash escapes and
+    /// Whether `s` has a `{` or `}` that is regex code (or the end of an
+    /// injected code block) rather than a literal character. Tracks single quotes, double quotes, backslash escapes and
     /// `<[...]>` character classes; a quote or class left unterminated is
     /// answered conservatively (any `{` counts), so a malformed pattern can
     /// never hide a code block behind a stray quote.
@@ -949,12 +949,14 @@ impl Interpreter {
             } else if in_dquote {
                 if c == '"' {
                     in_dquote = false;
-                } else if c == '{' {
+                } else if c == '{' || c == '}' {
                     return true;
                 }
             } else {
                 match c {
-                    '{' => return true,
+                    // An unbalanced `}` closes a code block the pattern never
+                    // opened (`1} if say "pwnd"; #`): as dangerous as a `{`.
+                    '{' | '}' => return true,
                     // An apostrophe inside an identifier (`don't`) is not a quote.
                     '\'' if !prev.is_some_and(|p| p.is_alphanumeric() || p == '_') => {
                         in_squote = true
@@ -974,7 +976,7 @@ impl Interpreter {
             i += 1;
         }
         // Unterminated quote or class: do not trust the scan.
-        (in_squote || in_dquote || in_class) && s.contains('{')
+        (in_squote || in_dquote || in_class) && (s.contains('{') || s.contains('}'))
     }
 
     /// Check if a regex pattern string contains dangerous code that could

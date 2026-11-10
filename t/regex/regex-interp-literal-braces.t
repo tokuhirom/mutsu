@@ -5,7 +5,8 @@ plan 12;
 # `<$re>` interpolates a string as regex source. A `{` that only stands for the
 # character (single-quoted, backslash-escaped, in a `<[...]>` class) is not a
 # code block and is accepted. (A real code block is still refused; that is
-# covered where the refusal is tested.)
+# covered by roast/S05-interpolation/regex-in-variable.t, including an unbalanced
+# `}` that ends an injected block.)
 
 sub interp(Str $src, Str $target) {
     my $re = $src;
