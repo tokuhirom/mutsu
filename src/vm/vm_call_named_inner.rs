@@ -639,6 +639,12 @@ impl Interpreter {
             if self.is_definite_return_spec(spec) {
                 return spec.to_string();
             }
+            // A core type (`--> Bool:D`, `--> Int`) names itself: skip the owner
+            // walk and capture lookup (~7k instructions per call).
+            let base = spec.strip_suffix(":D").or_else(|| spec.strip_suffix(":U")).unwrap_or(spec);
+            if crate::runtime::utils::is_known_type_constraint(base) {
+                return spec.to_string();
+            }
             let resolved = self.resolve_method_type_name(def_package, spec);
             loan_env!(self, resolved_type_capture_name(&resolved))
         });

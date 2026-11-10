@@ -103,6 +103,15 @@ impl Interpreter {
         {
             return true;
         }
+        // A core type with a smiley (`--> Bool:D`) is a type constraint. Decide it
+        // before the registry probes below: `has_type` and the alias-chain walk
+        // cost ~12k instructions per call, and a routine pays this at entry and
+        // again when it returns.
+        if let Some(base) = s.strip_suffix(":D").or_else(|| s.strip_suffix(":U"))
+            && crate::runtime::utils::is_known_type_constraint(base)
+        {
+            return false;
+        }
         if crate::runtime::utils::is_known_type_constraint(s)
             || self.has_type(s)
             || self.is_type_alias_constant(s)
