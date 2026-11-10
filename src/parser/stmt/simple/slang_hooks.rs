@@ -249,7 +249,26 @@ pub(crate) fn run_slang_action(rule: &str, node: Value, source: &str) -> Result<
 /// The literal a token body starts with: `'twice' ...` or `"twice" ...`.
 // Cost: O(n), n = body length.
 fn leading_literal(body: &str) -> Option<String> {
-    let body = body.trim_start();
+    let mut body = body.trim_start();
+    // Regex adverbs the token carries (`:ratchet 'twice'`, `:!s`) stand before the
+    // first atom and match nothing themselves.
+    while let Some(rest) = body.strip_prefix(':') {
+        let word = rest.trim_start_matches('!');
+        let end = word
+            .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(word.len());
+        if end == 0 {
+            break;
+        }
+        // A case- or mark-insensitive literal is not matched by `starts_with`.
+        if matches!(
+            &word[..end],
+            "i" | "ignorecase" | "ii" | "m" | "ignoremark" | "mm"
+        ) {
+            return None;
+        }
+        body = word[end..].trim_start();
+    }
     let quote = body.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
     let inner = &body[1..];
     let end = inner.find(quote)?;
@@ -621,4 +640,31 @@ pub(crate) fn parse_slang_pointy_block(text: &str) -> Option<(&str, Expr)> {
         return None;
     }
     crate::parser::primary::misc::arrow_lambda(text).ok()
+}
+
+#[cfg(test)]
+mod prefix_tests {
+    use super::leading_literal;
+
+    #[test]
+    fn the_literal_after_regex_adverbs_is_the_prefix() {
+        assert_eq!(
+            leading_literal("'mold' <.end-keyword>"),
+            Some("mold".into())
+        );
+        assert_eq!(
+            leading_literal(":ratchet 'aggsub'\n\t\t<.end-keyword>"),
+            Some("aggsub".into())
+        );
+        assert_eq!(leading_literal(":!s :ratchet \"x\""), Some("x".into()));
+    }
+
+    #[test]
+    fn no_prefix_when_the_first_atom_is_not_a_plain_literal() {
+        assert_eq!(leading_literal(":ratchet <.ws> 'a'"), None);
+        assert_eq!(leading_literal(":my $x = 1; 'a'"), None);
+        // A case-insensitive literal is not matched by `starts_with`.
+        assert_eq!(leading_literal(":i 'abc'"), None);
+        assert_eq!(leading_literal("<sym> 'a'"), None);
+    }
 }
