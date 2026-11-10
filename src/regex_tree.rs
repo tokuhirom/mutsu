@@ -861,6 +861,23 @@ impl RegexTree {
                         false,
                         anchor_start,
                     )?;
+                    // A quoted literal is ONE atom (`$<k>='run'` captures all of
+                    // `run`), but it lowers to a token per character, so the
+                    // alias goes on a group around them. (A bare word splits
+                    // after its first character, as Rakudo's does.)
+                    if !*hash && matches!(regex.as_ref(), RegexNode::Quote(_)) && tokens.len() > 1 {
+                        let mut outer = token(
+                            crate::runtime::RegexAtom::Group(pattern(
+                                tokens,
+                                ignore_case,
+                                ignore_mark,
+                            )),
+                            crate::runtime::RegexQuant::One,
+                            ratchet,
+                        );
+                        outer.named_capture = Some(name.clone());
+                        return Some(vec![outer]);
+                    }
                     let first = tokens.first_mut()?;
                     if *hash {
                         first.hash_capture = Some(name.clone());
