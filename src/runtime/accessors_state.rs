@@ -489,6 +489,15 @@ impl Interpreter {
             Some(redirected) => redirected.as_str().to_string(),
             None => key,
         };
+        self.set_our_var_exact(key, value);
+    }
+
+    /// [`Self::set_our_var`] under `key` as given, without the unmerged-package
+    /// redirect: for a write made THROUGH a stash object, which names its
+    /// package's own store whichever unit the writing code belongs to
+    /// (`sub bind($WHO) { $WHO<k> := ... }` called on a `my package`'s stash
+    /// of another unit).
+    pub(crate) fn set_our_var_exact(&mut self, key: String, value: Value) {
         self.lexicals
             .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));

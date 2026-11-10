@@ -509,6 +509,46 @@ impl Interpreter {
         stash
     }
 
+    /// `Stash.package_at_key($key)`: the package the stash holds under `$key`,
+    /// minted (and bound into the stash) as an empty package named after its
+    /// stash when it holds none yet.
+    // Cost: O(s), s = symbols of the stash (the lookup copies no value).
+    pub(crate) fn stash_package_at_key(
+        &mut self,
+        code: &CompiledCode,
+        stash: &Value,
+        key: &str,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Instance { attributes, .. } = stash.view() else {
+            return Err(RuntimeError::new("package_at_key requires a Stash invocant"));
+        };
+        let (package, existing) = {
+            let attrs = attributes.as_map();
+            let package = attrs
+                .get("name")
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            let existing = match attrs.get("symbols").map(Value::view) {
+                Some(ValueView::Hash(map)) => map.get(key).cloned(),
+                _ => None,
+            };
+            (package, existing)
+        };
+        if let Some(existing) = existing {
+            return Ok(existing.deref_container());
+        }
+        let package = Self::normalize_stash_package(&package);
+        let name = Self::qualify_stash_name(&package, key);
+        let how = Value::package(Symbol::intern("Metamodel::PackageHOW"));
+        let minted = self.call_method_with_values(
+            how,
+            "new_type",
+            vec![Value::pair("name".to_string(), Value::str(name))],
+        )?;
+        self.bind_stash_key(code, stash, key, minted.clone(), None)?;
+        Ok(minted)
+    }
+
     /// Bind a key in a `Stash` to a new container.  Caller stashes replace the
     /// binding in the addressed lexical pad; package stashes install the symbol
     /// under its fully-qualified environment/`our` name.
@@ -602,7 +642,7 @@ impl Interpreter {
                     .insert(Symbol::intern(&env_name));
             }
             self.env_mut().insert(env_name.clone(), binding.clone());
-            self.set_our_var(env_name, binding.clone());
+            self.set_our_var_exact(env_name, binding.clone());
             // A routine bound into a module's own export stash
             // (`OUR.WHO.BIND-KEY: .key, .value for Other::` inside `package
             // EXPORT::MANDATORY`) is one of its exports, as for `OUR::{'&name'}

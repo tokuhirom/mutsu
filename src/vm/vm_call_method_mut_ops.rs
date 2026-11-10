@@ -690,7 +690,18 @@ impl Interpreter {
             self.stack.push(proxy);
             return Ok(());
         }
-        let stash_target = if method == "BIND-KEY" && args.len() == 2 {
+        if method == "package_at_key"
+            && args.len() == 1
+            && matches!(
+                target.view(),
+                ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str())
+            )
+        {
+            let result = self.stash_package_at_key(code, &target, &args[0].to_string_value())?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        let stash_target = if matches!(method, "BIND-KEY" | "ASSIGN-KEY") && args.len() == 2 {
             match target.view() {
                 ValueView::Instance { class_name, .. }
                     if is_stash_class_name(class_name.as_str()) =>
@@ -709,7 +720,7 @@ impl Interpreter {
                 .as_ref()
                 .and_then(|sources| sources.get(1))
                 .and_then(|source| source.as_deref())
-                .filter(|source| !source.contains('\0'));
+                .filter(|source| !source.contains('\0') && method == "BIND-KEY");
             let result =
                 self.bind_stash_key(code, &stash_target, &key, args[1].clone(), bind_source)?;
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "stash-bind-key");
