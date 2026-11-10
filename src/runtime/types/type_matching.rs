@@ -952,6 +952,16 @@ impl Interpreter {
                 return self.type_matches_value_unviewed_why(constraint, &plain, why);
             }
         }
+        // `CORE::v6c::Name` (also `v6d`, `v6e`) is a core type spelled through
+        // its revision's package (`use v6.*` code writes
+        // `CORE::v6c::PseudoStash:D`): the type is the plain core `Name`.
+        for revision in ["CORE::v6c::", "CORE::v6d::", "CORE::v6e::"] {
+            if let Some(plain) = constraint.strip_prefix(revision)
+                && !plain.starts_with(|c: char| c.is_ascii_lowercase())
+            {
+                return self.type_matches_value_unviewed_why(plain, value, why);
+            }
+        }
         // `CORE::Name` names the type the scope outside every `my` declaration
         // of `Name` sees. The parser writes it for a type position that
         // precedes a later `my class Name` in its scope (rakudo resolves a
