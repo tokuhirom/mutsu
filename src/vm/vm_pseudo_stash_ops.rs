@@ -509,11 +509,17 @@ impl Interpreter {
                 continue;
             };
             for (name, binding) in bindings {
-                if let crate::runtime::lexical_imports::LexicalImport::Code(value) = binding {
-                    entries
-                        .entry(format!("&{}", name.resolve()))
-                        .or_insert_with(|| value.clone());
-                }
+                let value = match binding {
+                    crate::runtime::lexical_imports::LexicalImport::Code(value) => value.clone(),
+                    // A `my sub ... is export` the module declares: the set
+                    // records its definition, not a code object.
+                    crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                        self.sub_value_from_function_def((**def).clone())
+                    }
+                };
+                entries
+                    .entry(format!("&{}", name.resolve()))
+                    .or_insert(value);
             }
         }
     }

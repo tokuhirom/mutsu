@@ -3308,6 +3308,7 @@ t/modules/import-export/enum-export-space-and-slip.t
 t/modules/import-export/enum-export-tag.t
 t/modules/import-export/enum-slip-value-term-without-use.t
 t/modules/import-export/eqv-hook-export-scoped-to-importer.t
+t/modules/import-export/eval-my-stash-own-lexical-export.t
 t/modules/import-export/eval-use-export-hook-before-check.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/eval-use-export-stash-names.t
@@ -3349,6 +3350,7 @@ t/modules/import-export/export-hook-value-term.t
 t/modules/import-export/export-mandatory-bind-key-operator.t
 t/modules/import-export/export-mandatory-bind-key-type.t
 t/modules/import-export/export-nameclash.t
+t/modules/import-export/export-own-subs-with-reexported-stash.t
 t/modules/import-export/export-stash-manual-our-proto.t
 t/modules/import-export/export-stash-manual-our-sub.t
 t/modules/import-export/export-stash-named-keyed-assign.t
