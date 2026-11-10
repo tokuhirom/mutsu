@@ -12,10 +12,10 @@ class C { }
 class D { }
 
 my $t = C but R;
-is $t.^name, "C+{R}", "first mixin type object";
+is $t.^name, 'C+{R}', "first mixin type object";
 is $t.hi, "hi", "its method";
 my $u = D but S;
-is $u.^name, "D+{S}", "a mixin registered later";
+is $u.^name, 'D+{S}', "a mixin registered later";
 is $u.yo, "yo", "its method";
 is $t.hi, "hi", "the earlier one still resolves";
 my $v = C but S;
