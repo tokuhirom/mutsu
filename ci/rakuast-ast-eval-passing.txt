@@ -9662,6 +9662,7 @@ t/vm/nqp-cclass-general-category.t
 t/vm/nqp-chars-scan-is-linear.t
 t/vm/nqp-concblockingqueue-peek-unshift.t
 t/vm/nqp-const-nfa-edges.t
+t/vm/nqp-container-descriptor.t
 t/vm/nqp-container-kind-tests.t
 t/vm/nqp-control-ops.t
 t/vm/nqp-core-type-operand-fold.t

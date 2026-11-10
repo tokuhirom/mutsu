@@ -83,6 +83,13 @@ impl<'a> CodeText<'a> {
             // The `:default(` spelling the `trait_mod:<is>` default gate asks
             // for: a call to that routine passing a `default` pair.
             fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+                // `nqp::getattr($c, Array, '$!descriptor')`: the source gate
+                // for the `ContainerDescriptor` prelude asks for this spelling.
+                if let crate::ast::Expr::Literal(v) = expr
+                    && v.as_str().is_some_and(|s| s.contains("$!descriptor"))
+                {
+                    self.0.push_str("$!descriptor ");
+                }
                 if let crate::ast::Expr::Call { name, args, .. } = expr
                     && name.as_str() == "trait_mod:<is>"
                     && args.iter().any(|arg| {
