@@ -231,10 +231,17 @@ impl Interpreter {
         {
             return true;
         }
+        // `WhateverCode` is a `Code` but not a `Block` (rakudo MRO:
+        // WhateverCode, Code, Any, Mu), so `Block` does not admit it.
+        if matches!(constraint, "Callable" | "Code")
+            && value_type == "WhateverCode"
+        {
+            return true;
+        }
         if matches!(constraint, "Callable" | "Code" | "Block")
             && matches!(
                 value_type,
-                "Sub" | "Routine" | "Method" | "Block" | "WhateverCode" | "Regex"
+                "Sub" | "Routine" | "Method" | "Block" | "Regex"
             )
         {
             return true;
