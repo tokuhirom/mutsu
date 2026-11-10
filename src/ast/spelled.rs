@@ -153,6 +153,17 @@ impl Expr {
         }
     }
 
+    /// The arguments of a `die` as written: several of them are one
+    /// `ArrayLiteral` in the parser, while a lone list (`die <x y>`,
+    /// `die (1,2)`) is grouped and stays one argument.
+    // Cost: O(1).
+    pub(crate) fn written_die_args(&self) -> &[Expr] {
+        match self {
+            Expr::ArrayLiteral(items) => items,
+            other => std::slice::from_ref(other.written_list_arg()),
+        }
+    }
+
     /// The term itself, without the origin a `.AST` parse attaches around
     /// it once the unit is parsed (ADR-10723 Stage 2, `parser::term_origins`).
     // Cost: O(d), d = nested origin wrappers.
