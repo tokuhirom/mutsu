@@ -1394,8 +1394,18 @@ impl Interpreter {
             // (`my $WHO = Pkg.WHO`) installs the symbol in the package, exactly
             // as `Pkg.WHO.BIND-KEY(k, v)` does: the stash is the package's live
             // symbol table, not a copy.
-            if let ValueView::Instance { class_name, .. } = inst.view()
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = inst.view()
                 && is_stash_class_name(class_name.as_str())
+                // A package's stash only: a free-standing `Stash.new` is a
+                // Hash-backed instance with no package behind it.
+                && attributes
+                    .as_map()
+                    .get("name")
+                    .is_some_and(|name| !name.to_string_value().is_empty())
                 && !crate::qualified::is_qualified_str(&key_val.to_string_value())
             {
                 let source = match bind_sources.first() {
