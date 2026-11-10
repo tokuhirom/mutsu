@@ -222,9 +222,20 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
             elems
         }
         _ if val.as_list_items().is_some() => {
+            // The slots of a real Array are containers: a Hash in one is a
+            // single element (keyed by its `.WHICH`), not its pairs -- only a
+            // bare List flattens a Hash it holds (`(%h, %g).Set` is 3 pairs).
+            let opaque_hashes =
+                matches!(val.view(), ValueView::Array(_, kind) if kind != ArrayKind::List);
             let mut elems = HashSet::new();
             for item in val.as_list_items().unwrap().iter() {
-                insert_set_elem(&mut elems, originals, item);
+                if opaque_hashes && matches!(item.descalarize().deref_container().view(), ValueView::Hash(_)) {
+                    let (key, elem) = quanthash_elem_entry(item);
+                    record_quanthash_original(originals, &key, &elem);
+                    elems.insert(key);
+                } else {
+                    insert_set_elem(&mut elems, originals, item);
+                }
             }
             elems
         }
