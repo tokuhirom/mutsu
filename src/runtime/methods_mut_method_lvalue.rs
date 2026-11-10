@@ -1066,7 +1066,7 @@ impl Interpreter {
             && !self.setter_convention_would_preempt_lvalue_return(&target, method, &method_args)
         {
             if let Some(result) =
-                self.try_accessor_setter_assign(var_name, &target, method, &[value.clone()])
+                self.try_accessor_setter_assign(var_name, &target, method, std::slice::from_ref(&value))
             {
                 match result {
                     Ok(result) => return Ok(result),
