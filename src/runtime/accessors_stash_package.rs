@@ -39,7 +39,9 @@ impl Interpreter {
                 if self.user_declares_routine(name) {
                     continue;
                 }
-                let value = self.resolve_code_var(&format!("{package_name}::{name}"));
+                let value = self.resolve_code_var(
+                    crate::qualified::qualified_text(package_name.as_str(), *name).as_str(),
+                );
                 if !value.is_nil() {
                     symbols.insert(format!("&{name}"), value);
                 }
