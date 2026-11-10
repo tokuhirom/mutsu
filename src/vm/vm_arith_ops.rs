@@ -594,6 +594,11 @@ impl Interpreter {
             // core set. Reporting "no user candidate" here leaves the native
             // path to run, which is exactly what rakudo's core candidate does.
             if let Some((left, right)) = binary {
+                // The ranking reads the operands' types: a `WrapVarRef`-tagged
+                // variable operand (`@l ⊆ @r` compiled as an `InfixFunc`) is
+                // ranked as the value it holds.
+                let left = &crate::runtime::types::unwrap_varref_value(left.clone());
+                let right = &crate::runtime::types::unwrap_varref_value(right.clone());
                 match self.core_infix_candidate_wins(op_name, &def, left, right) {
                     CoreInfixVerdict::Core => return Ok(None),
                     CoreInfixVerdict::Tie(core) => {
