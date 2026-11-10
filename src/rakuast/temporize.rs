@@ -334,7 +334,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     }
     let target = match &lvalue {
         Expr::Index { target, .. } => {
-            temporize::base_name(target).ok_or_else(|| unsupported(node))?;
+            // `temp $obj.attr<k>`: the container is what the method call yields.
+            if !matches!(target.as_ref(), Expr::MethodCall { .. }) {
+                temporize::base_name(target).ok_or_else(|| unsupported(node))?;
+            }
             Target::Element(lvalue.clone())
         }
         other => Target::Variable(other.container_var_key().ok_or_else(|| unsupported(node))?),

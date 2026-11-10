@@ -382,7 +382,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             names,
             "die",
-            std::slice::from_ref(expr.written_list_arg()),
+            die_written_args(expr),
         )?))),
         Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
             names,
@@ -6552,4 +6552,15 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
             header,
         },
     )))
+}
+
+/// The arguments of a `die` as written: several of them are one
+/// `ArrayLiteral` in the parser, while a lone list (`die <x y>`, `die (1,2)`)
+/// is grouped and stays one argument.
+// Cost: O(1).
+fn die_written_args(expr: &Expr) -> &[Expr] {
+    match expr {
+        Expr::ArrayLiteral(items) => items,
+        other => std::slice::from_ref(other.written_list_arg()),
+    }
 }

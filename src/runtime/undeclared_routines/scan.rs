@@ -369,6 +369,17 @@ impl<'ast> Visit<'ast> for Scan {
         {
             self.record_call(name);
         }
+        // `$( ... )` is parsed as the `.item` of a desugared block, but is not
+        // a lexical scope: a routine declared inside belongs to the enclosing one.
+        if let Expr::DoBlock {
+            body,
+            origin: crate::ast::DoBlockOrigin::Desugar,
+            ..
+        } = expr
+        {
+            walk_stmts(self, body);
+            return;
+        }
         walk_expr(self, expr);
     }
 
