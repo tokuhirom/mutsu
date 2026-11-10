@@ -32,6 +32,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Numeric", 0, Handler::Pure(elems)),
     row!("Str", 0, Handler::Pure(str)),
     row!("list", 0, Handler::Pure(list)),
+    row!("List", 0, Handler::Pure(list)),
+    row!("values", 0, Handler::Pure(list)),
     row!("gist", 0, Handler::Pure(gist)),
     row!("raku", 0, Handler::Pure(raku)),
     // `chars` and `comb` are no `Uni` methods in current Rakudo, but roast pins
@@ -71,11 +73,12 @@ pub(crate) fn str(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError
     Ok(Value::str(uni.text().nfc().collect::<String>()))
 }
 
-/// `Uni.list`: the codepoints as `Int`s.
+/// `Uni.list`, `.List` and `.values`: the codepoints as `Int`s in a `Seq`
+/// (rakudo's `Uni` is no `List`, so these are `Seq`s).
 // Cost: O(n), n = codepoints.
 pub(crate) fn list(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let uni = uni_of(target)?;
-    Ok(Value::array(
+    Ok(Value::seq(
         uni.text().chars().map(|c| Value::int(c as i64)).collect(),
     ))
 }
