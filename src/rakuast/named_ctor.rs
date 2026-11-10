@@ -270,6 +270,13 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
             C::DeclarationResolvedConstant,
             &[("compile-time-value", Node, Required)],
         ),
+        "RakuAST::Declaration::Import" => (
+            C::DeclarationImport,
+            &[
+                ("lexical-name", Node, Required),
+                ("compile-time-value", Node, Required),
+            ],
+        ),
         "RakuAST::Term::Self" => (C::TermSelf, &[("variable", Node, Omit)]),
         "RakuAST::Type::Subset" => (
             C::TypeSubset,

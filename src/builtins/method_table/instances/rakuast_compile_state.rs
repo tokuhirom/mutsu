@@ -65,6 +65,25 @@ fn named_field(target: &Value, field: &str) -> Option<Value> {
     })
 }
 
+/// A field of a `Declaration::Import` built by `.new` (a RakuAST node), `None`
+/// for the instance form the resolver hands out.
+// Cost: O(f).
+pub(super) fn built_import_field(target: &Value, field: &str) -> Option<Value> {
+    match target.view() {
+        ValueView::RakuAst(node)
+            if node.class == crate::rakuast::RakuAstClass::DeclarationImport =>
+        {
+            named_field(target, field)
+        }
+        _ => None,
+    }
+}
+
+// Cost: O(f).
+fn import_lexical_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(built_import_field(target, "lexical-name").unwrap_or(Value::NIL))
+}
+
 // Cost: O(f).
 fn implicit_constant_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(named_field(target, "name").unwrap_or(Value::NIL))
@@ -131,6 +150,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "compile-time-value",
         arity: 0,
         handler: Handler::Pure(resolved_constant_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Declaration::Import",
+        name: "lexical-name",
+        arity: 0,
+        handler: Handler::Pure(import_lexical_name),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },

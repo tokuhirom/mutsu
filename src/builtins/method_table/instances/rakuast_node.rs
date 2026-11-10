@@ -224,6 +224,13 @@ fn external_value(
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
+    // An `Import` a module built itself (`Declaration::Import.new(:lexical-name,
+    // :compile-time-value)`, CompUnit::Util) holds its value.
+    if let Some(value) =
+        super::rakuast_compile_state::built_import_field(target, "compile-time-value")
+    {
+        return Some(Ok(value));
+    }
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
