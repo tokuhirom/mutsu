@@ -26,14 +26,15 @@ impl Drop for RoutineBodyGuard {
     }
 }
 
-/// The body about to be parsed belongs to the routine `name` with `params`;
+/// The body about to be parsed belongs to the routine `name` with `params`
+/// (`None`: no signature written);
 /// hold the guard while it is parsed. Costs one flag test when no slang wraps
 /// `statementlist`.
 // Cost: O(k) without a wrapper, k = registered wrappers; else O(p), p = parameters.
 pub(in crate::parser) fn announce_routine_body(
     kind: RoutineKind,
     name: &str,
-    params: &[ParamDef],
+    params: Option<&[ParamDef]>,
 ) -> RoutineBodyGuard {
     if super::slang_hooks::statementlist_wrapped() {
         let node = routine_scope_node(kind, name, params);

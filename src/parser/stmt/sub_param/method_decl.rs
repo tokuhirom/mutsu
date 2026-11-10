@@ -137,6 +137,7 @@ fn method_decl_body_with_my(
     let (rest, _) = ws(rest)?;
 
     let mut signature_start = None;
+    let has_signature = rest.starts_with('(');
     let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
@@ -180,7 +181,7 @@ fn method_decl_body_with_my(
             crate::rakuast::slang_block_scope::RoutineKind::Method
         },
         &name,
-        &param_defs,
+        has_signature.then_some(param_defs.as_slice()),
     );
     let (rest, mut body) = if param_defs.iter().any(|p| p.sigilless)
         || super::super::sub::has_type_capture(&param_defs)

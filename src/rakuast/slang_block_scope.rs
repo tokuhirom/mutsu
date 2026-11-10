@@ -21,17 +21,21 @@ pub(crate) enum RoutineKind {
 }
 
 /// `RakuAST::Method` / `Sub` / `Submethod` with the routine's `name` and
-/// `signature`, the scope node a routine body's statement list is parsed in.
-/// The body is not there yet: it is what is being parsed.
+/// `signature` (none when the declaration writes none, as in rakudo), the scope
+/// node a routine body's statement list is parsed in. The body is not there yet:
+/// it is what is being parsed.
 // Cost: O(p), p = parameters.
-pub(crate) fn routine_scope_node(kind: RoutineKind, name: &str, params: &[ParamDef]) -> Option<Value> {
+pub(crate) fn routine_scope_node(
+    kind: RoutineKind,
+    name: &str,
+    params: Option<&[ParamDef]>,
+) -> Option<Value> {
     let class = match kind {
         RoutineKind::Sub => RakuAstClass::Sub,
         RoutineKind::Method => RakuAstClass::Method,
         RoutineKind::Submethod => RakuAstClass::Submethod,
     };
     let names = NameScope::default();
-    let signature = super::routine_origins::anon_signature(&names, params, None).ok()?;
     let mut fields = Vec::with_capacity(2);
     if !name.is_empty() {
         fields.push(RakuAstField {
@@ -41,9 +45,17 @@ pub(crate) fn routine_scope_node(kind: RoutineKind, name: &str, params: &[ParamD
             ))),
         });
     }
+    // Without a written signature rakudo's scope has none yet (the type object)
+    // while the body is parsed, where a node built later shows an empty one.
+    let signature = match params {
+        Some(params) => Value::rakuast(Box::new(
+            super::routine_origins::anon_signature(&names, params, None).ok()?,
+        )),
+        None => Value::package(crate::symbol::Symbol::intern("RakuAST::Signature")),
+    };
     fields.push(RakuAstField {
         name: Some("signature"),
-        value: RakuAstFieldValue::Node(Value::rakuast(Box::new(signature))),
+        value: RakuAstFieldValue::Node(signature),
     });
     Some(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),

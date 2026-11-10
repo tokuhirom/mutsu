@@ -544,7 +544,7 @@ pub(crate) fn sub_decl_body(
     let routine_body = super::super::simple::announce_routine_body(
         crate::rakuast::slang_block_scope::RoutineKind::Sub,
         &name,
-        &param_defs,
+        has_explicit_signature.then_some(param_defs.as_slice()),
     );
     let (rest, mut body) = if super::any_sigilless(&param_defs)
         || super::any_callable_param(&param_defs)
