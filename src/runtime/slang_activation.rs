@@ -424,6 +424,16 @@ impl Interpreter {
         let Some(grammar) = args.get(1) else {
             return Err(RuntimeError::new("define_slang requires a grammar handle"));
         };
+        // `$*LANG` is the language of the compilation unit being compiled, so a
+        // `define_slang` run by the EXPORT hook of a module that the activating
+        // module itself `use`s slangs that module's own compilation, not the
+        // importer's (#17267: Qwiratry::Mold::Slang `use`s the Topic slang
+        // without re-exporting it, and rakudo leaves a plain importer's `given`
+        // alone). Only the activating module's own hook (it is the only module loading)
+        // registers for the importer.
+        if self.module.module_load_stack.len() > 1 {
+            return Ok(Value::NIL);
+        }
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
         let mut declarators: Vec<SlangDeclarator> = Vec::new();
         // The productions the slang's own grammar declares, for telling the
