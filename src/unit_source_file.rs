@@ -65,9 +65,79 @@ impl Drop for UnitSourceFileGuard {
     }
 }
 
+thread_local! {
+    /// The unit whose slang productions are being replayed, while their actions run.
+    static REPLAY_UNIT: Cell<Option<Symbol>> = const { Cell::new(None) };
+    /// How many RakuAST trees are being evaluated (`EVAL` of a node).
+    static TREE_EVAL_DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Marks the span in which a replayed slang action runs for the unit `file`.
+pub(crate) struct ReplayUnitGuard(Option<Symbol>);
+
+impl ReplayUnitGuard {
+    pub(crate) fn enter(file: Option<Symbol>) -> Self {
+        Self(REPLAY_UNIT.with(|cell| cell.replace(file)))
+    }
+}
+
+impl Drop for ReplayUnitGuard {
+    fn drop(&mut self) {
+        let previous = self.0;
+        REPLAY_UNIT.with(|cell| cell.set(previous));
+    }
+}
+
+/// Marks the span in which a RakuAST tree is lowered and run as an `EVAL` unit.
+pub(crate) struct TreeEvalGuard;
+
+impl TreeEvalGuard {
+    pub(crate) fn enter() -> Self {
+        TREE_EVAL_DEPTH.with(|d| d.set(d.get() + 1));
+        Self
+    }
+}
+
+impl Drop for TreeEvalGuard {
+    fn drop(&mut self) {
+        TREE_EVAL_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
+
+/// The unit a closure built by a RakuAST tree belongs to: the unit a slang
+/// production is being replayed for. rakudo compiles such a tree into the
+/// compilation unit that holds the production's text (`$*CU`), so the
+/// operators that unit imported apply inside the closure, whichever module's
+/// code (`Mold::Compiler.compile-block-expr`) asked for the tree to be built.
+// Cost: O(1).
+pub(crate) fn tree_closure_unit() -> Option<Symbol> {
+    if TREE_EVAL_DEPTH.with(Cell::get) == 0 {
+        return None;
+    }
+    REPLAY_UNIT.with(Cell::get)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tree_closure_unit_needs_a_replay_and_a_tree_eval() {
+        let unit = Symbol::intern("replaying.raku");
+        assert_eq!(tree_closure_unit(), None);
+        {
+            let _tree = TreeEvalGuard::enter();
+            assert_eq!(tree_closure_unit(), None, "no replay is running");
+        }
+        let _replay = ReplayUnitGuard::enter(Some(unit));
+        assert_eq!(tree_closure_unit(), None, "no tree is being evaluated");
+        {
+            let _tree = TreeEvalGuard::enter();
+            let _nested = TreeEvalGuard::enter();
+            assert_eq!(tree_closure_unit(), Some(unit));
+        }
+        assert_eq!(tree_closure_unit(), None);
+    }
 
     #[test]
     fn guard_publishes_and_restores() {
