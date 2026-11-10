@@ -80,6 +80,22 @@ impl Interpreter {
                         Self::eval_set_cont_values,
                     );
                 }
+                // The set relations: a user candidate that lost to the core
+                // `(Any, Any)` one (`core_infix_verdict`) lands here.
+                "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" => {
+                    let (left, right) = self.walk_set_operands(
+                        Self::unwrap_var_ref_value(call_args[0].clone()),
+                        Self::unwrap_var_ref_value(call_args[1].clone()),
+                    )?;
+                    return self.eval_binary_with_junctions(left, right, |_, l, r| {
+                        Ok(Value::truth(match name {
+                            "(<=)" | "⊆" => Self::quant_hash_subset(&l, &r),
+                            "(>=)" | "⊇" => Self::quant_hash_subset(&r, &l),
+                            "(<)" | "⊂" => Self::quant_hash_strict_subset(&l, &r),
+                            _ => Self::quant_hash_strict_subset(&r, &l),
+                        }))
+                    });
+                }
                 _ => {}
             }
         }
