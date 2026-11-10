@@ -30,6 +30,23 @@ impl Interpreter {
         let package_sym = Symbol::intern(&package_name);
         let pkg_is_global = package_sym == crate::symbol::wk::global_package();
 
+        // CORE:: / SETTING:: list the core types and the core routines
+        // (`&print`, `&say`, ...); the routine values resolve through the
+        // same lazy `CORE::name` lookup `CORE::.<&not>` uses.
+        if matches!(package_name.as_str(), "CORE" | "SETTING") {
+            let mut symbols: ValueMap = ValueMap::default();
+            for name in crate::builtin_functions::BUILTIN_FUNCTION_NAMES {
+                if self.user_declares_routine(name) {
+                    continue;
+                }
+                let value = self.resolve_code_var(&format!("{package_name}::{name}"));
+                if !value.is_nil() {
+                    symbols.insert(format!("&{name}"), value);
+                }
+            }
+            return Self::make_stash_instance(package, symbols);
+        }
+
         // PROCESS:: pseudo-package: exposes process-level dynamic variables
         // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
         // PROCESS::<$PROGRAM> looks up key "$PROGRAM" in the stash.
