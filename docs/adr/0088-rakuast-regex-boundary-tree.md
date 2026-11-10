@@ -1793,3 +1793,12 @@ matching, identical under `raku`.
 The corpus case `:i x <?before a> . y` on `xAy` used to pin `Nil` (the runtime
 parser did not carry `:i` into the lookahead); `raku` answers `｢xAy｣`, which the
 direct lowering now matches, so the pinned output was corrected.
+
+## 80. Match markers and `<?>` lower straight from the tree (2026-11-10)
+
+The direct lowering now covers `<(` (`CaptureStartMarker`), `)>`
+(`CaptureEndMarker`) and the null assertion `<?>` (`ZeroWidth`), the atoms the
+runtime parser builds for the same spellings. `<!>` and the other character
+classes still use the runtime parser.
+`t/regex/match/regex-tree-match-markers-lowering.t` pins the behaviour,
+identical under `raku`.

@@ -1,7 +1,7 @@
 //! The `EXPORTHOW::DECLARE` keywords a module's scan records.
 
 use super::{DeclScan, package_type_name};
-use crate::ast::{Expr, Stmt};
+use crate::ast::Stmt;
 
 impl DeclScan {
     /// `EXPORTHOW::DECLARE` entries can be constants (`constant kw = SomeHOW`)
@@ -36,16 +36,19 @@ impl DeclScan {
                 Stmt::Package { name, body, .. } if name.resolve() == "DECLARE" => {
                     for decl in body {
                         match decl {
+                            // The HOW is a bareword, which the parser wraps in a
+                            // `Spelled` once it knows the name (an imported type).
                             Stmt::VarDecl {
                                 name,
-                                expr: Expr::BareWord(how_type),
-                                custom_traits,
+                                expr,
                                 constant,
                                 ..
-                            } if constant.is_some() => {
+                            } if constant.is_some()
+                                && let Some(how_type) = expr.peel_parens().as_bare_word() =>
+                            {
                                 self.out
                                     .declare_keywords
-                                    .push((name.clone(), how_type.clone()));
+                                    .push((name.clone(), how_type.to_string()));
                             }
                             Stmt::ClassDecl { name, .. } if !name.resolve().contains("::") => {
                                 self.out.declare_keywords.push((

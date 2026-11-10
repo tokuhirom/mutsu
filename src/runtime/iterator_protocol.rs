@@ -215,6 +215,35 @@ impl crate::Interpreter {
         Ok(Some(pulled).filter(|items| items.len() > have))
     }
 
+    /// The elements a protocol call needs beyond the `have` already
+    /// materialised from a lazy source: just the new tail, so the caller
+    /// appends it in place. A `pull-one` loop then costs O(1) amortised per
+    /// element, where [`Self::iterator_topup_from_lazy_source`] re-copied the
+    /// whole prefix on every pull (O(n^2) for `(... xx *).iterator`).
+    ///
+    /// `None` when nothing was needed, or for a call that wants the whole
+    /// source (`push-all`, `sink-all`), which keeps the full top-up.
+    // Cost: O(k) for the k new elements, plus producing them.
+    pub(crate) fn iterator_topup_tail_from_lazy_source(
+        &mut self,
+        source: Option<&Value>,
+        op: IterOp,
+        index: usize,
+        args: &[Value],
+        have: usize,
+    ) -> Result<Option<Vec<Value>>, crate::value::RuntimeError> {
+        let Some(ValueView::LazyList(list)) = source.map(Value::view) else {
+            return Ok(None);
+        };
+        match needed_len(op, index, args) {
+            Some(need) if need > have => {
+                let tail = self.force_lazy_list_vm_window(&list, have, need)?;
+                Ok(Some(tail).filter(|t| !t.is_empty()))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// The elements a built-in `Iterator` instance has left from its cursor on,
     /// for a consumer that drains it whole (`List.from-iterator`, a
     /// `PositionalBindFailover` coercion). An iterator over a lazy source holds
