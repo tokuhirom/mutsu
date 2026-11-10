@@ -1580,7 +1580,19 @@ impl Interpreter {
                 // An END an `EVAL`'d unit installed calls the routines that
                 // unit declared, which left the registry with the unit.
                 let unit_routines = self.reinstall_unit_routines(&phaser.unit_routines);
+                // An END an `EVAL`'d unit installed reads that unit's own `use`
+                // imports, which are no longer open at exit.
+                let saved_import_chain = phaser.import_chain.clone().map(|chain| {
+                    (
+                        self.module.eval_import_chain.replace(chain),
+                        self.module.eval_import_unit.replace(phaser.unit),
+                    )
+                });
                 let body_result = self.run_block(body);
+                if let Some((chain, unit)) = saved_import_chain {
+                    self.module.eval_import_chain = chain;
+                    self.module.eval_import_unit = unit;
+                }
                 if let Some(snapshot) = unit_routines {
                     self.restore_routine_registry(snapshot);
                 }
