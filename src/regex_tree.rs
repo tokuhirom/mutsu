@@ -664,10 +664,24 @@ impl RegexTree {
                     ratchet,
                 )]),
                 // Match markers keep the runtime parser's plan.
-                RegexNode::MatchFrom
-                | RegexNode::MatchTo
-                | RegexNode::AssertionPass
-                | RegexNode::AssertionFail => None,
+                RegexNode::MatchFrom => Some(vec![token(
+                    crate::runtime::RegexAtom::CaptureStartMarker,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::MatchTo => Some(vec![token(
+                    crate::runtime::RegexAtom::CaptureEndMarker,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                // `<?>`: the null assertion.
+                RegexNode::AssertionPass => Some(vec![token(
+                    crate::runtime::RegexAtom::ZeroWidth,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                // `<!>` keeps the runtime parser's plan.
+                RegexNode::AssertionFail => None,
                 RegexNode::AnchorEndOfLine => Some(vec![token(
                     crate::runtime::RegexAtom::EndOfLine,
                     crate::runtime::RegexQuant::One,
