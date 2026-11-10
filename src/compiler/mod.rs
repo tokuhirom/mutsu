@@ -5135,6 +5135,20 @@ impl Compiler {
         }
     }
 
+    /// Whether `stmts` holds a `LEAVE` / `KEEP` / `UNDO` phaser of its own.
+    // Cost: O(n), n = statements.
+    fn has_exit_phasers(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                    ..
+                }
+            )
+        })
+    }
+
     fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         // Hoist top-level `use Test` declarations to the front (Raku `use` is
         // BEGIN-time, so test functions are available throughout the file even
@@ -5251,8 +5265,8 @@ impl Compiler {
         if has_catch {
             self.compile_implicit_try(stmts);
             self.emit_unit_tail_result();
-        } else if (self.is_routine || self.in_eval_unit)
-            && Self::has_block_enter_leave_phasers(stmts)
+        } else if (self.is_routine && Self::has_block_enter_leave_phasers(stmts))
+            || (self.in_eval_unit && Self::has_exit_phasers(stmts))
         {
             // An EVAL'd unit is a scope of its own whose exit phasers run when
             // it ends, wherever the EVAL was called from. Its BEGIN-time prologue
