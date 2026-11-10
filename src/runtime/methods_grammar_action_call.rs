@@ -73,12 +73,13 @@ impl Interpreter {
     /// resolves, else the general method funnel.
     // Cost: O(1) when the method resolves from the generation-keyed resolve
     // cache; the funnel fallback is the general call's own cost.
-    fn call_action_method(
+    pub(super) fn call_action_method(
         &mut self,
         actions: &Value,
         method: &str,
         match_obj: &Value,
     ) -> Result<Value, RuntimeError> {
+        self.record_slang_action(method, match_obj);
         if let Some(result) =
             self.try_dispatch_compiled_method_direct(actions, method, std::slice::from_ref(match_obj))
         {

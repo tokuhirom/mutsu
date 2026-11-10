@@ -248,6 +248,11 @@ impl UndeclaredName<'_> {
         {
             return false;
         }
+        // A keyword is no module's declaration: a module exporting a term named
+        // `self` (an enum key) does not make a method's `self` undeclared (#17243).
+        if is_core_term(name) {
+            return true;
+        }
         // A module's own declaration resolves only where that module is
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
         if interp.module_name_hidden_here(name) {

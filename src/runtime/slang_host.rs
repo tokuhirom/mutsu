@@ -92,6 +92,12 @@ grammar Mutsu::Slang::Host::Base {
     # zero-width success.
     token set_braid_from($) { <?> }
 }
+"#;
+
+/// The stubs of the resolver, compilation unit and base actions a production reads
+/// (`$*R`, `$*CU`, `attach`). The unit evaluates them too, to replay an action there
+/// (ADR-17243).
+pub(super) const HOST_STUBS: &str = r#"
 # The resolver and compilation unit a production reads (`$*R`, `$*CU`): the host
 # resolves names at run time, so declaring a lexical is a no-op and the
 # context is empty.
@@ -134,6 +140,10 @@ class Mutsu::Slang::Host::Actions {
     method statement-control:sym<if>(Mu $/) { $/.ast }
     method statement-control:sym<while>(Mu $/) { $/.ast }
 }
+"#;
+
+/// The entry of the host: runs one production and answers its node.
+const HOST_ENTRY_SOURCE: &str = r#"
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
@@ -212,6 +222,22 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
         my $stmt := @decls.head;
         return ($m.to, RakuAST::StatementList.new($stmt));
     }
+    # An action of the slang's own production may have done more than attach a node
+    # (Qwiratry's `mold` registers into a module-level registry): that happened in
+    # this interpreter only, so the unit re-runs the recorded actions where the
+    # production stands (ADR-17243). A class the production installed as a constant has its own replay, above.
+    if $m.ast.defined && $rule.split(':')[0] eq any(<routine-declarator scope-declarator statement-control statement-prefix>) {
+        my @events = __mutsu_slang_action_events();
+        if @events.elems {
+            my sub literal($value) {
+                RakuAST::Term::Declaration.new(RakuAST::Declaration::ResolvedConstant.new(:compile-time-value($value)))
+            }
+            my $replay = RakuAST::Statement::Expression.new(expression => RakuAST::Call::Name.new(
+                name => RakuAST::Name.from-identifier('__mutsu_slang_replay_actions'),
+                args => RakuAST::ArgList.new(literal(@aroles), literal(@events))));
+            return ($m.to, RakuAST::StatementList.new($replay, $m.ast));
+        }
+    }
     return ($m.to, $m.ast) if $m.ast.defined;
     # A production whose slang attached no node stands for the core definition it
     # read (rakudo's own `routine-declarator` action answers it): `Slang::Mosdef`
@@ -276,7 +302,7 @@ impl Interpreter {
         let mut run = HOST_ENTRY.with(|e| e.borrow().clone());
         if run.is_none() {
             let entry = self
-                .eval_code_string(HOST_PRELUDE)
+                .eval_code_string(&format!("{HOST_PRELUDE}{HOST_STUBS}{HOST_ENTRY_SOURCE}"))
                 .map_err(|e| e.message.to_string())?;
             HOST_ENTRY.with(|e| *e.borrow_mut() = Some(entry.clone()));
             run = Some(entry);
