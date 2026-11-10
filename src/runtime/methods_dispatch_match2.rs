@@ -491,7 +491,10 @@ impl Interpreter {
             func: args.first().cloned(),
             fatal: self.module.fatal_mode,
             mode,
-            plan: Default::default(),
+            plan: crate::runtime::map_grep_plan::MapGrepPlanSlot::for_source(matches!(
+                target.view(),
+                ValueView::Array(_, crate::value::ArrayKind::List)
+            )),
         }))
     }
     /// Dispatch "min" and "max" methods.

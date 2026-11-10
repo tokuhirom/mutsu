@@ -69,6 +69,7 @@ impl Compiler {
             } = crate::ast::make_anon_sub(body.to_vec())
         {
             self.pending_immutable_topic_block = false;
+            self.pending_topic_site_block = false;
             self.compile_expr_anon_sub_params(
                 &params,
                 &param_defs,
@@ -88,6 +89,7 @@ impl Compiler {
         // picks up the enclosing `.map`/`.grep`-over-a-literal verdict the
         // caller set -- see `CompiledCode::immutable_topic`.
         let immutable_topic = std::mem::take(&mut self.pending_immutable_topic_block);
+        let topic_site_decided = std::mem::take(&mut self.pending_topic_site_block);
         let declarator_doc = self.pending_declarator_doc.take().map(std::sync::Arc::new);
         if is_rw {
             // A bare `is rw` block (a `<->`-style loop body) keeps its tail
@@ -99,6 +101,7 @@ impl Compiler {
                 self.compile_routine_closure_body(&[], &[], body, true)
             };
             compiled.immutable_topic = immutable_topic;
+            compiled.topic_site_decided = topic_site_decided;
             compiled.declarator_doc = declarator_doc;
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
@@ -160,6 +163,7 @@ impl Compiler {
             // placeholder block (`{ $^a }`) binds its own parameter and keeps
             // the enclosing `$_`.
             compiled.immutable_topic = immutable_topic && placeholders.is_empty();
+            compiled.topic_site_decided = topic_site_decided;
             compiled.declarator_doc = declarator_doc;
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);

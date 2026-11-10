@@ -1788,6 +1788,8 @@ pub(crate) struct Compiler {
     /// at entry, so a block nested inside the callback does not inherit it.
     /// See [`crate::opcode::CompiledCode::immutable_topic`].
     pending_immutable_topic_block: bool,
+    /// See [`crate::opcode::CompiledCode::topic_site_decided`].
+    pending_topic_site_block: bool,
     /// One-shot: the declarator documentation of the anonymous sub or block
     /// about to be compiled. `compile_expr_anon_sub(_params)` takes it at
     /// entry and stores it on the closure's `CompiledCode`, so a block nested
@@ -2260,6 +2262,7 @@ impl Compiler {
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
             pending_immutable_topic_block: false,
+            pending_topic_site_block: false,
             pending_declarator_doc: None,
             decl_in_flight: None,
             constant_vars: std::collections::HashSet::new(),

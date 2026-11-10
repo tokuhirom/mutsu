@@ -374,8 +374,11 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block =
+                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
+            self.pending_topic_site_block = false;
             // ADR-0067's argument producer, method-callee half: the invocant
             // was pushed before this loop started, so the VM can ask the real
             // callee's signature even though its class is not knowable here.
@@ -977,8 +980,11 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block =
+                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
+            self.pending_topic_site_block = false;
             // ADR-0067's argument producer, as in the sibling loop: this path
             // serves a receiver that is not a plain variable (`S.new.take(...)`,
             // a chained call), whose invocant `compile_expr(target)` above has
