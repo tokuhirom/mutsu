@@ -3726,6 +3726,16 @@ pub(crate) enum OpCode {
     /// slot inspection survives only as the fallback for a `MarkSigillessBind`
     /// reached with no recorded verdict.
     MarkSigillessBind(u32),
+    /// Write the `__mutsu_sigilless_readonly::<name>` marker of a readonly
+    /// sigilless term declaration (`my \x = EXPR` in a loop or routine body):
+    /// `true` after the store, `false` before it to clear a previous
+    /// iteration's mark. The key is the string constant at `key_idx`, known at
+    /// compile time, so this is one pre-interned env insert instead of the
+    /// general string-keyed `SetGlobal` store (`set_env_with_main_alias` and its
+    /// package/alias probes), which cost ~24k instructions per declaration
+    /// (#17376).
+    // Cost: O(1).
+    SetTermMark { key_idx: u32, on: bool },
     /// Mark a variable as readonly (for `:=` binding / `constant`). The
     /// [`ReadonlyKind`] records *why*, which decides the exception an
     /// assignment through the name throws.

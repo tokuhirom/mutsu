@@ -67,9 +67,10 @@ impl Compiler {
             let key =
                 crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
             let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-            let false_idx = self.code.add_constant(Value::FALSE);
-            self.code.emit(OpCode::LoadConst(false_idx));
-            self.code.emit(OpCode::SetGlobal(key_idx));
+            self.code.emit(OpCode::SetTermMark {
+                key_idx,
+                on: false,
+            });
         }
     }
 
@@ -101,8 +102,6 @@ impl Compiler {
         let key =
             crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
         let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-        let true_idx = self.code.add_constant(Value::TRUE);
-        self.code.emit(OpCode::LoadConst(true_idx));
-        self.code.emit(OpCode::SetGlobal(key_idx));
+        self.code.emit(OpCode::SetTermMark { key_idx, on: true });
     }
 }
