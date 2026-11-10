@@ -165,7 +165,7 @@ impl Interpreter {
         if matches!(method, "elems" | "end")
             && args.is_empty()
             && self.has_user_method_including_role(&cn, "is-lazy")
-            && let Ok(lazy) = self.call_method_with_values(target.clone(), "is-lazy", Vec::new())
+            && let Ok(lazy) = self.try_compiled_method_or_interpret_sym(target.clone(), crate::symbol::Symbol::intern("is-lazy"), Vec::new())
             && lazy.truthy()
         {
             return Some(Ok(RuntimeError::cannot_lazy_action_failure(&format!(
