@@ -344,10 +344,12 @@ unsafe extern "C" fn trampoline_word(
     args: *const *const std::ffi::c_void,
     data: &CallbackData,
 ) {
-    *result = match invoke(data, args) {
+    // Raku code runs (and `Value`s are made and dropped) here, on a thread
+    // the native call counted quiescent: run it as a mutator.
+    *result = crate::gc::foreign_callback_mutator(|| match invoke(data, args) {
         Some(v) => encode_word_result(data.sig.ret, &v),
         None => 0,
-    };
+    });
 }
 
 unsafe extern "C" fn trampoline_f32(
@@ -356,10 +358,12 @@ unsafe extern "C" fn trampoline_f32(
     args: *const *const std::ffi::c_void,
     data: &CallbackData,
 ) {
-    *result = match invoke(data, args) {
+    // Raku code runs (and `Value`s are made and dropped) here, on a thread
+    // the native call counted quiescent: run it as a mutator.
+    *result = crate::gc::foreign_callback_mutator(|| match invoke(data, args) {
         Some(v) => crate::runtime::utils::to_float_value(&v).unwrap_or(0.0) as f32,
         None => 0.0,
-    };
+    });
 }
 
 unsafe extern "C" fn trampoline_f64(
@@ -368,8 +372,10 @@ unsafe extern "C" fn trampoline_f64(
     args: *const *const std::ffi::c_void,
     data: &CallbackData,
 ) {
-    *result = match invoke(data, args) {
+    // Raku code runs (and `Value`s are made and dropped) here, on a thread
+    // the native call counted quiescent: run it as a mutator.
+    *result = crate::gc::foreign_callback_mutator(|| match invoke(data, args) {
         Some(v) => crate::runtime::utils::to_float_value(&v).unwrap_or(0.0),
         None => 0.0,
-    };
+    });
 }

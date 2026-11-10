@@ -51,6 +51,8 @@ pub(crate) use stw::{
     park_at_safepoint as gc_park_point, preregister_worker_quiescent, thread_is_registered,
     wait_until, worker_started,
 };
+#[cfg(feature = "libffi")]
+pub(crate) use stw::{foreign_call_quiescent, foreign_callback_mutator};
 
 /// Test-only serialization for every unit test that touches the process-global
 /// GC statics (candidate buffer, worker count, STW flags, cooldown). The

@@ -293,6 +293,62 @@ fn block_quiescent_inner<R>(f: impl FnOnce() -> R) -> R {
     r
 }
 
+#[cfg(feature = "libffi")]
+thread_local! {
+    /// Whether this thread is inside [`foreign_call_quiescent`] AND that call
+    /// counted it quiescent -- what [`foreign_callback_mutator`] has to undo
+    /// when C calls back into Raku code.
+    static FOREIGN_QUIESCENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run a foreign (C) call `f` with this thread counted quiescent, as MoarVM
+/// marks a thread blocked around a native call: a call that blocks in C
+/// (`accept`, `recv`, `connect`) must not starve every other thread's
+/// stop-the-world. `f` must not touch the `Gc` graph itself; Raku code that C
+/// calls back into re-enters as a mutator through [`foreign_callback_mutator`].
+// Cost: O(1) around `f`.
+#[cfg(feature = "libffi")]
+pub(crate) fn foreign_call_quiescent<R>(f: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FOREIGN_QUIESCENT.with(|q| q.set(self.0));
+        }
+    }
+    block_quiescent_inner(|| {
+        // `block_quiescent_inner` counted the thread quiescent exactly when the
+        // GC is on and the thread is registered.
+        let counted = super::gc_ptr::gc_enabled() && thread_is_registered();
+        let _restore = Restore(FOREIGN_QUIESCENT.with(|q| q.replace(counted)));
+        f()
+    })
+}
+
+/// Run `f` -- a native callback's body, which runs Raku code and so mutates
+/// the `Gc` graph -- as a mutator: when this thread is inside
+/// [`foreign_call_quiescent`], leave quiescence through the checked protocol
+/// for `f`'s duration and re-enter it afterwards, as MoarVM unblocks a thread
+/// for a callback. A callback outside a foreign call (or with the GC off) just
+/// runs `f`.
+// Cost: O(1) around `f`.
+#[cfg(feature = "libffi")]
+pub(crate) fn foreign_callback_mutator<R>(f: impl FnOnce() -> R) -> R {
+    if !FOREIGN_QUIESCENT.with(|q| q.get()) {
+        return f();
+    }
+    struct Requiesce;
+    impl Drop for Requiesce {
+        fn drop(&mut self) {
+            quiescent_enter();
+            FOREIGN_QUIESCENT.with(|q| q.set(true));
+        }
+    }
+    FOREIGN_QUIESCENT.with(|q| q.set(false));
+    quiescent_exit_checked();
+    let _requiesce = Requiesce;
+    f()
+}
+
 /// A condvar wait that counts the thread quiescent and is stop-the-world
 /// aware: it returns only when `ready(&guard)` holds AND no stop is in
 /// progress at the moment of leaving. `ready` must be a pure read (no `Value`

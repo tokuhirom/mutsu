@@ -395,6 +395,59 @@ pub(crate) fn load_library_cached(
     )))
 }
 
+/// A native call's result before it becomes a `Value`: what
+/// [`raw_ffi_call`] returns while the thread is still counted blocked.
+#[cfg(feature = "libffi")]
+enum RawRet {
+    Unit,
+    Int(i64),
+    Num(f64),
+    Addr(usize),
+    Str(*const std::ffi::c_char),
+}
+
+/// Make the libffi call for return type `ret`, touching no `Value`.
+///
+/// # Safety
+/// `cif` must match the function at `code`, and every pointer in `args` must
+/// stay valid for the call.
+// Cost: O(1) plus the callee.
+#[cfg(feature = "libffi")]
+unsafe fn raw_ffi_call(
+    cif: &libffi::middle::Cif,
+    code: libffi::middle::CodePtr,
+    args: &[libffi::middle::Arg],
+    ret: CType,
+) -> RawRet {
+    // SAFETY: forwarded from this function's contract.
+    unsafe {
+        match ret {
+            CType::Void => {
+                cif.call::<()>(code, args);
+                RawRet::Unit
+            }
+            CType::I8 => RawRet::Int(cif.call::<i8>(code, args) as i64),
+            CType::I16 => RawRet::Int(cif.call::<i16>(code, args) as i64),
+            CType::I32 => RawRet::Int(cif.call::<i32>(code, args) as i64),
+            CType::I64 => RawRet::Int(cif.call::<i64>(code, args)),
+            CType::U8 => RawRet::Int(cif.call::<u8>(code, args) as i64),
+            CType::U16 => RawRet::Int(cif.call::<u16>(code, args) as i64),
+            CType::U32 => RawRet::Int(cif.call::<u32>(code, args) as i64),
+            CType::U64 => RawRet::Int(cif.call::<u64>(code, args) as i64),
+            CType::F32 => RawRet::Num(cif.call::<f32>(code, args) as f64),
+            CType::F64 => RawRet::Num(cif.call::<f64>(code, args)),
+            // A CArray return is mapped to `CType::Pointer` at registration
+            // (a returned `CArray[T]` has no length to reify), so it is an
+            // opaque pointer here; a CStruct return (`ret_struct` set) is
+            // wrapped by the caller.
+            CType::Pointer | CType::CArray | CType::Buf | CType::Callback => {
+                RawRet::Addr(cif.call::<usize>(code, args))
+            }
+            CType::Str => RawRet::Str(cif.call::<*const std::ffi::c_char>(code, args)),
+        }
+    }
+}
+
 /// Perform a native call, additionally returning the decoded values of `is rw`
 /// numeric out-parameters as `(arg index, value)` pairs. A caller's variable
 /// that arrives as a shared cell is already written in place; the returned
@@ -575,31 +628,26 @@ pub fn call_native_with_out_args(
     // under this call (#14864).
     let native_gate = crate::native_exit_gate::NativeCallGuard::enter();
 
-    // SAFETY: the CIF matches the declared signature; arg pointers outlive the
-    // call via `owners`.
+    // The foreign call itself runs with this thread counted blocked (MoarVM
+    // marks a thread blocked around a native call): a pool worker sitting in
+    // `accept`/`recv`/`connect` frees its slot so the pool grows for queued
+    // tasks (ADR-0123), and counts quiescent so it cannot starve another
+    // thread's stop-the-world. Nothing inside touches a `Value`; a `&callback`
+    // re-enters as a mutator (`gc::foreign_callback_mutator`).
+    let raw = {
+        let _blocking = crate::runtime::worker_pool::enter_blocking();
+        // SAFETY: the CIF matches the declared signature; arg pointers outlive
+        // the call via `owners`.
+        crate::gc::foreign_call_quiescent(|| unsafe { raw_ffi_call(&cif, code, &ffi_args, spec.ret) })
+    };
+    // SAFETY: a `Str` return is a C string pointer the callee handed back,
+    // read before anything else runs on this thread.
     let result = unsafe {
-        match spec.ret {
-            CType::Void => {
-                cif.call::<()>(code, &ffi_args);
-                Value::NIL
-            }
-            CType::I8 => Value::int(cif.call::<i8>(code, &ffi_args) as i64),
-            CType::I16 => Value::int(cif.call::<i16>(code, &ffi_args) as i64),
-            CType::I32 => Value::int(cif.call::<i32>(code, &ffi_args) as i64),
-            CType::I64 => Value::int(cif.call::<i64>(code, &ffi_args)),
-            CType::U8 => Value::int(cif.call::<u8>(code, &ffi_args) as i64),
-            CType::U16 => Value::int(cif.call::<u16>(code, &ffi_args) as i64),
-            CType::U32 => Value::int(cif.call::<u32>(code, &ffi_args) as i64),
-            CType::U64 => Value::int(cif.call::<u64>(code, &ffi_args) as i64),
-            CType::F32 => Value::num(cif.call::<f32>(code, &ffi_args) as f64),
-            CType::F64 => Value::num(cif.call::<f64>(code, &ffi_args)),
-            // A CArray return is mapped to `CType::Pointer` at registration
-            // (a returned `CArray[T]` has no length to reify), so this arm is
-            // unreachable in practice — treat it as an opaque pointer. A CStruct
-            // return (`ret_struct` set) wraps the address in an instance of the
-            // declared class so it round-trips as that native handle type.
-            CType::Pointer | CType::CArray | CType::Buf | CType::Callback => {
-                let addr = cif.call::<usize>(code, &ffi_args);
+        match raw {
+            RawRet::Unit => Value::NIL,
+            RawRet::Int(i) => Value::int(i),
+            RawRet::Num(n) => Value::num(n),
+            RawRet::Addr(addr) => {
                 let class = spec.ret_struct.as_deref().unwrap_or("Pointer");
                 if addr == 0 {
                     // A NULL return is the *type object*, not a defined pointer
@@ -629,8 +677,7 @@ pub fn call_native_with_out_args(
                     }
                 }
             }
-            CType::Str => {
-                let ptr = cif.call::<*const std::ffi::c_char>(code, &ffi_args);
+            RawRet::Str(ptr) => {
                 if ptr.is_null() {
                     Value::NIL
                 } else {
