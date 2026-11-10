@@ -595,6 +595,9 @@ impl Interpreter {
                                 result.push(v);
                             }
                             Err(e) if e.is_next() => continue,
+                            // `last` ends this level's iteration (a nested list ends only
+                            // itself), keeping what was mapped so far.
+                            Err(e) if e.is_last() => break,
                             Err(e) => return Err(e),
                         }
                         continue;
@@ -602,6 +605,9 @@ impl Interpreter {
                     match self.deepmap_iterate_inner(block, item, child_itemize) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
+                        // `last` ends this level's iteration (a nested list ends only
+                        // itself), keeping what was mapped so far.
+                        Err(e) if e.is_last() => break,
                         Err(e) => return Err(e),
                     }
                 }
@@ -643,6 +649,9 @@ impl Interpreter {
                     match self.deepmap_iterate_inner(block, item, true) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
+                        // `last` ends this level's iteration (a nested list ends only
+                        // itself), keeping what was mapped so far.
+                        Err(e) if e.is_last() => break,
                         Err(e) => return Err(e),
                     }
                 }
@@ -762,6 +771,9 @@ impl Interpreter {
                     match self.call_sub_value(block.clone(), vec![item.clone()]) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
+                        // `last` ends this level's iteration (a nested list ends only
+                        // itself), keeping what was mapped so far.
+                        Err(e) if e.is_last() => break,
                         Err(e) => return Err(e),
                     }
                 }
@@ -773,6 +785,9 @@ impl Interpreter {
                     match self.call_sub_value(block.clone(), vec![item.clone()]) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
+                        // `last` ends this level's iteration (a nested list ends only
+                        // itself), keeping what was mapped so far.
+                        Err(e) if e.is_last() => break,
                         Err(e) => return Err(e),
                     }
                 }
