@@ -383,8 +383,9 @@ pub(crate) fn set_relation_tail<'a>(
     }
     let r = &r[len..];
     let (r, _) = ws(r)?;
-    let (r, right) = rhs(r)
-        .map_err(|err| enrich_expected_error(err, "expected expression after set operator", r.len()))?;
+    let (r, right) = rhs(r).map_err(|err| {
+        enrich_expected_error(err, "expected expression after set operator", r.len())
+    })?;
     let l = left.take().expect("left operand");
     *left = Some(Expr::Binary {
         left: Box::new(l),
