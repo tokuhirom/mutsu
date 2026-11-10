@@ -8,6 +8,7 @@ mod methods_mixin_dispatch;
 pub(crate) use methods_mixin_dispatch::{MixinFrontEntry, MixinFrontKey, MixinWinnerKey};
 mod methods_mixin_what_cache;
 mod methods_mut;
+mod methods_mut_accessor_assign;
 mod methods_mut_dispatch;
 mod methods_mut_hash;
 mod methods_mut_method_lvalue;

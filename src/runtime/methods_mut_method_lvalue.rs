@@ -1065,6 +1065,18 @@ impl Interpreter {
             && !matches!(method, "AT-KEY" | "AT-POS")
             && !self.setter_convention_would_preempt_lvalue_return(&target, method, &method_args)
         {
+            if let Some(result) =
+                self.try_accessor_setter_assign(var_name, &target, method, &[value.clone()])
+            {
+                match result {
+                    Ok(result) => return Ok(result),
+                    Err(err) => {
+                        if !err.is_multi_no_match() && !err.is_method_not_found() {
+                            return Err(err);
+                        }
+                    }
+                }
+            }
             match self.call_method_mut_with_values(
                 var_name,
                 target.clone(),
