@@ -280,6 +280,11 @@ impl Interpreter {
                 if slot.take_first_phaser(src.has(1)) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
+                // A `NEXT` phaser fires after every iteration, including one
+                // ended by `next` (not by `last`).
+                let has_next_phaser = data.body.iter().any(|s| {
+                    matches!(s, crate::ast::Stmt::Phaser { kind: crate::ast::PhaserKind::Next, .. })
+                });
                 let mut i = 0usize;
                 let mut by_last = false;
                 while !src.satisfied(result, produced_base) && src.has(i + 1) {
@@ -437,6 +442,9 @@ impl Interpreter {
                         }
                     }
                     drop(_readonly_guard);
+                    if has_next_phaser {
+                        vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Next)?;
+                    }
                     i += arity;
                 }
                 // A map block's LAST runs once the loop ends (naturally or by
