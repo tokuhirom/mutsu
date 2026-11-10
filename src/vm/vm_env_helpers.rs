@@ -2,6 +2,20 @@ use super::*;
 use crate::meta_ns::MetaNs;
 
 impl Interpreter {
+    /// The compile-time `$*CU`: the unit's tree parsed from its source text
+    /// now, with the search paths its `use` lines were scanned with, so a class
+    /// an earlier `use` imported is a type and not a call (`Sum.()`).
+    // Cost: O(n), n = the unit's source text (parsed per call).
+    pub(crate) fn compile_time_cu_value(&self) -> Option<Value> {
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        let cu = crate::unit_source_text::compile_time_cu(
+            &|routine| self.unit_routine_imported(routine),
+            &|name| self.has_class(name),
+        );
+        crate::parser::clear_parser_lib_paths();
+        cu
+    }
+
     /// Whether the unit being compiled can call `routine` by now: a routine of
     /// the running scope, or one the importing unit has imported so far. The
     /// resolution `$*CU` answers for an imported routine is built from it.
@@ -1928,17 +1942,15 @@ impl Interpreter {
         // handful of `&str` comparisons, paid only after a real env miss).
         // `$*CU` is built with the routines the unit has imported so far, which
         // its lookups resolve to `Declaration::Import` (#15610).
+        // `$*R`: the compile-time resolver, visible while a BEGIN / CHECK phaser
+        // runs (rakudo binds it for the compile of the unit and it is undefined
+        // at run time, which is what `unless $*W || $*R` gates on). A `sub
+        // EXPORT` call binds its own (`bind_compile_time_resolver`).
+        if matches!(name, "$*R" | "*R") && self.control.check_phaser_depth > 0 {
+            return Some(crate::runtime::attach_target::compile_resolver_handle());
+        }
         if matches!(name, "$*CU" | "*CU") {
-            // The tree is parsed from the unit's source text now, with the
-            // search paths its `use` lines were scanned with, so a class an
-            // earlier `use` imported is a type and not a call (`Sum.()`).
-            crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-            let cu = crate::unit_source_text::compile_time_cu(
-                &|routine| self.unit_routine_imported(routine),
-                &|name| self.has_class(name),
-            );
-            crate::parser::clear_parser_lib_paths();
-            return cu;
+            return self.compile_time_cu_value();
         }
         if let Some(v) = Self::lazy_magic_dynamic_var(name) {
             return Some(v);

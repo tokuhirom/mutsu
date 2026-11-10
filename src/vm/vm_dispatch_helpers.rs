@@ -155,6 +155,14 @@ impl Interpreter {
                 (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => {
                     Some(crate::gc::Gc::ptr_eq(&x, &y))
                 }
+                // A RakuAST node is an immutable reference object: a `my sub f is
+                // raw { $*CU }` hands back the dynamic variable's cell, which is
+                // the node itself, so the cell and the plain node are one thing
+                // (CompUnit::Util's `scope =:= $*CU`).
+                (ValueView::ContainerRef(cell), ValueView::RakuAst(node))
+                | (ValueView::RakuAst(node), ValueView::ContainerRef(cell)) => Some(
+                    matches!(cell.load().view(), ValueView::RakuAst(held) if std::ptr::eq(&*held, &*node) || *held == *node),
+                ),
                 (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => Some(false),
                 _ => None,
             };
