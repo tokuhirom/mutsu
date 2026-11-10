@@ -6,6 +6,12 @@ use super::*;
 /// The owners whose control-method rows an exception or a `Failure` reaches.
 const CONTROL_OWNERS: [&str; 2] = ["Exception", "Failure"];
 
+/// Every method name the control rows of [`CONTROL_OWNERS`] declare. Any other
+/// call skips the row lookup entirely, which would otherwise intern the name
+/// and probe both owners on every method call; a unit test pins this list to
+/// the rows.
+const CONTROL_METHODS: [&str; 6] = ["throw", "rethrow", "die", "fail", "resume", "Failure"];
+
 impl Interpreter {
     /// Answer a control method of `Exception` or `Failure` from its row, for
     /// an instance or type object whose MRO reaches that owner (a user
@@ -19,6 +25,9 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if !CONTROL_METHODS.contains(&method) {
+            return None;
+        }
         let class = match target.view() {
             ValueView::Instance { class_name, .. } if !target.is_match_instance() => class_name,
             ValueView::Package(name) => name,
@@ -273,5 +282,42 @@ impl Interpreter {
                 .or_insert_with(|| Value::str_from(&file));
         }
         Value::write_back_sharing(&attributes, class_name, attrs, id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONTROL_METHODS, CONTROL_OWNERS};
+    use crate::symbol::Symbol;
+
+    /// `CONTROL_METHODS` is the early exit of `exception_control_by_mro`: a name
+    /// missing from it would silently stop reaching its row. Every control row
+    /// must be listed, and every listed name must be a row of some owner.
+    #[test]
+    fn control_methods_are_exactly_the_names_of_the_control_rows() {
+        let has_row = |owner: &str, method: &str| {
+            (0..=2usize).any(|arity| {
+                crate::builtins::method_table::owner_row(
+                    Symbol::intern(owner),
+                    Symbol::intern(method),
+                    arity,
+                )
+                .is_some()
+            })
+        };
+        for method in CONTROL_METHODS {
+            assert!(
+                CONTROL_OWNERS.iter().any(|owner| has_row(owner, method)),
+                "`{method}` is listed in CONTROL_METHODS but no control owner has a row for it"
+            );
+        }
+        for method in [
+            "new", "message", "gist", "Str", "payload", "backtrace", "elems", "name", "WHAT",
+        ] {
+            assert!(
+                !CONTROL_METHODS.contains(&method),
+                "`{method}` must not be a control method"
+            );
+        }
     }
 }
