@@ -612,9 +612,9 @@ impl Interpreter {
             if resolved == keyed { direct } else { resolved }
         };
         let (left_root, right_root) = (root(left), root(right));
-        let scalar = |name: &str| {
-            !name.starts_with(['@', '%', '&']) && crate::runtime::term_names::term_spelling(name).is_none()
-        };
+        // A sigilless term is judged like the operator form (`exec_container_eq_named_op`)
+        // judges it: two distinct names holding plain values are distinct containers.
+        let scalar = |name: &str| !name.starts_with(['@', '%', '&']);
         if left_root == right_root {
             return Some(true);
         }
