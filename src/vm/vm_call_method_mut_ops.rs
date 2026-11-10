@@ -599,6 +599,7 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
         let mut args = self.method_gather_args(&target, method, args)?;
