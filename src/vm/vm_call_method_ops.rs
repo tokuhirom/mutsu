@@ -917,6 +917,7 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
+        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         // Reify/consume a deferred Seq (ADR-0034 §2.3) — including an
         // `IO::Handle.lines`/`.words` source (formerly the separate
         // `LazyIoLines` special case). Introspection must not consume the
@@ -1658,7 +1659,6 @@ impl Interpreter {
         } else {
             target
         };
-        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         // A lazy receiver's pull answers first: the placeholders of
         // `gist`/`Str`/`raku`, `cache`, `values`, and the refusals of the
         // counting methods (the lazy step, ADR-13891).
