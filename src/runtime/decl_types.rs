@@ -610,6 +610,8 @@ pub(crate) struct WrapDispatchFrame {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SquishIteratorMeta {
+    /// Keeps the table's address key from naming a different, newer `Seq`.
+    pub(crate) life: crate::value::seq_body::SeqLife,
     pub(crate) source_items: Vec<Value>,
     pub(crate) as_func: Option<Value>,
     pub(crate) with_func: Option<Value>,
