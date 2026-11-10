@@ -382,7 +382,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             names,
             "die",
-            std::slice::from_ref(expr.written_list_arg()),
+            expr.written_die_args(),
         )?))),
         Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
             names,
