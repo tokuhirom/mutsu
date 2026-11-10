@@ -202,6 +202,7 @@ mod signature_decl;
 mod signature_decl_origins;
 mod signature_literal;
 pub(crate) mod slang_bridge;
+pub(crate) mod slang_block_scope;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
@@ -315,6 +316,9 @@ pub enum RakuAstClass {
     VersionLiteral,
     // `Constant.new($value)`: a compile-time value, its one positional field.
     Constant,
+    /// `RakuAST::Literal.from-value($v)` over a value no specific literal
+    /// class holds (an object, a type object, `Nil`): the value itself.
+    Literal,
     ComplexLiteral,
     // `:(Int $x)`: a signature literal, `Signature` as its one positional field.
     FakeSignature,
@@ -726,6 +730,7 @@ impl RakuAstClass {
             RatLiteral => "RakuAST::RatLiteral",
             VersionLiteral => "RakuAST::VersionLiteral",
             Constant => "RakuAST::Constant",
+            Literal => "RakuAST::Literal",
             ComplexLiteral => "RakuAST::ComplexLiteral",
             FakeSignature => "RakuAST::FakeSignature",
             StrLiteral => "RakuAST::StrLiteral",
@@ -1265,6 +1270,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RatLiteral,
     RakuAstClass::VersionLiteral,
     RakuAstClass::Constant,
+    RakuAstClass::Literal,
     RakuAstClass::ComplexLiteral,
     RakuAstClass::FakeSignature,
     RakuAstClass::StrLiteral,
@@ -2130,6 +2136,17 @@ fn construct_values(
         if let Some(literal) = literal {
             return construct_values(names, literal, "new", args);
         }
+        // Any other value (an object, a type object, `Nil`) is a plain
+        // `RakuAST::Literal` holding it; evaluating the node answers the value.
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Literal,
+            fields: vec![RakuAstField {
+                name: None,
+                // The value, not its container (rakudo's `nqp::decont`).
+                value: RakuAstFieldValue::Node(value.clone().deitemize_element()),
+            }],
+        }))));
     }
     if class_name == "RakuAST::Pragma"
         && let Some(answer) = pragma_statics::call(method, args)
@@ -4045,6 +4062,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RatLiteral
             | RakuAstClass::VersionLiteral
             | RakuAstClass::Constant
+            | RakuAstClass::Literal
             | RakuAstClass::ComplexLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix

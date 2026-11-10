@@ -261,14 +261,17 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
                 }
                 let (replay, _) = plain(lower_statement(first)?);
                 let (kept, kept_node) = plain(lower_statement(second)?);
-                let mut stmts = vec![replay, kept];
+                // The production's own statement first: the replayed actions see
+                // what it declared (EEL's `pattern` reads its method's
+                // `meta-object`, which rakudo's action finds already installed).
+                let mut stmts = vec![kept, replay];
                 for rest in children {
                     stmts.push(plain(lower_statement(rest)?).0);
                 }
                 return Ok(Stmt::Ast(Box::new(
                     crate::ast::parsed::ParsedStmt::Lowered {
                         stmt: Box::new(Stmt::SyntheticBlock(stmts)),
-                        node: kept_node.unwrap_or_else(|| second.clone()),
+                        node: replay_sequence(node, kept_node),
                     },
                 )));
             }
@@ -292,6 +295,31 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             node: Value::rakuast(Box::new(kept)),
         },
     )))
+}
+
+/// The node a production that also replays its actions stands for, as a reader
+/// of the tree sees it: a `StatementSequence` (no scope of its own) of the replay
+/// call and the production's own node, so a construct the unit converts back from
+/// its tree (a class body, ADR-15334 Stage 2) keeps the replay (ADR-17243).
+// Cost: O(f), f = statements of the list.
+fn replay_sequence(list: &RakuAstNode, kept: Option<Value>) -> Value {
+    let mut fields: Vec<_> = list
+        .fields
+        .iter()
+        .filter(|f| !super::origin::is_origin(f))
+        .cloned()
+        .collect();
+    // The production's own node as its statement was lowered (an expression
+    // stands in its `Statement::Expression`), ahead of the replay as it runs.
+    if let (Some(kept), Some(own)) = (kept, fields.get_mut(1)) {
+        own.value = RakuAstFieldValue::Node(kept);
+    }
+    fields.swap(0, 1);
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: super::RakuAstClass::StatementSequence,
+        fields,
+    }))
 }
 
 /// Lower the node a slang's `statementlist` wrapper answered (ADR-16888): the

@@ -7,7 +7,7 @@ use super::RakuAstClass;
 pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     use RakuAstClass::*;
     Some(match class {
-        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | Constant | ComplexLiteral
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | Constant | Literal | ComplexLiteral
         | StrLiteral => "value",
         FunctionInfix => "function",
         FakeSignature => "signature",

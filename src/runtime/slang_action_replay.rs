@@ -24,6 +24,18 @@ thread_local! {
     static CLASS_SERIAL: Cell<u64> = const { Cell::new(0) };
     /// The actions class (with its stubs) built for a set of roles.
     static BUILT: RefCell<Vec<(String, Value)>> = const { RefCell::new(Vec::new()) };
+    /// The package the production being replayed stands in (a class body), while
+    /// its actions run.
+    static REPLAY_OWNER: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// The package a replayed action's production stands in: the class whose body
+/// declares the method a `routine-declarator` production built, so the action's
+/// `$method.meta-object` is that class's method (EEL's `pattern`), as the
+/// compile-time action run of rakudo sees it. `None` outside a replay.
+// Cost: O(1).
+pub(crate) fn slang_replay_owner() -> Option<String> {
+    REPLAY_OWNER.with(|o| o.borrow().clone())
 }
 
 /// The actions class and its stubs, built from the slang's action roles.
@@ -115,6 +127,8 @@ impl Interpreter {
         install(self, "*R".to_string(), parts.get(1).cloned().unwrap_or(Value::NIL));
         install(self, "*CU".to_string(), parts.get(2).cloned().unwrap_or(Value::NIL));
         let mut outcome = Ok(Value::NIL);
+        let owner = Some(self.current_package());
+        let previous_owner = REPLAY_OWNER.with(|o| std::mem::replace(&mut *o.borrow_mut(), owner));
         for event in events.iter() {
             let Some(event) = event.as_list_items() else {
                 continue;
@@ -135,6 +149,7 @@ impl Interpreter {
                 break;
             }
         }
+        REPLAY_OWNER.with(|o| *o.borrow_mut() = previous_owner);
         for (key, previous) in saved {
             match previous {
                 Some(value) => self.env.insert(key, value),

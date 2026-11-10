@@ -34,6 +34,7 @@ mod registry;
 mod slang_hooks;
 mod slang_modes;
 mod slang_use;
+mod slang_wrapper_block;
 mod user_ops;
 
 // `pub` re-exports.
@@ -128,6 +129,7 @@ pub(in crate::parser) use registry::{
     register_user_sub, register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
     restore_declare_keywords, set_eval_language_version_preseed,
 };
+pub(in crate::parser) use slang_wrapper_block::announce_routine_body;
 pub(in crate::parser) use slang_hooks::{
     hooks_snapshot, numish_hook, register_action, register_hook, register_pointy_starters,
     register_wrapper, restore_hooks, set_activator, set_host as set_slang_host,

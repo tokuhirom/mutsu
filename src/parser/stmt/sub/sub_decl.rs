@@ -541,6 +541,11 @@ pub(crate) fn sub_decl_body(
     }
     let slurpy_scope = super::outer_slurpy::enter_routine_body(&param_defs, false);
     let brace = rest;
+    let routine_body = super::super::simple::announce_routine_body(
+        crate::rakuast::slang_block_scope::RoutineKind::Sub,
+        &name,
+        &param_defs,
+    );
     let (rest, mut body) = if super::any_sigilless(&param_defs)
         || super::any_callable_param(&param_defs)
         || super::has_type_capture(&param_defs)
@@ -562,6 +567,7 @@ pub(crate) fn sub_decl_body(
             Err(err) => return Err(err),
         }
     };
+    drop(routine_body);
     drop(slurpy_scope);
     // A routine declared with an explicit signature (`sub f() { ... }`, even an
     // empty one) cannot also use placeholder variables in its body — that would
