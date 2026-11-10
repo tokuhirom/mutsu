@@ -454,9 +454,6 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("'}'"));
         }
         let r = &r[1..];
-        if let Some(err) = double_closure_error(&stmts) {
-            return Err(err);
-        }
         // In Raku a block's `}` at end of line terminates the statement, so an
         // infix word on the next line (`g { 1 }` NL `before { 2 }`) starts a
         // new statement instead of taking this block as its left operand.
