@@ -259,9 +259,20 @@ impl Interpreter {
                 frame
                     .saved_env
                     .insert(resolved_source.to_string(), container.clone());
-                for (i, local_name) in code.locals.iter().enumerate() {
-                    if local_name == resolved_source && base + i < end {
-                        shared_slot_writes.push(base + i);
+                // The saved region is laid out by the CALLER's code, not by the
+                // running callee's: indexing it with `code.locals` landed a
+                // callee's slot 0 (`data`) on a method caller's `self`.
+                if frame.caller_code != 0 {
+                    // SAFETY: `caller_code` is the address of the `CompiledCode` the
+                    // caller was running when it pushed this frame; that caller is
+                    // suspended until the frame pops, so its code is alive while the
+                    // frame is on `call_frames` (as in `caller_slot_cell`).
+                    let caller =
+                        unsafe { &*(frame.caller_code as *const crate::opcode::CompiledCode) };
+                    for (i, local_name) in caller.locals.iter().enumerate() {
+                        if local_name == resolved_source && base + i < end {
+                            shared_slot_writes.push(base + i);
+                        }
                     }
                 }
             }
