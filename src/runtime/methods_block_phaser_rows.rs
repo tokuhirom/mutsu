@@ -33,6 +33,26 @@ fn block_phaser_kind(name: &str) -> Option<PhaserKind> {
     Some(kind)
 }
 
+/// Whether `kind` is one a block keeps in its phaser table (the compile-time
+/// phasers `BEGIN`, `CHECK`, `INIT`, `END` are not).
+// Cost: O(1).
+fn block_phaser_kind_known(kind: &PhaserKind) -> bool {
+    matches!(
+        kind,
+        PhaserKind::Enter
+            | PhaserKind::Leave
+            | PhaserKind::Keep
+            | PhaserKind::Undo
+            | PhaserKind::First
+            | PhaserKind::Next
+            | PhaserKind::Last
+            | PhaserKind::Pre
+            | PhaserKind::Post
+            | PhaserKind::Quit
+            | PhaserKind::Close
+    )
+}
+
 /// Whether rakudo appends a phaser of `kind` to its table entry (`ENTER`,
 /// `FIRST`, `PRE` run in declaration order) rather than prepending it (the
 /// rest run last-declared first).
@@ -104,6 +124,28 @@ impl Interpreter {
             found.reverse();
         }
         found
+    }
+
+    /// `Block.has-phaser`: whether the block carries a `name` phaser; `False` for
+    /// a name that is not a block phaser. `name = None` asks for any phaser
+    /// (`Block.has-phasers`). Rakudo also answers `LEAVE` for a block whose loop
+    /// or `KEEP`/`PRE`/`POST` phasers it wraps in one; that is an internal
+    /// detail of its phaser table and is not reproduced.
+    // Cost: O(s) over the block's s top-level statements.
+    pub(crate) fn block_has_phaser(data: &crate::value::SubData, name: Option<&str>) -> bool {
+        let wanted = match name {
+            Some(name) => match block_phaser_kind(name) {
+                Some(kind) => Some(kind),
+                None => return false,
+            },
+            None => None,
+        };
+        data.body.iter().any(|stmt| match stmt {
+            Stmt::Phaser { kind, .. } => {
+                block_phaser_kind_known(kind) && wanted.as_ref().is_none_or(|w| w == kind)
+            }
+            _ => false,
+        })
     }
 
     /// `Block.callable_for_phaser`: the block that runs every `name` phaser in
