@@ -161,7 +161,7 @@ impl Interpreter {
                 // (CompUnit::Util's `scope =:= $*CU`).
                 (ValueView::ContainerRef(cell), ValueView::RakuAst(node))
                 | (ValueView::RakuAst(node), ValueView::ContainerRef(cell)) => Some(
-                    matches!(cell.load().view(), ValueView::RakuAst(held) if std::ptr::eq(&*held, &*node) || *held == *node),
+                    matches!(cell.load().view(), ValueView::RakuAst(held) if std::ptr::eq(held, node) || *held == *node),
                 ),
                 (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => Some(false),
                 _ => None,

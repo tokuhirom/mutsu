@@ -147,7 +147,7 @@ impl Interpreter {
                     right.deref_container().view(),
                 ) {
                     (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
-                        std::ptr::eq(&*a, &*b) || *a == *b
+                        std::ptr::eq(a, b) || *a == *b
                     }
                     _ => false,
                 },
