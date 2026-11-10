@@ -146,6 +146,22 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "Block",
+        name: "has-phaser",
+        arity: 1,
+        handler: Handler::Interp(block_has_phaser),
+        flags: ARGS,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Block",
+        name: "has-phasers",
+        arity: 0,
+        handler: Handler::Interp(block_has_phasers),
+        flags: NULLARY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Block",
         name: "callable_for_phaser",
         arity: 1,
         handler: Handler::Interp(block_callable_for_phaser),
@@ -186,6 +202,28 @@ fn block_callable_for_phaser(
     };
     let name = args.first()?.to_string_value();
     Some(Ok(Interpreter::block_callable_for_phaser(&data, &name)))
+}
+
+/// `Block.has-phaser($name)`: whether the block carries a phaser of that name.
+// Cost: as `Interpreter::block_has_phaser`.
+fn block_has_phaser(_: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    let ValueView::Sub(data) = target.view() else {
+        return None;
+    };
+    let name = args.first()?.to_string_value();
+    Some(Ok(Value::truth(Interpreter::block_has_phaser(
+        &data,
+        Some(&name),
+    ))))
+}
+
+/// `Block.has-phasers`: whether the block carries any phaser.
+// Cost: as `Interpreter::block_has_phaser`.
+fn block_has_phasers(_: &mut Interpreter, target: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    let ValueView::Sub(data) = target.view() else {
+        return None;
+    };
+    Some(Ok(Value::truth(Interpreter::block_has_phaser(&data, None))))
 }
 
 /// `Routine.yada`.
