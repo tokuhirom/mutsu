@@ -341,9 +341,16 @@ impl Interpreter {
                 self.squish_env_diff(before, &mut revert_values, &mut revert_remove);
             }
             let seq_id = items.identity();
-            self.types.squish_iterator_meta.insert(
+            // Entries of Seqs nobody holds any more (never `.iterator`ed) go
+            // when the table doubles, so the sweep is amortized O(1).
+            let table = &mut self.types.squish_iterator_meta;
+            if table.len() >= 16 && table.len().is_power_of_two() {
+                table.retain(|_, meta| meta.life.is_alive());
+            }
+            table.insert(
                 seq_id,
                 super::super::SquishIteratorMeta {
+                    life: items.life(),
                     source_items,
                     as_func,
                     with_func,

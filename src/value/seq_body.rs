@@ -269,6 +269,18 @@ pub(crate) enum SeqView {
 /// and the `List` view its `.cache` returned — can share ONE copy of this
 /// state: a `retained`/`Taken` transition made through either handle must be
 /// visible through both (docs/adr/0038 S5).
+/// See [`SeqBody::life`].
+#[derive(Debug, Clone)]
+pub(crate) struct SeqLife(std::sync::Weak<SeqCore>);
+
+impl SeqLife {
+    /// Whether some `Seq` still shares the core this was taken from.
+    // Cost: O(1).
+    pub(crate) fn is_alive(&self) -> bool {
+        self.0.strong_count() > 0
+    }
+}
+
 struct SeqCore {
     /// This Seq's `.WHICH` identity — a never-reused id rather than the
     /// allocation address, which two dead temporaries could share. See
@@ -458,6 +470,15 @@ impl SeqBody {
     /// not the handle.
     pub(crate) fn identity(self: &Arc<Self>) -> usize {
         Arc::as_ptr(&self.core) as usize
+    }
+
+    /// A weak handle on the core [`Self::identity`] names. A side table keyed by
+    /// `identity()` keeps one next to the entry: while it exists the core's
+    /// allocation cannot be handed to a different `Seq`, so a stale entry never
+    /// answers for a new sequence, and `is_alive` says when the entry can go.
+    // Cost: O(1).
+    pub(crate) fn life(self: &Arc<Self>) -> SeqLife {
+        SeqLife(Arc::downgrade(&self.core))
     }
 
     /// Which Raku type this handle presents as — read by `value_type_name`
