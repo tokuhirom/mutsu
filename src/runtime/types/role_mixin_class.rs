@@ -32,13 +32,30 @@ impl Interpreter {
         }
         let display = crate::value::types::what_type_name(value);
         let registry = self.registry();
-        registry
-            .classes
-            .keys()
-            .find(|key| {
-                key.contains("+{") && crate::value::user_facing_type_name(key) == display.as_str()
-            })
-            .cloned()
+        // Cost: O(1) amortized: the display-name index is rebuilt (one scan of the
+        // class table) only when the table has grown since it was built.
+        let mut index = registry
+            .mixin_display_index
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(key) = index.1.get(display.as_str())
+            && registry.classes.contains_key(key.as_str())
+        {
+            return Some(key.clone());
+        }
+        if index.0 != registry.classes.len() {
+            let mut rebuilt = HashMap::default();
+            for key in registry.classes.keys() {
+                if key.contains("+{") {
+                    rebuilt
+                        .entry(crate::value::user_facing_type_name(key).to_string())
+                        .or_insert_with(|| key.clone());
+                }
+            }
+            *index = (registry.classes.len(), rebuilt);
+            return index.1.get(display.as_str()).cloned();
+        }
+        None
     }
 
     /// Ensure the mixin type `base+{roles}` is registered and return its name.

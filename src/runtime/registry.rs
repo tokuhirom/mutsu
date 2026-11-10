@@ -207,6 +207,12 @@ impl AugmentCutoff {
 
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// `user_facing_type_name -> class key` for the `base+{roles}` mixin classes, valid
+    /// for the class-table size it was built at (see
+    /// `Interpreter::mixin_class_of_type_object`). Shared across forks; a hit is
+    /// re-verified against `classes`.
+    pub(crate) mixin_display_index:
+        std::sync::Arc<std::sync::Mutex<(usize, HashMap<String, String>)>>,
     /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
     /// its `.WHO` answers that very object.
     pub(crate) who_overrides: std::collections::HashMap<String, crate::value::Value>,
