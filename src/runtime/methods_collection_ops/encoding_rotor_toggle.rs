@@ -338,6 +338,40 @@ impl Interpreter {
         Ok(Value::seq(result))
     }
 
+    /// The next test of `.toggle`'s `*@conditions`, flattening iterable
+    /// arguments one element at a time (`None` once every source is spent).
+    // Cost: O(1) per call, plus one `pull-one` on an iterable source.
+    fn next_toggle_test(
+        &mut self,
+        sources: &mut std::collections::VecDeque<ToggleSource>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        while let Some(front) = sources.pop_front() {
+            match front {
+                ToggleSource::Test(v) => return Ok(Some(v)),
+                ToggleSource::Iterable(v) => {
+                    let iterator = self.call_method_with_values(v, "iterator", Vec::new())?;
+                    sources.push_front(ToggleSource::Pulling(iterator, Default::default(), 1));
+                }
+                ToggleSource::Pulling(iterator, mut buffered, batch) => {
+                    if buffered.is_empty() {
+                        buffered = self.pull_iterator_prefix_to_vec(&iterator, batch)?.into();
+                    }
+                    if let Some(v) = buffered.pop_front() {
+                        // Grow the pull size geometrically: a toggle that
+                        // flips every few elements stays O(n) overall.
+                        sources.push_front(ToggleSource::Pulling(
+                            iterator,
+                            buffered,
+                            (batch * 2).min(4096),
+                        ));
+                        return Ok(Some(v));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Implements the `.toggle` method.
     ///
     /// method toggle(*@conditions, Bool :$off --> Seq)
@@ -354,16 +388,25 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // Extract :off named arg and collect positional callable args
         let mut start_off = false;
-        let mut conditions: Vec<Value> = Vec::new();
+        let mut sources: std::collections::VecDeque<ToggleSource> = std::collections::VecDeque::new();
 
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, value) if key == "off" => {
                     start_off = value.truthy();
                 }
-                _ => {
-                    conditions.push(arg.clone());
+                // `*@conditions` flattens an iterable argument (a `xx *`
+                // Seq of tests); its elements are pulled only as the
+                // switch needs them, so an infinite Seq works.
+                ValueView::Array(items, _) => {
+                    for item in items.iter() {
+                        sources.push_back(ToggleSource::Test(item.clone()));
+                    }
                 }
+                ValueView::Seq(_) | ValueView::LazyList(_) => {
+                    sources.push_back(ToggleSource::Iterable(arg.clone()));
+                }
+                _ => sources.push_back(ToggleSource::Test(arg.clone())),
             }
         }
 
@@ -390,12 +433,11 @@ impl Interpreter {
 
         let mut result: Vec<Value> = Vec::new();
         let mut switch_on = !start_off;
-        let mut cond_idx: usize = 0;
 
+        let mut current: Option<Value> = self.next_toggle_test(&mut sources)?;
         for item in &items {
-            if cond_idx < conditions.len() {
-                let tester = &conditions[cond_idx];
-                let test_value = self.call_sub_value(tester.clone(), vec![item.clone()])?;
+            if let Some(tester) = current.clone() {
+                let test_value = self.call_sub_value(tester, vec![item.clone()])?;
                 // A block ending in a regex literal (`{ /foo/ }`) boolifies by
                 // matching the regex against its lexical topic, not by the
                 // regex object being truthy.
@@ -406,7 +448,7 @@ impl Interpreter {
 
                 // If the switch toggled, advance to the next condition
                 if switch_on != old_on {
-                    cond_idx += 1;
+                    current = self.next_toggle_test(&mut sources)?;
                 }
             }
             // No more conditions: switch stays in its current state
@@ -418,4 +460,14 @@ impl Interpreter {
 
         Ok(Value::seq(result))
     }
+}
+
+/// One of `.toggle`'s `*@conditions` arguments, consumed in order.
+enum ToggleSource {
+    /// A Callable test.
+    Test(Value),
+    /// An iterable argument whose elements are the tests.
+    Iterable(Value),
+    /// The iterator of an iterable argument being drained.
+    Pulling(Value, std::collections::VecDeque<Value>, usize),
 }

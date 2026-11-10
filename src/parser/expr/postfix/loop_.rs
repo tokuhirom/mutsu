@@ -999,6 +999,9 @@ fn postfix_expr_loop_from<'a>(
                     || scan.starts_with("--")
                     || scan.starts_with(">>")
                     || scan.starts_with('\u{00BB}')
+                    // A declared postfix operator, symbolic or a word
+                    // (`$tree\ data-root`).
+                    || crate::parser::stmt::simple::match_user_declared_postfix_op(scan).is_some()
                 {
                     // Unspace deliberately glues the postfix onto the term, so
                     // the whitespace it just skipped must NOT count as a gap.
@@ -1202,6 +1205,7 @@ fn postfix_expr_loop_from<'a>(
                 let (r, args) = parse_call_arg_list(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, ')')?;
+                reject_called_double_closure(&expr)?;
                 expr = Expr::CallOn {
                     target: Box::new(expr),
                     args,
@@ -1952,6 +1956,7 @@ fn postfix_expr_loop_from<'a>(
             let (r, args) = parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            reject_called_double_closure(&expr)?;
             expr = Expr::CallOn {
                 target: Box::new(expr),
                 args,
@@ -3261,4 +3266,27 @@ pub(in crate::parser) fn parse_superscript_exp(input: &str) -> Option<(i64, usiz
         }
     }
     Some((sign * value, len))
+}
+
+/// rakudo's "Malformed double closure": a call applied straight to a block
+/// literal whose only statement is a `*`-curry (`{ * + 1 }()`,
+/// `({ *.abs })(1)`). The block alone is an ordinary block that returns the
+/// WhateverCode (`my $b = { * + 1 }`), as is `do { * + 1 }`; measured on
+/// rakudo 2026.09 with its RakuAST frontend.
+// Cost: O(1) plus the body check, which looks at a single statement.
+fn reject_called_double_closure(target: &Expr) -> Result<(), PError> {
+    let mut inner = target;
+    while let Expr::Grouped(next) = inner {
+        inner = next;
+    }
+    if let Expr::AnonSub {
+        body,
+        is_block: true,
+        ..
+    } = inner
+        && let Some(err) = crate::parser::primary::misc::double_closure_error(body)
+    {
+        return Err(err);
+    }
+    Ok(())
 }

@@ -4,7 +4,7 @@ use Test;
 # X::Syntax::Confused / X::AdHoc. Every expectation here was re-derived from
 # `raku` itself, so this file must pass under rakudo unchanged.
 
-plan 20;
+plan 21;
 
 my @arr = <1 2 3 4 5>;
 my $scalar = 'abcd';
@@ -50,8 +50,11 @@ is thrown(Q[my @a = 1, , 2]).^name, 'X::Syntax::InfixInTermPosition',
 is thrown(Q[ {my $foo; $^foo;}(1) ]).^name, 'X::Redeclaration',
     'my $foo then $^foo is a redeclaration';
 
-# A `*`-curry wrapped in braces is already a closure.
-is thrown(Q[{*.abs}]).^name, 'X::Syntax::Malformed', 'a double closure is malformed';
+# A `*`-curry wrapped in braces is already a closure: calling the block on the
+# spot is malformed, the block alone is an ordinary block (rakudo's RakuAST
+# frontend).
+is thrown(Q[{*.abs}()]).^name, 'X::Syntax::Malformed', 'a called double closure is malformed';
+nok thrown(Q[{*.abs}]).defined, 'the block alone is not';
 is thrown(Q[{*.{}}()]).^name, 'X::Syntax::Malformed', '... including the zen-slice curry';
 
 # The zen slice the double-closure case is built on, in its dotted spelling.

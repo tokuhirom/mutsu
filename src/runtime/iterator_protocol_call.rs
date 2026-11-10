@@ -242,7 +242,32 @@ impl crate::Interpreter {
             };
             (shared, index, map.get("lazy_source").cloned())
         };
-        let shared_len = shared.as_ref().map_or(0, |a| a.as_slice().len());
+        let mut shared = shared;
+        let mut shared_len = shared.as_ref().map_or(0, |a| a.as_slice().len());
+        // A stepping call that needs only a few more elements of a lazy source
+        // appends just the new tail to the materialised prefix in place.
+        if lazy_source.is_some()
+            && !matches!(op, IterOp::PushAll | IterOp::SinkAll)
+            && let Some(tail) = self.iterator_topup_tail_from_lazy_source(
+                lazy_source.as_ref(),
+                op,
+                index,
+                args,
+                shared_len,
+            )?
+        {
+            let items_value = attributes.as_map().get("items").cloned();
+            if let Some(items_value) = items_value
+                && Self::nqp_with_elems_mut("push-all", &items_value, |elems| {
+                    elems.extend(tail);
+                })
+                .is_ok()
+                && let ValueView::Array(values, ..) = items_value.view()
+            {
+                shared = Some(crate::gc::Gc::clone(&values));
+                shared_len = values.as_slice().len();
+            }
+        }
         // A lazy source may not have produced the elements this call needs yet;
         // the grown prefix is committed along with the cursor.
         let topped_up = self.iterator_topup_from_lazy_source(
