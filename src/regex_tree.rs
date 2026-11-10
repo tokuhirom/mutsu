@@ -615,6 +615,9 @@ impl RegexTree {
                         BackslashClass::Newline if *negated => RegexAtom::NotNewline,
                         BackslashClass::Newline => RegexAtom::Newline,
                         BackslashClass::Tab => single('\t'),
+                        // A bare `\r` may join a following `\n` into one CRLF
+                        // grapheme, which only the runtime parser re-merges.
+                        BackslashClass::CarriageReturn if !*negated => return None,
                         BackslashClass::CarriageReturn => single('\r'),
                         BackslashClass::Escape => single('\u{001B}'),
                         BackslashClass::FormFeed => single('\u{000C}'),

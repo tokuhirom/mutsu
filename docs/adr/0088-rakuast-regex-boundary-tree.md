@@ -1773,9 +1773,11 @@ case, so only its AST shape assertions run there.
 ADR-0088 step 5 continues: the direct `RegexTree` -> `RegexPattern` lowering
 used to cover only `\d`. It now lowers every backslash class to the atoms the
 runtime parser's `\X` arm builds: `\w \s \h \v` (and `\W \S \H \V`) become a
-one-item `CharClass`; `\n`/`\N` the `Newline`/`NotNewline` atoms; `\t \r \e \f`
+one-item `CharClass`; `\n`/`\N` the `Newline`/`NotNewline` atoms; `\t \e \f`
 a `Literal`, and their upper-case negations a negated one-char class. `\0`
 keeps the runtime parser (its digit-following rule) and `\b` stays obsolete
 syntax. `t/regex/regex-tree-backslash-class-lowering.t` pins matching for every
 class through a regex literal, a token and a named regex, identical under
 `raku`.
+A positive `\r` also stays on the runtime parser: it may join a following `\n` into one
+CRLF grapheme, which only that parser's merge pass handles.
