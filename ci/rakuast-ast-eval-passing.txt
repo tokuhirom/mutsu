@@ -2722,7 +2722,6 @@ t/lang/eval-stub-sub-then-definition.t
 t/lang/eval-tail-output-statement-value.t
 t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
-t/lang/eval-trait-mod-default-redispatch.t
 t/lang/eval-type-arg-from-use-import.t
 t/lang/eval-undeclared-block-assign.t
 t/lang/eval-unit-builtin-prelude-by-names.t
@@ -5914,6 +5913,7 @@ t/oo/trait/do-decl-container-trait-once.t
 t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-class-trait-die-not-installed.t
 t/oo/trait/eval-load-cached-trait.t
+t/oo/trait/eval-trait-mod-default-redispatch.t
 t/oo/trait/handles-container-attr-writeback.t
 t/oo/trait/handles-delegation-on-but-mixin.t
 t/oo/trait/handles-dynamic-list.t
