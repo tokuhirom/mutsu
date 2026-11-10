@@ -374,8 +374,8 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.pending_topic_site_block = matches!(mname.as_str(), "map" | "grep" | "first")
-                && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block =
+                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             self.pending_topic_site_block = false;
@@ -980,8 +980,8 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.pending_topic_site_block = matches!(mname.as_str(), "map" | "grep" | "first")
-                && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block =
+                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             self.pending_topic_site_block = false;
