@@ -517,7 +517,10 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
 /// anonymous `$` is no name (`-> $, $v`).
 // Cost: O(1).
 pub(super) fn parameter_desigil(desigil: &str) -> &str {
-    if desigil == super::view::ANONYMOUS_SCALAR_PARAM {
+    if matches!(
+        desigil,
+        super::view::ANONYMOUS_SCALAR_PARAM | "__ANON_ARRAY__" | "__ANON_HASH__"
+    ) {
         ""
     } else {
         desigil
