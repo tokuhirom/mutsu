@@ -1476,18 +1476,31 @@ impl Interpreter {
             // A re-import of a name an earlier module already installed adds
             // nothing to `env`, so the diff misses it even though it is part of
             // this module's scope (see `module_imported_names`).
+            // A dynamic (`our $*X is export`) is read through the dynamic scope,
+            // where the importer's `$*X := ...` binds it: it is no file-scope
+            // lexical of the module that imported it, and recording it here
+            // made the module's own routines answer the value it was imported
+            // with in place of the caller's binding.
+            let is_dynamic_import = |name: &String| {
+                name.trim_start_matches(['$', '@', '%', '&'])
+                    .starts_with('*')
+            };
             module_scope_names.extend(
                 imported
                     .iter()
+                    .filter(|(name, _, _)| !is_dynamic_import(name))
                     .map(|(name, value, _)| (imported_spelling(name), value.clone())),
             );
             imported_lexical_names.extend(imported.iter().flat_map(|(name, _, _)| {
+                if is_dynamic_import(name) {
+                    return Vec::new();
+                }
                 let spelled = imported_spelling(name);
                 let bare = spelled
                     .strip_prefix(['$', '@', '%'])
                     .unwrap_or(&spelled)
                     .to_string();
-                [spelled, bare]
+                vec![spelled, bare]
             }));
             // Module bodies execute in the caller's env for compatibility with
             // existing declaration machinery. Imported variables/constants need
