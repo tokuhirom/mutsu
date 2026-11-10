@@ -5135,7 +5135,14 @@ impl Compiler {
         }
     }
 
-    /// Whether `stmts` holds a `LEAVE` / `KEEP` / `UNDO` phaser of its own.
+    /// Whether `stmts` holds a written `LEAVE` / `KEEP` / `UNDO` phaser.
+    ///
+    /// The replay phasers a unit-level variable trait queues
+    /// (`begin_prologue::lift_unit_var_traits`) are not counted: a unit that
+    /// only has those keeps the plain path.
+    // TODO: run a unit-level variable trait's LEAVE replay when an EVAL'd unit
+    // ends; the phaser-scope path loses the unit's tail value after a
+    // `trait_mod:<does>` mixin there (t/lang/eval-unit-builtin-prelude-by-names.t).
     // Cost: O(n), n = statements.
     fn has_exit_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
@@ -5143,8 +5150,9 @@ impl Compiler {
                 s,
                 Stmt::Phaser {
                     kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                    body,
                     ..
-                }
+                } if !matches!(body.as_slice(), [Stmt::VarTrait { .. }])
             )
         })
     }

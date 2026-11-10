@@ -5972,7 +5972,6 @@ t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
 t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
-t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-dunder-name.t
 t/oo/trait/variable-trait-object-mixin.t
 t/oo/trait/variable-trait-owning-code-object.t

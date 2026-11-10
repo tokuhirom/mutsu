@@ -5,5 +5,6 @@ called from the mainline: the unit's exit phasers were wired up only when the
 compiled code was a routine body, so a unit of its own never ran them (inside a
 `sub` they did). An EVAL'd unit is a scope whose exit phasers run when it ends,
 wherever it was called from, so the unit now takes the phaser-scope path too.
-`variable-trait-block-add-phaser.t` (a trait adding a unit-level `LEAVE` through
-`$v.block.add_phaser`) joins the `EVAL($ast)` ratchet.
+A unit whose only exit phasers are the replays a unit-level variable trait queues
+keeps the old path (its tail value is lost on the phaser-scope path after a
+`trait_mod:<does>` mixin; recorded as a `// TODO` at `Compiler::has_exit_phasers`).
