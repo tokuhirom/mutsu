@@ -67,6 +67,7 @@ impl Encode for CompiledCode {
             is_hidden_from_backtrace,
             pointy_alias_param,
             immutable_topic,
+            topic_site_decided,
             declarator_doc,
             writes_topic,
             declared_in_routine,
@@ -233,6 +234,7 @@ impl Encode for CompiledCode {
         is_hidden_from_backtrace.encode(encoder)?;
         pointy_alias_param.encode(encoder)?;
         immutable_topic.encode(encoder)?;
+        topic_site_decided.encode(encoder)?;
         Compat(declarator_doc.as_deref()).encode(encoder)?;
         writes_topic.encode(encoder)?;
         declared_in_routine.encode(encoder)?;
@@ -387,6 +389,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             is_hidden_from_backtrace: Decode::decode(decoder)?,
             pointy_alias_param: Decode::decode(decoder)?,
             immutable_topic: Decode::decode(decoder)?,
+            topic_site_decided: Decode::decode(decoder)?,
             declarator_doc: decode_serde::<Option<crate::decl_doc::DeclDoc>, _>(decoder)?
                 .map(std::sync::Arc::new),
             writes_topic: Decode::decode(decoder)?,

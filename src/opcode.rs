@@ -7161,6 +7161,13 @@ pub(crate) struct CompiledCode {
     /// `call_compiled_closure_with_topic`), never as a body prologue — see
     /// `pointy_alias_param` above for why a prologue leaks the mark.
     pub(crate) immutable_topic: bool,
+    /// This block was written directly as the callback of a `.map`/`.grep`/
+    /// `.first` call, so [`CompiledCode::immutable_topic`] is that call site's
+    /// own verdict (`@a[0..1].map({ $_ = 5 })` writes through even though its
+    /// receiver is a `List`). A callback that arrives as a value has no such
+    /// verdict, and the runtime decides from the receiver's List-vs-Array
+    /// identity instead (`MapGrepPlanSlot::immutable_source`).
+    pub(crate) topic_site_decided: bool,
     /// The declarator documentation (`#|`/`#=`) of the anonymous sub or
     /// block this chunk is the body of; `.WHY` on the closure reads it
     /// (ADR-0136).
@@ -8630,6 +8637,7 @@ impl CompiledCode {
             is_hidden_from_backtrace: false,
             pointy_alias_param: false,
             immutable_topic: false,
+            topic_site_decided: false,
             declarator_doc: None,
             writes_topic: false,
             declared_in_routine: false,

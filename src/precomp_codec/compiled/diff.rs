@@ -134,6 +134,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         is_whatever_code,
         pointy_alias_param,
         immutable_topic,
+        topic_site_decided,
         writes_topic,
         declared_in_routine,
         outer_is_unit,

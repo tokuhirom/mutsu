@@ -239,7 +239,12 @@ impl Interpreter {
         let origin = sub_origin(data);
         let lexically_in_routine = !self.routine_stack.is_empty();
         let mut plan = self.build_inline_loop_plan(data, kind, origin, lexically_in_routine);
-        plan.immutable_topic |= slot.immutable_source && !plan.keeps_outer_topic;
+        let site_decided = data
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.topic_site_decided);
+        plan.immutable_topic |=
+            slot.immutable_source && !plan.keeps_outer_topic && !site_decided;
         let plan = Arc::new(plan);
         slot.inline = Some(plan.clone());
         plan
