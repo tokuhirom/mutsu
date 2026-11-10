@@ -878,6 +878,22 @@ impl RegexTree {
                         outer.named_capture = Some(name.clone());
                         return Some(vec![outer]);
                     }
+                    // A literal run lowers to one token per character: the alias
+                    // names the whole run (`$<key>='run'` is `run`, not `r`), so it
+                    // goes around the run as one group.
+                    if tokens.len() > 1 && !*hash && !*array {
+                        let mut outer = token(
+                            crate::runtime::RegexAtom::Group(pattern(
+                                tokens,
+                                ignore_case,
+                                ignore_mark,
+                            )),
+                            crate::runtime::RegexQuant::One,
+                            ratchet,
+                        );
+                        outer.named_capture = Some(name.clone());
+                        return Some(vec![outer]);
+                    }
                     let first = tokens.first_mut()?;
                     if *hash {
                         first.hash_capture = Some(name.clone());
