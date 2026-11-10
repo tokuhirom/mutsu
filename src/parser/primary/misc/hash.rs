@@ -22,8 +22,10 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             if spread_args.is_empty() {
                 return Ok((rest, Expr::Hash(pairs, crate::ast::HashSpelling::Composer)));
             }
-            let mut args = hash_args_from_pairs(pairs);
-            args.append(&mut spread_args);
+            // `spread_args` already holds the pairs that came before each spread, in
+            // source order; only the trailing pairs are left in `pairs`.
+            let mut args = spread_args;
+            args.extend(hash_args_from_pairs(pairs));
             return Ok((
                 rest,
                 Expr::Call {
@@ -115,6 +117,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         let (r, item) = expression(r)?;
         match item {
             Expr::HashVar(name) => {
+                spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
                 spread_args.push(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(Expr::HashVar(name)),
@@ -126,6 +129,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 expr,
                 ..
             } => {
+                spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
                 spread_args.push(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr,
@@ -156,6 +160,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                     // initializer (warning about odd counts only at runtime).
                     // Route it through the hash() builder via spread_args instead
                     // of failing with "expected hash key".
+                    spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
                     spread_args.push(other);
                 }
             }
