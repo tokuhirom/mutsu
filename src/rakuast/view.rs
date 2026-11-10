@@ -4824,8 +4824,8 @@ fn parameter(
             return Err(unsupported("type capture without a capture node"));
         };
         let mut fields = Vec::with_capacity(4);
-        if type_setting {
-            fields.push(node_field(Some("type"), type_setting_any()));
+        if let Some(t) = super::parameter_signature::bare_capture_type(names, pd, type_setting)? {
+            fields.push(node_field(Some("type"), t));
         }
         fields.push(type_captures_field(type_capture));
         if pd.is_invocant {

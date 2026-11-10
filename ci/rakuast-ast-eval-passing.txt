@@ -4281,6 +4281,7 @@ t/oo/attribute/attr-subscript-assignment.t
 t/oo/attribute/attr-trait-bracket-args.t
 t/oo/attribute/attr-trait-multi-positional-args.t
 t/oo/attribute/attr-trait-paren-space.t
+t/oo/attribute/attr-trait-recursive-default-dispatch.t
 t/oo/attribute/attr-trait-runtime-use-lazy-style.t
 t/oo/attribute/attr-trait-uppercase-scalar-sigil.t
 t/oo/attribute/attr-type-constraint-memo.t
@@ -5914,6 +5915,7 @@ t/oo/trait/do-decl-container-trait-once.t
 t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-class-trait-die-not-installed.t
 t/oo/trait/eval-load-cached-trait.t
+t/oo/trait/eval-trait-mod-default-redispatch.t
 t/oo/trait/handles-container-attr-writeback.t
 t/oo/trait/handles-delegation-on-but-mixin.t
 t/oo/trait/handles-dynamic-list.t
@@ -6181,6 +6183,7 @@ t/rakuast/rakuast-eval-ast-exported-type-param.t
 t/rakuast/rakuast-eval-ast-pod-declarator-order.t
 t/rakuast/rakuast-eval-ast-use-imports.t
 t/rakuast/rakuast-eval-atomic-minus-sign.t
+t/rakuast/rakuast-eval-bare-capture-smiley.t
 t/rakuast/rakuast-eval-bare-done.t
 t/rakuast/rakuast-eval-bare-for.t
 t/rakuast/rakuast-eval-block-arg.t
@@ -8232,6 +8235,7 @@ t/routines/signature/meta-parameterize-typed-declaration.t
 t/routines/signature/metaclass-parameterize.t
 t/routines/signature/multi-aliased-named-param.t
 t/routines/signature/multi-amp-param-otf-dispatch.t
+t/routines/signature/multi-callable-param-outranks-defined-any.t
 t/routines/signature/multi-candidate-narrower-declared-param-wins-over-distance.t
 t/routines/signature/multi-candidate-plus-param-narrowness.t
 t/routines/signature/multi-dispatch-empty-signature-beats-variadic-is-raw.t

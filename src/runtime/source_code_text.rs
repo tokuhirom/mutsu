@@ -49,7 +49,8 @@ impl<'a> CodeText<'a> {
     /// any other declaration is `role NAME class NAME` (the tree does not tell
     /// the two apart here, and a gate only asks whether the unit declares the
     /// name itself). A gate that needs a spelling this view cannot give
-    /// (`:default(` at a call site) stays closed for such a unit.
+    /// (a spelling no tree node carries) stays closed for such a unit; the
+    /// `trait_mod:<is>` call passing `:default(...)` is spelled for it.
     // Cost: O(n), n = size of the unit's AST.
     pub(crate) fn from_unit(stmts: &[crate::ast::Stmt]) -> CodeText<'static> {
         use crate::ast_visit::{NameKind, Visit, walk_stmt};
@@ -67,7 +68,32 @@ impl<'a> CodeText<'a> {
                         let _ = write!(self.0, "does {role} ");
                     }
                 }
+                // `trait_mod:<is>($attr, :default($v))` as a statement.
+                if let crate::ast::Stmt::Call { name, args, .. } = stmt
+                    && name.as_str() == "trait_mod:<is>"
+                    && args.iter().any(|arg| {
+                        matches!(arg, crate::ast::CallArg::Named { name, .. } if name == "default")
+                    })
+                {
+                    self.0.push_str(":default( ");
+                }
                 walk_stmt(self, stmt);
+            }
+
+            // The `:default(` spelling the `trait_mod:<is>` default gate asks
+            // for: a call to that routine passing a `default` pair.
+            fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+                if let crate::ast::Expr::Call { name, args, .. } = expr
+                    && name.as_str() == "trait_mod:<is>"
+                    && args.iter().any(|arg| {
+                        matches!(arg, crate::ast::Expr::Binary {
+                            left, op: crate::token_kind::TokenKind::FatArrow, ..
+                        } if matches!(&**left, crate::ast::Expr::Literal(v) if v.as_str() == Some("default")))
+                    })
+                {
+                    self.0.push_str(":default( ");
+                }
+                crate::ast_visit::walk_expr(self, expr);
             }
 
             fn visit_name(&mut self, name: &str, kind: NameKind) {
