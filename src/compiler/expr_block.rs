@@ -1446,7 +1446,13 @@ impl Compiler {
             .iter()
             .map(|a| Self::assign_arg_element(a).unwrap_or_else(|| a.clone()))
             .collect();
-        let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
+        // A read-only scalar parameter (`sub f($x) { $b($x) }`) has no
+        // container behind it either: the block's implicit `$_` is bound to
+        // its immutable value, so writing `$_` dies as it does for a literal.
+        let bare_args = !args.is_empty()
+            && args.iter().all(|a| {
+                Self::expr_yields_container_less_value(a) || self.is_readonly_param_operand(a)
+            });
         if let Expr::CodeVar(name) = target {
             self.fold_lexical_sub_free_vars_for_code_var(name);
             let arg_sources_idx = self.add_arg_sources_constant(&source_args);

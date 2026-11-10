@@ -21,6 +21,18 @@ const CORE_CODE_REF_FUNCTION_NAMES: &[&str] = &[
     "produce",
     "reduce",
     "cache",
+    "fc",
+    "tclc",
+    "wordcase",
+    "samecase",
+    "ords",
+    "samemark",
+    "trim-leading",
+    "trim-trailing",
+    "index",
+    "rindex",
+    "indices",
+    "split",
 ];
 
 pub(crate) use crate::builtin_functions::BUILTIN_FUNCTION_NAMES;
