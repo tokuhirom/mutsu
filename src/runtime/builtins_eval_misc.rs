@@ -366,6 +366,7 @@ impl Interpreter {
             // A lowered tree is an EVAL'd compilation unit: it runs through the
             // string EVAL's unit pipeline (phaser reordering, ADR-0134, and the
             // lexical isolation that keeps its `my` out of the caller, #13274).
+            let _tree_eval = crate::unit_source_file::TreeEvalGuard::enter();
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();
@@ -424,6 +425,7 @@ impl Interpreter {
             && let Some(base) = attributes.rakuast_base()
             && let ValueView::RakuAst(node) = base.view()
         {
+            let _tree_eval = crate::unit_source_file::TreeEvalGuard::enter();
             // The tree calls the operators its calling scope declares, as an
             // EVAL string does.
             let operators = self.collect_operator_sub_names();

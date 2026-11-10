@@ -223,7 +223,9 @@ impl Interpreter {
             // `executing_source_file()` reads the file baked onto the innermost
             // enclosing routine frame's own `def_file` instead, which stays
             // correct regardless of who is calling.
-            source_file: self.executing_source_file(),
+            source_file: crate::unit_source_file::tree_closure_unit()
+                .map(|unit| unit.resolve())
+                .or_else(|| self.executing_source_file()),
             captured_fatal_mode: self.module.lexical_fatal_mode,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),

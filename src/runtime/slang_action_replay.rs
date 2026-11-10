@@ -114,6 +114,8 @@ impl Interpreter {
         };
         install(self, "*R".to_string(), parts.get(1).cloned().unwrap_or(Value::NIL));
         install(self, "*CU".to_string(), parts.get(2).cloned().unwrap_or(Value::NIL));
+        let _replay_unit =
+            crate::unit_source_file::ReplayUnitGuard::enter(self.current_source_file_sym());
         let mut outcome = Ok(Value::NIL);
         for event in events.iter() {
             let Some(event) = event.as_list_items() else {
