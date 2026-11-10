@@ -268,6 +268,56 @@ pub(crate) fn compile_time_cu(
     }
 }
 
+/// Before the unit's check code runs: build `$*CU` again when a module read it
+/// before the unit's own `use` lines and slang productions had run, so the
+/// types they brought (a class Qwiratry's `aggsub` minted) resolve in the tree
+/// the check code reads. The check code has not run yet, so nothing it could
+/// have changed is lost; the queues live in the unit, not in the tree.
+// Cost: O(n * d), n = nodes of the tree, d = scope depth; O(1) when `$*CU` was never read.
+pub(crate) fn refresh_cu_resolution(
+    imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
+) {
+    enum Source {
+        Source(Rc<str>),
+        Tree(Value),
+    }
+    let source = UNITS.with(|units| {
+        let units = units.borrow();
+        let unit = active_index(&units).and_then(|i| units.get(i))?;
+        if unit.cu.is_none() || unit.rewritten {
+            return None;
+        }
+        match &unit.tree {
+            Some(tree) => Some(Source::Tree(tree.clone())),
+            None => Some(Source::Source(unit.source.clone())),
+        }
+    });
+    let cu = match source {
+        None => return,
+        Some(Source::Tree(tree)) => Some(crate::rakuast::compunit_of_tree(
+            &tree,
+            imported,
+            imported_type,
+        )),
+        Some(Source::Source(source)) => crate::rakuast::compile_time_compunit(
+            &crate::scope::NameScope::default(),
+            &source,
+            imported,
+            imported_type,
+        )
+        .ok(),
+    };
+    if let Some(cu) = cu {
+        UNITS.with(|units| {
+            let mut units = units.borrow_mut();
+            if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
+                unit.cu = Some(cu);
+            }
+        });
+    }
+}
+
 /// Before the unit's check code runs: record which calls of the trees the
 /// queued closures were handed (`cus`) resolve to an imported routine by now.
 /// Rakudo resolves in place before the CHECK phase; those trees are immutable,

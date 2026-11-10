@@ -7728,6 +7728,10 @@ impl Interpreter {
                 // module reads it before the unit's own `use` lines have run)
                 // resolved no imported routine: say which ones resolve now.
                 let queued = crate::unit_source_text::take_check_code();
+                crate::unit_source_text::refresh_cu_resolution(
+                    &|routine| self.unit_routine_imported(routine),
+                    &|name| self.has_class(name) || self.slang_minted_type(name),
+                );
                 crate::unit_source_text::publish_late_imports(
                     queued.iter().map(|(_, cu)| cu),
                     &|routine| self.unit_routine_imported(routine),
