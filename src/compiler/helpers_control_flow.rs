@@ -1161,6 +1161,7 @@ impl Compiler {
         traps: bool,
         catch_value: bool,
     ) {
+        let decay_failure = std::mem::take(&mut self.next_try_decays_failure) && traps;
         let saved = self.push_dynamic_scope_lexical();
         // Detect duplicate CATCH/CONTROL phasers in the same block: Raku
         // requires at most one of each per block (X::Phaser::Multiple).
@@ -1251,6 +1252,7 @@ impl Compiler {
             control_handles_take,
             is_bare_block,
             traps,
+            decay_failure,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;

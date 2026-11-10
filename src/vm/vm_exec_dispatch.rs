@@ -6605,6 +6605,7 @@ impl Interpreter {
                 control_handles_take,
                 is_bare_block,
                 traps,
+                decay_failure,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -6618,6 +6619,7 @@ impl Interpreter {
                     *control_handles_take,
                     *is_bare_block,
                     *traps,
+                    *decay_failure,
                     ip,
                     compiled_fns,
                 )?;

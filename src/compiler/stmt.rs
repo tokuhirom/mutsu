@@ -1183,6 +1183,8 @@ impl Compiler {
                 where_constraint,
                 anonymous: _,
             } => {
+                self.next_try_decays_failure =
+                    !name.starts_with(['@', '%', '&']) && matches!(expr, Expr::Try { .. });
                 // `use variables :D/:U` adds its implicit smiley to the
                 // declared type before anything below reads it (#9990).
                 let pragma_type_constraint = self

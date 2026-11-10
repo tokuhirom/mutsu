@@ -2014,6 +2014,10 @@ pub(crate) struct Compiler {
     /// consumes it so the emitted `TryCatch` is marked as a bare-block
     /// callframe. Other `compile_try` callers (e.g. `try { }`) leave it false.
     next_try_is_bare_block: bool,
+    /// The next `try` region is the initializer of a scalar declaration
+    /// (`my $x = try %*DYN`): a bare container read in its tail whose Failure it
+    /// caught yields an undefined `Any`, not the Failure (rakudo; Red).
+    next_try_decays_failure: bool,
     /// Line of the `Stmt::SetLine` marker last seen (the line attached to the ops
     /// emitted since; also the definition line of a block/sub compiled here).
     last_source_line: Option<i64>,
@@ -2314,6 +2318,7 @@ impl Compiler {
             next_dynamic_scope_inline_transparent: false,
             suppress_loop_block_state_reset: false,
             next_try_is_bare_block: false,
+            next_try_decays_failure: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
             fold_root: true,
             unit_use_ctx: std::sync::Arc::new(begin_use::UnitUseCtx::default()),
