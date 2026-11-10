@@ -4894,6 +4894,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         }
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;
+            if super::topic_subscript::is_subscript(call) {
+                return super::topic_subscript::lower(names, call);
+            }
             match lower_method_postfix(names, Expr::Var("_".to_string()), call)? {
                 Expr::MethodCall {
                     target,

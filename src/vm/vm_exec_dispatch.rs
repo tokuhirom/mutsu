@@ -7709,7 +7709,7 @@ impl Interpreter {
                 self.control.begin_prologue_pending = false;
                 *ip += 1;
             }
-            // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when none.
+            // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when none. With queued closures: O(n) to fingerprint `$*CU`, n = nodes of its tree, and a tree they changed is lowered and run in place of the program.
             OpCode::RunCheckCode => {
                 // The tree `$*CU` handed out earlier (a `sub EXPORT` of a `-M`
                 // module reads it before the unit's own `use` lines have run)
@@ -7719,14 +7719,46 @@ impl Interpreter {
                     queued.iter().map(|(_, cu)| cu),
                     &|routine| self.unit_routine_imported(routine),
                 );
+                // The tree before the closures: one that rewrote it makes the
+                // unit continue from the rewritten tree (#17244).
+                let before = crate::unit_source_text::built_cu()
+                    .map(|cu| crate::unit_source_text::tree_fingerprint(&cu));
+                let ran_closures = !queued.is_empty();
                 for (closure, _cu) in queued {
                     self.vm_call_on_value(closure, Vec::new(), None)?;
                 }
+                let rewritten = if ran_closures
+                    && let Some(cu) = crate::unit_source_text::built_cu()
+                    && before.is_some_and(|b| b != crate::unit_source_text::tree_fingerprint(&cu))
+                {
+                    Some(cu)
+                } else {
+                    None
+                };
                 // The unit's compile phase ends after its CHECK phasers and
                 // queued check code: `$*CU` is a Failure from here on.
                 crate::unit_source_text::end_compile_phase();
                 let (sorries, worries) = crate::unit_diagnostics::take();
                 self.report_compile_diagnostics(sorries, worries)?;
+                if let Some(cu) = rewritten {
+                    // In rakudo the rewritten tree is what gets compiled, and no
+                    // mainline statement has run yet: run the tree in place of
+                    // the compiled program, which ends here.
+                    // TODO: the BEGIN prologue and `use` lines of the first
+                    // compile run again with the tree; skipping what already ran
+                    // needs the tree to remember which statements are the prologue.
+                    crate::unit_source_text::mark_next_tree_rewritten();
+                    // The types the first compile declared are declared again.
+                    let outer = std::mem::replace(
+                        &mut self.module.suppress_cross_eval_class_redeclaration_check,
+                        true,
+                    );
+                    let result = self.eval_rakuast_node(&cu);
+                    self.module.suppress_cross_eval_class_redeclaration_check = outer;
+                    result?;
+                    *ip = code.ops.len();
+                    return Ok(());
+                }
                 *ip += 1;
             }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).

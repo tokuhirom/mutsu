@@ -37,9 +37,16 @@ pub(crate) struct Unit {
     /// Routines the unit imported after `$*CU` was built, which the tree's
     /// calls of them resolve to now (`publish_late_imports`).
     late_imports: std::collections::HashSet<String>,
+    /// The unit is the lowered, CHECK-rewritten tree of a unit whose check
+    /// closures already ran: its own (second) `use` lines queue the same
+    /// closures again, which must not rewrite the tree twice.
+    rewritten: bool,
 }
 
 thread_local! {
+    /// The next [`UnitSourceTextGuard::enter_tree`] is the restart of a unit
+    /// whose CHECK phase rewrote `$*CU` ([`mark_next_tree_rewritten`]).
+    static NEXT_TREE_REWRITTEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     pub(crate) static UNITS: RefCell<Vec<Unit>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -61,6 +68,7 @@ impl UnitSourceTextGuard {
                 worries: Vec::new(),
                 in_export: false,
                 late_imports: std::collections::HashSet::new(),
+                rewritten: false,
             });
         });
         Self
@@ -72,9 +80,11 @@ impl UnitSourceTextGuard {
     // Cost: O(1).
     pub(crate) fn enter_tree(tree: Value) -> Self {
         let guard = Self::enter("");
+        let rewritten = NEXT_TREE_REWRITTEN.with(|flag| flag.replace(false));
         UNITS.with(|units| {
             if let Some(unit) = units.borrow_mut().last_mut() {
                 unit.tree = Some(tree);
+                unit.rewritten = rewritten;
             }
         });
         guard
@@ -172,6 +182,10 @@ pub(crate) fn take_check_code() -> Vec<(Value, Value)> {
             return Vec::new();
         };
         let mut queued = std::mem::take(&mut unit.check_code);
+        if unit.rewritten {
+            unit.check_phasers = None;
+            return Vec::new();
+        }
         queued.reverse();
         if let Some(list) = unit.check_phasers.take()
             && let ValueView::Array(data, _) = list.view()
@@ -203,7 +217,10 @@ pub(crate) fn end_compile_phase() {
 /// when the source does not convert.
 // Cost: O(n) on the first read of a unit (parse + conversion), O(1) after;
 // n = source length.
-pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> {
+pub(crate) fn compile_time_cu(
+    imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
+) -> Option<Value> {
     enum Step {
         Built(Value),
         Build(Rc<str>),
@@ -223,7 +240,7 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
     match step {
         Step::Built(cu) => Some(cu),
         Step::BuildTree(tree) => {
-            let cu = crate::rakuast::compunit_of_tree(&tree, imported);
+            let cu = crate::rakuast::compunit_of_tree(&tree, imported, imported_type);
             UNITS.with(|units| {
                 let mut units = units.borrow_mut();
                 if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
@@ -237,6 +254,7 @@ pub(crate) fn compile_time_cu(imported: &dyn Fn(&str) -> bool) -> Option<Value> 
                 &crate::scope::NameScope::default(),
                 &source,
                 imported,
+                imported_type,
             )
             .ok()?;
             UNITS.with(|units| {
@@ -283,4 +301,30 @@ pub(crate) fn is_late_import(name: &str) -> bool {
             .and_then(|i| units.get(i))
             .is_some_and(|unit| unit.late_imports.contains(name))
     })
+}
+
+/// The next EVAL'd tree is the restart of a unit whose CHECK phase rewrote its
+/// `$*CU`: its check closures are not run again.
+// Cost: O(1).
+pub(crate) fn mark_next_tree_rewritten() {
+    NEXT_TREE_REWRITTEN.with(|flag| flag.set(true));
+}
+
+/// The `$*CU` tree of the innermost unit, when it was built.
+// Cost: O(1).
+pub(crate) fn built_cu() -> Option<Value> {
+    UNITS.with(|units| units.borrow().last().and_then(|unit| unit.cu.clone()))
+}
+
+/// A fingerprint of a `$*CU` tree, to tell whether the unit's check closures
+/// changed it.
+// Cost: O(n), n = nodes of the tree.
+pub(crate) fn tree_fingerprint(cu: &Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let ValueView::RakuAst(node) = cu.view() else {
+        return 0;
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("{node:?}").hash(&mut hasher);
+    hasher.finish()
 }

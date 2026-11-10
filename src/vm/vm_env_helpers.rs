@@ -1915,9 +1915,16 @@ impl Interpreter {
         // `$*CU` is built with the routines the unit has imported so far, which
         // its lookups resolve to `Declaration::Import` (#15610).
         if matches!(name, "$*CU" | "*CU") {
-            return crate::unit_source_text::compile_time_cu(&|routine| {
-                self.unit_routine_imported(routine)
-            });
+            // The tree is parsed from the unit's source text now, with the
+            // search paths its `use` lines were scanned with, so a class an
+            // earlier `use` imported is a type and not a call (`Sum.()`).
+            crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+            let cu = crate::unit_source_text::compile_time_cu(
+                &|routine| self.unit_routine_imported(routine),
+                &|name| self.has_class(name),
+            );
+            crate::parser::clear_parser_lib_paths();
+            return cu;
         }
         if let Some(v) = Self::lazy_magic_dynamic_var(name) {
             return Some(v);
