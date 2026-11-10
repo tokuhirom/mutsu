@@ -3373,6 +3373,7 @@ t/modules/import-export/exported-code-constant-reimport.t
 t/modules/import-export/exported-code-value-module-stash.t
 t/modules/import-export/exported-enum-unit-module-name-mismatch.t
 t/modules/import-export/exported-infix-candidate-family.t
+t/modules/import-export/exported-infix-family-ranks-candidates.t
 t/modules/import-export/exported-main-dispatch.t
 t/modules/import-export/exported-method-named-and-class-default.t
 t/modules/import-export/exported-method-sub-collision.t

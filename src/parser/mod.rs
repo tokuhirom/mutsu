@@ -70,6 +70,12 @@ pub(crate) fn with_rakuast_lexical_scope<T>(f: impl FnOnce() -> T) -> T {
     result
 }
 
+/// Whether a `use` the lowering has reached imported the routine `name`.
+// Cost: O(s + |name|), s = open parser scopes.
+pub(crate) fn lowering_imported_routine(name: &str) -> bool {
+    stmt::simple::is_imported_function(name)
+}
+
 /// Register a lexical code variable as the parser does before lowering the
 /// following statements in the same RakuAST block.
 // Cost: O(1).
@@ -82,6 +88,26 @@ pub(crate) fn register_rakuast_user_sub_binding(stmt: &crate::ast::Stmt) {
         }
         crate::ast::Stmt::SubDecl { name, .. } => {
             stmt::simple::register_user_sub(name.resolve().as_str());
+        }
+        // The operators a `use` imports are known to the parse that read the
+        // `use`; a tree is never parsed, so lowering registers them again for
+        // the statements after it.
+        crate::ast::Stmt::Use {
+            module,
+            arg,
+            tags,
+            condition: None,
+            ..
+        } => {
+            // `use lib` makes the modules after it findable.
+            if module == "lib" {
+                if let Some(arg) = arg {
+                    stmt::simple::try_add_parse_time_lib_path(arg);
+                }
+                return;
+            }
+            let tags = (!tags.is_empty()).then_some(tags.as_slice());
+            stmt::simple::register_use_exports(module, tags, false);
         }
         _ => {}
     }

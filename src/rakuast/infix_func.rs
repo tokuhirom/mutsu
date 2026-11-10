@@ -307,6 +307,7 @@ fn is_declared(names: &NameScope, name: &str) -> bool {
     let routine = format!("infix:<{name}>");
     SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
         || super::bareword::caller_declares_operator(names, &routine)
+        || crate::parser::lowering_imported_routine(&routine)
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`
