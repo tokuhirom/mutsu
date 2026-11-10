@@ -877,6 +877,12 @@ impl Value {
     /// (mirroring `ArrayKind` — the value stays a `Value::Hash` so it never
     /// leaks a wrapper to value operations), other values get wrapped in Scalar.
     pub fn item(self) -> Self {
+        // A code object is one item already, and a `Scalar` wrapper around it
+        // hides it from a call: `my $c = item({ 42 }); $c()` (RakuAST
+        // `Block.meta-object` is built as an `item(...)` call, #17243).
+        if matches!(self.view(), ValueView::Sub(_)) {
+            return self;
+        }
         match self.into_repr() {
             ValueRepr::Array(items, kind) => Value::Array(items, kind.itemize()),
             // A raw VM collection has no itemized form: Rakudo keeps the same
