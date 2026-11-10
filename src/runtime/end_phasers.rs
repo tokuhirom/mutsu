@@ -192,6 +192,7 @@ impl Interpreter {
             capture_seq: None,
             fixtures: None,
             unit_routines: Default::default(),
+            import_chain: None,
         });
         self.control.main_end_slots.insert(end_index, slot);
     }
@@ -317,6 +318,11 @@ impl Interpreter {
             capture_seq: Some(mark),
             fixtures: self.frame_fixtures().cloned(),
             unit_routines: self.eval_unit_routines(),
+            import_chain: self
+                .module
+                .eval_unit_functions_base
+                .is_some()
+                .then(|| self.active_lexical_import_chain()),
         });
     }
 
