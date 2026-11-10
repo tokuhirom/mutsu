@@ -2270,7 +2270,7 @@ impl Interpreter {
             // (`dispatch_shape::iterator_kind`).
             // The `Seq.from-loop(&body)` iterator is an internal class that is
             // still an `Iterator` (rakudo's `Rakudo::Iterator::Loop`).
-            if matches!(&*cn, "FromLoopIterator" | "HeadIterator")
+            if matches!(cn, "FromLoopIterator" | "HeadIterator")
                 && matches!(constraint, "Iterator" | "Iterator:D")
             {
                 return true;
