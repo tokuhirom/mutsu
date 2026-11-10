@@ -5251,7 +5251,9 @@ impl Compiler {
         if has_catch {
             self.compile_implicit_try(stmts);
             self.emit_unit_tail_result();
-        } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
+        } else if (self.is_routine || self.in_eval_unit) && Self::has_block_enter_leave_phasers(stmts) {
+            // An EVAL'd unit is a scope of its own whose exit phasers run when
+            // it ends, wherever the EVAL was called from.
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
         } else {
             // The statement whose value the unit evaluates to. Not simply the
