@@ -415,6 +415,27 @@ impl RuntimeError {
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
+    /// X::Cannot::Lazy whose `action` is the method spelled as rakudo does
+    /// (`.elems`), as `Seq.elems` raises on a lazy sequence.
+    pub(crate) fn cannot_lazy_action(action: &str) -> Self {
+        let msg = format!("Cannot {action} a lazy list");
+        let mut attrs = ValueMap::default();
+        attrs.insert("action".to_string(), Value::str(action.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Cannot::Lazy", attrs)
+    }
+
+    /// A Failure wrapping [`Self::cannot_lazy_action`]: `Seq.elems` on a lazy
+    /// sequence soft-fails rather than throwing.
+    pub(crate) fn cannot_lazy_action_failure(action: &str) -> Value {
+        let err = Self::cannot_lazy_action(action);
+        let mut failure_attrs = HashMap::new();
+        if let Some(ex) = err.exception {
+            failure_attrs.insert("exception".to_string(), *ex);
+        }
+        Value::make_instance(crate::symbol::Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// X::Cannot::Lazy with an action string and "onto" type (e.g., for .Capture on lazy lists)
     pub(crate) fn cannot_lazy_with_action(action: &str, onto: &str) -> Self {
         let msg = format!("Cannot {} a lazy list onto a {}", action, onto);
