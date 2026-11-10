@@ -30,8 +30,10 @@ impl Interpreter {
         };
         // mutsu's own iterators carry their laziness as data, read when the
         // Seq was built (`try_native_seq_construct`, `Seq.from-loop`).
-        if matches!(class_name.as_str(), "Iterator" | "FromLoopIterator")
-            || !self.class_has_user_method(&class_name, "is-lazy")
+        if matches!(
+            class_name.as_str(),
+            "Iterator" | "FromLoopIterator" | "HeadIterator"
+        ) || !self.class_has_user_method(&class_name, "is-lazy")
         {
             return Ok(());
         }

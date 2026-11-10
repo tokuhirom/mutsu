@@ -73,6 +73,10 @@ pub(super) fn roll_n(target: &Value, arg: &Value) -> Option<Result<Value, Runtim
         ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
         ValueView::Num(f) if f < 0.0 => Some(0),
         ValueView::Num(f) => Some(f as usize),
+        // A Rat count truncates like a Num (`.roll(5/2)` rolls twice); an
+        // infinite one (`1/0`) is `*`, as for `Inf`.
+        ValueView::Rat(_, 0) => None,
+        ValueView::Rat(n, d) => Some((n / d).max(0) as usize),
         ValueView::Whatever => None,
         ValueView::Str(s) => {
             let parsed = s.trim().parse::<i64>().ok()?;

@@ -18,8 +18,10 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return Ok(false),
         };
-        if matches!(class_name.as_str(), "Iterator" | "FromLoopIterator")
-            || !self.class_has_user_method(&class_name, "is-lazy")
+        if matches!(
+            class_name.as_str(),
+            "Iterator" | "FromLoopIterator" | "HeadIterator"
+        ) || !self.class_has_user_method(&class_name, "is-lazy")
         {
             return Ok(false);
         }
