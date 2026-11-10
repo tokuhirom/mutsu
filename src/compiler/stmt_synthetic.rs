@@ -67,10 +67,7 @@ impl Compiler {
             let key =
                 crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
             let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-            self.code.emit(OpCode::SetTermMark {
-                key_idx,
-                on: false,
-            });
+            self.code.emit(OpCode::SetTermMark { key_idx, on: false });
         }
     }
 
