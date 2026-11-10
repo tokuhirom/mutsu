@@ -3388,7 +3388,13 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         super::keyed_hash::lower(names, node, &sigil, type_constraint, &mut marks)?;
     let anonymous = node.class == RakuAstClass::VarDeclarationAnonymous;
     let desigil = if anonymous {
-        "__ANON_STATE#".to_string()
+        // The parser's names for a bare declared `$` / `@` / `%`.
+        match sigil.as_str() {
+            "@" => "__ANON_ARRAY__",
+            "%" => "__ANON_HASH__",
+            _ => "__ANON_STATE#",
+        }
+        .to_string()
     } else {
         let desigil_node = named_child(node, "desigilname")?;
         if let Some(name) = super::name_colonpairs::lower(names, desigil_node) {

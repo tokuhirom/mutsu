@@ -64,7 +64,8 @@ fn flatten(pd: &ParamDef) -> Result<Flat<'_>, RuntimeError> {
         names.push(if target.target == ParamTarget::Parens {
             String::new()
         } else {
-            split_sigil(&target.name).1.to_string()
+            // `:$!s` binds the attribute under its plain name `s`.
+            split_sigil(&target.name).1.trim_start_matches('!').to_string()
         });
     }
     names.extend(aliases.into_iter().rev());

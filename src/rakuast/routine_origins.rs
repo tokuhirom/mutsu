@@ -357,3 +357,11 @@ fn with_value(value: &mut RakuAstFieldValue, f: impl FnOnce(&mut RakuAstNode)) {
     f(&mut node);
     *held = Value::rakuast(Box::new(node));
 }
+
+/// Whether a `for` block's parameters are `default-rw` (`<->`). The parser's
+/// block flag is also true when a parameter is written `is rw`; that
+/// parameter then carries the trait itself.
+// Cost: O(p), p = parameters.
+pub(super) fn default_rw(rw_block: bool, defs: &[crate::ast::ParamDef]) -> bool {
+    rw_block && !defs.iter().any(|p| p.traits.iter().any(|t| t == "rw"))
+}
