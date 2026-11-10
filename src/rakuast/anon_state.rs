@@ -137,13 +137,9 @@ fn parts(node: &RakuAstNode) -> Result<(String, bool), RuntimeError> {
 pub(super) fn lower_term(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let (sigil, explicit) = parts(node)?;
     if is_my(node)? || explicit {
-        return if sigil == "$" {
-            Ok(Expr::DoStmt(Box::new(
-                super::lower::lower_expression_declaration(names, node)?,
-            )))
-        } else {
-            Err(unsupported(node))
-        };
+        return Ok(Expr::DoStmt(Box::new(
+            super::lower::lower_expression_declaration(names, node)?,
+        )));
     }
     match sigil.as_str() {
         "$" => Ok(Expr::Var(mint_scalar())),
@@ -156,8 +152,8 @@ pub(super) fn lower_term(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
 /// An anonymous variable as a statement of its own: `state $ = 0;`.
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let (sigil, explicit) = parts(node)?;
-    if sigil == "$" && (is_my(node)? || explicit) {
+    let (_, explicit) = parts(node)?;
+    if is_my(node)? || explicit {
         super::lower::lower_var_decl(names, node)
     } else {
         Ok(Stmt::Expr(lower_term(names, node)?))

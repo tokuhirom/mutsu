@@ -516,7 +516,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             };
             // `for @a <-> $x { }`: each parameter is a writable container
             // (`default-rw => True`, before its target).
-            if *rw_block {
+            if super::routine_origins::default_rw(*rw_block, explicit_defs) {
                 mark_default_rw(&mut body_node)?;
             }
             let mode_name = match mode {
@@ -1960,9 +1960,8 @@ pub(super) fn var_declaration(
     let (sigil, desigil) = split_sigil(name);
     // Provenance is carried by the declaration, never inferred from its name.
     // A `my` anonymous scalar keeps the default scope, which Rakudo omits.
-    let is_anonymous = sigil == "$"
-        && anonymous
-        && (scope == Some("state") || scope.is_none())
+    let is_anonymous = ((sigil == "$" && anonymous && (scope == Some("state") || scope.is_none()))
+        || matches!(desigil, "__ANON_ARRAY__" | "__ANON_HASH__"))
         && twigil.is_none()
         && will_build.is_none();
     // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
