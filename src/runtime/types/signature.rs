@@ -719,7 +719,7 @@ fn object_as_public_capture(
     if !matches!(unwrapped.view(), ValueView::Instance { .. }) {
         return value;
     }
-    match interpreter.try_interpreter_capture(&unwrapped) {
+    match interpreter.try_interpreter_capture(unwrapped) {
         Some(Ok(capture)) if matches!(capture.view(), ValueView::Capture { .. }) => capture,
         _ => value,
     }
