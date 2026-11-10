@@ -228,7 +228,12 @@ pub(super) fn wrap_aliases(
         def.named = true;
         return Ok(def);
     }
-    let target_key = def.name.trim_start_matches(['@', '%', '&']).to_string();
+    // `:$!x` binds the attribute under the plain name `x`, so its `names` hold `x`.
+    let target_key = def
+        .name
+        .trim_start_matches(['@', '%', '&'])
+        .trim_start_matches('!')
+        .to_string();
     let target_is_named = names.first() == Some(&target_key);
     let aliases = if target_is_named { &names[1..] } else { names };
     def.named = true;
