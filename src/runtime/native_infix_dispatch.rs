@@ -218,7 +218,10 @@ fn core_infix_shape(name: &str) -> Option<CoreInfixShape> {
         // The four set relations take `(Any, Any)` plus the `Setty`/`Baggy`/
         // `Mixy` pairs; a user `(Mu, Mu)` candidate (Qwiratry's `⊆`) is wider
         // than all of them and loses for any defined `Any` operands.
-        "(<=)" | "\u{2286}" | "(>=)" | "\u{2287}" | "(<)" | "\u{2282}" | "(>)" | "\u{2283}" => (
+        // The set operators have the same candidate set.
+        "(<=)" | "\u{2286}" | "(>=)" | "\u{2287}" | "(<)" | "\u{2282}" | "(>)" | "\u{2283}"
+        | "(-)" | "\u{2216}" | "(|)" | "\u{222a}" | "(&)" | "\u{2229}" | "(^)" | "\u{2296}"
+        | "(.)" | "\u{228d}" | "(+)" | "\u{228e}" => (
             &[&[
                 ("Any", "Any"),
                 ("Setty", "Setty"),
