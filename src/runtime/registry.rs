@@ -209,7 +209,7 @@ impl AugmentCutoff {
 pub(crate) struct Registry {
     /// `user_facing_type_name -> class key` for the `base+{roles}` mixin classes, valid
     /// for the class-table size it was built at (see
-    /// [`Interpreter::mixin_class_of_type_object`]). Shared across forks; a hit is
+    /// `Interpreter::mixin_class_of_type_object`). Shared across forks; a hit is
     /// re-verified against `classes`.
     pub(crate) mixin_display_index:
         std::sync::Arc<std::sync::Mutex<(usize, HashMap<String, String>)>>,
