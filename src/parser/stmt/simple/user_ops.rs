@@ -228,7 +228,18 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                 // its precedence, so the core parser keeps the token.
                 if matches!(
                     op,
-                    "\u{222a}" | "\u{2229}" | "\u{228d}" | "\u{228e}" | "\u{2216}" | "\u{2296}"
+                    "\u{222a}"
+                        | "\u{2229}"
+                        | "\u{228d}"
+                        | "\u{228e}"
+                        | "\u{2216}"
+                        | "\u{2296}"
+                        // The chaining membership operators (the subset ones keep a separate
+                        // user spelling, `t/lang/operators/infix-set-compare-user-import.t`).
+                        | "\u{2208}"
+                        | "\u{2209}"
+                        | "\u{220b}"
+                        | "\u{220c}"
                 ) && !scope.op_precedence.contains_key(name.as_str())
                 {
                     continue;
