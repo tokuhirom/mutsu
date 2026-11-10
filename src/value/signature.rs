@@ -1714,6 +1714,9 @@ fn render_param(p: &SigParam) -> String {
             result.push_str(" is ");
             result.push_str(t);
         }
+        if p.where_constraint.is_some() {
+            result.push_str(" where { ... }");
+        }
         if p.has_default {
             result.push_str(" = ...");
         }
@@ -1784,6 +1787,12 @@ fn render_param(p: &SigParam) -> String {
     for t in &p.traits {
         result.push_str(" is ");
         result.push_str(t);
+    }
+
+    // rakudo never prints the constraint's source: any `where` clause is
+    // `where { ... }`, between the traits and the default.
+    if p.where_constraint.is_some() {
+        result.push_str(" where { ... }");
     }
 
     // Literal default values render as `= 5`; complex default expressions
