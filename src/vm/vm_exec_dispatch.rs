@@ -8322,6 +8322,12 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
+            OpCode::SetTermMark { key_idx, on } => {
+                self.env_mut()
+                    .insert_sym_noting(code.const_sym(*key_idx), Value::truth(*on));
+                *ip += 1;
+            }
+            // Cost: O(1).
             OpCode::MarkVarReadonly(name_idx, kind) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.mark_readonly_with(&name, *kind);

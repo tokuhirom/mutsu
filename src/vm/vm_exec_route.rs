@@ -435,7 +435,8 @@ impl Interpreter {
             | OpCode::LetSaveElem { .. }
             | OpCode::LetSaveElemVivified { .. }
             | OpCode::MarkSigillessBind(..)
-            | OpCode::MarkVarReadonly(..) => self.exec_ops_group_16(code, ip, compiled_fns),
+            | OpCode::MarkVarReadonly(..)
+            | OpCode::SetTermMark { .. } => self.exec_ops_group_16(code, ip, compiled_fns),
         }
     }
 }

@@ -87,6 +87,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::LetSaveElem { .. }
             | OpCode::LetSaveElemVivified { .. }
             | OpCode::MarkSigillessBind(_)
+            | OpCode::SetTermMark { .. }
             | OpCode::MarkSigillessBindSource(_)
             | OpCode::MarkVarReadonly(..)
             | OpCode::CheckDynamicVarDeclared(_)
