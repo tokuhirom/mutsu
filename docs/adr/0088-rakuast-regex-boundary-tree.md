@@ -1790,3 +1790,6 @@ atoms the runtime parser builds for the same spellings. Match markers
 (`<(`/`)>`), `<?>`/`<!>` and the other character-class atoms still use the
 runtime parser. `t/regex/regex-tree-any-and-word-boundary-lowering.t` pins the
 matching, identical under `raku`.
+The corpus case `:i x <?before a> . y` on `xAy` used to pin `Nil` (the runtime
+parser did not carry `:i` into the lookahead); `raku` answers `｢xAy｣`, which the
+direct lowering now matches, so the pinned output was corrected.
