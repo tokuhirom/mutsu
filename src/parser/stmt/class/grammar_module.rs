@@ -211,7 +211,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     check_pseudo_package_in_decl(&name)?;
     // Consume optional type adverbs (`:ver<...>`, etc.) on the grammar name
     // before the `is`/`does` parent clauses (e.g. `grammar Foo:ver<1> is Bar`).
-    let (rest, _traits) = parse_declarator_traits(rest)?;
+    let (rest, name_adverbs) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let mut r = rest;
     let mut parents = Vec::new();
@@ -358,7 +358,10 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             grammar_stmt,
             &name,
             crate::ast::package_header::Header {
-                adverbs: Vec::new(),
+                adverbs: name_adverbs
+                    .into_iter()
+                    .filter(|(trait_name, _)| matches!(trait_name.as_str(), "ver" | "auth" | "api"))
+                    .collect(),
                 export_tags: (is_export && !is_lexical).then_some(export_tags),
             },
         ),
