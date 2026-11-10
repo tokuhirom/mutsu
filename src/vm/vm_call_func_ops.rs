@@ -1951,6 +1951,25 @@ impl Interpreter {
             );
         }
         crate::vm::vm_stats::record_function_dispatch();
+        // `&!f(...)`: the private code attribute of `self`, read from its own
+        // storage slot so a same-named `$!f` cannot answer for it (#17272).
+        let binding = match binding {
+            CodeVarBinding::ByName
+                if let Some(attr) = Self::const_str(code, name_idx).strip_prefix('!')
+                    && !attr.is_empty()
+                    && let Some(callable) = self.read_attr_cell_by_key(
+                        self.attr_access_self(code),
+                        None,
+                        Symbol::intern(attr),
+                        true,
+                        '&',
+                    )
+                    && !callable.is_nil() =>
+            {
+                CodeVarBinding::Bound(callable)
+            }
+            other => other,
+        };
         // An imported routine a trait composed a CALL-ME role into is called
         // through that role, as its code object is (ADR-11827).
         let binding = match binding {

@@ -141,6 +141,23 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let name_is_qualified = crate::qualified::is_qualified(code.const_sym(name_idx));
+        // `&!f`: the private code attribute of `self`, read from its own
+        // storage slot so a same-named `$!f` cannot answer for it (#17272).
+        if let Some(attr) = name.strip_prefix('!')
+            && !attr.is_empty()
+            && !name_is_qualified
+            && let Some(val) = self.read_attr_cell_by_key(
+                self.attr_access_self(code),
+                None,
+                Symbol::intern(attr),
+                true,
+                '&',
+            )
+            && !val.is_nil()
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         if let Some(val) = self.frame_amp_callable_at(code, name, slot) {
             self.stack.push(val);
             return Ok(());
