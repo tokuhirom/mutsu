@@ -489,6 +489,10 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),
         // which current Rakudo no longer declares (ADR-11276 §9.116).
         .filter(|row| !(row.owner == "Uni" && matches!(row.name, "chars" | "comb")))
+        // Rakudo's `Uni` answers `List`, `values` and `Array` through `Any`
+        // (over its own `list`); the shape is closed to `Any`'s rows
+        // (ADR-11276 §9.15), so `Uni` carries them itself (#17371).
+        .filter(|row| !(row.owner == "Uni" && matches!(row.name, "List" | "values" | "Array")))
         // Roast pins `VM.properties` (`S02-magicals/VM.t`), which Rakudo does
         // not declare (RT #124624, ADR-11276 §9.155).
         .filter(|row| !(row.owner == "VM" && row.name == "properties"))
