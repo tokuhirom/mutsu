@@ -55,9 +55,7 @@ pub(crate) fn origin_pod_source(node: &RakuAstNode) -> Option<String> {
         if let ValueView::RakuAst(child) = value.view()
             && child.class == RakuAstClass::DocBlock
         {
-            if super::origin::origin_of(child).is_none() {
-                return None;
-            }
+            super::origin::origin_of(child)?;
             blocks += 1;
         }
     }
@@ -72,7 +70,10 @@ pub(crate) fn origin_pod_source(node: &RakuAstNode) -> Option<String> {
     let ValueView::Instance { attributes, .. } = source.view() else {
         return None;
     };
-    let orig = attributes.as_map().get(super::unit_source::ORIG_ATTR)?.clone();
+    let orig = attributes
+        .as_map()
+        .get(super::unit_source::ORIG_ATTR)?
+        .clone();
     Some(orig.to_string_value())
 }
 
