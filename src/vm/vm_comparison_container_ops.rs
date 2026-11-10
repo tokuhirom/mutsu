@@ -138,7 +138,19 @@ impl Interpreter {
                         && !self.operand_denotes_scalar_container(code, right_name)
                         && crate::runtime::values_identical(&left, &right)
                 }
-                _ => false,
+                // A RakuAST node is an immutable reference object, like a
+                // Package or Sub: the same node reached through two names (or
+                // handed back by an `is raw` routine, CompUnit::Util's
+                // `scope =:= $*CU`) is `=:=`, whatever cell carried it.
+                _ => match (
+                    left.deref_container().view(),
+                    right.deref_container().view(),
+                ) {
+                    (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
+                        std::ptr::eq(a, b) || *a == *b
+                    }
+                    _ => false,
+                },
             }
         };
         self.stack.push(Value::truth(result));

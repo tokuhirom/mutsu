@@ -27,9 +27,15 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
 // Cost: see `Interpreter::merge_global_symbols`.
 fn merge_symbols(
     interp: &mut Interpreter,
-    _target: &Value,
+    target: &Value,
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
+    // `EXPORT.WHO.merge-symbols($handle.export-package)` at BEGIN time publishes
+    // the incoming `EXPORT::<tag>` stashes as the loading unit's own exports
+    // (CompUnit::Util `re-export`).
+    if interp.stash_is_unit_export_target(target) {
+        return Some(Ok(interp.merge_unit_export_symbols(args.first()?)));
+    }
     Some(Ok(interp.merge_global_symbols(args.first()?)))
 }

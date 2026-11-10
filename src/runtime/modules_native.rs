@@ -10,6 +10,7 @@ mod why_docee;
 pub(crate) use native_io::io_spec_kind::SpecKind;
 pub(crate) use native_io::{io_file_test, path_is_readable};
 pub(crate) mod attach_target;
+pub(crate) mod begin_scope_host;
 pub(crate) mod begin_prologue;
 mod dispatcher_wrap;
 mod enum_type_key;

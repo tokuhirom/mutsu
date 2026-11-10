@@ -89,6 +89,14 @@ fn target_handle(kind: &str, depth: usize) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern(ATTACH_TARGET_CLASS), attrs)
 }
 
+/// `$*R`'s `$!export-package`: the `EXPORT` package of the unit being compiled.
+// Cost: O(1).
+fn unit_export_package() -> Value {
+    Value::package(crate::symbol::Symbol::intern(
+        crate::runtime::begin_scope_host::UNIT_EXPORT_PACKAGE,
+    ))
+}
+
 /// The resolver object `$*CU.resolver` and `$!resolver` answer: the same
 /// opaque handle `$*R` is, standing for the unit's own scope.
 // Cost: O(1).
@@ -96,6 +104,7 @@ pub(crate) fn compile_resolver_handle() -> Value {
     let mut attrs = HashMap::new();
     attrs.insert("depth".to_string(), Value::int(-1));
     attrs.insert("compunit".to_string(), Value::int(0));
+    attrs.insert("export-package".to_string(), unit_export_package());
     Value::make_instance(crate::symbol::Symbol::intern(RESOLVER_CLASS), attrs)
 }
 
@@ -111,6 +120,7 @@ impl Interpreter {
             "compunit".to_string(),
             Value::int(self.control.compunit_leave_frames.len() as i64),
         );
+        attrs.insert("export-package".to_string(), unit_export_package());
         self.env.insert(
             "*R".to_string(),
             Value::make_instance(crate::symbol::Symbol::intern(RESOLVER_CLASS), attrs),
@@ -217,6 +227,7 @@ impl Interpreter {
                 };
                 Some(self.add_leave_phaser(target, phaser))
             }
+            (RESOLVER_CLASS, _) => self.dispatch_begin_scope_method(method, args),
             _ => None,
         }
     }
