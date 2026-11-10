@@ -208,6 +208,10 @@ struct UndeclaredName<'a> {
     /// declared anywhere is never reported).
     declared: &'a HashSet<String>,
     found: Option<String>,
+    /// Keep scanning past the first hit and record every undeclared name
+    /// (`all`), for a message that lists them.
+    collect_all: bool,
+    all: Vec<(String, i64)>,
     /// The unit is at language revision 6.e (`use v6.e.PREVIEW`).
     revision_6e: bool,
     /// Judge only capitalised (type-like) names. The mainline leaves a
@@ -320,7 +324,7 @@ impl UndeclaredName<'_> {
 
 impl<'ast> Visit<'ast> for UndeclaredName<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        if self.found.is_some() {
+        if self.found.is_some() && !self.collect_all {
             return;
         }
         if let Stmt::SetLine(n, _) = stmt {
@@ -330,15 +334,20 @@ impl<'ast> Visit<'ast> for UndeclaredName<'_> {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if self.found.is_some() {
+        if self.found.is_some() && !self.collect_all {
             return;
         }
         if let Expr::BareWord(name) = expr
             && (!self.type_like_only || name.starts_with(|c: char| c.is_ascii_uppercase()))
             && !self.is_known(name)
         {
-            self.found = Some(name.clone());
-            self.found_line = self.line;
+            if self.found.is_none() {
+                self.found = Some(name.clone());
+                self.found_line = self.line;
+            }
+            if self.collect_all && !self.all.iter().any(|(n, _)| n == name) {
+                self.all.push((name.clone(), self.line));
+            }
             return;
         }
         walk_expr(self, expr);
@@ -372,6 +381,21 @@ impl Interpreter {
         declared: &HashSet<String>,
         type_like_only: bool,
     ) -> Option<(String, i64)> {
+        self.undeclared_names(stmts, declared, type_like_only, false)
+            .into_iter()
+            .next()
+    }
+
+    /// Every undeclared bareword term (`collect_all`), else only the first.
+    // Cost: as `first_undeclared_name`; the scan no longer stops at the first hit
+    // when `collect_all`.
+    pub(super) fn undeclared_names(
+        &self,
+        stmts: &[Stmt],
+        declared: &HashSet<String>,
+        type_like_only: bool,
+        collect_all: bool,
+    ) -> Vec<(String, i64)> {
         let revision_6e = crate::parser::current_language_version().starts_with("6.e")
             || stmts.iter().any(|stmt| {
                 matches!(
@@ -384,6 +408,8 @@ impl Interpreter {
             interp: self,
             declared,
             found: None,
+            collect_all,
+            all: Vec::new(),
             revision_6e,
             type_like_only,
             line: 1,
@@ -395,7 +421,11 @@ impl Interpreter {
                 .collect(),
         };
         walk_stmts(&mut scan, stmts);
-        scan.found.map(|name| (name, scan.found_line))
+        if collect_all {
+            scan.all
+        } else {
+            scan.found.map(|name| (name, scan.found_line)).into_iter().collect()
+        }
     }
 
     /// A `BEGIN { ... }` block runs at compile time, so it can only see
@@ -466,6 +496,25 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        self.with_eval_call_explained(stmts, |explained| {
+            self.check_eval_unit_routines(stmts, explained)
+        })
+    }
+
+    /// The calls of an `EVAL` unit that resolve to nothing (by name and line), judged
+    /// with the same "explained" rule as [`Self::check_eval_undeclared_routines`].
+    // Cost: see `check_eval_unit_routines`.
+    fn eval_undeclared_call_names(&self, stmts: &[Stmt]) -> Vec<(String, i64)> {
+        self.with_eval_call_explained(stmts, |explained| {
+            self.undeclared_eval_calls(stmts, explained)
+        })
+    }
+
+    fn with_eval_call_explained<R>(
+        &self,
+        stmts: &[Stmt],
+        run: impl FnOnce(&dyn Fn(&str) -> bool) -> R,
+    ) -> R {
         let imported = self.eval_declared_types(stmts);
         // A `sub EXPORT` hook's names are known only once it runs (see
         // `check_eval_undeclared_names`), and what such a hook installs is
@@ -488,7 +537,7 @@ impl Interpreter {
             .flatten()
             .chain(self.module.eval_prerun_sets.iter().copied())
             .collect();
-        self.check_eval_unit_routines(stmts, |name| {
+        run(&|name: &str| {
             imported.types.contains(name)
                 || (hook && name.starts_with(|c: char| c.is_lowercase()))
                 || hook_terms.iter().any(|term| term == name)
@@ -549,7 +598,34 @@ impl Interpreter {
         // runs in (ADR-8751): the snippet's bare words read them.
         declared.extend(self.active_lexical_import_hook_terms());
         declared.extend(self.eval_unit_hook_terms(stmts));
-        if let Some((name, _)) = self.first_undeclared_name(stmts, &declared, false) {
+        let undeclared = self.undeclared_names(stmts, &declared, false, true);
+        // Lowercase barewords are routines to rakudo: "Undeclared routine(s):", every
+        // one of them, sorted by name.
+        if !undeclared.is_empty()
+            && undeclared
+                .iter()
+                .all(|(name, _)| !name.starts_with(|c: char| c.is_ascii_uppercase()))
+        {
+            let mut routines = undeclared;
+            for call in self.eval_undeclared_call_names(stmts) {
+                if !routines.iter().any(|(name, _)| *name == call.0) {
+                    routines.push(call);
+                }
+            }
+            routines.sort();
+            let lines: Vec<String> = routines
+                .iter()
+                .map(|(name, line)| format!("    {name} used at line {line}"))
+                .collect();
+            let plural = if routines.len() == 1 { "routine" } else { "routines" };
+            let first = routines[0].0.clone();
+            return Err(RuntimeError::undeclared_type_symbols(
+                &first,
+                format!("Undeclared {plural}:\n{}", lines.join("\n")),
+                Vec::new(),
+            ));
+        }
+        if let Some((name, _)) = undeclared.into_iter().next() {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(
                 &name,
