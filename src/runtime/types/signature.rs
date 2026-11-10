@@ -586,7 +586,9 @@ fn where_constraint_matches(
 ) -> bool {
     let saved = interpreter.env.clone();
     interpreter.env.insert("_".to_string(), candidate.clone());
-    if !pd.name.is_empty() {
+    // The key of a rename (`left` of `:left($ll)`) is no variable, so it must not
+    // shadow an unrelated `$left` an earlier parameter bound.
+    if !pd.name.is_empty() && !is_named_rename_sub_signature(pd) {
         interpreter.env.insert(pd.storage_name().into_owned(), candidate.clone());
     }
     let ok = match where_expr {
@@ -1465,15 +1467,26 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 bind_sub_param_candidate_names(interpreter, sub_pd, &candidate);
             }
             let name_sym = Symbol::intern(&sub_pd.name);
-            interpreter.check_positional_param_where_constraint(
-                sub_pd,
-                &sub_pd.name,
-                name_sym,
-                &candidate,
-                false,
-                true,
-                false,
-            )?;
+            if is_named_rename_sub_signature(sub_pd) {
+                // The key of a rename (`left` of `:left($ll)`) is no variable:
+                // binding it for the check would shadow an unrelated `$left`
+                // an earlier parameter bound, which the clause may read.
+                let mut keyless = sub_pd.clone();
+                keyless.name = String::new();
+                interpreter.check_positional_param_where_constraint(
+                    &keyless, "", name_sym, &candidate, false, true, false,
+                )?;
+            } else {
+                interpreter.check_positional_param_where_constraint(
+                    sub_pd,
+                    &sub_pd.name,
+                    name_sym,
+                    &candidate,
+                    false,
+                    true,
+                    false,
+                )?;
+            }
         }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
