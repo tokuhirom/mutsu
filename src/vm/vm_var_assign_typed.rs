@@ -1151,7 +1151,7 @@ impl Interpreter {
             // would land in that unrelated binding -- here the element cell
             // `my \value` is bound to. The caller's variable is reached by
             // the post-merge re-apply instead.
-            if skip_callee_locals && code.locals.iter().any(|l| *l == current_alias) {
+            if skip_callee_locals && code.locals.contains(&current_alias) {
                 self.pending_rw_writeback_sources
                     .push(current_alias.clone());
                 let next_key = crate::runtime::sigilless_alias_key(&current_alias);
