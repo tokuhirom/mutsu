@@ -2,7 +2,7 @@ use Test;
 
 plan 4;
 
-my $path = "tmp-io-out-buffer-{$*PID}.txt".IO;
+my $path = $*TMPDIR.add("mutsu-io-out-buffer-{$*PID}.txt");
 LEAVE $path.unlink if $path.e;
 
 $path.open(:w).close;
