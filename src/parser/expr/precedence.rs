@@ -18,7 +18,7 @@ use super::precedence_meta_ops::{
     BracketInfix, InfixTermOp, additive_expr, cannot_meta_loose_bracket_assign_error,
     cannot_meta_ternary_error, concat_expr, infix_term_call, multiplicative_expr,
     op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_infix_term_op,
-    parse_meta_op, power_expr, strip_sequence_op, structural_expr,
+    parse_meta_op, power_expr, set_relation_tail, strip_sequence_op, structural_expr,
 };
 
 mod assign;

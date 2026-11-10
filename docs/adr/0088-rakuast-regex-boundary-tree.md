@@ -1781,3 +1781,15 @@ class through a regex literal, a token and a named regex, identical under
 `raku`.
 A positive `\r` also stays on the runtime parser: it may join a following `\n` into one
 CRLF grapheme, which only that parser's merge pass handles.
+
+## 79. `.` and the word boundaries lower straight from the tree (2026-11-10)
+
+The direct lowering now covers the `.` wildcard (`RegexAtom::Any`) and the
+`<<`/`«` and `>>`/`»` anchors (`LeftWordBoundary`/`RightWordBoundary`), the
+atoms the runtime parser builds for the same spellings. Match markers
+(`<(`/`)>`), `<?>`/`<!>` and the other character-class atoms still use the
+runtime parser. `t/regex/regex-tree-any-and-word-boundary-lowering.t` pins the
+matching, identical under `raku`.
+The corpus case `:i x <?before a> . y` on `xAy` used to pin `Nil` (the runtime
+parser did not carry `:i` into the lookahead); `raku` answers `｢xAy｣`, which the
+direct lowering now matches, so the pinned output was corrected.

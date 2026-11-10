@@ -627,6 +627,12 @@ impl RegexTree {
                     };
                     Some(vec![token(atom, crate::runtime::RegexQuant::One, ratchet)])
                 }
+                // `.` is the runtime parser's `Any` atom.
+                RegexNode::CharClass(CharClassAtom::Any) => Some(vec![token(
+                    crate::runtime::RegexAtom::Any,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
                 // The other classes keep the runtime parser's plan.
                 RegexNode::CharClass(_) | RegexNode::CharClassAssertion(_) => None,
                 RegexNode::AnchorBeginningOfString => {
@@ -647,10 +653,18 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                // Word boundaries and match markers keep the runtime parser's plan.
-                RegexNode::AnchorLeftWordBoundary
-                | RegexNode::AnchorRightWordBoundary
-                | RegexNode::MatchFrom
+                RegexNode::AnchorLeftWordBoundary => Some(vec![token(
+                    crate::runtime::RegexAtom::LeftWordBoundary,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::AnchorRightWordBoundary => Some(vec![token(
+                    crate::runtime::RegexAtom::RightWordBoundary,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                // Match markers keep the runtime parser's plan.
+                RegexNode::MatchFrom
                 | RegexNode::MatchTo
                 | RegexNode::AssertionPass
                 | RegexNode::AssertionFail => None,
