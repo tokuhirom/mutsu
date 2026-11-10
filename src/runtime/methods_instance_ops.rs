@@ -1208,6 +1208,24 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
+            // A generated accessor takes no positional argument: `$o.attr(2)` is
+            // rakudo's arity error, never an assignment (that is `$o.attr = 2`,
+            // handled by `try_accessor_setter_assign`).
+            if args.iter().any(|a| !matches!(a.view(), ValueView::Pair(..)))
+                && self
+                    .collect_class_attributes(&cn_resolved)
+                    .iter()
+                    .any(|attr| attr.is_public && attr.name == method)
+            {
+                let positionals = args
+                    .iter()
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                    .count();
+                return Err(RuntimeError::new(format!(
+                    "Too many positionals passed; expected 1 argument but got {}",
+                    positionals + 1
+                )));
+            }
             // Fallback: auto-generated accessor for public attributes.
             if args.is_empty() {
                 if let Some(owner) = self.attribute_accessor_owner(&cn_resolved, method)
