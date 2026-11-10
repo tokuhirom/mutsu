@@ -33,22 +33,10 @@ impl Interpreter {
                 ..
             } if class_name == "Supply" => {
                 let values =
-                    if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
-                        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                            let mut a = HashMap::new();
-                            a.insert("emitted".to_string(), Value::array(Vec::new()));
-                            a.insert("done".to_string(), Value::FALSE);
-                            a
-                        });
-                        self.async_state
-                            .supply_emit_buffer
-                            .push(EmitFrame::default());
-                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter]);
-                        self.async_state
-                            .supply_emit_buffer
-                            .pop()
-                            .unwrap_or_default()
-                            .values
+                    if attributes.as_map().contains_key("on_demand_callback") {
+                        // The same path `.list` takes: it taps the supply, so a
+                        // `whenever` in the body is subscribed and drained.
+                        self.supply_get_values(&attributes.as_map())?
                     } else if attributes.as_map().get("values").is_some() {
                         // The same path `.list` takes, so a channel-backed or
                         // derived live Supply (`Supply.interval(..).head(3)`)
