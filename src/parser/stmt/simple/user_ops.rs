@@ -234,19 +234,12 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                         | "\u{228e}"
                         | "\u{2216}"
                         | "\u{2296}"
-                        // The chaining membership and subset operators.
+                        // The chaining membership operators (the subset ones keep a separate
+                        // user spelling, `t/lang/operators/infix-set-compare-user-import.t`).
                         | "\u{2208}"
                         | "\u{2209}"
                         | "\u{220b}"
                         | "\u{220c}"
-                        | "\u{2282}"
-                        | "\u{2284}"
-                        | "\u{2286}"
-                        | "\u{2288}"
-                        | "\u{2283}"
-                        | "\u{2285}"
-                        | "\u{2287}"
-                        | "\u{2289}"
                 ) && !scope.op_precedence.contains_key(name.as_str())
                 {
                     continue;
