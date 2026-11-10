@@ -104,7 +104,10 @@ impl Interpreter {
             }
         }
         // General round-trip check for other mismatches.
-        let (decoded, _, had_errors) = enc.decode(encoded);
+        // `decode_without_bom_handling`: `decode` would strip a leading BOM, so
+        // U+FEFF itself (a legal character in every Unicode encoding) would
+        // never round-trip.
+        let (decoded, had_errors) = enc.decode_without_bom_handling(encoded);
         if had_errors {
             return false;
         }
