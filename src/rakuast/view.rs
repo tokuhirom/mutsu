@@ -4824,7 +4824,10 @@ fn parameter(
             return Err(unsupported("type capture without a capture node"));
         };
         let mut fields = Vec::with_capacity(4);
-        if type_setting {
+        // `Any:U ::T`: the nominal type (with its smiley) rides beside the capture.
+        if let Some(t) = pd.type_constraint.as_deref() {
+            fields.push(node_field(Some("type"), build_type_node(names, t)?));
+        } else if type_setting {
             fields.push(node_field(Some("type"), type_setting_any()));
         }
         fields.push(type_captures_field(type_capture));
