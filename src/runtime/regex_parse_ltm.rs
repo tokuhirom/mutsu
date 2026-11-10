@@ -1807,7 +1807,8 @@ mod static_execution_tests {
     #[test]
     fn leaves_sigspace_and_unsupported_syntax_on_the_parser_path() {
         assert!(lower_static_execution_pattern(":s a b").is_none());
-        assert!(lower_static_execution_pattern("a.b").is_none());
+        assert!(lower_static_execution_pattern("a.b").is_some());
+        assert!(lower_static_execution_pattern("\\c[SPACE]").is_none());
         assert!(lower_static_execution_pattern("[ab]+ %% ','").is_none());
         let capture = lower_static_execution_pattern("(a)").expect("capture group");
         assert!(matches!(
