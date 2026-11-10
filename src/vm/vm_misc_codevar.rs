@@ -145,6 +145,7 @@ impl Interpreter {
         // storage slot so a same-named `$!f` cannot answer for it (#17272).
         if let Some(attr) = name.strip_prefix('!')
             && !attr.is_empty()
+            && !attr.contains("::")
             && !name_is_qualified
             && let Some(val) = self.read_attr_cell_by_key(
                 self.attr_access_self(code),

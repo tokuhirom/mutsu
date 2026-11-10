@@ -1957,6 +1957,7 @@ impl Interpreter {
             CodeVarBinding::ByName
                 if let Some(attr) = Self::const_str(code, name_idx).strip_prefix('!')
                     && !attr.is_empty()
+                    && !attr.contains("::")
                     && let Some(callable) = self.read_attr_cell_by_key(
                         self.attr_access_self(code),
                         None,

@@ -2563,7 +2563,12 @@ impl Compiler {
                 }
                 // For &!attr (callable private attributes), strip the &
                 // sigil so the env key matches the attribute name (!attr).
-                let effective_name = name.as_str();
+                // A `:=` bind of `&!attr` keeps the attribute's `!attr` key.
+                let effective_name = if name.starts_with("&!") && matches!(op, AssignOp::Bind) {
+                    &name[1..]
+                } else {
+                    name.as_str()
+                };
                 // Compile-time check: assigning a numeric literal to a typed
                 // numeric variable with a mismatched type (e.g. `my Num $n; $n = 42`)
                 // should produce X::Syntax::Number::LiteralType.
