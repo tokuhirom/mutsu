@@ -14,6 +14,9 @@ use super::*;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+/// One recorded action: its method, its Match and the Match's `:my` dynamics.
+type RecordedAction = (String, Value, Vec<(String, Value)>);
+
 /// What one running hook has built so far.
 #[derive(Default)]
 struct ClassLog {
@@ -24,7 +27,7 @@ struct ClassLog {
     ops: Vec<(String, Vec<Value>)>,
     /// `(action method, its Match, the Match's `:my` dynamics)` for every action
     /// of the slang that ran during the hook, in call order (ADR-17243).
-    actions: Vec<(String, Value, Vec<(String, Value)>)>,
+    actions: Vec<RecordedAction>,
     /// Names the hook's production: the unit replays a production's actions once
     /// however often it runs the statement that holds them.
     site: u64,
