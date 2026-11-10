@@ -7401,6 +7401,7 @@ t/regex/syntax/regex-ltm-ignoremark-alternation.t
 t/regex/syntax/regex-negated-charclass-lookahead.t
 t/regex/syntax/regex-octal-charclass-range.t
 t/regex/syntax/regex-quantified-anchor-spaced.t
+t/regex/syntax/regex-quantifier-after-doc-comment-branch-start.t
 t/regex/syntax/regex-quantifier-range-atom-boundary.t
 t/regex/syntax/regex-quote-in-char-class-not-a-delimiter.t
 t/regex/syntax/regex-ratchet-frugal-group-backref.t

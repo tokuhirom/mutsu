@@ -31,7 +31,7 @@ is grammar-matches("|| #|\{x} ?{$nl} 'b'"), 'b=m bb=n ab=n', 'whitespace between
 is grammar-matches("|| #|\{x}?{$nl} #|\{y}?{$nl} 'b'"), 'b=m bb=n ab=n', 'two comments in a row';
 
 # An atom before the comment: the quantifier is that atom's, as before.
-is grammar-matches("'a' #|\{x}?{$nl} 'b'"), 'b=m bb=n ab=m', "'a' #|{x}? b quantifies 'a'";
+is grammar-matches("'a' #|\{x}?{$nl} 'b'"), 'b=m bb=n ab=m', "'a' #|\{x}? b quantifies 'a'";
 
 # Still refused.
 nok compiles("||   ?{$nl} 'b'"), 'a bare ? after || (no comment) is refused';
