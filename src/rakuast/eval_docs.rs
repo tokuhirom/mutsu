@@ -201,6 +201,10 @@ pub(crate) fn collect(root: &RakuAstNode) -> Vec<DocComment> {
     // order (`doc_source::pod_source`); a declaration is placed at the length
     // of the text before it, so `$=pod` interleaves them as the tree does.
     let mut pod_len = 0usize;
+    // A parsed tree's Pod is read from the source it came from, whose blocks
+    // sit at the source's own byte offsets: a declaration is placed at its
+    // statement's byte offset there, not after the written-back text.
+    let source = super::origin_pod_source(root);
     for field in &root.fields {
         let RakuAstFieldValue::Node(value) = &field.value else {
             collector.visit_field(root, field);
@@ -215,8 +219,12 @@ pub(crate) fn collect(root: &RakuAstNode) -> Vec<DocComment> {
         }
         let before = collector.out.len();
         collector.visit(child);
+        let start = source
+            .as_deref()
+            .and_then(|text| super::doc_source::byte_offset_of_origin(child, text))
+            .unwrap_or(pod_len);
         for doc in &mut collector.out[before..] {
-            doc.start = pod_len;
+            doc.start = start;
         }
     }
     collector.out
