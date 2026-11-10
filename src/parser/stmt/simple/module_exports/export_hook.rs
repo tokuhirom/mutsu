@@ -339,10 +339,20 @@ struct LiteralValueKeys {
 }
 
 impl<'ast> crate::ast_visit::Visit<'ast> for LiteralValueKeys {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        // A routine declared in the hook is private to it: the named
+        // arguments its body passes (`M::tj($o, :pretty(True))`) are not
+        // export keys (#17273).
+        if !matches!(stmt, Stmt::SubDecl { .. }) {
+            crate::ast_visit::walk_stmt(self, stmt);
+        }
+    }
+
     fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
         if let crate::ast::Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
+            form: crate::ast::BinaryForm::Infix,
             ..
         } = expr
             && let crate::ast::Expr::Literal(key) = left.as_ref()
