@@ -142,7 +142,10 @@ impl Interpreter {
         // spelling, not the `$`-scalar its store key looks like (#11877).
         if Symbol::lookup(key).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
             let rest = Self::stash_member_tail(key, package_name)?;
-            return (!rest.is_empty()).then(|| rest.to_string());
+            // A term of a nested package (`outer::Inner::x`) is that package's
+            // member, not this one's.
+            return (!rest.is_empty() && !crate::qualified::is_qualified(Symbol::intern(rest)))
+                .then(|| rest.to_string());
         }
         if let Some(stash_key) = Self::sigil_leading_stash_member(key, package_name) {
             return Some(stash_key);

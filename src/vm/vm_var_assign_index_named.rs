@@ -1390,6 +1390,27 @@ impl Interpreter {
                 self.stack.push(val.clone());
                 return Ok(());
             }
+            // `$stash<k> := v` / `$stash<k> = v` on a stash held in a variable
+            // (`my $WHO = Pkg.WHO`) installs the symbol in the package, exactly
+            // as `Pkg.WHO.BIND-KEY(k, v)` does: the stash is the package's live
+            // symbol table, not a copy.
+            if let ValueView::Instance { class_name, .. } = inst.view()
+                && is_stash_class_name(class_name.as_str())
+            {
+                let source = match bind_sources.first() {
+                    Some(Some(name)) if bind_mode && !name.contains('\0') => Some(name.as_str()),
+                    _ => None,
+                };
+                let bound = self.bind_stash_key(
+                    code,
+                    &inst,
+                    &key_val.to_string_value(),
+                    val.clone(),
+                    source,
+                )?;
+                self.stack.push(bound);
+                return Ok(());
+            }
             let method = if bind_mode { "BIND-KEY" } else { "ASSIGN-KEY" };
             // A `:=` binds the element to the source variable's container,
             // as it does on a plain Hash: share a cell with the source so a

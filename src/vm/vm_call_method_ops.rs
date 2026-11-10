@@ -999,7 +999,18 @@ impl Interpreter {
             self.stack.push(Value::str(rendered));
             return Ok(());
         }
-        if method == "BIND-KEY"
+        if method == "package_at_key"
+            && args.len() == 1
+            && matches!(
+                target.view(),
+                ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str())
+            )
+        {
+            let result = self.stash_package_at_key(code, &target, &args[0].to_string_value())?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        if matches!(method, "BIND-KEY" | "ASSIGN-KEY")
             && args.len() == 2
             && matches!(
                 target.view(),
@@ -1007,8 +1018,9 @@ impl Interpreter {
             )
         {
             let key = args[0].to_string_value();
-            let result =
-                self.bind_stash_key(code, &target, &key, args[1].clone(), bind_source.as_deref())?;
+            // `ASSIGN-KEY` stores a value, it does not alias the source variable.
+            let source = bind_source.as_deref().filter(|_| method == "BIND-KEY");
+            let result = self.bind_stash_key(code, &target, &key, args[1].clone(), source)?;
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "stash-bind-key");
             self.stack.push(result);
             return Ok(());
