@@ -86,6 +86,9 @@ pub(crate) struct RoutineStack {
     /// past `frames` and a node always describes the live frame at its index
     /// (a frame is never modified in place — there is no `DerefMut`).
     nodes: RefCell<Vec<Arc<FrameNode>>>,
+    /// The language revisions a frame's entry replaced, innermost last, as
+    /// (frame index, revision to restore) -- see [`Self::enter_revision`].
+    revision_saves: Vec<(usize, crate::symbol::Symbol)>,
 }
 
 impl RoutineStack {
@@ -105,6 +108,7 @@ impl RoutineStack {
             self.lexical_package_frames += 1;
         }
         self.frames.push(frame);
+        self.enter_revision();
     }
 
     /// Push a frame together with its fixture record, which the frame then
@@ -117,6 +121,43 @@ impl RoutineStack {
             self.lexical_package_frames += 1;
         }
         self.frames.push(frame);
+        self.enter_revision();
+    }
+
+    /// Run a routine declared in a unit of another language revision under
+    /// that revision (ADR-17287): while the frame is live the parser's
+    /// current revision is the one its declaring file was written for.
+    // Cost: O(1) when every loaded unit shares one revision; else one probe.
+    #[inline]
+    fn enter_revision(&mut self) {
+        if !crate::parser::unit_revisions::revisions_mixed() {
+            return;
+        }
+        let idx = self.frames.len() - 1;
+        let Some(file) = self.frames[idx].def_file else {
+            return;
+        };
+        let Some(wanted) = crate::parser::unit_revisions::unit_language_revision(file) else {
+            return;
+        };
+        let current = crate::symbol::Symbol::intern(&crate::parser::current_language_version());
+        if current != wanted {
+            self.revision_saves.push((idx, current));
+            crate::parser::set_current_language_version(wanted.as_str());
+        }
+    }
+
+    /// Put back the revisions the frames at index `len` and above replaced.
+    // Cost: O(1) when none was replaced.
+    #[inline]
+    fn leave_revisions(&mut self, len: usize) {
+        while let Some(&(idx, previous)) = self.revision_saves.last() {
+            if idx < len {
+                break;
+            }
+            crate::parser::set_current_language_version(previous.as_str());
+            self.revision_saves.pop();
+        }
     }
 
     /// Give the innermost frame, which has no record, a copy of `fixtures`:
@@ -252,6 +293,7 @@ impl RoutineStack {
 
     pub(crate) fn pop(&mut self) -> Option<RoutineFrame> {
         let frame = self.frames.pop()?;
+        self.leave_revisions(self.frames.len());
         if frame.fixtures != 0 {
             self.fixtures.truncate(frame.fixtures as usize - 1);
         }
@@ -281,6 +323,7 @@ impl RoutineStack {
             self.fixtures.truncate(first.fixtures as usize - 1);
         }
         self.frames.truncate(len);
+        self.leave_revisions(len);
         self.cut_nodes();
     }
 

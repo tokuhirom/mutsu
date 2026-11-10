@@ -429,12 +429,17 @@ impl Interpreter {
         Some(r)
     }
 
+    // Cost: O(n), n = total number of nested items.
     pub(super) fn builtin_hash(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut flat_values = Vec::new();
         for arg in args {
             flat_values.extend(Self::value_to_list(arg));
         }
-        self.build_hash_from_items_warning(flat_values)
+        // `hash(+@list)` flattens the plain Lists among the elements
+        // (`hash((1, 2) Z (3, 4))`); itemized lists and Arrays stay whole.
+        let mut items = Vec::with_capacity(flat_values.len());
+        Self::extend_flatten_plain_lists(&mut items, flat_values);
+        self.build_hash_from_items_warning(items)
     }
 
     /// `:{ ... }` — a `Mu`-keyed object hash. Builds like `hash(...)` (which

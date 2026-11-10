@@ -5479,6 +5479,12 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     word: true,
                 });
             }
+            // A prefix the core does not define is a user-declared operator.
+            if let ValueView::Str(symbol) = positional_leaf(prefix)?.view()
+                && !super::user_prefix::is_core_prefix(&symbol)
+            {
+                return Ok(super::user_prefix::lower(&symbol, operand));
+            }
             let op = prefix_token(prefix)?;
             // `^N` is the range `0 ..^ N` as the parser spells it; a Whatever
             // operand (`^*`) is a WhateverCode and stays the unary.

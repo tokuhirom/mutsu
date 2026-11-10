@@ -144,7 +144,9 @@ fn consume_empty_call_parens(input: &str) -> &str {
 /// Parse `last` / `next` / `redo`.
 pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
-    if is_user_declared_sub("last") && rest.starts_with('(') {
+    // A routine of that name in scope (own or imported: ParaSeq exports `last`) shadows
+    // the loop-control statement, bare or called.
+    if is_user_declared_sub("last") {
         return Err(PError::expected("last statement"));
     }
     let (rest, _) = ws(rest)?;
@@ -166,7 +168,9 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
 
 pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
-    if is_user_declared_sub("next") && rest.starts_with('(') {
+    // A routine of that name in scope (own or imported: ParaSeq exports `last`) shadows
+    // the loop-control statement, bare or called.
+    if is_user_declared_sub("next") {
         return Err(PError::expected("next statement"));
     }
     let (rest, _) = ws(rest)?;
@@ -188,7 +192,9 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
 
 pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
-    if is_user_declared_sub("redo") && rest.starts_with('(') {
+    // A routine of that name in scope (own or imported: ParaSeq exports `last`) shadows
+    // the loop-control statement, bare or called.
+    if is_user_declared_sub("redo") {
         return Err(PError::expected("redo statement"));
     }
     let (rest, _) = ws(rest)?;

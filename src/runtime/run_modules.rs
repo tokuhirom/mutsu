@@ -1067,6 +1067,13 @@ impl Interpreter {
                 (ast, facts, effects, precompiled)
             }
         };
+        // The parse (or the replayed parse effects) left the module's own
+        // `use v6.*` as the current revision: remember it for the module's
+        // routines (ADR-17287).
+        crate::parser::unit_revisions::note_unit_language_revision(
+            Symbol::intern(&source_path.to_string_lossy()),
+            &crate::parser::current_language_version(),
+        );
         if entry.is_some() {
             for name in &facts.exported_operator_names {
                 crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)

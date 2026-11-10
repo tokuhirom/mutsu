@@ -1456,6 +1456,19 @@ impl Interpreter {
                     Some(s) => s,
                     None => unreachable!("SetGlobal name must be a string constant"),
                 };
+                // `&!f = ...`: the private code attribute of `self`, stored in
+                // its own slot so a same-named `$!f` is not overwritten
+                // (#17272).
+                if name_str.starts_with("&!")
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && Self::attr_twigil_base(name_str).is_some()
+                    && let Some(val) = self.stack.pop()
+                {
+                    self.write_self_attr_cell(name_str, val.into_descalarized());
+                    *ip += 1;
+                    return Ok(());
+                }
                 self.record_foreign_dynamic_write(code, code.const_sym(*name_idx));
                 // An `EVAL`'s store into a caller's `my &h` outlives the EVAL.
                 if name_str.starts_with('&') {
