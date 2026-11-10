@@ -1,0 +1,3 @@
+# Ecosystem lock board rotated from #16103 to #17269
+
+The ecosystem lock board had reached 474 comments, past the ~250 rotation threshold, so it moved to #17269 (v9) and #16103 was closed as a redirect. Two live locks were carried over: Net::NetRC (`eco/net-netrc-hyper-nested-cell`) and Property::Text::Controls (`eco/pt-controls-w45`). Five locks (Geo::Ellipsoid, mod-div-specs, Rat::Precise, HTTP::Core, Proc::Q) were not carried: each had been released on #16103 under a renamed branch, which `live-locks.py` reports as a stale lock plus an orphan unlock. All skill, doc and script references now point at #17269.
