@@ -334,6 +334,14 @@ impl Interpreter {
         }
         // What the call site knew about the argument (see [`TopicArgSite`]).
         let topic_arg_is_bare = site.bare;
+        // A bare block's `$_` is bound to the argument itself, so an argument
+        // variable that is a read-only binding (a plain parameter, a `for`
+        // loop alias) makes `$_` read-only too. Read in the CALLER's readonly
+        // state, before this call's frame opens its own.
+        let topic_source_readonly = site
+            .source
+            .as_ref()
+            .and_then(|source| self.readonly_kind(source));
         let topic_alias_source = site
             .source
             .filter(|_| !cc.is_routine && explicit_topic.is_none() && !capture_rw_topic);
@@ -1076,6 +1084,12 @@ impl Interpreter {
                 && !first.is_container_ref()
             {
                 self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+            } else if let Some(kind) = topic_source_readonly
+                && !capture_rw_topic
+                && explicit_topic.is_none()
+                && !first.is_container_ref()
+            {
+                self.mark_readonly_with("_", kind);
             } else {
                 self.unmark_readonly_topic();
             }
