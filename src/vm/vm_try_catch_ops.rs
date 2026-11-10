@@ -270,6 +270,15 @@ impl Interpreter {
                     {
                         failure_exception = Some(exc.clone());
                     }
+                    // `try` yields no value for a Failure it caught, as for an
+                    // exception it caught: `my $x = try { $*UNDECLARED }` leaves
+                    // `$x` an undefined `Any`, not a (handled) Failure whose
+                    // `.DEFINITE` is True. Only when the region is a real `try`
+                    // (`traps`), not the implicit wrapper around a `CATCH` block.
+                    if traps {
+                        self.stack.pop();
+                        self.stack.push(Value::NIL);
+                    }
                 }
                 self.env_mut()
                     .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));
