@@ -139,8 +139,8 @@ impl Interpreter {
         let Some(cell) = Self::self_instance_attrs(inv) else {
             return Ok(());
         };
-        let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
-        let class_attrs = self.collect_class_attributes(class_key);
+        let attr_type_constraints = self.attribute_type_constraints_shared(class_key);
+        let class_attrs = self.class_attributes_shared(class_key);
         for d in deferred {
             let key = super::attribute_storage_key(&class_attrs, &d.name, d.sigil);
             if written.contains(&key) {

@@ -1206,6 +1206,12 @@ pub(crate) struct NativeCtorPlan {
     /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
     /// per class shape instead of per construction (#12917).
     pub(crate) smiley_rules: std::sync::OnceLock<Arc<SmileyRules>>,
+    /// The attributes declared by more than one class of the MRO (or a public
+    /// one declared by several), each with its declaring class: the ones that
+    /// need a class-qualified storage slot (`collect_per_class_attrs`). Empty
+    /// for nearly every class, and a function of the class shape alone, so it
+    /// is collected once per plan instead of once per construction.
+    pub(crate) per_class_attrs: std::sync::OnceLock<Arc<Vec<(String, ClassAttributeDef)>>>,
     /// The builtin QuantHash a `is Set`/`is BagHash`/... subclass stores its
     /// data as (`quanthash_base_kind`), memoized per class shape (#12917).
     pub(crate) quanthash_base: std::sync::OnceLock<Option<&'static str>>,

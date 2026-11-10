@@ -1593,7 +1593,7 @@ impl Interpreter {
                 }
                 // Attribute type constraints (MRO-wide), used to coerce a provided
                 // value for a coercion-typed attribute (`has Int() $.x`).
-                let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
+                let attr_type_constraints = self.attribute_type_constraints_shared(class_key);
                 // Raku's default BUILDALL ignores a named argument that names no
                 // attribute; storing it would make `eqv` compare a key the object
                 // is not supposed to have. Only when the class's attribute set is
@@ -2129,7 +2129,7 @@ impl Interpreter {
                 // own copy stored under a qualified key ("ClassName\0attrName").
                 // Methods access $!attr via the qualified key for their owner class.
                 {
-                    let per_class_attrs = self.collect_per_class_attrs(class_key);
+                    let per_class_attrs = self.per_class_attrs_shared(class_key);
                     // Named-arg keys explicitly passed to the constructor. In Raku
                     // each class's BUILD binds its own same-named attribute from the
                     // named args (a provided named arg wins over the class's own
@@ -2143,7 +2143,7 @@ impl Interpreter {
                             _ => None,
                         })
                         .collect();
-                    for (declaring_class, attr) in per_class_attrs {
+                    for (declaring_class, attr) in per_class_attrs.iter().cloned() {
                         let ClassAttributeDef {
                             name: attr_name,
                             default,
