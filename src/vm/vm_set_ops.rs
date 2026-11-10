@@ -253,10 +253,10 @@ impl Interpreter {
         }
         let dispatch_left = left.clone();
         let dispatch_right = right.clone();
-        if let Some(result) =
-            self.try_user_infix("infix:<(elem)>", &dispatch_left, &dispatch_right)?
-        {
-            return Ok(result);
+        for name in ["infix:<(elem)>", "infix:<∈>"] {
+            if let Some(result) = self.try_user_infix(name, &dispatch_left, &dispatch_right)? {
+                return Ok(result);
+            }
         }
         let result = self.set_contains(&right, &left);
         Ok(Value::truth(result))
@@ -272,10 +272,10 @@ impl Interpreter {
         }
         let dispatch_left = left.clone();
         let dispatch_right = right.clone();
-        if let Some(result) =
-            self.try_user_infix("infix:<(cont)>", &dispatch_left, &dispatch_right)?
-        {
-            return Ok(result);
+        for name in ["infix:<(cont)>", "infix:<∋>"] {
+            if let Some(result) = self.try_user_infix(name, &dispatch_left, &dispatch_right)? {
+                return Ok(result);
+            }
         }
         let result = self.set_contains(&left, &right);
         Ok(Value::truth(result))
