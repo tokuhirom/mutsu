@@ -168,7 +168,9 @@ impl Interpreter {
             && let Ok(lazy) = self.call_method_with_values(target.clone(), "is-lazy", Vec::new())
             && lazy.truthy()
         {
-            return Some(Ok(RuntimeError::cannot_lazy_action_failure(&format!(".{method}"))));
+            return Some(Ok(RuntimeError::cannot_lazy_action_failure(&format!(
+                ".{method}"
+            ))));
         }
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
