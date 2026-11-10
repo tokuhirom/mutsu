@@ -641,7 +641,10 @@ impl Interpreter {
             }
             // A core type (`--> Bool:D`, `--> Int`) names itself: skip the owner
             // walk and capture lookup (~7k instructions per call).
-            let base = spec.strip_suffix(":D").or_else(|| spec.strip_suffix(":U")).unwrap_or(spec);
+            let base = spec
+                .strip_suffix(":D")
+                .or_else(|| spec.strip_suffix(":U"))
+                .unwrap_or(spec);
             if crate::runtime::utils::is_known_type_constraint(base) {
                 return spec.to_string();
             }
