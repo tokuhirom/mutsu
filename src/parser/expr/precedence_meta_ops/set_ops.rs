@@ -1,6 +1,7 @@
 use crate::ast::Expr;
 use crate::parser::expr::operators::enrich_expected_error;
 use crate::parser::helpers::{is_ident_char, ws};
+use crate::parser::parse_result::PError;
 use crate::parser::parse_result::PResult;
 use crate::token_kind::{NOT_THREADED, TokenKind};
 
