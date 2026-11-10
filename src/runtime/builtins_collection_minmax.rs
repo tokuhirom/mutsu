@@ -28,6 +28,42 @@ impl Interpreter {
             .cloned()
             .collect();
 
+        // A Hash is its Pairs (`%h.max(:k)` answers the key of the extremal
+        // Pair, not an index); the :k/:v/:kv/:p answers then name keys.
+        if positional.len() == 1
+            && let ValueView::Hash(map) = positional[0].deref_container().view()
+        {
+            let pairs: Vec<(Value, Value)> = map
+                .as_ref()
+                .iter()
+                .map(|(k, v)| (map.typed_key(k), v.clone()))
+                .collect();
+            // `result` is the extremal Pair; every Pair with an equal VALUE
+            // is extremal as well (`%(a=>1, b=>5, c=>5).max(:k)` is `(b c)`).
+            let extremal_value = match result.view() {
+                ValueView::ValuePair(_, v) | ValueView::Pair(_, v) => (*v).clone(),
+                _ => result.clone(),
+            };
+            let best: Vec<&(Value, Value)> = pairs
+                .iter()
+                .filter(|(_, v)| crate::runtime::compare_values(v, &extremal_value) == 0)
+                .collect();
+            let mut out = Vec::new();
+            for (k, v) in best {
+                match adverb {
+                    "k" => out.push(k.clone()),
+                    "v" => out.push(v.clone()),
+                    "kv" => {
+                        out.push(k.clone());
+                        out.push(v.clone());
+                    }
+                    "p" => out.push(Value::value_pair(k.clone(), v.clone())),
+                    _ => return Ok(result),
+                }
+            }
+            return Ok(Value::array(out));
+        }
+
         // Flatten list items
         let items: Vec<Value> = if positional.len() == 1 {
             if let Some(list) = positional[0].as_list_items() {
@@ -40,7 +76,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::seq(vec![]));
+            return Ok(Value::array(vec![]));
         }
 
         // Find all indices matching the extremum
@@ -58,11 +94,11 @@ impl Interpreter {
                     .iter()
                     .map(|&i| Value::int(i as i64))
                     .collect();
-                Ok(Value::seq(keys))
+                Ok(Value::array(keys))
             }
             "v" => {
                 let vals: Vec<Value> = matching_indices.iter().map(|&i| items[i].clone()).collect();
-                Ok(Value::seq(vals))
+                Ok(Value::array(vals))
             }
             "kv" => {
                 let mut kvs = Vec::new();
@@ -70,14 +106,14 @@ impl Interpreter {
                     kvs.push(Value::int(i as i64));
                     kvs.push(items[i].clone());
                 }
-                Ok(Value::seq(kvs))
+                Ok(Value::array(kvs))
             }
             "p" => {
                 let pairs: Vec<Value> = matching_indices
                     .iter()
                     .map(|&i| Value::value_pair(Value::int(i as i64), items[i].clone()))
                     .collect();
-                Ok(Value::seq(pairs))
+                Ok(Value::array(pairs))
             }
             _ => Ok(result),
         }
