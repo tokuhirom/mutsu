@@ -1396,6 +1396,7 @@ impl Interpreter {
             // symbol table, not a copy.
             if let ValueView::Instance { class_name, .. } = inst.view()
                 && is_stash_class_name(class_name.as_str())
+                && !crate::qualified::is_qualified_str(&key_val.to_string_value())
             {
                 let source = match bind_sources.first() {
                     Some(Some(name)) if bind_mode && !name.contains('\0') => Some(name.as_str()),
