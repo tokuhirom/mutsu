@@ -18,6 +18,9 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Some(threaded) = self.autothread_family_call_by_name(name, &args)? {
+            return Ok(threaded);
+        }
         if !Self::is_builtin_function(name) {
             return self.call_function(name, args);
         }

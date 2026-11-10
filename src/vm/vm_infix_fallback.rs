@@ -60,7 +60,12 @@ impl Interpreter {
         };
         if call_args.len() == 2
             && infix_name.is_none_or(|op| !self.is_candidate_less_proto(op))
-            && let Some(value) = self.core_infix_values(name, &call_args[0], &call_args[1], code)?
+            && let Some(value) = self.core_infix_values(
+                name,
+                &Self::unwrap_operand_value(call_args[0].clone()),
+                &Self::unwrap_operand_value(call_args[1].clone()),
+                code,
+            )?
         {
             return Ok(value);
         }
@@ -84,8 +89,8 @@ impl Interpreter {
                 // `(Any, Any)` one (`core_infix_verdict`) lands here.
                 "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" => {
                     let (left, right) = self.walk_set_operands(
-                        Self::unwrap_var_ref_value(call_args[0].clone()),
-                        Self::unwrap_var_ref_value(call_args[1].clone()),
+                        Self::unwrap_operand_value(call_args[0].clone()),
+                        Self::unwrap_operand_value(call_args[1].clone()),
                     )?;
                     let relation: fn(
                         &mut Interpreter,
@@ -116,10 +121,10 @@ impl Interpreter {
         // native Range variants and would order an `is Range` instance by its
         // representation instead of its bounds.
         if call_args.len() == 2 && name == "cmp" {
-            let left = Self::unwrap_var_ref_value(call_args[0].clone())
+            let left = Self::unwrap_operand_value(call_args[0].clone())
                 .deref_container()
                 .deitemize_element();
-            let right = Self::unwrap_var_ref_value(call_args[1].clone())
+            let right = Self::unwrap_operand_value(call_args[1].clone())
                 .deref_container()
                 .deitemize_element();
             return self.cmp_value(left, right);
@@ -127,8 +132,8 @@ impl Interpreter {
         if call_args.len() == 2
             && let Some(result) = self.range_instance_arithmetic(
                 name,
-                &Self::unwrap_var_ref_value(call_args[0].clone()),
-                &Self::unwrap_var_ref_value(call_args[1].clone()),
+                &Self::unwrap_operand_value(call_args[0].clone()),
+                &Self::unwrap_operand_value(call_args[1].clone()),
             )?
         {
             return Ok(result);
@@ -140,7 +145,7 @@ impl Interpreter {
             // that would extend the left operand's rows.
             let mut operands = Vec::with_capacity(call_args.len());
             for arg in &call_args {
-                operands.push(self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?);
+                operands.push(self.fetch_proxy_for_store(Self::unwrap_operand_value(arg.clone()))?);
             }
             // An infinite operand makes the product a lazy stage, as for the
             // meta-operator form.
@@ -165,9 +170,9 @@ impl Interpreter {
         // (GH-15203).
         if name == "eqv" && call_args.len() == 2 {
             let left =
-                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[0].clone()))?;
+                self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[0].clone()))?;
             let right =
-                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[1].clone()))?;
+                self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[1].clone()))?;
             return self.eqv_values(left, right);
         }
         if call_args.len() >= 2 {
@@ -185,10 +190,10 @@ impl Interpreter {
             // this point raw because user `multi infix:<op>` candidates with
             // `is rw` parameters were tried first and declined.
             let mut acc =
-                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[0].clone()))?;
+                self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[0].clone()))?;
             let mut reduced = true;
             for rhs in &call_args[1..] {
-                let rhs = self.fetch_proxy_for_store(Self::unwrap_var_ref_value(rhs.clone()))?;
+                let rhs = self.fetch_proxy_for_store(Self::unwrap_operand_value(rhs.clone()))?;
                 match crate::runtime::Interpreter::apply_reduction_op(name, &acc, &rhs) {
                     Ok(value) => acc = value,
                     Err(_) => {
@@ -422,5 +427,19 @@ impl Interpreter {
             _ => None,
         };
         Ok(result)
+    }
+
+    /// A native operator's operand: the value behind the `WrapVarRef` tag of a
+    /// variable operand and behind the container cell (`IndexArgRef`) of a
+    /// subscripted one, which an `is rw` candidate would have bound but a core
+    /// operator reads through.
+    // Cost: O(1).
+    fn unwrap_operand_value(value: Value) -> Value {
+        let value = Self::unwrap_var_ref_value(value);
+        if value.is_container_ref() {
+            value.into_deref()
+        } else {
+            value
+        }
     }
 }

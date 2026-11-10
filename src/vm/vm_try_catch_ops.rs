@@ -15,6 +15,7 @@ impl Interpreter {
         control_handles_take: bool,
         is_bare_block: bool,
         traps: bool,
+        decay_failure: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -84,6 +85,7 @@ impl Interpreter {
             resume_safe,
             control_handles_take,
             traps,
+            decay_failure,
             ip,
             compiled_fns,
         );
@@ -122,6 +124,7 @@ impl Interpreter {
         resume_safe: bool,
         control_handles_take: bool,
         traps: bool,
+        decay_failure: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -270,6 +273,17 @@ impl Interpreter {
                     {
                         failure_exception = Some(exc.clone());
                     }
+                }
+                // `my $x = try %*UNDECLARED`: the caught Failure is not the
+                // declaration's value (rakudo leaves `Any`); a handled one
+                // (the dynamic-variable lookup's) included.
+                if decay_failure
+                    && self.stack.last().is_some_and(|top| {
+                        matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                    })
+                {
+                    self.stack.pop();
+                    self.stack.push(Value::NIL);
                 }
                 self.env_mut()
                     .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));

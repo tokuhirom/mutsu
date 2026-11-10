@@ -86,7 +86,10 @@ impl Interpreter {
             } else {
                 base.to_string()
             };
-            total += self.class_mro(&resolved).len();
+            // A role's MRO is just itself (no `Any`/`Mu` tail), which would score
+            // it below an unconstrained `Any` parameter; a role constraint is
+            // still narrower than `Any`, so score it as a class would.
+            total += self.class_mro(&resolved).len().max(3);
         }
         total
     }

@@ -577,7 +577,17 @@ impl Interpreter {
             // exactly this set; without the same gate here the read resurrects the
             // foreign value (`my $x := f()` yielding Nil would see the other
             // scope's `$x`).
-            if let Some(shared_val) = self.get_shared_var(name) {
+            //
+            // A PARAMETER slot is bound by this call: its Nil is the argument
+            // (`sub f(Mu $value)` called with `Nil`), and no other frame can
+            // have written it. The store is keyed by bare name process-wide, so
+            // once any thread exists a previous call's `$value` (every `snap`
+            // frame mirrors its params into it) would be read back as this
+            // frame's `Nil` argument.
+            let is_param_slot = code
+                .local_sym(idx)
+                .is_some_and(|sym| code.param_locals.contains(&sym));
+            if !is_param_slot && let Some(shared_val) = self.get_shared_var(name) {
                 self.stack.push(shared_val);
                 return Ok(());
             }

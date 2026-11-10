@@ -4421,6 +4421,9 @@ pub(crate) enum OpCode {
         /// body that merely contains a `CATCH`/`CONTROL` phaser; such a region
         /// does not trap, so `{ die "x"; CONTROL { } }` must propagate.
         traps: bool,
+        /// A `try` that is the initializer of a scalar declaration (`my $x = try
+        /// %*DYN`): a Failure it caught leaves `Any`, not the Failure.
+        decay_failure: bool,
     },
 
     /// Bracket `[ip+1..body_end)` with a routine-registry save/restore, so a
