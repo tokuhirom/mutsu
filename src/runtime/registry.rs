@@ -537,6 +537,11 @@ pub(crate) struct Registry {
     /// regex engine consults this to route subrule dispatch through the custom
     /// `find_method` (Metamodel::GrammarHOW protocol).
     pub(crate) grammar_custom_how: HashMap<String, Value>,
+    /// Classes whose user HOW instance (`class_how_values`) defines a
+    /// `find_method`: class name -> that HOW. Every method call on an instance
+    /// or type object of such a class is looked up through it, the way rakudo's
+    /// method cache miss path asks `HOW.find_method` (OO::Actors' `actor`).
+    pub(crate) class_find_method_how: HashMap<String, Value>,
     /// Classes declared under a custom EXPORTHOW `class` metaclass whose HOW
     /// class defines a user `compose` method: names queued for a post-`is`-trait
     /// `compose` call. Drained by the class-decl VM op after custom `is` traits

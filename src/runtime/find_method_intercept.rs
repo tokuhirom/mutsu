@@ -93,7 +93,7 @@ impl Interpreter {
             _ => return None,
         };
         if !self.has_user_method_sym(class.as_str(), Symbol::intern(USER_FIND_METHOD)) {
-            return None;
+            return self.user_how_find_method_lookup(class.as_str(), method);
         }
         // The call's argument sources and the caller's containers belong to
         // the FOUND method's parameters; the metamethod binds its own
@@ -110,6 +110,44 @@ impl Interpreter {
         );
         self.set_pending_call_arg_sources_shared(sources);
         Some(found)
+    }
+
+    /// What the user HOW of `class` (an `EXPORTHOW` / `HOW.new_type` metaclass
+    /// whose class overrides `find_method`) answers for `method`:
+    /// `HOW.find_method(type, name)`. `None` -- ordinary dispatch -- when the class
+    /// has no such HOW, `method` is construction/introspection that never goes
+    /// through the hook here, or the HOW found no Callable.
+    // Cost: O(1) hash probe without such a HOW; otherwise the override's own cost.
+    fn user_how_find_method_lookup(
+        &mut self,
+        class: &str,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if matches!(
+            method,
+            "new" | "bless" | "CREATE" | "BUILDALL" | "BUILD" | "TWEAK" | "DESTROY" | "find_method"
+                | "can" | "isa" | "does" | "ACCEPTS" | "Str" | "Stringy" | "gist" | "raku"
+                | "say" | "print" | "put" | "note" | "WHICH"
+        ) {
+            return None;
+        }
+        let how = self.registry().class_find_method_how.get(class).cloned()?;
+        let found = self.call_method_with_values(
+            how,
+            "find_method",
+            vec![Value::package(Symbol::intern(class)), Value::str(method.to_string())],
+        );
+        match found {
+            Ok(callable)
+                if !matches!(
+                    callable.view(),
+                    ValueView::Routine { .. } | ValueView::Sub(_) | ValueView::WeakSub(_)
+                ) =>
+            {
+                None
+            }
+            other => Some(other),
+        }
     }
 
     /// Whether `value`'s type declares a user `^find_method`, which answers

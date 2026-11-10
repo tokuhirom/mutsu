@@ -203,6 +203,7 @@ impl Interpreter {
             if let ValueView::Instance { attributes, .. } = instance.view() {
                 attributes.insert("__mutsu_how_target", Value::str(name.clone()));
             }
+            self.note_user_find_method_how(how_class, &name, &instance);
             self.registry_mut()
                 .class_how_values
                 .insert(name.clone(), instance);

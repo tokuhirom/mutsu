@@ -572,10 +572,35 @@ impl Interpreter {
         if let ValueView::Instance { attributes, .. } = instance.view() {
             attributes.insert("__mutsu_how_target", Value::str(class_name.to_string()));
         }
+        if !role_how {
+            self.note_user_find_method_how(&how_class, class_name, &instance);
+        }
         self.registry_mut()
             .class_how_values
             .insert(class_name.to_string(), instance);
         Ok(has_user_compose)
+    }
+
+    /// Record `instance` as `class_name`'s method-lookup hook when its HOW class
+    /// (or an ancestor) declares a user `find_method`.
+    // Cost: O(m), m = the HOW class's MRO length.
+    pub(crate) fn note_user_find_method_how(
+        &mut self,
+        how_class: &str,
+        class_name: &str,
+        instance: &Value,
+    ) {
+        let has_user_find_method = self.class_mro(how_class).iter().any(|c| {
+            self.registry()
+                .user_method_overloads(c.as_str(), "find_method")
+                .is_some()
+        });
+        if has_user_find_method {
+            crate::runtime::find_method_intercept::note_user_find_method();
+            self.registry_mut()
+                .class_find_method_how
+                .insert(class_name.to_string(), instance.clone());
+        }
     }
 
     /// Whether `class_name`'s HOW is a `does`-mixin carrying a user `compose`
