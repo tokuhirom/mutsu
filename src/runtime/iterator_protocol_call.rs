@@ -93,6 +93,9 @@ impl crate::Interpreter {
         if class_name == "FromLoopIterator" {
             return Some(self.step_loop_iterator(target, op));
         }
+        if class_name == "HeadIterator" {
+            return Some(self.step_head_iterator(target, op, args));
+        }
         if let Some(result) = self.map_grep_stream_protocol_call(&attributes, op, args) {
             return Some(result);
         }
@@ -133,6 +136,75 @@ impl crate::Interpreter {
             }
             _ => Err(RuntimeError::new(
                 "this Seq.from-loop iterator supports pull-one, skip-one and sink-all only",
+            )),
+        }
+    }
+
+    /// A protocol call on the iterator of `Seq.new($iterator).head($n)`: each
+    /// pull takes one element of the wrapped iterator while the shared
+    /// remaining count allows (`pull_iterator_prefix_into`), so nothing is
+    /// pulled before a method asks, and `push-all` stops after `$n` elements.
+    // Cost: O(k) pulls of the wrapped iterator, k = elements the call consumes.
+    fn step_head_iterator(
+        &mut self,
+        target: &Value,
+        op: IterOp,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let arg_int = |v: Option<&Value>, default: i64| -> usize {
+            v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
+        };
+        let pull = |this: &mut Self, limit: usize| -> Result<Vec<Value>, RuntimeError> {
+            let mut out = crate::value::PullOut::default();
+            this.pull_iterator_prefix_into(target, limit, &mut out)?;
+            Ok(out.produced)
+        };
+        // Append `items` to the target array argument of a `push-*` call.
+        let push = |items: Vec<Value>, args: &[Value]| {
+            if let Some(buffer) = args.first() {
+                let _ = Self::nqp_with_elems_mut("push-all", buffer, |elems| {
+                    elems.extend(items);
+                });
+            }
+        };
+        match op {
+            IterOp::PullOne => Ok(pull(self, 1)?
+                .pop()
+                .unwrap_or_else(Value::iteration_end)),
+            IterOp::SkipOne => Ok(Value::int(i64::from(!pull(self, 1)?.is_empty()))),
+            IterOp::SinkAll => {
+                pull(self, usize::MAX)?;
+                Ok(Value::iteration_end())
+            }
+            IterOp::PushAll | IterOp::PushUntilLazy => {
+                let items = pull(self, usize::MAX)?;
+                push(items, args);
+                Ok(Value::iteration_end())
+            }
+            IterOp::PushExactly | IterOp::PushAtLeast => {
+                let want = arg_int(args.get(1), 1);
+                let items = pull(self, want)?;
+                let got = items.len();
+                push(items, args);
+                Ok(if got < want {
+                    Value::iteration_end()
+                } else {
+                    Value::int(got as i64)
+                })
+            }
+            IterOp::SkipAtLeast => {
+                let want = arg_int(args.first(), 0);
+                Ok(Value::int(i64::from(pull(self, want)?.len() >= want)))
+            }
+            IterOp::SkipAtLeastPullOne => {
+                let want = arg_int(args.first(), 0);
+                if pull(self, want)?.len() < want {
+                    return Ok(Value::iteration_end());
+                }
+                Ok(pull(self, 1)?.pop().unwrap_or_else(Value::iteration_end))
+            }
+            IterOp::CountOnly | IterOp::BoolOnly => Err(RuntimeError::new(
+                "this Seq.head iterator is not a PredictiveIterator",
             )),
         }
     }
