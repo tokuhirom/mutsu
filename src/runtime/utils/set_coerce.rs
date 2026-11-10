@@ -139,6 +139,14 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
                     }
                 }
             }
+            // An itemized Hash (`%(...)`, `$%h`, a row of `[ %(...), ... ]`) is
+            // one opaque element keyed by its `.WHICH`; only a bare Hash
+            // flattens to its pairs.
+            ValueView::Hash(_) if value.hash_is_itemized() => {
+                let (key, elem) = quanthash_elem_entry(value);
+                record_quanthash_original(originals, &key, &elem);
+                elems.insert(key);
+            }
             ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
                     if v.truthy() || v.is_nil() {
