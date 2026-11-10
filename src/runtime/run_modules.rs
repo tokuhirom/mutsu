@@ -1293,12 +1293,20 @@ impl Interpreter {
             // module can replace a same-named caller lexical's env entry before
             // the module's exports are installed, so the import-time `previous`
             // value alone is too late to recover it.
-            let saved_plain_env: HashMap<crate::symbol::Symbol, Value> = self
+            let mut saved_plain_env: HashMap<crate::symbol::Symbol, Value> = self
                 .env
                 .keys()
                 .filter(|key| !crate::qualified::is_qualified_str(key.as_str()))
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
+            // The importer's `$=pod` may live in an outer env tier, which
+            // `keys()` does not list; an EVAL'd unit reads it from `env`, so
+            // the load must hand it back (not the module's document).
+            if let Some(pod) = self.env.get("=pod") {
+                saved_plain_env
+                    .entry(crate::symbol::Symbol::intern("=pod"))
+                    .or_insert_with(|| pod.clone());
+            }
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
             let saved_imports = std::mem::take(&mut self.module.module_imported_names);
             let saved_export_terms = std::mem::take(&mut self.module.module_export_terms);

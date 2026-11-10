@@ -35,6 +35,71 @@ pub(crate) fn pod_source(node: &RakuAstNode) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
+/// The Pod source of a parsed tree: the source text the tree was parsed from,
+/// which its root origin carries. It is preferred to [`pod_source`], which writes
+/// back only plain shapes (no table, comment or margin).
+/// `None` for a hand-built tree (no origin) or one with no top-level Pod.
+// Cost: O(1) beyond cloning the unit's source text.
+pub(crate) fn origin_pod_source(node: &RakuAstNode) -> Option<String> {
+    if node.class != RakuAstClass::StatementList {
+        return None;
+    }
+    // Every top-level Pod block must carry the origin the parser gave it: a
+    // block added or rebuilt by hand has none, and then the written-back
+    // source is the only truth.
+    let mut blocks = 0;
+    for field in &node.fields {
+        let RakuAstFieldValue::Node(value) = &field.value else {
+            continue;
+        };
+        if let ValueView::RakuAst(child) = value.view()
+            && child.class == RakuAstClass::DocBlock
+        {
+            super::origin::origin_of(child)?;
+            blocks += 1;
+        }
+    }
+    if blocks == 0 {
+        return None;
+    }
+    let origin = super::origin::origin_of(node)?;
+    let ValueView::Instance { attributes, .. } = origin.view() else {
+        return None;
+    };
+    let source = attributes.as_map().get("source")?.clone();
+    let ValueView::Instance { attributes, .. } = source.view() else {
+        return None;
+    };
+    let orig = attributes
+        .as_map()
+        .get(super::unit_source::ORIG_ATTR)?
+        .clone();
+    Some(orig.to_string_value())
+}
+
+/// The byte offset in `text` (the unit's source) where `node` begins, from the
+/// character offset its origin records; `None` when it has no origin.
+// Cost: O(n), n = size of `text`.
+pub(super) fn byte_offset_of_origin(node: &RakuAstNode, text: &str) -> Option<usize> {
+    let origin = super::origin::origin_of(node)?;
+    let ValueView::Instance { attributes, .. } = origin.view() else {
+        return None;
+    };
+    let ValueView::Int(from) = attributes.as_map().get("from")?.view() else {
+        return None;
+    };
+    let from = usize::try_from(from).ok()?;
+    if text.is_ascii() && !text.contains('\r') {
+        return Some(from.min(text.len()));
+    }
+    use crate::grapheme_break::UnicodeSegmentation;
+    Some(
+        text.grapheme_indices(true)
+            .nth(from)
+            .map_or(text.len(), |(byte, _)| byte),
+    )
+}
+
 fn str_field(node: &RakuAstNode, name: &str) -> Option<String> {
     node.fields
         .iter()

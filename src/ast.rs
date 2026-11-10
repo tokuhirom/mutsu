@@ -1415,6 +1415,11 @@ pub(crate) enum IndexSpelling {
     Subscript,
     /// `<...>`: a literal word-list key.
     Angle,
+    /// `.{...}` / `.[...]` on the topic: raku's `Term::TopicCall` over the
+    /// subscript, not an `ApplyPostfix` on `$_`.
+    TopicSubscript,
+    /// `.<...>` on the topic: `Term::TopicCall` over a `LiteralHashIndex`.
+    TopicAngle,
     /// Semicolon-separated dimensions on an indexed bind. The parser normally
     /// represents these as `MultiDimIndex`; the bind execution path flattens
     /// dimensions into `IndexAssign.index`, so retain the separator here for

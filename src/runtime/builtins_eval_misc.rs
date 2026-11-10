@@ -395,7 +395,12 @@ impl Interpreter {
             // Pod blocks written into the tree are the unit's `$=pod`, which
             // is the EVAL's own: the caller's is put back afterwards.
             let docs = crate::rakuast::eval_docs::collect(node);
-            let Some(pod) = crate::rakuast::pod_source(node) else {
+            // A parsed tree whose Pod is a shape the writer does not produce
+            // (a table, a comment, a margin) is the unit's `$=pod` through the
+            // source it was parsed from.
+            let Some(pod) = crate::rakuast::origin_pod_source(node)
+                .or_else(|| crate::rakuast::pod_source(node))
+            else {
                 return self.eval_lowered_unit_with_docs(stmts, docs);
             };
             let previous_pod = self.env.get("=pod").cloned();

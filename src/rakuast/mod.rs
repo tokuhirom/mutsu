@@ -10,7 +10,7 @@ mod adverb_origins;
 mod model_methods;
 mod positional_fields;
 pub use accessors::node_accessor;
-pub(crate) use doc_source::pod_source;
+pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]
 pub(crate) use model_methods::accessor_schema;
 pub use model_methods::constructor_method_names;
@@ -135,6 +135,7 @@ pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
 pub(crate) use infix_func::add_colonpair;
+mod angle_subscript;
 mod assign_ro;
 mod call_term_origins;
 mod carried;
@@ -213,6 +214,7 @@ mod symbolic_deref;
 mod temporize;
 mod term_name;
 mod thunk;
+mod topic_subscript;
 mod type_args;
 mod type_build;
 mod type_call;
@@ -1926,6 +1928,7 @@ pub fn compile_time_compunit(
     names: &NameScope,
     source: &str,
     imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
     let cu = str_dot_ast_compunit(names, source, &no_unit_check)?;
     let ValueView::RakuAst(node) = cu.view() else {
@@ -1934,7 +1937,7 @@ pub fn compile_time_compunit(
     let mut node = RakuAstNode::clone(node);
     // The routines this unit declares, not those of the last unit lowered.
     shadowed_terms::scan(&node);
-    resolve::annotate(&mut node, imported);
+    resolve::annotate(&mut node, imported, imported_type);
     Ok(Value::rakuast(Box::new(node)))
 }
 
@@ -1971,7 +1974,11 @@ pub fn str_dot_ast_compunit(
 /// list is wrapped as `Str.AST(:compunit)` wraps a parse. Its lookups carry
 /// their resolution, as for [`compile_time_compunit`].
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub fn compunit_of_tree(tree: &Value, imported: &dyn Fn(&str) -> bool) -> Value {
+pub fn compunit_of_tree(
+    tree: &Value,
+    imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
+) -> Value {
     let ValueView::RakuAst(node) = tree.view() else {
         return tree.clone();
     };
@@ -1987,7 +1994,7 @@ pub fn compunit_of_tree(tree: &Value, imported: &dyn Fn(&str) -> bool) -> Value 
     };
     let mut node = RakuAstNode::clone(node);
     shadowed_terms::scan(&node);
-    resolve::annotate(&mut node, imported);
+    resolve::annotate(&mut node, imported, imported_type);
     Value::rakuast(Box::new(node))
 }
 

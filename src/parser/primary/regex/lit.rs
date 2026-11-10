@@ -1323,7 +1323,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                         target: Box::new(Expr::Var("_".to_string())),
                         index: Box::new(index_expr),
                         is_positional: false,
-                        spelling: Default::default(),
+                        spelling: crate::ast::IndexSpelling::TopicAngle,
                     },
                 ));
             }
@@ -1359,7 +1359,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 target: topic,
                 index: Box::new(index),
                 is_positional: true,
-                spelling: Default::default(),
+                spelling: crate::ast::IndexSpelling::TopicSubscript,
             },
             crate::parser::expr::ParsedBracketIndex::MultiDim(dimensions) => Expr::MultiDimIndex {
                 target: topic,
@@ -1393,7 +1393,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 target: Box::new(Expr::Var("_".to_string())),
                 index: Box::new(index),
                 is_positional: false,
-                spelling: Default::default(),
+                spelling: crate::ast::IndexSpelling::TopicSubscript,
             },
         ));
     }
