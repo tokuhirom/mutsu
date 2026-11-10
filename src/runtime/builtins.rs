@@ -1364,6 +1364,10 @@ impl Interpreter {
     /// `resolve_code_var` consults this list only to expose `&pick`, `&roll`,
     /// ... as first-class Routine values; calling one goes through the same
     /// by-name function dispatch as a bare call.
+    pub(crate) fn core_code_ref_function_names() -> &'static [&'static str] {
+        CORE_CODE_REF_FUNCTION_NAMES
+    }
+
     pub(crate) fn is_core_code_ref_function(name: &str) -> bool {
         CORE_CODE_REF_FUNCTION_NAMES.contains(&name)
     }

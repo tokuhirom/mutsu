@@ -22,6 +22,37 @@ impl Interpreter {
         self.package_stash_value_with("GLOBAL", true)
     }
 
+    /// The symbols of the `CORE::` stash: every built-in routine that has a
+    /// first-class `&name` value.
+    // Cost: O(b), b = built-in routine names (about 1000), one `&name`
+    // resolution each.
+    fn core_stash_symbols(&self) -> ValueMap {
+        let mut symbols = ValueMap::default();
+        let mut seen = std::collections::HashSet::new();
+        let names = crate::builtin_functions::BUILTIN_FUNCTION_NAMES
+            .iter()
+            .chain(Self::core_code_ref_function_names().iter())
+            .copied();
+        for name in names {
+            // Internal helpers carry a `__` prefix.
+            if name.is_empty() || !seen.insert(name) || name.starts_with("__") {
+                continue;
+            }
+            // A name the program (or an import) also declares must still be the
+            // CORE routine here, never the user's (`CORE::<&not>` under a
+            // `sub not`); only those pay for a captured-env Sub.
+            let value = if self.user_declares_routine(name) {
+                self.core_routine_sub(name)
+            } else {
+                self.resolve_code_var_unshadowed(name)
+            };
+            if !value.is_nil() {
+                symbols.insert(format!("&{name}"), value);
+            }
+        }
+        symbols
+    }
+
     /// [`Self::package_stash_value`]; `module_merges` keeps in a `GLOBAL`
     /// stash the entries only a module merge put there (#13802).
     fn package_stash_value_with(&self, package: &str, module_merges: bool) -> Value {
@@ -29,6 +60,25 @@ impl Interpreter {
         // Classified once for the whole build (every member loop below asks).
         let package_sym = Symbol::intern(&package_name);
         let pkg_is_global = package_sym == crate::symbol::wk::global_package();
+
+        // CORE:: / SETTING:: list the core types and the core routines
+        // (`&print`, `&say`, ...); the routine values resolve through the
+        // same lazy `CORE::name` lookup `CORE::.<&not>` uses.
+        if matches!(package_name.as_str(), "CORE" | "SETTING") {
+            let mut symbols: ValueMap = ValueMap::default();
+            for name in crate::builtin_functions::BUILTIN_FUNCTION_NAMES {
+                if self.user_declares_routine(name) {
+                    continue;
+                }
+                let value = self.resolve_code_var(
+                    crate::qualified::qualified_text(package_name.as_str(), *name).as_str(),
+                );
+                if !value.is_nil() {
+                    symbols.insert(format!("&{name}"), value);
+                }
+            }
+            return Self::make_stash_instance(package, symbols);
+        }
 
         // PROCESS:: pseudo-package: exposes process-level dynamic variables
         // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
@@ -54,6 +104,13 @@ impl Interpreter {
             symbols.insert("False".to_string(), Value::FALSE);
             symbols.insert("True".to_string(), Value::TRUE);
             return Self::make_stash_instance(package, symbols);
+        }
+
+        // `CORE::` is the setting's stash: it lists the built-in routines as
+        // `&name` (rakudo has ~420). A keyed read (`CORE::<&infix:<eq>>`) never
+        // gets here -- `package_stash_keyed_value` answers it alone.
+        if package_name == "CORE" {
+            return Self::make_stash_instance(package, self.core_stash_symbols());
         }
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {

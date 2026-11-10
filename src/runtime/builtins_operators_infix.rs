@@ -598,8 +598,35 @@ impl Interpreter {
     // Cost: O(c), c = length of the `:=` alias chains of the two names.
     fn call_site_containers_identical(&self, args: &[Value]) -> Option<bool> {
         let sources = self.pending_call_arg_sources()?;
-        let [Some(left), Some(right)] = sources.as_slice() else {
-            return None;
+        let plain_value = |v: &Value| {
+            let held = v.unwrap_varref().clone().into_deref();
+            // An itemized element (`$(3)`) is a Scalar holding the plain value.
+            let held = match held.view() {
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => held,
+            };
+            matches!(
+                held.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::Complex(..)
+            )
+        };
+        let (left, right) = match sources.as_slice() {
+            [Some(left), Some(right)] => (left, right),
+            // A named scalar variable against an unnamed operand (a call result, a
+            // literal): the variable's Scalar is never the operand's, which is a
+            // plain value or another call's result -- `&with($first, &as($next))`.
+            [Some(named), None] | [None, Some(named)] => {
+                return (!named.starts_with(['@', '%', '&']) && args.iter().all(plain_value))
+                    .then_some(false);
+            }
+            _ => return None,
         };
         let root = |name: &str| {
             // A sigilless parameter is stored under its term key.
@@ -612,9 +639,9 @@ impl Interpreter {
             if resolved == keyed { direct } else { resolved }
         };
         let (left_root, right_root) = (root(left), root(right));
-        let scalar = |name: &str| {
-            !name.starts_with(['@', '%', '&']) && crate::runtime::term_names::term_spelling(name).is_none()
-        };
+        // A sigilless term is judged like the operator form (`exec_container_eq_named_op`)
+        // judges it: two distinct names holding plain values are distinct containers.
+        let scalar = |name: &str| !name.starts_with(['@', '%', '&']);
         if left_root == right_root {
             return Some(true);
         }
@@ -623,19 +650,6 @@ impl Interpreter {
         // aggregates and objects are singletons or may be bare `:=` bindings,
         // which the operator form (`exec_container_eq_named_op`) leaves to
         // value identity, so they keep the value comparison here too.
-        let plain_value = |v: &Value| {
-            matches!(
-                v.unwrap_varref().view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Rat(..)
-                    | ValueView::FatRat(..)
-                    | ValueView::Complex(..)
-            )
-        };
         (scalar(&left_root) && scalar(&right_root) && args.iter().all(plain_value))
             .then_some(false)
     }

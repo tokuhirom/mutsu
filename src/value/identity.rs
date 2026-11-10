@@ -134,7 +134,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         {
             true
         }
-        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => {
+            crate::gc::Gc::ptr_eq(&a, &b) || a.which_id.get() == b.which_id.get()
+        }
         (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(&a, &b),
         (ValueView::Slip(a), ValueView::Slip(b)) => {
             // Empty is a singleton semantic value in Raku even when represented
@@ -142,7 +144,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(&a, &b)
         }
         (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
-        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        // A Hash's identity is its never-reused `.WHICH` id, which a
+        // read snapshot of the node keeps (`shared_snapshot`).
+        (ValueView::Hash(a), ValueView::Hash(b)) => {
+            crate::gc::Gc::ptr_eq(&a, &b) || a.which_id.get() == b.which_id.get()
+        }
         // RakuAST nodes are Arc-backed model objects. Cloning a Value keeps
         // the same node allocation, while separately constructed but
         // structurally equal nodes get different allocations.

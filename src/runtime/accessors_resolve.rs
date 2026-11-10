@@ -605,7 +605,7 @@ impl Interpreter {
     /// and never a same-named routine the program or an import declared
     /// (`call_core_routine`).
     // Cost: O(e), e = the frame env the Sub captures.
-    fn core_routine_sub(&self, name: &str) -> Value {
+    pub(crate) fn core_routine_sub(&self, name: &str) -> Value {
         let mut env = self.env.clone();
         env.insert(
             CORE_ROUTINE_KEY.to_string(),
