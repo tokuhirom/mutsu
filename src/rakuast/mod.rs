@@ -227,6 +227,7 @@ mod unit_span;
 mod unspell;
 mod use_origins;
 mod use_stmt;
+mod user_prefix;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
