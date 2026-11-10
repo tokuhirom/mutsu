@@ -3450,6 +3450,7 @@ t/modules/import-export/imported-sub-shadows-builtin.t
 t/modules/import-export/imported-sub-shadows-io-builtin.t
 t/modules/import-export/imported-term-keyword-call-form.t
 t/modules/import-export/imported-term-qualified-name.t
+t/modules/import-export/imported-toplevel-use-unit-set.t
 t/modules/import-export/imported-type-alias-return-spec.t
 t/modules/import-export/imported-type-and-term-in-my-stash.t
 t/modules/import-export/imported-type-smiley-grouped.t

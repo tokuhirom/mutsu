@@ -1789,6 +1789,10 @@ pub(crate) struct EndPhaser {
     /// when it ends, but the phaser runs at program exit and still calls them.
     /// Empty for every other phaser.
     pub(crate) unit_routines: std::sync::Arc<Vec<(Symbol, std::sync::Arc<FunctionDef>)>>,
+    /// The lexical import sets open where an `EVAL`'d unit installed this
+    /// `END` (innermost first): the unit's own top-level `use` imports, which
+    /// the body calls at program exit. `None` for every other phaser.
+    pub(crate) import_chain: Option<Vec<Symbol>>,
 }
 
 /// Install-order bases for [`EndPhaser::order`]; lowest = installed earliest =
