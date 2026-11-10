@@ -121,6 +121,7 @@ pub(super) const fn opaque(
                 "RakuAST::CheckTime",
                 "RakuAST::Declaration",
                 "RakuAST::PlaceholderParameterOwner",
+                "RakuAST::ScopePhaser",
             ],
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),

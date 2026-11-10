@@ -196,9 +196,11 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         }
         // mutsu keeps an infix's adverbs out of `visit-children`, as rakudo
         // does; the accessor still answers them.
-        (ApplyInfix | Postfix, "colonpairs") => {
-            Some(field(node, "colonpairs").unwrap_or_else(|| Value::array(Vec::new())))
-        }
+        (
+            ApplyInfix | Postfix | CallMethod | CallQuotedMethod | CallPrivateMethod
+            | CallMetaMethod | CallNameAsMethod | CallTermAsMethod,
+            "colonpairs",
+        ) => Some(field(node, "colonpairs").unwrap_or_else(|| Value::array(Vec::new()))),
         (ApplyPostfix, "on-topic") => {
             Some(Value::truth(field(node, "operand").is_some_and(|op| {
                 matches!(op.view(), ValueView::RakuAst(n)
