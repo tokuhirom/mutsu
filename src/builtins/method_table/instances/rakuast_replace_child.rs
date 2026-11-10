@@ -13,11 +13,7 @@ fn same_node(a: &Value, b: &Value) -> bool {
 }
 
 // Cost: O(f + l), f = fields of the node, l = the items of its list fields.
-fn replace_child(
-    node: &mut RakuAstNode,
-    old: &Value,
-    new: &Value,
-) -> Result<Value, RuntimeError> {
+fn replace_child(node: &mut RakuAstNode, old: &Value, new: &Value) -> Result<Value, RuntimeError> {
     if !matches!(new.view(), ValueView::RakuAst(_)) {
         return Err(RuntimeError::new(
             "RakuAST::Node.IMPL-REPLACE-CHILD expects a RakuAST node",
