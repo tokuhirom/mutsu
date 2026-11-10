@@ -93,7 +93,7 @@ impl OwnerFacts {
 /// Whether the program's language revision is 6.e.
 // Cost: O(1), a thread-local read.
 fn revision_e() -> bool {
-    crate::parser::current_language_version_starts_with("6.e")
+    crate::parser::unit_revisions::revision_e_methods_visible()
 }
 
 /// The snapshot, by owner. Where each owner's lines are is a committed table

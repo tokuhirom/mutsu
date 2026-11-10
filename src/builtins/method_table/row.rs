@@ -228,7 +228,7 @@ impl RowFlags {
     #[inline]
     pub(crate) fn in_force(self) -> bool {
         !self.contains(Self::REVISION_E)
-            || crate::parser::current_language_version_starts_with("6.e")
+            || crate::parser::unit_revisions::revision_e_methods_visible()
     }
 
     /// Whether every bit of `flag` is set.
