@@ -599,8 +599,14 @@ impl Interpreter {
     fn call_site_containers_identical(&self, args: &[Value]) -> Option<bool> {
         let sources = self.pending_call_arg_sources()?;
         let plain_value = |v: &Value| {
+            let held = v.unwrap_varref().clone().into_deref();
+            // An itemized element (`$(3)`) is a Scalar holding the plain value.
+            let held = match held.view() {
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => held,
+            };
             matches!(
-                v.unwrap_varref().clone().into_deref().view(),
+                held.view(),
                 ValueView::Int(_)
                     | ValueView::BigInt(_)
                     | ValueView::Num(_)

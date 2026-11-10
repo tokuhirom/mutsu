@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 # `&[=:=]` called through a code object with sigilless bindings of distinct
 # element containers compares containers, not the values they hold.
@@ -27,5 +27,12 @@ sub f(Iterator:D \it, :&as = {$_}, :&with = &[===]) {
 }
 is f([$x, $y].iterator, :with(&[=:=])), False, 'sigilless binding against a call result';
 is f([$x, $x].iterator, :with(&[=:=])), False, 'two element containers of one value differ';
+
+# Itemized literal elements are distinct Scalars too.
+my $items := [$(3), $(3)];
+my $iter = $items.iterator;
+my \p = $iter.pull-one;
+my \q = $iter.pull-one;
+is &w(p, q), False, 'itemized $(3) elements are distinct containers';
 
 # vim: expandtab shiftwidth=4
