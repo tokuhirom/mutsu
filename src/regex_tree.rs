@@ -586,17 +586,44 @@ impl RegexTree {
                 // Constructs only the RakuAST boundary models keep the runtime
                 // parser's plan.
                 RegexNode::Extension(_) => None,
-                RegexNode::CharClass(CharClassAtom::Backslash {
-                    class: BackslashClass::Digit,
-                    negated: false,
-                }) => Some(vec![token(
-                    crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
-                        negated: false,
-                        items: vec![crate::runtime::ClassItem::Digit],
-                    }),
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
+                // The remaining backslash classes lower to exactly the atoms
+                // the runtime parser's `\\X` arm builds (ADR-0088 section 78).
+                RegexNode::CharClass(CharClassAtom::Backslash { class, negated }) => {
+                    use crate::runtime::{CharClass, ClassItem, RegexAtom};
+                    let set = |item: ClassItem| {
+                        RegexAtom::CharClass(CharClass {
+                            negated: *negated,
+                            items: vec![item],
+                        })
+                    };
+                    let single = |ch: char| {
+                        if *negated {
+                            RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Char(ch)],
+                            })
+                        } else {
+                            RegexAtom::Literal(ch)
+                        }
+                    };
+                    let atom = match class {
+                        BackslashClass::Digit => set(ClassItem::Digit),
+                        BackslashClass::Word => set(ClassItem::Word),
+                        BackslashClass::Space => set(ClassItem::Space),
+                        BackslashClass::HorizontalSpace => set(ClassItem::HorizSpace),
+                        BackslashClass::VerticalSpace => set(ClassItem::VertSpace),
+                        BackslashClass::Newline if *negated => RegexAtom::NotNewline,
+                        BackslashClass::Newline => RegexAtom::Newline,
+                        BackslashClass::Tab => single('\t'),
+                        BackslashClass::CarriageReturn => single('\r'),
+                        BackslashClass::Escape => single('\u{001B}'),
+                        BackslashClass::FormFeed => single('\u{000C}'),
+                        // `\0` (no negated spelling) keeps the runtime parser's
+                        // digit-following rule; `\b` is obsolete syntax.
+                        BackslashClass::Nul | BackslashClass::BackSpace => return None,
+                    };
+                    Some(vec![token(atom, crate::runtime::RegexQuant::One, ratchet)])
+                }
                 // The other classes keep the runtime parser's plan.
                 RegexNode::CharClass(_) | RegexNode::CharClassAssertion(_) => None,
                 RegexNode::AnchorBeginningOfString => {
