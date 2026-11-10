@@ -87,15 +87,22 @@ impl Interpreter {
                         Self::unwrap_var_ref_value(call_args[0].clone()),
                         Self::unwrap_var_ref_value(call_args[1].clone()),
                     )?;
-                    let relation: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError> =
-                        match name {
-                            "(<=)" | "⊆" => |_, l, r| Ok(Value::truth(Self::quant_hash_subset(&l, &r))),
-                            "(>=)" | "⊇" => |_, l, r| Ok(Value::truth(Self::quant_hash_subset(&r, &l))),
-                            "(<)" | "⊂" => {
-                                |_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&l, &r)))
-                            }
-                            _ => |_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&r, &l))),
-                        };
+                    let relation: fn(
+                        &mut Interpreter,
+                        Value,
+                        Value,
+                    ) -> Result<Value, RuntimeError> = match name {
+                        "(<=)" | "⊆" => {
+                            |_, l, r| Ok(Value::truth(Self::quant_hash_subset(&l, &r)))
+                        }
+                        "(>=)" | "⊇" => {
+                            |_, l, r| Ok(Value::truth(Self::quant_hash_subset(&r, &l)))
+                        }
+                        "(<)" | "⊂" => {
+                            |_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&l, &r)))
+                        }
+                        _ => |_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&r, &l))),
+                    };
                     return self.eval_binary_with_junctions(left, right, relation);
                 }
                 _ => {}
