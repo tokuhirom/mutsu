@@ -159,6 +159,23 @@ impl Interpreter {
         if self.has_user_method_including_role(&cn, method) {
             return None;
         }
+        // `Sequence.elems` / `.end` of a lazy sequence soft-fail with
+        // X::Cannot::Lazy instead of pulling the endless iterator (ParaSeq
+        // over `^Inf` answers `is-lazy` True).
+        if matches!(method, "elems" | "end")
+            && args.is_empty()
+            && self.has_user_method_including_role(&cn, "is-lazy")
+            && let Ok(lazy) = self.try_compiled_method_or_interpret_sym(
+                target.clone(),
+                crate::symbol::Symbol::intern("is-lazy"),
+                Vec::new(),
+            )
+            && lazy.truthy()
+        {
+            return Some(Ok(RuntimeError::cannot_lazy_action_failure(&format!(
+                ".{method}"
+            ))));
+        }
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
         let need = Self::sequence_prefix_need(method, args);

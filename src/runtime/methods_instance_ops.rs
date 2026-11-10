@@ -1447,6 +1447,17 @@ impl Interpreter {
                 .resolve_user_method_or_accessor(&class_name.resolve(), method)
                 .is_none()
         {
+            // A `Seq` subclass whose `is-lazy` answers True (ParaSeq over `^Inf`)
+            // cannot be counted: `Seq.elems` fails with X::Cannot::Lazy rather
+            // than pulling the endless iterator.
+            if matches!(method, "elems" | "end")
+                && args.is_empty()
+                && matches!(payload.view(), ValueView::Seq(_))
+                && let Ok(lazy) = self.call_method_with_values(target.clone(), "is-lazy", Vec::new())
+                && lazy.truthy()
+            {
+                return Ok(RuntimeError::cannot_lazy_action_failure(&format!(".{method}")));
+            }
             let payload_type = crate::runtime::value_type_name(&payload);
             return match self.call_method_with_values(payload, method, args) {
                 // The payload has no such method either: the error names the
