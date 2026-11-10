@@ -792,7 +792,28 @@ impl Interpreter {
                     // lazily so `CORE::.<&not>` / `::("CORE")::('&not')` find core
                     // routines. Qualify with the stash name so a user shadow of the
                     // same name is bypassed (roast: `CORE::.<&not>` when shadowed).
-                    // TODO: extend to non-code core symbols ($ vars, type objects).
+                    // TODO: extend to non-code core symbols ($ vars).
+                    // `CORE::<v6c>` is the package of that revision's core types
+                    // (`use v6.*` programs read `CORE::{$rev}.WHO{$type}`), and the
+                    // package answers a core type by its name.
+                    if let Some(ValueView::Str(stash_name)) =
+                        attributes.as_map().get("name").map(Value::view)
+                    {
+                        let stash_name = stash_name.as_str();
+                        if matches!(stash_name, "CORE" | "SETTING")
+                            && matches!(key.as_str(), "v6c" | "v6d" | "v6e")
+                        {
+                            return Some(Ok(Value::package(crate::symbol::Symbol::intern(
+                                &format!("CORE::{key}"),
+                            ))));
+                        }
+                        if matches!(stash_name, "CORE::v6c" | "CORE::v6d" | "CORE::v6e")
+                            && !key.contains("::")
+                            && (Self::is_builtin_type(&key) || self.has_type(&key))
+                        {
+                            return Some(Ok(Value::package(crate::symbol::Symbol::intern(&key))));
+                        }
+                    }
                     if let Some(ValueView::Str(stash_name)) =
                         attributes.as_map().get("name").map(Value::view)
                         && (stash_name.as_str() == "CORE" || stash_name.as_str() == "SETTING")
