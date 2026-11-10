@@ -1,4 +1,4 @@
-//! `RakuAST::Block`'s `has-placeholder-parameters` and `replace-body`,
+//! `RakuAST::Block`'s `has-placeholder-parameters`, the `ScopePhaser` queries and `replace-body`,
 //! answered by [`crate::rakuast::block_queries`]; this file only registers the
 //! rows.
 
@@ -12,6 +12,34 @@ fn has_placeholder_parameters(target: &Value, _args: &[Value]) -> Result<Value, 
         ValueView::RakuAst(node) => Some(
             crate::rakuast::block_queries::has_placeholder_parameters(node),
         ),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(s), s = top-level statements of the block's body.
+fn has_any_phasers(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::block_queries::has_any_phasers(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(s), s = top-level statements of the block's body.
+fn has_loop_phasers(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::block_queries::has_loop_phasers(node)),
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
+// Cost: O(s), s = top-level statements of the block's body.
+fn has_phaser(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    let name = args.first().map(Value::to_string_value).unwrap_or_default();
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => Some(crate::rakuast::block_queries::has_phaser(node, &name)),
         _ => None,
     });
     Ok(answer.unwrap_or(Value::NIL))
@@ -131,6 +159,30 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Pure(has_placeholder_parameters),
         flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::ScopePhaser",
+        name: "has-any-phasers",
+        arity: 0,
+        handler: Handler::Pure(has_any_phasers),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::ScopePhaser",
+        name: "has-loop-phasers",
+        arity: 0,
+        handler: Handler::Pure(has_loop_phasers),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::ScopePhaser",
+        name: "has-phaser",
+        arity: 1,
+        handler: Handler::Pure(has_phaser),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
         named: &[],
     },
     MethodRow {

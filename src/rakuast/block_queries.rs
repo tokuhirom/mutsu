@@ -229,3 +229,90 @@ pub(super) fn bare_block(mut node: RakuAstNode) -> RakuAstNode {
 pub(crate) fn bare_block_flag(node: &RakuAstNode) -> Value {
     Value::truth(node.fields.iter().any(|f| is_bare_marker(node, f)))
 }
+
+/// The classes of the expressions of the top-level statements of the block
+/// `node`'s own body: the phasers a block collects (`ENTER`, `LEAVE`, the loop
+/// ones, `PRE`, `POST`) are those; a nested block's statements are its own and
+/// `BEGIN`, `CHECK`, `INIT`, `END` belong to the compilation unit.
+// Cost: O(s), s = top-level statements of the body.
+fn own_statement_classes(node: &RakuAstNode) -> Vec<RakuAstClass> {
+    fn node_of(value: &Value) -> Option<&RakuAstNode> {
+        match value.view() {
+            ValueView::RakuAst(n) => Some(n),
+            _ => None,
+        }
+    }
+    fn field_node<'a>(node: &'a RakuAstNode, name: &str) -> Option<&'a RakuAstNode> {
+        node.fields.iter().find_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v) if f.name == Some(name) => node_of(v),
+            _ => None,
+        })
+    }
+    let mut out = Vec::new();
+    let Some(blockoid) = field_node(node, "body") else {
+        return out;
+    };
+    let list = blockoid.fields.iter().find_map(|f| match &f.value {
+        RakuAstFieldValue::Node(v) => node_of(v).filter(|n| n.class == RakuAstClass::StatementList),
+        _ => None,
+    });
+    let Some(list) = list else { return out };
+    for f in &list.fields {
+        let RakuAstFieldValue::Node(v) = &f.value else {
+            continue;
+        };
+        let Some(stmt) = node_of(v) else { continue };
+        out.push(field_node(stmt, "expression").map_or(stmt.class, |e| e.class));
+    }
+    out
+}
+
+/// The phaser a class stands for, as `has-phaser` names it.
+// Cost: O(1).
+fn phaser_name(class: RakuAstClass) -> Option<&'static str> {
+    use RakuAstClass::*;
+    Some(match class {
+        StatementPrefixPhaserEnter => "ENTER",
+        StatementPrefixPhaserLeave => "LEAVE",
+        StatementPrefixPhaserKeep => "KEEP",
+        StatementPrefixPhaserUndo => "UNDO",
+        StatementPrefixPhaserFirst => "FIRST",
+        StatementPrefixPhaserNext => "NEXT",
+        StatementPrefixPhaserLast => "LAST",
+        StatementPrefixPhaserPre => "PRE",
+        StatementPrefixPhaserPost => "POST",
+        _ => return None,
+    })
+}
+
+/// `has-any-phasers`: the block's own body holds a phaser a block collects.
+// Cost: O(s), s = top-level statements of the body.
+pub(crate) fn has_any_phasers(node: &RakuAstNode) -> Value {
+    Value::truth(
+        own_statement_classes(node)
+            .into_iter()
+            .any(|class| phaser_name(class).is_some()),
+    )
+}
+
+/// `has-loop-phasers`: the block's own body holds `FIRST`, `NEXT` or `LAST`.
+// Cost: O(s), s = top-level statements of the body.
+pub(crate) fn has_loop_phasers(node: &RakuAstNode) -> Value {
+    Value::truth(
+        own_statement_classes(node)
+            .into_iter()
+            .filter_map(phaser_name)
+            .any(|name| matches!(name, "FIRST" | "NEXT" | "LAST")),
+    )
+}
+
+/// `has-phaser($name)`: the block's own body holds that phaser.
+// Cost: O(s), s = top-level statements of the body.
+pub(crate) fn has_phaser(node: &RakuAstNode, name: &str) -> Value {
+    Value::truth(
+        own_statement_classes(node)
+            .into_iter()
+            .filter_map(phaser_name)
+            .any(|phaser| phaser == name),
+    )
+}
