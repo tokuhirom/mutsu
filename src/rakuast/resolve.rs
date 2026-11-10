@@ -42,6 +42,8 @@ struct Scopes<'a> {
     scopes: Vec<HashMap<String, Value>>,
     /// Whether the interpreter knows a routine of this name (an import).
     imported: &'a dyn Fn(&str) -> bool,
+    /// Whether the interpreter knows a type of this name (an import).
+    imported_type: &'a dyn Fn(&str) -> bool,
     /// The named packages enclosing the node being walked, innermost last.
     packages: Vec<String>,
     /// How many `*` arguments the enclosing thunk has numbered so far.
@@ -69,10 +71,15 @@ impl Scopes<'_> {
 
 /// Resolve every lookup of the unit tree rooted at `node`.
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) {
+pub(super) fn annotate(
+    node: &mut RakuAstNode,
+    imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
+) {
     let mut scopes = Scopes {
         scopes: vec![HashMap::new()],
         imported,
+        imported_type,
         packages: Vec::new(),
         whatever_args: vec![0],
         anonymous_subsets: 0,
@@ -102,6 +109,19 @@ fn opens_scope(class: C) -> bool {
 
 // Cost: O(size of the subtree * d).
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
+    // A bareword naming a type the unit imported (`Sum` from a `sub EXPORT`)
+    // is a `Type::Simple`, as rakudo's parse of the same unit has it; the
+    // conversion could not know the import.
+    if node.class == C::TermName
+        && let Some(name) = type_node_name(node)
+        && scopes.find(&name).is_none()
+        && !crate::core_type_names::contains(&name)
+        && (scopes.imported_type)(&name)
+    {
+        let mut typed = super::bareword::simple_type_node(&name);
+        typed.origin = node.origin.clone();
+        *node = typed;
+    }
     // A role's body holds its name and signature (the role's own children
     // are its name and that body), as rakudo's tree has them.
     if node.class == C::Role {
@@ -853,7 +873,9 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 return Some(package.clone());
             }
             if !crate::core_type_names::contains(&name) {
-                return None;
+                return (scopes.imported_type)(&name)
+                    .then(|| external("RakuAST::Declaration::Import", &name))
+                    .flatten();
             }
             external("RakuAST::Declaration::External::Constant", &name)
         }
