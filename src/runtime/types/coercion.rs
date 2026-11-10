@@ -612,6 +612,14 @@ impl Interpreter {
             };
             return result;
         }
+        // `my str $k = $x.WHICH`: an `ObjAt` unboxes to its string (rakudo
+        // stores a native `str`), so the container holds a plain Str.
+        if constraint == "str"
+            && let ValueView::Instance { class_name, .. } = value.view()
+            && matches!(class_name.resolve().as_str(), "ObjAt" | "ValueObjAt")
+        {
+            return Ok(Value::str(value.to_string_value()));
+        }
         // A registry with no subsets (most programs) has nothing to walk — and
         // that settles the whole rest of the function, alias resolution
         // included, so the test belongs ABOVE it rather than after.

@@ -109,9 +109,11 @@ impl Interpreter {
         if constraint == "str"
             && matches!(
                 value_type,
-                "Str" | "IntStr" | "NumStr" | "RatStr" | "ComplexStr"
+                "Str" | "IntStr" | "NumStr" | "RatStr" | "ComplexStr" | "ObjAt" | "ValueObjAt"
             )
         {
+            // `ObjAt` (a `.WHICH` result) unboxes to a native string in rakudo
+            // (`my str $k = 1.WHICH` works), so `str` accepts it.
             return true;
         }
         // Native integer types match Int values -- and Bool, which `does Int`
