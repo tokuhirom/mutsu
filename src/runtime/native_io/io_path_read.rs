@@ -17,6 +17,11 @@ impl Interpreter {
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
         let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(args);
+        if p == "-" {
+            // Rakudo slurps `$*IN` for the path `-`.
+            let stdin = self.env.get("*IN").cloned().unwrap_or(Value::NIL).deref_container();
+            return self.native_io_handle_method(&stdin, "slurp", args.to_vec());
+        }
         self.slurp_file(&path_buf, bin, enc.as_deref())
     }
 
@@ -195,6 +200,35 @@ impl Interpreter {
             create,
             exclusive,
         ) = self.parse_io_flags_values(args);
+        if p == "-" {
+            // Rakudo: `"-".IO.open` returns `$*IN` (read) or `$*OUT` (write/append)
+            // itself, with `:bin` / `:enc` applied to that handle.
+            let var = if write || append { "*OUT" } else { "*IN" };
+            let mut handle = self.env.get(var).cloned().unwrap_or(Value::NIL).deref_container();
+            // A closed `$*IN`/`$*OUT` (e.g. `IO::Handle.new(:path(...))`) is opened first.
+            let opened = self
+                .native_io_handle_method(&handle, "opened", vec![])
+                .map(|v| v.truthy())
+                .unwrap_or(true);
+            if !opened {
+                let mode = Value::pair(if write { "w" } else { "r" }.to_string(), Value::TRUE);
+                if let Ok(v) = self.native_io_handle_method(&handle, "open", vec![mode])
+                    && matches!(v.view(), ValueView::Instance { .. })
+                {
+                    // mutsu's `open` yields a fresh handle; rakudo opens the
+                    // invocant in place, so make `$*IN`/`$*OUT` that handle.
+                    self.set_shared_var(var, v.clone());
+                    self.set_shared_var(&format!("$*{}", &var[1..]), v.clone());
+                    handle = v;
+                }
+            }
+            if bin {
+                self.native_io_handle_method(&handle, "encoding", vec![Value::NIL])?;
+            } else if let Some(enc) = enc {
+                self.native_io_handle_method(&handle, "encoding", vec![Value::str(enc)])?;
+            }
+            return Ok(handle);
+        }
         Ok(
             match self.open_file_handle(
                 &path_buf,
