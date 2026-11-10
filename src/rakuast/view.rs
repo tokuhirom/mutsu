@@ -3849,6 +3849,29 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 ],
             })
         }
+        // `.<k>` / `.[i]` / `.{k}`: `Term::TopicCall` over the bare subscript.
+        Expr::Index {
+            target,
+            index,
+            is_positional: false,
+            spelling: crate::ast::IndexSpelling::TopicAngle,
+        } if angle_key_text(index).is_some() => Ok(super::topic_subscript::wrap(
+            angle_subscript_node(names, target, index, None, Vec::new())?,
+        )),
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            spelling:
+                crate::ast::IndexSpelling::TopicSubscript | crate::ast::IndexSpelling::TopicAngle,
+        } => Ok(super::topic_subscript::wrap(subscript_node(
+            names,
+            target,
+            index,
+            *is_positional,
+            None,
+            Vec::new(),
+        )?)),
         Expr::Index {
             target,
             index,

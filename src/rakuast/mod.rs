@@ -212,6 +212,7 @@ mod substitution;
 mod symbolic_deref;
 mod temporize;
 mod term_name;
+mod topic_subscript;
 mod thunk;
 mod type_args;
 mod type_build;
