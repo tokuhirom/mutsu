@@ -14,6 +14,9 @@ use super::*;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+/// One recorded action: its method, its Match and the Match's `:my` dynamics.
+type RecordedAction = (String, Value, Vec<(String, Value)>);
+
 /// What one running hook has built so far.
 #[derive(Default)]
 struct ClassLog {
@@ -22,6 +25,12 @@ struct ClassLog {
     /// `(metamethod, arguments)` in call order; `new_type` is
     /// `("new_type", [how class name, the call's arguments..., minted name])`.
     ops: Vec<(String, Vec<Value>)>,
+    /// `(action method, its Match, the Match's `:my` dynamics)` for every action
+    /// of the slang that ran during the hook, in call order (ADR-17243).
+    actions: Vec<RecordedAction>,
+    /// Names the hook's production: the unit replays a production's actions once
+    /// however often it runs the statement that holds them.
+    site: u64,
 }
 
 thread_local! {
@@ -32,7 +41,14 @@ thread_local! {
 /// Start recording for a hook.
 // Cost: O(1).
 pub(super) fn begin_class_log() {
-    LOGS.with(|l| l.borrow_mut().push(ClassLog::default()));
+    static SITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let site = SITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    LOGS.with(|l| {
+        l.borrow_mut().push(ClassLog {
+            site,
+            ..ClassLog::default()
+        })
+    });
 }
 
 /// Stop recording for the innermost hook and answer its log as a list of
@@ -63,7 +79,65 @@ pub(super) fn peek_class_log() -> Value {
     })
 }
 
+/// Whether `method` is an action of the slang's own production, as opposed to the
+/// core action a slang overrides (`INFIX-EXPR`, `statement-control:sym<given>`)
+/// or a base-class helper of the host.
+// Cost: O(1).
+fn is_slang_own_action(method: &str) -> bool {
+    !crate::parser::slang_action_rule(method) && !matches!(method, "typename" | "attach")
+}
+
 impl Interpreter {
+    /// Record that the slang's action `method` ran over `match_obj` during the
+    /// running hook (ADR-17243): side effects of arbitrary Raku code happen in this
+    /// interpreter only, so the unit re-runs the action at the production's position.
+    // Cost: O(1) when no hook runs; otherwise O(v), v = the match's `:my` dynamics.
+    pub(super) fn record_slang_action(&self, method: &str, match_obj: &Value) {
+        if !is_slang_own_action(method) {
+            return;
+        }
+        LOGS.with(|l| {
+            let mut logs = l.borrow_mut();
+            let Some(log) = logs.last_mut() else { return };
+            let mut vars = Vec::new();
+            if let ValueView::Instance { attributes, .. } = match_obj.view()
+                && let Some(ValueView::Hash(hash)) =
+                    attributes.as_map().get("reduce_time_vars").map(Value::view)
+            {
+                vars.extend(hash.iter().map(|(k, v)| (k.to_string(), v.clone())));
+            }
+            log.actions.push((method.to_string(), match_obj.clone(), vars));
+        });
+    }
+
+    /// `__mutsu_slang_action_events()`: the actions of the running hook as a list
+    /// of `[method, match, dynamics, site]` tuples.
+    // Cost: O(a), a = the recorded actions.
+    pub(super) fn builtin_slang_action_events(&mut self) -> Result<Value, RuntimeError> {
+        Ok(LOGS.with(|l| {
+            let logs = l.borrow();
+            let actions = logs.last().map(|log| log.actions.as_slice()).unwrap_or(&[]);
+            let site = logs.last().map_or(0, |log| log.site);
+            Value::array(
+                actions
+                    .iter()
+                    .map(|(method, m, vars)| {
+                        let dynamics = vars
+                            .iter()
+                            .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                            .collect();
+                        Value::array(vec![
+                            Value::str(method.clone()),
+                            m.clone(),
+                            Value::array(dynamics),
+                            Value::int(site as i64),
+                        ])
+                    })
+                    .collect(),
+            )
+        }))
+    }
+
     /// Record the metamodel call `op(args)` when it mutates a type the running
     /// hook minted.
     // Cost: O(1) when no hook runs; otherwise O(1) per call.

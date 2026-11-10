@@ -240,8 +240,39 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
                 RakuAstFieldValue::Node(child) => Some(child),
                 _ => None,
             });
-        if let (Some(only), None) = (children.next(), children.next()) {
-            return lower_statement(only);
+        match (children.next(), children.next()) {
+            (Some(only), None) => return lower_statement(only),
+            // A production that also re-runs its actions in the unit
+            // (ADR-17243) stands for the replay call and its own node.
+            (Some(first), Some(second)) => {
+                // What the finalization unwraps is the outer `Lowered` only, so the
+                // parts are taken out of theirs; a reader of the tree sees the
+                // production's own node, not the replay call beside it.
+                fn plain(stmt: Stmt) -> (Stmt, Option<Value>) {
+                    match stmt {
+                        Stmt::Ast(parsed) => match *parsed {
+                            crate::ast::parsed::ParsedStmt::Lowered { stmt, node } => {
+                                (*stmt, Some(node))
+                            }
+                            other => (Stmt::Ast(Box::new(other)), None),
+                        },
+                        other => (other, None),
+                    }
+                }
+                let (replay, _) = plain(lower_statement(first)?);
+                let (kept, kept_node) = plain(lower_statement(second)?);
+                let mut stmts = vec![replay, kept];
+                for rest in children {
+                    stmts.push(plain(lower_statement(rest)?).0);
+                }
+                return Ok(Stmt::Ast(Box::new(
+                    crate::ast::parsed::ParsedStmt::Lowered {
+                        stmt: Box::new(Stmt::SyntheticBlock(stmts)),
+                        node: kept_node.unwrap_or_else(|| second.clone()),
+                    },
+                )));
+            }
+            _ => {}
         }
     }
     let names = NameScope::default();
@@ -303,6 +334,23 @@ pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
             "slang production produced no RakuAST node",
         ));
     };
+    // A production that also re-runs its actions in the unit (ADR-17243) holds the
+    // replay call beside its node. A term has no statement to hold the call, so it
+    // stands for its node alone.
+    // TODO: replay the actions of a term too (a `do` block holding the call).
+    if inner.class == super::RakuAstClass::StatementList {
+        let mut children = inner
+            .fields
+            .iter()
+            .filter(|f| !super::origin::is_origin(f))
+            .filter_map(|f| match &f.value {
+                RakuAstFieldValue::Node(child) => Some(child),
+                _ => None,
+            });
+        if let (Some(_), Some(node)) = (children.next(), children.next()) {
+            return lower_expression(node);
+        }
+    }
     let names = NameScope::default();
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     let lowered =

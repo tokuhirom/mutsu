@@ -5135,6 +5135,28 @@ impl Compiler {
         }
     }
 
+    /// Whether `stmts` holds a written `LEAVE` / `KEEP` / `UNDO` phaser.
+    ///
+    /// The replay phasers a unit-level variable trait queues
+    /// (`begin_prologue::lift_unit_var_traits`) are not counted: a unit that
+    /// only has those keeps the plain path.
+    // TODO: run a unit-level variable trait's LEAVE replay when an EVAL'd unit
+    // ends; the phaser-scope path loses the unit's tail value after a
+    // `trait_mod:<does>` mixin there (t/lang/eval-unit-builtin-prelude-by-names.t).
+    // Cost: O(n), n = statements.
+    fn has_exit_phasers(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                    body,
+                    ..
+                } if !matches!(body.as_slice(), [Stmt::VarTrait { .. }])
+            )
+        })
+    }
+
     fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         // Hoist top-level `use Test` declarations to the front (Raku `use` is
         // BEGIN-time, so test functions are available throughout the file even
@@ -5251,8 +5273,22 @@ impl Compiler {
         if has_catch {
             self.compile_implicit_try(stmts);
             self.emit_unit_tail_result();
-        } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
-            self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
+        } else if (self.is_routine && Self::has_block_enter_leave_phasers(stmts))
+            || (self.in_eval_unit && Self::has_exit_phasers(stmts))
+        {
+            // An EVAL'd unit is a scope of its own whose exit phasers run when
+            // it ends, wherever the EVAL was called from. Its BEGIN-time prologue
+            // runs before the scope opens: an ENTER phaser a prologue trait
+            // queued must find the queue filled.
+            let split = stmts
+                .iter()
+                .position(|s| matches!(s, Stmt::BeginPrologueEnd))
+                .filter(|_| self.in_eval_unit)
+                .map_or(0, |end| end + 1);
+            for stmt in &stmts[..split] {
+                self.compile_stmt(stmt);
+            }
+            self.compile_phaser_block_scope(&stmts[split..], PhaserBlockResult::ReturnViaTopic);
         } else {
             // The statement whose value the unit evaluates to. Not simply the
             // last one: reordering hoists a declaration (`constant X = 5`)

@@ -1751,6 +1751,7 @@ t/control/enter-phaser-sees-bare-declaration.t
 t/control/eval-begin-phaser.t
 t/control/eval-topic-write-through.t
 t/control/eval-type-decl-and-phaser-message.t
+t/control/eval-unit-leave-phaser.t
 t/control/for-array-destructure.t
 t/control/for-array-topic-alias-elision.t
 t/control/for-bind-typed-array-deitemize.t
