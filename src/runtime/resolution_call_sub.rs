@@ -539,6 +539,7 @@ impl Interpreter {
                 .lexical_operator_candidate_defs
                 .get(&data.id)
                 .cloned()
+                .or_else(|| Some(Self::definition_of_captured_candidate(&data)))
         {
             match self.core_infix_captured_verdict(family, &def, left, right) {
                 super::native_infix_dispatch::CoreInfixVerdict::Core => return Ok(None),
@@ -551,6 +552,43 @@ impl Interpreter {
         let candidate = Self::bind_family_dispatcher(&candidate, Some(family), func);
         self.call_captured_multi_winner(family, candidate, remaining, args, func.clone(), key_decided)
             .map(Some)
+    }
+
+    /// A definition standing for a captured candidate, for ranking it against the
+    /// core candidate set: a family a `sub EXPORT` hook handed out
+    /// (`Map.new(M::EXPORT::DEFAULT.WHO.pairs)`) holds the candidates as values,
+    /// and only their signature takes part in the ranking.
+    // Cost: O(p), p = the candidate's parameters.
+    fn definition_of_captured_candidate(data: &crate::value::SubData) -> Arc<FunctionDef> {
+        Arc::new(FunctionDef {
+            is_cached: false,
+            package: data.package,
+            name: data.name,
+            params: data.params.as_ref().clone(),
+            param_defs: data.param_defs.as_ref().clone(),
+            body: Vec::new(),
+            is_test_assertion: false,
+            is_hidden_from_backtrace: false,
+            is_implementation_detail: false,
+            is_rw: data.is_rw,
+            is_raw: data.is_raw,
+            declarator: crate::ast::RoutineDeclarator::Sub,
+            empty_sig: false,
+            is_stub: false,
+            return_type: None,
+            is_default: false,
+            deprecated_message: None,
+            op_prec: None,
+            source_file: None,
+            source_line: None,
+            decl_order: 0,
+            compiled: None,
+            dispatchee: None,
+            body_fp_cache: std::sync::OnceLock::new(),
+            captured_readonly: None,
+            body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
+        })
     }
 
     /// The built-in operator `name` (`infix:<+>`, `prefix:<->`) itself,
