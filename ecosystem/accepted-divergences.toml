@@ -91,6 +91,27 @@ is then False and test 6 takes the :all path. mutsu does not reproduce the cache
 (user decision 2026-09-27)."""
 
 [[divergence]]
+dist = "Jupyter::Chatbook"
+file = "t/05-autocomplete.rakutest"
+shape = { verdict = "die", ok = 9, nok = 1, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
+issue = 14416
+reason = """the sandbox's autocomplete builds its candidate table with `(1 .. 0x1ffff).map({.chr})` \
+and filters the surrogates out afterwards by `.uniprop` (category Cs). rakudo keeps the surrogate \
+in a `Str` (`chr(0xD800).ord` is 55296); mutsu does not keep a surrogate in a `Str`, and \
+`chr(0xD800)` raises `X::InvalidCodepoint` at construction, as roast's `ord_and_chr.t` \
+(`dies-ok {chr(0xD800)}`) and S15 specify (ADR-12640 rejected, maintainer decision 2026-10-21, \
+#14416)."""
+
+[[divergence]]
+dist = "Jupyter::Kernel"
+file = "t/05-autocomplete.rakutest"
+shape = { verdict = "die", ok = 9, nok = 1, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
+issue = 14416
+reason = """same as Jupyter::Chatbook t/05-autocomplete.rakutest: the candidate table is built with \
+`(1 .. 0x1ffff).map({.chr})`, which includes the surrogates rakudo keeps in a `Str` and mutsu \
+refuses (ADR-12640 rejected, maintainer decision 2026-10-21, #14416)."""
+
+[[divergence]]
 dist = "NativeHelpers::Blob"
 file = "t/02-cstruct.rakutest"
 shape = { verdict = "die", ok = 0, nok = 0, plan = 34, first_failure = "Unknown VM; don't know how to compile test libraries" }
