@@ -919,6 +919,66 @@ impl Interpreter {
         out
     }
 
+    /// Whether `s` has a `{` or `}` that is regex code (or the end of an
+    /// injected code block) rather than a literal character. Tracks single quotes, double quotes, backslash escapes and
+    /// `<[...]>` character classes; a quote or class left unterminated is
+    /// answered conservatively (any `{` counts), so a malformed pattern can
+    /// never hide a code block behind a stray quote.
+    // Cost: O(n), n = pattern length.
+    fn has_code_brace(s: &str) -> bool {
+        let chars: Vec<char> = s.chars().collect();
+        let mut i = 0usize;
+        let (mut in_squote, mut in_dquote, mut in_class) = (false, false, false);
+        let mut prev: Option<char> = None;
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\\' {
+                // The escaped character is never a delimiter or a brace.
+                prev = chars.get(i + 1).copied().or(Some(c));
+                i += 2;
+                continue;
+            }
+            if in_squote {
+                if c == '\'' {
+                    in_squote = false;
+                }
+            } else if in_class {
+                if c == ']' {
+                    in_class = false;
+                }
+            } else if in_dquote {
+                if c == '"' {
+                    in_dquote = false;
+                } else if c == '{' || c == '}' {
+                    return true;
+                }
+            } else {
+                match c {
+                    // An unbalanced `}` closes a code block the pattern never
+                    // opened (`1} if say "pwnd"; #`): as dangerous as a `{`.
+                    '{' | '}' => return true,
+                    // An apostrophe inside an identifier (`don't`) is not a quote.
+                    '\'' if !prev.is_some_and(|p| p.is_alphanumeric() || p == '_') => {
+                        in_squote = true
+                    }
+                    '"' => in_dquote = true,
+                    '[' if prev == Some('<')
+                        || (matches!(prev, Some('+' | '-' | '!'))
+                            && i >= 2
+                            && chars[i - 2] == '<') =>
+                    {
+                        in_class = true
+                    }
+                    _ => {}
+                }
+            }
+            prev = Some(c);
+            i += 1;
+        }
+        // Unterminated quote or class: do not trust the scan.
+        (in_squote || in_dquote || in_class) && (s.contains('{') || s.contains('}'))
+    }
+
     /// Check if a regex pattern string contains dangerous code that could
     /// be used for injection attacks. Returns true if the pattern is dangerous.
     pub(super) fn contains_dangerous_regex_code(pattern: &str) -> bool {
@@ -931,8 +991,12 @@ impl Interpreter {
         if s.contains("$(") || s.contains("@(") {
             return true;
         }
-        // Check for braces: { or } could indicate code blocks
-        if s.contains('{') || s.contains('}') {
+        // A `{` that opens a code block (`{ ... }`, `<{ ... }>`, `<?{ ... }>`, a
+        // closure inside a double-quoted string). A `{` or `}` that is only a
+        // character -- single-quoted (`'{'`), backslash-escaped (`\{`), in a
+        // `<[...]>` class, or a lone `}` -- is not code, and rakudo accepts it
+        // in an interpolated pattern (`'a' '{' ',' '3' '}'`).
+        if Self::has_code_brace(s) {
             return true;
         }
         // Check for dynamic lookups: <::(...)>
