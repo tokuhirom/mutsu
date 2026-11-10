@@ -139,7 +139,8 @@ fn parse_quote_word_list<'a>(
 /// a list for several.
 // Cost: O(n), n = length of `content`.
 pub(crate) fn angle_words_expr(content: &str) -> Expr {
-    let words = split_angle_words(content);
+    let glued = glue_nested_angle_whitespace(content);
+    let words = split_angle_words(&glued);
     if words.len() == 1 {
         // `<...>` is quote-words, and quote-words always yield the *allomorph*
         // (IntStr, RatStr, NumStr, ComplexStr). The only exceptions are Raku's
@@ -162,6 +163,55 @@ pub(crate) fn angle_words_expr(content: &str) -> Expr {
             .collect();
         Expr::ArrayLiteral(exprs)
     }
+}
+
+/// Inside a nested `<...>` pair of a `<...>` quote-word list, rakudo drops the
+/// whitespace right after the inner `<` and right before the inner `>`:
+/// `<a < b > c>` is `("a", "<b>", "c")` and `<& < > '>` is `("&", "<>", "'")`.
+/// Whitespace in the middle of the pair still separates words
+/// (`<a < b c > d>` is `("a", "<b", "c>", "d")`).
+// Cost: O(n), n = length of `content`.
+fn glue_nested_angle_whitespace(content: &str) -> std::borrow::Cow<'_, str> {
+    if !content.contains('<') {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut depth = 0usize;
+    let mut skip_ws = false;
+    let mut chars = content.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            skip_ws = false;
+            out.push(c);
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+            continue;
+        }
+        if skip_ws && c.is_whitespace() && !is_non_breaking_space(c) {
+            continue;
+        }
+        skip_ws = false;
+        match c {
+            '<' => {
+                depth += 1;
+                skip_ws = true;
+            }
+            '>' if depth > 0 => {
+                depth -= 1;
+                while out
+                    .chars()
+                    .next_back()
+                    .is_some_and(|l| l.is_whitespace() && !is_non_breaking_space(l))
+                {
+                    out.pop();
+                }
+            }
+            _ => {}
+        }
+        out.push(c);
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 pub(crate) fn find_quote_word_close(input: &str, open: &str, close: &str) -> Option<usize> {
