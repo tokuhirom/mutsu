@@ -33,7 +33,15 @@ pub(crate) fn install_synth_compile(compile: SynthCompile) {
 /// that text once the compiler is installed, else an AST body.
 // Cost: O(b) for the text key, b = size of the body; the compile happens once
 // per distinct text.
-fn synthesized_thunk(name: &str, body: Vec<Stmt>, is_rw: bool) -> Value {
+fn synthesized_thunk(name: &str, mut body: Vec<Stmt>, is_rw: bool) -> Value {
+    // A signature literal (`:(%a = {:a(2)})`) reaches here straight from the
+    // parser's expression entry, which has not been through the lowering pass
+    // that takes the spellings off a tree (ADR-12199): the compiler accepts none.
+    for stmt in &mut body {
+        if let Stmt::Expr(expr) = stmt {
+            crate::ast::spelled::strip_spelling(expr);
+        }
+    }
     let Some(compile) = SYNTH_COMPILE.get() else {
         return Value::make_sub(
             Symbol::intern(""),
