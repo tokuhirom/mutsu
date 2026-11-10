@@ -244,7 +244,7 @@ impl Interpreter {
     }
 
     /// Invoke a single `IO::Handle` native method on a handle value.
-    fn native_io_handle_method(
+    pub(super) fn native_io_handle_method(
         &mut self,
         handle: &Value,
         method: &str,

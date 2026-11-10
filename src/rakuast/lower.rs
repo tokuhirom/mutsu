@@ -706,9 +706,7 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                     }),
                     Err(_) => Ok(Stmt::Expr(lower_expr(names, node)?)),
                 },
-                "die" => Ok(Stmt::Die(
-                    args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
-                )),
+                "die" => Ok(Stmt::Die(die_argument(args))),
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
@@ -6172,4 +6170,28 @@ fn zip_declaration_assign(
             lower_expr(names, source)?,
         )
     })())
+}
+
+/// The argument of a lowered `die`: the parser keeps several arguments as one
+/// `ArrayLiteral` and groups a lone bare list (`die <x y>`) to tell it from
+/// them, so the message joins `die "a", "b"` and space-joins `die <x y>`.
+// Cost: O(n), n = number of arguments.
+fn die_argument(mut args: Vec<Expr>) -> Expr {
+    match args.len() {
+        0 => Expr::Literal(Value::NIL),
+        1 => {
+            let arg = args.remove(0);
+            let bare_list = match &arg {
+                Expr::ArrayLiteral(_) => true,
+                Expr::Spelled(spelled) => matches!(spelled.expr, Expr::ArrayLiteral(_)),
+                _ => false,
+            };
+            if bare_list {
+                Expr::Grouped(Box::new(arg))
+            } else {
+                arg
+            }
+        }
+        _ => Expr::ArrayLiteral(args),
+    }
 }

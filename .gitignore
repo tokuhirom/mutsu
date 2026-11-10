@@ -108,3 +108,6 @@ __pycache__/
 
 # llvm-cov raw profiles a child process leaves in the working directory
 *.profraw
+
+# Scratch files an IO test leaves in the working directory if run from an old checkout
+/tmp-io-out-buffer-*.txt

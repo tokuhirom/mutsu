@@ -2006,6 +2006,7 @@ t/exceptions/control-warn-handler-write-through-aggregate-arg-call.t
 t/exceptions/control-warn-resume-caller-var-name-collision.t
 t/exceptions/control.t
 t/exceptions/did-you-mean.t
+t/exceptions/die-argument-list-message.t
 t/exceptions/die-behavior.t
 t/exceptions/die-call-form-backtrace.t
 t/exceptions/die-fail-statement-modifier.t
@@ -5279,6 +5280,7 @@ t/oo/method/subset-method-call-reaches-base-type.t
 t/oo/method/succ-pred-method-rows.t
 t/oo/method/superscript-method-power.t
 t/oo/method/temp-element-invocant-method-assign.t
+t/oo/method/temp-method-call-element.t
 t/oo/method/temp-method-lvalue-compound.t
 t/oo/method/temp-type-object-method-lvalue.t
 t/oo/method/temporal-shift-edit-method-rows.t
@@ -6126,6 +6128,7 @@ t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-deparse-accessor-gaps.t
+t/rakuast/rakuast-deparse-die-call-parens.t
 t/rakuast/rakuast-deparse-highlight.t
 t/rakuast/rakuast-deparse-model-accessors.t
 t/rakuast/rakuast-deparse.t
@@ -6134,6 +6137,7 @@ t/rakuast/rakuast-deprecated-computed-message.t
 t/rakuast/rakuast-derived-methods-2.t
 t/rakuast/rakuast-derived-methods.t
 t/rakuast/rakuast-desugar-boundary.t
+t/rakuast/rakuast-die-list-args.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-doc-abbreviated-formula.t
 t/rakuast/rakuast-doc-block-builders.t
@@ -8530,6 +8534,7 @@ t/routines/stash-lists-our-operator-routines.t
 t/routines/sub-call-binding-failure-classes.t
 t/routines/sub-call-supertype-arg-runtime.t
 t/routines/sub-decl-rejects-bodiless-and-compact-sigil-forms.t
+t/routines/sub-declared-in-paren-group-stays-in-enclosing-scope.t
 t/routines/sub-expression-name.t
 t/routines/sub-form-cool-routine-failure.t
 t/routines/sub-hoisted-free-var-before-declaration.t

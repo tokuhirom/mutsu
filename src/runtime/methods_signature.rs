@@ -278,7 +278,6 @@ impl Interpreter {
                 pd.default = Some(crate::ast::Expr::Literal(value));
                 pd.required = false;
                 pd.optional_marker = false;
-                pd.where_constraint = None;
                 // The compiled chunks describe the replaced expressions.
                 pd.code = crate::ast::ParamCode::default();
             }
