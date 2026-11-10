@@ -415,6 +415,9 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             }
             let rule = match expr {
                 Expr::Binary { .. } => "INFIX-EXPR",
+                // A user-declared infix (`infix:<⩃>`) is the call of its
+                // routine; `is` is the parser's vehicle for a class trait.
+                Expr::InfixFunc { name, modifier: None, .. } if name != "is" => "INFIX-EXPR",
                 Expr::Unary { .. } => "PREFIX-EXPR",
                 // A user-declared prefix operator is the call of its routine.
                 Expr::Call { name, args, .. }
