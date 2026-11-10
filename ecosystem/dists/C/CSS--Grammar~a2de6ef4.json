@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 87,
         "plan": 87,
-        "secs": 3.26,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 87,
         "plan": 87,
-        "secs": 14.02,
+        "secs": 9.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 125,
         "plan": 125,
-        "secs": 0.48,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,6 +48,50 @@
         "nok": 0,
         "ok": 125,
         "plan": 125,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 118,
+        "plan": 118,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/error-handling.t",
+      "raku": {
+        "nok": 0,
+        "ok": 118,
+        "plan": 118,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parse-stylesheets.t",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
         "secs": 0.76,
         "skip": 0,
         "todo": 0,
@@ -58,53 +102,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 118,
-        "plan": 118,
-        "secs": 1.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/error-handling.t",
-      "raku": {
-        "nok": 0,
-        "ok": 118,
-        "plan": 118,
-        "secs": 1.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 32,
-        "plan": 32,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/parse-stylesheets.t",
-      "raku": {
-        "nok": 0,
-        "ok": 32,
-        "plan": 32,
-        "secs": 1.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.07,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +114,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.84,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +126,7 @@
         "nok": 0,
         "ok": 123,
         "plan": 123,
-        "secs": 0.33,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 123,
         "plan": 123,
-        "secs": 1.38,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,10 +156,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-08",
+    "date": "2026-11-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "08e9a4a4",
+    "mutsu_commit": "52bbfb59",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

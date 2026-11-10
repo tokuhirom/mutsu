@@ -27,11 +27,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "/home/runner/.cache/mutsu-ecosystem/run/ecosweep-jos_orpt/dist/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
+        "first_failure": "/home/runner/.cache/mutsu-ecosystem/run/ecosweep-y41r994r/dist/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 31.98,
+        "secs": 33.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.15,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.56,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.09,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 51,
-        "secs": 2.0,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,7 +101,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.22,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.32,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.09,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 3.74,
+        "secs": 2.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -171,7 +171,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.14,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -185,7 +185,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.6,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -199,7 +199,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.48,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,11 +209,11 @@
       "cmp": "no_baseline",
       "path": "t/14-parquet.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/dkd-parquet-2-1794176774' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/dkd-parquet-2-1794275386' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.48,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -223,11 +223,11 @@
       "cmp": "no_baseline",
       "path": "t/15-shim-cache.rakutest",
       "raku": {
-        "first_failure": "X::IO::Dir: Failed to get the directory contents of '/tmp/dkd-shimcache-2-1794176778': Failed to open dir: no such file or directory",
+        "first_failure": "X::IO::Dir: Failed to get the directory contents of '/tmp/dkd-shimcache-2-1794275390': Failed to open dir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.58,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -241,7 +241,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.73,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -271,10 +271,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-08",
+    "date": "2026-11-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "08e9a4a4",
+    "mutsu_commit": "52bbfb59",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

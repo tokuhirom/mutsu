@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.16,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,74 +24,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.55,
+        "secs": 0.5,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'CREATE' for invocant of type 'BinaryHeap::MinHeap'",
         "nok": 0,
-        "ok": 7,
+        "ok": 10,
         "plan": 10,
-        "secs": 0.38,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-binaryheap.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 5.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-autovivify.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-exports.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 1.2,
+        "secs": 3.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,12 +63,56 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/02-autovivify.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-exports.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/04-factories.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.89,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,7 +134,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.76,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,10 +146,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-08",
+    "date": "2026-11-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "08e9a4a4",
+    "mutsu_commit": "52bbfb59",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -161,13 +160,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/IN/BINARYHEAP/ec73bd530cc73aa6375617c0e41ae46586326a7f.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 30,
     "baseline_files": 6,
-    "mutsu_assertions": 27,
-    "parity_files": 5,
-    "regressed_files": 1
+    "mutsu_assertions": 30,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "2.1.1"
 }
