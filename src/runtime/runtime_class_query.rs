@@ -219,8 +219,17 @@ impl Interpreter {
         const CONTAINER_TYPES: &[&str] = &[
             "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
             "Seq", "array", "Buf", "Blob",
+            // The roles the containers do: a `$p` typed `Associative` / `Positional`
+            // holds the whole container, whose elements these constrain nothing.
+            "Associative", "Positional", "Iterable", "QuantHash", "Baggy", "Setty", "Mixy",
         ];
         let base = constraint.split('[').next().unwrap_or(constraint);
+        // `Associative:D` / `Hash:U` are the same container type.
+        let base = base
+            .strip_suffix(":D")
+            .or_else(|| base.strip_suffix(":U"))
+            .or_else(|| base.strip_suffix(":_"))
+            .unwrap_or(base);
         if !CONTAINER_TYPES.contains(&base) && !self.is_container_subclass(base) {
             return Some(constraint.to_string());
         }
