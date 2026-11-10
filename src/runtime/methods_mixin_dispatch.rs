@@ -210,7 +210,7 @@ impl Interpreter {
             .any(|role_name| self.role_has_method(role_name, method_name))
     }
 
-    /// The lazy `Seq` under a role mixin (`$lazy-seq does R`, `$lazy-seq but R`)
+    /// The lazy (or deferred) `Seq` under a role mixin (`$lazy-seq does R`, `$lazy-seq but R`)
     /// when `method` reads its elements and no composed role declares it: the
     /// call runs on the lazy list itself, whose lanes force it on demand. The
     /// element-reading builtins otherwise saw the mixin wrapper, whose list
@@ -220,7 +220,7 @@ impl Interpreter {
         let ValueView::Mixin(inner, _) = target.view() else {
             return None;
         };
-        if !matches!(inner.view(), ValueView::LazyList(_))
+        if !matches!(inner.view(), ValueView::LazyList(_) | ValueView::Seq(_))
             || !(crate::value::seq_method_consumes(method)
                 || matches!(method, "elems" | "list" | "Seq" | "end" | "Numeric" | "Int"))
             || self.mixin_composes_method(target, method)
