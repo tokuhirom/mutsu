@@ -63,6 +63,14 @@ impl Compiler {
         else {
             return false;
         };
+        // A sigilless parameter binds the caller's variable as a container, which
+        // the direct bind never does (`trir_bind_from_slots` declines every such
+        // site), so a linked site would always take the cold by-name fallback:
+        // ~50k instructions per `sub f(\x)` call with a variable argument
+        // (#17376). Leave it to `CallFunc`, whose binder handles the container.
+        if link.chunk.params.iter().any(|p| p.sigilless) {
+            return false;
+        }
         // A readonly parameter of this routine passed to an `is rw` parameter
         // is refused (#13782); the direct call would hand the callee this
         // frame's slot, so leave it to `CallFunc`, whose binder refuses it.
