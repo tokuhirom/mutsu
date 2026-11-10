@@ -1,6 +1,7 @@
 use crate::ast::Expr;
 use crate::parser::expr::operators::enrich_expected_error;
 use crate::parser::helpers::{is_ident_char, ws};
+use crate::parser::parse_result::PError;
 use crate::parser::parse_result::PResult;
 use crate::token_kind::{NOT_THREADED, TokenKind};
 
@@ -276,49 +277,17 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
-        // Negated set membership / relational operators: !(elem), !(cont),
-        // !(<=), !(>=), !(>), !(==), and Unicode glyphs (in/cont/subset/superset).
-        // Lower to `!(left <positive set op> right)` — a negated Bool.
-        if let Some((tok, len, threaded)) = parse_negated_set_op(r) {
-            let op_text = r;
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            let (r, right) = concat_expr(r).map_err(|err| {
-                enrich_expected_error(
-                    err,
-                    "expected expression after negated set operator",
-                    r.len(),
-                )
-            })?;
-            let written = &op_text[..len];
-            left = Expr::spelled(
-                Expr::Unary {
-                    op: if threaded {
-                        TokenKind::Ident(NOT_THREADED.to_string())
-                    } else {
-                        TokenKind::Bang
-                    },
-                    expr: Box::new(Expr::Binary {
-                        left: Box::new(left),
-                        op: tok,
-                        right: Box::new(right),
-                        form: Default::default(),
-                    }),
-                    word: false,
-                },
-                || {
-                    if threaded {
-                        crate::ast::spelled::Spelling::NegatedSetGlyph(written.into())
-                    } else {
-                        crate::ast::spelled::Spelling::NegatedSetInfix(written[1..].into())
-                    }
-                },
-            );
-            rest = r;
-            continue;
+        // The set *relations* (`(elem)`, `(<=)`, `!(cont)`, `≡`, ...) are iffy
+        // chaining operators, looser than `..`: `set_relation_tail` parses them
+        // from the comparison level.
+        if parse_negated_set_op(r).is_some() {
+            break;
         }
         // Set operators: (|), (&), (-), (^), (<=), (>=), (<), (>), (elem), (cont)
         if let Some((tok, len)) = parse_set_op(r) {
+            if is_iffy_set_op(&tok) {
+                break;
+            }
             // `∪=`, `(&)=`, `(-)=`, … are set-operator *compound assignments*
             // (`lhs OP= rhs`), not an infix set op followed by a stray `=`.
             // Stop here so the assignment handler parses the whole statement;
@@ -357,4 +326,72 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
         break;
     }
     Ok((rest, left))
+}
+
+/// One set relation (`(elem)`, `(<=)`, `!(cont)`, `∌`, `≡`, ...) after `left`, at
+/// the chaining level: `1..2 ∈ [1..2]` is `(1..2) ∈ [1..2]`. `rhs` parses the
+/// right operand at the next-tighter level. `None` when `r` does not start one.
+// Cost: O(len of the operator + the right operand).
+pub(crate) fn set_relation_tail<'a>(
+    r: &'a str,
+    left: &mut Option<Expr>,
+    rhs: &dyn Fn(&'a str) -> PResult<'a, Expr>,
+) -> Result<Option<&'a str>, PError> {
+    if let Some((tok, len, threaded)) = parse_negated_set_op(r) {
+        let op_text = r;
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = rhs(r).map_err(|err| {
+            enrich_expected_error(
+                err,
+                "expected expression after negated set operator",
+                r.len(),
+            )
+        })?;
+        let written = &op_text[..len];
+        let l = left.take().expect("left operand");
+        *left = Some(Expr::spelled(
+            Expr::Unary {
+                op: if threaded {
+                    TokenKind::Ident(NOT_THREADED.to_string())
+                } else {
+                    TokenKind::Bang
+                },
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(l),
+                    op: tok,
+                    right: Box::new(right),
+                    form: Default::default(),
+                }),
+                word: false,
+            },
+            || {
+                if threaded {
+                    crate::ast::spelled::Spelling::NegatedSetGlyph(written.into())
+                } else {
+                    crate::ast::spelled::Spelling::NegatedSetInfix(written[1..].into())
+                }
+            },
+        ));
+        return Ok(Some(r));
+    }
+    let Some((tok, len)) = parse_set_op(r) else {
+        return Ok(None);
+    };
+    if !is_iffy_set_op(&tok) {
+        return Ok(None);
+    }
+    let r = &r[len..];
+    let (r, _) = ws(r)?;
+    let (r, right) = rhs(r).map_err(|err| {
+        enrich_expected_error(err, "expected expression after set operator", r.len())
+    })?;
+    let l = left.take().expect("left operand");
+    *left = Some(Expr::Binary {
+        left: Box::new(l),
+        op: tok,
+        right: Box::new(right),
+        form: Default::default(),
+    });
+    Ok(Some(r))
 }

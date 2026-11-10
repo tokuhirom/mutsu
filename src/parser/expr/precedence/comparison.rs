@@ -2,8 +2,26 @@ use super::*;
 
 /// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
 pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, left) = structural_comparison_expr_mode(input, mode)?;
-    comparison_tail(rest, left, mode)
+    let (mut rest, left) = structural_comparison_expr_mode(input, mode)?;
+    // The set relations share the chaining level with the comparisons, so
+    // either may follow the other (`$x ∈ @a == True`).
+    let mut left = Some(left);
+    loop {
+        let (r, _) = ws(rest)?;
+        let rhs = |s| structural_comparison_expr_mode(s, mode);
+        if let Some(r) = set_relation_tail(r, &mut left, &rhs)? {
+            rest = r;
+            continue;
+        }
+        let (r2, l2) = comparison_tail(rest, left.take().expect("left operand"), mode)?;
+        let progressed = r2.len() != rest.len();
+        rest = r2;
+        left = Some(l2);
+        if !progressed {
+            break;
+        }
+    }
+    Ok((rest, left.expect("left operand")))
 }
 
 /// The comparison operators (if any) that follow an already-parsed `left`
