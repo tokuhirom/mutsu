@@ -352,7 +352,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for LiteralValueKeys {
         if let crate::ast::Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
-            form: crate::ast::BinaryForm::Infix,
+            form: crate::ast::BinaryForm::Infix | crate::ast::BinaryForm::QuotedKey,
             ..
         } = expr
             && let crate::ast::Expr::Literal(key) = left.as_ref()
