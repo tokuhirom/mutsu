@@ -18,3 +18,11 @@ body and re-enters it afterwards (`gc::foreign_callback_mutator`), so Raku
 code never mutates the object graph while the collector counts its thread
 stopped. The libffi call itself is now made by a helper that returns the raw
 result, and the `Value` is built only after the thread is a mutator again.
+
+The blocked mark is the pool's and the collector's only: a native call does
+not *park* the reacts whose events the thread is handling, so an `emit` keeps
+waiting for a `whenever` body that calls `close` or `write` through NativeCall
+(ADR-11268), as a Rakudo emitter waits on the react's lock. Net::BGP's
+`t/90-basic-bgp.t`, which also used to time out under the sandbox, now passes
+too; it depends on that ordering, since its socket's `recv` loop and the
+handler would otherwise both close the same descriptor.

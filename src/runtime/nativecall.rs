@@ -632,10 +632,12 @@ pub fn call_native_with_out_args(
     // marks a thread blocked around a native call): a pool worker sitting in
     // `accept`/`recv`/`connect` frees its slot so the pool grows for queued
     // tasks (ADR-0123), and counts quiescent so it cannot starve another
-    // thread's stop-the-world. Nothing inside touches a `Value`; a `&callback`
+    // thread's stop-the-world. It does not park the reacts this thread is
+    // handling events for: a `whenever` body calling `close` is still handling
+    // its event (ADR-11268). Nothing inside touches a `Value`; a `&callback`
     // re-enters as a mutator (`gc::foreign_callback_mutator`).
     let raw = {
-        let _blocking = crate::runtime::worker_pool::enter_blocking();
+        let _blocking = crate::runtime::worker_pool::enter_foreign_call();
         // SAFETY: the CIF matches the declared signature; arg pointers outlive
         // the call via `owners`.
         crate::gc::foreign_call_quiescent(|| unsafe { raw_ffi_call(&cif, code, &ffi_args, spec.ret) })

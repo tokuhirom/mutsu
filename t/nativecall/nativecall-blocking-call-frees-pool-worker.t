@@ -12,7 +12,7 @@ use Test;
 # still counted those workers as running, queued the next task for them, and
 # the test hung. `MUTSU_STACK_BUDGET_MB=0` reproduces that without a ulimit.
 
-plan 5;
+plan 6;
 
 my $exe = $*EXECUTABLE.absolute;
 
@@ -70,4 +70,23 @@ sub run-child(Str $code, *%env) {
     is $out.trim, 'True', 'callbacks on several workers sort correctly under GC pressure';
     is $exit, 0, '... and the program exits cleanly';
     is $err, '', '... with nothing on stderr';
+}
+
+# A `whenever` body that makes a native call is still handling its event: the
+# emitter keeps waiting for it (ADR-11268), as a Rakudo emitter waits on the
+# react's lock. Net::BGP's t/90-basic-bgp.t double-closed a socket when the
+# emitting `recv` loop ran on while the handler was inside a native `close`.
+{
+    use NativeCall;
+    sub getpid(--> int32) is native {*}
+    my @got;
+    my $s = Supplier.new;
+    my $ready = Promise.new;
+    start react {
+        whenever $s.Supply -> $m { getpid(); @got.push($m) }
+        $ready.keep;
+    }
+    await $ready;
+    $s.emit($_) for 1..3;
+    is +@got, 3, 'an emit waits for a whenever body that makes a native call';
 }
