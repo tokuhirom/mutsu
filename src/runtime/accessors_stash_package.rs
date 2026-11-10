@@ -22,6 +22,30 @@ impl Interpreter {
         self.package_stash_value_with("GLOBAL", true)
     }
 
+    /// The symbols of the `CORE::` stash: every built-in routine that has a
+    /// first-class `&name` value.
+    // Cost: O(b), b = built-in routine names (about 1000), one `&name`
+    // resolution each.
+    fn core_stash_symbols(&self) -> ValueMap {
+        let mut symbols = ValueMap::default();
+        let mut seen = std::collections::HashSet::new();
+        let names = crate::builtin_functions::BUILTIN_FUNCTION_NAMES
+            .iter()
+            .chain(Self::core_code_ref_function_names().iter())
+            .copied();
+        for name in names {
+            // Internal helpers carry a `__` prefix.
+            if name.is_empty() || !seen.insert(name) || name.starts_with("__") {
+                continue;
+            }
+            let value = self.resolve_code_var_unshadowed(name);
+            if !value.is_nil() {
+                symbols.insert(format!("&{name}"), value);
+            }
+        }
+        symbols
+    }
+
     /// [`Self::package_stash_value`]; `module_merges` keeps in a `GLOBAL`
     /// stash the entries only a module merge put there (#13802).
     fn package_stash_value_with(&self, package: &str, module_merges: bool) -> Value {
@@ -54,6 +78,13 @@ impl Interpreter {
             symbols.insert("False".to_string(), Value::FALSE);
             symbols.insert("True".to_string(), Value::TRUE);
             return Self::make_stash_instance(package, symbols);
+        }
+
+        // `CORE::` is the setting's stash: it lists the built-in routines as
+        // `&name` (rakudo has ~420). A keyed read (`CORE::<&infix:<eq>>`) never
+        // gets here -- `package_stash_keyed_value` answers it alone.
+        if package_name == "CORE" {
+            return Self::make_stash_instance(package, self.core_stash_symbols());
         }
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
