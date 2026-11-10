@@ -519,9 +519,7 @@ fn lower_parameter(names: &NameScope, param: &RakuAstNode) -> Result<SignatureVa
 pub(super) fn parameter_desigil(desigil: &str) -> &str {
     if matches!(
         desigil,
-        super::view::ANONYMOUS_SCALAR_PARAM
-            | "__ANON_ARRAY__"
-            | "__ANON_HASH__"
+        super::view::ANONYMOUS_SCALAR_PARAM | "__ANON_ARRAY__" | "__ANON_HASH__"
     ) {
         ""
     } else {
