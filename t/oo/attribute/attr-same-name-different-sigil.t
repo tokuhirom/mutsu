@@ -1,5 +1,5 @@
 use Test;
-plan 11;
+plan 13;
 
 class A {
     has $!f = "s";
@@ -34,3 +34,16 @@ class B { has @!f = 1, 2; has %!f = a => 1; has &!f = { 7 };
     method m { "{@!f}/{%!f}/{&!f()}" } }
 is B.new.m, "1 2/a\t1/7", 'array, hash and code attributes of one name';
 is A.^attributes.map(*.name).join(','), '$!f,&!f', '.^attributes lists both';
+
+# A subclass's private scalar beside the parent's public code attribute of the
+# same name (Test::Describe::Match::Change): a closure reads its own scalar.
+class PubCode { has &.msg = -> $a { "parent $a" } }
+class PrivScalar is PubCode {
+    has $!msg = "child msg";
+    method msg { -> $ { $!msg } }
+    method set { $!msg = "changed" }
+}
+my $ps = PrivScalar.new;
+is $ps.msg.(1), 'child msg', 'a closure reads the private scalar, not the parent code attribute';
+$ps.set;
+is $ps.msg.(1), 'changed', 'and sees the assignment';
