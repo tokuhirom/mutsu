@@ -11,6 +11,9 @@ our role EffectGrammar {
     token statement-control:sym<remember> {
         'remember' <.end-keyword> <.ws> $<what>=<identifier>
     }
+    token statement-control:sym<compile-outer> {
+        'compile-outer' <.end-keyword>
+    }
 }
 
 our role EffectActions {
@@ -22,6 +25,20 @@ our role EffectActions {
                 args => RakuAST::ArgList.new(RakuAST::StrLiteral.new('replayed ' ~ $<what>)),
             ),
         );
+    }
+    # An action that compiles a routine assigning to a variable of the importing unit,
+    # which the slang host cannot see.
+    method statement-control:sym<compile-outer>(Mu $/) {
+        my $sub = RakuAST::Sub.new(
+            body => RakuAST::Blockoid.new(RakuAST::StatementList.new(
+                RakuAST::Statement::Expression.new(expression => RakuAST::ApplyInfix.new(
+                    left => RakuAST::Var::Lexical.new('$outer'),
+                    infix => RakuAST::Infix.new('='),
+                    right => RakuAST::IntLiteral.new(1))))));
+        my $compiled = try { $sub.to-begin-time($*R, $*CU.context); $sub.meta-object };
+        remember-it($compiled.defined ?? 'compiled' !! 'not compiled');
+        self.attach: $/, RakuAST::Statement::Expression.new(
+            expression => RakuAST::IntLiteral.new(1));
     }
 }
 

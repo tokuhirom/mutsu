@@ -65,6 +65,11 @@ impl Interpreter {
     /// compile time (X::Undeclared, with "Did you mean" suggestions).
     // Cost: see `eval_var_scan::first_undeclared_var`.
     pub(crate) fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // A slang action compiling a block of the importing unit (`meta-object`) cannot
+        // see the unit's lexicals; the unit's own compile judges them (#17243).
+        if super::slang_host::in_hook() {
+            return Ok(());
+        }
         match super::eval_var_scan::first_undeclared_var(self, stmts) {
             Some(found) => Err(Self::undeclared_var_error(found)),
             None => Ok(()),
