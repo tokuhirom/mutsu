@@ -31,9 +31,11 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
     };
     let specific: &[&'static str] = match class {
         Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
-        CallMethod => &["dispatch", "dispatcher", "macroish"],
-        CallQuotedMethod => &["dispatch", "dispatcher", "args"],
-        CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => &["dispatch", "dispatcher"],
+        CallMethod => &["dispatch", "dispatcher", "macroish", "colonpairs"],
+        CallQuotedMethod => &["dispatch", "dispatcher", "args", "colonpairs"],
+        CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
+            &["dispatch", "dispatcher", "colonpairs"]
+        }
         TypeCoercion => &["constraint"],
         TypeEnum => &["clean-clone"],
         InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
@@ -56,7 +58,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
             "is-declared-required",
         ],
         TermEnum => &["name"],
-        CallMetaMethod => &["args"],
+        CallMetaMethod => &["args", "colonpairs"],
         Heredoc => &["has-variables", "processors"],
         StubFail | StubDie | StubWarn => &["name"],
         Method | Submethod => &["meta", "declarator"],
@@ -196,7 +198,11 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         }
         // mutsu keeps an infix's adverbs out of `visit-children`, as rakudo
         // does; the accessor still answers them.
-        (ApplyInfix | Postfix, "colonpairs") => {
+        (
+            ApplyInfix | Postfix | CallMethod | CallQuotedMethod | CallPrivateMethod
+            | CallMetaMethod | CallNameAsMethod | CallTermAsMethod,
+            "colonpairs",
+        ) => {
             Some(field(node, "colonpairs").unwrap_or_else(|| Value::array(Vec::new())))
         }
         (ApplyPostfix, "on-topic") => {
