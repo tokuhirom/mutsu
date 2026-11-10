@@ -172,9 +172,7 @@ pub(super) fn bare_capture_type(
     // A `::T` spelled as the type constraint itself (`type_capture` unset) is
     // the capture, not a nominal type.
     match def.type_constraint.as_deref() {
-        Some(t) if def.type_capture.is_some() => {
-            super::view::build_type_node(names, t).map(Some)
-        }
+        Some(t) if def.type_capture.is_some() => super::view::build_type_node(names, t).map(Some),
         _ => Ok(type_setting.then(super::view::type_setting_any)),
     }
 }
