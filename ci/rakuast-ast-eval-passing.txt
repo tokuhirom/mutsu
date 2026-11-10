@@ -3054,8 +3054,16 @@ t/lang/parsing/syntax-two-terms-across-lines.t
 t/lang/pod-begin-at-end-of-input.t
 t/lang/pod-begin-with-directive.t
 t/lang/pod-begin-without-identifier.t
+t/lang/pod-block-gist.t
 t/lang/pod-block-named-and-empty-config.t
+t/lang/pod-declarator-blocks-in-source-order.t
+t/lang/pod-declarator-nested-declarants.t
+t/lang/pod-delimited-literal-equals.t
 t/lang/pod-eval-return.t
+t/lang/pod-index-entry-meta.t
+t/lang/pod-item-lists.t
+t/lang/pod-numbered-alias-config.t
+t/lang/pod-to-text-bundled.t
 t/lang/proxy-arg-raw-sigilless-store.t
 t/lang/quoting/angle-spaceship-quote-word.t
 t/lang/quoting/backslash-unrecognized.t
@@ -3313,6 +3321,7 @@ t/modules/eval-module-lexical-subs.t
 t/modules/eval-our-sub-package-stash.t
 t/modules/eval-package-enum-result.t
 t/modules/eval-package-tail-value.t
+t/modules/eval-pod-in-module-closure.t
 t/modules/eval-require-declares-module.t
 t/modules/eval-sees-global-stash-bound-module-type.t
 t/modules/eval-stub-package-does-not-leak.t
@@ -3749,6 +3758,7 @@ t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-our-globals-outlive-scope.t
 t/modules/module-own-dynamic-does-not-leak.t
 t/modules/module-parse-warning-once.t
+t/modules/module-pod-variable.t
 t/modules/module-private-enum-qualified-scope.t
 t/modules/module-private-sub-does-not-leak.t
 t/modules/module-proto-survives-block-require.t
@@ -4375,6 +4385,7 @@ t/oo/attribute/attribute-is-default-plan-chunk.t
 t/oo/attribute/attribute-key-and-value-types.t
 t/oo/attribute/attribute-lazy-initialization.t
 t/oo/attribute/attribute-lowercase-subset-checked-at-construction.t
+t/oo/attribute/attribute-meta-object-identity.t
 t/oo/attribute/attribute-method-rows.t
 t/oo/attribute/attribute-nil-argument-default.t
 t/oo/attribute/attribute-of-trait-order.t
@@ -4466,6 +4477,7 @@ t/oo/attribute/hash-attribute-set-op-assign-stays-hash.t
 t/oo/attribute/hash-literal-bang-attribute.t
 t/oo/attribute/hash-subclass-eqv-ignores-attributes.t
 t/oo/attribute/instance-eqv-private-attribute-and-user-raku.t
+t/oo/attribute/instance-eqv-qualified-attributes.t
 t/oo/attribute/interp-attribute-array-hash-method.t
 t/oo/attribute/interp-self-accessor-call.t
 t/oo/attribute/is-type-attribute-fetches-proxy-initial.t
@@ -6210,6 +6222,7 @@ t/rakuast/rakuast-doc-abbreviated-formula.t
 t/rakuast/rakuast-doc-block-builders.t
 t/rakuast/rakuast-doc-block-from-alias-config.t
 t/rakuast/rakuast-doc-block-pod-config.t
+t/rakuast/rakuast-doc-block-pod.t
 t/rakuast/rakuast-doc-block-statements.t
 t/rakuast/rakuast-doc-block.t
 t/rakuast/rakuast-doc-config-directive.t
@@ -8418,6 +8431,7 @@ t/routines/signature/parameter-gist.t
 t/routines/signature/parameter-invalidtype.t
 t/routines/signature/parameter-nominal-type-of-coerce.t
 t/routines/signature/parameter-placeholder.t
+t/routines/signature/parameter-raku-default.t
 t/routines/signature/parameter-signature-constraint.t
 t/routines/signature/parameter-type-meta-parameterized.t
 t/routines/signature/parameter-type-smiley-modifier.t
@@ -8663,6 +8677,7 @@ t/tooling/cli-option-errors.t
 t/tooling/cli-rakudo-internals-include.t
 t/tooling/cmp-ok-string-ops.t
 t/tooling/command-line-negation.t
+t/tooling/doc-mode-pod-render.t
 t/tooling/doc-renderer-option.t
 t/tooling/dump-ast-no-execute.t
 t/tooling/exit-dynamic-hook.t
