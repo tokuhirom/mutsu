@@ -107,6 +107,43 @@ fn opens_scope(class: C) -> bool {
     )
 }
 
+/// The operand of a `.()` / `.method` postfix that is an argument-less call
+/// of a name the unit knows as a type becomes that `Type::Simple`.
+// Cost: O(1) plus the type probe.
+fn retype_called_operand(node: &mut RakuAstNode, scopes: &Scopes) {
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("operand")) else {
+        return;
+    };
+    let RakuAstFieldValue::Node(operand) = &field.value else {
+        return;
+    };
+    let ValueView::RakuAst(held) = operand.view() else {
+        return;
+    };
+    if held.class != C::CallName {
+        return;
+    }
+    let Ok(name) = call_name_str(held) else {
+        return;
+    };
+    let has_args = held.fields.iter().any(|f| {
+        f.name == Some("args")
+            && matches!(&f.value, RakuAstFieldValue::Node(args)
+                if matches!(args.view(), ValueView::RakuAst(a)
+                    if a.fields.iter().any(|f| matches!(&f.value, RakuAstFieldValue::List(l) if !l.is_empty()))))
+    });
+    if has_args
+        || scopes.find(&name).is_some()
+        || crate::core_type_names::contains(&name)
+        || !(scopes.imported_type)(&name)
+    {
+        return;
+    }
+    let mut typed = super::bareword::simple_type_node(&name);
+    typed.origin = held.origin.clone();
+    field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(typed)));
+}
+
 // Cost: O(size of the subtree * d).
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     // A bareword naming a type the unit imported (`Sum` from a `sub EXPORT`)
@@ -121,6 +158,11 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         let mut typed = super::bareword::simple_type_node(&name);
         typed.origin = node.origin.clone();
         *node = typed;
+    }
+    // `Tally.({ ... })` on a type a slang minted or the unit imported: the
+    // parse read `Tally` as a call, rakudo's tree has the type.
+    if node.class == C::ApplyPostfix {
+        retype_called_operand(node, scopes);
     }
     // A role's body holds its name and signature (the role's own children
     // are its name and that body), as rakudo's tree has them.
