@@ -9,3 +9,7 @@ the same Match nodes (with the `:my` dynamics their rules declared, `$*BLOCK`), 
 so the effects happen in the interpreter that runs the program (#17243, ADR-17243 Proposed).
 Qwiratry's `t/unit/mold-slang.rakutest` passes, as under `raku`. Also fixed: a keyword (`self`) in an
 `EVAL`'d snippet is never reported undeclared because a module exports a term of that name.
+
+A routine a slang action compiles (`meta-object`, Qwiratry's `wrapper MOLD_MATCHER { $outer = ... }`) is no longer
+judged for undeclared variables in the slang host, which cannot see the importing unit's lexicals; the unit's own
+compile judges them. Qwiratry's `t/unit/wrapper-system.rakutest` passes.

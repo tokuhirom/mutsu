@@ -32,6 +32,13 @@ thread_local! {
     static HOOK_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
+/// Whether a slang hook is running on this thread: the host sees none of the
+/// importing unit's lexicals, so it must not judge a variable undeclared.
+// Cost: O(1).
+pub(super) fn in_hook() -> bool {
+    HOOK_DEPTH.with(std::cell::Cell::get) > 0
+}
+
 /// The bound on nested hooks: the source's nesting is untrusted input
 /// (docs/security.md, resource bounds), so a deeper one is a catchable error.
 const MAX_HOOK_DEPTH: u32 = 64;
