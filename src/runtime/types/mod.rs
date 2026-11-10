@@ -1214,7 +1214,7 @@ impl Interpreter {
             }
         }
         match name.strip_prefix("CORE::") {
-            Some(plain) if !plain.contains("::") => plain.to_string(),
+            Some(plain) if !crate::qualified::is_qualified_str(plain) => plain.to_string(),
             _ => name.to_string(),
         }
     }

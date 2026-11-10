@@ -803,12 +803,13 @@ impl Interpreter {
                         if matches!(stash_name, "CORE" | "SETTING")
                             && matches!(key.as_str(), "v6c" | "v6d" | "v6e")
                         {
-                            return Some(Ok(Value::package(crate::symbol::Symbol::intern(
-                                &format!("CORE::{key}"),
+                            return Some(Ok(Value::package(crate::qualified::qualified(
+                                crate::symbol::Symbol::intern(stash_name),
+                                crate::symbol::Symbol::intern(&key),
                             ))));
                         }
                         if matches!(stash_name, "CORE::v6c" | "CORE::v6d" | "CORE::v6e")
-                            && !key.contains("::")
+                            && !crate::qualified::is_qualified_str(&key)
                             && (Self::is_builtin_type(&key) || self.has_type(&key))
                         {
                             return Some(Ok(Value::package(crate::symbol::Symbol::intern(&key))));
