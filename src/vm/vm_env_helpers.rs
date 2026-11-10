@@ -24,8 +24,13 @@ impl Interpreter {
     /// as a constant (Qwiratry's `aggsub Tally`).
     // Cost: O(1) expected, a few hashed lookups.
     pub(crate) fn slang_minted_type(&self, name: &str) -> bool {
-        self.get_env_with_main_alias(name)
-            .is_some_and(|value| matches!(value.view(), crate::value::ValueView::Package(_)))
+        self.resolve_bareword_type_name(name).is_some()
+            || self
+                .get_env_with_main_alias(name)
+                .is_some_and(|value| matches!(value.view(), crate::value::ValueView::Package(_)))
+            || self
+                .package_symbol_alias(name)
+                .is_some_and(|value| matches!(value.view(), crate::value::ValueView::Package(_)))
     }
 
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is

@@ -1021,13 +1021,6 @@ pub(super) fn unresolved_call_names(node: &RakuAstNode, out: &mut Vec<String>) {
     if let Some(name) = deferrable_call(node) {
         out.push(name);
     }
-    if node.class == C::TermName
-        && node.origin.2.is_none()
-        && let Some(name) = type_node_name(node)
-        && !crate::core_type_names::contains(&name)
-    {
-        out.push(name);
-    }
     for field in &node.fields {
         let children: &[Value] = match &field.value {
             RakuAstFieldValue::Node(value) => std::slice::from_ref(value),
@@ -1046,15 +1039,6 @@ pub(super) fn unresolved_call_names(node: &RakuAstNode, out: &mut Vec<String>) {
 /// tree was built ([`crate::unit_source_text::publish_late_imports`]).
 // Cost: O(1).
 pub(super) fn late_resolution(node: &RakuAstNode) -> Option<Value> {
-    // A bareword naming a type a slang minted after the tree was built
-    // (Qwiratry's `aggsub Tally`): `Tally` is a `Type::Simple` by the time the
-    // unit's check code reads the tree.
-    if node.class == C::TermName
-        && let Some(name) = type_node_name(node)
-        && crate::unit_source_text::is_late_type(&name)
-    {
-        return external("RakuAST::Declaration::Import", &name);
-    }
     let name = deferrable_call(node)?;
     crate::unit_source_text::is_late_import(&name)
         .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
