@@ -999,6 +999,9 @@ fn postfix_expr_loop_from<'a>(
                     || scan.starts_with("--")
                     || scan.starts_with(">>")
                     || scan.starts_with('\u{00BB}')
+                    // A declared postfix operator, symbolic or a word
+                    // (`$tree\ data-root`).
+                    || crate::parser::stmt::simple::match_user_declared_postfix_op(scan).is_some()
                 {
                     // Unspace deliberately glues the postfix onto the term, so
                     // the whitespace it just skipped must NOT count as a gap.
