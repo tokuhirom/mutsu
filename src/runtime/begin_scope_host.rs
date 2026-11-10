@@ -68,7 +68,9 @@ impl Interpreter {
                 }
                 _ => continue,
             };
-            let target = format!("{UNIT_EXPORT_PACKAGE}::{tag}");
+            let target = crate::qualified::qualified_text(UNIT_EXPORT_PACKAGE, &tag)
+                .as_str()
+                .to_string();
             for (key, value) in entries {
                 let (sigil, bare) = match key.as_bytes().first() {
                     Some(b'&' | b'@' | b'%') => (&key[..1], &key[1..]),
