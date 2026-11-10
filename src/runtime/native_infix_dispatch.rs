@@ -204,6 +204,17 @@ fn core_infix_shape(name: &str) -> Option<CoreInfixShape> {
             ],
             Some("Mu"),
         ),
+        // rakudo's membership candidates take the collection as `Any`, `Setty`,
+        // `Baggy` or `Mixy` (the element is an untyped `$a`); a user `(Mu, Mu)`
+        // candidate is wider than all of them and loses (Qwiratry's `∈`).
+        "(elem)" | "\u{2208}" => (
+            &[&[("Mu", "Any"), ("Mu", "Setty"), ("Mu", "Baggy"), ("Mu", "Mixy")]],
+            None,
+        ),
+        "(cont)" | "\u{220b}" => (
+            &[&[("Any", "Mu"), ("Setty", "Mu"), ("Baggy", "Mu"), ("Mixy", "Mu")]],
+            None,
+        ),
         _ => return None,
     };
     Some(CoreInfixShape { sigs, catch_all })
