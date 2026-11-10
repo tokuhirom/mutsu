@@ -606,6 +606,13 @@ impl Interpreter {
         // Emit any parse warnings (e.g. duplicate traits)
         self.emit_parse_warnings(crate::parser::take_parse_warnings());
         let (mut stmts, finish_content) = parse_result?;
+        // The program's own revision, for routines it declares (ADR-17287).
+        if let Some(path) = self.io.program_path_sym {
+            crate::parser::unit_revisions::note_unit_language_revision(
+                path,
+                &crate::parser::current_language_version(),
+            );
+        }
         // Finish `$=pod` now that the program's own declarations are known, and
         // before any of them can be observed: the prelude injection below adds
         // statements this compunit never wrote, and a BEGIN/DOC INIT phaser or

@@ -416,6 +416,12 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
             let rule = match expr {
                 Expr::Binary { .. } => "INFIX-EXPR",
                 Expr::Unary { .. } => "PREFIX-EXPR",
+                // A user-declared prefix operator is the call of its routine.
+                Expr::Call { name, args, .. }
+                    if args.len() == 1 && name.as_str().starts_with("prefix:<") =>
+                {
+                    "PREFIX-EXPR"
+                }
                 Expr::PostfixOp { .. } => "POSTFIX-EXPR",
                 _ => return,
             };

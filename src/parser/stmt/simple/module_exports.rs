@@ -478,6 +478,11 @@ fn apply_module_exports(exports: &[InlineModuleExport]) {
         if export.name.starts_with("trait_mod:<") {
             register_user_sub(&export.name);
         }
+        // An imported routine named like a loop-control statement shadows it
+        // (ParaSeq exports `last` to learn when a mapped block ended early).
+        if matches!(export.name.as_str(), "last" | "next" | "redo") {
+            register_user_sub(&export.name);
+        }
         if is_operator_sub_name(&export.name) {
             register_user_sub(&export.name);
             register_user_callable_term_symbol(&export.name);

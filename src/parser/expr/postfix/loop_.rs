@@ -1047,6 +1047,26 @@ fn postfix_expr_loop_from<'a>(
                 continue;
             }
         }
+        // `$0:exists` / `$1:!exists` on a positional match capture is sugar for
+        // `$/[0]:exists`, the same rewrite as for `$<foo>` above.
+        if let Expr::Var(name) = &expr
+            && !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_digit())
+            && (rest.starts_with(":exists") || rest.starts_with(":!exists"))
+            && let Ok(position) = name.parse::<i64>()
+        {
+            let target = Expr::Index {
+                target: Box::new(Expr::Var("/".to_string())),
+                index: Box::new(Expr::Literal(Value::int(position))),
+                is_positional: true,
+                spelling: Default::default(),
+            };
+            if let Some((r, pairs)) = scan_subscript_adverbs(rest) {
+                expr = subscript_adverbs_expr(target, pairs);
+                rest = r;
+                continue;
+            }
+        }
         // Superscript power in method-call syntax: `2.²` == `2²` == `2 ** 2`
         // (also `.³`, `.⁻¹`, ...). Must run before the general `.method`
         // dispatch below, which would otherwise treat `²` as a method name.

@@ -369,7 +369,7 @@ pub(crate) fn mixin_role_owners_of(target: &Value, method: &str) -> Option<Vec<S
     let key = (
         &**mixins as *const crate::value::MixinOverrides as usize,
         method,
-        crate::parser::current_language_version_starts_with("6.e"),
+        crate::parser::unit_revisions::revision_e_methods_visible(),
     );
     if let Some(hit) = OWNERS_MEMO.with(|memo| memo.borrow().get(&key).map(|(_, v)| v.clone())) {
         return hit;

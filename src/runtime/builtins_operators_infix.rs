@@ -93,6 +93,28 @@ impl Interpreter {
         {
             return self.call_core_infix_routine(Self::normalize_unicode_infix(op), &args);
         }
+        // `&CORE::last()` / `&CORE::next()` / `&CORE::redo()` raise the
+        // loop-control signal even when the program or an import declares a
+        // routine of that name (ParaSeq's `last` wrapper calls it).
+        if let Some(control) = match name {
+            "last" => Some(crate::value::Control::Last),
+            "next" => Some(crate::value::Control::Next),
+            "redo" => Some(crate::value::Control::Redo),
+            _ => None,
+        } {
+            let label = match args.first().map(Value::view) {
+                Some(ValueView::Str(l)) => Some(l.to_string()),
+                _ => None,
+            };
+            let mut signal = crate::runtime::loop_handler_depth::loop_control_signal(control, label);
+            // A value argument (`last VALUE`, v6.e) is the iteration's result.
+            if let Some(v) = args.first()
+                && !matches!(v.view(), ValueView::Str(_))
+            {
+                signal.return_value = Some(v.clone());
+            }
+            return Err(signal);
+        }
         let (args, _) = self.sanitize_call_args_owned(args);
         match self.call_function_arms(name, args.clone(), false) {
             // A `Cool` routine (`abs`, `uc`, `sqrt`, ...) is its invocant's
