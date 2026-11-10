@@ -646,6 +646,7 @@ impl Interpreter {
             new_candidates_type_keyed: std::sync::OnceLock::new(),
             named_user_new_declines: Default::default(),
             smiley_rules: std::sync::OnceLock::new(),
+            per_class_attrs: std::sync::OnceLock::new(),
             quanthash_base: std::sync::OnceLock::new(),
             class_attrs,
             attr_syms,

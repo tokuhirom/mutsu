@@ -158,6 +158,44 @@ impl Interpreter {
         self.smart_match_values(value, &pred_val)
     }
 
+    /// The attribute type constraints of `class_name`'s MRO, shared. A registered
+    /// class answers from its memoized [`NativeCtorPlan`] (dropped at every
+    /// class-shape mutation), so a construction does not re-walk the MRO and
+    /// re-clone every `attribute_types` entry once per phase that asks; an
+    /// unregistered one is collected on the spot.
+    // Cost: O(1) for a registered class with a memoized plan; otherwise
+    // O(m * a), m = MRO length, a = attributes per class.
+    pub(crate) fn attribute_type_constraints_shared(
+        &mut self,
+        class_name: &str,
+    ) -> std::sync::Arc<HashMap<String, String>> {
+        if self.registry().classes.contains_key(class_name) {
+            let plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_name));
+            return plan.type_constraints.clone();
+        }
+        std::sync::Arc::new(self.collect_attribute_type_constraints(class_name))
+    }
+
+    /// [`Self::collect_per_class_attrs`] for `class_name`, shared: a registered
+    /// class answers from its memoized plan.
+    // Cost: O(1) for a registered class with a memoized plan; otherwise
+    // O(m * a), m = MRO length, a = attributes per class.
+    pub(crate) fn per_class_attrs_shared(
+        &mut self,
+        class_name: &str,
+    ) -> std::sync::Arc<Vec<(String, ClassAttributeDef)>> {
+        if self.registry().classes.contains_key(class_name) {
+            let plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_name));
+            if let Some(shared) = plan.per_class_attrs.get() {
+                return shared.clone();
+            }
+            let shared = std::sync::Arc::new(self.collect_per_class_attrs(class_name));
+            let _ = plan.per_class_attrs.set(shared.clone());
+            return shared;
+        }
+        std::sync::Arc::new(self.collect_per_class_attrs(class_name))
+    }
+
     pub(crate) fn collect_attribute_type_constraints(
         &mut self,
         class_name: &str,
@@ -190,7 +228,7 @@ impl Interpreter {
         class_attrs_info: &[ClassAttributeDef],
         attrs: &AttrMap,
     ) -> Result<(), RuntimeError> {
-        let type_constraints = self.collect_attribute_type_constraints(class_name);
+        let type_constraints = self.attribute_type_constraints_shared(class_name);
         for attr in class_attrs_info {
             let attr_name = &attr.name;
             let sigil = &attr.sigil;
@@ -535,9 +573,9 @@ impl Interpreter {
         // Initialize subclass attributes with defaults; an attribute without
         // one is seeded as an ordinary instance's is (its type object, or its
         // `is default` value), not left `Nil` (#14259).
-        let class_attrs_info = self.collect_class_attributes(class_name);
-        let attr_type_constraints = self.collect_attribute_type_constraints(class_name);
-        for attr in &class_attrs_info {
+        let class_attrs_info = self.class_attributes_shared(class_name);
+        let attr_type_constraints = self.attribute_type_constraints_shared(class_name);
+        for attr in class_attrs_info.iter() {
             let attr_name = &attr.name;
             let default_expr = &attr.default;
             let sigil = &attr.sigil;

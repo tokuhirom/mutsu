@@ -885,7 +885,7 @@ impl Interpreter {
     /// if Parent and Child both declare an attribute with the same name,
     /// both entries are returned. Used to initialize class-qualified attribute
     /// storage so that each class has its own private copy.
-    pub(super) fn collect_per_class_attrs(
+    pub(crate) fn collect_per_class_attrs(
         &mut self,
         class_name: &str,
     ) -> Vec<(String, ClassAttributeDef)> {
