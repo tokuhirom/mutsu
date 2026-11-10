@@ -295,7 +295,11 @@ pub(crate) fn refresh_cu_resolution(
     });
     let cu = match source {
         None => return,
-        Some(Source::Tree(tree)) => Some(crate::rakuast::compunit_of_tree(&tree, imported, imported_type)),
+        Some(Source::Tree(tree)) => Some(crate::rakuast::compunit_of_tree(
+            &tree,
+            imported,
+            imported_type,
+        )),
         Some(Source::Source(source)) => crate::rakuast::compile_time_compunit(
             &crate::scope::NameScope::default(),
             &source,
