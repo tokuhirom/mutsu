@@ -75,6 +75,14 @@ impl Interpreter {
             self.stack.push(stash);
             return Ok(());
         }
+        if name == "CORE::" {
+            // The setting's own symbols: the built-in routines as `&name`
+            // (rakudo lists ~420 of them). Not the running scope's lexicals.
+            let entries = self.core_pseudo_stash_entries();
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
+            return Ok(());
+        }
         if let Some(target) = self.named_pseudo_stash_target(name) {
             let stash = loan_env!(self, package_stash_value(&target));
             self.stack.push(stash);
@@ -473,6 +481,31 @@ impl Interpreter {
 
     /// Add the routines the block owning `import_scopes()[scope]` imported.
     // Cost: O(a * p), a = routines that block imported, p = bare-name packages.
+    /// The entries of the `CORE::` pseudo-stash: every built-in
+    /// routine that has a first-class `&name` value.
+    // Cost: O(b), b = built-in routine names (about 1000), one `&name`
+    // resolution each.
+    fn core_pseudo_stash_entries(&self) -> ValueMap {
+        let mut entries = ValueMap::default();
+        let mut seen = std::collections::HashSet::new();
+        let names = crate::builtin_functions::BUILTIN_FUNCTION_NAMES
+            .iter()
+            .chain(Self::core_code_ref_function_names().iter())
+            .copied();
+        for name in names {
+            // Operators and internal helpers carry a category or `__` prefix.
+            if name.is_empty() || !seen.insert(name) || name.starts_with("__") {
+                continue;
+            }
+            let value = self.resolve_code_var_unshadowed(name);
+            if value.is_nil() {
+                continue;
+            }
+            entries.insert(format!("&{name}"), value);
+        }
+        entries
+    }
+
     fn add_scope_imported_routines(&self, scope: usize, entries: &mut ValueMap) {
         let packages = self.bare_name_packages_syms();
         for &alias in &self.import_scopes()[scope].own_routine_imports {
