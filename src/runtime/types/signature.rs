@@ -701,12 +701,37 @@ fn bind_sub_param_candidate_names(interpreter: &mut Interpreter, pd: &ParamDef, 
     }
 }
 
+/// An object destructured by an all-named sub-signature (`Ge (:$left, |)`) is
+/// unpacked through its `Capture`: the named parts are its PUBLIC attributes,
+/// so one the sub-signature does not name is an unaccounted named argument
+/// (rakudo: "Unexpected named argument 'right' passed in sub-signature"),
+/// unless a `|`/`*%` slurpy takes it. Anything else keeps the value as is.
+// Cost: O(a), a = the class's attributes; only for an Instance and an all-named sub-signature.
+fn object_as_public_capture(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: Value,
+) -> Value {
+    if sub_params.is_empty() || !sub_params.iter().all(|p| p.named || p.slurpy) {
+        return value;
+    }
+    let unwrapped = value.unwrap_varref();
+    if !matches!(unwrapped.view(), ValueView::Instance { .. }) {
+        return value;
+    }
+    match interpreter.try_interpreter_capture(unwrapped) {
+        Some(Ok(capture)) if matches!(capture.view(), ValueView::Capture { .. }) => capture,
+        _ => value,
+    }
+}
+
 fn sub_signature_matches_value_unbound(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
     value: &Value,
 ) -> bool {
-    let value = &interpreter.coerce_via_user_capture(value);
+    let value = interpreter.coerce_via_user_capture(value);
+    let value = &object_as_public_capture(interpreter, sub_params, value);
     let mut positional = positional_values_from_unpack_target(value);
     // A `Pair` element of a list is a named part of that list's Capture
     // (`('item', :over-ride)` is `\('item', :over-ride)`), so once the
@@ -1213,7 +1238,8 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
     // An element that sits in an item container (an Array element a `grep`
     // already visited) is destructured by its content, not by the container.
     let value = &value.deref_container();
-    let value = &interpreter.coerce_via_user_capture(value);
+    let value = interpreter.coerce_via_user_capture(value);
+    let value = &object_as_public_capture(interpreter, sub_params, value);
     let positional =
         drop_pairs_captured_as_named(value, positional_values_from_unpack_target(value));
     let mut nested_positional_idx = 0usize;
