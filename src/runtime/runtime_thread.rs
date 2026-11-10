@@ -243,10 +243,7 @@ impl Interpreter {
                 // dynamics `@*x` / `%*x`, whose live `.then`-chain propagation
                 // depends on it (the exclusion list above keeps their scalar
                 // siblings off).
-                if !self.lexical_name_is_opaque(&key)
-                    && !(key.starts_with(['@', '%'])
-                        && crate::env::is_dynamic_var_name(&key))
-                {
+                if !self.lexical_name_is_opaque(&key) {
                     continue;
                 }
                 // Only seed if not already visible — an entry an earlier thread
