@@ -148,9 +148,15 @@ impl Interpreter {
         };
         // Public `has $.v` stores under `v`; private-only `has $!v` under `v!`.
         let priv_key = format!("{}!", attr);
+        // A scalar whose name another sigil's attribute also carries is stored
+        // under the sigil-qualified key (`attribute_storage_key`), and the bare
+        // key then belongs to the other attribute (#17272).
+        let sigil_key = format!("${attr}");
         let key = {
             let map = attributes.as_map();
-            if map.get(attr.as_str()).is_some() {
+            if map.get(sigil_key.as_str()).is_some() {
+                sigil_key
+            } else if map.get(attr.as_str()).is_some() {
                 attr.clone()
             } else if map.get(priv_key.as_str()).is_some() {
                 priv_key
