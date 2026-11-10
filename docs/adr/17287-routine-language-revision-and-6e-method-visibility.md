@@ -25,7 +25,7 @@ switches (multidim subscripts, `.hash` of ..., deepmap, ...) belong to the unit.
 
 1. **Method visibility is process-wide.** `unit_revisions::revision_e_methods_visible()` is true
    when the running unit is 6.e or any unit of the process declared 6.e
-   (`note_language_version`, called by every `set_current_language_version`). The method-table
+   (`note_unit_language_revision`, a per-thread flag set when a loaded unit or the main program declares 6.e). The method-table
    rows (`RowFlags::in_force`, the owner memo), `can`/introspection and `snitch`'s raw-invocant
    rule use it.
 2. **Everything else is per unit, by swapping the thread-local while a routine runs.** The loader

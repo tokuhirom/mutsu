@@ -19,30 +19,30 @@ use std::sync::{LazyLock, RwLock};
 static UNIT_REVISIONS: LazyLock<RwLock<HashMap<Symbol, Symbol>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 static MIXED: AtomicBool = AtomicBool::new(false);
-static ANY_6E: AtomicBool = AtomicBool::new(false);
-
-/// Note that a unit (or an `EVAL`) declared language `version`.
-// Cost: O(1).
-#[inline]
-pub(crate) fn note_language_version(version: &str) {
-    if version.starts_with("6.e") {
-        ANY_6E.store(true, Ordering::Relaxed);
-    }
+std::thread_local! {
+    /// Whether a unit loaded on this thread declared 6.e. Per thread, like the
+    /// parser's own current revision: a worker thread's routines get theirs
+    /// from the frame swap, and a process-wide flag would leak between the
+    /// interpreters one test process builds.
+    static ANY_6E: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether the 6.e methods are visible: the running unit is 6.e, or any unit
 /// of the process declared 6.e. Rakudo adds the 6.e methods to the core types
 /// when the first 6.e compunit loads, so a 6.d unit of the same process sees
 /// them too (`.can('snip')`, `.snip`, `Str.nomark`).
-// Cost: O(1), an atomic and a thread-local read.
+// Cost: O(1), two thread-local reads.
 #[inline]
 pub(crate) fn revision_e_methods_visible() -> bool {
-    ANY_6E.load(Ordering::Relaxed) || crate::parser::current_language_version_starts_with("6.e")
+    ANY_6E.get() || crate::parser::current_language_version_starts_with("6.e")
 }
 
 /// Record that the unit in `file` declares language `version`.
 // Cost: O(u), u = recorded units (the disagreement check), once per unit load.
 pub(crate) fn note_unit_language_revision(file: Symbol, version: &str) {
+    if version.starts_with("6.e") {
+        ANY_6E.set(true);
+    }
     let version = Symbol::intern(version);
     let mut units = UNIT_REVISIONS
         .write()

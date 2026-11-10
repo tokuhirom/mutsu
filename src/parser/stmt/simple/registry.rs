@@ -348,7 +348,6 @@ pub(crate) fn set_eval_language_version_preseed(version: Option<String>) {
 }
 
 pub(crate) fn set_current_language_version(version: &str) {
-    crate::parser::unit_revisions::note_language_version(version);
     CURRENT_LANGUAGE_VERSION.with(|v| {
         *v.borrow_mut() = version.to_string();
     });
