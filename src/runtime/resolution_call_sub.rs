@@ -541,6 +541,11 @@ impl Interpreter {
                 .cloned()
                 .or_else(|| Some(Self::definition_of_captured_candidate(&data)))
         {
+            // Rank the operands as the values they hold: a `WrapVarRef`-tagged
+            // variable operand (`@l ⊆ @r` compiled as an `InfixFunc`) is not
+            // a type the core candidates' constraints can match.
+            let left = &super::types::unwrap_varref_value(left.clone());
+            let right = &super::types::unwrap_varref_value(right.clone());
             match self.core_infix_captured_verdict(family, &def, left, right) {
                 super::native_infix_dispatch::CoreInfixVerdict::Core => return Ok(None),
                 super::native_infix_dispatch::CoreInfixVerdict::Tie(core) => {
