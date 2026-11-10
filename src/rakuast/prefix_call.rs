@@ -1,4 +1,5 @@
-//! `start`, `quietly` and `sink` as statement prefixes.
+//! `start`, `quietly` and `sink` as statement prefixes (and, for a call of a
+//! user-declared `prefix:<…>` routine, `ApplyPrefix`).
 //!
 //! The parser keeps them as calls named after the keyword (`start { ... }`
 //! is `start(AnonSub)`, `quietly EXPR` is `quietly(EXPR)`); raku has a node
@@ -40,7 +41,10 @@ pub(super) fn view_node(
     name: &str,
     args: &[Expr],
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let class = prefix_class(name)?;
+    let Some(class) = prefix_class(name) else {
+        // A user-declared prefix operator application (`prefix:<⥷>(x)`).
+        return super::user_prefix::view(names, name, args);
+    };
     let [arg] = args else {
         return None;
     };
