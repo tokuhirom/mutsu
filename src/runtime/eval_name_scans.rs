@@ -510,6 +510,12 @@ impl Interpreter {
     // Cost: O(n * l), n = size of the unit's AST, l = cost of one
     // registry/env lookup.
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // A slang hook's host sees none of the importing unit's classes (a
+        // `mold ... do { Node.new }` body names one declared above it), so it
+        // must not judge a bareword undeclared either.
+        if super::slang_host::in_hook() {
+            return Ok(());
+        }
         // A class or sub named by a run-time value declares a name the walk cannot
         // see: no bareword of the unit is judged (as for the mainline check).
         let mut dynamic = super::undeclared_names::DynamicDeclaration::default();
