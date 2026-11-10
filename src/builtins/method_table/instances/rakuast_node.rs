@@ -415,6 +415,17 @@ pub(super) fn parameter_meta_object(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // A routine's meta-object is the routine itself; one row serves every class
+    // (the dispatch shape holds one `meta-object` row), so the routine classes
+    // are answered here too.
+    if matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::Sub
+            | crate::rakuast::RakuAstClass::Method
+            | crate::rakuast::RakuAstClass::Submethod
+    ) {
+        return routine_meta_object(interp, target, _args, _named);
+    }
     // A block's meta-object is its closure, as its `compile-time-value`.
     if matches!(
         node.class,
@@ -1024,4 +1035,28 @@ fn deparse(
         return Some(Err(e));
     }
     Some(interp.call_function("MUTSU_DEPARSE::run", call_args))
+}
+
+/// `Routine.meta-object` of a `RakuAST::Sub` / `Method` / `Submethod`: the
+/// routine the unit declares, else (a node a slang built and has not attached
+/// yet) the routine the node stands for as a closure of its own, which a tool
+/// can call or read the signature of.
+// Cost: O(size of the routine node).
+pub(super) fn routine_meta_object(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    if let Some(Ok(declared)) = sub_value(interp, target, args, named)
+        && !declared.is_nil()
+    {
+        return Some(Ok(declared));
+    }
+    let mut anonymous = node.clone();
+    anonymous.fields.retain(|f| f.name != Some("name"));
+    Some(interp.eval_rakuast_node(&Value::rakuast(Box::new(anonymous))))
 }

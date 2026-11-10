@@ -98,7 +98,7 @@ If there is no record at all, that is fine — the corpus sweep is partial (see
 
 Agents run in parallel and a distribution has no issue of its own to carry a
 claim, so the claim goes on the **lock board**,
-[#16103](https://github.com/tokuhirom/mutsu/issues/16103) (the single open issue
+[#17269](https://github.com/tokuhirom/mutsu/issues/17269) (the single open issue
 labelled `ecosystem:lock`). This holds however you arrived at the distribution —
 a user naming it does not make it unclaimed.
 

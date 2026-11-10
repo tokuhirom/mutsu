@@ -5061,8 +5061,10 @@ impl Interpreter {
                     OpCode::SinkPopCall(name_idx) => (
                         self.sunk_call_result_runs_sink(code, *ip, *name_idx),
                         // A block that hands back its last statement's container
-                        // sinks nothing inside it.
-                        !self.sunk_call_result_is_block_container(code, *name_idx),
+                        // sinks nothing inside it -- except under `use fatal`
+                        // (so inside a `try`), where the container is sunk too.
+                        self.module.lexical_fatal_mode
+                            || !self.sunk_call_result_is_block_container(code, *name_idx),
                     ),
                     _ => unreachable!(),
                 };
@@ -5217,9 +5219,20 @@ impl Interpreter {
                             // without `use fatal` in effect (`t/failure-fatal-mode-
                             // creation-time.t`) — Raku decides a Failure's fate at
                             // *construction* time, not at every later mention.
+                            //
+                            // Under `use fatal` (and so inside a `try`) the value of a
+                            // statement call is sunk through its container too: a
+                            // closure that hands back a variable holding an unhandled
+                            // Failure (`dies-ok { $failure }`) throws.
+                            let sunk_failure = if self.module.lexical_fatal_mode {
+                                val.deref_container()
+                            } else {
+                                val.clone()
+                            };
                             if !self.regex_state.in_regex_code_block
                                 && may_explode_failure
-                                && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
+                                && let Some(err) =
+                                    self.failure_to_runtime_error_if_unhandled(&sunk_failure)
                             {
                                 return Err(err);
                             }
