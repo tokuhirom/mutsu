@@ -29,4 +29,4 @@ pub(crate) use meta_bracket::{
     strip_sequence_op,
 };
 pub(super) use set_ops::structural_expr;
-pub(crate) use set_ops::{negated_glyph_relation, starts_with_set_infix_op};
+pub(crate) use set_ops::{negated_glyph_relation, set_relation_tail, starts_with_set_infix_op};
