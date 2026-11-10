@@ -2082,6 +2082,11 @@ impl Compiler {
                         && !is_native_type
                         && !name.starts_with('@')
                         && !name.starts_with('%')
+                        // A dynamic (`our $*X is export`) is read through the
+                        // dynamic scope, where an importer's `$*X := ...` binds
+                        // it; a shared package cell would shadow that binding
+                        // for the module's own code.
+                        && !name.starts_with('*')
                         // An `our &code` shares one cell with its qualified name
                         // only for a plain `our &name = ...`; an operator-named
                         // or bodiless declaration keeps the two-store sequence.
