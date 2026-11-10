@@ -218,6 +218,50 @@ impl Interpreter {
         Ok(Some(Value::junction(kind, results)))
     }
 
+    /// Autothread a by-name call of a user routine family reached through a
+    /// code value (a lexically imported `proto`/`multi` dispatcher, `&compare`):
+    /// a Junction argument that no candidate takes as a whole is threaded, one
+    /// call per eigenstate, as the `CallFunc` path does. `None` when no
+    /// argument needs threading.
+    // Cost: O(c * p) to decide (c = candidates of the family, p = parameters),
+    // then one call per eigenstate of the threaded Junction.
+    pub(crate) fn autothread_family_call_by_name(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let junction_indices: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| Self::extract_junction_from_arg(v).is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if junction_indices.is_empty() || name.starts_with("__mutsu_") {
+            return Ok(None);
+        }
+        let Some(pds) = self.get_func_param_defs_for_autothread(name, args) else {
+            return Ok(None);
+        };
+        let indices = self.autothread_indices_for_params(args, &junction_indices, &pds);
+        if indices.is_empty() {
+            return Ok(None);
+        }
+        let idx = self.pick_autothread_junction_index(args, &indices);
+        let Some((kind, values, pair_key)) = Self::extract_junction_from_arg(&args[idx]) else {
+            return Ok(None);
+        };
+        let mut results = Vec::with_capacity(values.len());
+        for eigenstate in values.iter() {
+            let mut threaded = args.to_vec();
+            threaded[idx] = match &pair_key {
+                Some(key) => Value::pair(key.clone(), eigenstate.clone()),
+                None => eigenstate.clone(),
+            };
+            results.push(self.call_user_family_by_name(name, threaded)?);
+        }
+        Ok(Some(Value::junction(kind, results)))
+    }
+
     /// Unwrap a Junction value (possibly through Scalar wrapper).
     pub(super) fn unwrap_junction_value(
         val: &Value,
@@ -821,7 +865,7 @@ impl Interpreter {
         out
     }
 
-    fn get_func_param_defs_for_autothread(
+    pub(crate) fn get_func_param_defs_for_autothread(
         &mut self,
         name: &str,
         args: &[Value],
