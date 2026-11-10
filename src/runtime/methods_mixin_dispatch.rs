@@ -210,6 +210,26 @@ impl Interpreter {
             .any(|role_name| self.role_has_method(role_name, method_name))
     }
 
+    /// The lazy `Seq` under a role mixin (`$lazy-seq does R`, `$lazy-seq but R`)
+    /// when `method` reads its elements and no composed role declares it: the
+    /// call runs on the lazy list itself, whose lanes force it on demand. The
+    /// element-reading builtins otherwise saw the mixin wrapper, whose list
+    /// view is the lazy list's still-empty cache (`.elems` 0, `.list` `()`).
+    // Cost: O(1) plus the role-method probe, r = composed roles.
+    pub(crate) fn mixin_lazy_inner(&self, target: &Value, method: &str) -> Option<Value> {
+        let ValueView::Mixin(inner, _) = target.view() else {
+            return None;
+        };
+        if !matches!(inner.view(), ValueView::LazyList(_))
+            || !(crate::value::seq_method_consumes(method)
+                || matches!(method, "elems" | "list" | "Seq" | "end" | "Numeric" | "Int"))
+            || self.mixin_composes_method(target, method)
+        {
+            return None;
+        }
+        Some(inner.as_ref().clone())
+    }
+
     /// Commit the merged attribute snapshot returned by a role method to the
     /// two stores it may contain. The method frame deliberately presents one
     /// flat namespace to the Raku body, but a role's attributes belong to the

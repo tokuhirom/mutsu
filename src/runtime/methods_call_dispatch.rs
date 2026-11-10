@@ -389,6 +389,7 @@ impl Interpreter {
         if let Some(result) = self.lazy_array_front_mutate_in_place(&target, method, &args) {
             return result;
         }
+        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything

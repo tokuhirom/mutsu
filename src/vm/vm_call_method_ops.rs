@@ -1658,6 +1658,7 @@ impl Interpreter {
         } else {
             target
         };
+        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         // A lazy receiver's pull answers first: the placeholders of
         // `gist`/`Str`/`raku`, `cache`, `values`, and the refusals of the
         // counting methods (the lazy step, ADR-13891).

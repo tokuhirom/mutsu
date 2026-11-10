@@ -1077,6 +1077,7 @@ impl Interpreter {
             self.stack.push(out);
             return Ok(());
         }
+        let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
         // A lazy receiver's pull answers first, as in the `CallMethod` lane
         // (the lazy step, ADR-13891). It runs before the gather-coroutine
         // force below, which would hang on an infinite list.
