@@ -2687,6 +2687,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 expr,
                 Expr::Call { listop: true, .. } | Expr::UserRoutineCall { listop: true, .. }
             );
+            if let Some(prefix) = super::user_prefix::view(names, name.as_str(), args) {
+                return prefix;
+            }
             if let Some(prefix) = super::prefix_call::view_node(names, name.as_str(), args) {
                 return prefix;
             }
