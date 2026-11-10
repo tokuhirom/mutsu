@@ -31,11 +31,9 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
     };
     let specific: &[&'static str] = match class {
         Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
-        CallMethod => &["dispatch", "dispatcher", "macroish", "colonpairs"],
-        CallQuotedMethod => &["dispatch", "dispatcher", "args", "colonpairs"],
-        CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
-            &["dispatch", "dispatcher", "colonpairs"]
-        }
+        CallMethod => &["dispatch", "dispatcher", "macroish"],
+        CallQuotedMethod => &["dispatch", "dispatcher", "args"],
+        CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => &["dispatch", "dispatcher"],
         TypeCoercion => &["constraint"],
         TypeEnum => &["clean-clone"],
         InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
@@ -58,7 +56,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
             "is-declared-required",
         ],
         TermEnum => &["name"],
-        CallMetaMethod => &["args", "colonpairs"],
+        CallMetaMethod => &["args"],
         Heredoc => &["has-variables", "processors"],
         StubFail | StubDie | StubWarn => &["name"],
         Method | Submethod => &["meta", "declarator"],
