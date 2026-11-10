@@ -376,7 +376,8 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
         _ => return false,
     }
     while let Some(c) = chars.next() {
-        if c.is_alphanumeric() || c == '_' {
+        // Combining marks continue an identifier (`a` + U+0301 + U+0302).
+        if c.is_alphanumeric() || c == '_' || unicode_normalization::char::is_combining_mark(c) {
             continue;
         }
         if c == '-' || c == '\'' {

@@ -329,7 +329,7 @@ impl Interpreter {
     // Cost: O(n), n = total number of nested items.
     /// Append `items` to `out`, recursively expanding plain `List` items (the
     /// way a `*@` slurpy flattens); itemized lists and real Arrays stay whole.
-    fn extend_flatten_plain_lists(out: &mut Vec<Value>, items: Vec<Value>) {
+    pub(crate) fn extend_flatten_plain_lists(out: &mut Vec<Value>, items: Vec<Value>) {
         for item in items {
             match item.view() {
                 ValueView::Array(inner, crate::value::ArrayKind::List) => {

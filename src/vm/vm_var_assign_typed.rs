@@ -1104,12 +1104,18 @@ impl Interpreter {
     /// binding in the program has armed `sigilless_alias_seen` -- including the
     /// overwhelmingly common case of a program whose one binding is an ordinary
     /// `my $x := $y` that this name has nothing to do with.
+    ///
+    /// `skip_callee_locals` is set by the frame-exit flush of a sigilless
+    /// parameter: its chain targets are CALLER variables, so a target the
+    /// routine also declares as its own lexical is left alone here (the
+    /// post-merge re-apply writes the caller's).
     pub(crate) fn propagate_sigilless_alias_chain(
         &mut self,
         code: &CompiledCode,
         name: &str,
         slot: Option<usize>,
         val: &Value,
+        skip_callee_locals: bool,
     ) {
         // Fast path: no sigilless-parameter alias has ever been registered, so the
         // chain is empty — skip the `format!` + env lookup entirely.
@@ -1139,6 +1145,25 @@ impl Interpreter {
             // `sub f(\c) { c = ('x','y') }`) holding a List, and a `%` target
             // holding a List rather than a Hash. Coerce to the target's own
             // shape, exactly as a store through the sigiled name would.
+            // The frame-exit flush names a CALLER variable. When this routine
+            // declares a lexical of the same name (`sub eo(\object) { my
+            // \value = ... }` called with the caller's `\value`), the write
+            // would land in that unrelated binding -- here the element cell
+            // `my \value` is bound to. The caller's variable is reached by
+            // the post-merge re-apply instead.
+            if skip_callee_locals && code.locals.contains(&current_alias) {
+                self.pending_rw_writeback_sources
+                    .push(current_alias.clone());
+                let next_key = crate::runtime::sigilless_alias_key(&current_alias);
+                alias_name = self.env().get_sym(next_key).and_then(|v| {
+                    if let ValueView::Str(n) = v.view() {
+                        Some(n.to_string())
+                    } else {
+                        None
+                    }
+                });
+                continue;
+            }
             let stored = self.coerce_alias_target_shape(&current_alias, val);
             self.set_env_with_main_alias(&current_alias, stored.clone());
             self.update_local_if_exists(code, &current_alias, &stored);
@@ -1246,7 +1271,7 @@ impl Interpreter {
         }
         // Propagate the new value along the sigilless alias chain and into self's
         // shared cell for an attribute-twigil alias.
-        self.propagate_sigilless_alias_chain(code, name, slot.map(|s| s as usize), &new_val);
+        self.propagate_sigilless_alias_chain(code, name, slot.map(|s| s as usize), &new_val, false);
         // Write back to source variable when the target is `$_` bound to a container.
         if name == "_"
             && let Some(ref source_var) = self.topic_state.topic_source_var

@@ -155,6 +155,7 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 pub(crate) mod term_origins;
+pub(crate) mod unit_revisions;
 mod whenever_scope;
 use std::sync::OnceLock;
 
