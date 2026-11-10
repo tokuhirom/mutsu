@@ -160,3 +160,17 @@ pub(super) fn lower_constraint(
     }
     Ok(())
 }
+
+/// The `type` of a bare `::T` parameter: its nominal type with the smiley
+/// (`Any:U ::T`), or the implicit `Any` of a setting-typed signature.
+// Cost: O(t), t = size of the type's spelling.
+pub(super) fn bare_capture_type(
+    names: &NameScope,
+    def: &ParamDef,
+    type_setting: bool,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    match def.type_constraint.as_deref() {
+        Some(t) => super::view::build_type_node(names, t).map(Some),
+        None => Ok(type_setting.then(super::view::type_setting_any)),
+    }
+}
