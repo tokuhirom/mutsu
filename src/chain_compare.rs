@@ -108,6 +108,24 @@ fn build_chain_cmp_expr(
         return make_chain_cmp(left, op, operands[index + 1].clone(), negated);
     }
 
+    // A middle operand that is a plain variable or a literal has no side
+    // effect to run twice and no value that can change between the two
+    // comparisons, so it is read in place, as the first operand already is
+    // (`expand`). That keeps the common `0x41 <= $ord <= 0x5A` free of the
+    // temp's declaration and the block that scopes it. (A `Proxy` FETCHes
+    // once per read; rakudo FETCHes a chain's middle more than once too.)
+    let middle = &operands[index + 1];
+    if is_inline_operand(middle) {
+        let cmp = make_chain_cmp(left, op, middle.clone(), negated);
+        let rest = build_chain_cmp_expr(operands, ops, index + 1, middle.clone());
+        return Expr::Binary {
+            left: Box::new(cmp),
+            op: TokenKind::AndAnd,
+            right: Box::new(rest),
+            form: Default::default(),
+        };
+    }
+
     // Minted from the compile session, so a cacheable compile names its temps
     // the same in every process (ADR-11756 §2.3).
     let tmp_idx = crate::compiler::compile_session::mint();
@@ -142,6 +160,16 @@ fn build_chain_cmp_expr(
     ])
 }
 
+/// Whether a chain operand is read in place rather than through a temp: a
+/// plain variable or a literal, whose evaluation has no side effect.
+// Cost: O(1).
+fn is_inline_operand(operand: &Expr) -> bool {
+    matches!(
+        operand,
+        Expr::Var(_) | Expr::Literal(_) | Expr::LiteralSrc(..)
+    )
+}
+
 /// Expand an `Expr::ChainedCompare { operands, ops }` marker into its runtime
 /// shape. Called from the compiler's `Expr::ChainedCompare` arm, which
 /// immediately compiles the result — the expanded tree never re-enters any
@@ -154,12 +182,7 @@ pub(crate) fn expand(operands: &[Expr], ops: &[(TokenKind, bool)]) -> Expr {
     // keeps container identity for `=:=`.
     let first = &operands[0];
     let identity_op = matches!(&ops[0].0, TokenKind::Ident(n) if n == "=:=" || n == "!=:=");
-    if identity_op
-        || matches!(
-            first,
-            Expr::Var(_) | Expr::Literal(_) | Expr::LiteralSrc(..)
-        )
-    {
+    if identity_op || is_inline_operand(first) {
         return build_chain_cmp_expr(operands, ops, 0, first.clone());
     }
     let tmp_idx = crate::compiler::compile_session::mint();

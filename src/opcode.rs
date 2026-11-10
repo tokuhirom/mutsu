@@ -14335,6 +14335,33 @@ pub(crate) enum FastParamCheck {
     },
 }
 
+/// The definiteness smiley a light-checkable return type carries
+/// (`--> Bool:D`, `--> Int:U`), split off its nominal base so the base can
+/// still be classified as a [`FastParamType`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
+pub(crate) enum TypeSmiley {
+    /// `:D`: the value must be an object instance, not a type object.
+    Definite,
+    /// `:U`: the value must be a type object.
+    Undefined,
+}
+
+impl TypeSmiley {
+    /// Split a trailing `:D` / `:U` off a type spelling. `:_` (and no smiley)
+    /// leave the spelling as it is and report `None`.
+    // Cost: O(1).
+    pub(crate) fn split(spec: &str) -> (&str, Option<Self>) {
+        if let Some(base) = spec.strip_suffix(":D") {
+            (base, Some(Self::Definite))
+        } else if let Some(base) = spec.strip_suffix(":U") {
+            (base, Some(Self::Undefined))
+        } else {
+            (spec, None)
+        }
+    }
+}
+
 impl FastParamCheck {
     /// The plan for parameter `pd`: [`Self::of`] its type constraint, except
     /// that an untyped `&` parameter still checks the implicit `Callable`.
@@ -14572,6 +14599,10 @@ pub(crate) struct CompiledFunction {
     /// `None` when there is no return type, or when it is not one the light
     /// return check handles by tag.
     pub(crate) return_fast_type: Option<FastParamCheck>,
+    /// The definiteness smiley of the declared return type when
+    /// [`Self::return_fast_type`] classified its base (`--> Bool:D` is
+    /// `Fast { Bool }` plus `Some(Definite)`); `None` otherwise.
+    pub(crate) return_smiley: Option<TypeSmiley>,
     /// The constant a *definite* return spec names (`--> Nil`, `--> True`,
     /// `--> False`, `--> 42`), when it is one of those literal constants.
     /// Such a spec is not a type constraint: the body's value is sunk and
@@ -15070,10 +15101,18 @@ impl CompiledFunction {
             .map(FastParamCheck::of_param)
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default();
-        self.return_fast_type = self
-            .return_type
-            .as_ref()
-            .and_then(|rt| FastParamCheck::of(Some(rt)));
+        let (return_fast_type, return_smiley) = match self.return_type.as_deref() {
+            Some(rt) => {
+                let (base, smiley) = TypeSmiley::split(rt);
+                match FastParamCheck::of(Some(&base.to_string())) {
+                    Some(check) => (Some(check), smiley),
+                    None => (None, None),
+                }
+            }
+            None => (None, None),
+        };
+        self.return_fast_type = return_fast_type;
+        self.return_smiley = return_smiley;
         self.return_definite_const = self
             .return_type
             .as_deref()
@@ -15227,6 +15266,7 @@ mod compiled_fns_identity {
             light_required_positionals: None,
             light_full_arity_only: false,
             return_fast_type: None,
+            return_smiley: None,
             return_definite_const: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,

@@ -762,6 +762,7 @@ impl Compiler {
             light_required_positionals: None,
             light_full_arity_only: false,
             return_fast_type: None,
+            return_smiley: None,
             return_definite_const: None,
             // The declaring package, matching the package component of this
             // function's `compiled_fns` key (built from `key_package` above).

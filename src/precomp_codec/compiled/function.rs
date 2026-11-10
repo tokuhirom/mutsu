@@ -44,6 +44,7 @@ impl Encode for CompiledFunction {
             light_required_positionals,
             light_full_arity_only,
             return_fast_type,
+            return_smiley,
             return_definite_const,
             package,
             compiled_fns,
@@ -90,6 +91,7 @@ impl Encode for CompiledFunction {
         light_required_positionals.encode(encoder)?;
         light_full_arity_only.encode(encoder)?;
         return_fast_type.encode(encoder)?;
+        return_smiley.encode(encoder)?;
         return_definite_const.encode(encoder)?;
         package.encode(encoder)?;
         compiled_fns.encode(encoder)?;
@@ -136,6 +138,7 @@ impl Decode<DecodeCtx> for CompiledFunction {
             light_required_positionals: Decode::decode(decoder)?,
             light_full_arity_only: Decode::decode(decoder)?,
             return_fast_type: Decode::decode(decoder)?,
+            return_smiley: Decode::decode(decoder)?,
             return_definite_const: Decode::decode(decoder)?,
             package: Decode::decode(decoder)?,
             compiled_fns: Decode::decode(decoder)?,
