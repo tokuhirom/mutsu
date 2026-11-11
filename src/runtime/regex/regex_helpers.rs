@@ -17,6 +17,10 @@ thread_local! {
     /// (`regex_ltm_fate`), and a `:my` initializer, a `$*` rule frame, a
     /// token's `.wrap`per and the action replay log are all skipped.
     pub(crate) static LTM_DECLARATIVE_MODE: Cell<bool> = const { Cell::new(false) };
+    /// Set by a plain `.subparse` around its start-rule match: the next real
+    /// top-level match attempt is anchored at position 0 instead of scanning
+    /// (taken by it, so nothing it calls inherits the anchor).
+    static SUBPARSE_ANCHOR: Cell<bool> = const { Cell::new(false) };
     /// A quantified alternation folds only captures it actually produces.
     /// Its unmatched branches must not manufacture extra iterations.
     pub(super) static IN_QUANTIFIED_ALTERNATION_MATCH: Cell<bool> = const { Cell::new(false) };
@@ -1649,4 +1653,29 @@ pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
         }
         _ => false,
     }
+}
+
+/// Anchor the next top-level match attempt at position 0 (a plain `.subparse`,
+/// which raku never retries at a later position); the guard clears an anchor no
+/// attempt took.
+pub(crate) struct SubparseAnchor;
+
+impl SubparseAnchor {
+    pub(crate) fn arm() -> Self {
+        SUBPARSE_ANCHOR.with(|a| a.set(true));
+        SubparseAnchor
+    }
+}
+
+impl Drop for SubparseAnchor {
+    fn drop(&mut self) {
+        SUBPARSE_ANCHOR.with(|a| a.set(false));
+    }
+}
+
+/// Whether this top-level match attempt is a subparse's, anchored at 0; takes
+/// the anchor. An LTM measurement never takes it (it runs no real match).
+// Cost: O(1).
+pub(super) fn take_subparse_anchor() -> bool {
+    !LTM_DECLARATIVE_MODE.with(Cell::get) && SUBPARSE_ANCHOR.with(|a| a.replace(false))
 }
