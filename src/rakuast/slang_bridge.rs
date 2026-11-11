@@ -121,10 +121,25 @@ fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     // unit's parse classifies them (ADR-0033); EEL reads them (#16888).
     crate::whatever_curry::mark::mark_call_args(&mut exprs);
     let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
-    Ok(Some((
-        text.len() - rest.len(),
-        Value::rakuast(Box::new(node)),
-    )))
+    let mut node = Value::rakuast(Box::new(node));
+    super::annotate_slang_production(&mut node, &shadowed_by_unit);
+    Ok(Some((text.len() - rest.len(), node)))
+}
+
+/// Whether the code around a production declares the routine `name`
+/// (`infix:<>>`), under either spelling of its operator brackets.
+// Cost: O(s), s = parser scopes.
+fn shadowed_by_unit(name: &str) -> bool {
+    if crate::parser::is_user_declared_sub(name) {
+        return true;
+    }
+    let Some((category, rest)) = name.split_once(":<") else {
+        return false;
+    };
+    let Some(op) = rest.strip_suffix('>') else {
+        return false;
+    };
+    crate::parser::is_user_declared_sub(&format!("{category}:«{op}»"))
 }
 
 /// The `<EXPR>` core rule as a `for` reads its iterable: the expression at the
@@ -137,10 +152,9 @@ fn for_expr_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     crate::whatever_curry::mark::mark_expression(&mut expr);
     let names = NameScope::default();
     let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
-    Ok(Some((
-        text.len() - rest.len(),
-        Value::rakuast(Box::new(node)),
-    )))
+    let mut node = Value::rakuast(Box::new(node));
+    super::annotate_slang_production(&mut node, &shadowed_by_unit);
+    Ok(Some((text.len() - rest.len(), node)))
 }
 
 /// The `<pointy-block>` core rule: a pointy block (`-> $x { ... }`) or a bare

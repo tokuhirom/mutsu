@@ -44,6 +44,10 @@ struct Scopes<'a> {
     imported: &'a dyn Fn(&str) -> bool,
     /// Whether the interpreter knows a type of this name (an import).
     imported_type: &'a dyn Fn(&str) -> bool,
+    /// Whether an operator routine (`infix:<>>`) is declared by the code around
+    /// a tree that is not a whole unit (a slang production's node): the
+    /// operator is then that declaration, not the setting's.
+    shadowed: &'a dyn Fn(&str) -> bool,
     /// The named packages enclosing the node being walked, innermost last.
     packages: Vec<String>,
     /// How many `*` arguments the enclosing thunk has numbered so far.
@@ -76,10 +80,29 @@ pub(super) fn annotate(
     imported: &dyn Fn(&str) -> bool,
     imported_type: &dyn Fn(&str) -> bool,
 ) {
+    annotate_with(node, imported, imported_type, &|_| false);
+}
+
+/// [`annotate`] for the node a slang production built from the core rule the
+/// parser parsed for it (#16888): the operators the surrounding code declares
+/// (`shadowed`) are not the setting's.
+// Cost: as [`annotate`].
+pub(super) fn annotate_production(node: &mut RakuAstNode, shadowed: &dyn Fn(&str) -> bool) {
+    annotate_with(node, shadowed, &|_| false, shadowed);
+}
+
+// Cost: as [`annotate`].
+fn annotate_with(
+    node: &mut RakuAstNode,
+    imported: &dyn Fn(&str) -> bool,
+    imported_type: &dyn Fn(&str) -> bool,
+    shadowed: &dyn Fn(&str) -> bool,
+) {
     let mut scopes = Scopes {
         scopes: vec![HashMap::new()],
         imported,
         imported_type,
+        shadowed,
         packages: Vec::new(),
         whatever_args: vec![0],
         anonymous_subsets: 0,
@@ -869,13 +892,20 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
         C::Infix => {
             let name = format!("infix:<{}>", leaf(node, "operator")?);
             // An operator the unit declares itself is that routine.
-            scopes
-                .find(&format!("&{name}"))
-                .cloned()
-                .or_else(|| external_setting(&name))
+            if let Some(declared) = scopes.find(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
+            (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
         }
-        C::Prefix => external_setting(&format!("prefix:<{}>", leaf(node, "operator")?)),
-        C::Postfix => external_setting(&format!("postfix:<{}>", leaf(node, "operator")?)),
+        C::Prefix | C::Postfix => {
+            let category = if node.class == C::Prefix {
+                "prefix"
+            } else {
+                "postfix"
+            };
+            let name = format!("{category}:<{}>", leaf(node, "operator")?);
+            (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
+        }
         C::PostcircumfixArrayIndex => external_setting("postcircumfix:<[ ]>"),
         C::PostcircumfixHashIndex | C::PostcircumfixLiteralHashIndex => {
             external_setting("postcircumfix:<{ }>")
@@ -929,6 +959,15 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
 /// without the sigil (`infix:<+>`, `say`).
 // Cost: O(1).
 fn external_setting(name: &str) -> Option<Value> {
+    // rakudo spells an operator whose name holds an angle bracket with
+    // French quotes: `&infix:«<=»`, but `&infix:<+>`.
+    let name = match name.split_once(":<") {
+        Some((category, rest)) => match rest.strip_suffix('>') {
+            Some(op) if op.contains(['<', '>']) => format!("{category}:«{op}»"),
+            _ => name.to_string(),
+        },
+        None => name.to_string(),
+    };
     external(
         "RakuAST::Declaration::External::Setting",
         &format!("&{name}"),

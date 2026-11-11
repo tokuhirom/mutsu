@@ -682,6 +682,18 @@ impl Interpreter {
         if self.type_matches_value_why_core(constraint, value, why) {
             return true;
         }
+        // A declaration object the resolver made (`Declaration::External::
+        // Setting`, an instance rather than a node) does the roles rakudo's
+        // measured hierarchy gives it (`RakuAST::CompileTimeValue`), when no
+        // user class took its name (#16888).
+        if constraint.starts_with("RakuAST::")
+            && let ValueView::Instance { class_name, .. } = value.view()
+            && class_name.as_str().starts_with("RakuAST::Declaration::")
+            && !self.types.user_declared_classes.contains(class_name.as_str())
+            && crate::rakuast::hierarchy::entry(class_name.as_str()).is_some()
+        {
+            return crate::rakuast::type_object_does(class_name.as_str(), constraint);
+        }
         // A user type imported under a core type's short name (`role Variable`
         // exported by a module) is that name lexically, so a value that is not
         // the core type may still satisfy it through the import alias (#16497,
