@@ -9954,10 +9954,13 @@ impl CompiledCode {
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
-                | OpCode::PostIncrement(idx, _)
-                | OpCode::PostDecrement(idx, _)
-                | OpCode::PreIncrement(idx, _)
-                | OpCode::PreDecrement(idx, _)
+                // A `++`/`--` that carries its slot reads and writes that
+                // slot (`exec_scalar_incdec_op`); only a slotless one resolves
+                // the variable by name.
+                | OpCode::PostIncrement(idx, None)
+                | OpCode::PostDecrement(idx, None)
+                | OpCode::PreIncrement(idx, None)
+                | OpCode::PreDecrement(idx, None)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
                 | OpCode::AssignExpr(idx, _)

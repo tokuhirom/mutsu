@@ -198,12 +198,30 @@ impl Interpreter {
             self.stack.push(k.result(old, new));
             return Ok(());
         }
+        // The variable's own slot holds its value, read where the env entry
+        // was (after the state / `our` / package-lexical stores, which answer
+        // for names whose slot is only a mirror): a slotted `++`/`--` does not
+        // keep the env mirror current (`compute_needs_env_sync`), so reading
+        // the name from env could see a stale copy. A shared cell or Proxy
+        // parked in env under the name is still what the variable is, as the
+        // slot fast path also decides.
+        let slot_val = slot
+            .map(|s| s as usize)
+            .filter(|&s| code.locals.get(s).is_some_and(|local| local == name))
+            .filter(|_| {
+                !self
+                    .env()
+                    .get_for(name, Some(name_sym))
+                    .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
+            })
+            .and_then(|s| self.locals.get(s).cloned());
         let raw_val = self
             // A per-call anonymous state reads from the state store, never from
             // the stale env copy -- see `anon_state_key`.
             .per_call_anon_state_read(name, Value::int(0))
             .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
+            .or(slot_val)
             .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
             .or_else(|| self.read_package_scope_var(name_sym))
             .or_else(|| self.qualified_our_var_read(name_sym))
