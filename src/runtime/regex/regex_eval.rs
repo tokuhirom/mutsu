@@ -336,6 +336,10 @@ impl Interpreter {
         // `.pos`, roast/S05-capture/match-object.t). The reduce-time replay always
         // installed both; running inline has to as well.
         env.push(("\u{00A2}".to_string(), cursor.clone()));
+        // A routine the body calls can `make` on this very `$/` (EEL 0.3's
+        // `&make` reaches it through `nqp::getlexcaller`, #16888): that writes
+        // the object in place but not this frame's `made` slot.
+        let block_slash = cursor.clone();
         env.push(("/".to_string(), cursor));
         // When the assertion references `.made` AND we are inside a
         // `Grammar.parse(:actions(...))`, run the relevant action method on each
@@ -472,7 +476,11 @@ impl Interpreter {
                 writes.insert(k.clone(), now.clone());
             }
         }
-        let made = self.env.get("made").cloned();
+        let made = self.env.get("made").cloned().or_else(|| {
+            block_slash
+                .match_ast()
+                .filter(|ast| caps.ast.as_ref() != Some(ast))
+        });
         match saved_made {
             Some(v) => {
                 self.env.insert("made".to_string(), v);

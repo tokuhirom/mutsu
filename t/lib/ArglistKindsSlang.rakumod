@@ -31,6 +31,12 @@ sub resolved($value) {
         when RakuAST::ApplyPostfix {
             .postfix.args.args[0].maybe-compile-time-value
         }
+        when RakuAST::Call::Name {
+            # Only whether the setting's routine was chosen: rakudo resolves a
+            # lexical routine to its `RakuAST::Sub`, which mutsu does not build.
+            .is-resolved && .resolution ~~ RakuAST::Declaration::External::Setting
+                ?? 'setting' !! 'not-setting'
+        }
         default { .^name }
     }
 }
