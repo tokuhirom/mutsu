@@ -169,6 +169,12 @@ impl Interpreter {
                 // so the calling frame always has them, even when mutsu has
                 // not materialized the entry yet (the frame never assigned
                 // one): bind the calling frame's.
+                // TODO: the caller does not see the bound value yet — its
+                // topic lives in its env, which the return path restores
+                // from `saved_env` and never merges a callee's `$_`/`$/`/`$!`
+                // into (`pop_caller_env_with_writeback` skips them). The
+                // correct fix carries the bind on the `CallFrameEntry` and
+                // applies it at every return site (#17453).
                 let implicit = matches!(key, "_" | "/" | "!");
                 if !implicit && !self.caller_env_stack.iter().any(|env| env.contains_key(key)) {
                     return Some(Err(RuntimeError::new(format!(
