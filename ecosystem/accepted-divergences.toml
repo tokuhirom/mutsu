@@ -93,7 +93,7 @@ is then False and test 6 takes the :all path. mutsu does not reproduce the cache
 [[divergence]]
 dist = "Jupyter::Chatbook"
 file = "t/05-autocomplete.rakutest"
-shape = { verdict = "die", ok = 9, nok = 1, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
+shape = { verdict = "die", ok = 10, nok = 0, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
 issue = 14416
 reason = """the sandbox's autocomplete builds its candidate table with `(1 .. 0x1ffff).map({.chr})` \
 and filters the surrogates out afterwards by `.uniprop` (category Cs). rakudo keeps the surrogate \
@@ -105,7 +105,7 @@ in a `Str` (`chr(0xD800).ord` is 55296); mutsu does not keep a surrogate in a `S
 [[divergence]]
 dist = "Jupyter::Kernel"
 file = "t/05-autocomplete.rakutest"
-shape = { verdict = "die", ok = 9, nok = 1, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
+shape = { verdict = "die", ok = 10, nok = 0, first_failure = "X::InvalidCodepoint: Invalid surrogate codepoint 55296" }
 issue = 14416
 reason = """same as Jupyter::Chatbook t/05-autocomplete.rakutest: the candidate table is built with \
 `(1 .. 0x1ffff).map({.chr})`, which includes the surrogates rakudo keeps in a `Str` and mutsu \
@@ -120,3 +120,14 @@ reason = """the test's own helper t/CompileTestLib.rakumod dispatches on `$*VM.n
 and dies on anything else; mutsu reports 'mutsu' and will not claim 'moar' (same decision as \
 LibraryMake, user decision 2026-09-25). With the helper's check bypassed all 34 assertions pass \
 under mutsu."""
+
+[[divergence]]
+dist = "SOAP::Client"
+file = "t/05-simple-service.rakutest"
+shape = { verdict = "die", ok = 0, nok = 0, plan = 3, first_failure = "Failed to resolve 'www.w3schools.com:443': failed to lookup address information: Temporary failure in name resolution" }
+issue = 15525
+reason = """the test probes `try require IO::Socket::SSL` and calls `skip-rest` when it is absent. \
+The oracle rakudo has no IO::Socket::SSL (SOAP::Client does not depend on it), so it skips all 3; \
+mutsu bundles IO::Socket::SSL, so the test runs its real flow against www.w3schools.com, which the \
+sweep sandbox cannot reach. Same situation as Dev::ContainerizedService: hiding the bundled module \
+from `require` would not be a fix (user decision 2026-11-03, #15525)."""
