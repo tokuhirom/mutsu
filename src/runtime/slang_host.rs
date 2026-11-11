@@ -12,8 +12,10 @@
 //! parser  <--Done(end, node)--------------------   host   token + action done
 //! ```
 //!
-//! Positions are character offsets into `source`, the text from the start of
-//! the production to the end of the unit. The host owns the composed grammar
+//! Positions are character offsets into `source`, the unit's text when the
+//! parser has it (the production then starts at the hook's `start`, and the
+//! cursor's `.orig` and `.from` are the unit's, as rakudo's are), else the text
+//! from the start of the production to the end of the unit. The host owns the composed grammar
 //! and actions objects; a RakuAST node crosses the boundary as the `Value` it
 //! is (both threads are registered GC mutators).
 //!
@@ -165,7 +167,7 @@ const HOST_ENTRY_SOURCE: &str = r#"
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
-sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block) {
+sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0) {
     unless $Mutsu::Slang::Host::G.defined {
         my $g = Metamodel::GrammarHOW.new_type(:name<Raku::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
@@ -206,9 +208,9 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$blo
     my $m = $rule eq 'statementlist'
         ?? do {
             my $*BLOCK = $block // RakuAST::Block.new;
-            $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A))
+            $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :$pos, :actions($Mutsu::Slang::Host::A))
         }
-        !! $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
+        !! $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :$pos, :actions($Mutsu::Slang::Host::A));
     return Nil unless $m;
     # A node the core action built for a production the slang's own token matched
     # (a `for` with the slang's extra clause) stands for it: a slang action that
@@ -290,13 +292,14 @@ impl Interpreter {
             let Some(ToHost::Hook {
                 rule,
                 source,
+                start,
                 node,
                 block,
             }) = message
             else {
                 return;
             };
-            if !self.answer_hook(&rule, &source, node, block) {
+            if !self.answer_hook(&rule, &source, start, node, block) {
                 return;
             }
         }
@@ -309,6 +312,7 @@ impl Interpreter {
         &mut self,
         rule: &str,
         source: &str,
+        start: usize,
         node: Option<Value>,
         block: Option<Value>,
     ) -> bool {
@@ -320,7 +324,7 @@ impl Interpreter {
         } else {
             HOOK_DEPTH.with(|d| d.set(depth + 1));
             super::slang_class_replay::begin_class_log();
-            let answer = self.run_slang_hook(rule, source, node, block);
+            let answer = self.run_slang_hook(rule, source, start, node, block);
             super::slang_class_replay::end_class_log();
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
@@ -332,13 +336,14 @@ impl Interpreter {
         })
     }
 
-    /// Match `rule` at the start of `source` with the composed grammar and
-    /// read the node its action attached.
+    /// Match `rule` at character offset `start` of `source` with the composed
+    /// grammar and read the node its action attached.
     // Cost: the token and the action.
     fn run_slang_hook(
         &mut self,
         rule: &str,
         source: &str,
+        start: usize,
         node: Option<Value>,
         block: Option<Value>,
     ) -> HostAnswer {
@@ -362,6 +367,7 @@ impl Interpreter {
                         Value::str(source.to_string()),
                         grammar_roles,
                         action_roles,
+                        Value::pair("pos".to_string(), Value::int(start as i64)),
                     ];
                     if let Some(node) = node {
                         args.push(Value::pair("node".to_string(), node));
@@ -500,10 +506,11 @@ impl Interpreter {
                 ToHost::Hook {
                     rule,
                     source,
+                    start,
                     node,
                     block,
                 } => {
-                    if !self.answer_hook(&rule, &source, node, block) {
+                    if !self.answer_hook(&rule, &source, start, node, block) {
                         return Err(lost());
                     }
                 }

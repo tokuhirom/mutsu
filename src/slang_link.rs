@@ -7,11 +7,15 @@ use std::sync::mpsc::{Receiver, Sender};
 
 /// A parser-to-host message.
 pub(crate) enum ToHost {
-    /// Match the slang's token `rule` (`statement-control:sym<twice>`) at the
-    /// start of `source`, then run its action.
+    /// Match the slang's token `rule` (`statement-control:sym<twice>`) at
+    /// character offset `start` of `source`, then run its action. `source` is
+    /// the unit's text when the parser has it (the cursor's `.orig`, which a
+    /// slang reads to place what it matched), else the text from the
+    /// production on.
     Hook {
         rule: String,
         source: String,
+        start: usize,
         /// For an action override (`INFIX-EXPR`): the node the core action built.
         node: Option<Value>,
         /// For a `statementlist` wrapper: the routine whose body the list is,
@@ -79,32 +83,44 @@ impl SlangHost {
     /// host runs; it is quiescent for the GC meanwhile.
     // Cost: the slang's own token and action, plus one `back_call` per core
     // rule the token uses.
+    /// `unit` is the unit's text and the character offset of `source` in it,
+    /// when the parser has them: the host then matches in the whole text, and
+    /// the positions it reports are translated back to `source`'s.
     pub(crate) fn run_hook(
         &self,
         rule: &str,
         source: &str,
+        unit: Option<(&str, usize)>,
         block: Option<Value>,
         back_call: &mut dyn FnMut(&str, usize, BackCallDynamics) -> HostAnswer,
     ) -> HostAnswer {
+        let (text, start) = unit.unwrap_or((source, 0));
         self.to_host
             .send(ToHost::Hook {
                 rule: rule.to_string(),
-                source: source.to_string(),
+                source: text.to_string(),
+                start,
                 node: None,
                 block,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
+        let shift = |answer: HostAnswer| {
+            answer.map(|found| found.map(|(end, node)| (end.saturating_sub(start), node)))
+        };
         loop {
             let message = crate::gc::block_quiescent(|| self.from_host.recv())
                 .map_err(|_| "the slang host stopped answering".to_string())?;
             match message {
-                FromHost::Done(answer) => return answer,
+                FromHost::Done(answer) => return shift(answer),
                 FromHost::BackCall {
                     rule,
                     pos,
                     dynamics,
                 } => {
-                    let reply = back_call(&rule, pos, dynamics);
+                    // The parser answers in `source`'s offsets; the host reads
+                    // them in the unit text's.
+                    let reply = back_call(&rule, pos.saturating_sub(start), dynamics)
+                        .map(|found| found.map(|(end, node)| (end + start, node)));
                     self.to_host
                         .send(ToHost::BackReply(reply))
                         .map_err(|_| "the slang host is gone".to_string())?;
@@ -128,6 +144,7 @@ impl SlangHost {
             .send(ToHost::Hook {
                 rule: rule.to_string(),
                 source: source.to_string(),
+                start: 0,
                 node: Some(node),
                 block: None,
             })

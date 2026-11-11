@@ -379,9 +379,15 @@ pub(in crate::parser) fn statementlist_wrapper(
         )))
     };
     let block = super::slang_wrapper_block::take_routine_body();
-    let answer = host.run_hook("statementlist", input, block, &mut |rule, pos, dynamics| {
-        serve_back_call(input, rule, pos, dynamics)
-    });
+    let unit = crate::parser::primary::unit_text_at(input);
+    let unit = unit.as_ref().map(|(text, start)| (&**text, *start));
+    let answer = host.run_hook(
+        "statementlist",
+        input,
+        unit,
+        block,
+        &mut |rule, pos, dynamics| serve_back_call(input, rule, pos, dynamics),
+    );
     match answer {
         Ok(None) => None,
         Ok(Some((end, node))) => match crate::rakuast::slang_bridge::lower_statements(&node) {
@@ -466,10 +472,16 @@ fn run_category_uncached<'a>(
         (rules, hooks.host.clone())
     });
     let host = host?;
+    let unit = crate::parser::primary::unit_text_at(input);
+    let unit = unit.as_ref().map(|(text, start)| (&**text, *start));
     for candidate in rules {
-        let answer = host.run_hook(&candidate.rule, input, None, &mut |rule, pos, dynamics| {
-            serve_back_call(input, rule, pos, dynamics)
-        });
+        let answer = host.run_hook(
+            &candidate.rule,
+            input,
+            unit,
+            None,
+            &mut |rule, pos, dynamics| serve_back_call(input, rule, pos, dynamics),
+        );
         match answer {
             Ok(None) => continue,
             Ok(Some((end, node))) => return Some(Ok((&input[byte_offset(input, end)..], node))),

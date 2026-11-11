@@ -775,9 +775,19 @@ impl Interpreter {
                 if key == "rule" || key == "token" {
                     start_rule = value.to_string_value();
                 } else if key == "pos" {
-                    start_pos = value.as_int().and_then(|n| usize::try_from(n).ok());
+                    // A variable's value arrives in its item container
+                    // (`:$pos`, `pos => $p`).
+                    start_pos = value
+                        .deref_container()
+                        .descalarize()
+                        .as_int()
+                        .and_then(|n| usize::try_from(n).ok());
                 } else if key == "c" || key == "continue" {
-                    continue_pos = value.as_int().and_then(|n| usize::try_from(n).ok());
+                    continue_pos = value
+                        .deref_container()
+                        .descalarize()
+                        .as_int()
+                        .and_then(|n| usize::try_from(n).ok());
                 } else if key == "args" {
                     // :args(\(42)) passes a Capture; :args(42,) / :args(:arg(42),)
                     // passes an Array. `rule_args` is a flat mixed vec that
@@ -1089,14 +1099,17 @@ impl Interpreter {
             for (pattern, sym) in candidates {
                 let candidate_dynvars = self.enter_grammar_rule_dynvars(&start_rule);
                 let mut candidate_partial = None;
-                let captures = if method == "parse" || method == "parsefile" {
+                let captures = if (method == "parse" || method == "parsefile")
+                    && start_pos.is_none()
+                {
                     self.regex_match_with_captures_full_from_start_tracking_partial(
                         &pattern,
                         &text,
                         &mut candidate_partial,
                     )
                 } else if let Some(pos) = start_pos {
-                    // `:pos(N)` — subparse anchored to begin exactly at N.
+                    // `:pos(N)` — (sub)parse anchored to begin exactly at N; a
+                    // `.parse` must still reach the end (checked below).
                     self.regex_match_with_captures_at(&pattern, &text, pos)
                 } else if let Some(cpos) = continue_pos {
                     // `:c(N)`/`:continue(N)` — search for a match from N onwards.
