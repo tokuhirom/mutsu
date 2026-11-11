@@ -2740,6 +2740,22 @@ impl Interpreter {
                                     )
                                     .with_parameter_object(pd, Some(&*self)));
                             }
+                            // An untyped `:&x` is implicitly `Callable`, as its
+                            // positional counterpart is: `f(e => {})` (an empty
+                            // Hash) and `f(e => 42)` fail to bind.
+                            if pd.type_constraint.is_none()
+                                && pd.name.starts_with('&')
+                                && !pd.slurpy
+                                && !self.type_matches_value("Callable", &bound_value)
+                            {
+                                return Err(self
+                                    .typecheck_binding_parameter_failure(
+                                        &param_display_name(pd),
+                                        "Callable",
+                                        &bound_value,
+                                    )
+                                    .with_parameter_object(pd, Some(&*self)));
+                            }
                             // An untyped routine `:$x` is implicitly `Any`, as
                             // its positional counterpart is (#10878).
                             if crate::opcode::FastParamCheck::implicitly_any(pd)
