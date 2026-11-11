@@ -567,6 +567,10 @@ pub(crate) struct ResolutionCaches {
     /// container subclass's NATIVE `AT-KEY` when a user override asks for it
     /// with `nextcallee`. Built on first use; see `container_element_proxy`.
     pub(crate) container_element_proxy: Option<Value>,
+    /// The `-> \tappable { -> $emitter { ... } }` adapter that turns a
+    /// `Tappable` into an on-demand producer (`Supply.new($tappable)`). Built
+    /// on first use; see `supply_tappable`.
+    pub(crate) supply_tappable_adapter: Option<Value>,
     /// Compiles of AST-body code objects called as values, and the shared
     /// signatures of `nextcallee`'s method callables that let those compiles
     /// be reused; see `value_call_compile_cache`. Pure recomputable

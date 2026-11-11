@@ -184,6 +184,7 @@ fn method_decl_body_with_my(
         has_signature.then_some(param_defs.as_slice()),
     );
     let (rest, mut body) = if param_defs.iter().any(|p| p.sigilless)
+        || super::super::sub::any_callable_param(&param_defs)
         || super::super::sub::has_type_capture(&param_defs)
     {
         // When there are sigilless params, register them as term symbols in the
@@ -198,6 +199,9 @@ fn method_decl_body_with_my(
                 super::super::simple::register_user_term_symbol(&pd.name);
             }
         }
+        // A `&done` / `&emit` parameter shadows the keyword of the same name,
+        // as in a sub (`Tappable.tap(&emit, &done, &quit, &tap)`).
+        super::super::sub::register_callable_param_terms(&param_defs);
         super::super::sub::register_body_type_captures(&param_defs);
         let mut result = super::super::block_inner(r);
         super::super::simple::finish_block_anon_states(&mut result);

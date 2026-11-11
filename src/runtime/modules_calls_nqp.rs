@@ -24,6 +24,7 @@ mod cstr_repr;
 mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
+mod supply_tappable;
 mod container_role_of;
 mod ctor_phase_plan;
 pub(crate) mod native_decl;

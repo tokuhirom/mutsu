@@ -31,18 +31,19 @@ impl Interpreter {
             Ok(Value::channel(SharedChannel::new()))
     }
 
-    // A Supply cannot be constructed directly (Rakudo throws
-    // X::Supply::New); live supplies come from a Supplier, on-demand
-    // ones from `Supply.on-demand` / `supply { }`. Internal builders
-    // (1.Supply, Supplier.Supply, Proc streams, ...) assemble their
-    // Supply instances directly.
+    // A Supply is constructed directly only over a `Tappable` (rakudo's
+    // `Supply.new(Tappable)`); anything else throws X::Supply::New. Live
+    // supplies come from a Supplier, on-demand ones from `Supply.on-demand` /
+    // `supply { }`. Internal builders (1.Supply, Supplier.Supply, Proc
+    // streams, ...) assemble their Supply instances directly.
     /// `Supply`.
+    // Cost: O(1).
     pub(super) fn ctor_supply(
         &mut self,
         _c: &CtorCall<'_>,
-        _args: Vec<Value>,
+        args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-            Err(RuntimeError::supply_new())
+        self.supply_from_tappable(&args)
     }
 
     /// `Supplier`, `Supplier::Preserving`.
