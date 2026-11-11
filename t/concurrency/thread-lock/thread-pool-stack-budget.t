@@ -96,9 +96,10 @@ else {
     my ($, $calib) = run-child($refuse);
     my $vmsize = $calib.lines.head.Int;
     # Leave room for startup mappings to vary between the calibration and
-    # constrained children under load, while staying below the smallest 32 MiB
-    # stack tier so the OS still has to refuse every stack size.
-    my $stack-startup-slack-kib = 28_000;
+    # constrained children under load, while staying below the smallest stack
+    # tier (4 MiB in a release build, ADR-0123 §6) so the OS still has to
+    # refuse every stack size.
+    my $stack-startup-slack-kib = 3_000;
     my ($rc, $rout, $rerr) = run-child($refuse, :ulimit(~($vmsize + $stack-startup-slack-kib)));
     ok $rout.contains('survived'), 'a refused thread does not take the process down';
     my @refusals = $rout.lines.grep(/^ ['start'|'thread'] ': '/);
