@@ -89,8 +89,7 @@ pub(crate) fn core_sub_candidates(name: &str) -> &'static [CoreCandidate] {
 fn french_quoted_operator_name(name: &str) -> Option<String> {
     let (category, rest) = name.split_once(":<")?;
     let symbol = rest.strip_suffix('>')?;
-    (!category.is_empty() && symbol.contains(['<', '>']))
-        .then(|| format!("{category}:«{symbol}»"))
+    (!category.is_empty() && symbol.contains(['<', '>'])).then(|| format!("{category}:«{symbol}»"))
 }
 
 /// The candidates of the method `name` declared on built-in type `owner`.
