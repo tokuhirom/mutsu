@@ -19,9 +19,9 @@ impl Interpreter {
     /// and declines (touching nothing) for anything else:
     /// - a positional, non-negative `Int` subscript, no `=`-element share;
     /// - a plain user lexical `$` name the chunk declares untyped at
-    ///   `target_slot`, with no sigilless alias, `:=` bind pair, `is default`,
-    ///   readonly binding, unit-lexical cell or `our` mirror redirecting it,
-    ///   and whose env mirror (if any) holds the same node;
+    ///   `target_slot`, with no sigilless alias, `:=` bind pair, `is default`
+    ///   or readonly binding redirecting it, and whose env mirror (if any)
+    ///   holds the same node;
     /// - the slot holds a plain mutable `Array`/`ItemArray` without embedded
     ///   type metadata (no element type, native backing or default);
     /// - an assignment's rvalue is a plain scalar value (the allow-list the `@`
@@ -60,25 +60,49 @@ impl Interpreter {
             return None;
         }
         let i = idx_i as usize;
-        let slot = target_slot? as usize;
-        if slot >= self.locals.len()
-            || !code.declares_slot(slot)
-            || code.declared_constraint(slot) != DeclaredConstraint::Untyped
-        {
-            return None;
-        }
         let var_name = Self::const_str(code, name_idx);
         // A scalar is keyed without its sigil; `@`/`%`/`&`/`\` names, `$_`,
         // `self`, twigils and system names are all excluded here.
         if var_name.starts_with(['@', '%', '&', '\\', '$'])
             || !crate::env::is_plain_user_lexical(var_name)
-            || code.locals.get(slot).map(String::as_str) != Some(var_name)
         {
             return None;
         }
-        let (items, kind) = match self.locals[slot].view() {
-            ValueView::Array(items, kind) => (items.clone(), kind),
-            _ => return None,
+        let var_sym = code.const_sym(name_idx);
+        let (items, kind, slot_home) = match target_slot {
+            Some(slot) => {
+                let slot = slot as usize;
+                if slot >= self.locals.len()
+                    || !code.declares_slot(slot)
+                    || code.declared_constraint(slot) != DeclaredConstraint::Untyped
+                    || code.locals.get(slot).map(String::as_str) != Some(var_name)
+                {
+                    return None;
+                }
+                match self.locals[slot].view() {
+                    ValueView::Array(items, kind) => (items.clone(), kind, true),
+                    _ => return None,
+                }
+            }
+            // A pointy `for` parameter has no slot: the loop binds it by name,
+            // and while that loop runs the env binding is the variable
+            // (`for @tables -> $t { $t[$i] := ... }`). A compunit file-scope
+            // lexical of the same name is reached through its cell instead,
+            // so leave any name the unit-lexical store holds to the generic
+            // path.
+            None => {
+                if !self.topic_state.name_bound_by_loop_param(var_name)
+                    || !code.local_slots_of(var_sym).is_empty()
+                    || !self.lexicals.unit_lexicals.is_empty()
+                        && self.lexicals.unit_lexicals.contains_name(var_name)
+                {
+                    return None;
+                }
+                match self.env().get_sym(var_sym).map(Value::view) {
+                    Some(ValueView::Array(items, kind)) => (items.clone(), kind, false),
+                    _ => return None,
+                }
+            }
         };
         if !matches!(
             kind,
@@ -87,7 +111,6 @@ impl Interpreter {
         {
             return None;
         }
-        let var_sym = code.const_sym(name_idx);
         if self
             .env()
             .get_sym(MetaNs::SigillessAlias.key(var_sym))
@@ -95,18 +118,22 @@ impl Interpreter {
             || self.bind_pair_names_container(code, var_name)
             || self.var_default(var_name).is_some()
             || self.is_readonly_sym(var_sym)
-            || self.unit_lexical_container_cell(var_name).is_some()
-            || self.unit_lexical_slot(var_name, Some(var_sym)).is_some()
-            || self.our_package_container_key(var_name).is_some()
+        // No unit-lexical or `our` probe for a slot: the generic store
+        // reaches a compunit's file-scope cell only through a slot holding
+        // that cell (`unit_lexical_container_cell_at`), and the slot here
+        // holds a bare Array; a `Slot` place resolves nothing by name.
         {
             return None;
         }
-        // The env mirror, when there is one, must name the same node, so the
-        // in-place write below is what a by-name reader sees too.
-        match self.env().get_sym(var_sym).map(Value::view) {
-            None => {}
-            Some(ValueView::Array(env_items, _)) if crate::gc::Gc::ptr_eq(&items, &env_items) => {}
-            Some(_) => return None,
+        // The env mirror of a slot, when there is one, must name the same
+        // node, so the in-place write below is what a by-name reader sees too.
+        if slot_home {
+            match self.env().get_sym(var_sym).map(Value::view) {
+                None => {}
+                Some(ValueView::Array(env_items, _))
+                    if crate::gc::Gc::ptr_eq(&items, &env_items) => {}
+                Some(_) => return None,
+            }
         }
         let rhs = &self.stack[stack_len - 2];
         // `(element to store, rvalue, whether the store writes the slot itself)`.
