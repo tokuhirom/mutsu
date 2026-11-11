@@ -133,11 +133,17 @@ impl Interpreter {
         })
     }
 
-    /// The stash key a named (non-GLOBAL) package's `our`-store key `key`
-    /// contributes. That store is where an `our` declared in a branch that
-    /// never RAN is pre-installed (`EndWalker::install_our_symbol`).
+    /// What a named (non-GLOBAL) package's `our`-store key `key` contributes
+    /// to its stash. That store is where an `our` declared in a branch that
+    /// never RAN is pre-installed (`EndWalker::install_our_symbol`). A term
+    /// of a nested package (`outer::Inner::x`) contributes the sub-package
+    /// `Inner`, never its own value under that name (#17475).
     // Cost: O(m), m = bytes of the key.
-    pub(super) fn our_var_stash_member(&self, key: &str, package_name: &str) -> Option<String> {
+    pub(super) fn our_var_stash_member(
+        &self,
+        key: &str,
+        package_name: &str,
+    ) -> Option<EnvStashMember> {
         if key.starts_with("__mutsu_") {
             return None;
         }
@@ -149,24 +155,28 @@ impl Interpreter {
             // a member of this one (`Inner`), not the qualified name.
             if let Some(head) = Self::stash_tail_sub_package(rest) {
                 return (!head.is_empty() && !Self::env_tail_has_sigil(head))
-                    .then(|| head.to_string());
+                    .then(|| EnvStashMember::SubPackage(head.to_string()));
             }
-            return (!rest.is_empty()).then(|| rest.to_string());
+            return (!rest.is_empty()).then(|| EnvStashMember::Value(rest.to_string()));
         }
         if let Some(stash_key) = Self::sigil_leading_stash_member(key, package_name) {
-            return Some(stash_key);
+            return Some(EnvStashMember::Value(stash_key));
         }
         let rest = Self::stash_member_tail(key, package_name)?;
         if let Some(member) = Self::self_qualified_member(rest, package_name) {
-            return Some(Self::stash_symbol_key_from_env_tail(member));
+            return Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
+                member,
+            )));
         }
         if rest.is_empty() || crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
         if self.is_our_scalar_key(key) {
-            return Some(format!("${rest}"));
+            return Some(EnvStashMember::Value(format!("${rest}")));
         }
-        Some(Self::stash_symbol_key_from_env_tail(rest))
+        Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
+            rest,
+        )))
     }
 
     /// Whether the sigil-less store key `key` (`Pkg::Baz`) holds a `$` scalar
@@ -376,7 +386,12 @@ impl Interpreter {
             let Some(value) = self.get_our_var(name.as_str()) else {
                 continue;
             };
-            if self.our_var_stash_member(name.as_str(), &package_name).as_deref() == Some(key) {
+            // A nested package's term names a sub-package here, whose value
+            // is not this one (#17475); only a direct member counts.
+            if let Some(EnvStashMember::Value(stash_key)) =
+                self.our_var_stash_member(name.as_str(), &package_name)
+                && stash_key == key
+            {
                 return Some(Some(value.clone()));
             }
         }
