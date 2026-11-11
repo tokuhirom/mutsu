@@ -87,6 +87,10 @@ pub(crate) struct ModuleVisibility {
     /// ADR-11136: the module whose load published each package-less
     /// `our sub` (`GLOBAL::name`), by bare name.
     pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// #17433: the core routine names the main program declared a routine of
+    /// its own under (`sub item`); module code keeps the core one
+    /// (`runtime::main_unit_routines`).
+    pub(crate) main_shadowing_routines: std::sync::Arc<HashSet<Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
     pub(crate) module_units: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The values of `module_units`: the compunits of the modules whose body
@@ -213,6 +217,9 @@ impl Interpreter {
     // Cost: O(1) when no module published an `our sub`; otherwise one
     // provenance probe plus `module_merged_here` for a published one.
     pub(crate) fn module_routine_visible_here(&self, key: Symbol) -> bool {
+        if !self.main_routine_visible_here(key) {
+            return false;
+        }
         if self
             .module
             .module_visibility

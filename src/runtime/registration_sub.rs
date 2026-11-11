@@ -1138,6 +1138,7 @@ impl Interpreter {
                 self.registry_mut()
                     .routine_tables_mut()
                     .install_function(fq_sym, cached.clone());
+                self.note_main_unit_routine(&pkg, name);
                 // Invalidate name-keyed resolution caches. Exactly one key
                 // moved, so the base-name index keeps every other base name:
                 // this path is the per-call re-install of a routine-local
@@ -1903,6 +1904,7 @@ impl Interpreter {
             self.registry_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);
+            self.note_main_unit_routine(&package, name);
         }
         // A proto can be exported before its multi candidates are declared.
         // Keep the candidate family in the module's EXPORT stash as each
