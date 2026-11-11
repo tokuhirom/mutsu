@@ -2705,11 +2705,16 @@ fn lower_method_literal(names: &NameScope, node: &RakuAstNode) -> Result<Expr, R
     Ok(literal)
 }
 
-/// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
+/// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`),
+/// or the plain `Infix('=')` a hand-built tree spells it with (EEL's `:my`
+/// locals), which rakudo compiles as the same assignment.
+// Cost: O(f), f = fields of the node.
 pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
-    named_child(node, "infix")
-        .map(|c| c.class == RakuAstClass::Assignment)
-        .unwrap_or(false)
+    named_child(node, "infix").is_ok_and(|c| {
+        c.class == RakuAstClass::Assignment
+            || (c.class == RakuAstClass::Infix
+                && positional_leaf(c).is_ok_and(|op| op.as_str() == Some("=")))
+    })
 }
 
 /// Whether an `ApplyInfix` is `VAR := …`: a plain `:=` infix whose left side
