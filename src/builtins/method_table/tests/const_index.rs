@@ -222,9 +222,9 @@ fn owner_groups_match_a_scan_of_every_row() {
             "{owner}.{name} owner_declares"
         );
         for arity in 0..10usize {
-            let fixed = declared.iter().filter(|(_, row)| {
-                u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
-            });
+            let fixed = declared
+                .iter()
+                .filter(|(_, row)| u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a)));
             let slurpy = declared.iter().filter(|(_, row)| {
                 row.flags.contains(RowFlags::SLURPY)
                     && !u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
@@ -237,5 +237,8 @@ fn owner_groups_match_a_scan_of_every_row() {
             assert_eq!(got, want, "{owner}.{name}/{arity} owner_rows_at");
         }
     }
-    assert!(!owner_declares("No::Such::Owner::Anywhere", Symbol::intern("new")));
+    assert!(!owner_declares(
+        "No::Such::Owner::Anywhere",
+        Symbol::intern("new")
+    ));
 }
