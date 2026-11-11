@@ -368,6 +368,7 @@ impl Interpreter {
             let outer_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
             // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
             let immutable_topic = plan.immutable_topic;
+            let topic_per_element = plan.topic_per_element;
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -484,7 +485,7 @@ impl Interpreter {
                         let _readonly_guard =
                             crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                         vm.mark_placeholder_params_readonly(&data.params);
-                        super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
+                        super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
                         match vm.run_loop_body(code, compiled_fns, declares_routines) {
                             Ok(()) => {
                                 let pred = vm
