@@ -48,6 +48,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Promise::Vow", "break", 0, vow_break),
     row!("Promise::Vow", "break", 1, vow_break),
     row!("Channel", "get-await-handle", 0, channel_await_handle),
+    row!("Supply", "get-await-handle", 0, supply_await_handle),
     row!("Channel", "send", 1, channel_send),
     row!("Channel", "receive", 0, channel_receive),
     row!("Channel", "poll", 0, channel_poll),
@@ -249,6 +250,21 @@ fn channel_await_handle(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_
         return Some(i.call_function("MUTSU_AWAIT::channel-handle", vec![native]));
     }
     Some(Ok(native))
+}
+
+/// `Supply.get-await-handle`: the prelude's `MUTSU_AWAIT::supply-handle`
+/// (ADR-15519). The prelude is present whenever the unit names the protocol,
+/// which a call spelled `get-await-handle` always does; otherwise the row
+/// declines.
+// Cost: O(1).
+fn supply_await_handle(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if !matches!(t.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    if i.has_function("MUTSU_AWAIT::supply-handle") {
+        return Some(i.call_function("MUTSU_AWAIT::supply-handle", vec![t.clone()]));
+    }
+    None
 }
 
 /// `Channel.send($value)`.

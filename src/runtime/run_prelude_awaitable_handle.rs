@@ -47,8 +47,8 @@ module MUTSU_AWAIT {
         }
         $promise
     }
-    # The handle `Promise.get-await-handle` and `Channel.get-await-handle`
-    # return (ADR-15519 unit 3): a settled source becomes an already-settled
+    # The handle `Promise.get-await-handle`, `Channel.get-await-handle` and
+    # `Supply.get-await-handle` return (ADR-15519 unit 3): a settled source becomes an already-settled
     # handle, a pending one a handle whose `subscribe-awaiter` waits on the
     # source's own settlement.
     class PromiseHandle does Awaitable::Handle {
@@ -87,6 +87,26 @@ module MUTSU_AWAIT {
         return ChannelHandle.already-failure(X::Channel::ReceiveOnClosed.new(:channel(channel)))
             if channel.closed.status ~~ Kept;
         ChannelHandle.new(:!already).set-channel(channel)
+    }
+    # `Supply.get-await-handle`: never settled up front; `subscribe-awaiter`
+    # taps the supply and settles with its last value (`Nil` for none) when it
+    # is done, or with the exception it quits with -- what `await $supply`
+    # yields.
+    class SupplyHandle does Awaitable::Handle {
+        has $!supply;
+        method set-supply($s) { $!supply = $s; self }
+        method subscribe-awaiter(&subscriber) {
+            my $last is default(Nil);
+            $!supply.tap(
+                -> \value { $last = value },
+                done => { subscriber(True, $last) },
+                quit => -> $cause { subscriber(False, $cause) },
+            );
+            Nil
+        }
+    }
+    our sub supply-handle(Mu \supply) {
+        SupplyHandle.new(:!already).set-supply(supply)
     }
 }
 "#;
