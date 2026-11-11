@@ -281,6 +281,10 @@ pub(crate) fn run_slang_activation(
                 a.host = Some(host);
                 a
             }));
+            // The activation module also loads in the importing unit. Emit
+            // only the host's token/action output here, before its parser
+            // request returns, so module-load output is not duplicated.
+            interp.set_immediate_stdout(true);
             interp.serve_slang_host();
         },
     )
