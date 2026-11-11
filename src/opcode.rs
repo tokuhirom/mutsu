@@ -10427,8 +10427,16 @@ impl CompiledCode {
                     true
                 }
                 // `nqp::getlexcaller('$/')` reads a lexical as the calling frames
-                // see it (EEL's exported `&make`, #16888).
-                OpCode::NqpOp { id, .. } if crate::nqp_op_ids::nqp_op_name(*id) == "getlexcaller" => {
+                // see it (EEL's exported `&make`, #16888); `nqp::bindlexdyn`
+                // binds the calling frames' dynamic, so a routine running it
+                // must be called with its callers' envs pushed even when it
+                // takes arguments (the light positional call skips them, #17452).
+                OpCode::NqpOp { id, .. }
+                    if matches!(
+                        crate::nqp_op_ids::nqp_op_name(*id),
+                        "getlexcaller" | "bindlexdyn"
+                    ) =>
+                {
                     op_reads_caller = true;
                     true
                 }
