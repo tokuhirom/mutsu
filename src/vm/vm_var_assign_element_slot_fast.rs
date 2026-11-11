@@ -111,17 +111,21 @@ impl Interpreter {
         let rhs = &self.stack[stack_len - 2];
         // `(element to store, rvalue, whether the store writes the slot itself)`.
         let (element, result, plain_slot_store) = if Self::is_bind_index_value(rhs) {
-            let (value, sources) = match Self::split_bind_index_marker(rhs.clone()) {
-                Ok(split) => split,
-                Err(_) => return None,
-            };
+            // Read the marker in place: `split_bind_index_marker` copies the
+            // source names into a fresh `Vec<Option<String>>`, an allocation
+            // per bind this lane exists to avoid.
+            let (value, source) = Self::peek_bind_index_marker(rhs)?;
             if let ValueView::ContainerRef(cell) = value.view() {
                 // An element (or otherwise already promoted) source: the
                 // destination becomes that very container.
                 (Value::container_ref(cell.clone()), value, false)
-            } else if let Some(Some(source)) = sources.first() {
+            } else if let Some(source) = source {
                 // A variable source shares its container; only one that
                 // already holds a cell is served here.
+                let ValueView::Str(source) = source.view() else {
+                    return None;
+                };
+                let source: &str = source.as_str();
                 if source.contains('\0') {
                     return None;
                 }
@@ -131,9 +135,7 @@ impl Interpreter {
                     }
                     _ => return None,
                 }
-            } else if sources.iter().all(Option::is_none)
-                && matches!(value.view(), ValueView::Sub(_) | ValueView::Instance { .. })
-            {
+            } else if matches!(value.view(), ValueView::Sub(_) | ValueView::Instance { .. }) {
                 // No container to share (`:= &code` of a `my &c := {...}`, a
                 // routine, an object): the element holds the value itself.
                 // Literals (which bind read-only) and aggregates (which get a
@@ -190,5 +192,39 @@ impl Interpreter {
         data.store_element(i, element);
         self.stack.push(Self::itemize_value(result));
         Some(Ok(()))
+    }
+
+    /// The bound value of a [`Self::bind_index_marker`] and its first
+    /// source's name (a non-empty `Str`), read without copying: the store
+    /// only ever consults the first source (`split_bind_index_marker`'s
+    /// callers). `None` for a value that is no marker or whose payload is not
+    /// the `[value, sources]` list the marker builds.
+    // Cost: O(1).
+    fn peek_bind_index_marker(val: &Value) -> Option<(Value, Option<Value>)> {
+        let payload = match val.view() {
+            ValueView::Pair(name, payload)
+                if name == super::vm_var_assign_ops::BIND_INDEX_MARKER =>
+            {
+                payload.clone()
+            }
+            ValueView::ValuePair(name, payload)
+                if name.as_str() == Some(super::vm_var_assign_ops::BIND_INDEX_MARKER) =>
+            {
+                payload.clone()
+            }
+            _ => return None,
+        };
+        let ValueView::Array(items, ..) = payload.view() else {
+            return None;
+        };
+        let value = items.first().cloned().unwrap_or(Value::NIL);
+        let source = match items.get(1).map(Value::view) {
+            Some(ValueView::Array(sources, ..)) => sources
+                .first()
+                .filter(|src| matches!(src.view(), ValueView::Str(s) if !s.is_empty()))
+                .cloned(),
+            _ => None,
+        };
+        Some((value, source))
     }
 }
