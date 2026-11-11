@@ -225,18 +225,18 @@ pub(crate) fn seed_native_subclass_payloads(
             .any(|name| name == "Match" || name == "Grammar")
         && !attrs.contains_key(crate::builtins::native_base::CAPTURE_PAYLOAD)
     {
+        // The nameds live in a hash node of their own, which nqp code shares
+        // through `%!hash` (`runtime::capture_storage`); rakudo's `Capture`
+        // BUILD installs the `:hash` argument's storage itself, so its node
+        // is shared too.
         let mut positional = Vec::new();
-        let mut named = crate::value::ValueMap::default();
+        let mut named = None;
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "list" => positional = crate::runtime::value_to_list(value),
-                    "hash" => {
-                        if let ValueView::Hash(map) = value.view() {
-                            for (k, v) in map.iter() {
-                                named.insert(k.clone(), v.clone());
-                            }
-                        }
+                    "hash" if matches!(value.view(), ValueView::Hash(_)) => {
+                        named = Some(value.clone());
                     }
                     _ => {}
                 }
@@ -244,7 +244,11 @@ pub(crate) fn seed_native_subclass_payloads(
         }
         attrs.insert(
             crate::builtins::native_base::CAPTURE_PAYLOAD,
-            Value::capture(positional, named),
+            Value::capture(positional, crate::value::ValueMap::default()),
+        );
+        attrs.insert(
+            crate::builtins::native_base::CAPTURE_HASH,
+            named.unwrap_or_else(|| Value::hash(crate::value::ValueMap::default())),
         );
     }
     // An `is IterationBuffer` subclass keeps its elements in a reserved array

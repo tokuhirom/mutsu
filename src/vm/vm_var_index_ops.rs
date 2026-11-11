@@ -2415,9 +2415,17 @@ impl Interpreter {
                     Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
                     Err(_) => Value::NIL,
                 };
+                // A subclass of a built-in type answers through its payload's
+                // own `AT-KEY` (a `Capture` is not `Associative`, but its
+                // `<key>` is `Nil` for a missing key, as rakudo's).
+                let payload_answers = || {
+                    crate::builtins::native_base::redirect(&target, "AT-KEY")
+                        .is_some_and(|payload| matches!(payload.view(), ValueView::Capture { .. }))
+                };
                 if result.is_nil()
                     && !self.has_user_method_including_role(&cn, "AT-KEY")
                     && !self.type_matches_value("Associative", &target)
+                    && !payload_answers()
                 {
                     Self::make_assoc_indexing_failure(&cn)
                 } else if result.is_nil() {

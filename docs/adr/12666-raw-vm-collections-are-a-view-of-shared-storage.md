@@ -357,3 +357,21 @@ object operand is not a plain variable keeps the plain copy. The first is exactl
 `$raw := ...` aliasing already is in Rakudo's own compiler output for an NQP local; no surveyed
 caller (§2.1) mutates the handle through a second holder. The `IterationBuffer` instance
 representation (#12700) is a separate question that this amendment does not change.
+
+## 10. Amendment (2026-11-11): a `Capture` subclass's `%!hash` follows the Map it is installed into (#16888)
+
+EEL's `Event is Capture` is a surveyed caller that does mutate the handle through a second
+holder: the capture holds its `%!hash`, nqp code reads it, and then installs it as the
+`$!storage` of a fresh `Hash` (`nqp::create(Hash)`). §9's direction (the object's node stays
+put) leaves the capture on the detached node. So:
+
+- An instance of a user `Capture` subclass keeps its nameds in a hash node of its own
+  (`native_base::CAPTURE_HASH`). `nqp::getattr`/`nqp::bindattr` of `Capture`'s `%!hash` read and
+  install that node by reference (`runtime/capture_storage.rs`).
+- When a `Map`'s `$!storage` bind copies a node in, and that node is the `%!hash` a capture
+  handed out last, the capture is re-pointed at the map's node. One slot is enough, because nqp
+  code reads the storage and installs it in consecutive statements.
+
+Residual divergence, accepted for now and tracked in #17413: a second fresh `Hash` built over
+the same capture moves the capture to *its* node, and the first `Hash` keeps the old one. Rakudo
+has one VMHash shared by all three.
