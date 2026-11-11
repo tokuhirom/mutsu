@@ -26,3 +26,37 @@ pub(crate) fn string_return_type() -> Value {
 pub(crate) fn literal_compile_time_value(node: &RakuAstNode) -> Value {
     node_accessor(node, "value").unwrap_or(Value::NIL)
 }
+
+/// `QuotedString.maybe-compile-time-value`: the string its segments spell when
+/// every one is a `StrLiteral` (no interpolation, no processor), else `Nil`.
+// Cost: O(s), s = total length of the segments.
+pub(crate) fn quoted_string_maybe_compile_time_value(node: &RakuAstNode) -> Value {
+    use super::RakuAstFieldValue;
+    if node
+        .fields
+        .iter()
+        .any(|f| matches!(f.name, Some("processors")))
+    {
+        return Value::NIL;
+    }
+    let Some(segments) = node.fields.iter().find(|f| f.name == Some("segments")) else {
+        return Value::NIL;
+    };
+    let items: Vec<Value> = match &segments.value {
+        RakuAstFieldValue::List(items) => items.clone(),
+        RakuAstFieldValue::Node(v) => vec![v.clone()],
+        RakuAstFieldValue::Adverb(_) => return Value::NIL,
+    };
+    let mut out = String::new();
+    for item in &items {
+        match item.view() {
+            crate::value::ValueView::RakuAst(seg)
+                if seg.class.printed_name() == "RakuAST::StrLiteral" =>
+            {
+                out.push_str(&literal_compile_time_value(seg).to_string_value());
+            }
+            _ => return Value::NIL,
+        }
+    }
+    Value::str(out)
+}

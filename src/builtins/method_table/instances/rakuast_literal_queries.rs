@@ -28,6 +28,20 @@ fn literal_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+// Cost: O(s), s = total length of the segments.
+fn quoted_string_maybe_compile_time_value(
+    target: &Value,
+    _args: &[Value],
+) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => {
+            Some(crate::rakuast::literal_queries::quoted_string_maybe_compile_time_value(node))
+        }
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
 // Cost: O(n), n = children of the node.
 fn has_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
@@ -67,6 +81,22 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "compile-time-value",
         arity: 0,
         handler: Handler::Pure(literal_compile_time_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Literal",
+        name: "maybe-compile-time-value",
+        arity: 0,
+        handler: Handler::Pure(literal_compile_time_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::QuotedString",
+        name: "maybe-compile-time-value",
+        arity: 0,
+        handler: Handler::Pure(quoted_string_maybe_compile_time_value),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
