@@ -294,3 +294,63 @@ impl Interpreter {
         }
     }
 }
+
+impl Interpreter {
+    /// Whether every container-binding parameter of `method_def` is a
+    /// sigilless one ([`Self::light_sigilless_param_ok`]) whose argument in
+    /// this call is a value ([`LightSigillessBind::Readonly`]): the method
+    /// fast path then binds those parameters as read-only terms instead of
+    /// handing the whole call to the full binder. A variable argument (which
+    /// would need the caller's frame to promote) and every other raw/`is rw`
+    /// shape answer `false`.
+    // Cost: O(p + a), p = parameters, a = arguments.
+    pub(super) fn method_sigilless_args_light(
+        &self,
+        method_def: &crate::runtime::MethodDef,
+        args: &[Value],
+    ) -> bool {
+        // Method arguments may arrive with their `VarRef` already stripped;
+        // the call site's argument-source names say which were variables.
+        let sources = self.pending_call_arg_sources();
+        let names_variable = |idx: usize| {
+            sources
+                .and_then(|s| s.get(idx))
+                .and_then(|n| n.as_deref())
+                .is_some_and(|n| {
+                    !crate::symbol::Symbol::lookup(n).is_some_and(|s| s.is_frame_fixture())
+                })
+        };
+        let mut positional = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| !a.unwrap_varref().is_string_pair_value());
+        let mut any = false;
+        for pd in method_def.param_defs.iter() {
+            if pd.is_invocant {
+                if pd.binds_caller_container() || pd.is_does_target() {
+                    return false;
+                }
+                continue;
+            }
+            let consumes = !pd.named && !pd.slurpy && !pd.double_slurpy;
+            let arg = if consumes { positional.next() } else { None };
+            if !(pd.binds_caller_container() || pd.is_does_target()) {
+                continue;
+            }
+            if !Self::light_sigilless_param_ok(pd) {
+                return false;
+            }
+            let Some((idx, arg)) = arg else {
+                return false;
+            };
+            if names_variable(idx)
+                || arg.unwrap_varref().is_proxy_value()
+                || self.light_sigilless_bind(arg, None) != Some(LightSigillessBind::Readonly)
+            {
+                return false;
+            }
+            any = true;
+        }
+        any
+    }
+}
