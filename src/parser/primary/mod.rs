@@ -186,6 +186,9 @@ struct SourceOrigin {
     /// that is a copy of a fragment of it (a regex code block): `$?LINE` adds
     /// them to the line within the copy.
     line_base: i64,
+    /// The buffer's text, for a slang host matching at a place in it
+    /// ([`unit_text_at`]).
+    text: Option<std::sync::Arc<str>>,
 }
 
 impl SourceOrigin {
@@ -198,6 +201,7 @@ impl SourceOrigin {
         attempt_base: None,
         span_base: SpanBase::Unit,
         line_base: 0,
+        text: None,
     };
 
     fn newlines(&self) -> &[usize] {
@@ -226,6 +230,30 @@ struct LeakedRegion {
     after_src: usize,
 }
 
+/// The text of the buffer being parsed and the character offset of `input`
+/// in it, when `input` is the rest of that buffer from some place on (a slang
+/// host matches there with the whole buffer as its `.orig`, as rakudo's
+/// cursor has, #16888). `None` for a copy of the text (a heredoc's leaked
+/// region) or another buffer.
+// Cost: O(p), p = the length of the text before `input`.
+pub(crate) fn unit_text_at(input: &str) -> Option<(std::sync::Arc<str>, usize)> {
+    let addr = input.as_ptr() as usize;
+    ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        let text = origin.text.clone()?;
+        if origin.ptr == 0
+            || addr < origin.ptr
+            || addr + input.len() != origin.ptr + origin.len
+            || text.len() != origin.len
+        {
+            return None;
+        }
+        let offset = addr - origin.ptr;
+        let before = text.get(..offset)?;
+        Some((text.clone(), before.chars().count()))
+    })
+}
+
 /// Set the original source for $?LINE computation.
 pub(super) fn set_original_source(source: &str) {
     let newlines = newline_index(source);
@@ -245,6 +273,7 @@ pub(super) fn set_original_source(source: &str) {
                 .with(|p| p.take())
                 .unwrap_or(SpanBase::Unit),
             line_base: PENDING_LINE_BASE.with(|p| p.take()).unwrap_or(0),
+            text: Some(std::sync::Arc::from(source)),
         };
     });
     fragment_attempts::adopt_lent_attempts();
