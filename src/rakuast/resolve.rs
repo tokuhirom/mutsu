@@ -918,6 +918,12 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             if super::declared_routines::is_declared(&name) {
                 return None;
             }
+            // A routine the code around a slang production declares (`sub any`
+            // in the block holding EEL's `any(1, 5)`, #16888) is not the
+            // setting's.
+            if crate::builtin_functions::is_builtin_function(&name) && (scopes.shadowed)(&name) {
+                return None;
+            }
             if super::declared_routines::is_user_call(node) {
                 return external("RakuAST::Declaration::Import", &format!("&{name}"));
             }

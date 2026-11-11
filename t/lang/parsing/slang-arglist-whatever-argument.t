@@ -7,7 +7,7 @@ use Test;
 # and a bare `*` argument as a `RakuAST::Term::Whatever`; its operators resolve
 # to the setting's declarations, and a plain string has its compile-time value.
 
-plan 3;
+plan 5;
 
 use ArglistKindsSlang;
 
@@ -20,3 +20,10 @@ is %%resolved(:a(* > 3), :b(1 <= *), :c(* == 2)),
     'an operator resolves to the setting, spelled as rakudo spells it';
 is %%resolved(:p(*.starts-with('/api/'))), '/api/',
     "a plain string argument's maybe-compile-time-value";
+
+is %%resolved(:a(any(1, 5))), 'setting', 'a core routine call resolves to the setting';
+{
+    sub any(*@a) { 'mine' }
+    is %%resolved(:a(any(1, 5))), 'not-setting',
+        'a routine the enclosing block declares shadows the setting';
+}
