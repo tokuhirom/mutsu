@@ -1,6 +1,7 @@
 //! Multi-dimensional index-assignment and assign-through-accessor lvalue ops.
 use super::*;
 use crate::value::ValueView;
+use crate::runtime::methods_signature_errors::make_x_immutable_error;
 
 impl Interpreter {
     pub(super) fn deref_lvalue_value(mut value: Value) -> Value {
@@ -974,6 +975,14 @@ impl Interpreter {
         // dirty-tracked `$model.map<k>:delete`). An `is rw` accessor's Proxy
         // is addressed by what it FETCHes.
         let container = protocol_object;
+        // A `Map` (a `Capture`'s `.hash`) or a `List` is immutable: the
+        // in-place removal below must refuse it, as rakudo does.
+        if container.is_immutable_map() {
+            return Err(make_x_immutable_error("DELETE-KEY", "Map"));
+        }
+        if let ValueView::Array(_, crate::value::ArrayKind::List) = container.view() {
+            return Err(make_x_immutable_error("DELETE-POS", "List"));
+        }
         let removed = match container.view() {
             ValueView::Hash(h) => {
                 // An object hash (`has %.a{Str:D}`) stores `.WHICH` keys.
