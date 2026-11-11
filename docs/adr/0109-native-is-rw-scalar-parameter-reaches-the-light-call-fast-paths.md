@@ -349,3 +349,27 @@ See `news/2026-09/native-is-rw-scalar-params-reach-the-light-call-fast-paths.md`
 for the full writeup, measurements, and the `rust-gdb`-confirmed evidence that
 real `JSON::Fast` helpers (`parse-thing`, `parse-string`, `parse-numeric`) now
 take this path.
+
+## Amendment (2026-11-11): sigilless `\x` parameters reuse the same transport
+
+A sigilless positional parameter (`sub f(Mu \obj)`) is implicitly raw: it
+aliases a caller variable's container and binds any other argument as a
+read-only term. It was excluded from the positional-light path, so every call
+to one took the general binder (~50k instructions against ~3k for a `$`
+parameter; #17335, #17376). `src/vm/vm_call_light_sigilless.rs` admits it with
+the cell transport this ADR introduced, classifying each argument per call:
+
+- a value with no container (a literal, a call result, `self`, a type object
+  read by its own name, a read-only caller binding) binds read-only and gets
+  the same `__mutsu_sigilless_readonly::` env mark the general binder writes;
+- an argument that already is a shared cell (an element lvalue, a variable an
+  earlier light call promoted) binds that cell;
+- a caller lexical at the slot its `WrapVarRef` site recorded is promoted with
+  `capture_rw_arg_cell` and the cell is bound, exactly as for `is rw`.
+
+Every other shape declines and keeps the general binder: a name-aliased source
+(`__mutsu_sigilless_alias::`), a read-only binding cell, a multi-dimensional
+slice, a twigilled/dynamic/pseudo/qualified source, a variable that is not a
+local of the caller's code at its recorded slot, and native-typed, defaulted,
+`where`-constrained or trait-carrying sigilless parameters. The method fast
+path is not covered: it has no caller `CompiledCode` to promote against.

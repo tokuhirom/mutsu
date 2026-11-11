@@ -835,6 +835,13 @@ impl Interpreter {
                                 cf,
                                 &self.stack[self.stack.len() - arity_usize..],
                             )
+                            // And for a sigilless `\x` parameter's argument
+                            // (`vm_call_light_sigilless.rs`).
+                            && self.positional_light_sigilless_args_admitted(
+                                cf,
+                                &self.stack[self.stack.len() - arity_usize..],
+                                Some(code),
+                            )
                         {
                             // Bind straight out of the stack (no args buffer):
                             // the callee takes the arguments in place from
@@ -1280,7 +1287,7 @@ impl Interpreter {
                             && !named_share
                             && !mainline_capture_blocked
                             && !call_has_named
-                            && Self::is_positional_light_call_eligible(
+                            && self.is_positional_light_call_eligible(
                                 &cf,
                                 name_str,
                                 Self::positional_light_argc(&args),
@@ -2381,7 +2388,7 @@ impl Interpreter {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if !call_has_named
-                    && Self::is_positional_light_call_eligible(
+                    && self.is_positional_light_call_eligible(
                         cf,
                         name,
                         Self::positional_light_argc(&args),
@@ -2495,7 +2502,7 @@ impl Interpreter {
                 });
                 if !call_has_named
                     && self.has_multi_candidates_cached_sym(name_sym)
-                    && Self::is_positional_light_call_eligible_where(
+                    && self.is_positional_light_call_eligible_where(
                         cf,
                         name,
                         Self::positional_light_argc(&args),

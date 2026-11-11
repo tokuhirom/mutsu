@@ -446,13 +446,14 @@ impl Interpreter {
     /// the calls that supply everything — see
     /// [`CompiledFunction::light_full_arity_only`].
     pub(super) fn is_positional_light_call_eligible(
+        &self,
         cf: &CompiledFunction,
         fn_name: &str,
         argc: usize,
         args: &[Value],
         caller_code: Option<&CompiledCode>,
     ) -> bool {
-        Self::is_positional_light_call_eligible_where(cf, fn_name, argc, args, caller_code, false)
+        self.is_positional_light_call_eligible_where(cf, fn_name, argc, args, caller_code, false)
     }
 
     /// [`Self::is_positional_light_call_eligible`] for the winner of a
@@ -463,6 +464,7 @@ impl Interpreter {
     /// time (#12915). #8697's `pending_skip_constraint_recheck` is the general
     /// binder's equivalent of the same trust.
     pub(super) fn is_positional_light_call_eligible_where(
+        &self,
         cf: &CompiledFunction,
         fn_name: &str,
         argc: usize,
@@ -501,6 +503,11 @@ impl Interpreter {
             && (!cf.has_rw_positional_param
                 || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
             && Self::positional_light_aggregate_args_admitted(cf, args)
+            // A sigilless `\x` argument this path cannot classify, or whose
+            // caller variable it would have to promote without the caller's
+            // code, keeps the general binder (one bool test for a routine
+            // without a sigilless parameter).
+            && self.positional_light_sigilless_args_admitted(cf, args, caller_code)
     }
 
     /// The signature-level half of [`Self::is_positional_light_call_eligible_where`]:
@@ -542,7 +549,9 @@ impl Interpreter {
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && pd.code_signature.is_none()
-                    && !pd.sigilless
+                    // A sigilless `\x` binds through
+                    // `vm_call_light_sigilless.rs` (#17335).
+                    && (!pd.sigilless || (i < 64 && Self::light_sigilless_param_ok(pd)))
                     && !pd.is_invocant
                     // ADR-0109 (#8686 Phase 2): a positional `$`-scalar
                     // parameter whose only trait is `rw` is admitted at the

@@ -76,7 +76,7 @@ impl Interpreter {
                         .param_defs
                         .iter()
                         .any(|pd| pd.where_constraint.is_some());
-                    Self::is_positional_light_call_eligible_where(
+                    self.is_positional_light_call_eligible_where(
                         cf,
                         name,
                         argc,

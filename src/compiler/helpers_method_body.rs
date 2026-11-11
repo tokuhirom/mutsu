@@ -361,6 +361,7 @@ impl Compiler {
             is_hidden_from_backtrace: false,
             uses_return_rw: crate::opcode::body_uses_return_rw(body),
             has_rw_positional_param: false,
+            has_sigilless_positional_param: false,
             has_copy_positional_param: false,
             aggregate_positional_params: 0,
             is_cached: false,

@@ -438,6 +438,7 @@ impl Interpreter {
             is_hidden_from_backtrace: def.is_hidden_from_backtrace,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             has_rw_positional_param: false,
+            has_sigilless_positional_param: false,
             has_copy_positional_param: false,
             aggregate_positional_params: 0,
             is_cached: def.is_cached,
@@ -701,7 +702,7 @@ impl Interpreter {
         // to one off the loading script's same-named lexical
         // (`t/module-file-scope-lexical.t`).
         let light_eligible = self.unit_of_source_sym(cf.source_file_sym()) == self.current_unit
-            && Self::is_positional_light_call_eligible(
+            && self.is_positional_light_call_eligible(
                 &cf,
                 &name,
                 Self::positional_light_argc(&args),

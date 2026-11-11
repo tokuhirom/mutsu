@@ -337,7 +337,7 @@ impl Interpreter {
         let result = if args.is_empty() && !cf.is_raw && Self::is_fast_call_eligible(cf, name) {
             self.call_compiled_function_fast(cf, name, name_sym, compiled_fns)?
         } else if !call_has_named
-            && Self::is_positional_light_call_eligible(
+            && self.is_positional_light_call_eligible(
                 cf,
                 name,
                 Self::positional_light_argc(&args),

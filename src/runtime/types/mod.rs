@@ -32,6 +32,7 @@ mod type_matching_static;
 mod type_registry;
 
 // Re-export public items from submodules
+pub(crate) use binding_signature::is_multidim_slice_cells;
 pub(crate) use binding_signature::param_display_name;
 pub(crate) use binding_signature::CalleeArgsUsage;
 pub(crate) use coercion::{

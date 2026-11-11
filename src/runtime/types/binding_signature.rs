@@ -29,7 +29,7 @@ use super::*;
 /// identifies it without reading its contents, an empty selection included.
 // Cost: O(1) for a flagged slice; O(n), n = the array's elements, otherwise
 // (the walk stops at the first non-cell).
-fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
+pub(crate) fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
     let crate::value::ValueView::Array(items, ..) = value.view() else {
         return false;
     };
