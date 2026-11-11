@@ -1386,7 +1386,10 @@ impl Interpreter {
     /// (the base or a role mixed onto it) or a defined object, so the shape
     /// decides.
     // Cost: O(1).
-    pub(crate) fn light_param_smiley_admits(val: &Value, smiley: crate::opcode::TypeSmiley) -> bool {
+    pub(crate) fn light_param_smiley_admits(
+        val: &Value,
+        smiley: crate::opcode::TypeSmiley,
+    ) -> bool {
         let val = val.descalarize();
         let undefined = match val.view() {
             ValueView::Package(_) => true,
@@ -1618,7 +1621,8 @@ impl Interpreter {
         // A `:D`/`:U` constraint (`is_fast_type_name` admits one on a boxed
         // concrete base): the base, then the smiley.
         if let (base, Some(smiley)) = crate::opcode::TypeSmiley::split(type_name) {
-            return Self::fast_type_check(val, base) && Self::light_param_smiley_admits(val, smiley);
+            return Self::fast_type_check(val, base)
+                && Self::light_param_smiley_admits(val, smiley);
         }
         // An itemized value is checked as what it holds; see the tagged form.
         let val = val.descalarize();

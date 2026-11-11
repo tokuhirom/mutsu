@@ -130,7 +130,7 @@ impl Interpreter {
                     return RuntimeError::parameter_invalid_concreteness(
                         base,
                         &got,
-                        routine.rsplit("::").next().unwrap_or(routine),
+                        crate::qualified::last_segment(Symbol::intern(routine)).as_str(),
                         &pd.name,
                         smiley == crate::opcode::TypeSmiley::Definite,
                         pd.is_invocant,
