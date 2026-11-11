@@ -456,7 +456,7 @@ impl Interpreter {
         self.is_positional_light_call_eligible_where(cf, fn_name, argc, args, caller_code, false)
     }
 
-    /// [`self.is_positional_light_call_eligible`] for the winner of a
+    /// [`Self::is_positional_light_call_eligible`] for the winner of a
     /// value-dependent `multi` whose resolution just ran every one of its
     /// `where` clauses against these exact arguments (`where_verified`): the
     /// light bind never runs a `where`, and here none is left to run -- except
@@ -510,7 +510,7 @@ impl Interpreter {
             && self.positional_light_sigilless_args_admitted(cf, args, caller_code)
     }
 
-    /// The signature-level half of [`self.is_positional_light_call_eligible_where`]:
+    /// The signature-level half of [`Self::is_positional_light_call_eligible_where`]:
     /// every condition that reads only the routine itself (flags, return type,
     /// parameter shapes), none that looks at this call's arguments. Memoized per
     /// routine for `where_verified == false` (`CompiledFunction::light_signature_cache`),
