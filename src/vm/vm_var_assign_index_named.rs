@@ -5460,7 +5460,21 @@ impl Interpreter {
             }
         }
 
-        let indices: Vec<String> = indices_val.iter().map(|v| v.to_string_value()).collect();
+        // The walk below keys every level by text, so a positional level's
+        // enum value (`@a[B][9] := v`) or Bool must become the `Int` it names
+        // first: `"B"` addressed no element and the store fell through to the
+        // next level's key, binding `@a[9]` instead of `@a[1][9]`.
+        let indices: Vec<String> = indices_val
+            .iter()
+            .zip(positional_flags.iter().copied().chain(std::iter::repeat(true)))
+            .map(|(v, positional)| {
+                if positional {
+                    Self::positional_index_as_int(v.clone()).to_string_value()
+                } else {
+                    v.to_string_value()
+                }
+            })
+            .collect();
         let val = raw_val_for_junction;
 
         // LHS binding (`$struct[..]<..>[..] := $scalar`): unwrap the bind
