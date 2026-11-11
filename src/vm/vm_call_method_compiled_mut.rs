@@ -88,6 +88,13 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = false;
             return result;
         }
+        if package_sym.is_none()
+            && let Some(result) = self.try_attribute_meta_row(&target, method_sym, &args)
+        {
+            // `set_rw`/`set_build` change the metaobject, never a caller lexical.
+            self.dispatch.method_dispatch_pure = true;
+            return result;
+        }
         if let Some(class_name) = new_on_package
             && crate::runtime::types::strip_type_smiley(class_name.as_str())
                 .1

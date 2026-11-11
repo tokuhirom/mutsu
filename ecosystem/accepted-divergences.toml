@@ -131,3 +131,15 @@ The oracle rakudo has no IO::Socket::SSL (SOAP::Client does not depend on it), s
 mutsu bundles IO::Socket::SSL, so the test runs its real flow against www.w3schools.com, which the \
 sweep sandbox cannot reach. Same situation as Dev::ContainerizedService: hiding the bundled module \
 from `require` would not be a fix (user decision 2026-11-03, #15525)."""
+
+[[divergence]]
+dist = "URI::FetchFile"
+file = "t/060-http-useragent.t"
+shape = { verdict = "fail", ok = 3, nok = 3, plan = 8, first_failure = "fetch on a non-existent file" }
+issue = 15525
+reason = """the test runs its HTTP::UserAgent provider only `if $type.is-available` (a `require` probe) \
+and calls `skip-rest` otherwise. The oracle rakudo has no HTTP::UserAgent (URI::FetchFile depends \
+only on File::Which), so it skips 6 of 8; mutsu bundles HTTP::UserAgent, so the provider fetches \
+http://example.com for real, which the sweep sandbox cannot reach, and both `lives-ok` fetches die. \
+Same situation as Dev::ContainerizedService and SOAP::Client: hiding the bundled module from \
+`require` would not be a fix (user decision 2026-11-03, #15525)."""

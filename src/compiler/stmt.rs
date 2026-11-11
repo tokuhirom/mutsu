@@ -1183,6 +1183,7 @@ impl Compiler {
                 where_constraint,
                 anonymous: _,
             } => {
+                self.note_nqp_fresh_hash_decl(name, bind.is_some(), expr);
                 self.next_try_decays_failure =
                     !name.starts_with(['@', '%', '&']) && matches!(expr, Expr::Try { .. });
                 // `use variables :D/:U` adds its implicit smiley to the
