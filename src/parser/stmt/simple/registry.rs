@@ -498,6 +498,20 @@ pub(crate) fn declare_keyword_is_role(keyword: &str) -> bool {
     DECLARE_KEYWORDS.with(|m| m.borrow().get(keyword).is_some_and(|d| d.is_role))
 }
 
+/// Whether `keyword` is a registered package declarator.
+// Cost: O(1).
+pub(in crate::parser) fn is_declare_keyword(keyword: &str) -> bool {
+    DECLARE_KEYWORDS.with(|m| m.borrow().contains_key(keyword))
+}
+
+/// Remove the package declarator `keyword` (its slang's scope ended).
+// Cost: O(1).
+pub(in crate::parser) fn unregister_declare_keyword(keyword: &str) {
+    DECLARE_KEYWORDS.with(|m| {
+        m.borrow_mut().remove(keyword);
+    });
+}
+
 /// Snapshot / restore the DECLARE keyword table around a nested module scan
 /// (the nested parse's reset clears it, and any keywords the scanned module
 /// itself imports are lexical to that module, not to the importer).

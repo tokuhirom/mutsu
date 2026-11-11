@@ -213,6 +213,14 @@ pub(crate) fn pop_scope() {
             if let Some(before) = scope.slang_hooks_before_use {
                 restore_hooks(before);
             }
+            if !scope.slang_declarators.is_empty() {
+                for keyword in &scope.slang_declarators {
+                    super::registry::unregister_declare_keyword(keyword);
+                }
+                // A memoized parse that read the keyword as a declarator must
+                // not be replayed outside the scope.
+                crate::parser::invalidate_all_memos();
+            }
         }
     });
 }
@@ -227,6 +235,18 @@ pub(in crate::parser) fn note_slang_activation_scope() {
             && scope.slang_hooks_before_use.is_none()
         {
             scope.slang_hooks_before_use = Some(before);
+        }
+    });
+}
+
+/// Note, in the current scope, a package declarator a slang activated here added:
+/// leaving the scope removes it, as rakudo's slang ends with the block holding
+/// the `use` (EEL's `event`, #16888).
+// Cost: O(1).
+pub(in crate::parser) fn note_slang_declarator(keyword: &str) {
+    SCOPES.with(|s| {
+        if let Some(scope) = s.borrow_mut().last_mut() {
+            scope.slang_declarators.push(keyword.to_string());
         }
     });
 }

@@ -197,10 +197,17 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
     // Package declarators the slang added (ADR-0091): each keyword parses
-    // like `class`/`role` for the rest of this unit, with the declarator's
+    // like `class`/`role` for the rest of the enclosing block, with the declarator's
     // metaclass attached at registration time.
+    //
+    // A keyword an outer scope already has stays with that scope: only one
+    // this `use` introduces ends with the current block.
     for decl in &activation.declarators {
+        let introduced = !super::registry::is_declare_keyword(&decl.keyword);
         register_declare_keyword(module, &decl.keyword, decl.is_role());
+        if introduced && super::registry::is_declare_keyword(&decl.keyword) {
+            super::compile_consts::note_slang_declarator(&decl.keyword);
+        }
     }
     for keyword in &activation.supersede_keywords {
         register_supersede_keyword(module, keyword);
