@@ -76,6 +76,16 @@ impl Interpreter {
                         None => out.push(item.clone()),
                     }
                 }
+                // `flat` descends into a pull list (`(Channel.list, 9).flat`);
+                // read it to its end so the pure flattener sees its elements.
+                ValueView::LazyList(ll) if ll.is_unfinished_pull() => {
+                    let elements = self.force_lazy_list_vm(&ll)?;
+                    out.push(Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
+                        ArrayKind::List,
+                    ));
+                    changed = true;
+                }
                 ValueView::Slip(inner) => match self.expand_instance_items(&inner)? {
                     Some(expanded) => {
                         out.push(Value::slip(expanded));
@@ -111,6 +121,8 @@ impl Interpreter {
         }
         match item.view() {
             ValueView::Instance { .. } | ValueView::Mixin(..) => true,
+            // An on-demand pull list not yet read to its end (#17435).
+            ValueView::LazyList(ll) => ll.is_unfinished_pull(),
             ValueView::Array(inner, ArrayKind::List) => {
                 inner.iter().any(Self::may_hold_iterable_instance)
             }

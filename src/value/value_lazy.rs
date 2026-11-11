@@ -185,6 +185,18 @@ impl LazyList {
         })
     }
 
+    /// A finite pull list (`Channel.list`, a supply's lazy `.list`) that has
+    /// not been read to its end: its cache does not hold its elements yet,
+    /// so a pure reader (`flat_val`) would see too few (#17435).
+    // Cost: O(1).
+    pub(crate) fn is_unfinished_pull(&self) -> bool {
+        self.is_finite_cat_pull()
+            && self
+                .cat_pull
+                .as_ref()
+                .is_some_and(|spec| !spec.lock().unwrap_or_else(|e| e.into_inner()).done)
+    }
+
     /// Whether this list is backed by a live `IO::CatHandle` iterator.
     /// CatHandle iterators pull lazily internally, but Rakudo exposes both
     /// `.lines` and `.handles` as eager `Seq` values (`.is-lazy` is `False`).

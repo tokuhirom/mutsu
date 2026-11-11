@@ -692,7 +692,9 @@ impl NanBox {
     pub(in crate::value) fn flat_scan_class(&self) -> Option<bool> {
         match classify(self.0.get()) {
             Classified::Kind(Kind::Instance | Kind::Mixin) => Some(true),
-            Classified::Kind(Kind::ArrayList | Kind::Slip | Kind::SlipItemized) => None,
+            Classified::Kind(
+                Kind::ArrayList | Kind::Slip | Kind::SlipItemized | Kind::LazyList,
+            ) => None,
             _ => Some(false),
         }
     }
