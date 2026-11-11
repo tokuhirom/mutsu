@@ -55,7 +55,11 @@ impl MixinOverrides {
 /// `.^set_name` name do not take part. The lock only guards the memo slot
 /// (a composition node is shared across threads, see the module doc).
 #[derive(Debug, Default)]
-pub(crate) struct NameSuffixMemo(std::sync::Mutex<Option<(Arc<str>, Option<Arc<str>>)>>);
+pub(crate) struct NameSuffixMemo(std::sync::Mutex<Option<RenderedSuffix>>);
+
+/// The base name a suffix was rendered against, and the suffix (`None`: the
+/// composition adds no `+{...}` to that base).
+type RenderedSuffix = (Arc<str>, Option<Arc<str>>);
 
 impl NameSuffixMemo {
     /// Drop the memo: the markers it was rendered from are about to change.
