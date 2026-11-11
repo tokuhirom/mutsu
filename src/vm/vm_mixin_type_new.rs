@@ -43,7 +43,7 @@ impl Interpreter {
         if self.mro_declares_user_new(base) || self.mro_declares_user_bless(base) {
             return None;
         }
-        let roles = Self::mixin_role_applications(&mixins);
+        let roles = Self::mixin_role_applications(mixins);
         if roles.iter().any(|(role, _)| {
             self.role_or_parent_has_method(role, "new")
                 || self.role_or_parent_has_method(role, "bless")
