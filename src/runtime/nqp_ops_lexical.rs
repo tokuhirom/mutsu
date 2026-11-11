@@ -165,13 +165,18 @@ impl Interpreter {
             "bindlexdyn" => {
                 let name = name_operand(args, 0);
                 let key = lex_key(&name);
-                if !self.caller_env_stack.iter().any(|env| env.contains_key(key)) {
+                // Every routine frame declares its own `$_`, `$/` and `$!`,
+                // so the calling frame always has them, even when mutsu has
+                // not materialized the entry yet (the frame never assigned
+                // one): bind the calling frame's.
+                let implicit = matches!(key, "_" | "/" | "!");
+                if !implicit && !self.caller_env_stack.iter().any(|env| env.contains_key(key)) {
                     return Some(Err(RuntimeError::new(format!(
                         "Dynamic variable '{name}' not found"
                     ))));
                 }
                 let value = args.get(1).cloned().unwrap_or(Value::NIL);
-                if self.env.contains_key_own_tier(key) {
+                if implicit || self.env.contains_key_own_tier(key) {
                     // The running frame declares its own: bind the caller's
                     // binding only, which the caller drains on return.
                     if let Some(caller) = self.caller_env_stack.last_mut() {
