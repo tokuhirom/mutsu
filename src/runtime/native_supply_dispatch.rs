@@ -1712,89 +1712,14 @@ impl Interpreter {
                 Ok(source_values.last().cloned().unwrap_or(Value::NIL))
             }
             "Channel" => {
-                // Supply.Channel: create a Channel that receives all values
-                // emitted by the underlying supplier. Existing snapshot values
-                // are pushed first, then a live tap forwards future emits.
-                // The channel is closed when the supplier is done, or failed
-                // when the supplier quits.
-                //
-                // An on-demand supply must be TAPPED, not snapshot-drained: a
-                // supply block whose whenevers chain down to a live source
-                // (Cro's `establish` pipelines) materializes to zero values,
-                // and the old snapshot-and-close left the channel closed
-                // before any message could flow. Drive the pipeline with a
-                // done/quit-less tap and wire the block's emitter to the
-                // channel, so every `emit` (present and future) lands in it.
-                if attributes.contains_key("on_demand_callback") {
-                    let ch = SharedChannel::new();
-                    let supply_val =
-                        Value::make_instance(Symbol::intern("Supply"), attributes.clone());
-                    let tap = self.call_method_with_values(supply_val, "tap", vec![Value::NIL])?;
-                    let emitter_id = if let ValueView::Instance {
-                        attributes: tap_attrs,
-                        ..
-                    } = tap.view()
-                    {
-                        tap_attrs
-                            .as_map()
-                            .get("close_supplier_id")
-                            .and_then(|v| v.as_int())
-                            .map(|i| i as u64)
-                    } else {
-                        None
-                    };
-                    if let Some(eid) = emitter_id {
-                        register_supplier_channel_tap(eid, ch.clone());
-                        // Values a synchronous body already emitted (recorded in
-                        // the emitter's global state during the tap above) were
-                        // dropped by the NIL tap callback — replay them first.
-                        let (vals, done, quit_reason) = supplier_snapshot(eid);
-                        for v in vals {
-                            ch.send(v);
-                        }
-                        if let Some(reason) = quit_reason {
-                            ch.fail(reason);
-                        } else if done {
-                            ch.close();
-                        }
-                    } else {
-                        ch.close();
-                    }
-                    return Ok(Value::channel(ch));
-                }
-                // A preserving supply hands its un-replayed backlog to the
-                // channel, exactly as it does to a `.tap` (the backlog is what
-                // its supplier buffered while nothing listened, and a derived
-                // supply's `values` snapshot never saw it — #8825).
-                let preserved_sid = attributes
-                    .contains_key("preserving")
-                    .then(|| supplier_id_from_attrs(attributes))
-                    .flatten();
-                let ch = SharedChannel::new();
-                // Take the backlog and register the forwarding tap as one step
-                // against a concurrent `emit` (the emit gate), so an emission
-                // is neither lost between the two nor delivered by both.
-                let _gate = preserved_sid.map(|_| crate::runtime::native_methods::emit_gate());
-                let source_values = match preserved_sid {
-                    Some(sid) => supplier_take_preserved_backlog(sid),
-                    None => self.supply_get_values(attributes)?,
-                };
-                for v in source_values {
-                    ch.send(v);
-                }
-                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    let (_, done, quit_reason) = supplier_snapshot(supplier_id);
-                    if let Some(reason) = quit_reason {
-                        ch.fail(reason);
-                    } else if done {
-                        ch.close();
-                    } else {
-                        register_supplier_channel_tap(supplier_id, ch.clone());
-                    }
-                } else {
-                    ch.close();
-                }
-                Ok(Value::channel(ch))
+                // `Supply.Channel` is Rakudo's `self.tap(-> \v { $c.send(v) },
+                // done => { $c.close }, quit => { $c.fail($_) })`: tap the
+                // supply with collector shims that feed a fresh channel. A
+                // value emitted after the tap returns (a live `whenever`
+                // source, `Supply.interval`) reaches the channel when it is
+                // emitted, and a quit is received after the values before it.
+                let supply_val = Value::make_instance(Symbol::intern("Supply"), attributes.clone());
+                Ok(Value::channel(self.supply_tap_into_channel(&supply_val)?))
             }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self

@@ -11,7 +11,9 @@
 //! and returns, so the emitting thread (which may be a completely different
 //! thread than the one draining) is never blocked on real user code.
 
-use super::state_supply_collector::supply_collector_waker;
+use super::state_supply_collector::{
+    CollectorSink, supply_collector_sink, unregister_supply_collector,
+};
 use crate::runtime::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -29,26 +31,30 @@ impl Interpreter {
         else {
             return Ok(Value::NIL);
         };
-        let Some(waker) = supply_collector_waker(collector_id as u64) else {
+        let Some(sink) = supply_collector_sink(collector_id as u64) else {
             // The drain already gave up (deadline/disconnect) and unregistered
             // this collector; a late event has nowhere left to go.
             return Ok(Value::NIL);
         };
-        match method {
-            "__mutsu_collector_emit" => {
-                waker.push(
-                    0,
-                    SinkEvent::Emit(args.into_iter().next().unwrap_or(Value::NIL)),
-                );
+        let arg = || args.first().cloned().unwrap_or(Value::NIL);
+        match (method, sink) {
+            ("__mutsu_collector_emit", CollectorSink::Waker(waker)) => {
+                waker.push(0, SinkEvent::Emit(arg()));
             }
-            "__mutsu_collector_done" => {
+            ("__mutsu_collector_done", CollectorSink::Waker(waker)) => {
                 waker.push(0, SinkEvent::Done);
             }
-            "__mutsu_collector_quit" => {
-                waker.push(
-                    0,
-                    SinkEvent::Quit(args.into_iter().next().unwrap_or(Value::NIL)),
-                );
+            ("__mutsu_collector_quit", CollectorSink::Waker(waker)) => {
+                waker.push(0, SinkEvent::Quit(arg()));
+            }
+            ("__mutsu_collector_emit", CollectorSink::Channel(ch)) => ch.send(arg()),
+            ("__mutsu_collector_done", CollectorSink::Channel(ch)) => {
+                unregister_supply_collector(collector_id as u64);
+                ch.close();
+            }
+            ("__mutsu_collector_quit", CollectorSink::Channel(ch)) => {
+                unregister_supply_collector(collector_id as u64);
+                ch.fail(arg());
             }
             _ => {
                 return Err(RuntimeError::new(format!(

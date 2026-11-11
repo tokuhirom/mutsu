@@ -220,6 +220,9 @@ impl Interpreter {
             return Some(result);
         }
         let attrs = attributes.as_map();
+        if !want_array && Self::supply_lists_lazily(&attrs) {
+            return Some(self.supply_lazy_values(target, false));
+        }
         if !attrs.contains_key("proc_output")
             && let Some(sid) = attrs.get("supply_id").and_then(Value::as_int)
             && let Some(rx) = crate::runtime::native_methods::take_supply_channel(sid as u64)
@@ -243,5 +246,71 @@ impl Interpreter {
             }));
         }
         Some(self.supply_list_values(&attrs, true).map(Value::array))
+    }
+
+    /// Whether `.list` / `.Seq` of a supply with these attributes taps it
+    /// and pulls lazily ([`Self::supply_lazy_values`]): an on-demand
+    /// `supply { }` block, a supply derived from a live one
+    /// (`Supply.interval(1).map(...)`) and a timer/channel-backed one
+    /// (`Supply.interval(1)`). A static supply (`Supply.from-list`) is
+    /// answered from its stored values by `listify` before this is asked.
+    // Cost: O(1).
+    pub(crate) fn supply_lists_lazily(attrs: &crate::value::AttrMap) -> bool {
+        !attrs.contains_key("proc_output")
+            && (attrs.contains_key("on_demand_callback")
+                || attrs.contains_key("parent_supply_id")
+                || attrs.contains_key("supply_id"))
+    }
+
+    /// `Supply.list` / `.Seq` (Rakudo: "taps the Supply it is called on, and
+    /// returns a lazy list that will be reified as the Supply emits values"):
+    /// tap `supply` with collector shims that feed a channel, and answer the
+    /// channel's lazy list. Each element is pulled as it is emitted, so
+    /// `for $supply.list { last if ... }` ends without waiting for the
+    /// supply to be done (a `whenever Supply.interval(60)` in the block
+    /// never is); `done` ends the list and a `quit` is thrown once the values
+    /// emitted before it have been read. A list abandoned early leaves the
+    /// tap open, as on Rakudo.
+    // Cost: O(1) plus the synchronous part of the tap; O(1) per pulled element.
+    pub(crate) fn supply_lazy_values(
+        &mut self,
+        supply: &Value,
+        seq: bool,
+    ) -> Result<Value, RuntimeError> {
+        let ch = self.supply_tap_into_channel(supply)?;
+        let mut ll = crate::value::LazyList::new_cat_pull(
+            Value::channel(ch),
+            crate::value::CatPullMode::ChannelReceive,
+        );
+        ll.list_context = !seq;
+        Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
+    }
+
+    /// Tap `supply` with collector shims that feed a fresh channel: emit
+    /// sends, done closes, quit fails it (Rakudo's `Supply.Channel`).
+    // Cost: O(1) plus the synchronous part of the tap.
+    pub(crate) fn supply_tap_into_channel(
+        &mut self,
+        supply: &Value,
+    ) -> Result<crate::value::SharedChannel, RuntimeError> {
+        let ch = crate::value::SharedChannel::new();
+        let collector_id =
+            crate::runtime::native_methods::register_supply_channel_collector(ch.clone());
+        let emit_shim = Self::build_supply_collector_shim(collector_id, "emit");
+        let done_shim = Self::build_supply_collector_shim(collector_id, "done");
+        let quit_shim = Self::build_supply_collector_shim(collector_id, "quit");
+        if let Err(err) = self.call_method_with_values(
+            supply.clone(),
+            "tap",
+            vec![
+                emit_shim,
+                Value::pair("done".to_string(), done_shim),
+                Value::pair("quit".to_string(), quit_shim),
+            ],
+        ) {
+            crate::runtime::native_methods::unregister_supply_collector(collector_id);
+            return Err(err);
+        }
+        Ok(ch)
     }
 }

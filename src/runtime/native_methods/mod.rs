@@ -91,7 +91,7 @@ pub(in crate::runtime) use state_supplier::{
     get_direct_transform_output_supplier_ids, get_start_output_supplier_ids,
     get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
     get_transform_output_supplier_ids, last_supplier_tap_id, migrate_switch_inner,
-    register_supplier_batch_tap, register_supplier_channel_tap, register_supplier_classify_tap,
+    register_supplier_batch_tap, register_supplier_classify_tap,
     register_supplier_close_callback, register_supplier_done_callback,
     register_supplier_elems_transform_tap, register_supplier_flat_tap,
     register_supplier_forward_tap, register_supplier_head_tap, register_supplier_tail_tap,
@@ -118,7 +118,7 @@ pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
 };
 pub(in crate::runtime) use state_supply_collector::{
-    register_supply_collector, unregister_supply_collector,
+    register_supply_channel_collector, register_supply_collector, unregister_supply_collector,
 };
 
 use super::*;
