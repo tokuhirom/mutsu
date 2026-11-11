@@ -135,8 +135,18 @@ impl Interpreter {
     /// The `X::Multi::NoMatch` for `op` stepping the readonly variable `name`,
     /// naming its current value's type.
     // Cost: O(1) env lookup plus the message build.
-    fn incdec_readonly_error(&self, op: &str, name: &str) -> RuntimeError {
-        let current = self.env().get(name).map(|v| v.clone().deref_container());
+    // Cost: O(l) to find the slot by name, l = the chunk's locals; O(d) for
+    // the env read otherwise, d = env tiers.
+    fn incdec_readonly_error(&self, code: &CompiledCode, op: &str, name: &str) -> RuntimeError {
+        // The variable's own slot first: a slotted `++`/`--` keeps no env
+        // mirror of it (`compute_needs_env_sync`), so the env copy can be stale.
+        let current = code
+            .locals
+            .iter()
+            .position(|local| local == name)
+            .and_then(|slot| self.locals.get(slot).cloned())
+            .or_else(|| self.env().get(name).cloned())
+            .map(|v| v.deref_container());
         crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, current.as_ref())
     }
 
@@ -161,7 +171,7 @@ impl Interpreter {
             None
         };
         match decision {
-            Some(FreeVarBinding::Readonly(..)) => Err(self.incdec_readonly_error(op, name)),
+            Some(FreeVarBinding::Readonly(..)) => Err(self.incdec_readonly_error(code, op, name)),
             // Still ask the sigilless marker: it is a separate mechanism the
             // decision does not cover.
             Some(FreeVarBinding::Writable) => {
@@ -173,11 +183,13 @@ impl Interpreter {
                         Some(ValueView::Bool(true))
                     )
                 {
-                    return Err(self.incdec_readonly_error(op, name));
+                    return Err(self.incdec_readonly_error(code, op, name));
                 }
                 Ok(())
             }
-            None => self.check_readonly_for_incdec_for(name, Some(name_sym), op),
+            None => self
+                .check_readonly_for_incdec_for(name, Some(name_sym), op)
+                .map_err(|_| self.incdec_readonly_error(code, op, name)),
         }
     }
 
