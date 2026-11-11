@@ -374,6 +374,7 @@ mod vm_method_value;
 mod vm_mixin_type_new;
 mod vm_named_root_guard;
 mod vm_object_hash_keys;
+mod vm_proxy_subclass_method;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;

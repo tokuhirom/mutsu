@@ -81,6 +81,14 @@ impl Interpreter {
             return result;
         }
         if package_sym.is_none()
+            && let Some(result) = self.try_proxy_subclass_var_method(&target, method_sym, &args)
+        {
+            // A user method body: leave the dispatch impure so the call site
+            // reconciles the caller's slots.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
+        if package_sym.is_none()
             && let Some(result) = self.try_attribute_meta_row(&target, method_sym, &args)
         {
             // `set_rw`/`set_build` change the metaobject, never a caller lexical.
