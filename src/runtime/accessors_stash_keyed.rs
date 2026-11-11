@@ -113,6 +113,9 @@ impl Interpreter {
         if !is_global && self.is_enum_key_of_package(package_name, rest) {
             return Some(EnvStashMember::Value(rest.to_string()));
         }
+        if self.is_our_scalar_key(key_s) {
+            return Some(EnvStashMember::Value(format!("${rest}")));
+        }
         Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
             rest,
         )))
@@ -160,7 +163,17 @@ impl Interpreter {
         if rest.is_empty() || crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
+        if self.is_our_scalar_key(key) {
+            return Some(format!("${rest}"));
+        }
         Some(Self::stash_symbol_key_from_env_tail(rest))
+    }
+
+    /// Whether the sigil-less store key `key` (`Pkg::Baz`) holds a `$` scalar
+    /// rather than a term of the same spelling (#17364).
+    // Cost: O(1).
+    fn is_our_scalar_key(&self, key: &str) -> bool {
+        Symbol::lookup(key).is_some_and(|sym| self.lexicals.our_scalar_keys.contains(&sym))
     }
 
     /// `c2` of `rest` = `M::c2` when `M` is the last component of the package

@@ -635,11 +635,16 @@ impl Interpreter {
                 Some('$') | None => qualified,
                 Some(sigil) => format!("{sigil}{qualified}"),
             };
+            let env_sym = Symbol::intern(&env_name);
             if sigil.is_none() {
                 // An unsigiled key is the stash entry itself, not a `$` scalar.
-                self.lexicals
-                    .our_term_keys
-                    .insert(Symbol::intern(&env_name));
+                self.lexicals.our_term_keys.insert(env_sym);
+                self.lexicals.our_scalar_keys.remove(&env_sym);
+            } else if sigil == Some('$') {
+                // `$Baz` is stored as `Pkg::Baz`; record that it is the scalar
+                // and not a term of that spelling (#17364).
+                self.lexicals.our_scalar_keys.insert(env_sym);
+                self.lexicals.our_term_keys.remove(&env_sym);
             }
             self.env_mut().insert(env_name.clone(), binding.clone());
             self.set_our_var_exact(env_name, binding.clone());
