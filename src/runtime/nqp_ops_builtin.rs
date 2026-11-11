@@ -126,6 +126,10 @@ impl Interpreter {
             "ctx" => Ok(self.nqp_ctx()),
             // Cost: O(1).
             "ctxcaller" => Ok(self.nqp_ctxcaller(args)),
+            // The caller skipping thunk frames: mutsu runs a thunk (a `where`,
+            // a default) without a context of its own, so it is the caller.
+            // Cost: O(1).
+            "ctxcallerskipthunks" => Ok(self.nqp_ctxcaller(args)),
             // Cost: O(v), v = variables visible in the enclosing scope.
             "ctxouter" => self.nqp_ctxouter(args),
             // Cost: O(v), v = variables in the context.
@@ -345,6 +349,14 @@ impl Interpreter {
                 let val = super::nqp_attr::NqpAttrConv::of_op(op).bind(raw);
                 if let Some(done) = self.nqp_code_do_attr(&obj, &attr, Some(&val)) {
                     return Some(done);
+                }
+                // A Match's `$!made` is what `make` writes (rakudo's `make` is
+                // this bind; EEL's own `&make` spells it out, #16888).
+                if attr == "$!made"
+                    && let Some(made) =
+                        self.match_make(&crate::runtime::types::unwrap_varref_value(obj.clone()), &val)
+                {
+                    return Some(Ok(made));
                 }
                 match Self::nqp_bindattr_value(op, &obj, &attr, val.clone()) {
                     Ok(()) => Ok(val),

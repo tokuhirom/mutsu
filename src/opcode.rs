@@ -10426,6 +10426,12 @@ impl CompiledCode {
                     op_reads_caller = true;
                     true
                 }
+                // `nqp::getlexcaller('$/')` reads a lexical as the calling frames
+                // see it (EEL's exported `&make`, #16888).
+                OpCode::NqpOp { id, .. } if crate::nqp_op_ids::nqp_op_name(*id) == "getlexcaller" => {
+                    op_reads_caller = true;
+                    true
+                }
                 OpCode::SymbolicDeref { .. }
                     if *derefs_read_caller_lexical
                         .get_or_insert_with(|| self.symbolic_derefs_name_caller_lexical()) =>

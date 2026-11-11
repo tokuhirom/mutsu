@@ -280,6 +280,7 @@ impl Interpreter {
                 | "Capture"
                 | "Junction"
                 | "Match"
+                | "NQPMatchRole"
                 | "Signature"
                 | "Parameter"
                 | "WhateverCode"

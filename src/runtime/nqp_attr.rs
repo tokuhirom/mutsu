@@ -152,6 +152,11 @@ impl NqpAttrSite {
     /// not the op's, and the site keeps the generic dispatch.
     // Cost: O(n), n = chars of the name; paid once per compiled site.
     pub(crate) fn of_op(op: &str, argc: usize, name: &str) -> Option<Self> {
+        // A Match's `$!made` is the match's `.made`, which only the generic op
+        // (with the interpreter at hand) writes (#16888).
+        if name == "$!made" {
+            return None;
+        }
         let kind = match (op, argc) {
             ("getattr" | "getattr_i" | "getattr_n" | "getattr_s", 3) => NqpAttrSiteKind::Get,
             ("bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s", 4) => NqpAttrSiteKind::Bind,
