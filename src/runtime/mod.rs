@@ -230,7 +230,7 @@ pub(crate) fn seed_native_subclass_payloads(
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
-                    "list" => positional = crate::runtime::value_to_list(&value),
+                    "list" => positional = crate::runtime::value_to_list(value),
                     "hash" => {
                         if let ValueView::Hash(map) = value.view() {
                             for (k, v) in map.iter() {
