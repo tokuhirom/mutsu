@@ -203,6 +203,7 @@ mod signature_decl_origins;
 mod signature_literal;
 pub(crate) mod slang_bridge;
 pub(crate) mod slang_block_scope;
+pub(crate) mod fresh_copy;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;

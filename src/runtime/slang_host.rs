@@ -444,7 +444,8 @@ impl Interpreter {
             Some((end, node)) => {
                 let cursor = Self::make_cursor_value(&class, &orig, pos as i64, end as i64, false);
                 if let ValueView::Instance { attributes, .. } = cursor.view() {
-                    attributes.insert("ast", node);
+                    // The match's own nodes: an action may edit them in place.
+                    attributes.insert("ast", crate::rakuast::fresh_copy::fresh_copy(&node));
                 }
                 Ok(cursor)
             }
