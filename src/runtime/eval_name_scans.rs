@@ -270,6 +270,9 @@ impl UndeclaredName<'_> {
             || interp.has_class(name)
             || interp.has_function(name)
             || interp.has_multi_function_unindexed(name)
+            // A type of the CORE setting mutsu has no registry entry for
+            // (`NQPMatchRole`, which EEL's `&make` tests against, #16888).
+            || crate::core_type_names::contains(name)
             // A routine an enclosing block's `use` bound in its lexical import
             // set, not in the registry (ADR-8751).
             || interp.lexically_imported_routine(name)

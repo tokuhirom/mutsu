@@ -514,6 +514,11 @@ impl Interpreter {
         // `frame.saved_env` holds the flat caller for restoration; the exit
         // writeback iterates this overlay (overlay-only) = exactly the closure's
         // own mutations, which is what it must propagate back to the caller.
+        // The caller's frame entry is the caller's env, pushed before this
+        // frame's overlay exists: a name the closure owns (`$/` of a routine)
+        // or captures must not answer `CALLER::` / `nqp::getlexcaller` for the
+        // caller (EEL's exported `&make`, #16888), as for a named routine.
+        loan_env!(self, push_caller_env_in_call_frame());
         {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
@@ -754,8 +759,6 @@ impl Interpreter {
         // frame pushed above journals the change, so the caller's marks come
         // back on return (#10389).
         self.reconcile_captured_readonly(data.captured_readonly.as_ref(), cc);
-
-        loan_env!(self, push_caller_env_in_call_frame());
 
         // Push Sub value to block_stack for callframe().code
         // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs).

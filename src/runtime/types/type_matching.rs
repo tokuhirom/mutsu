@@ -1207,7 +1207,7 @@ impl Interpreter {
             // `Grammar` IS a `Match` subclass), as does the cursor's own class.
             // Unlisted constraints (subsets, roles) fall through to the full
             // checker below, which materializes through `view()` as an Instance.
-            matches!(constraint, "Match" | "Any" | "Mu")
+            matches!(constraint, "Match" | "NQPMatchRole" | "Any" | "Mu")
                 || constraint == value_for_tag.match_dispatch_class()
         } else {
             // The lowercase native aliases are accepted alongside the boxed

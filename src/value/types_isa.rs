@@ -294,7 +294,9 @@ impl Value {
             // grammar (its `Grammar` parent reaches `Match` through the builtin
             // type catalog), but not an anonymous one (`my grammar { ... }`,
             // registered as `<anon|N>`) — and the shape test is exact anyway.
-            "Match" => {
+            // rakudo's `Match` does `NQPMatchRole` (the cursor role every
+            // match and grammar cursor shares; EEL's `&make` tests it, #16888).
+            "Match" | "NQPMatchRole" => {
                 matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance()
             }
             "Exception" => self.instance_is_exception_by_name(),

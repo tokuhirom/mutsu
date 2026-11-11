@@ -97,6 +97,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Thread", "start", 1, thread_start, RowFlags::ANY_NAMED, &[]),
     row!("Thread", "yield", 0, thread_yield),
     row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic, named: &["override"]),
+    row!(
+        "Rakudo::Internals",
+        "IS-ISOLATED-MATCH",
+        1,
+        is_isolated_match
+    ),
     row!("Rakudo::Internals", "FILETEST-E", 1, filetest_e),
     row!("Rakudo::Internals", "FILETEST-D", 1, filetest_d),
     row!("Rakudo::Internals", "FILETEST-F", 1, filetest_f),
@@ -367,6 +373,17 @@ fn thread_yield(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> An
 // Cost: O(1) to build the derived supply.
 fn supply_start(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     Some(i.dispatch_supply_transform(t.clone(), "start", &all_args(args, named)))
+}
+
+/// `Rakudo::Internals.IS-ISOLATED-MATCH(\cont)`: whether `cont` is a `$/`
+/// Scalar whose descriptor is rakudo's `ContainerDescriptor::IsolatedMatch`,
+/// the mark a method-form match leaves so that `make` does not write the
+/// caller's `$/` (EEL's own `&make`, #16888). mutsu's `$/` carries no
+/// container descriptors, so no container is one: rakudo's answer for those is
+/// the native `0` of its `&&` chain.
+// Cost: O(1).
+fn is_isolated_match(_: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(Ok(Value::int(0)))
 }
 
 /// `Rakudo::Internals.REGISTER-DYNAMIC` (ADR-11276 §9.159).

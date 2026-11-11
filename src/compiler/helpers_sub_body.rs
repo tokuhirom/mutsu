@@ -811,6 +811,10 @@ impl Compiler {
             && !is_cached
             && !cf.has_inner_subs
             && !cf.code.uses_capture
+            // A body that reads its caller's frame (`CALLER::`,
+            // `nqp::getlexcaller`) needs the frame-pushing call path, which a
+            // TRIR call skips (#16888).
+            && !cf.code.uses_callframe
             && cf.code.lexical_import_chains.is_empty()
         {
             cf.trir = crate::trir::compile::compile_routine(

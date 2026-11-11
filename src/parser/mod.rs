@@ -608,6 +608,13 @@ pub(crate) fn parse_fragment_spelled(
     let saved_scopes = stmt::simple::snapshot_scopes();
     let saved_package_path = stmt::simple::snapshot_package_path();
     let saved_language_version = stmt::simple::current_language_version();
+    // `parse_program` resets the unit's slang state (hooks, parser modes,
+    // declarator keywords); a regex code block parsed in the middle of a unit
+    // that activated a slang must leave it active for the rest of the unit
+    // (EEL's `pattern` after a `/ a { ... } /`, #16888).
+    let saved_slang_hooks = stmt::simple::hooks_snapshot();
+    let saved_slang_modes = stmt::simple::slang_modes_snapshot();
+    let saved_declare_keywords = stmt::simple::declare_keywords_snapshot();
     // A fragment is not a compilation unit: it must not replace the
     // declarator docs the enclosing unit's parse published.
     let saved_unit_docs = decl_doc::take_unit_docs();
@@ -629,6 +636,9 @@ pub(crate) fn parse_fragment_spelled(
     stmt::simple::restore_scopes(saved_scopes);
     stmt::simple::restore_package_path(saved_package_path);
     stmt::simple::set_current_language_version(&saved_language_version);
+    stmt::simple::restore_hooks(saved_slang_hooks);
+    stmt::simple::restore_slang_modes(saved_slang_modes);
+    stmt::simple::restore_declare_keywords(saved_declare_keywords);
     result
 }
 
