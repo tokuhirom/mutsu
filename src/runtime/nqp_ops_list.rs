@@ -322,6 +322,8 @@ impl Interpreter {
                 for (k, v) in entries {
                     data.map.insert(k, v);
                 }
+                // A capture's `%!hash` installed here follows the map's node.
+                Interpreter::capture_hash_follow_bind(storage, container);
                 true
             }
             // An `is List` / `is Array` subclass instance keeps its elements in

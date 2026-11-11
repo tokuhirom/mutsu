@@ -245,6 +245,12 @@ impl Interpreter {
     // Cost: O(1) for a plain instance, one hash probe of an interned id (two when the
     // operand's twigil form is also probed); other receivers cost what the generic op does.
     pub(crate) fn nqp_getattr_named(obj: &Value, name: NqpAttrName) -> Option<Value> {
+        // A `Capture` subclass's `@!list` / `%!hash` (`capture_storage`).
+        if matches!(name.read_key.as_str(), "hash" | "list")
+            && let Some(storage) = Self::capture_storage_read(obj, name.read_key.as_str())
+        {
+            return storage;
+        }
         // A plain instance only: a Match (lazy, a `Match` instance, or a
         // grammar cursor) has NQP-level attribute names that are not the keys
         // mutsu stores, so it takes the generic body.
@@ -288,6 +294,12 @@ impl Interpreter {
         name: NqpAttrName,
         val: Value,
     ) -> Result<(), RuntimeError> {
+        if let Some(key) = name.write_key
+            && matches!(key.as_str(), "hash" | "list")
+            && Self::capture_storage_bind(obj, key.as_str(), &val)
+        {
+            return Ok(());
+        }
         if let Some(key) = name.write_key
             && !name.container_storage
             && let ValueView::Instance { attributes, .. } = obj.view()

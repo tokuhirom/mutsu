@@ -592,6 +592,9 @@ impl Interpreter {
         if Self::nqp_bind_container_storage(attr_key, obj, &val) {
             return Ok(());
         }
+        if Self::capture_storage_bind(obj, attr_key, &val) {
+            return Ok(());
+        }
         let is_pair = matches!(obj.view(), ValueView::Pair(..));
         let is_value_pair = matches!(obj.view(), ValueView::ValuePair(..));
         if (is_pair || is_value_pair) && matches!(attr_key, "key" | "value") {
@@ -705,6 +708,9 @@ impl Interpreter {
             && matches!(obj.view(), ValueView::Array(..) | ValueView::Hash(_))
         {
             return obj.raw_storage_view();
+        }
+        if let Some(storage) = Self::capture_storage_read(obj, bare) {
+            return storage;
         }
         // `$*CU`'s `$!check-phasers`: the raw list whose closures run in the
         // unit's CHECK phase (Qwiratry's `BodyRewrite.install` pushes onto it).

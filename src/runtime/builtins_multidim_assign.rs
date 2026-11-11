@@ -589,25 +589,34 @@ impl Interpreter {
                     .0
                     .to_string()
             });
+            // Only a `%`/`@` attribute's type is its elements' type: a
+            // `has Hash $.h` that holds a Hash constrains the attribute itself
+            // (EEL's `has Hash $.captures`, #16888).
+            let elements_typed = tc.is_some()
+                && self
+                    .collect_class_attributes(&class_name.resolve())
+                    .iter()
+                    .find(|attr| attr.name == method)
+                    .is_none_or(|attr| matches!(attr.sigil, '%' | '@'));
             if (is_hash_attr || is_array_attr)
+                && elements_typed
                 && let Some(ref type_constraint) = elem_tc
                 && !matches!(type_constraint.as_str(), "Mu" | "Any")
                 && !effective_value.is_nil()
                 && !self.type_matches_value(type_constraint, &effective_value)
             {
                 let sigil = if is_hash_attr { "%" } else { "@" };
-                return Err(crate::runtime::RuntimeError::new(format!(
-                    "Type check failed for an element of {}{}; expected {} but got {}",
-                    sigil,
-                    method,
+                return Err(self.type_check_element_failure(
+                    &format!("{sigil}!{method}"),
                     type_constraint,
-                    crate::runtime::utils::value_type_name(&effective_value),
-                )));
+                    &effective_value,
+                ));
             }
             // Detect autovivification into typed hash attribute:
             // $o.h<key1><key2> = val  would autovivify h<key1> as a Hash,
             // but if h is typed (e.g. Int), a Hash is not a valid value.
             if is_hash_attr
+                && elements_typed
                 && let Some(ref type_constraint) = tc
                 && !matches!(type_constraint.as_str(), "Mu" | "Any" | "Hash")
             {

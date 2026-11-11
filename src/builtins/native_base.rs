@@ -111,9 +111,25 @@ fn subclass_payload(target: &Value) -> Option<Value> {
         .or_else(|| map.get(SEQ_PAYLOAD))
         .or_else(|| map.get(VERSION_PAYLOAD))
         .or_else(|| map.get(DEPSPEC_PAYLOAD))
-        .or_else(|| map.get(CAPTURE_PAYLOAD))
         .or_else(|| map.get(crate::symbol::wk::baggy_data()))
         .cloned()
+        .or_else(|| capture_payload(&map))
+}
+
+/// The `Capture` an instance of a user `Capture` subclass stands for: its
+/// positionals, and the nameds its live hash node holds now.
+// Cost: O(1) without a hash node; O(n) with one, n = its pairs.
+fn capture_payload(map: &crate::value::AttrMap) -> Option<Value> {
+    let payload = map.get(CAPTURE_PAYLOAD)?;
+    let Some(node) = map.get(CAPTURE_HASH) else {
+        return Some(payload.clone());
+    };
+    let (ValueView::Capture { positional, .. }, ValueView::Hash(hash)) =
+        (payload.view(), node.view())
+    else {
+        return Some(payload.clone());
+    };
+    Some(Value::capture(positional.to_vec(), hash.map.clone()))
 }
 
 /// The reserved attribute an instance of a user subclass of `Range` carries
@@ -131,6 +147,11 @@ pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
 /// The reserved attribute an instance of a user subclass of `Capture` carries
 /// its capture in (#16888).
 pub(crate) const CAPTURE_PAYLOAD: &str = "__mutsu_capture_value";
+
+/// The reserved attribute an instance of a user subclass of `Capture` keeps
+/// its nameds in: a hash node of its own, which nqp code shares with a `Hash`
+/// through `%!hash` (`runtime::capture_storage`, #16888).
+pub(crate) const CAPTURE_HASH: &str = "__mutsu_capture_hash";
 
 /// The reserved attribute an instance of a user subclass of
 /// `CompUnit::DependencySpecification` carries its specification in (#14850).
