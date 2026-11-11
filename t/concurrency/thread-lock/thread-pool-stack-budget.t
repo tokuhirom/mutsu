@@ -84,8 +84,18 @@ else {
 
     # Leave the process almost no address space beyond what it already uses,
     # so no thread stack fits: every refusal must be a catchable X::AdHoc.
+    # The child lowers its own `RLIMIT_AS` to its current size plus a slack
+    # below the smallest stack tier (4 MiB in a release build, ADR-0123 §6).
+    # Measuring in-process makes the slack exact: a separate calibration run
+    # varied by a whole 64 MiB malloc arena under load, enough for a 4 MiB
+    # stack to fit and the refusal to go missing.
     my $refuse = q:to/CODE/;
-        say "/proc/self/status".IO.lines.grep(/^VmSize/).head.words[1];
+        use NativeCall;
+        sub setrlimit(int32, CArray[uint64] --> int32) is native {*}
+        my constant RLIMIT_AS = 9;
+        my $vmsize-kib = "/proc/self/status".IO.lines.grep(/^VmSize/).head.words[1].Int;
+        my $limit = CArray[uint64].new(($vmsize-kib + 3_000) * 1024 xx 2);
+        die "setrlimit failed" if setrlimit(RLIMIT_AS, $limit);
         my $p = start { 42 };
         try await $p;
         say "start: ", $!.^name, ": ", $!.message if $!;
@@ -93,13 +103,7 @@ else {
         say "thread: ", $!.^name, ": ", $!.message if $!;
         say "survived";
     CODE
-    my ($, $calib) = run-child($refuse);
-    my $vmsize = $calib.lines.head.Int;
-    # Leave room for startup mappings to vary between the calibration and
-    # constrained children under load, while staying below the smallest 32 MiB
-    # stack tier so the OS still has to refuse every stack size.
-    my $stack-startup-slack-kib = 28_000;
-    my ($rc, $rout, $rerr) = run-child($refuse, :ulimit(~($vmsize + $stack-startup-slack-kib)));
+    my ($rc, $rout, $rerr) = run-child($refuse);
     ok $rout.contains('survived'), 'a refused thread does not take the process down';
     my @refusals = $rout.lines.grep(/^ ['start'|'thread'] ': '/);
     # An awaited refusal arrives `but X::Await::Died`, as in rakudo.
