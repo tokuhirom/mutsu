@@ -1349,10 +1349,7 @@ impl Interpreter {
     /// `type_matches_value` with the whole spelling. `Nil` and a `Failure`
     /// pass any return type, as in the general return check.
     // Cost: O(1).
-    fn light_return_smiley_check(
-        val: &Value,
-        smiley: crate::opcode::TypeSmiley,
-    ) -> Option<bool> {
+    fn light_return_smiley_check(val: &Value, smiley: crate::opcode::TypeSmiley) -> Option<bool> {
         use crate::opcode::TypeSmiley as S;
         if val.is_nil() {
             return Some(true);
