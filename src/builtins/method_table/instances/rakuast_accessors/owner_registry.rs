@@ -50,7 +50,7 @@ const OWNER_PARTS: &[&[OwnerChain]] = &[
     owners_14::CHAINS,
     owners_15::CHAINS,
 ];
-const OWNER_N: usize = 312;
+const OWNER_N: usize = 313;
 static OWNER_CHAINS: [OwnerChain; OWNER_N] = flatten_owners();
 
 const fn flatten_owners() -> [OwnerChain; OWNER_N] {
