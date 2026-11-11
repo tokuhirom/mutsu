@@ -175,7 +175,7 @@ impl Interpreter {
                 let leaves = crate::runtime::utils::shaped_array_leaves(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), leaves, &grep_adverb)
             }
-            ValueView::Array(items, _arr_kind) => {
+            ValueView::Array(items, arr_kind) => {
                 // ADR-0058 step 3b: with the default `:v` adverb the callback
                 // runs when the Seq is CONSUMED, not here. The adverbed forms
                 // (`:k`/`:kv`/`:p`) need positional indices over the whole
@@ -188,7 +188,11 @@ impl Interpreter {
                         func: args.first().cloned(),
                         fatal: self.module.fatal_mode,
                         mode: crate::value::MapGrepMode::GrepArray(target.clone()),
-                        plan: Default::default(),
+                        // A `List` source decides the topic's writability per
+                        // element, as `.map` does (#16949).
+                        plan: crate::runtime::map_grep_plan::MapGrepPlanSlot::for_source(
+                            matches!(arr_kind, crate::value::ArrayKind::List),
+                        ),
                     }));
                 }
                 self.grep_over_array_promoting(items.clone(), args.first().cloned(), &grep_adverb)

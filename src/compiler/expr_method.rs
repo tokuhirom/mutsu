@@ -374,8 +374,9 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.pending_topic_site_block =
-                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block = matches!(mname.as_str(), "map" | "grep" | "first")
+                && Self::is_bare_block_arg(arg)
+                && (immutable_topic_cb || !Self::receiver_topic_decided_at_run_time(target));
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             self.pending_topic_site_block = false;
@@ -611,6 +612,22 @@ impl Compiler {
         // `@a` was itself `:=`-bound to a provably-bare Positional.
         matches!(mname, "map" | "grep" | "first")
             && self.receiver_provably_yields_bare_items(target)
+    }
+
+    /// A receiver whose syntax says nothing about whether its elements are
+    /// containers: a plain `$` variable or a sigilless term (a `\it`
+    /// parameter, a constant). Its `.map`/`.grep`/`.first` block is not
+    /// "site decided" unless it is provably bare, so the run time decides from
+    /// the receiver's List-vs-Array identity and, for a `List`, from each
+    /// element (#16949: `sub a(\it) { it.map({ --$_ }) }` called with
+    /// `(1, 2)` must refuse the write, as raku does).
+    // Cost: O(1).
+    pub(super) fn receiver_topic_decided_at_run_time(target: &Expr) -> bool {
+        match target {
+            Expr::Grouped(inner) => Self::receiver_topic_decided_at_run_time(inner),
+            Expr::Var(_) | Expr::BareWord(_) => true,
+            _ => false,
+        }
     }
 
     /// A directly-written bare block argument (`{ ... }`), the only shape whose
@@ -980,8 +997,9 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.pending_topic_site_block =
-                matches!(mname.as_str(), "map" | "grep" | "first") && Self::is_bare_block_arg(arg);
+            self.pending_topic_site_block = matches!(mname.as_str(), "map" | "grep" | "first")
+                && Self::is_bare_block_arg(arg)
+                && (immutable_topic_cb || !Self::receiver_topic_decided_at_run_time(target));
             self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             self.pending_topic_site_block = false;

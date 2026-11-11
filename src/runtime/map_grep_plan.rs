@@ -70,6 +70,13 @@ pub(crate) struct InlineLoopPlan {
     pub(crate) keeps_outer_topic: bool,
     /// See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
     pub(crate) immutable_topic: bool,
+    /// The topic's writability is decided per ELEMENT
+    /// ([`super::resolution_map_grep::set_loop_topic_readonly`]): the source
+    /// is a `List` value and no call site spoke for the callback, so an
+    /// element that is a container (`($x, $y).map(&f)`) keeps `$_` writable
+    /// while a bare one (`(1, 2)` reaching `.map` through a parameter, #16949)
+    /// makes it immutable.
+    pub(crate) topic_per_element: bool,
     /// See `frame_authoritative_set`.
     pub(crate) block_authoritative: Vec<Symbol>,
     /// Names the loop binds per iteration or the body declares: the params,
@@ -119,11 +126,12 @@ pub(crate) struct MapGrepPlanSlot {
     /// its `LAST` phaser runs with. A pull that finds the source already read
     /// to its end has no call of its own to take them from (#14196).
     pub(crate) last_call_args: Option<Vec<Value>>,
-    /// The Seq's source is an immutable `List` value (not an `Array`), so a
-    /// plain callback's implicit `$_` has no container to assign into even when
-    /// the callback itself arrived as a value (`$list.map(&f)`); set where the
-    /// receiver is known (`dispatch_map_method`) and OR-ed into
-    /// `InlineLoopPlan::immutable_topic`.
+    /// The Seq's source is a `List` value (not an `Array`), so a plain
+    /// callback's implicit `$_` is writable only where the element itself is
+    /// a container, even when the callback arrived as a value
+    /// (`$list.map(&f)`); set where the receiver is known
+    /// (`dispatch_map_method`) and turned into
+    /// `InlineLoopPlan::topic_per_element`.
     pub(crate) immutable_source: bool,
 }
 
@@ -243,7 +251,7 @@ impl Interpreter {
             .compiled_code
             .as_ref()
             .is_some_and(|cc| cc.topic_site_decided);
-        plan.immutable_topic |=
+        plan.topic_per_element =
             slot.immutable_source && !plan.keeps_outer_topic && !site_decided;
         let plan = Arc::new(plan);
         slot.inline = Some(plan.clone());
@@ -393,6 +401,7 @@ impl Interpreter {
                     .compiled_code
                     .as_ref()
                     .is_some_and(|cc| cc.immutable_topic),
+            topic_per_element: false,
             block_authoritative: data
                 .compiled_code
                 .as_ref()

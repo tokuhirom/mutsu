@@ -166,7 +166,18 @@ pub(crate) fn bind_loop_topic(
 /// through `run_reuse` without `push_call_frame`, so without an open readonly
 /// scope the mark would skip the undo journal and leak permanently (see the
 /// guard's own comment at each call site).
-pub(crate) fn set_loop_topic_readonly(vm: &mut Interpreter, immutable_topic: bool) {
+///
+/// `per_element` ([`super::map_grep_plan::InlineLoopPlan::topic_per_element`])
+/// decides from the element just bound to `$_` instead: a container element of
+/// a `List` (`($x, $y).map(&f)`) is writable, a bare one is not (#16949).
+// Cost: O(1).
+pub(crate) fn set_loop_topic_readonly(vm: &mut Interpreter, immutable_topic: bool, per_element: bool) {
+    let immutable_topic = immutable_topic
+        || (per_element
+            && !vm
+                .env()
+                .get_sym(crate::symbol::wk::topic())
+                .is_some_and(|v| v.is_container_ref()));
     if immutable_topic {
         vm.mark_readonly_sym_with(
             crate::symbol::wk::topic(),
@@ -813,6 +824,7 @@ impl Interpreter {
             // its implicit topic has no container to assign into -- see
             // `CompiledCode::immutable_topic` and `set_loop_topic_readonly`.
             let immutable_topic = plan.immutable_topic;
+            let topic_per_element = plan.topic_per_element;
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
@@ -933,7 +945,7 @@ impl Interpreter {
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
-                    set_loop_topic_readonly(vm, immutable_topic);
+                    set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
                     match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let val = vm
@@ -1193,6 +1205,7 @@ impl Interpreter {
         // is not a provably-bare receiver, and this scan already binds the
         // element CONTAINERS for it.
         let immutable_topic = plan.immutable_topic;
+            let topic_per_element = plan.topic_per_element;
 
         let mut found: Option<(usize, Value)> = None;
         // A matcher closure may execute a regex.  Keep the resulting Match
@@ -1233,7 +1246,7 @@ impl Interpreter {
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
-                    set_loop_topic_readonly(vm, immutable_topic);
+                    set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
                     match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let pred = vm
