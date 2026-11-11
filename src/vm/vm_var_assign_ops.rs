@@ -1158,7 +1158,12 @@ impl Interpreter {
         arc: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) {
-        let is_anon_container = crate::runtime::utils::has_anon_marker(name);
+        // Only an `@`/`%` variable IS its container. A scalar that holds one
+        // (`$e = @a`) is rebound by its next assignment, never written into:
+        // `$e = [9]` from a routine must leave `@a` alone (#16888, EEL 0.3's
+        // fork copier restoring `$alias = %state`).
+        let plain_store = crate::runtime::utils::has_anon_marker(name)
+            || !(name.starts_with('@') || name.starts_with('%'));
         // A deferred element token only reaches a by-name store as a `:=` rebind
         // (`$*p := $*p<k>`; a plain `=` reads it through first), so it replaces
         // the cell's contents. Storing *through* a cell that still holds the
@@ -1171,7 +1176,7 @@ impl Interpreter {
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                if !is_anon_container
+                if !plain_store
                     && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc)
                     // A `Map` is immutable: overwriting its published node in
                     // place frees the table under a lock-free reader on
@@ -1182,7 +1187,7 @@ impl Interpreter {
                 Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
             }
             (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
-                if !is_anon_container && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                if !plain_store && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
             {
                 Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
             }
