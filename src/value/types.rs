@@ -416,7 +416,14 @@ pub(crate) fn mixin_roles_applied_last_first(mixins: &MixinOverrides, base: &str
 /// [`role_mixin_suffix`], but skipping the role whose name equals `base` — the
 /// role-punning case, where `R.new` builds `Mixin(Instance{R}, __mutsu_role__R)`
 /// and raku reports plain `R` rather than `R+{R}`. Pass `""` to exclude nothing.
+// Cost: O(1) when `mixins` last rendered against `base` (the memo); otherwise
+// O(m log m), m = marker entries of the composition.
 pub(crate) fn role_mixin_suffix_excluding(mixins: &MixinOverrides, base: &str) -> Option<String> {
+    mixins.name_suffix_for(base, || render_role_mixin_suffix(mixins, base))
+}
+
+// Cost: O(m log m), m = marker entries of the composition.
+fn render_role_mixin_suffix(mixins: &MixinOverrides, base: &str) -> Option<String> {
     // APPLICATION order, not alphabetical: raku gives each composition its own
     // bracket and shows them in the order they were applied, which is the
     // property that distinguishes `(1 but A) but B` (`Int+{A}+{B}`) from
