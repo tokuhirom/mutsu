@@ -351,7 +351,18 @@ impl InstanceAttrs {
             };
             if matches!(v.view(), ValueView::ContainerRef(_)) {
                 let taken = std::mem::replace(v, Value::NIL);
-                *v = taken.deref_container();
+                let inner = taken.deref_container();
+                // A slot bound to a Scalar around an Array/Hash
+                // (`Attribute.set_value` of a `$`-variable, #17418) keeps a
+                // Scalar of its own in the clone, as rakudo's clone gives every
+                // container slot a fresh one; a plain value needs no cell.
+                *v = if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+                    Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                        inner,
+                    )))
+                } else {
+                    inner
+                };
             }
             // An `@`/`%` attribute nobody has filled yet is not vivified in
             // Rakudo, so the clone and the original each vivify their own on
