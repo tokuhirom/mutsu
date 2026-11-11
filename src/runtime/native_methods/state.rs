@@ -271,6 +271,16 @@ pub(crate) enum SupplyEvent {
 /// materialiser); a `whenever` on a `Proc::Async` output Supply registers a tap
 /// as well, so without this both paths would fire it.
 ///
+/// Whether `supply_id`'s channel is a competing-consumer stream (an
+/// `IO::Socket::Async` read Supply, see `SupplyReceiver::mark_exclusive`).
+// Cost: O(1).
+pub(crate) fn supply_channel_is_exclusive(supply_id: u64) -> bool {
+    supply_channel_map()
+        .lock()
+        .ok()
+        .is_some_and(|map| map.get(&supply_id).is_some_and(|t| t.is_exclusive()))
+}
+
 /// The name is historical: it once handed over the sole receiver.
 pub(crate) fn take_supply_channel(supply_id: u64) -> Option<super::supply_channel::SupplyReceiver> {
     let subscribed = supply_channel_map().lock().ok().and_then(|mut map| {

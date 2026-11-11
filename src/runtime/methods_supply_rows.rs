@@ -334,6 +334,16 @@ impl Interpreter {
             return None;
         }
         let sid = attrs.get("supply_id").and_then(Value::as_int)?;
+        // TODO: a competing-consumer stream (an `IO::Socket::Async` read
+        // Supply) keeps the eager drain: pulled lazily, two listener taps that
+        // each `append` their connection's `.list` intermittently wait forever
+        // for events that never reach the receiver
+        // (`roast/S32-io/IO-Socket-Async.t`, the two-listener block), a race
+        // not yet understood. Such a stream ends with its connection, so the
+        // drain returns; the lazy form is what Rakudo does.
+        if crate::runtime::native_methods::supply_channel_is_exclusive(sid as u64) {
+            return None;
+        }
         let rx = crate::runtime::native_methods::take_supply_channel(sid as u64)?;
         let pull_id = crate::runtime::native_methods::register_supply_pull(rx);
         let mut ll = crate::value::LazyList::new_cat_pull(
