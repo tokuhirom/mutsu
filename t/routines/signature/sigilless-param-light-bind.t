@@ -6,7 +6,7 @@ use Test;
 # the cached light dispatch as well as its first (cold) resolution. Found via
 # AttrX::Mooish / Monad, whose helpers all take `Mu \obj` (#17335, #17376).
 
-plan 15;
+plan 17;
 
 sub set-it(\x, $v) { x = $v }
 sub read-it(\x) { x }
@@ -96,4 +96,14 @@ sub type-name(Mu \x) { x.^name }
 {
     my $c = 5;
     is (^3).map({ read-it($c) }).join(','), '5,5,5', 'repeated reads of an aliased variable';
+}
+
+{
+    my ($x, $y) = 3, 3;
+    sub same(\p, \q) { p =:= q }
+    sub same-rw($p is rw, $q is rw) { $p =:= $q }
+    is (^3).map({ same($x, $x) ~ same($x, $y) }).join(','), 'TrueFalse,TrueFalse,TrueFalse',
+        '=:= of two sigilless parameters bound to one variable';
+    is (^3).map({ same-rw($x, $x) ~ same-rw($x, $y) }).join(','), 'TrueFalse,TrueFalse,TrueFalse',
+        '=:= of two is rw parameters bound to one variable';
 }

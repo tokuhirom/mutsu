@@ -98,6 +98,26 @@ impl Interpreter {
         let left_name = Self::const_str(code, left_name_idx);
         let right_name = Self::const_str(code, right_name_idx);
 
+        // Both names hold the SAME shared cell in their own local slots (two
+        // light-bound `is rw` or sigilless parameters given one variable):
+        // one container, though the light binders record no by-name alias for
+        // the root comparison below to find. Distinct cells may still be one
+        // container (a `:=` binding cell over another), so only the positive
+        // answer is decided here.
+        let slot_cell = |name: &str| {
+            self.find_local_slot(code, name)
+                .and_then(|slot| self.locals.get(slot))
+                .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                .cloned()
+        };
+        if let (Some(a), Some(b)) = (slot_cell(left_name), slot_cell(right_name))
+            && let (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) = (a.view(), b.view())
+            && crate::gc::Gc::ptr_eq(&x, &y)
+        {
+            self.stack.push(Value::TRUE);
+            return;
+        }
+
         // Resolve alias chains to find the binding root of each variable.
         // =:= tests container identity — two named variables are identical
         // only when they share the same binding root (via `:=`).
