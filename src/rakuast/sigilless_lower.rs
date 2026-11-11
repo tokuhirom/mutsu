@@ -41,6 +41,18 @@ static ANON_SIGILLESS_SRC_COUNTER: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 // Cost: O(1), plus the cost of the container test on the right-hand side.
+/// Whether `expr` is a `:=` bind into a package stash spelled `X.WHO<k>`.
+// Cost: O(1).
+fn binds_into_package_stash(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::IndexAssign { target, value, .. }
+            if matches!(value.as_ref(), Expr::IndexBindValue(_))
+                && matches!(target.as_ref(), Expr::MethodCall { name, args, .. }
+                    if args.is_empty() && name.resolve() == "WHO")
+    )
+}
+
 pub(super) fn build_sigilless_bind_stmt(
     name: String,
     expr: Expr,
@@ -94,10 +106,12 @@ pub(super) fn build_sigilless_bind_stmt(
     }
     let binds_a_container = match &expr {
         Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. } => true,
-        Expr::Grouped(inner) => matches!(
-            inner.as_ref(),
-            Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
-        ),
+        Expr::Grouped(inner) => {
+            matches!(
+                inner.as_ref(),
+                Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
+            ) || binds_into_package_stash(inner)
+        }
         Expr::Ternary {
             then_expr,
             else_expr,
@@ -125,6 +139,12 @@ pub(super) fn build_sigilless_bind_stmt(
         // (`my \d = (Proxy.new(...))`), so it binds through the block (#16965).
         Expr::DoBlock { .. } => true,
         Expr::DoStmt(stmt) => !matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
+        // `my \s = (Pkg.WHO<k> := Proxy.new(...))`: a bind into a package
+        // stash answers the bound value itself, so the Proxy is not FETCHed
+        // here (rakudo; Red keeps a lazy `$model.WHO<ResultSeq>` this way).
+        // A bind into a Hash does FETCH (its postcircumfix decontainerizes
+        // its result), so only a literal `.WHO` target takes this path.
+        e if binds_into_package_stash(e) => true,
         _ => false,
     };
     // A scopeless expansion, as in expression position (`foo(my \x = 1)`).
