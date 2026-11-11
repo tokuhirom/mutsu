@@ -163,7 +163,10 @@ impl Interpreter {
         let has_rw_params = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.binds_caller_container() || pd.is_does_target());
+            .any(|pd| pd.binds_caller_container() || pd.is_does_target())
+            // A sigilless parameter given a value binds as a read-only term
+            // on the fast path below (`vm_call_light_sigilless.rs`).
+            && !self.method_sigilless_args_light(method_def, &args);
         if has_rw_params {
             self.publish_rw_arg_cells_by_source();
         }
@@ -2419,6 +2422,13 @@ impl Interpreter {
             }
             if arg_idx < args.len() {
                 let mut val = args[arg_idx].clone();
+                // A sigilless parameter reaches this binder only with a value
+                // argument (`method_sigilless_args_light`): a read-only term,
+                // marked the way the general binder marks it.
+                if pd.is_some_and(|pd| pd.sigilless) {
+                    val = crate::runtime::types::unwrap_varref_value(val);
+                    self.mark_light_sigilless_param(binding_sym, false);
+                }
                 // A plain `@x`/`%x` binds the caller's container itself
                 // (admitted per call by `method_aggregate_args_light`),
                 // de-itemized like the general binder's `@`/`%` bind.
