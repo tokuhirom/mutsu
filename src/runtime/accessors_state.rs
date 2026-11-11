@@ -459,22 +459,7 @@ impl Interpreter {
 
     /// A package variable by its qualified key. A key of a package not
     /// merged here reads the unmerged-package store (#13942).
-    ///
-    /// The store is read under the key itself or under its unmerged-store
-    /// spelling; when it holds neither, the answer is `None` whichever the
-    /// visibility gate picks, so the gate -- which can build `GLOBAL`'s whole
-    /// stash (`module_name_hidden_here`) -- is not run for a miss. A bareword
-    /// probing `Pkg::name` for every running package hit that per read
-    /// (App::Moneymoor, #17265).
-    // Cost: O(1) amortized for a key the store holds under neither spelling;
-    // otherwise `unmerged_our_var_key`'s.
     pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
-        if !self.lexicals.our_vars.contains_key(key)
-            && (!crate::qualified::is_qualified_str(key)
-                || !self.unmerged_store_entry_exists(Symbol::intern(key)))
-        {
-            return None;
-        }
         match self.unmerged_our_var_key(key) {
             Some(redirected) => self.lexicals.our_vars.get(redirected.as_str()),
             None => self.lexicals.our_vars.get(key),

@@ -63,20 +63,6 @@ impl Compiler {
             && !self.enclosing_sigilless.contains(name)
     }
 
-    /// Whether the bareword `name` reads a sigil-less constant declared in an
-    /// enclosing scope (and not in this one): no binding of this scope takes
-    /// the term over — a sigil-less local, a sigil-less binding of an
-    /// enclosing scope, or a lexical type that shadows the constant.
-    // Cost: O(1) expected.
-    pub(super) fn reads_outer_term_constant(&self, name: &str) -> bool {
-        self.enclosing_term_constants.contains(name)
-            && !self.constant_vars_in_scope.contains(name)
-            && !self.sigilless_locals.contains(name)
-            && !self.enclosing_sigilless.contains(name)
-            && !self.lexical_type_shadows.contains(name)
-            && !self.lexical_types_in_scope.contains(name)
-    }
-
     /// Whether a sigil-less assignment target `name` names no binding this
     /// unit can see — no local, no sigil-less binding here or in an enclosing
     /// scope. Such a write (typically an `EVAL`'d `b = 5`) is compiled against
