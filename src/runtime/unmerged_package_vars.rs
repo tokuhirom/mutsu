@@ -78,6 +78,20 @@ impl Interpreter {
         Some(Self::unmerged_store_key(pkg, split.sigil, split.bare))
     }
 
+    /// Whether the package store holds anything under the unmerged-store key
+    /// `name` would be redirected to ([`Self::unmerged_package_var_key`]),
+    /// without running the visibility gate that decides whether it is.
+    // Cost: O(1) amortized (a split, memoized name joins, one probe).
+    pub(crate) fn unmerged_store_entry_exists(&self, name: Symbol) -> bool {
+        let Some(split) = split_qualified_var(name) else {
+            return false;
+        };
+        let pkg =
+            crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
+        let key = Self::unmerged_store_key(pkg, split.sigil, split.bare);
+        self.lexicals.our_vars.contains_key(key.as_str())
+    }
+
     /// The separate store's key for the variable `<sigil><pkg>::<bare>`.
     // Cost: O(1) amortized (memoized name joins, one intern).
     fn unmerged_store_key(pkg: Symbol, sigil: &str, bare: &str) -> Symbol {
