@@ -85,6 +85,7 @@ use constructor_positional::single_positional_class;
 mod core_term_names;
 mod statements;
 mod view;
+mod object_literal;
 use crate::core_type_names;
 use crate::scope::NameScope;
 mod decl_compound_assign;
