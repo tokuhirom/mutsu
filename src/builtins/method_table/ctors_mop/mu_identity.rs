@@ -184,7 +184,7 @@ pub(super) fn where_in(
 /// `::` component, because the prelude's `Pointer` picks up the enclosing
 /// package when prepended inside a module (`Probe::Pointer`).
 // Cost: O(1) for a reference type; O(n) for a value type, n = its rendering.
-fn where_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn where_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if let ValueView::Instance {
         class_name,
         attributes,

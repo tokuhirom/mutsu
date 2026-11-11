@@ -180,6 +180,13 @@ impl Interpreter {
             "REPR" => Ok(Value::str_from(boot_repr(name))),
             "HOW" => Ok(Value::package(Symbol::intern("KnowHOW"))),
             "VAR" => Ok(target.clone()),
+            // `.WHERE` is a pseudo-method every object answers, a raw collection
+            // too (`nqp::objectid` lowers to it): its node's identity, the same
+            // as the high-level view of that node answers.
+            "WHERE" => crate::builtins::method_table::identity_where(target, &[])
+                .unwrap_or_else(|| {
+                    Err(crate::runtime::did_you_mean::method_not_found(method, name))
+                }),
             // Any other meta-method asks the `KnowHOW`, which has no such
             // method either.
             _ if let Some(meta) = method.strip_prefix('^') => Err(

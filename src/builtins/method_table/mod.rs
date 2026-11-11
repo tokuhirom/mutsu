@@ -88,6 +88,7 @@ pub(crate) use collections::{
     range, render as collection_render, render_names as collection_render_names,
     rotate as collection_rotate, terminals,
 };
+pub(crate) use ctors_mop::identity_where;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
 pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
