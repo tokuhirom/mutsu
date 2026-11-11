@@ -443,7 +443,21 @@ impl Interpreter {
         // without re-exporting it, and rakudo leaves a plain importer's `given`
         // alone). Only the activating module's own hook (it is the only module loading)
         // registers for the importer.
+        //
+        // That module's own code still runs here, though: a package declarator
+        // the slang adds (`our event Flow` in a module that `use`s EEL, #16888)
+        // is registered with its metaclass at run time, so the declarators are
+        // recorded even then; the parser rules are not.
         if self.module.module_load_stack.len() > 1 {
+            for role in Self::slang_handle_roles(grammar) {
+                for over in self.slang_role_rule_names(&role, SlangRoleKind::Grammar)? {
+                    if let Some(keyword) = declarator_keyword(&over.name) {
+                        let decl =
+                            self.slang_declarator_from_candidate(keyword, over.body.as_deref());
+                        self.record_slang_declarator(decl);
+                    }
+                }
+            }
             return Ok(Value::NIL);
         }
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
@@ -517,28 +531,9 @@ impl Interpreter {
         // compunits registers its declarators again each time; keep one entry
         // per keyword rather than growing the list without bound.
         for decl in declarators {
-            self.regex_state
-                .defined_slang_declarators
-                .retain(|d| d.keyword != decl.keyword);
-            self.regex_state.defined_slang_declarators.push(decl);
+            self.record_slang_declarator(decl);
         }
         Ok(Value::NIL)
-    }
-
-    /// The metaclass a slang declarator keyword builds its package with, if
-    /// this interpreter has seen the slang register it.
-    ///
-    /// An `EXPORTHOW::DECLARE` declarator finds its HOW through an ordinary
-    /// env lookup, because the `constant` that names it is declared in the
-    /// module's mainline and outlives the load. A slang declarator is
-    /// registered from `sub EXPORT`, whose env is restored the moment the call
-    /// returns, so the record lives on the interpreter instead.
-    pub(crate) fn slang_declarator_how(&self, keyword: &str) -> Option<Value> {
-        self.regex_state
-            .defined_slang_declarators
-            .iter()
-            .find(|d| d.keyword == keyword && !d.how_type.is_empty())
-            .map(|d| Value::package(crate::symbol::Symbol::intern(&d.how_type)))
     }
 }
 

@@ -192,6 +192,31 @@ impl Interpreter {
         }
     }
 
+    /// Record a declarator the slang registered, one entry per keyword.
+    // Cost: O(d), d = declarators recorded so far.
+    pub(super) fn record_slang_declarator(&mut self, decl: SlangDeclarator) {
+        self.regex_state
+            .defined_slang_declarators
+            .retain(|d| d.keyword != decl.keyword);
+        self.regex_state.defined_slang_declarators.push(decl);
+    }
+
+    /// The metaclass a slang declarator keyword builds its package with, if
+    /// this interpreter has seen the slang register it.
+    ///
+    /// An `EXPORTHOW::DECLARE` declarator finds its HOW through an ordinary
+    /// env lookup, because the `constant` that names it is declared in the
+    /// module's mainline and outlives the load. A slang declarator is
+    /// registered from `sub EXPORT`, whose env is restored the moment the call
+    /// returns, so the record lives on the interpreter instead.
+    pub(crate) fn slang_declarator_how(&self, keyword: &str) -> Option<Value> {
+        self.regex_state
+            .defined_slang_declarators
+            .iter()
+            .find(|d| d.keyword == keyword && !d.how_type.is_empty())
+            .map(|d| Value::package(crate::symbol::Symbol::intern(&d.how_type)))
+    }
+
     fn slang_how_type_name(how: &Value) -> String {
         match how.view() {
             ValueView::Package(sym) => sym.resolve(),
