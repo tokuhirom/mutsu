@@ -214,6 +214,37 @@ pub(crate) fn seed_native_subclass_payloads(
     {
         attrs.insert(crate::builtins::native_base::DEPSPEC_PAYLOAD, payload);
     }
+    // An `is Capture` subclass (EEL's `Event is Capture`) carries the Capture
+    // its `:list` / `:hash` named arguments build; the table's rows answer
+    // `.list`, `.hash`, `<key>` and `[i]` on it (`native_base::redirect`).
+    // A `Match` (and a grammar, a `Match` subclass) is a `Capture` too, with its
+    // captures of its own.
+    if class_mro.iter().any(|name| name == "Capture")
+        && !class_mro.iter().any(|name| name == "Match" || name == "Grammar")
+        && !attrs.contains_key(crate::builtins::native_base::CAPTURE_PAYLOAD)
+    {
+        let mut positional = Vec::new();
+        let mut named = crate::value::ValueMap::default();
+        for arg in args {
+            if let ValueView::Pair(key, value) = arg.view() {
+                match key.as_str() {
+                    "list" => positional = crate::runtime::value_to_list(&value),
+                    "hash" => {
+                        if let ValueView::Hash(map) = value.view() {
+                            for (k, v) in map.iter() {
+                                named.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        attrs.insert(
+            crate::builtins::native_base::CAPTURE_PAYLOAD,
+            Value::capture(positional, named),
+        );
+    }
     // An `is IterationBuffer` subclass keeps its elements in a reserved array
     // attribute, which nqp code (`nqp::push(self, ...)`) writes into from the
     // first statement of a method. `nqp::create` seeds it (`create_instance`),

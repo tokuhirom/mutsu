@@ -111,6 +111,7 @@ fn subclass_payload(target: &Value) -> Option<Value> {
         .or_else(|| map.get(SEQ_PAYLOAD))
         .or_else(|| map.get(VERSION_PAYLOAD))
         .or_else(|| map.get(DEPSPEC_PAYLOAD))
+        .or_else(|| map.get(CAPTURE_PAYLOAD))
         .or_else(|| map.get(crate::symbol::wk::baggy_data()))
         .cloned()
 }
@@ -126,6 +127,10 @@ pub(crate) const SEQ_PAYLOAD: &str = "__mutsu_seq_value";
 /// The reserved attribute an instance of a user subclass of `Version` carries
 /// its version in (#8070).
 pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
+
+/// The reserved attribute an instance of a user subclass of `Capture` carries
+/// its capture in (#16888).
+pub(crate) const CAPTURE_PAYLOAD: &str = "__mutsu_capture_value";
 
 /// The reserved attribute an instance of a user subclass of
 /// `CompUnit::DependencySpecification` carries its specification in (#14850).
