@@ -383,6 +383,22 @@ impl Value {
             Ok(child)
         })
     }
+    /// The routine `meta-object` memoized on this RakuAST node, if any.
+    // Cost: O(1).
+    pub(crate) fn rakuast_memo_meta_object(&self) -> Option<Value> {
+        match self.view() {
+            ValueView::RakuAst(node) => node.origin.4.clone(),
+            _ => None,
+        }
+    }
+
+    /// Memoize `meta_object` on this RakuAST node, shared by every holder of
+    /// the node (rakudo keeps a node's meta-object on the node).
+    // Cost: O(1).
+    pub(crate) fn set_rakuast_memo_meta_object(&self, meta_object: Value) {
+        self.0.with_rakuast_inplace(|node| node.origin.4 = Some(meta_object));
+    }
+
     /// The in-place field setters of the RakuAST model:
     /// `CompUnit.replace-statement-list($statement-list)` and
     /// `Statement::Expression.set-expression($expression)`. They mutate the

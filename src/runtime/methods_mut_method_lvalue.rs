@@ -1126,6 +1126,21 @@ impl Interpreter {
             );
         }
 
+        // A routine roles were mixed into keeps the composition in its identity
+        // cell, so a bare `Sub` value (a method's or an attribute's answer, a
+        // slang's `$method.meta-object`) is assigned through as the Mixin it
+        // currently is (#17415).
+        if let Some(current) = Self::routine_current_view(&target) {
+            return self.assign_method_lvalue_with_values(
+                target_var,
+                current,
+                method,
+                method_args,
+                value,
+                preserve_hash_entries,
+            );
+        }
+
         // Handle Mixin-wrapped instances (e.g. from role punning) by updating
         // the mixin attribute entry directly.
         if let ValueView::Mixin(inner, mixins) = target.view() {
