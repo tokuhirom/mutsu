@@ -443,13 +443,13 @@ impl Interpreter {
                 };
                 insert_entry(&mut data, &method_args[0], value.clone())?;
                 let mut new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
-                // Propagate container type metadata to avoid stale pointer reuse
-                let meta = old_meta.unwrap_or(ContainerTypeInfo {
-                    value_type: "Any".to_string(),
-                    key_type: None,
-                    declared_type: None,
-                });
-                new_hash = self.tag_container_metadata(new_hash, meta);
+                // Carry a typed hash's container metadata over to the new node.
+                // An untyped hash stays untyped: tagging it `Any` would make it
+                // a `Hash[Any]` (`(my Any % = ...)`), which no longer `eqv`s an
+                // equal plain `Hash`.
+                if let Some(meta) = old_meta {
+                    new_hash = self.tag_container_metadata(new_hash, meta);
+                }
                 if let Some(var_name) = target_var {
                     self.env.insert_through(var_name.to_string(), new_hash);
                 }
