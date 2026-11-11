@@ -485,6 +485,19 @@ impl Compiler {
                     let key = crate::runtime::term_names::term_key(name);
                     let name_idx = self.code.add_constant(Value::str(key));
                     self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.reads_outer_term_constant(name) {
+                    // A sigil-less constant of an ENCLOSING scope (a module's
+                    // `my constant DAYS = (...)` read from its subs). It lives
+                    // under its term key in the enclosing frame, exactly like
+                    // an enclosing `my \x`, so it is read the same way: a
+                    // by-name read of the term key that `compute_free_vars`
+                    // captures. The bareword resolution chain it used to take
+                    // re-derived the answer on every read, and its cost grew
+                    // with the calling context (App::Moneymoor's `valid-date`,
+                    // ~0.5 ms per read inside `compute`).
+                    let key = crate::runtime::term_names::term_key(name);
+                    let name_idx = self.code.add_constant(Value::str(key));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"

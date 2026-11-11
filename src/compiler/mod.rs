@@ -1896,9 +1896,15 @@ pub(crate) struct Compiler {
     /// detect that a `constant X` inside the closure *shadows* an outer constant
     /// — a shadowing constant is purely lexical and must not clobber the outer
     /// constant's shared package store. This set is deliberately NOT consulted
-    /// during bare-word resolution (that stays driven by `constant_vars_in_scope`
-    /// + `local_map`), so it cannot turn an outer-constant read into a GetLocal.
+    /// during bare-word resolution (that is `enclosing_term_constants`), so it
+    /// cannot turn an outer-constant read into a GetLocal.
     outer_constant_names: std::collections::HashSet<String>,
+    /// Names of the sigil-less constants visible in an enclosing scope of
+    /// this nested routine or closure (handed down by
+    /// `inherit_enclosing_scopes`). Consulted only by bare-word resolution
+    /// ([`Compiler::reads_outer_term_constant`]), which reads such a constant
+    /// as a captured by-name read of its term key.
+    enclosing_term_constants: std::collections::HashSet<String>,
     /// Local names that are sigilless bindings (declared with `my \Foo = ...`
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
@@ -2286,6 +2292,7 @@ impl Compiler {
             lexical_class_names_current_scope: std::collections::HashSet::new(),
             qualified_class_names_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
+            enclosing_term_constants: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             direct_bound_params: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
@@ -3042,6 +3049,15 @@ impl Compiler {
             .extend(self.sigilless_locals.iter().cloned());
         sub.enclosing_sigilless
             .extend(self.enclosing_sigilless.iter().cloned());
+        // Every sigil-less constant visible here (this frame's own and the
+        // ones it inherited): a bare read of one in the nested code is a
+        // captured read of its term key.
+        sub.enclosing_term_constants.extend(
+            self.constant_vars_in_scope
+                .iter()
+                .chain(self.enclosing_term_constants.iter())
+                .cloned(),
+        );
         sub.enclosing_type_captures.extend(
             self.type_capture_locals
                 .iter()
