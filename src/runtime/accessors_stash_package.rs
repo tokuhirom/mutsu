@@ -364,6 +364,7 @@ impl Interpreter {
         // `class Foo { if False { our $c = 1 } }` still lists `$c`. `or_insert`
         // so a live env value always wins over the pre-installed type object.
         if let Some(names) = &candidates {
+            let mut sub_packages = Vec::new();
             for name in names {
                 let key = name.as_str();
                 // A package object's stash is the package's own, whichever unit
@@ -374,10 +375,24 @@ impl Interpreter {
                 let Some(val) = self.lexicals.our_vars.get(key) else {
                     continue;
                 };
-                if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
-                    let stash_key = Self::type_member_stash_key(val, key, stash_key);
-                    symbols.entry(stash_key).or_insert_with(|| val.clone());
+                match self.our_var_stash_member(key, &package_name) {
+                    Some(EnvStashMember::Value(stash_key)) => {
+                        let stash_key = Self::type_member_stash_key(val, key, stash_key);
+                        symbols.entry(stash_key).or_insert_with(|| val.clone());
+                    }
+                    // Listed after the direct members, so a sub-package's own
+                    // `our` entry (`tmp::Foo`) is not shadowed by the
+                    // placeholder for a term nested in it (`tmp::Foo::Bar`,
+                    // #17475).
+                    Some(EnvStashMember::SubPackage(head)) => sub_packages.push(head),
+                    None => {}
                 }
+            }
+            for head in sub_packages {
+                let qualified = Self::qualify_stash_name(&package_name, &head);
+                symbols
+                    .entry(head)
+                    .or_insert_with(|| Value::package(Symbol::intern(&qualified)));
             }
         }
 
