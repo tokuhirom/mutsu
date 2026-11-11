@@ -2371,23 +2371,13 @@ impl Interpreter {
                 return Err(e);
             }
             if let Some(cf) = compiled {
-                // ADR-0110 / ADR-0112: a TRIR routine runs its chunk on the
-                // call that resolved it too, not only on later resolution-
-                // cache hits (see `trir/entry_values.rs`). Same admissions as
-                // the hit path in `exec_call_func_op`; a multi name is left
-                // to the dispatch below, as the name-keyed caches leave it.
-                if let Some(raw) = trir_args
-                    && cf.trir.is_some()
-                    && !self.has_multi_candidates_cached_sym(name_sym)
-                    && let Some(result) = self.try_call_trir_values(cf, raw, code, compiled_fns)
-                {
-                    let result = result?;
-                    self.drain_and_reconcile_after_cached_call(code);
-                    return Ok(result);
-                }
-                // Try positional light call path first (ultra-fast, no env clone).
-                // Skip for multi functions since the cache doesn't differentiate by arg types.
-                if !call_has_named
+                // Whether the positional-light path serves this call. Decided
+                // before the TRIR attempt below: a TRIR routine that completes
+                // returns from here, and the name-keyed cache entry must exist
+                // by then or every later call re-resolves the name through
+                // this general path instead of reaching the cached dispatch,
+                // which tries TRIR itself first (#17441).
+                let positional_light = !call_has_named
                     && self.is_positional_light_call_eligible(
                         cf,
                         name,
@@ -2399,8 +2389,8 @@ impl Interpreter {
                     && !self.has_multi_candidates_cached_sym(name_sym)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
-                    && !self.light_call_blocked_by_mainline_capture(name)
-                {
+                    && !self.light_call_blocked_by_mainline_capture(name);
+                if positional_light {
                     let cur_pkg_sym = self.current_package_sym();
                     if self
                         .caches
@@ -2426,6 +2416,24 @@ impl Interpreter {
                             );
                         }
                     }
+                }
+                // ADR-0110 / ADR-0112: a TRIR routine runs its chunk on the
+                // call that resolved it too, not only on later resolution-
+                // cache hits (see `trir/entry_values.rs`). Same admissions as
+                // the hit path in `exec_call_func_op`; a multi name is left
+                // to the dispatch below, as the name-keyed caches leave it.
+                if let Some(raw) = trir_args
+                    && cf.trir.is_some()
+                    && !self.has_multi_candidates_cached_sym(name_sym)
+                    && let Some(result) = self.try_call_trir_values(cf, raw, code, compiled_fns)
+                {
+                    let result = result?;
+                    self.drain_and_reconcile_after_cached_call(code);
+                    return Ok(result);
+                }
+                // Try positional light call path first (ultra-fast, no env clone).
+                // Skip for multi functions since the cache doesn't differentiate by arg types.
+                if positional_light {
                     let result = self.call_compiled_function_positional_light(
                         cf,
                         &args,
