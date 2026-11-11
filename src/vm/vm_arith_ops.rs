@@ -227,9 +227,13 @@ impl Interpreter {
         };
         if target.is_proxy_value() {
             let fetched = loan_env!(self, auto_fetch_proxy(&target))?;
-            *self.stack.last_mut().unwrap() = fetched;
+            if let Some(slot) = self.stack.last_mut() {
+                *slot = fetched;
+            }
         }
-        let top = self.stack.last().unwrap();
+        let Some(top) = self.stack.last() else {
+            return Ok(());
+        };
         if !is_meta_assign_undefined(top) {
             return Ok(());
         }

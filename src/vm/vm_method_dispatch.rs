@@ -3431,7 +3431,7 @@ fn bound_by_type_capture(param_defs: &[crate::ast::ParamDef], name: &str) -> boo
     let name = name
         .strip_prefix(crate::meta_ns::MetaNs::TypeCaptureBound.prefix())
         .unwrap_or(name);
-    let bare = name.rsplit_once("::").map_or(name, |(_, bare)| bare);
+    let bare = crate::str_scan::rsplit_once_double_colon(name).map_or(name, |(_, bare)| bare);
     param_defs.iter().any(|pd| {
         pd.captured_type_name()
             .is_some_and(|t| t == name || t == bare)
