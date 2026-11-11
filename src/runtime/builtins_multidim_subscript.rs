@@ -409,7 +409,7 @@ impl Interpreter {
                     .map(|value| crate::runtime::to_int(&value).max(0))
                     .unwrap_or(0);
                 let mut items = Vec::with_capacity(len as usize);
-                let mut initialized = std::collections::HashSet::new();
+                let mut initialized = rustc_hash::FxHashSet::default();
                 for i in 0..len {
                     let value = self
                         .try_compiled_method_or_interpret(t.clone(), "AT-POS", vec![Value::int(i)])

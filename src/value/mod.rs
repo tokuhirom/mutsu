@@ -2591,7 +2591,7 @@ pub struct ArrayData {
     /// scoped to the assigning frame and lost on scope exit, so an outer array
     /// filled from inside a method/closure (e.g. HTTP::Status's `method sink`
     /// populating `@codes`) reported every gap as existing.
-    pub initialized: Option<std::collections::HashSet<usize>>,
+    pub initialized: Option<rustc_hash::FxHashSet<usize>>,
     /// Rakudo container-descriptor name override for `.VAR.name`. `Some` only
     /// on the fresh anonymous container an unsupplied `@`-param binds
     /// ("element"), so `@kh.VAR.name` distinguishes it from a supplied one

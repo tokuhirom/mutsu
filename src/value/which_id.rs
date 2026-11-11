@@ -179,7 +179,10 @@ mod tests {
         // of the whole array. It stayed at 216 on 2026-09-24 (#9235): the
         // `nqp_elem` kind of an `nqp::list_i`/`_n`/`_s` took the 8 bytes that
         // `shape` gave back by becoming a boxed slice instead of a `Vec`.
-        assert_eq!(size_of::<crate::value::ArrayData>(), 216);
+        // It went 216 -> 200 on 2026-11-11 (#17429): the `initialized` hole
+        // set hashes with `FxBuildHasher`, which is zero-sized, where std's
+        // `RandomState` is two words.
+        assert_eq!(size_of::<crate::value::ArrayData>(), 200);
         // `HashData` then went 208 -> 192 on 2026-09-13 (ADR-0103): its two maps
         // (`map` and `original_keys`) carry their `BuildHasher` inline, and
         // `foldhash::fast::RandomState` is one `u64` where std's `RandomState`
