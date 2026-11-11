@@ -162,7 +162,12 @@ impl NamedFast {
             return None;
         }
         let check = FastParamCheck::of_param(pd)?;
-        if matches!(check, FastParamCheck::ImplicitCallable) {
+        // A `:D`/`:U` named parameter keeps the general binder, which raises
+        // its concreteness error.
+        if matches!(
+            check,
+            FastParamCheck::ImplicitCallable | FastParamCheck::Fast { smiley: Some(_), .. }
+        ) {
             return None;
         }
         let fill = pd
@@ -172,7 +177,7 @@ impl NamedFast {
             .filter(|value| match check {
                 FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
                 FastParamCheck::ImplicitCallable => false,
-                FastParamCheck::Fast { kind, name_sym } => {
+                FastParamCheck::Fast { kind, name_sym, .. } => {
                     crate::runtime::Interpreter::fast_type_check_tagged(value, kind, name_sym)
                 }
             });
@@ -189,7 +194,7 @@ impl NamedFast {
             // caller's `named_mu_only_arg` gate.
             FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
             FastParamCheck::ImplicitCallable => false,
-            FastParamCheck::Fast { kind, name_sym } => {
+            FastParamCheck::Fast { kind, name_sym, .. } => {
                 crate::runtime::Interpreter::fast_type_check_tagged(value, kind, name_sym)
             }
         }

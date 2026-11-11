@@ -98,8 +98,15 @@ impl CompiledFunction {
             Some(FastParamCheck::Unconstrained | FastParamCheck::RequiresAny) => Some(value),
             // A filled `&c?` would need the general binder's `Callable` check.
             Some(FastParamCheck::ImplicitCallable) => None,
-            Some(FastParamCheck::Fast { kind, name_sym }) => {
-                match crate::runtime::Interpreter::fast_type_check_tagged(&value, kind, name_sym) {
+            Some(FastParamCheck::Fast {
+                kind,
+                name_sym,
+                smiley,
+            }) => {
+                match crate::runtime::Interpreter::fast_type_check_tagged(&value, kind, name_sym)
+                    && smiley.is_none_or(|smiley| {
+                        crate::runtime::Interpreter::light_param_smiley_admits(&value, smiley)
+                    }) {
                     true => Some(value),
                     false => None,
                 }

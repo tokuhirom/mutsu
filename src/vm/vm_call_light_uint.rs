@@ -91,6 +91,12 @@ impl Interpreter {
     /// at hand; see [`Self::light_param_type_check`].
     // Cost: O(1), or `light_uint_check`'s for a `UInt` constraint.
     pub(super) fn light_type_check_by_name(&mut self, val: &Value, type_name: &str) -> bool {
+        // A `:D`/`:U` constraint (`is_fast_type_name` admits one on a boxed
+        // concrete base): the base, then the smiley.
+        if let (base, Some(smiley)) = crate::opcode::TypeSmiley::split(type_name) {
+            return self.light_type_check_by_name(val, base)
+                && Self::light_param_smiley_admits(val, smiley);
+        }
         if type_name == "UInt" {
             self.light_uint_check(val)
         } else {
@@ -109,7 +115,31 @@ impl Interpreter {
         pd: &crate::ast::ParamDef,
         tc: &str,
         val: &Value,
+        routine: &str,
     ) -> RuntimeError {
+        // A `:D`/`:U` parameter: a value of the base type failed only the
+        // smiley, which is the binder's concreteness error; any other value
+        // fails the base, named without its smiley (`expected Str`).
+        let tc = match crate::opcode::TypeSmiley::split(tc) {
+            (base, Some(smiley)) => {
+                if self.type_matches_value(base, val) {
+                    let got = match val.view() {
+                        ValueView::Package(pkg) => pkg.resolve().to_string(),
+                        _ => crate::runtime::value_type_name(val).to_string(),
+                    };
+                    return RuntimeError::parameter_invalid_concreteness(
+                        base,
+                        &got,
+                        routine.rsplit("::").next().unwrap_or(routine),
+                        &pd.name,
+                        smiley == crate::opcode::TypeSmiley::Definite,
+                        pd.is_invocant,
+                    );
+                }
+                base
+            }
+            (tc, None) => tc,
+        };
         if tc == "UInt" && self.type_matches_value("Int", val) {
             return self.subset_constraint_binding_error(pd, &pd.name, tc, tc, val);
         }

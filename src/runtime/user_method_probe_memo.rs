@@ -225,8 +225,11 @@ impl Interpreter {
                 return None;
             }
             match crate::opcode::FastParamCheck::of(Some(&spec.to_string())) {
-                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym })
-                    if kind != FastParamType::UInt =>
+                Some(crate::opcode::FastParamCheck::Fast {
+                    kind,
+                    name_sym,
+                    smiley: None,
+                }) if kind != FastParamType::UInt =>
                 {
                     Some((kind, name_sym))
                 }

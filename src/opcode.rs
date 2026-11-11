@@ -14341,9 +14341,15 @@ pub(crate) enum FastParamCheck {
     /// Check `kind`; `name_sym` is the constraint name pre-interned, so the
     /// bare-type-object case (`sub f(Int $a); f(Int)`) compares two `Symbol`s
     /// instead of resolving one to a `&str` and comparing bytes.
+    ///
+    /// `smiley` is a parameter's `:D`/`:U` (`Str:D $s`), split off so `kind`
+    /// and `name_sym` name the nominal base; only a parameter of a concrete
+    /// boxed kind carries one ([`TypeSmiley::param_kind_admits`]). A return
+    /// type keeps its smiley apart (`CompiledFunction::return_smiley`).
     Fast {
         kind: FastParamType,
         name_sym: Symbol,
+        smiley: Option<TypeSmiley>,
     },
 }
 
@@ -14360,6 +14366,23 @@ pub(crate) enum TypeSmiley {
 }
 
 impl TypeSmiley {
+    /// Whether a parameter of `kind` may carry a smiley on the light paths:
+    /// the boxed concrete kinds, whose every admitted value is either a type
+    /// object (`:U`) or a defined object (`:D`) by its shape alone. `Any`/`Mu`
+    /// (any value at all), `UInt` (a subset) and the native kinds (no type
+    /// objects) keep the general binder.
+    // Cost: O(1).
+    pub(crate) fn param_kind_admits(kind: FastParamType) -> bool {
+        matches!(
+            kind,
+            FastParamType::Int
+                | FastParamType::Str
+                | FastParamType::Num
+                | FastParamType::Bool
+                | FastParamType::Rat
+        )
+    }
+
     /// Split a trailing `:D` / `:U` off a type spelling. `:_` (and no smiley)
     /// leave the spelling as it is and report `None`.
     // Cost: O(1).
@@ -14383,6 +14406,17 @@ impl FastParamCheck {
         }
         if Self::implicitly_any(pd) || pd.type_constraint.as_deref() == Some("Any") {
             return Some(Self::RequiresAny);
+        }
+        if let Some(tc) = pd.type_constraint.as_deref()
+            && let (base, Some(smiley)) = TypeSmiley::split(tc)
+        {
+            return FastParamType::of(base)
+                .filter(|&kind| TypeSmiley::param_kind_admits(kind))
+                .map(|kind| Self::Fast {
+                    kind,
+                    name_sym: Symbol::intern(base),
+                    smiley: Some(smiley),
+                });
         }
         Self::of(pd.type_constraint.as_ref())
     }
@@ -14442,6 +14476,7 @@ impl FastParamCheck {
             Some(tc) => FastParamType::of(tc).map(|kind| Self::Fast {
                 kind,
                 name_sym: Symbol::intern(tc),
+                smiley: None,
             }),
         }
     }
