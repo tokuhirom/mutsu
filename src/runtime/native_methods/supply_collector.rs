@@ -47,14 +47,18 @@ impl Interpreter {
             ("__mutsu_collector_quit", CollectorSink::Waker(waker)) => {
                 waker.push(0, SinkEvent::Quit(arg()));
             }
-            ("__mutsu_collector_emit", CollectorSink::Channel(ch)) => ch.send(arg()),
+            // Through `Channel.send`/`.close`/`.fail`'s own delivery, so a
+            // tap of the channel's Supplies (`$s.Channel.Supply`) sees it.
+            ("__mutsu_collector_emit", CollectorSink::Channel(ch)) => {
+                self.channel_send_value(&ch, arg());
+            }
             ("__mutsu_collector_done", CollectorSink::Channel(ch)) => {
                 unregister_supply_collector(collector_id as u64);
-                ch.close();
+                self.channel_close(&ch, None)?;
             }
             ("__mutsu_collector_quit", CollectorSink::Channel(ch)) => {
                 unregister_supply_collector(collector_id as u64);
-                ch.fail(arg());
+                self.channel_close(&ch, Some(arg()))?;
             }
             _ => {
                 return Err(RuntimeError::new(format!(

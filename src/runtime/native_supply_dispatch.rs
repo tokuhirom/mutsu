@@ -1713,13 +1713,57 @@ impl Interpreter {
             }
             "Channel" => {
                 // `Supply.Channel` is Rakudo's `self.tap(-> \v { $c.send(v) },
-                // done => { $c.close }, quit => { $c.fail($_) })`: tap the
-                // supply with collector shims that feed a fresh channel. A
-                // value emitted after the tap returns (a live `whenever`
-                // source, `Supply.interval`) reaches the channel when it is
-                // emitted, and a quit is received after the values before it.
-                let supply_val = Value::make_instance(Symbol::intern("Supply"), attributes.clone());
-                Ok(Value::channel(self.supply_tap_into_channel(&supply_val)?))
+                // done => { $c.close }, quit => { $c.fail($_) })`. An on-demand
+                // block, a timer supply and a supply derived from a live one
+                // are tapped with collector shims that feed a fresh channel
+                // (`supply_tap_into_channel`): a value emitted after the tap
+                // returns reaches the channel when it is emitted, and a quit is
+                // received after the values before it. A supplier-backed supply
+                // forwards through the supplier's channel-sink tap below, which
+                // takes a `Supplier::Preserving` backlog and registers the tap
+                // as one step against a racing `emit` (#12831).
+                let supplier_backed = attributes.contains_key("preserving")
+                    || supplier_id_from_attrs(attributes).is_some();
+                if attributes.contains_key("on_demand_callback")
+                    || (!supplier_backed && Self::supply_lists_lazily(attributes))
+                {
+                    let supply_val =
+                        Value::make_instance(Symbol::intern("Supply"), attributes.clone());
+                    return Ok(Value::channel(self.supply_tap_into_channel(&supply_val)?));
+                }
+                // A preserving supply hands its un-replayed backlog to the
+                // channel, exactly as it does to a `.tap` (the backlog is what
+                // its supplier buffered while nothing listened, and a derived
+                // supply's `values` snapshot never saw it — #8825).
+                let preserved_sid = attributes
+                    .contains_key("preserving")
+                    .then(|| supplier_id_from_attrs(attributes))
+                    .flatten();
+                let ch = SharedChannel::new();
+                // Take the backlog and register the forwarding tap as one step
+                // against a concurrent `emit` (the emit gate), so an emission
+                // is neither lost between the two nor delivered by both.
+                let _gate = preserved_sid.map(|_| crate::runtime::native_methods::emit_gate());
+                let source_values = match preserved_sid {
+                    Some(sid) => supplier_take_preserved_backlog(sid),
+                    None => self.supply_get_values(attributes)?,
+                };
+                for v in source_values {
+                    ch.send(v);
+                }
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+                    if let Some(reason) = quit_reason {
+                        ch.fail(reason);
+                    } else if done {
+                        ch.close();
+                    } else {
+                        register_supplier_channel_tap(supplier_id, ch.clone());
+                    }
+                } else {
+                    ch.close();
+                }
+                Ok(Value::channel(ch))
             }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self

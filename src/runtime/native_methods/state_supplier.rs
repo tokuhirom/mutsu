@@ -811,6 +811,49 @@ pub(in crate::runtime) fn last_supplier_tap_id(supplier_id: u64) -> Option<u64> 
     }
 }
 
+/// Register a channel sink tap on a supplier. Each emitted value is pushed
+/// into the channel; on done/quit the channel is closed (or failed).
+pub(in crate::runtime) fn register_supplier_channel_tap(
+    supplier_id: u64,
+    channel: crate::value::SharedChannel,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::NIL,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                head_downstream: None,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
+                flat_downstream: None,
+                channel_sink: Some(channel),
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id: next_tap_id(),
+                closed: false,
+                migrate_state: None,
+                forward_downstream: None,
+                transform_state: None,
+                tail_state: None,
+            });
+    }
+}
+
 /// Close (or fail) all channel-sink taps registered on the given supplier.
 /// If `failure` is Some, the channel is failed with that value, otherwise
 /// it is closed cleanly.
