@@ -59,6 +59,9 @@ impl EqvInstanceHook for StructuralInstances {
 struct EqvCtx<'h> {
     /// Instance-identity pairs already under comparison (cycle guard).
     pairs: std::collections::HashSet<(u64, u64)>,
+    /// Array/Hash node pairs already under comparison: a container that holds
+    /// itself (`%h<self> := %h`) is compared once, not descended forever.
+    containers: std::collections::HashSet<(usize, usize)>,
     hook: &'h mut dyn EqvInstanceHook,
 }
 
@@ -83,6 +86,7 @@ impl Value {
     pub(crate) fn eqv_with(&self, other: &Self, hook: &mut dyn EqvInstanceHook) -> bool {
         let mut seen = EqvCtx {
             pairs: std::collections::HashSet::new(),
+            containers: std::collections::HashSet::new(),
             hook,
         };
         self.eqv_inner(other, &mut seen)
@@ -123,6 +127,15 @@ impl Value {
         if let (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) =
             (self.view(), other.view())
             && !seen.pairs.insert((a, b))
+        {
+            return true;
+        }
+        // The same for a pair of Array/Hash nodes: a cyclic container reached
+        // again through itself is the pair already being compared.
+        if let (Some(a), Some(b)) = (
+            crate::value::container_lock::container_node_addr(self),
+            crate::value::container_lock::container_node_addr(other),
+        ) && !seen.containers.insert((a, b))
         {
             return true;
         }
