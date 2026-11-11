@@ -5466,7 +5466,12 @@ impl Interpreter {
         // next level's key, binding `@a[9]` instead of `@a[1][9]`.
         let indices: Vec<String> = indices_val
             .iter()
-            .zip(positional_flags.iter().copied().chain(std::iter::repeat(true)))
+            .zip(
+                positional_flags
+                    .iter()
+                    .copied()
+                    .chain(std::iter::repeat(true)),
+            )
             .map(|(v, positional)| {
                 if positional {
                     Self::positional_index_as_int(v.clone()).to_string_value()
