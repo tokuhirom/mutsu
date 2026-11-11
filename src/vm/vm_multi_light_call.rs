@@ -104,7 +104,7 @@ impl Interpreter {
         else {
             return Ok(false);
         };
-        if !Self::is_positional_light_call_eligible_where(
+        if !self.is_positional_light_call_eligible_where(
             cf,
             name,
             Self::positional_light_argc(&args),

@@ -328,6 +328,24 @@ impl Interpreter {
             }
         }
 
+        // A sigilless `\x` parameter binds its argument as a read-only term or
+        // through a shared cell (`vm_call_light_sigilless.rs`). Like the `is rw`
+        // pre-pass above, a promotion indexes the CALLER's locals, so it runs
+        // before the frame push below.
+        let sigilless_writable = if cf.has_sigilless_positional_param {
+            match self.bind_light_sigilless_args(cf, args_base, actual_count, caller_code, func_name)
+            {
+                Ok(bits) => bits,
+                Err(e) => {
+                    self.current_unit = saved_unit;
+                    self.stack.truncate(args_base);
+                    return Err(e);
+                }
+            }
+        } else {
+            0
+        };
+
         // Open the callee's frame at its real size in one step: sizing it later
         // (an empty `push_frame` plus a `refill_slots`) cost a second
         // out-of-line `Vec::resize` per call. Nothing between here and the
@@ -876,6 +894,17 @@ impl Interpreter {
                 if constraint.is_some() || Self::env_type_constraint_seen_for(name_sym) {
                     self.bind_param_type_constraint_sym(param_name, name_sym, constraint);
                 }
+            }
+            // A sigilless parameter's mutability lives in its env marks, as
+            // the general binder records it, not in the readonly-name set.
+            if cf.has_sigilless_positional_param && cf.param_defs[param_idx].sigilless {
+                let storage_sym = match cf.param_name_syms.get(param_idx) {
+                    Some(&sym) => sym,
+                    None => Symbol::intern(&cf.param_defs[param_idx].storage_name()),
+                };
+                let writable = param_idx < actual_count && sigilless_writable & (1 << param_idx) != 0;
+                self.mark_light_sigilless_param(storage_sym, writable);
+                continue;
             }
             let writable = is_rw_param
                 || is_copy_param
