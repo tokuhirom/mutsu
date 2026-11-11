@@ -622,12 +622,11 @@ impl Compiler {
     /// element (#16949: `sub a(\it) { it.map({ --$_ }) }` called with
     /// `(1, 2)` must refuse the write, as raku does).
     // Cost: O(1).
-    pub(super) fn receiver_topic_decided_at_run_time(target: &Expr) -> bool {
-        match target {
-            Expr::Grouped(inner) => Self::receiver_topic_decided_at_run_time(inner),
-            Expr::Var(_) | Expr::BareWord(_) => true,
-            _ => false,
+    pub(super) fn receiver_topic_decided_at_run_time(mut target: &Expr) -> bool {
+        while let Expr::Grouped(inner) = target {
+            target = inner;
         }
+        matches!(target, Expr::Var(_) | Expr::BareWord(_))
     }
 
     /// A directly-written bare block argument (`{ ... }`), the only shape whose
