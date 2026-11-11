@@ -138,7 +138,11 @@ impl Interpreter {
     /// Failure, an unsuccessful Proc).
     // Cost: O(1) for `None` or under `use fatal`; otherwise
     // `sunk_call_result_is_block_container`'s callee lookup.
-    pub(crate) fn sink_call_may_explode(&mut self, code: &CompiledCode, sink_call: Option<u32>) -> bool {
+    pub(crate) fn sink_call_may_explode(
+        &mut self,
+        code: &CompiledCode,
+        sink_call: Option<u32>,
+    ) -> bool {
         match sink_call {
             None => true,
             Some(name_idx) => {
