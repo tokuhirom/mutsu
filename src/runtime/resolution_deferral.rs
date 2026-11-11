@@ -86,10 +86,21 @@ impl Interpreter {
             } else {
                 base.to_string()
             };
-            // A role's MRO is just itself (no `Any`/`Mu` tail), which would score
-            // it below an unconstrained `Any` parameter; a role constraint is
-            // still narrower than `Any`, so score it as a class would.
-            total += self.class_mro(&resolved).len().max(3);
+            // Score the depth as if the MRO ended in `Any, Mu`. A role's MRO is
+            // just itself, and so is the internal MRO of a parentless class the
+            // runtime registers (`Pod::Block`, whose child `Pod::Block::Named`
+            // then has two entries): counting the tail they lack keeps a role
+            // above an unconstrained `Any` parameter (Red's t/006-optimizer)
+            // without flattening `Pod::Block::Named` and `Pod::Block:D` into one
+            // score, which sent Pod::TreeWalker's `callsame` from the `Named`
+            // candidate to the role's generic `Pod::Block:D` one.
+            let mro = self.class_mro(&resolved);
+            let tail = match mro.last().map(|s| s.resolve()) {
+                Some(last) if last == "Mu" => 0,
+                Some(last) if last == "Any" => 1,
+                _ => 2,
+            };
+            total += mro.len() + tail;
         }
         total
     }
