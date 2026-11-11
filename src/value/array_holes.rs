@@ -139,11 +139,26 @@ impl ArrayData {
     /// its existing range before recording the write; starting with an empty
     /// set would incorrectly turn untouched explicit `Any` elements into
     /// holes.
+    ///
+    /// A write that leaves no gap -- into an existing slot, or one past the
+    /// end -- keeps an all-present array all-present, so it records nothing;
+    /// materializing the set there made every element-wise store into a
+    /// bulk-built array pay O(e) once and a hash insert from then on (#17429).
+    // Cost: O(1) expected; O(e) once, e = elements, when a write past the end
+    // of an all-present array first opens a gap.
     pub(crate) fn mark_initialized(&mut self, i: usize) {
         let len = self.len();
-        self.initialized
-            .get_or_insert_with(|| (0..len).collect())
-            .insert(i);
+        match &mut self.initialized {
+            Some(set) => {
+                set.insert(i);
+            }
+            None if i <= len => {}
+            None => {
+                let mut set: std::collections::HashSet<usize> = (0..len).collect();
+                set.insert(i);
+                self.initialized = Some(set);
+            }
+        }
     }
 }
 

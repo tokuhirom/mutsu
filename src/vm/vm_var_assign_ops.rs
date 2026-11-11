@@ -4,7 +4,7 @@ use crate::value::ValueMap;
 
 /// The tag of the `Pair` [`Interpreter::bind_index_marker`] builds. Only the
 /// marker helpers below may name it.
-const BIND_INDEX_MARKER: &str = "__mutsu_bind_index_value";
+pub(super) const BIND_INDEX_MARKER: &str = "__mutsu_bind_index_value";
 
 impl Interpreter {
     /// Return the default fill value for a native type constraint.

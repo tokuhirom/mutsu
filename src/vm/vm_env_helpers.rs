@@ -756,7 +756,7 @@ impl Interpreter {
         if let Some(ValueView::ContainerRef(arc)) = self.lexsub_alias_slot(name).map(Value::view) {
             return Some(crate::gc::Gc::clone(&arc));
         }
-        if self.lexicals.unit_lexicals.is_empty() {
+        if self.lexicals.unit_lexicals.is_empty() || !self.unit_lexicals_may_hold(name, None) {
             return None;
         }
         if crate::runtime::utils::has_anon_marker(name) {
@@ -979,6 +979,9 @@ impl Interpreter {
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
+        if !self.unit_lexicals_may_hold(name, name_sym) {
+            return None;
+        }
         // See `unit_lexical_slot_mut`: the frame's own same-named variable.
         if self.frame_binds_own(name, name_sym) {
             return None;
@@ -1062,6 +1065,24 @@ impl Interpreter {
         None
     }
 
+    /// Whether the unit-lexical store can answer `name` at all: an
+    /// unqualified name is looked up under its own spelling in some bucket
+    /// (the mainline capture, a package-less file's bucket, or a package
+    /// chain), so a name no bucket holds resolves to nothing there. Asked
+    /// before the frame and package-chain work, which a free-variable read of
+    /// an ordinary name (a `for` parameter, a closure's captured scalar) paid
+    /// on every read in a module routine (#17429). A qualified name is looked
+    /// up under its bare part, so it always may.
+    // Cost: O(1) expected (one name-filter probe, rebuilt once after a
+    // store mutation).
+    fn unit_lexicals_may_hold(&self, name: &str, name_sym: Option<Symbol>) -> bool {
+        let qualified = match name_sym {
+            Some(sym) => crate::qualified::is_qualified(sym),
+            None => crate::qualified::is_qualified_str(name),
+        };
+        qualified || self.lexicals.unit_lexicals.contains_name(name)
+    }
+
     /// The packages a free-variable read probes the unit-lexical store
     /// under, in order: the frame's lexical package, the method-class-stack
     /// top, the frame's own package, then `cur`. A global or routine-scope
@@ -1115,6 +1136,9 @@ impl Interpreter {
             return self.lexsub_alias_slot_mut(name);
         }
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        if !self.unit_lexicals_may_hold(name, name_sym) {
             return None;
         }
         // A variable the running frame binds itself shadows the compunit's

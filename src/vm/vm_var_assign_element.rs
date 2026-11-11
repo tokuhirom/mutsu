@@ -732,6 +732,14 @@ impl Interpreter {
         {
             return result;
         }
+        // The `$`-held twin of the array lane above: `$d[$i] = $v` and
+        // `$d[$i] := ...` on an Array living in the scalar's own slot (#17429).
+        if !element_share
+            && let Some(result) =
+                self.try_fast_slot_array_element_store(code, name_idx, is_positional, target_slot)
+        {
+            return result;
+        }
         // The VM local slot is authoritative for a lexical scalar between env
         // synchronization points.  A Range receiver is immutable even when the
         // scalar wrapper came from ordinary `my $r = ...` assignment.
