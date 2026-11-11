@@ -171,6 +171,9 @@ pub(in crate::parser) struct LexicalScope {
     /// The slang hooks as they were before a `use` in this scope activated a
     /// slang: the activation ends with the scope, so leaving it restores them.
     slang_hooks_before_use: Option<slang_hooks::SlangHooks>,
+    /// The package declarators (`event`, EEL) a slang activated in this scope
+    /// added: like the slang's hooks they end with the scope.
+    slang_declarators: Vec<String>,
     /// Declaration text of the plain named subs of this scope (`use Slang &sub`, #17055).
     sub_sources: HashMap<String, String>,
     prefix_operator_subs: HashSet<String>,
