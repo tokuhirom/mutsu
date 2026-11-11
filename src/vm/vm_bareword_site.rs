@@ -76,6 +76,22 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::GetTypeCapture`: push the live binding of the type capture
+    /// the operand names, when `env` holds one under its marker. `false`
+    /// leaves the stack untouched for the `GetBareWord` resolution.
+    // Cost: O(d), d = env tiers walked (the marker probe and the value probe).
+    pub(super) fn exec_get_type_capture_op(&mut self, code: &CompiledCode, name_idx: u32) -> bool {
+        let name = code.const_sym(name_idx);
+        if !name.with_str(|n| self.has_type_capture_binding(n)) {
+            return false;
+        }
+        let Some(value) = self.env().get_sym(name).cloned() else {
+            return false;
+        };
+        self.stack.push(value);
+        true
+    }
+
     /// A bare word that resolved to nothing but its own name, read by a loaded
     /// module's code, is the `my` class / role that module's compunit declared,
     /// when it has one: the load may have bound it in a tier the code's static

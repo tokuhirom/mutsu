@@ -1372,6 +1372,16 @@ pub(crate) enum OpCode {
     /// `X::Undeclared::Symbols`; any other name nothing claims degrades to
     /// the name itself as a `Str` (the old bareword-string fallback).
     GetBareWord(u32),
+    /// Read a type capture in scope by its bare name: `T` inside a routine
+    /// with a `::T` parameter, or inside a method of `role R[::T]`. Stack:
+    /// `[] → [type]`.
+    ///
+    /// The capture is a lexical of the routine (rakudo binds `::T` as one),
+    /// so the binding the binder or the role composition made is the answer,
+    /// read from `env` under the name while its `TypeCaptureBound` marker is
+    /// set. With no such binding live (a role method run on the bare role
+    /// type object) it resolves as [`Self::GetBareWord`] does.
+    GetTypeCapture(u32),
     /// [`Self::GetBareWord`] for a bare word that spells a `$`-scalar of the
     /// SAME scope (`my $bar = 3; say bar`). Stack: `[] → [value]`.
     ///
@@ -9053,7 +9063,9 @@ impl CompiledCode {
 
     fn collect_bareword_names(&self, names: &mut std::collections::HashSet<Symbol>) {
         for op in &self.ops {
-            if let OpCode::GetBareWord(idx) | OpCode::GetBareWordOverScalar(idx) = op
+            if let OpCode::GetBareWord(idx)
+            | OpCode::GetBareWordOverScalar(idx)
+            | OpCode::GetTypeCapture(idx) = op
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(*idx as usize).map(Value::view)
             {

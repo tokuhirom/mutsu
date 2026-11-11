@@ -32,6 +32,7 @@ impl Interpreter {
             OpCode::CheckDynamicVarDeclared(..)
             | OpCode::GetBareWord(..)
             | OpCode::GetBareWordOverScalar(..)
+            | OpCode::GetTypeCapture(..)
             | OpCode::GetCallTempRaw(..)
             | OpCode::GetExportTermOrJump { .. }
             | OpCode::GetLexicalStash { .. }

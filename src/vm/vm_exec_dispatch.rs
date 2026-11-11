@@ -1248,6 +1248,17 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            // Cost: O(d) on a live capture, d = env tiers walked (two probes);
+            // otherwise the `GetBareWord` resolution.
+            OpCode::GetTypeCapture(name_idx) => {
+                if !self.exec_get_type_capture_op(code, *name_idx) {
+                    self.sync_source_line(code, *ip);
+                    self.test_pending_callsite_line = None;
+                    self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
+                    self.apply_pending_rw_writeback(code);
+                }
+                *ip += 1;
+            }
             // Cost: O(p*|name|), p = packages on the bare-name search path (the
             // `GetBareWord` resolution without its type-object memo or its
             // `env[name]` read); independent of the registry size.
