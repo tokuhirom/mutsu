@@ -271,14 +271,31 @@ def sweep_dist(name, index, opts, bundled) -> dict:
             else:
                 record["load"][module] = eco.first_error_line(m_out) or "load failed"
                 blocked = True
-        if blocked:
-            record["status"] = "blocked_load"
-            record["totals"] = empty_totals()
-            return record
-
         tests = eco.find_test_files(root, include_xt=opts.include_xt)
         if opts.max_files:
             tests = tests[:opts.max_files]
+        if blocked:
+            # mutsu cannot load it, so its suite is not run on mutsu. Run it on
+            # rakudo still: a distribution whose suite the oracle passes no
+            # file of is `no_baseline` whatever mutsu does, not a load gap to
+            # work (Polyglot::Brainfuck's slang does not parse its own test on
+            # the RakuAST frontend).
+            baseline = []
+            for path in tests:
+                raku, _ = measure([opts.raku] + libs + [path],
+                                  attempts=opts.attempts, **common)
+                baseline.append({"path": os.path.relpath(path, root), "raku": raku,
+                                 "cmp": "no_baseline"})
+                if raku["verdict"] == "pass":
+                    break  # one baseline file settles it
+            record["totals"] = empty_totals()
+            if blocked_has_baseline(baseline):
+                record["status"] = "blocked_load"
+            else:
+                record["status"] = "no_baseline"
+                record["files"] = baseline
+            return record
+
         for path in tests:
             rel = os.path.relpath(path, root)
             # Both sides get the same retry budget. Giving mutsu three chances
@@ -334,6 +351,13 @@ def prepare(name, index, workdir, opts, resolved):
                             fh.write(dep_root)
                         opts.dep_roots[dep] = dep_root
     return root
+
+
+def blocked_has_baseline(baseline):
+    """Whether a distribution mutsu cannot load is still a mutsu gap: rakudo
+    passes at least one of its test files. One with no test file at all keeps
+    `blocked_load`, since its load is the only thing measured."""
+    return not baseline or any(f["raku"]["verdict"] == "pass" for f in baseline)
 
 
 def empty_totals():
@@ -919,6 +943,17 @@ def _self_test() -> int:
         {"cmp": "parity", "raku": passing_side, "mutsu": passing_side}])
     check("an accepted file is out of the denominator",
           totals["baseline_files"] == 1 and status_of(totals) == "green")
+
+    # blocked_has_baseline(): a load failure is a mutsu gap only while rakudo
+    # passes some test file of the distribution.
+    fails = {"raku": {"verdict": "die"}}
+    passes = {"raku": {"verdict": "pass"}}
+    check("a blocked load with no rakudo-passing file is no gap",
+          not blocked_has_baseline([fails, fails]))
+    check("one rakudo-passing file keeps it blocked_load",
+          blocked_has_baseline([fails, passes]))
+    check("a distribution without test files keeps blocked_load",
+          blocked_has_baseline([]))
 
     run = real_run
     print(f"ecosystem-sweep self-test: "

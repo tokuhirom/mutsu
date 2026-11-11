@@ -78,7 +78,7 @@ divergence, also out of the KPI and out of every "what to fix next" tool
 ([ADR-0130](../docs/adr/0130-ecosystem-accepted-divergences.md)).
 
 `status` rolls that up per distribution: `green` (every baseline file passes) ·
-`partial` · `red` · `no_baseline` · `blocked_load` (a provided module does not
+`partial` · `red` · `no_baseline` · `blocked_load` (rakudo passes some test file, but a provided module does not
 `use`) · `blocked_dep` (its dependency closure cannot be resolved, so it runs on
 neither side) · `skipped`.
 

@@ -99,6 +99,12 @@ unmaintained compiler surface: it is `no_baseline`, and mutsu does not have to r
 Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_load`
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
+A load failure is charged to mutsu only while rakudo passes the distribution's suite: when a
+module does not load on mutsu, the sweep still runs the test files on rakudo, stopping at the
+first that passes. If none does, the record is `no_baseline` with those files listed, not
+`blocked_load`. Fixing the load could not make any file comparable. A distribution with no
+test files keeps `blocked_load`, because its load is all that is measured.
+
 `ecosystem/exclude.txt` is orthogonal to `status` — it does not change what gets measured or
 published, only what `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` offer automatically. A
 distribution lands there once, and only once, a run has shown its record can never move (rakudo
