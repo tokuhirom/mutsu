@@ -51,6 +51,8 @@ pub(super) use grammar_module::{
     does_decl, grammar_decl, grammar_decl_my, module_decl, token_decl, trusts_decl,
 };
 pub(super) use package_decl::{package_decl, package_decl_my, unit_module_stmt};
-pub(super) use proto_decl::{proto_decl, proto_decl_scoped};
+pub(super) use proto_decl::{
+    proto_decl, proto_decl_scoped, proto_method_after_keyword, proto_sub_after_keyword,
+};
 pub(super) use role_decl::role_decl;
 pub(crate) use role_decl::{parse_optional_role_type_params, role_type_param_names};

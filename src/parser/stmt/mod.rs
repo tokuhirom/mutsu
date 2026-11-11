@@ -288,6 +288,12 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         STMT_MEMO.store(input, &result);
         return result;
     }
+    // ... and after a `multi`/`proto`/`only` keyword, as rakudo's
+    // `multi-declarator` parses `<declarator>` (#16888).
+    if let Some(result) = simple::multi_declarator_hook(input) {
+        STMT_MEMO.store(input, &result);
+        return result;
+    }
     let input_len = input.len();
     let mut best_error: Option<(usize, PError)> = None;
     let mut early_success: Option<(&str, Stmt)> = None;

@@ -44,6 +44,45 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
     } else {
         rest
     };
+    proto_decl_named(rest, is_regex_proto, is_method, regex_kind, is_my, is_our)
+}
+
+/// The rest of a `proto method` declaration after its keywords: its name,
+/// signature, traits and `{*}` body. A slang's routine declarator after a
+/// `proto` keyword reads it with the core `method-def` (#16888).
+// Cost: the parse of the declaration.
+pub(crate) fn proto_method_after_keyword(input: &str) -> PResult<'_, Stmt> {
+    proto_decl_named(
+        input,
+        false,
+        true,
+        crate::regex_tree::RegexDeclKind::Token,
+        false,
+        false,
+    )
+}
+
+/// The same for a `proto sub` (the core `routine-def`).
+// Cost: the parse of the declaration.
+pub(crate) fn proto_sub_after_keyword(input: &str) -> PResult<'_, Stmt> {
+    proto_decl_named(
+        input,
+        false,
+        false,
+        crate::regex_tree::RegexDeclKind::Token,
+        false,
+        false,
+    )
+}
+
+fn proto_decl_named(
+    rest: &str,
+    is_regex_proto: bool,
+    is_method: bool,
+    regex_kind: crate::regex_tree::RegexDeclKind,
+    is_my: bool,
+    is_our: bool,
+) -> PResult<'_, Stmt> {
     let (rest, name) = parse_sub_name(rest)?;
     if !is_regex_proto && !is_method {
         // A lone `proto sub infix:<op>` (no `multi` candidates in this
@@ -51,6 +90,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
         super::super::simple::register_user_sub(&name);
     }
     let (rest, _) = ws(rest)?;
+    let has_signature = rest.starts_with('(');
     let (rest, (param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
@@ -95,6 +135,19 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
         let parsed = if crate::parser::stmt::trace::is_dispatcher_body(rest) {
             crate::parser::stmt::trace::unnumbered(|| block(rest))
         } else {
+            // A body other than `{*}` is a statement list a slang's wrapper sees
+            // with `$*BLOCK` the proto (ADR-16888 §2.6).
+            let _routine_body = (!is_regex_proto).then(|| {
+                crate::parser::stmt::simple::announce_routine_body(
+                    if is_method {
+                        crate::rakuast::slang_block_scope::RoutineKind::Method
+                    } else {
+                        crate::rakuast::slang_block_scope::RoutineKind::Sub
+                    },
+                    &name,
+                    has_signature.then_some(param_defs.as_slice()),
+                )
+            });
             block(rest)
         };
         if needs_scope {

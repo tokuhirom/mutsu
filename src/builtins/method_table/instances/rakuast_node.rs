@@ -287,11 +287,19 @@ fn method_value(
         };
         return Some(interp.call_method_with_values(table, "AT-KEY", vec![Value::str(name)]));
     }
-    Some(interp.call_method_with_values(
+    let found = interp.call_method_with_values(
         Value::package(Symbol::intern(&owner)),
         "^find_method",
         vec![Value::str(name)],
-    ))
+    );
+    // A `multi` declaration's object is its own candidate.
+    if let Ok(dispatcher) = &found
+        && let Some(candidate) =
+            super::rakuast_multi_candidate::multi_candidate(interp, dispatcher, node)
+    {
+        return Some(Ok(candidate));
+    }
+    Some(found)
 }
 
 /// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
@@ -1065,6 +1073,10 @@ pub(super) fn routine_meta_object(
         return Some(Ok(declared));
     }
     let mut anonymous = node.clone();
-    anonymous.fields.retain(|f| f.name != Some("name"));
+    // A stand-in before the declaration runs (a slang action at parse time): a
+    // nameless routine, which is no `proto`/`multi` candidate of anything.
+    anonymous
+        .fields
+        .retain(|f| f.name != Some("name") && f.name != Some("multiness"));
     Some(interp.eval_rakuast_node(&Value::rakuast(Box::new(anonymous))))
 }

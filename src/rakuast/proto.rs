@@ -148,3 +148,23 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         is_our,
     })
 }
+
+/// The multiness a `Sub` / `Method` node was declared with (`"multi"`,
+/// `"proto"`, `"only"`), `None` for a plain routine.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn routine_multiness(node: &RakuAstNode) -> Option<String> {
+    node.fields
+        .iter()
+        .any(|f| f.name == Some("multiness"))
+        .then(|| super::lower::leaf_str(node, "multiness").ok())
+        .flatten()
+}
+
+/// The parameters a routine node's signature declares, as the parser's
+/// `ParamDef`s (no invocant: a node does not write the implicit one).
+// Cost: O(n), n = size of the signature.
+pub(crate) fn routine_param_defs(node: &RakuAstNode) -> Option<Vec<ParamDef>> {
+    signature_positional_params(&NameScope::default(), node)
+        .ok()
+        .map(|(_, defs)| defs)
+}

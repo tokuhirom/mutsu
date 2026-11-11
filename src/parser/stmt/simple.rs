@@ -33,6 +33,7 @@ mod pragma_preseed;
 mod registry;
 mod slang_hooks;
 mod slang_modes;
+mod slang_multiness;
 mod slang_use;
 mod slang_wrapper_block;
 mod user_ops;
@@ -143,6 +144,8 @@ pub(crate) use slang_hooks::{
 };
 pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
+pub(in crate::parser) use slang_multiness::multi_declarator_hook;
+pub(crate) use slang_multiness::{Multiness, take_slang_multiness};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use slang_wrapper_block::announce_routine_body;
