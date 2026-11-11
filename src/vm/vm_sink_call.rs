@@ -129,6 +129,25 @@ impl Interpreter {
 }
 
 impl Interpreter {
+    /// Whether the value a sunk statement call to `sink_call` (a
+    /// `SinkPopCall`'s callee; `None` for any other sink) handed back may
+    /// explode: not when the callee is a code-variable block that hands back
+    /// its last statement's container, which sinks nothing inside it --
+    /// except under `use fatal` (so inside a `try`), where the container is
+    /// sunk too. Asked only for a value that would explode (an unhandled
+    /// Failure, an unsuccessful Proc).
+    // Cost: O(1) for `None` or under `use fatal`; otherwise
+    // `sunk_call_result_is_block_container`'s callee lookup.
+    pub(crate) fn sink_call_may_explode(&mut self, code: &CompiledCode, sink_call: Option<u32>) -> bool {
+        match sink_call {
+            None => true,
+            Some(name_idx) => {
+                self.module.lexical_fatal_mode
+                    || !self.sunk_call_result_is_block_container(code, name_idx)
+            }
+        }
+    }
+
     /// Whether a sunk statement call to the code variable `&name` hands back
     /// the container of its last statement, so the value inside it (a stored
     /// `Failure`, an unsuccessful `Proc`) is not sunk: `my &c = { $z = f() };

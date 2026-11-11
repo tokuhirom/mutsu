@@ -5078,17 +5078,19 @@ impl Interpreter {
             // callee when the value has a user `sink` method.
             OpCode::SinkPop(..) | OpCode::SinkPopCall(_) => {
                 self.sync_source_line(code, *ip);
-                let (user_sink, may_explode_failure) = match &code.ops[*ip] {
+                // `sink_call`: the callee of a `SinkPopCall`, whose value may
+                // still be spared by `sink_call_may_explode` -- asked only once
+                // a value that would explode is in hand, as the question costs
+                // a by-name callee lookup and almost every sunk call returns a
+                // value that sinks to nothing.
+                let (user_sink, may_explode_failure, sink_call) = match &code.ops[*ip] {
                     OpCode::SinkPop(user_sink, may_explode_failure) => {
-                        (*user_sink, *may_explode_failure)
+                        (*user_sink, *may_explode_failure, None)
                     }
                     OpCode::SinkPopCall(name_idx) => (
                         self.sunk_call_result_runs_sink(code, *ip, *name_idx),
-                        // A block that hands back its last statement's container
-                        // sinks nothing inside it -- except under `use fatal`
-                        // (so inside a `try`), where the container is sunk too.
-                        self.module.lexical_fatal_mode
-                            || !self.sunk_call_result_is_block_container(code, *name_idx),
+                        true,
+                        Some(*name_idx),
                     ),
                     _ => unreachable!(),
                 };
@@ -5257,6 +5259,7 @@ impl Interpreter {
                                 && may_explode_failure
                                 && let Some(err) =
                                     self.failure_to_runtime_error_if_unhandled(&sunk_failure)
+                                && self.sink_call_may_explode(code, sink_call)
                             {
                                 return Err(err);
                             }
@@ -5299,7 +5302,10 @@ impl Interpreter {
                                 // A signal-killed child reports `exitcode = 0`
                                 // (see `exit_status_parts`), so the signal is
                                 // the only evidence that it was unsuccessful.
-                                if (exitcode != 0 || signal != 0) && !is_live {
+                                if (exitcode != 0 || signal != 0)
+                                    && !is_live
+                                    && self.sink_call_may_explode(code, sink_call)
+                                {
                                     // Rakudo names the program (`$.proc.command[0]`),
                                     // not the whole command line.
                                     let command = attributes
