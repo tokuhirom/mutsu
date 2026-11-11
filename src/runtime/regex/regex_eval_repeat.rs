@@ -381,16 +381,26 @@ impl Interpreter {
             return;
         }
         // Children first, so an outer declaration is in force while the matches
-        // below it record their own.
+        // below it record their own. An alias (`<operand=atom>`) files ONE node
+        // under two names: it is reduced once, and both slots keep sharing it --
+        // a copy per slot would be two cursors, whose actions the grammar walk
+        // then dispatches twice (EEL's `eel-local`, #16888).
+        let mut reduced: Vec<(*const CapNode, Arc<CapNode>)> = Vec::new();
         for (key, slot) in named.iter_mut() {
             let child_rule = Self::reduce_child_rule_name(key.as_str());
             for sc in slot.nodes.iter_mut() {
+                let shared = Arc::as_ptr(sc);
+                if let Some((_, done)) = reduced.iter().find(|(p, _)| *p == shared) {
+                    *sc = Arc::clone(done);
+                    continue;
+                }
                 crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-                let sc = Arc::make_mut(sc);
-                let child_rule = sc
+                let node = Arc::make_mut(sc);
+                let child_rule = node
                     .action_name
                     .map_or_else(|| child_rule.clone(), |name| name.resolve());
-                self.reduce_cap_node_for_rule(sc, target, Some(&child_rule));
+                self.reduce_cap_node_for_rule(node, target, Some(&child_rule));
+                reduced.push((shared, Arc::clone(sc)));
             }
         }
         for slot in positional.iter_mut() {

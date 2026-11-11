@@ -238,7 +238,7 @@ impl Interpreter {
         }
 
         let chars = orig_chars;
-        if parsed.anchor_start {
+        if parsed.anchor_start || super::regex_helpers::take_subparse_anchor() {
             return self
                 .regex_match_end_from_caps_in_pkg(parsed, chars, 0, pkg)
                 .map(|(end, mut caps)| {

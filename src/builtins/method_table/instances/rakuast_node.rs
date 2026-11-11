@@ -262,7 +262,15 @@ fn method_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    let (owner, name) = crate::rakuast::declared_method(node)?;
+    // A method a slang production built has no recorded owner: while the
+    // production's actions are replayed in the unit it is the class whose body
+    // holds the production (ADR-17243).
+    let (owner, name) = crate::rakuast::declared_method(node).or_else(|| {
+        Some((
+            crate::runtime::slang_action_replay::slang_replay_owner()?,
+            crate::rakuast::declared_package_name(node)?,
+        ))
+    })?;
     // A private method is in its class's private method table.
     if crate::rakuast::node_accessor(node, "private").is_some_and(|v| v.truthy()) {
         if let Some(method) = interp.role_private_method_object(&owner, &name) {

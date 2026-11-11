@@ -137,6 +137,7 @@ fn method_decl_body_with_my(
     let (rest, _) = ws(rest)?;
 
     let mut signature_start = None;
+    let has_signature = rest.starts_with('(');
     let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
@@ -173,6 +174,15 @@ fn method_decl_body_with_my(
     let return_type = traits.return_type.or(param_return_type);
     let slurpy_scope = super::super::sub::enter_routine_body(&param_defs, true);
     let brace = rest;
+    let routine_body = super::super::simple::announce_routine_body(
+        if is_submethod {
+            crate::rakuast::slang_block_scope::RoutineKind::Submethod
+        } else {
+            crate::rakuast::slang_block_scope::RoutineKind::Method
+        },
+        &name,
+        has_signature.then_some(param_defs.as_slice()),
+    );
     let (rest, mut body) = if param_defs.iter().any(|p| p.sigilless)
         || super::super::sub::has_type_capture(&param_defs)
     {
@@ -196,6 +206,7 @@ fn method_decl_body_with_my(
     } else {
         super::super::method_block(rest)?
     };
+    drop(routine_body);
     drop(slurpy_scope);
     // When no explicit signature is given, collect placeholder variables
     // (@_, $^a, $^b, etc.) from the body as implicit parameters.

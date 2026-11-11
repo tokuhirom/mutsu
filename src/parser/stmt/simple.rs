@@ -34,6 +34,7 @@ mod registry;
 mod slang_hooks;
 mod slang_modes;
 mod slang_use;
+mod slang_wrapper_block;
 mod user_ops;
 
 // `pub` re-exports.
@@ -144,6 +145,7 @@ pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
+pub(in crate::parser) use slang_wrapper_block::announce_routine_body;
 pub(crate) use user_ops::is_user_declared_value_term;
 pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
 pub(in crate::parser) use user_ops::{

@@ -14,6 +14,9 @@ pub(crate) enum ToHost {
         source: String,
         /// For an action override (`INFIX-EXPR`): the node the core action built.
         node: Option<Value>,
+        /// For a `statementlist` wrapper: the routine whose body the list is,
+        /// bound to `$*BLOCK` while the slang's method runs (ADR-16888 §2.6).
+        block: Option<Value>,
     },
     /// The answer to a [`FromHost::BackCall`].
     BackReply(HostAnswer),
@@ -67,6 +70,7 @@ impl SlangHost {
         &self,
         rule: &str,
         source: &str,
+        block: Option<Value>,
         back_call: &mut dyn FnMut(&str, usize) -> HostAnswer,
     ) -> HostAnswer {
         self.to_host
@@ -74,6 +78,7 @@ impl SlangHost {
                 rule: rule.to_string(),
                 source: source.to_string(),
                 node: None,
+                block,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
         loop {
@@ -107,6 +112,7 @@ impl SlangHost {
                 rule: rule.to_string(),
                 source: source.to_string(),
                 node: Some(node),
+                block: None,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
         let message = crate::gc::block_quiescent(|| self.from_host.recv())

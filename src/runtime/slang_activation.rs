@@ -67,6 +67,10 @@ pub(crate) fn is_slang_handle_class(class_name: &str) -> bool {
 /// names another slang-activating module).
 pub(crate) const ACTIVATION_THREAD_NAME: &str = "mutsu-slang-activation";
 
+/// The importer the activation's `use` stands for: the unit being parsed, which
+/// has no code in the activation interpreter.
+const SLANG_IMPORTER_FILE: &str = "<slang importer>";
+
 /// Which half of a `define_slang('MAIN', $grammar, $actions)` registration a
 /// role was mixed into. The two halves spell an override differently, so the
 /// reader has to know which it is looking at.
@@ -217,6 +221,14 @@ pub(crate) fn run_slang_activation(
                     interp.add_lib_path(path);
                 }
                 interp.env.insert("*LANG".to_string(), comp_lang_instance());
+                // The `use` below imports into the unit being parsed, whose code
+                // never runs here. Naming that importer marks what an `EXPORT`
+                // hook hands out (`'&make' => ...`, EEL) as its import alone, so
+                // the slang's own modules, which run here, keep the core routine.
+                interp.env.insert(
+                    "?FILE".to_string(),
+                    Value::str_from(SLANG_IMPORTER_FILE),
+                );
                 // The `use` statement's literal arguments reach the module's
                 // `sub EXPORT`, as they do at run time: an EXPORT that declines
                 // to slang when given one (`use L10N::BG 'no-slangification'`)

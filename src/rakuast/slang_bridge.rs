@@ -261,14 +261,21 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
                 }
                 let (replay, _) = plain(lower_statement(first)?);
                 let (kept, kept_node) = plain(lower_statement(second)?);
-                let mut stmts = vec![replay, kept];
+                // The production's own statement first: the replayed actions see
+                // what it declared (EEL's `pattern` reads its method's
+                // `meta-object`, which rakudo's action finds already installed).
+                let mut stmts = vec![kept, replay];
                 for rest in children {
                     stmts.push(plain(lower_statement(rest)?).0);
                 }
                 return Ok(Stmt::Ast(Box::new(
                     crate::ast::parsed::ParsedStmt::Lowered {
                         stmt: Box::new(Stmt::SyntheticBlock(stmts)),
-                        node: kept_node.unwrap_or_else(|| second.clone()),
+                        node: if declares_method(second) {
+                            replay_sequence(node, kept_node)
+                        } else {
+                            kept_node.unwrap_or_else(|| second.clone())
+                        },
                     },
                 )));
             }
@@ -292,6 +299,43 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             node: Value::rakuast(Box::new(kept)),
         },
     )))
+}
+
+/// Whether a production's node declares a method: one a class body holds, which
+/// the unit converts back from its tree (ADR-15334 Stage 2), so the replay of the
+/// production's actions must be part of the node it reads.
+// Cost: O(1).
+fn declares_method(node: &Value) -> bool {
+    matches!(node.view(), ValueView::RakuAst(n)
+        if matches!(n.class, super::RakuAstClass::Method | super::RakuAstClass::Submethod))
+}
+
+/// The node a production that declares a method and replays its actions stands
+/// for, as a reader of the tree sees it: a `StatementSequence` (no scope of its
+/// own) of the production's own node and the replay call, so a class body
+/// converted back from its tree keeps the replay (ADR-17243). Any other
+/// production is read as its own node.
+// TODO: a reader that deparses such a class body sees the sequence; carry the
+// replay beside the node instead once the tree has a place for it.
+// Cost: O(f), f = statements of the list.
+fn replay_sequence(list: &RakuAstNode, kept: Option<Value>) -> Value {
+    let mut fields: Vec<_> = list
+        .fields
+        .iter()
+        .filter(|f| !super::origin::is_origin(f))
+        .cloned()
+        .collect();
+    // The production's own node as its statement was lowered (an expression
+    // stands in its `Statement::Expression`), ahead of the replay as it runs.
+    if let (Some(kept), Some(own)) = (kept, fields.get_mut(1)) {
+        own.value = RakuAstFieldValue::Node(kept);
+    }
+    fields.swap(0, 1);
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: super::RakuAstClass::StatementSequence,
+        fields,
+    }))
 }
 
 /// Lower the node a slang's `statementlist` wrapper answered (ADR-16888): the

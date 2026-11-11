@@ -126,6 +126,10 @@ class Mutsu::Slang::Host::Actions {
         $/.make(RakuAST::Type::Simple.new(RakuAST::Name.from-identifier(~$/)));
     }
     method attach($/, $ast) { $/.make($ast); $ast }
+    # rakudo's declarator actions (`package-declarator:sym<class>`, ...) attach
+    # the definition through it; it also widens the node's origin, which the
+    # host does not track.
+    method DECLARATOR($/, $ast) { self.attach($/, $ast) }
     # The core actions a slang may override and `callsame` into: the core node
     # is the Match's `.ast` already, so they answer it.
     method INFIX-EXPR(Mu $/) { $/.ast }
@@ -154,7 +158,7 @@ const HOST_ENTRY_SOURCE: &str = r#"
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
-sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
+sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block) {
     unless $Mutsu::Slang::Host::G.defined {
         my $g = Metamodel::GrammarHOW.new_type(:name<Raku::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
@@ -190,7 +194,14 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node) {
     my $*R = Mutsu::Slang::Host::Resolver.new;
     my $*CU = Mutsu::Slang::Host::CompUnit.new;
     $Mutsu::Slang::Host::Built = Nil;
-    my $m = $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
+    # A wrapped statement list runs in the scope rakudo's `<block>` / `method-def`
+    # entered for it: the routine whose body it is, else a bare block (ADR-16888 §2.6).
+    my $m = $rule eq 'statementlist'
+        ?? do {
+            my $*BLOCK = $block // RakuAST::Block.new;
+            $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A))
+        }
+        !! $Mutsu::Slang::Host::G.subparse($source, :rule($rule), :actions($Mutsu::Slang::Host::A));
     return Nil unless $m;
     # A node the core action built for a production the slang's own token matched
     # (a `for` with the slang's extra clause) stands for it: a slang action that
@@ -269,10 +280,16 @@ impl Interpreter {
                 let link = link.as_ref()?;
                 crate::gc::block_quiescent(|| link.from_parser.recv()).ok()
             });
-            let Some(ToHost::Hook { rule, source, node }) = message else {
+            let Some(ToHost::Hook {
+                rule,
+                source,
+                node,
+                block,
+            }) = message
+            else {
                 return;
             };
-            if !self.answer_hook(&rule, &source, node) {
+            if !self.answer_hook(&rule, &source, node, block) {
                 return;
             }
         }
@@ -281,7 +298,13 @@ impl Interpreter {
     /// Run one hook and send the parser its `Done`; `false` when the parser is
     /// gone.
     // Cost: the token and the action.
-    fn answer_hook(&mut self, rule: &str, source: &str, node: Option<Value>) -> bool {
+    fn answer_hook(
+        &mut self,
+        rule: &str,
+        source: &str,
+        node: Option<Value>,
+        block: Option<Value>,
+    ) -> bool {
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
         let answer = if depth >= MAX_HOOK_DEPTH {
             Err(format!(
@@ -290,7 +313,7 @@ impl Interpreter {
         } else {
             HOOK_DEPTH.with(|d| d.set(depth + 1));
             super::slang_class_replay::begin_class_log();
-            let answer = self.run_slang_hook(rule, source, node);
+            let answer = self.run_slang_hook(rule, source, node, block);
             super::slang_class_replay::end_class_log();
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
@@ -305,7 +328,13 @@ impl Interpreter {
     /// Match `rule` at the start of `source` with the composed grammar and
     /// read the node its action attached.
     // Cost: the token and the action.
-    fn run_slang_hook(&mut self, rule: &str, source: &str, node: Option<Value>) -> HostAnswer {
+    fn run_slang_hook(
+        &mut self,
+        rule: &str,
+        source: &str,
+        node: Option<Value>,
+        block: Option<Value>,
+    ) -> HostAnswer {
         let mut run = HOST_ENTRY.with(|e| e.borrow().clone());
         if run.is_none() {
             let entry = self
@@ -329,6 +358,9 @@ impl Interpreter {
                     ];
                     if let Some(node) = node {
                         args.push(Value::pair("node".to_string(), node));
+                    }
+                    if let Some(block) = block {
+                        args.push(Value::pair("block".to_string(), block));
                     }
                     args
                 },
@@ -412,7 +444,8 @@ impl Interpreter {
             Some((end, node)) => {
                 let cursor = Self::make_cursor_value(&class, &orig, pos as i64, end as i64, false);
                 if let ValueView::Instance { attributes, .. } = cursor.view() {
-                    attributes.insert("ast", node);
+                    // The match's own nodes: an action may edit them in place.
+                    attributes.insert("ast", crate::rakuast::fresh_copy::fresh_copy(&node));
                 }
                 Ok(cursor)
             }
@@ -446,8 +479,13 @@ impl Interpreter {
             });
             match message.ok_or_else(lost)? {
                 ToHost::BackReply(answer) => return Ok(answer),
-                ToHost::Hook { rule, source, node } => {
-                    if !self.answer_hook(&rule, &source, node) {
+                ToHost::Hook {
+                    rule,
+                    source,
+                    node,
+                    block,
+                } => {
+                    if !self.answer_hook(&rule, &source, node, block) {
                         return Err(lost());
                     }
                 }

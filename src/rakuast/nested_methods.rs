@@ -48,7 +48,9 @@ pub(crate) fn hoist(body: &mut Vec<Stmt>) {
         hoisted: Vec::new(),
         groups: Vec::new(),
     };
-    for stmt in body.iter_mut() {
+    // A `SyntheticBlock` is no scope: what it groups (a slang production and the
+    // replay of its actions, ADR-17243) are package-body statements themselves.
+    for stmt in crate::ast::scope_members_mut(body) {
         // A top-level statement is already a package-body statement; only
         // what is nested in it is scanned.
         if !owns_its_scope(stmt) {

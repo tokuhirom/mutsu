@@ -212,6 +212,11 @@ pub(super) fn lower_stmt(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, 
     }
     match node.class {
         RakuAstClass::StatementEmpty => Ok(Stmt::Expr(Expr::Literal(Value::NIL))),
+        // Statements standing together without a scope of their own: a slang
+        // production and the replay of its actions (ADR-17243).
+        RakuAstClass::StatementSequence => {
+            Ok(Stmt::SyntheticBlock(lower_statement_sequence(names, node)?))
+        }
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
         RakuAstClass::StatementAlso => super::role::lower_also(names, node),
@@ -2700,11 +2705,16 @@ fn lower_method_literal(names: &NameScope, node: &RakuAstNode) -> Result<Expr, R
     Ok(literal)
 }
 
-/// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
+/// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`),
+/// or the plain `Infix('=')` a hand-built tree spells it with (EEL's `:my`
+/// locals), which rakudo compiles as the same assignment.
+// Cost: O(f), f = fields of the node.
 pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
-    named_child(node, "infix")
-        .map(|c| c.class == RakuAstClass::Assignment)
-        .unwrap_or(false)
+    named_child(node, "infix").is_ok_and(|c| {
+        c.class == RakuAstClass::Assignment
+            || (c.class == RakuAstClass::Infix
+                && positional_leaf(c).is_ok_and(|op| op.as_str() == Some("=")))
+    })
 }
 
 /// Whether an `ApplyInfix` is `VAR := …`: a plain `:=` infix whose left side
@@ -4540,6 +4550,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         | RakuAstClass::RatLiteral
         | RakuAstClass::VersionLiteral
         | RakuAstClass::Constant
+        | RakuAstClass::Literal
         | RakuAstClass::ComplexLiteral
         | RakuAstClass::StrLiteral => Ok(Expr::Literal(positional_leaf(node)?)),
         // `"..."` parses to a QuotedString wrapping StrLiteral segments; a single

@@ -368,7 +368,8 @@ pub(in crate::parser) fn statementlist_wrapper(
             input,
         )))
     };
-    let answer = host.run_hook("statementlist", input, &mut |rule, pos| {
+    let block = super::slang_wrapper_block::take_routine_body();
+    let answer = host.run_hook("statementlist", input, block, &mut |rule, pos| {
         serve_back_call(input, rule, pos)
     });
     match answer {
@@ -379,6 +380,12 @@ pub(in crate::parser) fn statementlist_wrapper(
         },
         Err(message) => fail(message),
     }
+}
+
+/// Whether a slang wraps the core `statementlist` (ADR-16888).
+// Cost: O(k), k = registered wrappers.
+pub(in crate::parser) fn statementlist_wrapped() -> bool {
+    HOOKS.with(|h| h.borrow().wrappers.iter().any(|w| w == "statementlist"))
 }
 
 /// Whether the list parse being entered is a wrapper's own delegation; clears
@@ -449,7 +456,7 @@ fn run_category_uncached<'a>(
     });
     let host = host?;
     for candidate in rules {
-        let answer = host.run_hook(&candidate.rule, input, &mut |rule, pos| {
+        let answer = host.run_hook(&candidate.rule, input, None, &mut |rule, pos| {
             serve_back_call(input, rule, pos)
         });
         match answer {

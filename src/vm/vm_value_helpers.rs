@@ -21,6 +21,26 @@ impl Interpreter {
     pub(super) fn bound_slash_positional(slash: &Value, i: usize) -> Value {
         slash.with_deref(|v| match v.view() {
             ValueView::Array(data, _) => data.get(i).cloned().unwrap_or(Value::NIL),
+            // `$/` bound to a Capture (`$/ = \(7)`) indexes its positionals.
+            ValueView::Capture { positional, .. } => {
+                positional.get(i).cloned().unwrap_or(Value::NIL)
+            }
+            // An `is Capture` object (EEL's `$/ = self`) indexes the Capture it
+            // carries (`native_base::CAPTURE_PAYLOAD`).
+            ValueView::Instance { attributes, .. }
+                if attributes
+                    .as_map()
+                    .contains_key(crate::builtins::native_base::CAPTURE_PAYLOAD) =>
+            {
+                attributes
+                    .as_map()
+                    .get(crate::builtins::native_base::CAPTURE_PAYLOAD)
+                    .and_then(|c| match c.view() {
+                        ValueView::Capture { positional, .. } => positional.get(i).cloned(),
+                        _ => None,
+                    })
+                    .unwrap_or(Value::NIL)
+            }
             ValueView::Instance { .. } => v
                 .match_list()
                 .and_then(|list| match list.view() {

@@ -1098,6 +1098,11 @@ impl Interpreter {
                     // `:c(N)`/`:continue(N)` — search for a match from N onwards.
                     self.regex_match_with_captures_from(&pattern, &text, cpos)
                 } else {
+                    // A plain `.subparse` begins at 0 (the check below refuses any
+                    // other start): anchored, so a failed start rule does not
+                    // retry at every later position, running its code blocks there
+                    // (raku runs them once) and costing a scan of the text.
+                    let _anchor = super::regex::regex_helpers::SubparseAnchor::arm();
                     self.regex_match_with_captures(&pattern, &text)
                 };
                 // Check for pending regex error (e.g., <sym> used outside proto regex)
