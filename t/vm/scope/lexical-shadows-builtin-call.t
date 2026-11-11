@@ -8,7 +8,7 @@ use Test;
 # return the wrong value -- it hijacks the enclosing routine's control flow.
 # See todo/tickets/code-lexical-does-not-shadow-a-builtin.md.
 
-plan 15;
+plan 17;
 
 # `my &emit` at an outer scope, called from a nested sub.
 {
@@ -103,5 +103,15 @@ ok tap-done-like(), 'done() if &done with no &done passed just runs the rest';
     my $blk = { emit(); 'after' };
     is $blk(), 'after', 'a non-final emit() statement still resolves the lexical &emit';
 }
+
+# A method's `&done` / `&emit` parameters shadow the keywords too
+# (`Tappable.tap(&emit, &done, &quit, &tap)`).
+class TapLike {
+    method tap(&emit, &done) { emit($_) for 1..2; done() }
+}
+my @emitted;
+is TapLike.new.tap(-> $v { @emitted.push($v) }, { 'finished' }), 'finished',
+    'a method\'s &done parameter shadows the done builtin';
+is-deeply @emitted, [1, 2], 'and its &emit parameter shadows emit';
 
 # vim: expandtab shiftwidth=4
