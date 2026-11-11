@@ -49,7 +49,8 @@ fn origin_span(node: &RakuAstNode) -> Option<(Value, i64, i64)> {
     };
     let attrs = attributes.as_map();
     let source = attrs.get("source")?.clone();
-    let (ValueView::Int(from), ValueView::Int(to)) = (attrs.get("from")?.view(), attrs.get("to")?.view())
+    let (ValueView::Int(from), ValueView::Int(to)) =
+        (attrs.get("from")?.view(), attrs.get("to")?.view())
     else {
         return None;
     };
@@ -178,7 +179,7 @@ pub(crate) fn prelude_text(node: &RakuAstNode) -> Option<String> {
     let mut prelude = String::new();
     for row in rows.iter() {
         let cells = row.as_list_items()?;
-        let [kind, start, end] = &cells[..] else {
+        let [kind, start, end] = cells else {
             continue;
         };
         let (ValueView::Int(start), ValueView::Int(end)) = (start.view(), end.view()) else {
@@ -202,7 +203,10 @@ pub(crate) fn prelude_text(node: &RakuAstNode) -> Option<String> {
 fn grapheme_slice(text: &str, from: i64, to: i64) -> String {
     let cp = |g: i64| crate::value::match_helpers::grapheme_to_cp_index(text, g.max(0) as usize);
     let (start, end) = (cp(from), cp(to));
-    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+    text.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 /// The package declarations at the top level of the statement list `tree`.
