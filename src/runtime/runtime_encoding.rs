@@ -496,8 +496,8 @@ impl Interpreter {
     /// type. Lexical types use an opaque NUL-suffixed registry key, so the
     /// package-item marker cannot be queried with the unmangled spelling that
     /// appears in source (`M::State`).
-    // Cost: O(1) expected, or O(t), t = registered type keys, for a name that
-    // has lexically scoped (NUL-mangled) registrations.
+    // Cost: O(1) expected, plus O(k), k = the NUL-mangled keys that carry the
+    // name (`Registry::lexical_type_keys_for`).
     pub(crate) fn is_my_scoped_type_name(&self, fq_name: &str) -> bool {
         if !crate::qualified::is_qualified_str(fq_name) {
             return false;
@@ -517,17 +517,10 @@ impl Interpreter {
         if exact_key && self.is_my_scoped_package_item(fq_name) {
             return true;
         }
-        if !registry.has_lexical_type_key_for(fq_name) {
-            return false;
-        }
-        let prefix = format!("{fq_name}\u{0}");
         registry
-            .classes
-            .keys()
-            .chain(registry.roles.keys())
-            .chain(registry.enum_types.keys())
-            .chain(registry.subsets.keys())
-            .any(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
+            .lexical_type_keys_for(fq_name)
+            .iter()
+            .any(|key| self.is_my_scoped_package_item(key))
     }
 
     /// Whether a lexically scoped type's source-facing name is visible from

@@ -1433,7 +1433,35 @@ impl Interpreter {
         Ok(value)
     }
 
+    // Cost: O(1) expected for a role already materialized under the current
+    // registry state; otherwise binding its type-parameter defaults.
     pub(crate) fn materialize_default_parametric_role(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Package(role_sym) = value.view() else {
+            return Ok(value);
+        };
+        // The defaults are evaluated in the role's declaring scope, so the
+        // answer depends only on what is declared: remember it for the current
+        // registry state.
+        let generation = self.registry_write_generation();
+        if let Some((seen, materialized)) = self.types.default_role_parametrizations.get(&role_sym)
+            && *seen == generation
+        {
+            return Ok(materialized.clone());
+        }
+        let materialized = self.materialize_default_parametric_role_uncached(value)?;
+        // The binding itself may have registered something; key the answer by
+        // the generation it was asked under, which a later write moves past.
+        self.types
+            .default_role_parametrizations
+            .insert(role_sym, (generation, materialized.clone()));
+        Ok(materialized)
+    }
+
+    // Cost: binding the role's type-parameter defaults in its declaring scope.
+    fn materialize_default_parametric_role_uncached(
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
