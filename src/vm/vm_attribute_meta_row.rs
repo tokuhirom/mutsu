@@ -61,8 +61,6 @@ impl Interpreter {
         {
             return None;
         }
-        crate::builtins::method_table::invoke_owner(self, &["Attribute"], method, args, || {
-            instance
-        })
+        crate::builtins::method_table::invoke_owner(self, &["Attribute"], method, args, || instance)
     }
 }
