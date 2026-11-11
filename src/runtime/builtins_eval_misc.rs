@@ -402,7 +402,11 @@ impl Interpreter {
             let Some(pod) = crate::rakuast::origin_pod_source(node)
                 .or_else(|| crate::rakuast::pod_source(node))
             else {
-                return self.eval_lowered_unit_with_docs(stmts, docs);
+                let result = self.eval_lowered_unit_with_docs(stmts, docs);
+                if result.is_ok() {
+                    self.record_evaluated_package_types(node);
+                }
+                return result;
             };
             let previous_pod = self.env.get("=pod").cloned();
             self.env.remove("=pod");
@@ -410,6 +414,9 @@ impl Interpreter {
                 Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs),
                 Err(e) => Err(e),
             };
+            if result.is_ok() {
+                self.record_evaluated_package_types(node);
+            }
             match previous_pod {
                 Some(saved) => {
                     self.env.insert("=pod".to_string(), saved);

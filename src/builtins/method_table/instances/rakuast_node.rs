@@ -460,6 +460,11 @@ pub(super) fn parameter_meta_object(
     ) {
         return routine_meta_object(interp, target, _args, _named);
     }
+    // A package's meta-object is its type, declared ahead of `EVAL` when the
+    // unit has not run yet (ADR-17472).
+    if crate::rakuast::declared_ahead::is_package_class(node.class) {
+        return Some(interp.package_node_meta_object(node));
+    }
     // A block's meta-object is its closure, as its `compile-time-value`.
     if matches!(
         node.class,

@@ -39,6 +39,7 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod ctor_names;
+pub(crate) mod declared_ahead;
 mod decl_origins;
 mod decl_shape_origins;
 pub(crate) mod diagnostics;
