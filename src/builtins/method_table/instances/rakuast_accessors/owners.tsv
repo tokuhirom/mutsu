@@ -172,6 +172,7 @@ RakuAST::Initializer::CallAssign	is-binding	RakuAST::Initializer
 RakuAST::Initializer::CallAssign	postfixish	RakuAST::Initializer::CallAssign
 RakuAST::IntLiteral	value	RakuAST::Literal
 RakuAST::Label	name	RakuAST::Label
+RakuAST::Literal	value	RakuAST::Literal
 RakuAST::MetaInfix::Assign	infix	RakuAST::MetaInfix::Assign
 RakuAST::MetaInfix::Cross	infix	RakuAST::MetaInfix::Cross
 RakuAST::MetaInfix::Hyper	dwim-left	RakuAST::MetaInfix::Hyper

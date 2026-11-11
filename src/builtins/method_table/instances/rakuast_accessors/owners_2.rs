@@ -131,6 +131,16 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     ),
     ("RakuAST::Label", &["RakuAST::Label", "RakuAST::Node"]),
     (
+        "RakuAST::Literal",
+        &[
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::MetaInfix::Assign",
         &[
             "RakuAST::MetaInfix::Assign",
