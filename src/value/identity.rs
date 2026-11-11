@@ -96,15 +96,21 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             if matches!(inner.view(), ValueView::Package(_))
                 && crate::value::role_mixin_suffix(mixins).is_some() =>
         {
+            // Only a composed class (`Box\0default[Any]+{Marker}`) is the
+            // mixin's type; a bare name is the role/class it was made from.
+            // Decided first: the common comparison is against `Nil`/`Any`
+            // (an absence test), where rendering the mixin's own name -- its
+            // base type's name and the `+{...}` suffix -- is wasted.
+            let other = name.resolve();
+            if !other.contains("+{") {
+                return false;
+            }
             let composed = if left.is_mixin_value() {
                 crate::value::types::what_type_name(left)
             } else {
                 crate::value::types::what_type_name(right)
             };
-            let other = name.resolve();
-            // Only a composed class (`Box\0default[Any]+{Marker}`) is the
-            // mixin's type; a bare name is the role/class it was made from.
-            other.contains("+{") && type_identity_name(&composed) == type_identity_name(&other)
+            type_identity_name(&composed) == type_identity_name(&other)
         }
         // A parameterized role type object is one type per distinct argument
         // list (`R[Str, Int] === R[Str, Int]`).
