@@ -50,6 +50,13 @@ impl Interpreter {
         let map = attributes.as_map();
         let owner = map.get("__mutsu_lookup_class")?.to_string_value();
         let name = map.get("__mutsu_lookup_method")?.to_string_value();
+        // A `proto`'s dispatcher object composes onto the proto's own cell,
+        // the one its lookups read back (`method_object_with_routine_mixins`).
+        if map.get("is_dispatcher").is_some_and(|v| v.truthy())
+            && let Some(proto) = self.registry().method_entry_proto(&owner, &name)
+        {
+            return Some(proto.routine_cell.clone());
+        }
         let idx = match map.get("__mutsu_lookup_candidate_idx").map(|v| v.view()) {
             Some(ValueView::Int(i)) => i as usize,
             _ => 0,

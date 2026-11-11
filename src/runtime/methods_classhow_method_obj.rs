@@ -729,7 +729,9 @@ impl Interpreter {
                 _ => Vec::new(),
             },
         };
-        if !candidates.is_empty() {
+        // A dispatcher answers its candidates even when it has none (a lone
+        // `proto method`).
+        if !candidates.is_empty() || is_dispatcher {
             attrs.insert("candidates".to_string(), Value::array(candidates));
         }
 

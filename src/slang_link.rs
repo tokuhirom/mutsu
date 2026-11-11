@@ -26,9 +26,22 @@ pub(crate) enum ToHost {
 pub(crate) enum FromHost {
     /// Parse the core production `rule` at character offset `pos` of the hook's
     /// source, and answer with [`ToHost::BackReply`].
-    BackCall { rule: String, pos: usize },
+    BackCall {
+        rule: String,
+        pos: usize,
+        dynamics: BackCallDynamics,
+    },
     /// The hook finished.
     Done(HostAnswer),
+}
+
+/// The core dynamics in force where the host asked for a core production, which
+/// the parser's own grammar consults while it parses that production.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BackCallDynamics {
+    /// `$*IN_REGEX_ASSERTION`: a `>` ends the expression (rakudo's
+    /// `infixstopper`), as in a regex assertion's `<name: args>` arguments.
+    pub(crate) in_regex_assertion: bool,
 }
 
 /// `Ok(Some((end, node)))`: the production matched up to character offset `end`
@@ -71,7 +84,7 @@ impl SlangHost {
         rule: &str,
         source: &str,
         block: Option<Value>,
-        back_call: &mut dyn FnMut(&str, usize) -> HostAnswer,
+        back_call: &mut dyn FnMut(&str, usize, BackCallDynamics) -> HostAnswer,
     ) -> HostAnswer {
         self.to_host
             .send(ToHost::Hook {
@@ -86,8 +99,12 @@ impl SlangHost {
                 .map_err(|_| "the slang host stopped answering".to_string())?;
             match message {
                 FromHost::Done(answer) => return answer,
-                FromHost::BackCall { rule, pos } => {
-                    let reply = back_call(&rule, pos);
+                FromHost::BackCall {
+                    rule,
+                    pos,
+                    dynamics,
+                } => {
+                    let reply = back_call(&rule, pos, dynamics);
                     self.to_host
                         .send(ToHost::BackReply(reply))
                         .map_err(|_| "the slang host is gone".to_string())?;

@@ -334,9 +334,19 @@ fn byte_offset(text: &str, chars: usize) -> usize {
 /// Parse the core production `rule` at character offset `pos` of `input` for
 /// the slang host: the character offset it ends at and its node.
 // Cost: the parse of the production.
-fn serve_back_call(input: &str, rule: &str, pos: usize) -> crate::slang_link::HostAnswer {
+fn serve_back_call(
+    input: &str,
+    rule: &str,
+    pos: usize,
+    dynamics: crate::slang_link::BackCallDynamics,
+) -> crate::slang_link::HostAnswer {
     let start = byte_offset(input, pos);
-    crate::rakuast::slang_bridge::parse_production(rule, &input[start..])
+    let text = &input[start..];
+    // A statement list (or statement) the host asks for stands inside a block,
+    // whose override resets `$*IN_REGEX_ASSERTION` (see `infix_stopper`).
+    let stopper = dynamics.in_regex_assertion && !matches!(rule, "statementlist" | "statement");
+    let _stopper = crate::parser::infix_stopper::enter(text, stopper);
+    crate::rakuast::slang_bridge::parse_production(rule, text)
         .map(|found| found.map(|(len, node)| (input[..start + len].chars().count(), node)))
 }
 
@@ -369,8 +379,8 @@ pub(in crate::parser) fn statementlist_wrapper(
         )))
     };
     let block = super::slang_wrapper_block::take_routine_body();
-    let answer = host.run_hook("statementlist", input, block, &mut |rule, pos| {
-        serve_back_call(input, rule, pos)
+    let answer = host.run_hook("statementlist", input, block, &mut |rule, pos, dynamics| {
+        serve_back_call(input, rule, pos, dynamics)
     });
     match answer {
         Ok(None) => None,
@@ -409,7 +419,8 @@ fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str
         .take(64)
         .fold(0xcbf29ce484222325u64, |h, b| {
             (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
-        });
+        })
+        ^ super::slang_multiness::slang_multiness_key();
     let key = (
         input.as_ptr() as usize,
         input.len(),
@@ -456,8 +467,8 @@ fn run_category_uncached<'a>(
     });
     let host = host?;
     for candidate in rules {
-        let answer = host.run_hook(&candidate.rule, input, None, &mut |rule, pos| {
-            serve_back_call(input, rule, pos)
+        let answer = host.run_hook(&candidate.rule, input, None, &mut |rule, pos, dynamics| {
+            serve_back_call(input, rule, pos, dynamics)
         });
         match answer {
             Ok(None) => continue,
@@ -487,6 +498,29 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
         ],
         input,
     )?;
+    Some(found.and_then(|(rest, node)| {
+        crate::rakuast::slang_bridge::lower_statement(&node)
+            .map(|stmt| (rest, stmt))
+            .map_err(|e| PError::fatal_at(e.message.to_string(), input))
+    }))
+}
+
+/// Whether a slang added any `routine-declarator` production.
+// Cost: O(r), r = registered hook rules.
+pub(super) fn has_routine_declarator_hooks() -> bool {
+    HOOKS.with(|h| {
+        h.borrow()
+            .rules
+            .iter()
+            .any(|r| slang_hook_rule(&r.rule) == Some("routine-declarator"))
+    })
+}
+
+/// Try the slang's `routine-declarator` productions alone at `input` (after a
+/// `multi`/`proto`/`only` keyword, [`super::slang_multiness`]).
+// Cost: as [`run_category`].
+pub(super) fn routine_declarator_hook(input: &str) -> Option<PResult<'_, Stmt>> {
+    let found = run_category(&["routine-declarator"], input)?;
     Some(found.and_then(|(rest, node)| {
         crate::rakuast::slang_bridge::lower_statement(&node)
             .map(|stmt| (rest, stmt))
@@ -545,7 +579,13 @@ pub(crate) fn parse_slang_shim_production<'a>(
         "routine-def" => Some(
             ws(text)
                 .and_then(|(text, _)| {
-                    crate::parser::stmt::sub::sub_decl_body(text, false, false, false).or_else(
+                    // After a `multi`/`proto`/`only` keyword (#16888).
+                    let multiness = super::take_slang_multiness();
+                    if multiness == Some(super::Multiness::Proto) {
+                        return crate::parser::stmt::class::proto_sub_after_keyword(text);
+                    }
+                    let multi = multiness == Some(super::Multiness::Multi);
+                    crate::parser::stmt::sub::sub_decl_body(text, multi, false, false).or_else(
                         |named| {
                             // No name: the anonymous forms `λ ($n) { ... }`.
                             match crate::parser::primary::ident::sub_after_keyword(text) {
@@ -560,8 +600,15 @@ pub(crate) fn parse_slang_shim_production<'a>(
         // The same for the rest of a `method` declaration (`def`, `method`).
         "method-def" => Some(
             ws(text)
-                .and_then(|(text, _)| {
-                    crate::parser::stmt::sub_param::method_decl_body(text, false, false)
+                .and_then(|(text, _)| match super::take_slang_multiness() {
+                    Some(super::Multiness::Proto) => {
+                        crate::parser::stmt::class::proto_method_after_keyword(text)
+                    }
+                    multiness => crate::parser::stmt::sub_param::method_decl_body(
+                        text,
+                        multiness == Some(super::Multiness::Multi),
+                        false,
+                    ),
                 })
                 .map_err(|e| e.to_string()),
         ),

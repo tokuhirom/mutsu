@@ -438,7 +438,12 @@ impl Interpreter {
             .get("orig")
             .map(Value::to_string_value)
             .unwrap_or_default();
-        let answer = self.slang_back_call(&rule, pos)?;
+        let dynamics = crate::slang_link::BackCallDynamics {
+            in_regex_assertion: self
+                .get_dynamic_var("*IN_REGEX_ASSERTION")
+                .is_ok_and(|v| v.truthy()),
+        };
+        let answer = self.slang_back_call(&rule, pos, dynamics)?;
         let class = class_name.resolve();
         match answer.map_err(RuntimeError::new)? {
             Some((end, node)) => {
@@ -459,7 +464,12 @@ impl Interpreter {
     /// its answer, serving a hook the parser starts meanwhile: a slang
     /// production inside the block it parses runs inside this call.
     // Cost: the parser's own parse of the production.
-    fn slang_back_call(&mut self, rule: &str, pos: usize) -> Result<HostAnswer, RuntimeError> {
+    fn slang_back_call(
+        &mut self,
+        rule: &str,
+        pos: usize,
+        dynamics: crate::slang_link::BackCallDynamics,
+    ) -> Result<HostAnswer, RuntimeError> {
         let lost = || RuntimeError::new("the parser stopped answering the slang shim");
         HOST_LINK.with(|l| {
             let link = l.borrow();
@@ -468,6 +478,7 @@ impl Interpreter {
                 .send(FromHost::BackCall {
                     rule: rule.to_string(),
                     pos,
+                    dynamics,
                 })
                 .map_err(|_| lost())
         })?;

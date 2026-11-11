@@ -41,6 +41,10 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
     }
 
     let (r, _) = ws(rest)?;
+    // `$*IN_REGEX_ASSERTION`: a `>` ends the arguments of `<name: ...>`.
+    if crate::parser::infix_stopper::stops_at(r) {
+        return Ok((rest, left));
+    }
     // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
     if r.starts_with("=~") && !r.starts_with("=~=") && !r.starts_with("=:=") {
         let after = &r[2..];
