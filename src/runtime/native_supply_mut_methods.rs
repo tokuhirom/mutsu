@@ -9,6 +9,21 @@ use crate::value::AttrMap;
 impl Interpreter {
     pub(super) fn native_supply_mut_unpumped(
         &mut self,
+        attrs: AttrMap,
+        method: &str,
+        args: Vec<Value>,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<(Value, AttrMap), RuntimeError> {
+        if Self::has_tap_hook(&attrs, method, &args) {
+            return self.supply_tap_with_hook(attrs, method, &args, publish);
+        }
+        self.native_supply_mut_unhooked(attrs, method, args, publish)
+    }
+
+    /// [`Self::native_supply_mut_unpumped`] past the `:tap` / `Tappable`
+    /// route (`supply_tap_hook`), which comes back here.
+    pub(super) fn native_supply_mut_unhooked(
+        &mut self,
         mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,

@@ -170,6 +170,7 @@ impl Interpreter {
     /// phasers.
     // Cost: O(u + c), u = upstream taps, c = CLOSE phasers.
     pub(crate) fn tap_close(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        crate::runtime::supply_tap_hook::note_pending_tap_close(attributes);
         if let Some(ValueView::Int(whenever_id)) =
             attributes.get("whenever_id").map(Value::view)
         {
@@ -239,6 +240,14 @@ impl Interpreter {
             for cb in take_supplier_close_callbacks(cid as u64) {
                 self.call_sub_value(cb, vec![])?;
             }
+        }
+        // `Tap.new(&on-close)`: its block runs on every close.
+        if let Some(on_close) = attributes
+            .get(crate::runtime::native_ctor::TAP_ON_CLOSE)
+            .filter(|cb| cb.as_sub().is_some())
+            .cloned()
+        {
+            self.call_sub_value(on_close, vec![])?;
         }
         Ok(Value::TRUE)
     }

@@ -92,6 +92,25 @@ impl Interpreter {
             Ok(Value::make_instance(*class_name, HashMap::new()))
     }
 
+    /// `Tap.new(&on-close?)`: a Tap whose `.close` calls `&on-close`, as
+    /// a user `Tappable` answers for its subscription (#16888).
+    // Cost: O(1).
+    pub(super) fn ctor_tap(
+        &mut self,
+        c: &CtorCall<'_>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let mut attrs = HashMap::new();
+        if let Some(on_close) = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .filter(|a| a.as_sub().is_some())
+        {
+            attrs.insert(TAP_ON_CLOSE.to_string(), on_close.clone());
+        }
+        Ok(Value::make_instance(c.class_name, attrs))
+    }
+
     /// `Cancellation`.
     pub(super) fn ctor_cancellation(
         &mut self,
@@ -168,3 +187,6 @@ impl Interpreter {
             Ok(Value::make_instance(*class_name, attrs))
     }
 }
+
+/// The attribute holding a `Tap.new` block, run by every `.close`.
+pub(crate) const TAP_ON_CLOSE: &str = "on_close";
