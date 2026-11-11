@@ -147,10 +147,14 @@ impl Interpreter {
         {
             return None;
         }
+        // The table is keyed by the bare rule name a capture is stored under:
+        // a start rule named with its candidate (`routine-declarator:sym<pattern>`,
+        // the slang host's subparse, #16888) declares under `routine-declarator`.
+        let bare = rule_name.split(':').next().unwrap_or(rule_name);
         let decls = self
             .regex_state
             .grammar_rule_dynvar_decls
-            .get(rule_name)?
+            .get(bare)?
             .clone();
         let mut keys = Vec::new();
         let mut saved = Vec::new();
