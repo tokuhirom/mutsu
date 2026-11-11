@@ -583,6 +583,9 @@ impl Compiler {
     /// a Raku container (see the decontainerizing preamble of `call_nqp_op`).
     /// Building those wrappers to discard them was pure per-operand waste.
     pub(super) fn try_compile_nqp_value_op(&mut self, name: &str, args: &[Expr]) -> bool {
+        if self.try_compile_nqp_storage_adopt(name, args) {
+            return true;
+        }
         if let Some(raw_var) = Self::bindattr_storage_rebind_target(name, args) {
             // nqp::bindattr(OBJ, T, '$!storage', $raw): the contents move into
             // OBJ's node, so `$raw` is rebound to a raw view of that node and a

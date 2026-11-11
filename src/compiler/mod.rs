@@ -1152,6 +1152,7 @@ mod nqp_lexical_forms;
 mod nqp_loop_control;
 mod nqp_object_forms;
 mod nqp_p6_forms;
+mod nqp_storage_adopt;
 mod numeric_operand_names;
 mod outer_ref;
 mod package_runtime_body;
@@ -1812,6 +1813,10 @@ pub(crate) struct Compiler {
     /// scalar (`my $x := $itemized`) inherits the item container and is NOT
     /// recorded. See `normalize_for_iterable`.
     noncontainer_bound_vars: std::collections::HashSet<String>,
+    /// Scalars this routine declared as a fresh hash wrapper
+    /// (`my $h := nqp::create(Hash)`), whose `$!storage` bind adopts the storage
+    /// node (see `nqp_storage_adopt`).
+    pub(super) nqp_fresh_hash_vars: std::collections::HashSet<String>,
     /// The enclosing compilers' [`Self::noncontainer_bound_vars`], handed down by
     /// `inherit_enclosing_scopes`: a routine or closure that reads such a
     /// variable as a free variable (`my $l := (1, 2, 3); sub f { for $l {...} }`)
@@ -2277,6 +2282,7 @@ impl Compiler {
             decl_in_flight: None,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
+            nqp_fresh_hash_vars: std::collections::HashSet::new(),
             enclosing_noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
             readonly_scalar_params: std::collections::HashSet::new(),
