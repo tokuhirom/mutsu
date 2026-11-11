@@ -167,7 +167,8 @@ impl Interpreter {
                 } else if !held.is_container_ref() {
                     Some(LightSigillessBind::Promote)
                 } else {
-                    Self::light_sigilless_cell_ok(held).then_some(LightSigillessBind::RelayHeld(slot))
+                    Self::light_sigilless_cell_ok(held)
+                        .then_some(LightSigillessBind::RelayHeld(slot))
                 }
             }
             _ => {
@@ -186,10 +187,7 @@ impl Interpreter {
     fn light_sigilless_cell_ok(cell: &Value) -> bool {
         // No read-only binding cell was ever made: nothing to walk.
         !crate::value::readonly_binding_cells_possible()
-            || !matches!(
-            Self::binding_chain_readonly_kind(cell),
-            Some(Some(_))
-        )
+            || !matches!(Self::binding_chain_readonly_kind(cell), Some(Some(_)))
     }
 
     /// An Array the general binder treats as a multi-dimensional slice

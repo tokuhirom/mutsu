@@ -333,8 +333,13 @@ impl Interpreter {
         // pre-pass above, a promotion indexes the CALLER's locals, so it runs
         // before the frame push below.
         let sigilless_writable = if cf.has_sigilless_positional_param {
-            match self.bind_light_sigilless_args(cf, args_base, actual_count, caller_code, func_name)
-            {
+            match self.bind_light_sigilless_args(
+                cf,
+                args_base,
+                actual_count,
+                caller_code,
+                func_name,
+            ) {
                 Ok(bits) => bits,
                 Err(e) => {
                     self.current_unit = saved_unit;
@@ -902,7 +907,8 @@ impl Interpreter {
                     Some(&sym) => sym,
                     None => Symbol::intern(&cf.param_defs[param_idx].storage_name()),
                 };
-                let writable = param_idx < actual_count && sigilless_writable & (1 << param_idx) != 0;
+                let writable =
+                    param_idx < actual_count && sigilless_writable & (1 << param_idx) != 0;
                 self.mark_light_sigilless_param(storage_sym, writable);
                 continue;
             }
