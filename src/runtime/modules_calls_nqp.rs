@@ -25,6 +25,7 @@ mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
 mod supply_tappable;
+mod find_method_fallback;
 mod capture_storage;
 mod container_role_of;
 mod ctor_phase_plan;
