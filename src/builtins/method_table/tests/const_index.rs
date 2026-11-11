@@ -192,3 +192,50 @@ fn const_index_matches_the_runtime_builder() {
     }
     assert!(checked > 10_000);
 }
+
+/// `owner_rows_at` and `owner_declares` read the per-name owner groups; the
+/// oracle is the linear scan of every row they replaced.
+#[test]
+fn owner_groups_match_a_scan_of_every_row() {
+    let all: Vec<(u16, &'static MethodRow)> = all_rows()
+        .enumerate()
+        .map(|(idx, row)| (idx as u16, row))
+        .collect();
+    let mut pairs: Vec<(&'static str, &'static str)> =
+        all.iter().map(|(_, row)| (row.owner, row.name)).collect();
+    pairs.sort_unstable();
+    pairs.dedup();
+    for (owner, name) in pairs {
+        let (osym, msym) = (Symbol::intern(owner), Symbol::intern(name));
+        let declared: Vec<&(u16, &MethodRow)> = all
+            .iter()
+            .filter(|(_, row)| {
+                row.owner == owner
+                    && row.name == name
+                    && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+                    && row.flags.in_force()
+            })
+            .collect();
+        assert_eq!(
+            owner_declares(owner, msym),
+            !declared.is_empty(),
+            "{owner}.{name} owner_declares"
+        );
+        for arity in 0..10usize {
+            let fixed = declared.iter().filter(|(_, row)| {
+                u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
+            });
+            let slurpy = declared.iter().filter(|(_, row)| {
+                row.flags.contains(RowFlags::SLURPY)
+                    && !u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
+                    && arity >= usize::from(row.arity)
+            });
+            let want: Vec<u16> = fixed.chain(slurpy).map(|(id, _)| *id).collect();
+            let got: Vec<u16> = owner_rows_at(osym, msym, arity)
+                .map(RowId::to_bits)
+                .collect();
+            assert_eq!(got, want, "{owner}.{name}/{arity} owner_rows_at");
+        }
+    }
+    assert!(!owner_declares("No::Such::Owner::Anywhere", Symbol::intern("new")));
+}

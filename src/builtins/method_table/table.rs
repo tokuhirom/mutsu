@@ -269,27 +269,77 @@ fn rows_named(name: usize) -> &'static [u16] {
     &NAME_ROWS[usize::from(NAME_START[name])..usize::from(NAME_START[name + 1])]
 }
 
+/// The rows each owner declares under one name, grouped by owner and sorted
+/// by the owner's symbol id, each group in registration order, leaving out
+/// [`RowFlags::DEFERRAL_BASE`] rows: what [`owner_row`], [`owner_rows_at`]
+/// and [`owner_declares`] read, so a lookup visits only the owner's own rows
+/// rather than every owner's rows of a busy name (`new`, `Str`). Built per
+/// name on its first lookup (the table is static); [`RowFlags::in_force`]
+/// (the revision gate) is applied per lookup.
+type OwnerGroups = Box<[(u32, Box<[u16]>)]>;
+
+// Cost: O(1) after a name's first lookup; that lookup is O(k * o), k = rows
+// named `NAMES[name]` (one owner intern each), o = their distinct owners.
+fn owner_groups(name: usize) -> &'static OwnerGroups {
+    static GROUPS_BY_NAME: std::sync::OnceLock<Box<[std::sync::OnceLock<OwnerGroups>]>> =
+        std::sync::OnceLock::new();
+    let by_name = GROUPS_BY_NAME.get_or_init(|| {
+        (0..NAMES.len())
+            .map(|_| std::sync::OnceLock::new())
+            .collect()
+    });
+    by_name[name].get_or_init(|| {
+        let mut groups: Vec<(u32, Vec<u16>)> = Vec::new();
+        for &id in rows_named(name) {
+            let row = ALL[usize::from(id)];
+            if row.flags.contains(RowFlags::DEFERRAL_BASE) {
+                continue;
+            }
+            let owner = Symbol::intern(row.owner).id();
+            match groups.iter_mut().find(|(o, _)| *o == owner) {
+                Some((_, ids)) => ids.push(id),
+                None => groups.push((owner, vec![id])),
+            }
+        }
+        groups.sort_by_key(|(owner, _)| *owner);
+        groups
+            .into_iter()
+            .map(|(owner, ids)| (owner, ids.into_boxed_slice()))
+            .collect()
+    })
+}
+
+/// The ids of the rows `owner` declares under `NAMES[name]` (see
+/// [`owner_groups`]), the revision gate applied.
+// Cost: O(log o) to find the owner, o = owners with rows of the name, plus
+// O(m) to iterate, m = the owner's rows of the name.
+fn owner_rows_named(owner: Symbol, name: usize) -> impl Iterator<Item = u16> + Clone {
+    let groups = owner_groups(name);
+    groups
+        .binary_search_by_key(&owner.id(), |(o, _)| *o)
+        .map_or(&[][..], |at| &groups[at].1[..])
+        .iter()
+        .copied()
+        .filter(|&id| ALL[usize::from(id)].flags.in_force())
+}
+
 /// The row `owner` declares for `method` taking `arity` positional arguments,
 /// whatever the receiver is: the lookup of a receiver that has no shape. A
 /// slurpy row answers every arity from its own up, however long.
-// Cost: O(k), k = rows named `method` (a string compare of the owner each).
+// Cost: O(1) to find the owner's rows of `method`, plus O(m) over them,
+// m = that owner's rows of the name.
 pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<RowId> {
-    let rows = rows_named(name_index(method)?);
-    let owner = owner.as_str();
-    let declared = || {
-        rows.iter().copied().filter(|&id| {
-            let row = ALL[usize::from(id)];
-            row.owner == owner
-                && !row.flags.contains(RowFlags::DEFERRAL_BASE)
-                && row.flags.in_force()
-        })
-    };
+    let declared = owner_rows_named(owner, name_index(method)?);
     if let Some(arity) = u8::try_from(arity).ok()
-        && let Some(id) = declared().find(|&id| ALL[usize::from(id)].arities().contains(&arity))
+        && let Some(id) = declared
+            .clone()
+            .find(|&id| ALL[usize::from(id)].arities().contains(&arity))
     {
         return Some(RowId(id));
     }
-    let id = declared().find(|&id| ALL[usize::from(id)].flags.contains(RowFlags::SLURPY))?;
+    let id = declared
+        .clone()
+        .find(|&id| ALL[usize::from(id)].flags.contains(RowFlags::SLURPY))?;
     (arity >= usize::from(ALL[usize::from(id)].arity)).then_some(RowId(id))
 }
 
@@ -298,27 +348,20 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
 /// whose arity it reaches. [`owner_row`] is the first of them; the MRO walk
 /// (`invoke_mro`) tries each in turn, as a pure row's interpreter twin
 /// (ADR-11276 §9.135) answers the receivers the pure one declines.
-// Cost: O(k), k = rows named `method` (a string compare of the owner each).
+// Cost: O(1) to find the owner's rows of `method`, plus O(m) over them,
+// m = that owner's rows of the name.
 pub(crate) fn owner_rows_at(
     owner: Symbol,
     method: Symbol,
     arity: usize,
 ) -> impl Iterator<Item = RowId> {
-    let rows = name_index(method).map_or(&[][..], rows_named);
-    let owner = owner.as_str();
-    let fixed = rows.iter().copied().filter(move |&id| {
-        let row = ALL[usize::from(id)];
-        row.owner == owner
-            && !row.flags.contains(RowFlags::DEFERRAL_BASE)
-            && row.flags.in_force()
-            && u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
+    let rows = name_index(method).map(|name| owner_rows_named(owner, name));
+    let fixed = rows.clone().into_iter().flatten().filter(move |&id| {
+        u8::try_from(arity).is_ok_and(|a| ALL[usize::from(id)].arities().contains(&a))
     });
-    let slurpy = rows.iter().copied().filter(move |&id| {
+    let slurpy = rows.into_iter().flatten().filter(move |&id| {
         let row = ALL[usize::from(id)];
-        row.owner == owner
-            && !row.flags.contains(RowFlags::DEFERRAL_BASE)
-            && row.flags.in_force()
-            && row.flags.contains(RowFlags::SLURPY)
+        row.flags.contains(RowFlags::SLURPY)
             && !u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
             && arity >= usize::from(row.arity)
     });
@@ -327,16 +370,15 @@ pub(crate) fn owner_rows_at(
 
 /// Whether `owner` declares a row for `method` at any arity: what `.can` asks
 /// of an owner a shapeless receiver's rows are found under.
-// Cost: O(k), k = rows named `method`.
+// Cost: O(|owner|) to find its symbol, plus O(m), m = the owner's rows of the name.
 pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
-    name_index(method).is_some_and(|name| {
-        rows_named(name).iter().any(|&id| {
-            let row = ALL[usize::from(id)];
-            row.owner == owner
-                && !row.flags.contains(RowFlags::DEFERRAL_BASE)
-                && row.flags.in_force()
-        })
-    })
+    let Some(name) = name_index(method) else {
+        return false;
+    };
+    // Building the name's groups interns every owner a row of it names, so
+    // an owner the symbol table does not know has none of them.
+    owner_groups(name);
+    Symbol::lookup(owner).is_some_and(|owner| owner_rows_named(owner, name).next().is_some())
 }
 
 /// The roles mixed into `target` (a `Mixin`) that are catalog owners with a
