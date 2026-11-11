@@ -71,6 +71,15 @@ impl Interpreter {
             _ => None,
         };
         let new_on_package = if method == "new" { package_sym } else { None };
+        if package_sym.is_none()
+            && let Some(result) = self.try_mixin_type_object_default_new(&target, method_sym, &args)
+        {
+            // The construction runs the classes' and roles' BUILD/TWEAK, which
+            // may write a captured caller lexical: leave the dispatch impure so
+            // the call site reconciles the caller's slots.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
         if let Some(class_name) = new_on_package
             && crate::runtime::types::strip_type_smiley(class_name.as_str())
                 .1
