@@ -55,12 +55,15 @@ name: Ecosystem sweep
 # lands its records but is refused a `history.tsv` row.
 
 on:
-  # 18:20 UTC = 03:20 JST, every day. JST has no daylight saving, so the local
-  # time does not drift. Twenty past rather than on the hour: GitHub queues
+  # Twice a day while the ecosystem is the focus (2026-11-11): 18:20 UTC =
+  # 03:20 JST and 06:20 UTC = 15:20 JST. JST has no daylight saving, so the local
+  # times do not drift. Twenty past rather than on the hour: GitHub queues
   # scheduled jobs hardest at :00, and a 27-shard matrix waiting for runners is
-  # the one delay this run cannot shorten.
+  # the one delay this run cannot shorten. Drop the second entry to go back to
+  # one run a day.
   schedule:
     - cron: '20 18 * * *'
+    - cron: '20 6 * * *'
   workflow_dispatch:
     inputs:
       scope:
