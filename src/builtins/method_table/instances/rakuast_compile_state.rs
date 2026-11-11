@@ -84,6 +84,22 @@ fn import_lexical_name(target: &Value, _args: &[Value]) -> Result<Value, Runtime
     Ok(built_import_field(target, "lexical-name").unwrap_or(Value::NIL))
 }
 
+/// `$*CU.merge-generated-lexical-declaration($import, :resolver, :force)`:
+/// a module installing a declaration into the unit being compiled at BEGIN
+/// time (CompUnit::Util's `set-unit`, #15371).
+// Cost: O(f) plus the install (`merge_generated_lexical`).
+fn merge_generated_lexical(
+    interp: &mut crate::runtime::Interpreter,
+    _target: &Value,
+    args: &[Value],
+    _named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let decl = args.first()?;
+    let name = built_import_field(decl, "lexical-name")?.to_string_value();
+    let value = built_import_field(decl, "compile-time-value").unwrap_or(Value::NIL);
+    Some(interp.merge_generated_lexical(&name, value))
+}
+
 // Cost: O(f).
 fn implicit_constant_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(named_field(target, "name").unwrap_or(Value::NIL))
@@ -152,6 +168,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Pure(resolved_constant_value),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::CompUnit",
+        name: "merge-generated-lexical-declaration",
+        arity: 1,
+        handler: Handler::Interp(merge_generated_lexical),
+        flags: RowFlags::OWNER_ONLY,
+        named: &["resolver", "force"],
     },
     MethodRow {
         owner: "RakuAST::Declaration::Import",

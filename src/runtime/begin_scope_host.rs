@@ -103,15 +103,80 @@ impl Interpreter {
                 .cloned()
                 .or_else(|| self.compile_time_cu_value())
                 .unwrap_or(Value::NIL))),
-            // No lexical was declared at BEGIN time that the resolver could
-            // answer: the module installs through its own table.
-            "resolve-lexical-constant"
-            | "resolve-lexical-constant-in-setting"
+            // A package the unit being compiled declared lexically before the
+            // phaser (`my package EXPORTHOW { ... }`), as the resolver's view
+            // of the current scope answers it.
+            "resolve-lexical-constant" => Some(self.resolve_unit_lexical_package(_args)),
+            // No other lexical was declared at BEGIN time that the resolver
+            // could answer: the module installs through its own table.
+            "resolve-lexical-constant-in-setting"
             | "resolve-lexical"
             | "find-generated-lexical" => Some(Ok(Value::NIL)),
             // The unit's `GLOBALish`.
             "get-global" => Some(Ok(Value::package(Symbol::intern("GLOBALish")))),
             _ => None,
         }
+    }
+
+    /// Install `name` with `value` into the unit being compiled, as a BEGIN
+    /// phaser's `$*CU.merge-generated-lexical-declaration` asks (#15371). An
+    /// `&EXPORT` becomes the unit's export hook, run for its importer once its
+    /// body is done; any other name is not supported yet.
+    // Cost: O(1).
+    pub(crate) fn merge_generated_lexical(
+        &mut self,
+        name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if name == "&EXPORT" {
+            let Some(unit) = self.module.module_load_stack.last().cloned() else {
+                return Err(RuntimeError::new(
+                    "merge-generated-lexical-declaration: &EXPORT outside a module load",
+                ));
+            };
+            self.module.pending_inner_export_subs.insert(unit, value);
+            return Ok(Value::NIL);
+        }
+        // TODO: install any other generated lexical into the unit's scope
+        // (CompUnit::Util's `set-unit` / `set-lexpad`, #15371): the module's
+        // BEGIN runs inside its body, whose top-level scope is not reachable
+        // from the phaser's frame yet.
+        Err(RuntimeError::new(format!(
+            "merge-generated-lexical-declaration of '{name}' is not supported yet"
+        )))
+    }
+
+    /// `$*R.resolve-lexical-constant($name)`: a package type object the
+    /// running unit's lexical scope binds under `name` (and that is not the
+    /// setting's), as the `RakuAST::Declaration::Import` that names it; `Nil`
+    /// otherwise.
+    // Cost: O(d) for the scope lookup, d = scope depth.
+    fn resolve_unit_lexical_package(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let Some(name) = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .map(Value::to_string_value)
+        else {
+            return Ok(Value::NIL);
+        };
+        if crate::core_type_names::contains(&name) || name.starts_with(['$', '@', '%', '&']) {
+            return Ok(Value::NIL);
+        }
+        let Some(value) = self.env().get(&name).cloned() else {
+            return Ok(Value::NIL);
+        };
+        let value = value.deref_container();
+        if !matches!(value.view(), ValueView::Package(_)) {
+            return Ok(Value::NIL);
+        }
+        // The resolver's own form of the declaration: its `compile-time-value`
+        // reads the name in the scope that asks (`external_value`).
+        let _ = value;
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("lexical-name".to_string(), Value::str(name));
+        Ok(Value::make_instance(
+            Symbol::intern("RakuAST::Declaration::Import"),
+            attrs,
+        ))
     }
 }
