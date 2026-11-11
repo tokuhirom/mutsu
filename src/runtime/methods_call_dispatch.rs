@@ -2030,10 +2030,13 @@ impl Interpreter {
                     .and_then(|list| self.list_to_capture(&list)),
             ),
             ValueView::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
-                // `.Seq` taps the supply and collects its emissions (`.list` does
-                // not run an on-demand `supply { ... }` block).
+                // `.Seq` taps the supply; a live or on-demand supply answers a
+                // lazy pull list, which is drained like `Channel.list` below.
                 self.call_method_with_values(target.clone(), "Seq", vec![])
-                    .and_then(|seq| self.list_to_capture(&seq)),
+                    .and_then(|seq| match self.try_interpreter_capture(&seq) {
+                        Some(capture) => capture,
+                        None => self.list_to_capture(&seq),
+                    }),
             ),
             ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
                 crate::builtins::methods_0arg::coercion::capture_needs_str_key(target)

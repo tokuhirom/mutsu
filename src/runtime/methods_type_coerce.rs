@@ -32,6 +32,9 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Supply" => {
+                if Self::supply_lists_lazily(&attributes.as_map()) {
+                    return self.supply_lazy_values(&target, true);
+                }
                 let values =
                     if attributes.as_map().contains_key("on_demand_callback") {
                         // The same path `.list` takes: it taps the supply, so a

@@ -1712,55 +1712,24 @@ impl Interpreter {
                 Ok(source_values.last().cloned().unwrap_or(Value::NIL))
             }
             "Channel" => {
-                // Supply.Channel: create a Channel that receives all values
-                // emitted by the underlying supplier. Existing snapshot values
-                // are pushed first, then a live tap forwards future emits.
-                // The channel is closed when the supplier is done, or failed
-                // when the supplier quits.
-                //
-                // An on-demand supply must be TAPPED, not snapshot-drained: a
-                // supply block whose whenevers chain down to a live source
-                // (Cro's `establish` pipelines) materializes to zero values,
-                // and the old snapshot-and-close left the channel closed
-                // before any message could flow. Drive the pipeline with a
-                // done/quit-less tap and wire the block's emitter to the
-                // channel, so every `emit` (present and future) lands in it.
-                if attributes.contains_key("on_demand_callback") {
-                    let ch = SharedChannel::new();
+                // `Supply.Channel` is Rakudo's `self.tap(-> \v { $c.send(v) },
+                // done => { $c.close }, quit => { $c.fail($_) })`. An on-demand
+                // block, a timer supply and a supply derived from a live one
+                // are tapped with collector shims that feed a fresh channel
+                // (`supply_tap_into_channel`): a value emitted after the tap
+                // returns reaches the channel when it is emitted, and a quit is
+                // received after the values before it. A supplier-backed supply
+                // forwards through the supplier's channel-sink tap below, which
+                // takes a `Supplier::Preserving` backlog and registers the tap
+                // as one step against a racing `emit` (#12831).
+                let supplier_backed = attributes.contains_key("preserving")
+                    || supplier_id_from_attrs(attributes).is_some();
+                if attributes.contains_key("on_demand_callback")
+                    || (!supplier_backed && Self::supply_lists_lazily(attributes))
+                {
                     let supply_val =
                         Value::make_instance(Symbol::intern("Supply"), attributes.clone());
-                    let tap = self.call_method_with_values(supply_val, "tap", vec![Value::NIL])?;
-                    let emitter_id = if let ValueView::Instance {
-                        attributes: tap_attrs,
-                        ..
-                    } = tap.view()
-                    {
-                        tap_attrs
-                            .as_map()
-                            .get("close_supplier_id")
-                            .and_then(|v| v.as_int())
-                            .map(|i| i as u64)
-                    } else {
-                        None
-                    };
-                    if let Some(eid) = emitter_id {
-                        register_supplier_channel_tap(eid, ch.clone());
-                        // Values a synchronous body already emitted (recorded in
-                        // the emitter's global state during the tap above) were
-                        // dropped by the NIL tap callback — replay them first.
-                        let (vals, done, quit_reason) = supplier_snapshot(eid);
-                        for v in vals {
-                            ch.send(v);
-                        }
-                        if let Some(reason) = quit_reason {
-                            ch.fail(reason);
-                        } else if done {
-                            ch.close();
-                        }
-                    } else {
-                        ch.close();
-                    }
-                    return Ok(Value::channel(ch));
+                    return Ok(Value::channel(self.supply_tap_into_channel(&supply_val)?));
                 }
                 // A preserving supply hands its un-replayed backlog to the
                 // channel, exactly as it does to a `.tap` (the backlog is what

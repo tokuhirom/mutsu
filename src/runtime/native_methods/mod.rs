@@ -118,7 +118,7 @@ pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
 };
 pub(in crate::runtime) use state_supply_collector::{
-    register_supply_collector, unregister_supply_collector,
+    register_supply_channel_collector, register_supply_collector, unregister_supply_collector,
 };
 
 use super::*;
