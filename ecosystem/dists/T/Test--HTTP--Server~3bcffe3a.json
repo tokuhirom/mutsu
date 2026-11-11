@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 8.88,
+        "secs": 11.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.08,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.42,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.68,
+        "secs": 20.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,11 +85,11 @@
       "cmp": "no_baseline",
       "path": "t/04-simple-files.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/tzkaFO2UaP: Read-only file system",
+        "first_failure": "Failed to open file /tmp/v6U3m0x6fZ: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.88,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,11 +99,11 @@
       "cmp": "no_baseline",
       "path": "t/05-config-file.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/YLEPP6hm7z: Read-only file system",
+        "first_failure": "Failed to open file /tmp/Wm9mrT59fQ: Read-only file system",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.78,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,11 +113,11 @@
       "cmp": "no_baseline",
       "path": "t/06-loop-in-file.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/_cQgwhd1Ta: Read-only file system",
+        "first_failure": "Failed to open file /tmp/IZ13lajcCP: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.71,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -130,10 +130,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-08",
+    "date": "2026-11-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "08e9a4a4",
+    "mutsu_commit": "4e76f7ed",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

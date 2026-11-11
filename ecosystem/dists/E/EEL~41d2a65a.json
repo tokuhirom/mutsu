@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.45,
+        "secs": 5.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 37.43,
+        "secs": 49.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.4,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.97,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.38,
+        "secs": 3.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 7.74,
+        "secs": 8.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 20.9,
+        "secs": 22.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 12.62,
+        "secs": 13.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,11 +104,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/08-supply-match.t:9]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.27,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 85,
         "plan": 85,
-        "secs": 6.82,
+        "secs": 8.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,11 +127,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/09-window.t:6]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.18,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 5.34,
+        "secs": 5.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +154,7 @@
         "nok": 69,
         "ok": 0,
         "plan": 69,
-        "secs": 6.3,
+        "secs": 7.74,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -164,7 +164,7 @@
         "nok": 0,
         "ok": 69,
         "plan": 69,
-        "secs": 22.76,
+        "secs": 27.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 7.99,
+        "secs": 10.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,7 +187,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.34,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -201,7 +201,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 3.28,
+        "secs": 3.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -210,11 +210,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/13-metadata.t:23]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.97,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -224,7 +224,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.01,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.42,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -247,11 +247,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/15-colon-calls.t:5]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.6,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -261,7 +261,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.84,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -270,11 +270,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/16-capture-delegation.t:27]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.05,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -284,7 +284,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.87,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -293,11 +293,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/17-subpattern-captures.t:7]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.61,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -307,7 +307,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.05,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -320,7 +320,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.77,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -330,7 +330,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.16,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -339,11 +339,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/19-proto.t:6]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -353,7 +353,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 4.44,
+        "secs": 4.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -366,7 +366,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.04,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -376,7 +376,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.35,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -389,7 +389,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.65,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -399,7 +399,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.09,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -413,7 +413,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 0.95,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -426,7 +426,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.4,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -436,7 +436,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.23,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -449,7 +449,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.09,
+        "secs": 4.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -459,7 +459,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 2.56,
+        "secs": 3.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -472,7 +472,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.4,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -482,7 +482,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.19,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -496,7 +496,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.99,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -509,7 +509,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 23.44,
+        "secs": 35.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -519,7 +519,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 4.42,
+        "secs": 5.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -532,7 +532,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.99,
+        "secs": 2.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -542,7 +542,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 7.11,
+        "secs": 9.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -551,11 +551,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/29-optimizations.t:73]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.54,
+        "secs": 3.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -565,7 +565,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 6.75,
+        "secs": 8.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -578,7 +578,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.29,
+        "secs": 4.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -588,7 +588,7 @@
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 1.51,
+        "secs": 1.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -601,7 +601,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.31,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -611,7 +611,7 @@
         "nok": 0,
         "ok": 50,
         "plan": 50,
-        "secs": 2.09,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -624,7 +624,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.82,
+        "secs": 6.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -634,7 +634,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 2.04,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -648,7 +648,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 0.84,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -661,7 +661,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.62,
+        "secs": 19.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -671,7 +671,7 @@
         "nok": 0,
         "ok": 161,
         "plan": 161,
-        "secs": 1.81,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -685,7 +685,7 @@
         "nok": 0,
         "ok": 32,
         "plan": null,
-        "secs": 1.47,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -698,7 +698,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.82,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -708,7 +708,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.12,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -717,11 +717,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/36-presence-index.t:10]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.63,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -731,7 +731,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.15,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -743,7 +743,7 @@
         "nok": 0,
         "ok": 85,
         "plan": 85,
-        "secs": 10.28,
+        "secs": 12.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -753,7 +753,7 @@
         "nok": 0,
         "ok": 85,
         "plan": 85,
-        "secs": 4.11,
+        "secs": 5.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -762,11 +762,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/38-prefix-index.t:9]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.58,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -776,7 +776,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.38,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -785,11 +785,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/39-suffix-index.t:9]",
+        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.56,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -799,7 +799,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 1.47,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -812,7 +812,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.38,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -822,7 +822,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.04,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -835,7 +835,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.58,
+        "secs": 14.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -845,7 +845,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 2.35,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -854,21 +854,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': RakuAST: EVAL does not yet support lowering `RakuAST::Method` [at EEL-0.3/t/42-cuts.t:7]",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 224.12,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/42-cuts.t",
       "raku": {
         "nok": 0,
         "ok": 45,
         "plan": 45,
-        "secs": 3.09,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -881,7 +881,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.78,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -891,7 +891,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 2.28,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -904,7 +904,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.27,
+        "secs": 5.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -914,7 +914,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 1.35,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -949,10 +949,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-10",
+    "date": "2026-11-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "52bbfb59",
+    "mutsu_commit": "4e76f7ed",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

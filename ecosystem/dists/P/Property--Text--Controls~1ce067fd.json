@@ -11,46 +11,44 @@
   "dist": "Property::Text::Controls",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Error encoding UTF8 string: could not encode codepoint 65279",
         "nok": 0,
-        "ok": 41,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 59,
+        "plan": 59,
+        "secs": 7.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/contracts.rakutest",
       "raku": {
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 8.96,
+        "secs": 9.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Error encoding UTF8 string: could not encode codepoint 65279",
         "nok": 0,
-        "ok": 9,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/utf8-offsets.rakutest",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.36,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-10",
+    "date": "2026-11-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "52bbfb59",
+    "mutsu_commit": "4e76f7ed",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -76,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RO/PROPERTY_TEXT_CONTROLS/03c5f5d3702933ffcb74e92d3a061bc4942501dd.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 85,
     "baseline_files": 2,
-    "mutsu_assertions": 50,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 85,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "1.1.0"
 }
