@@ -1,6 +1,7 @@
 //! Multi-dimensional index-assignment and assign-through-accessor lvalue ops.
 use super::*;
 use crate::value::ValueView;
+use crate::runtime::methods_signature_errors::make_x_immutable_error;
 
 impl Interpreter {
     pub(super) fn deref_lvalue_value(mut value: Value) -> Value {
@@ -913,8 +914,12 @@ impl Interpreter {
 
     /// Handle `$obj.method<key>:delete` — element delete through a method accessor.
     /// Gets the current container (hash/array) via the accessor, removes the
-    /// element, writes the modified container back through the setter, and returns
-    /// the removed value (or the container's `is default(...)` for an absent key).
+    /// element from it in place, and returns the removed value (or the
+    /// container's `is default(...)` for an absent key). The fourth argument
+    /// (the invocant's variable name) is no longer needed: nothing is written
+    /// back.
+    // Cost: O(1) expected for a Hash key, O(1) for an Array index, plus the
+    // accessor call.
     pub(super) fn builtin_index_delete_method_lvalue(
         &mut self,
         args: &[Value],
@@ -927,7 +932,6 @@ impl Interpreter {
         let target = args[0].clone();
         let method = args[1].to_string_value();
         let index = args[2].clone();
-        let var_name = args[3].to_string_value();
 
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
         let current = match current.view() {
@@ -943,17 +947,6 @@ impl Interpreter {
                 None
             }
         });
-
-        // Save the pre-delete Arc identity so the modified container can be
-        // propagated to every instance/binding sharing it (mirrors the assign path).
-        let old_array_arc = match current.view() {
-            ValueView::Array(arc, ..) => Some(arc.clone()),
-            _ => None,
-        };
-        let old_hash_arc = match current.view() {
-            ValueView::Hash(arc) => Some(arc.clone()),
-            _ => None,
-        };
 
         // The accessor answered an object that declares the subscript protocol
         // itself (Red's `.num1<k>:delete`, `.num1` a column whose `DELETE-KEY`
@@ -973,7 +966,24 @@ impl Interpreter {
             return Ok(answer);
         }
 
-        let (removed, updated) = match current.view() {
+        // The accessor answered the container itself (a Hash or Array is a
+        // reference type): the element is removed from that node in place,
+        // which every holder of it -- the attribute above all -- observes, as
+        // in rakudo. The former copy-and-write-back needed a setter, so a
+        // plain accessor or an `is rw` method answering `nqp::getattr` died
+        // with "not rw" / "does not expose an assignable attribute" (Red's
+        // dirty-tracked `$model.map<k>:delete`). An `is rw` accessor's Proxy
+        // is addressed by what it FETCHes.
+        let container = protocol_object;
+        // A `Map` (a `Capture`'s `.hash`) or a `List` is immutable: the
+        // in-place removal below must refuse it, as rakudo does.
+        if container.is_immutable_map() {
+            return Err(make_x_immutable_error("DELETE-KEY", "Map"));
+        }
+        if let ValueView::Array(_, crate::value::ArrayKind::List) = container.view() {
+            return Err(make_x_immutable_error("DELETE-POS", "List"));
+        }
+        let removed = match container.view() {
             ValueView::Hash(h) => {
                 // An object hash (`has %.a{Str:D}`) stores `.WHICH` keys.
                 let key = if h.key_type.is_some() {
@@ -983,60 +993,38 @@ impl Interpreter {
                 } else {
                     index.to_string_value()
                 };
-                let mut new_hash = (**h).clone();
-                let removed = new_hash
-                    .remove(&key)
-                    .unwrap_or_else(|| absent_default.clone().unwrap_or(Value::NIL));
-                (removed, Value::hash_with_data(crate::gc::Gc::new(new_hash)))
+                let node = h.clone();
+                // SAFETY: audited aliased in-place container write (see
+                // `value::aliased_mut`), the one an element store makes on a
+                // shared node: no borrow into the node is live across it, and
+                // it runs on the executing thread.
+                let data: &mut crate::value::HashData =
+                    unsafe { crate::value::gc_contents_mut(&node) };
+                data.remove(&key)
+                    .unwrap_or_else(|| absent_default.clone().unwrap_or_else(|| Value::package(crate::symbol::wk::any())))
             }
-            ValueView::Array(items, kind) => {
+            ValueView::Array(items, _) => {
                 let idx = crate::runtime::to_int(&index);
-                let mut new_items = (**items).clone();
-                let removed = if idx >= 0 && (idx as usize) < new_items.len() {
+                let node = items.clone();
+                // SAFETY: as for the Hash arm above.
+                let data: &mut crate::value::ArrayData =
+                    unsafe { crate::value::gc_contents_mut(&node) };
+                if idx >= 0 && (idx as usize) < data.len() {
                     let i = idx as usize;
-                    let r = new_items[i].clone();
+                    let r = data[i].clone();
                     // Trailing element shrinks; an interior delete leaves a hole.
-                    if i + 1 == new_items.len() {
-                        new_items.truncate(i);
+                    if i + 1 == data.len() {
+                        data.truncate(i);
                     } else {
-                        new_items[i] = Value::NIL;
+                        data[i] = Value::NIL;
                     }
                     r
                 } else {
-                    absent_default.unwrap_or(Value::NIL)
-                };
-                (
-                    removed,
-                    Value::array_with_kind(crate::gc::Gc::new(new_items), kind),
-                )
+                    absent_default.unwrap_or_else(|| Value::package(crate::symbol::wk::any()))
+                }
             }
             _ => return Ok(absent_default.unwrap_or(Value::NIL)),
         };
-
-        if let Some(old_arc) = &old_array_arc {
-            self.propagate_shared_array_in_instances(old_arc, &updated);
-            self.overwrite_array_bindings_by_identity(old_arc, updated.clone());
-        }
-        if let Some(old_arc) = &old_hash_arc {
-            self.propagate_shared_hash_in_instances(old_arc, &updated);
-            self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
-        }
-
-        if self.store_through_attr_value_share(&target, &method, &[], &updated) {
-            return Ok(removed);
-        }
-        self.assign_method_lvalue_with_values(
-            if var_name.is_empty() {
-                None
-            } else {
-                Some(var_name.as_str())
-            },
-            target,
-            &method,
-            Vec::new(),
-            updated,
-            true,
-        )?;
         Ok(removed)
     }
 

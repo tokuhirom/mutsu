@@ -119,6 +119,19 @@ impl Interpreter {
                     };
                     return Ok(Value::truth(has_role && args_match));
                 }
+                // A class composed through the MOP (`^add_role: R[T]`) keeps
+                // the parameterisation in its composed roles, as the
+                // smartmatch arm reads it.
+                let class = match invocant.view() {
+                    ValueView::Package(pkg) => Some(pkg.resolve()),
+                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                    _ => None,
+                };
+                if let Some(class) = class
+                    && self.class_composes_parameterised_role(&class, &base, type_args)
+                {
+                    return Ok(Value::TRUE);
+                }
                 return Ok(Value::truth(self.type_matches_value(
                     &format!(
                             "{}[{}]",

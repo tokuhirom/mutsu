@@ -1694,7 +1694,19 @@ impl Interpreter {
                 let positional = crate::value::positional_role_args(rhs_args);
                 let rhs_args = &positional;
                 // For Package values (type objects), check class hierarchy
-                if let ValueView::Package(_) = left_value.view() {
+                if let ValueView::Package(pkg) = left_value.view() {
+                    // A class that composed the parameterisation through the
+                    // MOP (`$c.^add_role: R[$type]` on a `new_type` class, Red's
+                    // generated ResultSeq classes) records it in its composed
+                    // roles, as a declared `class C does R[T]` does; the name
+                    // match below only finds the declared spelling.
+                    if self.class_composes_parameterised_role(
+                        &pkg.resolve(),
+                        &rhs_base.resolve(),
+                        rhs_args,
+                    ) {
+                        return true;
+                    }
                     let args_str = rhs_args
                         .iter()
                         .map(|v| match v.view() {
