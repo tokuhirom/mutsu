@@ -223,6 +223,9 @@ impl Interpreter {
         if !want_array && Self::supply_lists_lazily(&attrs) {
             return Some(self.supply_lazy_values(target, false));
         }
+        if !want_array && let Some(list) = Self::supply_native_lazy_values(&attrs, false) {
+            return Some(Ok(list));
+        }
         if !attrs.contains_key("proc_output")
             && let Some(sid) = attrs.get("supply_id").and_then(Value::as_int)
             && let Some(rx) = crate::runtime::native_methods::take_supply_channel(sid as u64)
@@ -253,12 +256,10 @@ impl Interpreter {
     /// `supply { }` block and a supply derived from a live one
     /// (`Supply.interval(1).map(...)`). A static supply (`Supply.from-list`) is
     /// answered from its stored values by `listify` before this is asked.
-    // TODO: a supply backed directly by a native event channel (`supply_id`:
-    // `Supply.interval`, an `IO::Socket::Async` read stream) still drains that
-    // channel eagerly until it closes, so `Supply.interval(1).list` never
-    // returns. Its `.tap` does not report `done` for every source (a read
-    // stream of an already closed socket), so tapping it here would hang
-    // where the drain ends; the channel itself has to back the lazy list.
+    /// A supply backed directly by a native event channel (`supply_id`) is not
+    /// tapped: its `.tap` does not report `done` for every source (the read
+    /// stream of an already closed socket), so its lazy list pulls the channel
+    /// itself ([`Self::supply_native_lazy_values`]).
     // Cost: O(1).
     pub(crate) fn supply_lists_lazily(attrs: &crate::value::AttrMap) -> bool {
         !attrs.contains_key("proc_output")
@@ -315,5 +316,31 @@ impl Interpreter {
             return Err(err);
         }
         Ok(ch)
+    }
+
+    /// `.list` / `.Seq` of a supply backed directly by a native event channel
+    /// (`supply_id`: `Supply.interval`, an `IO::Socket::Async` read stream):
+    /// subscribe to the channel and answer a lazy list that pulls one event
+    /// per element (`CatPullMode::SupplyReceive`), ending at the stream's
+    /// done. The eager drain this replaces never returned for a supply that is
+    /// never done (`Supply.interval(1).list`, #17428). `None` when the supply
+    /// has no such channel.
+    // Cost: O(1); O(1) per pulled element plus the wait for it.
+    pub(crate) fn supply_native_lazy_values(
+        attrs: &crate::value::AttrMap,
+        seq: bool,
+    ) -> Option<Value> {
+        if attrs.contains_key("proc_output") {
+            return None;
+        }
+        let sid = attrs.get("supply_id").and_then(Value::as_int)?;
+        let rx = crate::runtime::native_methods::take_supply_channel(sid as u64)?;
+        let pull_id = crate::runtime::native_methods::register_supply_pull(rx);
+        let mut ll = crate::value::LazyList::new_cat_pull(
+            Value::int(pull_id as i64),
+            crate::value::CatPullMode::SupplyReceive,
+        );
+        ll.list_context = !seq;
+        Some(Value::lazy_list(crate::gc::Gc::new(ll)))
     }
 }

@@ -27,6 +27,7 @@ pub(crate) mod state_supply_child_taps;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
+mod state_supply_pull;
 mod stream_decoder;
 pub(crate) mod supply_channel;
 mod supply_collector;
@@ -117,6 +118,8 @@ pub(crate) use state_supplier::{SupplyTicket, reserve_supply_serialize};
 pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
 };
+pub(crate) use state_supply_pull::supply_pull_next;
+pub(in crate::runtime) use state_supply_pull::register_supply_pull;
 pub(in crate::runtime) use state_supply_collector::{
     register_supply_channel_collector, register_supply_collector, unregister_supply_collector,
 };
