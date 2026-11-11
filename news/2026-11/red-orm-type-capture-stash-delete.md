@@ -1,4 +1,4 @@
-# Red ORM: type captures, bound stash entries, accessor `:delete`
+# Red ORM: type captures, stash Proxy entries, accessor `:delete`
 
 Several interpreter gaps surfaced by the Red ORM test suite are fixed:
 
@@ -10,9 +10,8 @@ Several interpreter gaps surfaced by the Red ORM test suite are fixed:
   candidate competes with a core one.
 - A class that composes a parameterised role through the MOP
   (`.^add_role: R[T]`) smartmatches `R[T]` and answers `.^does(R[T])`.
-- Assigning to a stash entry that was bound (`Pkg.WHO<x> := ...`) goes
-  through a bound `Proxy`'s STORE, and refuses a bound type object, as rakudo
-  does.
+- Assigning to a stash entry bound to a `Proxy` (`Pkg.WHO<x> := Proxy.new(...)`)
+  goes through its STORE, as rakudo does.
 - `$obj.accessor<k>:delete` deletes from the attribute itself, and an absent
   key answers the container default.
 - `%h.AT-KEY("k") = v` keeps an untyped hash untyped, so it still `eqv`s an

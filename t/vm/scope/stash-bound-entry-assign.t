@@ -1,16 +1,16 @@
 use Test;
 
-plan 6;
+plan 5;
 
-# Assigning to a stash entry that is *bound* (not a container): a bound
-# Proxy is stored through its STORE, a bound type object is immutable.
+# Assigning to a stash entry that holds a bound Proxy goes through its
+# STORE; assigning a plain entry replaces it.
 
 class A { }
 class B { }
 
-A.WHO<Sub> := B;
-dies-ok { A.WHO<Sub> = Any }, 'a bound type object is immutable';
-is A.WHO<Sub>.^name, 'B', 'and keeps its value';
+A.WHO<Plain> = B;
+A.WHO<Plain> = A;
+is A.WHO<Plain>.^name, 'A', 'an assigned entry can be reassigned';
 
 my $stored;
 A.WHO<P> := Proxy.new(FETCH => -> $ { 42 }, STORE => -> $, $v { $stored = $v });

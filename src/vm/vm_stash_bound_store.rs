@@ -1,14 +1,16 @@
 use super::*;
 
 impl Interpreter {
-    /// `Pkg.WHO<name> = $v` on a symbol the stash holds *bound* rather than in
-    /// a container. A `Proxy` bound there (`Pkg.WHO<x> := Proxy.new(...)`) is
-    /// assigned through its STORE, which may refuse the value; a type object
-    /// bound there (`Pkg.WHO<x> := SomeClass`, a nested package) is not a
-    /// container at all, so the assignment dies as rakudo's does ("Cannot
-    /// modify an immutable ..."). The generic element store used to replace
-    /// the Proxy and ignore the type object, so Red's read-only
-    /// `$model.WHO<ResultSeq>` accepted any assignment.
+    /// `Pkg.WHO<name> = $v` on a symbol the stash holds as a bound `Proxy`
+    /// (`Pkg.WHO<x> := Proxy.new(...)`): the assignment goes through its
+    /// STORE, which may refuse the value. The generic element store used to
+    /// replace the Proxy, so Red's read-only `$model.WHO<ResultSeq>` accepted
+    /// any assignment.
+    ///
+    // TODO: a type object bound with `:=` (`Pkg.WHO<x> := SomeClass`) should
+    // refuse an assignment too, as rakudo does, but a stash entry does not yet
+    // record whether it was bound or assigned (`EXPORTHOW.WHO.<class> = HOW`
+    // must keep working), so that case still falls through to the plain store.
     ///
     /// `Some(result)` when the store was handled here; `None` leaves every
     /// other entry (a cell, an aggregate, a missing key) to the generic store.
@@ -51,12 +53,6 @@ impl Interpreter {
         if entry.is_proxy_value() {
             self.store_proxy_lvalue(&entry, value.clone())?;
             return Ok(Some(value.clone()));
-        }
-        if let ValueView::Package(name) = entry.view() {
-            let name = name.resolve();
-            return Err(RuntimeError::new(format!(
-                "Cannot modify an immutable {name} ({name})"
-            )));
         }
         Ok(None)
     }
