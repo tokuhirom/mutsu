@@ -394,6 +394,24 @@ pub(crate) fn enter_blocking() -> (native::BlockingGuard, crate::value::waker::P
     (native::enter_blocking(), parked)
 }
 
+/// A pooled worker is about to make a foreign (C) call that may block for
+/// good (`accept`, `recv`): count it blocked in the pool, so queued tasks get
+/// a worker (ADR-0123), as MoarVM marks a thread blocked around a native call.
+///
+/// Unlike [`enter_blocking`] this does not park the reacts whose events the
+/// thread is handling: a `whenever` body that calls `close` or `write`
+/// through NativeCall is still handling its event, and its producer keeps
+/// waiting for it (ADR-11268), as a Rakudo emitter waits on the react's lock
+/// for as long as the body runs. Nor does it count as a park for a
+/// `Supply.throttle` job (`park_observer`) or release a declaration gate: a
+/// short call such as `close` is no reason to start the next job, and C code
+/// cannot wait on a gate.
+#[cfg(all(not(target_arch = "wasm32"), feature = "libffi"))]
+// Cost: O(1) (the pool lock), plus starting a worker when one is needed.
+pub(crate) fn enter_foreign_call() -> native::BlockingGuard {
+    native::enter_blocking()
+}
+
 /// wasm32: there is no pool to account to.
 #[cfg(target_arch = "wasm32")]
 pub(crate) struct BlockingGuard;
