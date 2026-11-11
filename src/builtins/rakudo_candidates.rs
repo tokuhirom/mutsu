@@ -69,7 +69,28 @@ fn table() -> &'static Table {
 /// The candidates of the core sub `name`, in Rakudo's declaration order.
 // Cost: O(1) lookup (plus the one-time table build), c = candidates returned.
 pub(crate) fn core_sub_candidates(name: &str) -> &'static [CoreCandidate] {
-    lookup("", name)
+    let rows = lookup("", name);
+    if !rows.is_empty() {
+        return rows;
+    }
+    // Rakudo names an operator whose symbol holds `<` or `>` with French
+    // quotes (`infix:«>»`), and the snapshot keeps that spelling; a code
+    // handle names it `infix:<>>`. Without this, `&infix:«>».candidates` was
+    // empty, and the `static` analyzer judged every `$x > 0` a mismatch.
+    match french_quoted_operator_name(name) {
+        Some(french) => lookup("", &french),
+        None => rows,
+    }
+}
+
+/// `infix:<>>` -> `infix:«>»`: the `«»` spelling Rakudo gives an operator
+/// name whose symbol contains `<` or `>`, or `None` for any other name.
+// Cost: O(n), n = name length.
+fn french_quoted_operator_name(name: &str) -> Option<String> {
+    let (category, rest) = name.split_once(":<")?;
+    let symbol = rest.strip_suffix('>')?;
+    (!category.is_empty() && symbol.contains(['<', '>']))
+        .then(|| format!("{category}:«{symbol}»"))
 }
 
 /// The candidates of the method `name` declared on built-in type `owner`.
