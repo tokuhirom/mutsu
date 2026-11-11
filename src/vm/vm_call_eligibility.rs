@@ -194,7 +194,7 @@ impl Interpreter {
             && (cf
                 .return_type
                 .as_deref()
-                .is_none_or(Self::is_fast_type_name)
+                .is_none_or(Self::is_fast_return_type_name)
                 || cf.return_definite_const.is_some())
             && !cf.is_cached
             && cf.code.state_locals.is_empty()
@@ -532,7 +532,7 @@ impl Interpreter {
             && (cf
                 .return_type
                 .as_deref()
-                .is_none_or(Self::is_fast_type_name)
+                .is_none_or(Self::is_fast_return_type_name)
                 || cf.return_definite_const.is_some())
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().enumerate().all(|(i, pd)| {

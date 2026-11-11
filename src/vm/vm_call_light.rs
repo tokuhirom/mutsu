@@ -1292,8 +1292,29 @@ impl Interpreter {
         {
             let check_val = explicit_return.as_ref().unwrap_or(ret_val);
             let passed = match cf.return_fast_type {
+                // `--> Bool:D`: the smiley first, then the base by tag. A
+                // shape the smiley check cannot classify takes the general
+                // matcher with the whole spelling, and so does a value the
+                // tag check rejects (a type object of a subclass for `:U`),
+                // so a rejection is always the general path's verdict.
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym })
+                    if cf.return_smiley.is_some() =>
+                {
+                    let smiley = cf.return_smiley.expect("guarded above");
+                    match Self::light_return_smiley_check(check_val, smiley) {
+                        Some(true) => {
+                            self.light_return_check(check_val, kind, name_sym)
+                                || self.type_matches_value(rt, check_val)
+                        }
+                        Some(false) => false,
+                        None => self.type_matches_value(rt, check_val),
+                    }
+                }
                 Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
                     self.light_return_check(check_val, kind, name_sym)
+                }
+                _ if crate::opcode::TypeSmiley::split(rt).1.is_some() => {
+                    self.type_matches_value(rt, check_val)
                 }
                 _ if rt == "UInt" => self.light_return_check(
                     check_val,
@@ -1310,6 +1331,42 @@ impl Interpreter {
             }
         }
         Ok(definite_value)
+    }
+
+    /// [`Self::is_fast_type_name`] for a declared return type, which may also
+    /// carry a `:D` / `:U` smiley (`--> Bool:D`): the light return check
+    /// answers the smiley itself ([`Self::light_return_smiley_check`]) and the
+    /// base by tag.
+    // Cost: O(1).
+    pub(super) fn is_fast_return_type_name(name: &str) -> bool {
+        Self::is_fast_type_name(crate::opcode::TypeSmiley::split(name).0)
+    }
+
+    /// The definiteness half of a smiley return type (`--> Int:D`) on the
+    /// light paths: `Some(verdict)` when the value's shape answers it, `None`
+    /// for a shape only the general matcher can classify (a mixin, a
+    /// junction, a container of another kind), which the caller then hands to
+    /// `type_matches_value` with the whole spelling. `Nil` and a `Failure`
+    /// pass any return type, as in the general return check.
+    // Cost: O(1).
+    fn light_return_smiley_check(val: &Value, smiley: crate::opcode::TypeSmiley) -> Option<bool> {
+        use crate::opcode::TypeSmiley as S;
+        if val.is_nil() {
+            return Some(true);
+        }
+        match val.view() {
+            ValueView::Package(_) => Some(smiley == S::Undefined),
+            ValueView::Instance { class_name, .. } => {
+                Some(class_name.resolve() == "Failure" || smiley == S::Definite)
+            }
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Str(_)
+            | ValueView::Num(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(_, _) => Some(smiley == S::Definite),
+            _ => None,
+        }
     }
 
     /// Check if a type name is one of the basic types that fast_type_check handles.
