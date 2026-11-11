@@ -371,6 +371,7 @@ mod vm_hash_key_user_str;
 mod vm_incdec_mixin_subscript;
 mod vm_method_value;
 mod vm_mixin_type_new;
+mod vm_proxy_subclass_method;
 mod vm_named_root_guard;
 mod vm_object_hash_keys;
 mod vm_range_int_bounds;

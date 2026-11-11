@@ -80,6 +80,14 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = false;
             return result;
         }
+        if package_sym.is_none()
+            && let Some(result) = self.try_proxy_subclass_var_method(&target, method_sym, &args)
+        {
+            // A user method body: leave the dispatch impure so the call site
+            // reconciles the caller's slots.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
         if let Some(class_name) = new_on_package
             && crate::runtime::types::strip_type_smiley(class_name.as_str())
                 .1
