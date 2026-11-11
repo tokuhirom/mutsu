@@ -580,6 +580,8 @@ impl Interpreter {
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
             "__mutsu_bind_positional_element" => self.builtin_bind_positional_element(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
+            "__mutsu_supply_tapped" => self.builtin_supply_tapped(&args),
+            "__mutsu_supply_tappable_tap" => Ok(Self::builtin_supply_tappable_tap(&args)),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),

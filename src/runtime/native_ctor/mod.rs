@@ -18,6 +18,7 @@ use crate::symbol::Symbol;
 mod basic;
 mod collections;
 mod concurrency;
+pub(crate) use concurrency::TAP_ON_CLOSE;
 mod distribution;
 mod io_temporal;
 mod meta;
@@ -122,7 +123,7 @@ static CTORS: &[(&str, CtorFn, bool, bool)] = &[
     ("Supplier", Interpreter::ctor_supplier, false, true),
     ("Supplier::Preserving", Interpreter::ctor_supplier, false, true),
     ("Supply", Interpreter::ctor_supply, false, false),
-    ("Tap", Interpreter::ctor_threadpoolscheduler, false, true),
+    ("Tap", Interpreter::ctor_tap, false, true),
     ("Thread", Interpreter::ctor_thread, false, false),
     ("ThreadPoolScheduler", Interpreter::ctor_threadpoolscheduler, false, true),
     ("Uni", Interpreter::ctor_uni, false, true),

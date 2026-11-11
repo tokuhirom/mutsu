@@ -17,16 +17,16 @@ use super::Interpreter;
 use crate::ast::Stmt;
 use crate::value::{RuntimeError, Value, ValueView};
 
-// `tap` receives the Tap the tappable answers for this subscription; the
-// emitter-driven tap that mutsu returns to the caller is its own, so the
-// argument is accepted and not needed further.
+// `tap` receives the Tap the tappable answers for this subscription and
+// passes it to the caller's `:tap` callback; the Tap `tap` returns is closed
+// with the emitter-driven one mutsu returns to the caller (`supply_tap_hook`).
 const SUPPLY_TAPPABLE_ADAPTER_SRC: &str = r#"sub (\tappable) {
     -> $emitter {
-        tappable.tap(
+        __mutsu_supply_tappable_tap(tappable.tap(
             -> \value { $emitter.emit(value) },
             -> { $emitter.done },
             -> \ex { $emitter.quit(ex) },
-            -> $ { });
+            -> \t { __mutsu_supply_tapped(t) }));
     }
 }"#;
 
@@ -74,6 +74,10 @@ impl Interpreter {
             .supply_tappable_adapter()
             .ok_or_else(|| RuntimeError::new("Supply.new: the Tappable adapter failed to build"))?;
         let producer = self.eval_call_on_value(adapter, vec![tappable.clone()])?;
-        self.dispatch_supply_on_demand(&[producer])
+        let supply = self.dispatch_supply_on_demand(&[producer])?;
+        if let ValueView::Instance { attributes, .. } = supply.view() {
+            attributes.insert(super::supply_tap_hook::TAPPABLE_SUPPLY, Value::TRUE);
+        }
+        Ok(supply)
     }
 }
