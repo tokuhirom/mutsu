@@ -89,7 +89,7 @@ impl Interpreter {
     ) -> RuntimeError {
         let pd = &cf.param_defs[param_idx];
         let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
-        let err = self.light_param_type_failure(pd, tc, &val);
+        let err = self.light_param_type_failure(pd, tc, &val, func_name);
         let args = self.stack[args_base..].to_vec();
         self.enhance_binding_error_at_site(err, cf.package_sym(), func_name, &cf.param_defs, &args)
     }
@@ -546,7 +546,11 @@ impl Interpreter {
                     let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
                     self.type_matches_value("Callable", &val)
                 }
-                Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                Some(&crate::opcode::FastParamCheck::Fast {
+                    kind,
+                    name_sym,
+                    smiley,
+                }) => {
                     is_native_int = matches!(
                         kind,
                         crate::opcode::FastParamType::NativeInt
@@ -560,7 +564,7 @@ impl Interpreter {
                     } else {
                         &*val
                     };
-                    if kind == crate::opcode::FastParamType::UInt
+                    let nominal = if kind == crate::opcode::FastParamType::UInt
                         || matches!(val.view(), ValueView::Instance { .. })
                     {
                         // The type matcher needs `&mut self`; only a `UInt`
@@ -569,6 +573,13 @@ impl Interpreter {
                         self.light_param_type_check(&val, kind, name_sym)
                     } else {
                         Self::fast_type_check_tagged(val, kind, name_sym)
+                    };
+                    match smiley {
+                        Some(smiley) if nominal => {
+                            let val = arg_binding_value(&self.stack[args_base + param_idx]);
+                            Self::light_param_smiley_admits(&val, smiley)
+                        }
+                        _ => nominal,
                     }
                 }
                 None => {
@@ -1297,7 +1308,7 @@ impl Interpreter {
                 // matcher with the whole spelling, and so does a value the
                 // tag check rejects (a type object of a subclass for `:U`),
                 // so a rejection is always the general path's verdict.
-                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym })
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym, .. })
                     if cf.return_smiley.is_some() =>
                 {
                     let smiley = cf.return_smiley.expect("guarded above");
@@ -1310,7 +1321,7 @@ impl Interpreter {
                         None => self.type_matches_value(rt, check_val),
                     }
                 }
-                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym, .. }) => {
                     self.light_return_check(check_val, kind, name_sym)
                 }
                 _ if crate::opcode::TypeSmiley::split(rt).1.is_some() => {
@@ -1369,9 +1380,35 @@ impl Interpreter {
         }
     }
 
-    /// Check if a type name is one of the basic types that fast_type_check handles.
+    /// Whether `val`, which already satisfies the nominal base of a `:D`/`:U`
+    /// parameter (`crate::opcode::TypeSmiley::param_kind_admits` kinds only),
+    /// satisfies its smiley. Every value such a base admits is a type object
+    /// (the base or a role mixed onto it) or a defined object, so the shape
+    /// decides.
+    // Cost: O(1).
+    pub(crate) fn light_param_smiley_admits(
+        val: &Value,
+        smiley: crate::opcode::TypeSmiley,
+    ) -> bool {
+        let val = val.descalarize();
+        let undefined = match val.view() {
+            ValueView::Package(_) => true,
+            ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Package(_)),
+            _ => val.is_nil(),
+        };
+        undefined == (smiley == crate::opcode::TypeSmiley::Undefined)
+    }
+
+    /// Check if a type name is one of the basic types that fast_type_check
+    /// handles: a light-checkable name, or a boxed concrete one with a
+    /// `:D`/`:U` smiley (see `crate::opcode::FastParamCheck::of_param`).
+    // Cost: O(1).
     pub(super) fn is_fast_type_name(name: &str) -> bool {
-        crate::opcode::FastParamType::of(name).is_some()
+        match crate::opcode::TypeSmiley::split(name) {
+            (base, None) => crate::opcode::FastParamType::of(base).is_some(),
+            (base, Some(_)) => crate::opcode::FastParamType::of(base)
+                .is_some_and(crate::opcode::TypeSmiley::param_kind_admits),
+        }
     }
 
     /// [`Self::fast_type_check`] against a constraint already classified at
@@ -1581,6 +1618,12 @@ impl Interpreter {
 
     /// Fast type check for common types.
     pub(super) fn fast_type_check(val: &Value, type_name: &str) -> bool {
+        // A `:D`/`:U` constraint (`is_fast_type_name` admits one on a boxed
+        // concrete base): the base, then the smiley.
+        if let (base, Some(smiley)) = crate::opcode::TypeSmiley::split(type_name) {
+            return Self::fast_type_check(val, base)
+                && Self::light_param_smiley_admits(val, smiley);
+        }
         // An itemized value is checked as what it holds; see the tagged form.
         let val = val.descalarize();
         // Allomorphs (`IntStr`/`NumStr`/`RatStr`/...) and other mixed-in values

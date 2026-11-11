@@ -269,7 +269,7 @@ impl Interpreter {
                             // `X::TypeCheck::Argument` only for a call site
                             // whose argument types are all static (#10640).
                             let pd = &cf.param_defs[i];
-                            let err = self.light_param_type_failure(pd, tc, &val);
+                            let err = self.light_param_type_failure(pd, tc, &val, func_name);
                             bind_err = Some(self.enhance_binding_error_at_site(
                                 err,
                                 cf.package_sym(),
@@ -452,7 +452,7 @@ impl Interpreter {
                 && !self.light_type_check_by_name(&v, tc)
             {
                 let pd = &cf.param_defs[i];
-                let err = self.light_param_type_failure(pd, tc, &v);
+                let err = self.light_param_type_failure(pd, tc, &v, func_name);
                 bind_err = Some(self.enhance_binding_error_at_site(
                     err,
                     cf.package_sym(),
