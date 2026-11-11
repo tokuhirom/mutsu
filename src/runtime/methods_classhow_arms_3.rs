@@ -191,8 +191,12 @@ impl Interpreter {
             {
                 return Ok(mop_absent_method());
             }
+            if let Some(method) = self.classhow_find_method(invocant, &method_name) {
+                return Ok(method);
+            }
+            // A class with a `FALLBACK` answers every missing name.
             Ok(self
-                .classhow_find_method(invocant, &method_name)
+                .find_method_fallback(invocant, &method_name, &args)?
                 .unwrap_or_else(mop_absent_method))
     }
 
