@@ -106,10 +106,11 @@ written so far (the type object when none is written).
 - A `routine-declarator` production's actions are replayed in the unit (ADR-17243) **after** its
   own statement, so a replayed `$method.meta-object` finds the method the class installed. The
   replay owner is the package the production stands in.
-- In a package body the production and its replay are one `SyntheticBlock` (a
-  `StatementSequence` node when the body is converted back from its tree); neither the method
+- In a package body the production and its replay are one `SyntheticBlock`; neither the method
   hoisting of nested blocks nor a class body treats it as a scope, so the method is installed
-  where it stands.
+  where it stands. A production that declares a method is read back as a `StatementSequence` of
+  its node and the replay (a class body is converted back from its tree); any other production
+  is read as its own node, so a reader that deparses a body does not meet the sequence.
 - An `EXPORT` hook's symbols are the importing unit's: the activation interpreter names its
   importer `<slang importer>`, so the slang's own modules, which run in the host, keep the core
   routines (EEL exports a `&make` of its own).

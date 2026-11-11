@@ -271,7 +271,11 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
                 return Ok(Stmt::Ast(Box::new(
                     crate::ast::parsed::ParsedStmt::Lowered {
                         stmt: Box::new(Stmt::SyntheticBlock(stmts)),
-                        node: replay_sequence(node, kept_node),
+                        node: if declares_method(second) {
+                            replay_sequence(node, kept_node)
+                        } else {
+                            kept_node.unwrap_or_else(|| second.clone())
+                        },
                     },
                 )));
             }
@@ -297,10 +301,22 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
     )))
 }
 
-/// The node a production that also replays its actions stands for, as a reader
-/// of the tree sees it: a `StatementSequence` (no scope of its own) of the replay
-/// call and the production's own node, so a construct the unit converts back from
-/// its tree (a class body, ADR-15334 Stage 2) keeps the replay (ADR-17243).
+/// Whether a production's node declares a method: one a class body holds, which
+/// the unit converts back from its tree (ADR-15334 Stage 2), so the replay of the
+/// production's actions must be part of the node it reads.
+// Cost: O(1).
+fn declares_method(node: &Value) -> bool {
+    matches!(node.view(), ValueView::RakuAst(n)
+        if matches!(n.class, super::RakuAstClass::Method | super::RakuAstClass::Submethod))
+}
+
+/// The node a production that declares a method and replays its actions stands
+/// for, as a reader of the tree sees it: a `StatementSequence` (no scope of its
+/// own) of the production's own node and the replay call, so a class body
+/// converted back from its tree keeps the replay (ADR-17243). Any other
+/// production is read as its own node.
+// TODO: a reader that deparses such a class body sees the sequence; carry the
+// replay beside the node instead once the tree has a place for it.
 // Cost: O(f), f = statements of the list.
 fn replay_sequence(list: &RakuAstNode, kept: Option<Value>) -> Value {
     let mut fields: Vec<_> = list
