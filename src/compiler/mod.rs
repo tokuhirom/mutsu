@@ -3907,6 +3907,18 @@ impl Compiler {
             // `A(Int)` is a coercion literal, which the call checks by the
             // argument having no variable source.
             Expr::BareWord(name) if crate::runtime::utils::is_known_type_constraint(name) => None,
+            // A `::T` type capture (this routine's, or an enclosing one's read
+            // from a closure) is a type too. Recorded as a source, a sigilless
+            // callee parameter (`sub f(\type)`) aliased the caller's `T` and
+            // the return wrote the callee's view of it back, so after
+            // `f(T)` the caller's `T` was the `Package` type object (Red's
+            // `add-column`).
+            Expr::BareWord(name)
+                if self.reads_own_type_capture(name)
+                    || self.in_closure_body_for_type_capture(name) =>
+            {
+                None
+            }
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
             Expr::DoStmt(stmt) => stmt.declared_var_key(),
