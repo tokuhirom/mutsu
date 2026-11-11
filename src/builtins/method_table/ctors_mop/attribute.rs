@@ -319,9 +319,25 @@ fn set_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
     // `set_value` BINDS its value argument (`Mu \value`): a scalar variable
     // naming a container (`Mu $v is raw`, an aliased parameter) is bound as
     // that container, so later writes through the attribute reach it.
-    let bound = i
-        .container_of_arg_source(1)
-        .unwrap_or_else(|| args[1].clone());
+    // An Array/Hash read out of a `$`-variable whose Scalar is not a shared
+    // cell yet is still that Scalar's content: a `@`/`%` attribute is bound to
+    // a Scalar of its own around it, so `get_value` hands out a container and
+    // `nqp::assign` through it stores into the slot (EEL's state copier,
+    // #17418). Rakudo binds the variable's own Scalar; this one is not shared
+    // with the variable.
+    // TODO: promote the source variable to a shared cell so later writes
+    // through either side are seen by both.
+    let bound = i.container_of_arg_source(1).unwrap_or_else(|| {
+        if i.arg_source_is_scalar_var(1)
+            && matches!(args[1].view(), ValueView::Array(..) | ValueView::Hash(_))
+        {
+            Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                args[1].clone(),
+            )))
+        } else {
+            args[1].clone()
+        }
+    });
     with_meta(target, |meta| {
         i.attribute_meta_set_value(meta, &args[0], &bound)
     })

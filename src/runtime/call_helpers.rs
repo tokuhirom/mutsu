@@ -46,6 +46,17 @@ impl Interpreter {
     /// native method that binds its argument can bind that container rather
     /// than a copy of its value.
     // Cost: O(1), one env probe.
+    /// Whether positional argument `index` of the pending call was written as a
+    /// plain scalar variable (`$x`), whose value then reached the callee out of
+    /// that variable's Scalar.
+    // Cost: O(1).
+    pub(crate) fn arg_source_is_scalar_var(&self, index: usize) -> bool {
+        self.pending_call_arg_sources()
+            .and_then(|sources| sources.get(index))
+            .and_then(Option::as_ref)
+            .is_some_and(|name| !name.starts_with(['@', '%', '&']) && !name.contains('='))
+    }
+
     pub(crate) fn container_of_arg_source(&self, index: usize) -> Option<Value> {
         let name = self.pending_call_arg_sources()?.get(index)?.as_ref()?;
         if name.starts_with(['@', '%', '&']) || name.contains('=') {
