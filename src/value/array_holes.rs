@@ -154,7 +154,7 @@ impl ArrayData {
             }
             None if i <= len => {}
             None => {
-                let mut set: std::collections::HashSet<usize> = (0..len).collect();
+                let mut set: rustc_hash::FxHashSet<usize> = (0..len).collect();
                 set.insert(i);
                 self.initialized = Some(set);
             }

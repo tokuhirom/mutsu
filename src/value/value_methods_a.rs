@@ -687,7 +687,7 @@ impl Value {
     /// are recognized as holes by `:exists`/`:k`/`:p`).
     pub fn real_array_initialized_at(items: Vec<Value>, idx: usize) -> Self {
         let mut data = ArrayData::new(items);
-        let mut set = std::collections::HashSet::new();
+        let mut set = rustc_hash::FxHashSet::default();
         set.insert(idx);
         data.initialized = Some(set);
         Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
@@ -701,7 +701,7 @@ impl Value {
     /// but for `ArrayKind::Array` rather than `ArrayKind::Shaped`.
     pub fn real_array_unassigned(items: Vec<Value>) -> Self {
         let mut data = ArrayData::new(items);
-        data.initialized = Some(std::collections::HashSet::new());
+        data.initialized = Some(rustc_hash::FxHashSet::default());
         Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
     }
     /// Create a shaped (multidimensional) Array value.
@@ -715,7 +715,7 @@ impl Value {
     /// `None` of [`Value::shaped_array`] means "bulk-constructed, no gaps".
     pub fn shaped_array_unassigned(items: Vec<Value>) -> Self {
         let mut data = ArrayData::new(items);
-        data.initialized = Some(std::collections::HashSet::new());
+        data.initialized = Some(rustc_hash::FxHashSet::default());
         Value::Array(crate::gc::Gc::new(data), ArrayKind::Shaped)
     }
     /// Rebuild an array's backing data with new elements, keeping ONLY the

@@ -846,14 +846,17 @@ impl Interpreter {
     /// so it is skipped rather than made cheaper. The guards are deliberately
     /// conservative — a plain non-negative `Int` into a plain `List`/`Array`
     /// carrying no element type, no `is default(...)`, and no native backing,
-    /// answering an element that is itself an ordinary value. Anything else
-    /// (a hole, a `:=`-bound element cell, a deferred bind token, an
-    /// out-of-range index, a shaped or itemized array) falls through, so the
-    /// general path stays the single definition of every edge case.
+    /// answering an element that is itself an ordinary value. A real `Array`
+    /// also answers a hole and an out-of-range index (both its `Any` element
+    /// default) and a `:=`-bound element cell holding an ordinary value, which
+    /// is all `resolve_array_entry` does with them there (#17429). Anything
+    /// else (a `List` hole or out-of-range index, a deferred bind token, a
+    /// cell holding a `Proxy`, a shaped or itemized array) falls through, so
+    /// the general path stays the single definition of every edge case.
     ///
     /// The stack is only *peeked*; the caller pops exactly when this answers
     /// `Some`, so a `None` leaves the operand stack untouched.
-    // Cost: O(1) (in-range `Int` read of a plain array).
+    // Cost: O(1) (an `Int` read of a plain array).
     #[inline]
     fn index_fast_path_element(&self, is_positional: bool) -> Option<Value> {
         // The core-subscript re-entry guard means this dispatch is not an
@@ -881,12 +884,17 @@ impl Interpreter {
             return None;
         };
         // `Shaped` dies on an out-of-range read and defaults its unwritten
-        // slots; `Lazy` may still need reifying; the itemized kinds are a
-        // one-element list under a positional subscript. All three are left to
-        // the general path.
-        if !matches!(kind, ArrayKind::List | ArrayKind::Array) {
+        // slots, and `Lazy` may still need reifying: both are left to the
+        // general path. An itemized Array (`$[...]`, the Array a `$` scalar or
+        // a `for` parameter holds) indexes exactly like the Array itself; an
+        // itemized List is left to the general path.
+        if !matches!(
+            kind,
+            ArrayKind::List | ArrayKind::Array | ArrayKind::ItemArray
+        ) {
             return None;
         }
+        let real_array = kind != ArrayKind::List;
         // An element type, an `is default(...)`, or ADR-0030 native backing all
         // change what a read answers (or where it reads from).
         if items.has_type_meta() || items.default.is_some() || items.has_native_backing() {
@@ -899,15 +907,35 @@ impl Interpreter {
             None,
             &self.stack[n - 2],
         );
-        let elem = items.get(i as usize)?;
+        let Some(elem) = items.get(i as usize) else {
+            // Past the end of an untyped real Array the read is its element
+            // default, `Any` (`typed_container_default`); a List's is `Nil`,
+            // which the general path answers.
+            return real_array.then(|| Value::package(crate::symbol::wk::any()));
+        };
         match elem.view() {
-            // A deleted/never-assigned hole, a `:=`-bound element cell, and a
-            // deferred array-entry bind token each resolve to something other
-            // than themselves — `resolve_array_entry` owns all three.
-            ValueView::Package(..)
-            | ValueView::ContainerRef(_)
-            | ValueView::HashEntryRef { .. }
-            | ValueView::Nil => None,
+            // In an untyped real Array a hole is the `Any` gap marker, and
+            // `resolve_array_entry` answers it with the element default --
+            // `Any` again -- while a type object stored there is read back as
+            // itself. A List's `Mu` hole reads as `Nil` instead.
+            ValueView::Package(..) if real_array => Some(elem.clone()),
+            // A `:=`-bound element cell decontainerizes on read
+            // (`resolve_array_entry`), unless it holds something the general
+            // path still has to fetch or resolve.
+            ValueView::ContainerRef(_) => {
+                let value = elem.deref_container();
+                (!value.is_proxy_value()
+                    && !value.is_container_ref()
+                    && !value.is_lazy_thunk_value()
+                    && !matches!(
+                        value.view(),
+                        ValueView::Nil | ValueView::HashEntryRef { .. }
+                    ))
+                .then_some(value)
+            }
+            // A deferred array-entry bind token resolves to the entry it
+            // names, and a `Nil` slot keeps the general path's handling.
+            ValueView::Package(..) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
             _ => Some(elem.clone()),
         }
     }
