@@ -111,8 +111,9 @@ impl Interpreter {
                     return None;
                 }
                 let source = name.as_str();
-                // `self` is the caller's invocant, never a writable variable.
-                if source == "self" {
+                // The frame's own fixtures (the invocant, `?CLASS`, `?ROLE`)
+                // are values, never writable variables.
+                if name.is_frame_fixture() {
                     return Some(LightSigillessBind::Readonly);
                 }
                 // The topic, the routine-reset magic, pseudo-packages,
