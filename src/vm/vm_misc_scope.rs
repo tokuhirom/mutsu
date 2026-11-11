@@ -254,9 +254,7 @@ impl Interpreter {
             self.lexicals
                 .our_term_keys
                 .insert(Symbol::intern(&qualified));
-        } else if qualified != code.locals[idx]
-            && !code.locals[idx].starts_with(['@', '%', '&'])
-        {
+        } else if qualified != code.locals[idx] && !code.locals[idx].starts_with(['@', '%', '&']) {
             // A `$` scalar's store key carries no sigil either; record it so
             // an uppercase-leading `our $Baz` lists as `$Baz` (#17364).
             self.lexicals
