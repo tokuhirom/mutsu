@@ -250,16 +250,19 @@ impl Interpreter {
 
     /// Whether `.list` / `.Seq` of a supply with these attributes taps it
     /// and pulls lazily ([`Self::supply_lazy_values`]): an on-demand
-    /// `supply { }` block, a supply derived from a live one
-    /// (`Supply.interval(1).map(...)`) and a timer/channel-backed one
-    /// (`Supply.interval(1)`). A static supply (`Supply.from-list`) is
+    /// `supply { }` block and a supply derived from a live one
+    /// (`Supply.interval(1).map(...)`). A static supply (`Supply.from-list`) is
     /// answered from its stored values by `listify` before this is asked.
+    // TODO: a supply backed directly by a native event channel (`supply_id`:
+    // `Supply.interval`, an `IO::Socket::Async` read stream) still drains that
+    // channel eagerly until it closes, so `Supply.interval(1).list` never
+    // returns. Its `.tap` does not report `done` for every source (a read
+    // stream of an already closed socket), so tapping it here would hang
+    // where the drain ends; the channel itself has to back the lazy list.
     // Cost: O(1).
     pub(crate) fn supply_lists_lazily(attrs: &crate::value::AttrMap) -> bool {
         !attrs.contains_key("proc_output")
-            && (attrs.contains_key("on_demand_callback")
-                || attrs.contains_key("parent_supply_id")
-                || attrs.contains_key("supply_id"))
+            && (attrs.contains_key("on_demand_callback") || attrs.contains_key("parent_supply_id"))
     }
 
     /// `Supply.list` / `.Seq` (Rakudo: "taps the Supply it is called on, and

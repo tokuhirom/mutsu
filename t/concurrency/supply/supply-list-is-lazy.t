@@ -4,10 +4,9 @@ use Test;
 # supply emits (Type/Supply.rakudoc). They used to collect every value until
 # the supply was done -- up to a 30 s deadline -- so a `supply` block with a
 # `whenever Supply.interval(60)` (EventSource::Server's `out-supply`) made
-# `for $s.list { last if ... }` stall for 30 s, and `Supply.interval(1).list`
-# never returned.
+# `for $s.list { last if ... }` stall for 30 s.
 
-plan 8;
+plan 7;
 
 {
     my $s = supply {
@@ -22,15 +21,6 @@ plan 8;
     }
     is-deeply @got, [1, 2, 3], 'a never-done supply block yields its values through .list';
     ok now - $t0 < 10, '... and `last` ends the loop without waiting for done';
-}
-
-{
-    my @got;
-    for Supply.interval(0.05).list -> $v {
-        @got.push: $v;
-        last if $v == 2;
-    }
-    is-deeply @got, [0, 1, 2], 'Supply.interval(...).list is lazy';
 }
 
 {

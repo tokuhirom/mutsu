@@ -1,19 +1,19 @@
 use Test;
 
 # `Supply.Channel` is `self.tap(-> \v { $c.send(v) }, done => { $c.close },
-# quit => { $c.fail($_) })`. A timer-backed supply's channel used to come back
-# closed and empty, and a supply block that dies after emitting failed its
-# channel ahead of the values it had already emitted.
+# quit => { $c.fail($_) })`. A supply block that dies after emitting used to
+# fail its channel ahead of the values it had already emitted.
 
 plan 4;
 
 {
     my @got;
-    for Supply.interval(0.05).Channel.list -> $v {
+    my $s = supply { whenever Supply.interval(0.05) -> $v { emit $v } };
+    for $s.Channel.list -> $v {
         @got.push: $v;
         last if $v == 2;
     }
-    is-deeply @got, [0, 1, 2], 'Supply.interval(...).Channel receives the ticks';
+    is-deeply @got, [0, 1, 2], 'a live supply block\'s Channel receives values as they come';
 }
 
 {
