@@ -214,9 +214,9 @@ pub(super) fn lower_stmt(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, 
         RakuAstClass::StatementEmpty => Ok(Stmt::Expr(Expr::Literal(Value::NIL))),
         // Statements standing together without a scope of their own: a slang
         // production and the replay of its actions (ADR-17243).
-        RakuAstClass::StatementSequence => Ok(Stmt::SyntheticBlock(lower_statement_sequence(
-            names, node,
-        )?)),
+        RakuAstClass::StatementSequence => {
+            Ok(Stmt::SyntheticBlock(lower_statement_sequence(names, node)?))
+        }
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
         RakuAstClass::StatementAlso => super::role::lower_also(names, node),

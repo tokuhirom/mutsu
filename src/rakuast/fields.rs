@@ -147,8 +147,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
                 Absent::TypeObject("RakuAST::StatementModifier::Loop"),
             ),
         ],
-        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | Constant | Literal | ComplexLiteral
-        | StrLiteral => &[("value", Absent::Required)],
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | Constant | Literal
+        | ComplexLiteral | StrLiteral => &[("value", Absent::Required)],
         VarLexical | VarDynamic | VarDoc => &[("name", Absent::Required)],
         VarCompilerLookup => &[("name", Absent::Required)],
         VarCompilerFile => &[("file", Absent::Required)],

@@ -220,7 +220,9 @@ pub(crate) fn seed_native_subclass_payloads(
     // A `Match` (and a grammar, a `Match` subclass) is a `Capture` too, with its
     // captures of its own.
     if class_mro.iter().any(|name| name == "Capture")
-        && !class_mro.iter().any(|name| name == "Match" || name == "Grammar")
+        && !class_mro
+            .iter()
+            .any(|name| name == "Match" || name == "Grammar")
         && !attrs.contains_key(crate::builtins::native_base::CAPTURE_PAYLOAD)
     {
         let mut positional = Vec::new();

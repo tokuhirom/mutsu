@@ -141,6 +141,7 @@ mod call_term_origins;
 mod carried;
 mod decl_postfix_origins;
 mod finalize;
+pub(crate) mod fresh_copy;
 pub(crate) mod implicit_signature;
 mod infix_origins;
 mod infix_spelling;
@@ -201,9 +202,8 @@ mod shadowed_terms;
 mod signature_decl;
 mod signature_decl_origins;
 mod signature_literal;
-pub(crate) mod slang_bridge;
 pub(crate) mod slang_block_scope;
-pub(crate) mod fresh_copy;
+pub(crate) mod slang_bridge;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
