@@ -453,7 +453,18 @@ impl Interpreter {
     /// instances without a stringifier pass through unchanged (the pure
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
+    // Cost: O(1) for a plain `Str`; otherwise O(1) probes plus the operand's
+    // own stringifier (a user method, a Seq reify, a list's elements).
     pub(crate) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+        // A plain `Str` is its own `.Stringy`: none of the steps below (a
+        // Proxy FETCH, a Seq reify, a Failure, Nil's warning, a mixin's,
+        // subclass's or object's own stringifier) applies to one, and every
+        // one of them answers it unchanged. Infix `~`, `eq` and the other
+        // string operators coerce two operands per call, so this skips a
+        // dozen probes on their most common operand.
+        if matches!(v.view(), ValueView::Str(_)) {
+            return Ok(v);
+        }
         // ADR-0058: a string context renders a Seq's elements, so a
         // still-deferred `.map` must run its callback first.
         self.reify_nested_map_grep_for_read(&v)?;

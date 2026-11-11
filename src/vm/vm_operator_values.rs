@@ -170,6 +170,25 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // Two plain strings, the common case (`$ch eq ' '` in a tokenizer):
+        // nothing the operand coercion handles (a Proxy, a Seq, a mixin's or
+        // an object's own `Str`, a Blob, Nil's warning) and no junction can
+        // apply, so the comparison runs on them directly, through the same
+        // leaf the general path ends in.
+        if matches!(left.view(), ValueView::Str(_)) && matches!(right.view(), ValueView::Str(_)) {
+            let result = match kind {
+                StrCmp::Eq | StrCmp::Ne => str_cmp_leaf::<0>(self, left, right),
+                StrCmp::Lt => str_cmp_leaf::<2>(self, left, right),
+                StrCmp::Gt => str_cmp_leaf::<3>(self, left, right),
+                StrCmp::Le => str_cmp_leaf::<4>(self, left, right),
+                StrCmp::Ge => str_cmp_leaf::<5>(self, left, right),
+            }?;
+            return Ok(if kind == StrCmp::Ne {
+                Value::truth(!result.truthy())
+            } else {
+                result
+            });
+        }
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         // `eval_binary_with_junctions` takes a plain `fn`, so the comparison is
         // picked here rather than captured.
