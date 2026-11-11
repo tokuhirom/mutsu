@@ -59,7 +59,10 @@ impl Interpreter {
     fn mro_declares_user_bless(&mut self, class: Symbol) -> bool {
         let mro = self.class_mro(class.as_str());
         let registry = self.registry();
-        mro.iter()
-            .any(|layer| registry.user_method_overloads(layer.as_str(), "bless").is_some())
+        mro.iter().any(|layer| {
+            registry
+                .user_method_overloads(layer.as_str(), "bless")
+                .is_some()
+        })
     }
 }
