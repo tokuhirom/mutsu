@@ -358,15 +358,13 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let cn = class_name.resolve();
-        // A user class that shares a builtin's name (`class Pair is Capture`,
-        // EEL's `event Pair`) is not that builtin, as `dispatch_new` has it.
-        if self.types.user_declared_classes.contains(&cn) {
-            return None;
-        }
         // Pure-data constructors shared with the interpreter's `dispatch_new`
-        // (`native_ctor`): one table, so the two paths cannot drift.
+        // (`native_ctor`): one table, so the two paths cannot drift. A user
+        // class that shares a builtin's name (`class Pair is Capture`, EEL's
+        // `event Pair`) is not that builtin, as `dispatch_new` has it.
         if let Some(ctor) = super::native_ctor::lookup(&cn)
             && ctor.fast
+            && !self.types.user_declared_classes.contains(&cn)
         {
             let call = super::native_ctor::CtorCall {
                 class_name,
