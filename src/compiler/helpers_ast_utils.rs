@@ -845,9 +845,20 @@ impl Compiler {
                 }
                 // Check for intervening class/role declarations that could
                 // have inter-dependencies with the stub class.
-                let has_intervening_decls = stmts[stub_idx + 1..real_idx]
-                    .iter()
-                    .any(|s| matches!(s, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }));
+                // A versioned/authored declaration (`grammar G:ver<0.5.0>`)
+                // arrives wrapped in a `SyntheticBlock` with its
+                // `__MUTSU_SET_META__` call; it intervenes just the same
+                // (CSS::Grammar: `grammar CSS::Grammar::Core {...}`, then
+                // `grammar CSS::Grammar:ver<0.5.0>`, then `grammar
+                // CSS::Grammar::Core is CSS::Grammar` -- moving the last one
+                // up made its parent unknown).
+                let is_type_decl =
+                    |s: &Stmt| matches!(s, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
+                let has_intervening_decls =
+                    stmts[stub_idx + 1..real_idx].iter().any(|s| {
+                        is_type_decl(s)
+                            || matches!(s, Stmt::SyntheticBlock(inner) if inner.iter().any(is_type_decl))
+                    });
                 if !has_intervening_decls {
                     needs_move.push((name.clone(), *stub_idx, real_idx));
                 }
