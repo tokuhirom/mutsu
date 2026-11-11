@@ -103,6 +103,11 @@ pub(crate) struct LexicalState {
     /// constant`. The store spells such a key like a scalar's, so this is the
     /// only record that `answer` is a term and not `$answer` (#11877).
     pub(crate) our_term_keys: rustc_hash::FxHashSet<Symbol>,
+    /// The `our_vars` keys (`Pkg::Baz`) that hold a `$` scalar. The store
+    /// spells a scalar's key without its sigil, and an uppercase-leading tail
+    /// otherwise reads as a type or term, so this is the only record that
+    /// `Baz` is `$Baz` (#17364).
+    pub(crate) our_scalar_keys: rustc_hash::FxHashSet<Symbol>,
     /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
     /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
     /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
@@ -433,6 +438,7 @@ impl LexicalState {
             our_var_unqualified: rustc_hash::FxHashSet::default(),
             global_our_names: Default::default(),
             our_term_keys: rustc_hash::FxHashSet::default(),
+            our_scalar_keys: rustc_hash::FxHashSet::default(),
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: std::sync::Arc::new(PackageLexicals::default()),
@@ -497,6 +503,7 @@ impl LexicalState {
             our_var_unqualified: self.our_var_unqualified.clone(),
             global_our_names: self.global_our_names.clone(),
             our_term_keys: self.our_term_keys.clone(),
+            our_scalar_keys: self.our_scalar_keys.clone(),
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
