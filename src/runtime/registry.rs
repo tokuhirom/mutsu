@@ -852,7 +852,9 @@ pub(crate) struct Registry {
     /// ADR-0047 P1 `Foo\u{0}<decl-id>` suffix. Built on first query and
     /// dropped by [`RegistryWriteGuard`]'s `DerefMut`; see
     /// [`Registry::has_lexical_type_key_for`].
-    lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashSet<Box<str>>>,
+    /// Each name maps to the full keys that carry it before one of their NULs,
+    /// in the four maps' order (classes, roles, enums, subsets).
+    lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>>,
     /// `short name -> class key` for every class whose key is qualified: the
     /// part after the LAST `::` of the key, pointing at the smallest key with
     /// that tail. Built on first query and dropped by
@@ -929,24 +931,45 @@ impl Registry {
     /// so a registration that adds a mangled key cannot fail to invalidate it.
     ///
     /// [#8830]: https://github.com/tokuhirom/mutsu/issues/8830
+    // Cost: O(1) expected once built; the first query after a registry write
+    // is O(t), t = registered type keys.
     pub(crate) fn has_lexical_type_key_for(&self, unmangled: &str) -> bool {
+        !self.lexical_type_keys_for(unmangled).is_empty()
+    }
+
+    /// Every key of `classes` / `roles` / `enum_types` / `subsets` that starts
+    /// with `"{unmangled}\u{0}"` -- exactly what a `starts_with` scan over the
+    /// four maps finds, in the maps' order -- from the same index as
+    /// [`Self::has_lexical_type_key_for`], so a caller that needs the keys
+    /// themselves does not walk every type key either.
+    // Cost: O(1) expected once built; the first query after a registry write
+    // is O(t), t = registered type keys.
+    pub(crate) fn lexical_type_keys_for(&self, unmangled: &str) -> &[Box<str>] {
         self.lexical_type_names
             .get_or_init(|| {
-                self.classes
+                let mut index: rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>> =
+                    rustc_hash::FxHashMap::default();
+                for key in self
+                    .classes
                     .keys()
                     .chain(self.roles.keys())
                     .chain(self.enum_types.keys())
                     .chain(self.subsets.keys())
-                    .flat_map(|key| {
-                        // Every NUL-terminated prefix: a type nested in a
-                        // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
-                        // and a scan for `Outer\0<id>::Inner` is a prefix of it.
-                        key.match_indices('\u{0}')
-                            .map(|(at, _)| Box::<str>::from(&key[..at]))
-                    })
-                    .collect()
+                {
+                    // Every NUL-terminated prefix: a type nested in a
+                    // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+                    // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+                    for (at, _) in key.match_indices('\u{0}') {
+                        index
+                            .entry(Box::<str>::from(&key[..at]))
+                            .or_default()
+                            .push(Box::<str>::from(key.as_str()));
+                    }
+                }
+                index
             })
-            .contains(unmangled)
+            .get(unmangled)
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The registry key of a class declared as `...::short` (a name `short`

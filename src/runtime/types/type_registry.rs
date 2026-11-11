@@ -1120,29 +1120,22 @@ impl Interpreter {
 
     /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
     /// source-facing name is `bare`, or `None` when there is none or several.
-    // Cost: O(t), t = registered types.
+    // Cost: O(k), k = the NUL-mangled keys carrying `bare`
+    // (`Registry::lexical_type_keys_for`).
     pub(crate) fn unique_lexical_type_key(&self, bare: &str) -> Option<String> {
-        let prefix = format!("{bare}\u{0}");
+        // The bare name plus its NUL: where the declaration id starts.
+        let prefix_len = bare.len() + 1;
         let reg = self.registry();
-        let mut found: Option<&String> = None;
-        for key in reg
-            .classes
-            .keys()
-            .chain(reg.roles.keys())
-            .chain(reg.enum_types.keys())
-            .chain(reg.subsets.keys())
-            .filter(|key| {
-                key.starts_with(&prefix)
-                    && !is_curried_lexical_key(key, prefix.len())
-                    && !is_mixin_lexical_key(key, prefix.len())
-            })
-        {
+        let mut found: Option<&str> = None;
+        for key in reg.lexical_type_keys_for(bare).iter().filter(|key| {
+            !is_curried_lexical_key(key, prefix_len) && !is_mixin_lexical_key(key, prefix_len)
+        }) {
             match found {
-                Some(prev) if prev != key => return None,
-                _ => found = Some(key),
+                Some(prev) if prev != &**key => return None,
+                _ => found = Some(&**key),
             }
         }
-        found.cloned()
+        found.map(str::to_string)
     }
 
     /// Resolve a type name against the current package chain: inside
