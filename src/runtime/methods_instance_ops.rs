@@ -1754,8 +1754,56 @@ impl Interpreter {
             return Ok(Value::FALSE);
         }
 
+        // Class-level attribute access (our $.x / my $.x) — works on both
+        // type objects (Foo.bar) and instances ($obj.bar).
+        // A per-instance attribute with the same name hides the class-level one.
+        {
+            let class_name_for_lookup = match target.view() {
+                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name_for_lookup
+                && args.is_empty()
+                && self.has_class_level_attr(&cn, method)
+                && !self.has_public_accessor(&cn, method)
+                && let Some(val) = self.get_class_level_attr(&cn, method)
+            {
+                return Ok(val);
+            }
+        }
+
+        // The `Code` rows of a regex and the `Routine` rows of a code-class
+        // instance (`.^methods`' `Method` objects), found by their owner
+        // (ADR-12523, ADR-11276 §9.121).
+        if let Some(answer) =
+            crate::builtins::method_table::code::answer(self, &target, method, &args)
+        {
+            return answer;
+        }
+        // `Mu`'s and `Cool`'s late rows: `gist`, `raku`, `Str`, `isa`, `REPR`,
+        // ... of a receiver every answer above declined, from the first late
+        // row of its MRO that binds the call (ADR-11276 §9.138).
+        if MU_LATE_BY_MRO.contains(&method) {
+            let mut mro = self.classhow_mro_unhidden_names(&target);
+            // Every type is a `Mu`.
+            if mro.last().map(String::as_str) != Some("Mu") {
+                mro.push("Mu".to_string());
+            }
+            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+            if let Some(answer) = crate::builtins::method_table::invoke_mro_late(
+                self, &owners, method, &args, &target,
+            ) {
+                return answer;
+            }
+        }
+
         // Wildcard delegation (`handles *`) and FALLBACK method dispatch.
         // Dispatch order: wildcard delegation -> FALLBACK -> built-in fallbacks -> error.
+        // They come after the methods every object has (`Mu`'s late rows, a
+        // class-level attribute's accessor): rakudo's FALLBACK only sees a name
+        // normal dispatch did not find, so `T.isa(U)` on a class with a
+        // FALLBACK is `Mu.isa` (EEL's `Event`, #16888).
         {
             let fallback_class = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
@@ -1849,50 +1897,6 @@ impl Interpreter {
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
                 }
-            }
-        }
-
-        // Class-level attribute access (our $.x / my $.x) — works on both
-        // type objects (Foo.bar) and instances ($obj.bar).
-        // A per-instance attribute with the same name hides the class-level one.
-        {
-            let class_name_for_lookup = match target.view() {
-                ValueView::Package(name) => Some(name.resolve()),
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                _ => None,
-            };
-            if let Some(cn) = class_name_for_lookup
-                && args.is_empty()
-                && self.has_class_level_attr(&cn, method)
-                && !self.has_public_accessor(&cn, method)
-                && let Some(val) = self.get_class_level_attr(&cn, method)
-            {
-                return Ok(val);
-            }
-        }
-
-        // The `Code` rows of a regex and the `Routine` rows of a code-class
-        // instance (`.^methods`' `Method` objects), found by their owner
-        // (ADR-12523, ADR-11276 §9.121).
-        if let Some(answer) =
-            crate::builtins::method_table::code::answer(self, &target, method, &args)
-        {
-            return answer;
-        }
-        // `Mu`'s and `Cool`'s late rows: `gist`, `raku`, `Str`, `isa`, `REPR`,
-        // ... of a receiver every answer above declined, from the first late
-        // row of its MRO that binds the call (ADR-11276 §9.138).
-        if MU_LATE_BY_MRO.contains(&method) {
-            let mut mro = self.classhow_mro_unhidden_names(&target);
-            // Every type is a `Mu`.
-            if mro.last().map(String::as_str) != Some("Mu") {
-                mro.push("Mu".to_string());
-            }
-            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
-            if let Some(answer) = crate::builtins::method_table::invoke_mro_late(
-                self, &owners, method, &args, &target,
-            ) {
-                return answer;
             }
         }
 
