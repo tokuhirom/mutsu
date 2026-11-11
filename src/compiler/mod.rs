@@ -3046,7 +3046,7 @@ impl Compiler {
         }
         self.type_capture_locals.contains(name)
             || self.role_type_param_names.iter().any(|p| {
-                p.strip_prefix("__type_capture__")
+                p.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX)
                     .is_some_and(|captured| captured == name)
             })
     }
