@@ -153,6 +153,10 @@ pub(crate) struct MixinOverrides {
     overrides: ValueMap,
     attributes: Gc<InstanceAttrs>,
     type_name: RwLock<Option<Arc<str>>>,
+    /// The memoized `+{...}` suffix of this composition's type name for one
+    /// base name (see `mixin_type_name.rs`); cleared by every `&mut self`
+    /// accessor of `overrides`.
+    name_suffix: NameSuffixMemo,
 }
 
 impl MixinOverrides {
@@ -167,6 +171,7 @@ impl MixinOverrides {
             overrides,
             attributes: Gc::new(InstanceAttrs::role_storage(attributes)),
             type_name: RwLock::new(None),
+            name_suffix: NameSuffixMemo::default(),
         }
     }
 
@@ -177,6 +182,7 @@ impl MixinOverrides {
     }
 
     pub(crate) fn overrides_mut(&mut self) -> &mut ValueMap {
+        self.name_suffix.forget();
         &mut self.overrides
     }
 
@@ -198,6 +204,7 @@ impl MixinOverrides {
             overrides: self.overrides.clone(),
             attributes: earlier.attributes.clone(),
             type_name: RwLock::new(self.type_name()),
+            name_suffix: NameSuffixMemo::default(),
         }
     }
 
@@ -316,6 +323,7 @@ impl MixinOverrides {
         String: std::borrow::Borrow<Q>,
         Q: std::hash::Hash + Eq + ?Sized,
     {
+        self.name_suffix.forget();
         self.overrides.get_mut(key)
     }
 
@@ -328,6 +336,7 @@ impl MixinOverrides {
     }
 
     pub(crate) fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+        self.name_suffix.forget();
         self.overrides.insert(key, value)
     }
 
@@ -335,6 +344,7 @@ impl MixinOverrides {
         &mut self,
         key: String,
     ) -> std::collections::hash_map::Entry<'_, String, Value> {
+        self.name_suffix.forget();
         self.overrides.entry(key)
     }
 
@@ -343,6 +353,7 @@ impl MixinOverrides {
     }
 
     pub(crate) fn iter_mut(&mut self) -> std::collections::hash_map::IterMut<'_, String, Value> {
+        self.name_suffix.forget();
         self.overrides.iter_mut()
     }
 
@@ -367,6 +378,7 @@ impl MixinOverrides {
         String: std::borrow::Borrow<Q>,
         Q: std::hash::Hash + Eq + ?Sized,
     {
+        self.name_suffix.forget();
         self.overrides.remove(key)
     }
 }
@@ -389,6 +401,7 @@ impl Clone for MixinOverrides {
             overrides: self.overrides.clone(),
             attributes,
             type_name: RwLock::new(self.type_name()),
+            name_suffix: NameSuffixMemo::default(),
         }
     }
 }
@@ -629,6 +642,7 @@ pub(crate) mod which_id;
 pub(crate) use match_lazy::MatchNode;
 mod mix_weight;
 mod mixin_type_name;
+use mixin_type_name::NameSuffixMemo;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;

@@ -60,6 +60,7 @@ mod rakuast_doc_edit;
 mod rakuast_finish;
 mod rakuast_literal_queries;
 mod rakuast_locate;
+mod rakuast_multi_candidate;
 mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
 mod rakuast_operator_props;

@@ -175,6 +175,7 @@ mod placeholder;
 mod postfix_grouping;
 mod prefix_call;
 mod proto;
+pub(crate) use proto::{routine_multiness, routine_param_defs};
 mod quoted_string;
 mod react;
 mod regex_char_class;

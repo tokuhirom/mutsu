@@ -113,6 +113,7 @@ pub(crate) fn register_rakuast_user_sub_binding(stmt: &crate::ast::Stmt) {
     }
 }
 pub(crate) mod helpers;
+pub(crate) mod infix_stopper;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
 mod outer_redecl;

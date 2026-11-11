@@ -166,6 +166,7 @@ impl Interpreter {
         let mro = self.class_mro(&class_name_str);
         for owner_sym in mro.iter() {
             let owner_str = owner_sym.as_str();
+            let mut lone_proto = false;
             let defs_all: Vec<MethodDef> = {
                 let registry = self.registry();
                 let usable = registry
@@ -197,6 +198,7 @@ impl Interpreter {
                 if let Some(defs) = usable {
                     defs
                 } else if let Some(proto) = registry.method_entry_proto(owner_str, method_name) {
+                    lone_proto = true;
                     // A `proto method`/`proto submethod` with no candidates yet
                     // (`proto method bar {*}` alone) has no `user_method_overloads`
                     // row at all, so it was invisible to `.^lookup`/`.^find_method`/
@@ -241,6 +243,21 @@ impl Interpreter {
                 }
             };
             let first = &defs_all[0];
+            // A `proto` with no candidates is a dispatcher over none
+            // (`is_dispatcher` True, `.candidates` empty), as rakudo has it.
+            if lone_proto {
+                return Some(self.make_method_object_with_owner_ex(
+                    method_name,
+                    first,
+                    true,
+                    first.return_type.clone(),
+                    None,
+                    Some(owner_str),
+                    false,
+                    Some(Vec::new()),
+                    0,
+                ));
+            }
             let has_multi = defs_all.iter().any(|d| d.is_multi);
             // ADR-0019 Phase F box F1: return the same `Method`/`Submethod`
             // `Instance` shape `.^methods`/`.^method_table` build, instead of
