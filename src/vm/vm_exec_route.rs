@@ -39,6 +39,7 @@ impl Interpreter {
             | OpCode::GetPseudoStash(..)
             | OpCode::GetPseudoStashKeyed(..)
             | OpCode::GetShadowableTerm { .. }
+            | OpCode::GetTypeCapture(..)
             | OpCode::PushLastRegisteredClass
             | OpCode::PushLastRegisteredRole
             | OpCode::RoleGroupToCandidate

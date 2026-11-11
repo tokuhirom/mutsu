@@ -63,6 +63,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetArrayVar(_)
             | OpCode::GetHashVar(_)
             | OpCode::GetBareWord(_)
+            | OpCode::GetTypeCapture(_)
             | OpCode::GetCaptureVar(_)
             | OpCode::GetCodeVar(_)
             | OpCode::GetCodeVarLocal { .. }

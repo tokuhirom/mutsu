@@ -3032,6 +3032,25 @@ impl Compiler {
         self.enclosing_type_captures.contains(name) && !self.type_capture_locals.contains(name)
     }
 
+    /// Whether the bare word `name` is this routine's own type capture: a
+    /// `::T` of its signature, or a type parameter of the role whose method
+    /// (or a block in one) is being compiled. A lexical type or a local of
+    /// the same spelling declared in this frame is the nearer binding.
+    // Cost: O(r), r = the role's type parameters.
+    fn reads_own_type_capture(&self, name: &str) -> bool {
+        if name.contains("::")
+            || self.lexical_types_in_scope.contains(name)
+            || self.local_map.contains_key(name)
+        {
+            return false;
+        }
+        self.type_capture_locals.contains(name)
+            || self.role_type_param_names.iter().any(|p| {
+                p.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX)
+                    .is_some_and(|captured| captured == name)
+            })
+    }
+
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         for op in &self.lexical_infix_ops {
             if !sub.lexical_infix_ops.contains(op) {
