@@ -399,6 +399,7 @@ mod vm_scope_ops;
 mod vm_set_arith_ops;
 mod vm_set_ops;
 mod vm_sigilless_aggregate_store;
+mod vm_mixin_type_new;
 mod vm_sink_call;
 mod vm_sink_lazy_pipe;
 pub(crate) mod vm_smart_match;

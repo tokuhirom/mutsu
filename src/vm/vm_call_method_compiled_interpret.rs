@@ -80,6 +80,11 @@ impl Interpreter {
             _ => None,
         };
         let new_on_package = if method == "new" { package_sym } else { None };
+        if package_sym.is_none()
+            && let Some(result) = self.try_mixin_type_object_default_new(&target, method_sym, &args)
+        {
+            return result;
+        }
         if let Some(name) = package_sym {
             let role_name = name.as_str();
             if !self.registry().classes.contains_key(role_name)
