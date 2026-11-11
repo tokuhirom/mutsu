@@ -548,6 +548,11 @@ impl Interpreter {
                 .module_visibility
                 .module_routine_providers
                 .is_empty()
+            && self
+                .module
+                .module_visibility
+                .main_shadowing_routines
+                .is_empty()
         {
             return false;
         }
@@ -559,7 +564,8 @@ impl Interpreter {
     /// the module is merged (ADR-11136).
     #[inline]
     pub(crate) fn is_unit_scoped_routine_sym(&self, name: Symbol) -> bool {
-        (!self.module.unit_private_names.is_empty()
+        self.is_main_shadowing_routine(name)
+            || (!self.module.unit_private_names.is_empty()
             && self.module.unit_private_names.contains(&name))
             || (!self
                 .module
