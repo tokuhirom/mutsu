@@ -24,12 +24,22 @@ pub(crate) const STACK_RESERVE_BYTES: usize = 16 * 1024 * 1024;
 /// A stack smaller than this is left unguarded: its reserve would no longer
 /// cover one check interval's worth of overshoot plus the unwind. The
 /// smallest stack tier (`stack_budget::STACK_TIERS`) is exactly this.
+///
+/// A debug build needs 32 MiB (an 8 MiB reserve over a ~5 MiB worst-case
+/// interval overshoot). A release frame is about a tenth of a debug one
+/// (measured 6-17 KiB per Raku call level: plain sub, method, `.map`
+/// closure), so one interval overshoots well under 1 MiB and an 8 MiB stack
+/// with its 2 MiB reserve is guarded (ADR-0123 §6).
+#[cfg(debug_assertions)]
 pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 32 * 1024 * 1024;
+#[cfg(not(debug_assertions))]
+pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 4 * 1024 * 1024;
 
 /// The reserve kept below the guard on a stack of `stack_size` bytes:
 /// [`STACK_RESERVE_BYTES`], or a quarter of a smaller stack (8 MiB on the
 /// 32 MiB tier -- still above the ~5 MiB worst-case interval overshoot of a
-/// debug build, see `vm::vm_stack_guard::STACK_CHECK_INTERVAL`).
+/// debug build, see `vm::vm_stack_guard::STACK_CHECK_INTERVAL`; 2 MiB on a
+/// release build's 8 MiB tier, against an overshoot under 1 MiB).
 fn reserve_for(stack_size: usize) -> usize {
     STACK_RESERVE_BYTES.min(stack_size / 4)
 }

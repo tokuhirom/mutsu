@@ -165,3 +165,39 @@ the heap:
 Pinned by `t/concurrency/thread-lock/thread-pool-stack-budget.t`, which gains the 48-parked-worker
 case under a 6 GB `ulimit -v`. Measured, it fails both before this amendment and with only the
 step-down fix (without the arena cap).
+
+## 6. Amendment (2026-11-11): a release build steps down to 4 MiB
+
+§5 made a burst of **parked** workers fit, up to a point: past the budget each one still takes
+the smallest tier, 32 MiB. Log::Dispatch's `t/040-threaded` parks 500 `start` blocks on one
+`await` (#17392). Under the sandbox's 6 GB limit that needs 3 GB for the dozen full-size workers
+optional growth made, plus 488 × 32 MiB -- three times what is left. After ~150 workers the OS
+refused the thread, the task was rejected, its `$ready` promise was never kept, and the main
+thread waited for ever. Rakudo parks an `await` as a continuation and needs no thread for it.
+
+The 32 MiB floor is a **debug-build** number. It exists so that ADR-0100's reserve (a quarter of
+the stack) covers one check interval's worst-case overshoot, measured at ~5 MiB from ~156 KiB
+debug frames. A release frame is about a tenth of that: on the 256 MiB main stack a release
+build reaches 40 556 levels of plain sub recursion, 17 538 of method recursion and 14 102 of a
+recursion through a `.map` closure, i.e. 6-17 KiB per Raku call level, so one interval overshoots
+well under 1 MiB.
+
+So the tiers and the guardable floor (`native_stack::MIN_GUARDABLE_STACK_BYTES`) depend on the
+build profile:
+
+| build | `STACK_TIERS` | smallest tier's reserve |
+|---|---|---|
+| debug (`debug_assertions`) | 256, 64, 32 MiB | 8 MiB |
+| release | 256, 64, 32, 16, 8, 4 MiB | 1 MiB |
+
+Nothing else changes: optional growth still takes only the full tier, and a `Required` thread
+still takes the largest smaller tier that fits the budget and goes past it only with the
+smallest. A worker on a 4 MiB stack is guarded like any other, so deep recursion there raises
+`Too deep recursion` (after ~400 plain sub levels) instead of crashing. Only a thread created
+after the budget is spent ever gets one.
+
+This moves the cliff; it does not remove it. 500 parked workers now run in 0.2 s under 6 GB; about
+700 still do not fit. Removing the cliff means a blocked task must stop costing a whole native
+stack (growable VM stacks, or a continuation-style `await`) -- the open part of #17392.
+
+Pinned by `t/concurrency/thread-lock/thread-pool-small-stack-tier.t`.

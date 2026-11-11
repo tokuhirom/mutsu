@@ -30,8 +30,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const MIB: usize = 1024 * 1024;
 
 /// Stack sizes a user-code thread may get, largest (the normal one) first.
-/// The smallest must stay guardable by `vm_stack_guard`.
-pub(crate) const STACK_TIERS: [usize; 3] = [256 * MIB, 64 * MIB, 32 * MIB];
+/// The smallest must stay guardable by `vm_stack_guard`
+/// (`native_stack::MIN_GUARDABLE_STACK_BYTES`), which depends on the build
+/// profile: a debug frame is ~10x a release one, so a debug build stops at
+/// 32 MiB while a release build steps down to 8 MiB (ADR-0123 §6). The
+/// smaller tiers are only ever taken by a thread that has to exist once the
+/// budget is spent -- hundreds of `start` blocks parked in `await` (#17392).
+#[cfg(debug_assertions)]
+pub(crate) const STACK_TIERS: &[usize] = &[256 * MIB, 64 * MIB, 32 * MIB];
+#[cfg(not(debug_assertions))]
+pub(crate) const STACK_TIERS: &[usize] = &[256 * MIB, 64 * MIB, 32 * MIB, 16 * MIB, 8 * MIB, 4 * MIB];
 
 /// Bytes of stack currently reserved by live user-code threads (not counting
 /// the main thread, whose stack exists before the budget is consulted).
@@ -159,6 +167,9 @@ mod tests {
     #[test]
     fn tiers_descend_and_stay_guardable() {
         assert!(STACK_TIERS.windows(2).all(|w| w[0] > w[1]));
-        assert!(*STACK_TIERS.last().unwrap() >= 32 * MIB);
+        assert_eq!(
+            *STACK_TIERS.last().unwrap(),
+            crate::native_stack::MIN_GUARDABLE_STACK_BYTES
+        );
     }
 }
