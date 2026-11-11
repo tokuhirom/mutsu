@@ -193,9 +193,15 @@ impl Interpreter {
     /// nothing cached until pulled, so `append`/`prepend` read it to its end
     /// first, as the unshared path does.
     // Cost: O(a), a = arguments (plus the elements a flattened one holds).
-    fn shared_lane_items(&mut self, method: &str, args: &[Value]) -> Result<Vec<Value>, RuntimeError> {
+    fn shared_lane_items(
+        &mut self,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
         if matches!(method, "push" | "unshift") {
-            return Ok(crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec()));
+            return Ok(crate::runtime::Interpreter::normalize_push_unshift_args(
+                args.to_vec(),
+            ));
         }
         let args = args
             .iter()
