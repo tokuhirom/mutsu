@@ -40,6 +40,8 @@ role Actions is export {
     }
     method shout-body(Mu $/) {
         my $word = nqp::atkey($/.hash, 'word').Str;
+        # A compile-time error the action reports (`HLL::Grammar.panic`).
+        $/.panic("cannot shout $word") if $word eq 'panic';
         # The core `make`: the importer's `&make` from `EXPORT` is not this
         # module's.
         make $word;

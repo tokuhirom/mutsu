@@ -17,6 +17,8 @@ grammar GLOBAL::Raku::Grammar {
     method typed-panic(Str:D $type, *%args) {
         ::($type).^mixin(X::Comp).new(|%args).throw
     }
+    # HLL::Grammar's `panic`: a compile-time error carrying the message.
+    method panic(*@args) { self.typed-panic('X::AdHoc', payload => @args.join) }
 }
 class GLOBAL::Raku::Actions { }
 nqp::bindhllsym('Raku', 'Grammar', GLOBAL::Raku::Grammar);

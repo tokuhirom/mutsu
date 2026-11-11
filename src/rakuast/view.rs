@@ -5724,6 +5724,14 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
             class: RakuAstClass::TermEmptySet,
             fields: Vec::new(),
         }),
+        // Any other object a slang action embedded (EEL's compiled
+        // `EEL::Definition`, `val($node)`) is rakudo's plain `RakuAST::Literal`
+        // holding it (#16888).
+        ValueView::Instance { .. } => Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Literal,
+            fields: vec![leaf_field(None, v.clone())],
+        }),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
 }

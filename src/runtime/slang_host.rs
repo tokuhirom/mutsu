@@ -50,6 +50,8 @@ const MAX_HOOK_DEPTH: u32 = 64;
 const HOST_PRELUDE: &str = r#"
 grammar Mutsu::Slang::Host::Base {
     token end-keyword { » <!before \h* '=>'> }
+    # HLL::Grammar's `panic`: a compile-time error carrying the message.
+    method panic(*@args) { X::AdHoc.^mixin(X::Comp).new(payload => @args.join).throw }
     method block(*@) { __mutsu_slang_shim('block', self) }
     method signature(*@) { __mutsu_slang_shim('signature', self) }
     method trait(*@) { __mutsu_slang_shim('trait', self) }

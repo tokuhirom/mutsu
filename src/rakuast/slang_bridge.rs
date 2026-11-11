@@ -47,8 +47,9 @@ pub(crate) fn parse_production(rule: &str, text: &str) -> Result<Option<(usize, 
     let rule = if rule == "blorst" { "block" } else { rule };
     let parsed = crate::parser::parse_slang_shim_production(rule, text)
         .ok_or_else(|| format!("the core rule <{rule}> has no slang shim yet (ADR-15762 §2.3)"))?;
-    let Ok((rest, stmt)) = parsed else {
-        return Ok(None);
+    let (rest, stmt) = match parsed {
+        Ok(found) => found,
+        Err(e) => return fatal_or_no_match(&e),
     };
     let node = production_node(&stmt).map_err(|e| e.message.to_string())?;
     Ok(Some((text.len() - rest.len(), node)))
@@ -89,14 +90,27 @@ fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String
     )))
 }
 
+/// A failed core production: no match, unless the failure is fatal (a slang
+/// action's `$/.panic` in a production nested inside it), which ends the parse
+/// as rakudo's exception does instead of letting the slang backtrack (#16888).
+// Cost: O(1).
+fn fatal_or_no_match(e: &crate::parser::PError) -> Result<Option<(usize, Value)>, String> {
+    if e.is_fatal() {
+        Err(e.to_string())
+    } else {
+        Ok(None)
+    }
+}
+
 /// The `<statement>` core rule: the one statement at the start of `text`, as the
 /// node rakudo's `statement` action makes (not unwrapped to its expression).
 // Cost: O(n), n = size of the statement (parse and conversion).
 fn statement_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     let parsed = crate::parser::parse_slang_shim_production("statement", text)
         .ok_or_else(|| "the core rule <statement> has no slang shim".to_string())?;
-    let Ok((rest, mut stmt)) = parsed else {
-        return Ok(None);
+    let (rest, mut stmt) = match parsed {
+        Ok(found) => found,
+        Err(e) => return fatal_or_no_match(&e),
     };
     crate::whatever_curry::mark::mark_program(std::slice::from_mut(&mut stmt));
     let names = NameScope::default();

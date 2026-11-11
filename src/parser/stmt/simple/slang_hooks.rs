@@ -570,50 +570,42 @@ pub(in crate::parser) fn numish_hook(expr: Expr, source: &str) -> Result<Expr, P
 pub(crate) fn parse_slang_shim_production<'a>(
     rule: &str,
     text: &'a str,
-) -> Option<Result<(&'a str, Stmt), String>> {
+) -> Option<Result<(&'a str, Stmt), PError>> {
     match rule {
-        "block" => Some(super::block_stmt(text).map_err(|e| e.to_string())),
+        "block" => Some(super::block_stmt(text)),
         // `<routine-def=.key-origin('routine-def', 'sub')>`: the rest of a `sub`
         // declaration after its keyword, which a slang spells as it likes
         // (`lambda`, `λ`).
-        "routine-def" => Some(
-            ws(text)
-                .and_then(|(text, _)| {
-                    // After a `multi`/`proto`/`only` keyword (#16888).
-                    let multiness = super::take_slang_multiness();
-                    if multiness == Some(super::Multiness::Proto) {
-                        return crate::parser::stmt::class::proto_sub_after_keyword(text);
-                    }
-                    let multi = multiness == Some(super::Multiness::Multi);
-                    crate::parser::stmt::sub::sub_decl_body(text, multi, false, false).or_else(
-                        |named| {
-                            // No name: the anonymous forms `λ ($n) { ... }`.
-                            match crate::parser::primary::ident::sub_after_keyword(text) {
-                                Ok(Some((rest, expr))) => Ok((rest, Stmt::Expr(expr))),
-                                _ => Err(named),
-                            }
-                        },
-                    )
-                })
-                .map_err(|e| e.to_string()),
-        ),
+        "routine-def" => Some(ws(text).and_then(|(text, _)| {
+            // After a `multi`/`proto`/`only` keyword (#16888).
+            let multiness = super::take_slang_multiness();
+            if multiness == Some(super::Multiness::Proto) {
+                return crate::parser::stmt::class::proto_sub_after_keyword(text);
+            }
+            let multi = multiness == Some(super::Multiness::Multi);
+            crate::parser::stmt::sub::sub_decl_body(text, multi, false, false).or_else(|named| {
+                // No name: the anonymous forms `λ ($n) { ... }`.
+                match crate::parser::primary::ident::sub_after_keyword(text) {
+                    Ok(Some((rest, expr))) => Ok((rest, Stmt::Expr(expr))),
+                    _ => Err(named),
+                }
+            })
+        })),
         // The same for the rest of a `method` declaration (`def`, `method`).
         "method-def" => Some(
-            ws(text)
-                .and_then(|(text, _)| match super::take_slang_multiness() {
-                    Some(super::Multiness::Proto) => {
-                        crate::parser::stmt::class::proto_method_after_keyword(text)
-                    }
-                    multiness => crate::parser::stmt::sub_param::method_decl_body(
-                        text,
-                        multiness == Some(super::Multiness::Multi),
-                        false,
-                    ),
-                })
-                .map_err(|e| e.to_string()),
+            ws(text).and_then(|(text, _)| match super::take_slang_multiness() {
+                Some(super::Multiness::Proto) => {
+                    crate::parser::stmt::class::proto_method_after_keyword(text)
+                }
+                multiness => crate::parser::stmt::sub_param::method_decl_body(
+                    text,
+                    multiness == Some(super::Multiness::Multi),
+                    false,
+                ),
+            }),
         ),
         // `<statement>`: one statement, without its terminating `;`.
-        "statement" => Some(crate::parser::stmt::statement_pub(text).map_err(|e| e.to_string())),
+        "statement" => Some(crate::parser::stmt::statement_pub(text)),
         _ => None,
     }
 }
