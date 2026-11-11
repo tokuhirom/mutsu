@@ -6,7 +6,7 @@ use Test;
 # instance (#16888: EEL's `Event` has a FALLBACK, and its runner asks
 # `$type.^isa(Event)` of a type built by a custom metaclass).
 
-plan 10;
+plan 13;
 
 class E { method FALLBACK($name, |) { "FB:$name" } }
 class P is E { our $.shared = 'class-level' }
@@ -26,3 +26,18 @@ T.^add_parent(E);
 T.^compose;
 ok T.^isa(E), '.^isa through a custom metaclass';
 ok T.HOW.isa(T, E), 'HOW.isa through a custom metaclass';
+
+# A subclass of a built-in type answers the base type's methods from its
+# payload; a name the base does not have either reaches the class's FALLBACK.
+class Ev is Capture is Any {
+    has $!data;
+    method accept($d) { $!data = $d; self }
+    method FALLBACK(Str:D $name, |) {
+        return $!data{$name} if $!data ~~ Associative;
+        die X::Method::NotFound.new(:method($name), :typename(self.^name));
+    }
+}
+my $ev = Ev.new(:list([1, 2])).accept({id => 42});
+is $ev.id, 42, 'an unknown name on a Capture subclass reaches FALLBACK';
+is $ev.elems, 2, 'a Capture method is still the base type\'s';
+throws-like { Ev.new.accept(5).nope }, X::Method::NotFound, 'FALLBACK\'s own not-found';

@@ -625,7 +625,7 @@ impl Interpreter {
         &mut self,
         target: Value,
         method: &str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // Instance dispatch
         if let ValueView::Instance {
@@ -1477,18 +1477,27 @@ impl Interpreter {
                 return Ok(RuntimeError::cannot_lazy_action_failure(&format!(".{method}")));
             }
             let payload_type = crate::runtime::value_type_name(&payload);
-            return match self.call_method_with_values(payload, method, args) {
+            // A name the base type does not have either goes on to the class's
+            // own `handles *` / `FALLBACK` (EEL's `Event is Capture`, #16888).
+            let has_fallback = self.class_has_wildcard_handles_or_fallback(&class_name.resolve());
+            let payload_args = if has_fallback { args.clone() } else { std::mem::take(&mut args) };
+            match self.call_method_with_values(payload, method, payload_args) {
                 // The payload has no such method either: the error names the
                 // receiver (`I`), not the payload's type (`Int`) (#14318).
-                Err(err) if err.is_method_not_found() && err.message.contains(&format!("of type '{payload_type}'")) => {
-                    Err(make_method_not_found_error(
-                        method,
-                        &class_name.resolve(),
-                        false,
-                    ))
+                Err(err)
+                    if err.is_method_not_found()
+                        && err.message.contains(&format!("of type '{payload_type}'")) =>
+                {
+                    if !has_fallback {
+                        return Err(make_method_not_found_error(
+                            method,
+                            &class_name.resolve(),
+                            false,
+                        ));
+                    }
                 }
-                other => other,
-            };
+                other => return other,
+            }
         }
 
         // Package (type object) dispatch -- private method call
