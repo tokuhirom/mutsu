@@ -89,3 +89,27 @@ independently landable pieces; neither depends on this ADR.
   grammar stays the Rust parser.
 - **Run the override as a post-parse tree rewrite.** The wrapper changes what the parser accepts
   (EEL's own syntax inside a list), so it cannot run after the list parsed.
+
+## Amendment 1 (2026-11-11): §2.6, the scope a wrapped list runs in
+
+EEL's `method statementlist` parses a `pattern` body in its own language only when
+`$*BLOCK ~~ RakuAST::Method`: in rakudo `method-def` enters the method's scope before it
+parses the body, so `$*BLOCK` is the method being declared, with its name and the signature
+written so far (the type object when none is written).
+
+- A routine declarator of the Rust parser (`method`/`submethod`, `sub`) announces its name and
+  written signature just before its body; the statement list that body starts takes the
+  announcement and the hook sends it to the host with the request (`ToHost::Hook.block`). The
+  host binds it to `$*BLOCK` around the slang's `statementlist`; a list with no announcement (a
+  bare block nested in the body) gets a `RakuAST::Block`. The announcement is taken once, and a
+  guard drops one no list took.
+- A `routine-declarator` production's actions are replayed in the unit (ADR-17243) **after** its
+  own statement, so a replayed `$method.meta-object` finds the method the class installed. The
+  replay owner is the package the production stands in.
+- In a package body the production and its replay are one `SyntheticBlock` (a
+  `StatementSequence` node when the body is converted back from its tree); neither the method
+  hoisting of nested blocks nor a class body treats it as a scope, so the method is installed
+  where it stands.
+- An `EXPORT` hook's symbols are the importing unit's: the activation interpreter names its
+  importer `<slang importer>`, so the slang's own modules, which run in the host, keep the core
+  routines (EEL exports a `&make` of its own).

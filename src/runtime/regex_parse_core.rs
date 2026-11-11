@@ -1288,6 +1288,14 @@ impl Interpreter {
                 }
                 continue;
             }
+            // A code block (`{ ... }`, `<?{ ... }>`) is main-slang code: a bracket or
+            // quote in it (`<?{ $<open> eq '[' }>`, EEL's `eel-group`) is not regex
+            // structure. Copied through to its matching brace, quote-aware.
+            if ch == '{' && !in_char_class {
+                body.push(ch);
+                super::regex_code_block_scan::copy_regex_code_block(chars, &mut body);
+                continue;
+            }
             // `)>` is the capture-end token wherever it appears, never a group
             // close followed by a stray `>` (`/(a )> b)/` captures `ab`, #11570).
             if ch == ')' && close_ch == ')' && !in_char_class && chars.peek() == Some(&'>') {
