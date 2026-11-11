@@ -281,10 +281,18 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
                 }
                 let (replay, _) = plain(lower_statement(first)?);
                 let (kept, kept_node) = plain(lower_statement(second)?);
-                // The production's own statement first: the replayed actions see
-                // what it declared (EEL's `pattern` reads its method's
-                // `meta-object`, which rakudo's action finds already installed).
-                let mut stmts = vec![kept, replay];
+                // rakudo runs a production's actions at compile time, after the
+                // declarations it installs and before any statement runs. So a
+                // production that declares runs first and the replay sees what
+                // it declared (EEL's `pattern` reads its method's `meta-object`).
+                // Any other production runs after the replay and stays the last
+                // statement, so its value is the statement's value (Qwiratry's
+                // `givenroot $data { ... }` as a routine's last statement).
+                let mut stmts = if is_declaration(second) {
+                    vec![kept, replay]
+                } else {
+                    vec![replay, kept]
+                };
                 for rest in children {
                     stmts.push(plain(lower_statement(rest)?).0);
                 }
@@ -319,6 +327,22 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             node: Value::rakuast(Box::new(kept)),
         },
     )))
+}
+
+/// Whether a production's node is a declaration (a routine, package or
+/// variable), looking through the `Statement::Expression` that wraps one.
+// Cost: O(f), f = fields of the statement node.
+fn is_declaration(node: &Value) -> bool {
+    let ValueView::RakuAst(n) = node.view() else {
+        return false;
+    };
+    if n.class.printed_name() == "RakuAST::Statement::Expression" {
+        return n.fields.iter().any(|f| {
+            f.name == Some("expression")
+                && matches!(&f.value, RakuAstFieldValue::Node(e) if is_declaration(e))
+        });
+    }
+    super::hierarchy::does(n.class.printed_name(), "RakuAST::Declaration") == Some(true)
 }
 
 /// Whether a production's node declares a method: one a class body holds, which

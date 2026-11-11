@@ -265,12 +265,23 @@ fn method_value(
     // A method a slang production built has no recorded owner: while the
     // production's actions are replayed in the unit it is the class whose body
     // holds the production (ADR-17243).
-    let (owner, name) = crate::rakuast::declared_method(node).or_else(|| {
-        Some((
+    let (owner, name, from_replay) = match crate::rakuast::declared_method(node) {
+        Some((owner, name)) => (owner, name, false),
+        None => (
             crate::runtime::slang_action_replay::slang_replay_owner()?,
             crate::rakuast::declared_package_name(node)?,
-        ))
-    })?;
+            true,
+        ),
+    };
+    // Only a `has`-scoped method is in its class's method table: a `my` one a
+    // slang builds as a plain method object (Qwiratry's `mold`) is not, and the
+    // generic `meta-object` (compiling the node) answers it.
+    if from_replay
+        && crate::rakuast::node_accessor(node, "scope")
+            .is_some_and(|scope| scope.to_string_value() == "my")
+    {
+        return None;
+    }
     // A private method is in its class's private method table.
     if crate::rakuast::node_accessor(node, "private").is_some_and(|v| v.truthy()) {
         if let Some(method) = interp.role_private_method_object(&owner, &name) {
