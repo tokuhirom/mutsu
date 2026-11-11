@@ -76,9 +76,10 @@ fn blockoid_production(text: &str) -> Result<Option<(usize, Value)>, String> {
 /// `RakuAST::StatementList` (ADR-16888).
 // Cost: O(n), n = size of the list (parse and conversion).
 fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
-    let Some((rest, stmts)) = crate::parser::parse_slang_statementlist(text) else {
+    let Some((rest, mut stmts)) = crate::parser::parse_slang_statementlist(text) else {
         return Ok(None);
     };
+    crate::whatever_curry::mark::mark_program(&mut stmts);
     let names = NameScope::default();
     let node =
         super::statements::statement_list(&names, &stmts).map_err(|e| e.message.to_string())?;
@@ -94,9 +95,10 @@ fn statementlist_production(text: &str) -> Result<Option<(usize, Value)>, String
 fn statement_production(text: &str) -> Result<Option<(usize, Value)>, String> {
     let parsed = crate::parser::parse_slang_shim_production("statement", text)
         .ok_or_else(|| "the core rule <statement> has no slang shim".to_string())?;
-    let Ok((rest, stmt)) = parsed else {
+    let Ok((rest, mut stmt)) = parsed else {
         return Ok(None);
     };
+    crate::whatever_curry::mark::mark_program(std::slice::from_mut(&mut stmt));
     let names = NameScope::default();
     let list = super::statements::statement_list(&names, std::slice::from_ref(&stmt))
         .map_err(|e| e.message.to_string())?;
@@ -114,27 +116,45 @@ fn arglist_production(text: &str) -> Result<Option<(usize, Value)>, String> {
         return Ok(None);
     };
     let names = NameScope::default();
-    let exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
+    let mut exprs = super::view::call_args_as_exprs(&args).map_err(|e| e.message.to_string())?;
+    // The `*`s a priming curries are `WhateverCode::Argument`s, as the whole
+    // unit's parse classifies them (ADR-0033); EEL reads them (#16888).
+    crate::whatever_curry::mark::mark_call_args(&mut exprs);
     let node = super::view::arg_list(&names, &exprs).map_err(|e| e.message.to_string())?;
-    Ok(Some((
-        text.len() - rest.len(),
-        Value::rakuast(Box::new(node)),
-    )))
+    let mut node = Value::rakuast(Box::new(node));
+    super::annotate_slang_production(&mut node, &shadowed_by_unit);
+    Ok(Some((text.len() - rest.len(), node)))
+}
+
+/// Whether the code around a production declares the routine `name`
+/// (`infix:<>>`), under either spelling of its operator brackets.
+// Cost: O(s), s = parser scopes.
+fn shadowed_by_unit(name: &str) -> bool {
+    if crate::parser::is_user_declared_sub(name) {
+        return true;
+    }
+    let Some((category, rest)) = name.split_once(":<") else {
+        return false;
+    };
+    let Some(op) = rest.strip_suffix('>') else {
+        return false;
+    };
+    crate::parser::is_user_declared_sub(&format!("{category}:«{op}»"))
 }
 
 /// The `<EXPR>` core rule as a `for` reads its iterable: the expression at the
 /// start of `text`, up to the block that follows.
 // Cost: O(n), n = size of the expression (parse and conversion).
 fn for_expr_production(text: &str) -> Result<Option<(usize, Value)>, String> {
-    let Some((rest, expr)) = crate::parser::parse_slang_for_expr(text) else {
+    let Some((rest, mut expr)) = crate::parser::parse_slang_for_expr(text) else {
         return Ok(None);
     };
+    crate::whatever_curry::mark::mark_expression(&mut expr);
     let names = NameScope::default();
     let node = super::view::view_expr(&names, &expr).map_err(|e| e.message.to_string())?;
-    Ok(Some((
-        text.len() - rest.len(),
-        Value::rakuast(Box::new(node)),
-    )))
+    let mut node = Value::rakuast(Box::new(node));
+    super::annotate_slang_production(&mut node, &shadowed_by_unit);
+    Ok(Some((text.len() - rest.len(), node)))
 }
 
 /// The `<pointy-block>` core rule: a pointy block (`-> $x { ... }`) or a bare

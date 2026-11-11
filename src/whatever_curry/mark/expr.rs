@@ -79,6 +79,18 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 mark_value_leaf(item);
             }
         }
+        // `:a(*)`: the value stands alone in its parentheses, a grouping a
+        // bare `*` is a value in (raku's `Term::Whatever`); `:a(* + 1)` still
+        // curries.
+        Expr::Binary {
+            left,
+            op: TokenKind::FatArrow,
+            right,
+            form: crate::ast::BinaryForm::ColonPairValue,
+        } => {
+            mark_expr(left);
+            mark_value_leaf(right);
+        }
         Expr::Binary {
             left, op, right, ..
         } => match op {

@@ -38,6 +38,21 @@ pub(crate) fn mark_program(stmts: &mut [Stmt]) {
     mark_stmts(stmts);
 }
 
+/// The arguments of a call a slang production read with the core `<arglist>`
+/// (#16888): each is a call argument, where a bare `*` stays a value.
+// Cost: O(n), n = size of the arguments.
+pub(crate) fn mark_call_args(args: &mut [Expr]) {
+    for arg in args {
+        mark_value_leaf(arg);
+    }
+}
+
+/// One expression a slang production read with a core rule (`<EXPR>`).
+// Cost: O(n), n = size of the expression.
+pub(crate) fn mark_expression(expr: &mut Expr) {
+    mark_value_leaf(expr);
+}
+
 fn mark_stmts(stmts: &mut [Stmt]) {
     for stmt in stmts {
         stmt::mark_stmt(stmt);

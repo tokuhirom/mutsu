@@ -1950,6 +1950,19 @@ pub fn compile_time_compunit(
     Ok(Value::rakuast(Box::new(node)))
 }
 
+/// Resolve the lookups of the node a slang production's core rule built
+/// (#16888): what the parser knows the surrounding code declares (`shadowed`,
+/// an operator by its `infix:<op>` name) is not the setting's.
+// Cost: O(n), n = nodes of the tree.
+pub(crate) fn annotate_slang_production(node: &mut Value, shadowed: &dyn Fn(&str) -> bool) {
+    let ValueView::RakuAst(held) = node.view() else {
+        return;
+    };
+    let mut owned = RakuAstNode::clone(held);
+    resolve::annotate_production(&mut owned, shadowed);
+    *node = Value::rakuast(Box::new(owned));
+}
+
 /// The names of the calls of the unit tree `cu` that carry no resolution yet
 /// could still resolve to a routine the unit imports later.
 // Cost: O(n), n = nodes of the tree.

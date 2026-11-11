@@ -119,6 +119,13 @@ class Mutsu::Slang::Host::Resolver {
     method merge-generated-lexical-declaration($declaration, :$resolver) {
         @!generated.push($declaration);
     }
+    # The setting's declaration of a lexical spelled exactly `$name`: a node the
+    # parser resolved to the setting already carries that declaration, with
+    # rakudo's spelling (`&infix:<==>`, `&infix:«<=»`); another spelling names
+    # no lexical of the setting (EEL 0.3's `resolves-to-setting`, #16888).
+    # TODO: answer the declaration for the exact spelling too, once a host can
+    # make one (an instance of `RakuAST::Declaration::External::Setting`).
+    method resolve-lexical-constant-in-setting($name) { Nil }
 }
 class Mutsu::Slang::Host::CompUnit { method context() { Nil } }
 class Mutsu::Slang::Host::Actions {
