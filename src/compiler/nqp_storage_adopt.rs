@@ -1,4 +1,4 @@
-//! `nqp::bindattr($wrapper, Map, '$!storage', $storage)` on a hash wrapper the
+//! `nqp::bindattr($wrapper, Map, '$!storage', STORAGE)` on a hash wrapper the
 //! routine just made with `nqp::create(Hash)` (#16888, EEL 0.3's `EEL-hash`):
 //!
 //! ```raku
@@ -76,9 +76,10 @@ impl Compiler {
         if !is_lit(&args[1], "Map") || !is_lit(&args[2], "$!storage") {
             return false;
         }
-        let Expr::Var(storage) = &args[3] else {
-            return false;
-        };
+        // The storage may be any expression (EEL reads it straight off the
+        // capture: `nqp::getattr(self, Capture, '%!hash')`, #17413); it is
+        // evaluated once, in whichever branch runs.
+        let storage = &args[3];
         let call = |name: &str, args: Vec<Expr>| Expr::Call {
             name: crate::symbol::Symbol::intern(name),
             args,
@@ -86,7 +87,7 @@ impl Compiler {
         };
         let adopt = Expr::AssignExpr {
             name: wrapper.clone(),
-            expr: Box::new(call("nqp::hllize", vec![Expr::Var(storage.clone())])),
+            expr: Box::new(call("nqp::hllize", vec![storage.clone()])),
             is_bind: true,
         };
         let generic = call("nqp::bindattr", args.to_vec());

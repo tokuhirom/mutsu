@@ -375,3 +375,16 @@ put) leaves the capture on the detached node. So:
 Residual divergence, accepted for now and tracked in #17413: a second fresh `Hash` built over
 the same capture moves the capture to *its* node, and the first `Hash` keeps the old one. Rakudo
 has one VMHash shared by all three.
+
+## 11. Amendment (2026-11-12): a fresh wrapper adopts a storage read inline (#17413)
+
+The §10 residual is closed on the other side of the bind. The fresh-wrapper rule (#17461,
+`src/compiler/nqp_storage_adopt.rs`) rebinds a `my $x := nqp::create(Hash)` wrapper that is still
+empty to a `Hash` view of the storage's own node instead of copying the storage in. It applied
+only when the storage operand was a plain variable. EEL's `EEL-hash` reads the storage inline
+(`nqp::bindattr(nqp::decont($hash), Map, '$!storage', nqp::getattr(self, Capture, '%!hash'))`),
+so it fell to the generic copy and to the §10 capture re-pointing. The rule now takes any
+storage expression. The lowering is a ternary on the wrapper's `elems`, and each branch
+evaluates the expression once, so no operand runs twice. Every wrapper built this way names
+the capture's one node, as rakudo's VMHash is shared. The §10 re-pointing stays for the shapes
+the rule does not cover: a wrapper that is not fresh, or one that is not a plain variable.
