@@ -2066,7 +2066,15 @@ impl SubData {
             let light_bindable = !self.params.is_empty()
                 && self.param_defs.is_empty()
                 && self.params.iter().all(|p| is_light_bindable_param_name(p));
-            let light_def_params = crate::vm::light_def_params(&self.param_defs);
+            // A closure with no parameters at all (`-> { 1 }`, `sub () { 1 }`)
+            // binds nothing: an empty signature the light paths serve at
+            // exact arity 0. A call with arguments still declines (the arity
+            // test) and the general binder reports it.
+            let light_def_params = if self.params.is_empty() && self.param_defs.is_empty() {
+                Some(Vec::new().into_boxed_slice())
+            } else {
+                crate::vm::light_def_params(&self.param_defs)
+            };
             let light_call_legacy = if light_bindable {
                 None
             } else if self.param_defs.is_empty()
