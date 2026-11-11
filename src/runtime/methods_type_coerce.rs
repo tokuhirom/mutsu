@@ -35,6 +35,9 @@ impl Interpreter {
                 if Self::supply_lists_lazily(&attributes.as_map()) {
                     return self.supply_lazy_values(&target, true);
                 }
+                if let Some(seq) = Self::supply_native_lazy_values(&attributes.as_map(), true) {
+                    return Ok(seq);
+                }
                 let values =
                     if attributes.as_map().contains_key("on_demand_callback") {
                         // The same path `.list` takes: it taps the supply, so a

@@ -3780,6 +3780,12 @@ pub(crate) enum CatPullMode {
     /// instead of draining a never-ending iterator (#15305). `IterationEnd`
     /// ends the list; unlike the other modes the list may be unbounded.
     UserIterator,
+    /// `Supply.list` / `.Seq` of a supply backed directly by a native event
+    /// channel (`Supply.interval`, a socket read stream): `cat` is the id of
+    /// its receiver in `native_methods::state_supply_pull`; each pull waits for
+    /// one event, and the stream's done ends the list (#17428). An emitted
+    /// `Nil` is an element, not the end.
+    SupplyReceive,
 }
 
 /// Lazy `IO::CatHandle.lines` / `.handles` generator. Holds the live cat

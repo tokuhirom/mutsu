@@ -27,6 +27,7 @@ pub(crate) mod state_supply_child_taps;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
+mod state_supply_pull;
 mod stream_decoder;
 pub(crate) mod supply_channel;
 mod supply_collector;
@@ -42,7 +43,7 @@ pub(crate) mod thread_lock_count;
 pub(crate) use state::{
     SupplyEvent, bind_whenever_close_flag, has_supply_channel, is_whenever_closed, next_whenever_id,
     unbind_whenever_close_flag,
-    split_supply_chunks_into_lines, take_supply_channel, whenever_closed_seq,
+    split_supply_chunks_into_lines, supply_channel_is_exclusive, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 pub(crate) use proc::ProcStream;
@@ -117,6 +118,8 @@ pub(crate) use state_supplier::{SupplyTicket, reserve_supply_serialize};
 pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
 };
+pub(crate) use state_supply_pull::supply_pull_next;
+pub(in crate::runtime) use state_supply_pull::register_supply_pull;
 pub(in crate::runtime) use state_supply_collector::{
     register_supply_channel_collector, register_supply_collector, unregister_supply_collector,
 };

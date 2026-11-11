@@ -766,6 +766,33 @@ impl Interpreter {
                         .push(item);
                     continue;
                 }
+                CatPullMode::SupplyReceive => {
+                    let next = cat
+                        .as_int()
+                        .and_then(|id| crate::runtime::native_methods::supply_pull_next(id as u64));
+                    match next {
+                        Some(Ok(item)) => {
+                            list.cache
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .get_or_insert_with(Vec::new)
+                                .push(item);
+                            continue;
+                        }
+                        Some(Err(reason)) => {
+                            if let Some(spec) = list.cat_pull.as_ref() {
+                                spec.lock().unwrap_or_else(|e| e.into_inner()).done = true;
+                            }
+                            return Err(Self::runtime_error_from_supply_reason(reason));
+                        }
+                        None => {
+                            if let Some(spec) = list.cat_pull.as_ref() {
+                                spec.lock().unwrap_or_else(|e| e.into_inner()).done = true;
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
                 CatPullMode::Lines => self.call_method_with_values(cat.clone(), "get", vec![])?,
                 CatPullMode::Handles if !started => {
                     // First pull: the currently-active handle, opened on demand

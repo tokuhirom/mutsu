@@ -68,7 +68,10 @@ impl Interpreter {
         if self.env().get(name).is_some_and(Value::is_container_ref) {
             return match method {
                 "push" | "unshift" | "append" | "prepend" if !args.is_empty() => {
-                    let items = shared_lane_items(method, args);
+                    let items = match self.shared_lane_items(method, args) {
+                        Ok(items) => items,
+                        Err(err) => return Some(Err(err)),
+                    };
                     if let Err(err) = self.check_container_element_types(name, target, &items) {
                         return Some(Err(err));
                     }
@@ -127,7 +130,10 @@ impl Interpreter {
                 );
                 // Stored through a native slot, so each element wraps to the
                 // element width (`my uint8 @e; @e.push(1, 300, 2)` -> 1, 44, 2).
-                let items = shared_lane_items(method, args);
+                let items = match self.shared_lane_items(method, args) {
+                    Ok(items) => items,
+                    Err(err) => return Some(Err(err)),
+                };
                 if let Err(err) = self.check_container_element_types(name, target, &items) {
                     return Some(Err(err));
                 }
@@ -180,13 +186,32 @@ impl Interpreter {
     }
 }
 
-/// The elements a growing method adds: `push`/`unshift` take each argument as
-/// one element, `append`/`prepend` flatten (the one-argument rule).
-// Cost: O(a), a = arguments (plus the elements a flattened one holds).
-fn shared_lane_items(method: &str, args: &[Value]) -> Vec<Value> {
-    if matches!(method, "push" | "unshift") {
-        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
-    } else {
-        crate::runtime::flatten_append_args(args.to_vec())
+impl Interpreter {
+    /// The elements a growing method adds: `push`/`unshift` take each argument
+    /// as one element, `append`/`prepend` flatten (the one-argument rule). An
+    /// on-demand pull list argument (`Channel.list`, a supply's `.list`) has
+    /// nothing cached until pulled, so `append`/`prepend` read it to its end
+    /// first, as the unshared path does.
+    // Cost: O(a), a = arguments (plus the elements a flattened one holds).
+    fn shared_lane_items(
+        &mut self,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if matches!(method, "push" | "unshift") {
+            return Ok(crate::runtime::Interpreter::normalize_push_unshift_args(
+                args.to_vec(),
+            ));
+        }
+        let args = args
+            .iter()
+            .map(|arg| match arg.view() {
+                ValueView::LazyList(ll) if ll.is_finite_cat_pull() => {
+                    self.force_lazy_list_vm(&ll).map(Value::array)
+                }
+                _ => Ok(arg.clone()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(crate::runtime::flatten_append_args(args))
     }
 }

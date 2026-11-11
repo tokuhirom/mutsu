@@ -66,6 +66,12 @@ pub(super) fn grow(
             ValueView::Seq(body) if body.needs_touch() => {
                 interp.reify_seq_body(&body).map(Value::seq)
             }
+            // An on-demand pull list (`Channel.list`, a supply's `.list`)
+            // has nothing cached until pulled; it flattens like any other
+            // List argument, so read it to its end first.
+            ValueView::LazyList(ll) if ll.is_finite_cat_pull() => {
+                interp.force_lazy_list_vm(&ll).map(Value::array)
+            }
             _ => Ok(arg.clone()),
         })
         .collect::<Result<_, _>>()?;
