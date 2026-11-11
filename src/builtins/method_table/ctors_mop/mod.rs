@@ -17,6 +17,7 @@ pub(in crate::builtins::method_table) mod mu_answers;
 mod mu_base;
 mod mu_emit;
 mod mu_identity;
+pub(crate) use mu_identity::where_ as identity_where;
 mod mu_isa;
 mod mu_numeric;
 mod mu_rakuseen;

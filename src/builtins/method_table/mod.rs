@@ -77,6 +77,7 @@ mod unadmitted;
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use carried_state::owners_of as carried_state_owners_of;
+pub(crate) use ctors_mop::identity_where;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
