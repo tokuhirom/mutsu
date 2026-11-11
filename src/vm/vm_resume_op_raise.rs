@@ -14,6 +14,11 @@
 //! write. A single-element store resumes by storing the type object in the
 //! slot, and an `@` declaration's check resumes per element (#14153). `%`
 //! stores, slice stores and binds keep unwinding to the region.
+//!
+//! A sink op (`SinkPop`, `SinkPopCall`, a protected block's trailing
+//! `ThrowIfFailure`) that explodes a sunk `Failure` resumes
+//! in place too: Rakudo's `Failure.sink` `.throw`s the exception, so `.resume`
+//! continues after the statement (REPL's `rakudo-history`, #17269).
 
 use crate::opcode::{CompiledCode, OpCode};
 use crate::runtime::Interpreter;
@@ -29,6 +34,9 @@ impl Interpreter {
                 op,
                 OpCode::SetLocal(_)
                     | OpCode::SetLocalDecl { .. }
+                    | OpCode::SinkPop(..)
+                    | OpCode::SinkPopCall(_)
+                    | OpCode::ThrowIfFailure
                     | OpCode::TypeCheck(..)
                     | OpCode::IndexAssignExprNamed { .. }
                     | OpCode::IndexAssignLocal { .. }
@@ -78,6 +86,22 @@ impl Interpreter {
             }
             let resumed = self.try_catch_inline(err)?;
             self.stack.push(resumed);
+            *ip += 1;
+            return Ok(());
+        }
+        // A sunk value that explodes (an unhandled `Failure` throws its
+        // exception when sunk, as Rakudo's `Failure.sink` does with `.throw`):
+        // a sink op has already popped the value and pushes nothing, and
+        // `ThrowIfFailure` (a protected block's trailing value) only peeked at
+        // it, so a resumed handler continues with the next op either way.
+        if matches!(
+            code.ops[*ip],
+            OpCode::SinkPop(..) | OpCode::SinkPopCall(_) | OpCode::ThrowIfFailure
+        ) {
+            if !Self::is_inline_catchable(&err) || err.catch_inline_verdict().is_some() {
+                return Err(err);
+            }
+            self.try_catch_inline(err)?;
             *ip += 1;
             return Ok(());
         }

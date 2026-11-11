@@ -156,7 +156,16 @@ impl Interpreter {
                 (f.package, f.name)
             }
             Some(f) if f.is_block => return Value::NIL,
-            _ => (Symbol::intern("GLOBAL"), Symbol::intern("<unit>")),
+            // The unit's mainline is a `Block` named `<unit>` that starts at
+            // line 1 of its file, as in Rakudo (REPL's `repl` builds its
+            // header from `callframe(1).code.file` / `.line`).
+            _ => {
+                return Self::bare_block_code(
+                    Symbol::intern("<unit>"),
+                    Some(entry.file.clone()),
+                    Some(1),
+                );
+            }
         };
         Value::make_sub(
             package,
@@ -196,10 +205,17 @@ impl Interpreter {
     /// block frame (the real block body is inlined into the enclosing scope).
     // Cost: O(1).
     fn block_frame_code() -> Value {
+        Self::bare_block_code(Symbol::intern(""), None, None)
+    }
+
+    /// A defined, empty `Block` named `name`, reporting `file`/`line` as its
+    /// `.file`/`.line`.
+    // Cost: O(1).
+    fn bare_block_code(name: Symbol, file: Option<String>, line: Option<u32>) -> Value {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             fixtures: None,
             package: Symbol::intern("GLOBAL"),
-            name: Symbol::intern(""),
+            name,
             params: std::sync::Arc::new(Vec::new()),
             param_defs: std::sync::Arc::new(Vec::new()),
             body: std::sync::Arc::new(Vec::new()),
@@ -216,8 +232,8 @@ impl Interpreter {
             compiled_fns: None,
             compiled_routine: None,
             is_decl_expr_thunk: false,
-            source_line: None,
-            source_file: None,
+            source_line: line,
+            source_file: file,
             owned_captures: Vec::new(),
             authoritative_captures: Vec::new(),
             own_cell_captures: Vec::new(),
