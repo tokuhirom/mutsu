@@ -41,3 +41,55 @@ impl MixinOverrides {
             .unwrap_or_else(PoisonError::into_inner) = Some(Arc::from(name));
     }
 }
+
+/// The `+{...}` suffix of a composition's type name, memoized for the one
+/// base name it was last rendered against (`what_type_name` renders a mixin
+/// as `<base><suffix>`; the base is the composition's inner value's type, so
+/// it is the same on every call for one composition). Rendering walks every
+/// marker of the composition, sorts the roles by application order and
+/// formats each, and a `Type but Role` type object is named that way on every
+/// `=:=`, `.^name` and smartmatch against it.
+///
+/// The suffix is a function of the `overrides` markers alone, so every
+/// `&mut self` accessor of `overrides` clears the memo; the role cell and the
+/// `.^set_name` name do not take part. The lock only guards the memo slot
+/// (a composition node is shared across threads, see the module doc).
+#[derive(Debug, Default)]
+pub(crate) struct NameSuffixMemo(std::sync::Mutex<Option<(Arc<str>, Option<Arc<str>>)>>);
+
+impl NameSuffixMemo {
+    /// Drop the memo: the markers it was rendered from are about to change.
+    // Cost: O(1).
+    pub(super) fn forget(&mut self) {
+        *self.0.get_mut().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
+impl MixinOverrides {
+    /// The memoized suffix for `base`, rendering it with `render` on a miss.
+    // Cost: O(1) plus an O(|suffix|) copy on a hit; a miss is `render`.
+    pub(crate) fn name_suffix_for(
+        &self,
+        base: &str,
+        render: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        if let Some((memo_base, suffix)) = self
+            .name_suffix
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            && &**memo_base == base
+        {
+            return suffix.as_deref().map(str::to_string);
+        }
+        let suffix = render();
+        *self
+            .name_suffix
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            Some((Arc::from(base), suffix.as_deref().map(Arc::from)));
+        suffix
+    }
+}
