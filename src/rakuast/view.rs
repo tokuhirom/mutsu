@@ -5724,7 +5724,7 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
             class: RakuAstClass::TermEmptySet,
             fields: Vec::new(),
         }),
-        other => Err(unsupported(&format!("literal {other:?}"))),
+        _ => super::object_literal::view_node(v),
     }
 }
 

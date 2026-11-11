@@ -83,6 +83,7 @@ pub(crate) mod why_doc;
 mod with_branch;
 use constructor_positional::single_positional_class;
 mod core_term_names;
+mod object_literal;
 mod statements;
 mod view;
 use crate::core_type_names;

@@ -137,6 +137,7 @@ impl Interpreter {
             };
             let method = event.first().map(Value::to_string_value).unwrap_or_default();
             let match_obj = event.get(1).cloned().unwrap_or(Value::NIL);
+            let match_obj = self.unit_language_cursor(match_obj);
             if let Some(dynamics) = event.get(2).and_then(Value::as_list_items) {
                 for dynamic in dynamics.iter() {
                     if let ValueView::Pair(name, value) = dynamic.view() {
@@ -159,5 +160,37 @@ impl Interpreter {
             };
         }
         outcome
+    }
+}
+
+impl Interpreter {
+    /// A recorded Match as the replayed action sees it here: a cursor of the
+    /// host's language grammar (a type the host minted, `Raku::Grammar` by
+    /// name, unknown to this interpreter) becomes a cursor of this unit's
+    /// `Raku::Grammar` (`raku_bases`), so its methods (`panic`, #16888) answer.
+    // Cost: O(a), a = the cursor's attributes, when it is re-made; O(1) otherwise.
+    fn unit_language_cursor(&mut self, match_obj: Value) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = match_obj.view()
+        else {
+            return match_obj;
+        };
+        let name = class_name.resolve();
+        if !super::metamodel_new_type::is_minted_type_name(&name) {
+            return match_obj;
+        }
+        let Some((shown, _)) = name.split_once('\u{0}') else {
+            return match_obj;
+        };
+        if shown != "Raku::Grammar"
+            || self.registry().classes.contains_key(&*name)
+            || self.ensure_raku_bases().is_err()
+        {
+            return match_obj;
+        }
+        Value::make_instance(Symbol::intern(shown), attributes.to_map())
     }
 }
