@@ -517,7 +517,9 @@ impl Interpreter {
             && !cf.empty_sig
             && cf.param_local_slots.is_some()
             // Exclude functions with inner closures/blocks (may use phasers, closures, etc.)
-            && !cf.has_inner_subs
+            // EXPERIMENT: only closures / inner routine declarations block.
+            && !cf.declares_inner_routines
+            && cf.code.closure_compiled_codes.is_empty()
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
