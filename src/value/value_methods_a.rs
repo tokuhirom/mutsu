@@ -396,7 +396,8 @@ impl Value {
     /// the node (rakudo keeps a node's meta-object on the node).
     // Cost: O(1).
     pub(crate) fn set_rakuast_memo_meta_object(&self, meta_object: Value) {
-        self.0.with_rakuast_inplace(|node| node.origin.4 = Some(meta_object));
+        self.0
+            .with_rakuast_inplace(|node| node.origin.4 = Some(meta_object));
     }
 
     /// The in-place field setters of the RakuAST model:
