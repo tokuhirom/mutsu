@@ -298,7 +298,10 @@ impl<V> Clone for PackageKeyed<V> {
             .iter()
             .map(|(pkg, map)| {
                 let indexed = seed.is_some() && map.indexed_by.load(Ordering::Relaxed) == self.id;
-                (pkg.clone(), map.tagged_clone(if indexed { id } else { UNINDEXED }))
+                (
+                    pkg.clone(),
+                    map.tagged_clone(if indexed { id } else { UNINDEXED }),
+                )
             })
             .collect();
         drop(retired);
