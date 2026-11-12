@@ -387,10 +387,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args, is_param)) = self.extract_role_application(&right) {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args, is_param)?;
-            let result =
+            let mut result =
                 self.stamp_role_application_group(result, std::slice::from_ref(&role_name));
-            // Call BUILD submethods from the composed role
-            let result = self.call_role_build_submethods(result, &role_name)?;
+            // A type-object mixin declares a type; BUILD/TWEAK run only when
+            // an instance is constructed from it.
+            if !Self::is_type_object_role_mixin(&result) {
+                result = self.call_role_build_submethods(result, &role_name)?;
+            }
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
                 self.set_var_meta_value(&target_name, result.clone());
             }
@@ -422,14 +425,20 @@ impl Interpreter {
             }
         }
         let mut result = self.stamp_role_application_group(result, &composed_role_names);
-        // Call BUILD submethods for all composed roles
-        for role_name in &composed_role_names {
-            result = self.call_role_build_submethods(result, role_name)?;
+        if !Self::is_type_object_role_mixin(&result) {
+            for role_name in &composed_role_names {
+                result = self.call_role_build_submethods(result, role_name)?;
+            }
         }
         if let Some(target_name) = Self::var_target_name_from_value(&left) {
             self.set_var_meta_value(&target_name, result.clone());
         }
         Ok(result)
+    }
+
+    // Cost: O(1).
+    fn is_type_object_role_mixin(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Package(_)))
     }
 
     /// Stamp every role composed by ONE `but`/`does` application with a shared
