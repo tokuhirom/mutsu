@@ -410,7 +410,9 @@ impl Interpreter {
                     // One-shot cues run on the ADR-0020 worker pool (slice 1).
                     let run = move || {
                         crate::runtime::worker_pool::submit(move || {
+                            let forked_with = thread_interp.adopt_worker_warm_caches();
                             thread_interp.scheduler_run_async(params);
+                            thread_interp.leave_worker_warm_caches(forked_with);
                             state_scheduler::scheduler_task_finished();
                         });
                     };
