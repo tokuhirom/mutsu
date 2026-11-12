@@ -568,6 +568,12 @@ pub(crate) struct CatchHandlerEntry {
     /// unqualified routine names there (a module-private helper the handler
     /// calls), not in the package of the code that threw.
     pub installing_package: crate::symbol::Symbol,
+    /// Length of the readonly journal (`readonly_undo`) when the region was
+    /// entered. A handler run inline at a deeper throw site sees the readonly
+    /// marks of the installing frame, not those of the frames above it: the
+    /// thrower's `Str $reason` parameter must not make the handler's own
+    /// `my $reason` read-only.
+    pub installing_readonly_journal: usize,
     /// Present only when this region's CATCH can resume: the bytecode + range +
     /// function table needed to run the handler INLINE at a deep throw site.
     pub handler: Option<CatchHandlerCode>,

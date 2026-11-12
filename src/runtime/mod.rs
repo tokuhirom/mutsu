@@ -848,6 +848,7 @@ pub(crate) fn attribute_type_constraint(
 ///
 /// The value records *why* the name is readonly ([`ReadonlyKind`]), which is
 /// what decides the exception an assignment through it throws.
+#[derive(Clone)]
 pub(crate) struct ReadonlySet {
     map: rustc_hash::FxHashMap<Symbol, ReadonlyKind>,
     /// Whether the topic `_` is currently in `map`.
