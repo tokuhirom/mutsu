@@ -1617,7 +1617,13 @@ impl Compiler {
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
                 // The parser tags such binds with the internal `__scalar_bind`
                 // trait.
-                let scalar_bind_decont = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
+                let scalar_bind_decont = matches!(
+                    bind,
+                    Some(
+                        crate::ast::bind_decl::BindKind::Scalar
+                            | crate::ast::bind_decl::BindKind::Code
+                    )
+                );
                 // Capture whether this is a `:=` bind of an `@`/`%` container var
                 // *before* the RHS-compilation branches below consume `bind_vardecl`.
                 // Used by the `our` global store to skip the readonly check (the
