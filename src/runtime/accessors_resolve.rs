@@ -388,6 +388,8 @@ impl Interpreter {
         };
         let proto_value = self.sub_value_from_function_def(proto.clone());
         let mut next: crate::value::SubData = (**data).clone();
+        // The dispatcher belongs where its proto was declared (`&Pkg::f`).
+        next.package = proto.package;
         next.env
             .insert_sym(crate::symbol::wk::multi_dispatch_declared_proto(), proto_value);
         Value::sub_value(crate::gc::Gc::new(next))

@@ -62,6 +62,17 @@ impl Interpreter {
                     .is_some_and(|v| v.truthy());
                 // The proto's own body is `{*}` (the onlystar term, or the bare
                 // `*` the registry's copy keeps), or empty.
+                // A dispatcher built around its family's proto answers that
+                // proto's body: one doing more than dispatch is run by the call
+                // (`multi_dispatch_proto`), an only-star one is kept for
+                // introspection (`multi_dispatch_declared_proto`).
+                if data
+                    .env
+                    .get_sym(crate::symbol::wk::multi_dispatch_proto())
+                    .is_some()
+                {
+                    return Some(Value::FALSE);
+                }
                 let only_star = data.body.is_empty()
                     || super::dispatch_proto_rewrite::is_only_star_block(&data.body)
                     || matches!(data.body.as_slice(),
