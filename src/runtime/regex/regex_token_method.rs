@@ -13,6 +13,8 @@ use std::cell::{Cell, RefCell};
 use super::super::*;
 use super::regex_helpers::{CODE_ATOMS_INERT, LTM_DECLARATIVE_MODE, NamedRegexLookupSpec};
 
+type WrappedParseCall<'a> = (&'a str, &'a [Value], Option<(usize, bool)>);
+
 /// The inner regex captures of the most recent token-method call
 /// (`run_token_method_at`), identified by (pkg, name, from, to) in the
 /// original string. The custom-HOW subrule hook uses this to rebuild the full
@@ -285,7 +287,7 @@ impl Interpreter {
         name: &str,
         call_args: Vec<Value>,
         chain: &[(u64, Value)],
-        parse_call: Option<(&str, &[Value], Option<(usize, bool)>)>,
+        parse_call: Option<WrappedParseCall<'_>>,
     ) -> Result<Value, RuntimeError> {
         if chain.is_empty() {
             return Err(RuntimeError::new(
