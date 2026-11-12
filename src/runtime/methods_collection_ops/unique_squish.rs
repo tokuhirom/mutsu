@@ -82,10 +82,12 @@ pub(crate) fn distinct_adverbs(args: &[Value]) -> (Option<Value>, Option<Value>)
     let mut with_func: Option<Value> = None;
     for arg in args {
         if let Some((key, value)) = adverb_pair(arg) {
+            // `:$with` passes the variable's container; the adverb is the
+            // callable it holds.
             if key == "as" && value.truthy() {
-                as_func = Some(value.clone());
+                as_func = Some(value.deref_container());
             } else if key == "with" && value.truthy() {
-                with_func = Some(value.clone());
+                with_func = Some(value.deref_container());
             }
         }
     }
