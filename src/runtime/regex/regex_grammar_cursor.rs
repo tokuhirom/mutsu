@@ -154,7 +154,13 @@ impl Interpreter {
             Some(r) if matches!(r.view(), ValueView::Instance { .. }) => {
                 self.try_compiled_method_or_interpret(r.clone(), "new", Vec::new())?
             }
-            _ => self.dispatch_new(Value::package(pkg), Vec::new())?,
+            // `G.new` built as a call site builds it: the native default
+            // constructor when the grammar's plan admits it (no user `new`,
+            // BUILD or TWEAK in the way), the general `dispatch_new` otherwise.
+            _ => match self.try_native_default_construct(pkg, &[]) {
+                Some(built) => built?,
+                None => self.dispatch_new(Value::package(pkg), Vec::new())?,
+            },
         };
         if let ValueView::Instance { attributes, .. } = invocant.view() {
             attributes.insert("orig", Value::str(text.to_string()));

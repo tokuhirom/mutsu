@@ -49,6 +49,16 @@ impl Interpreter {
         if !self.registry().classes.contains_key(cn_resolved) {
             return false;
         }
+        // A grammar's built-in ancestors (`Grammar is Match is Capture`) are
+        // not registered classes and declare nothing the default constructor
+        // builds: a grammar instance is a plain instance of its class, which
+        // `dispatch_new` assembles the same way. (A `class M is Match` is not
+        // a grammar and keeps its Match-shaped construction.)
+        let grammar_bases = self.class_is_grammar(cn_resolved);
+        let builtin_base = |name: &str| {
+            matches!(name, "Any" | "Mu" | "Cool")
+                || (grammar_bases && matches!(name, "Grammar" | "Match" | "Capture"))
+        };
         // A same-named attribute redeclared across the hierarchy (Parent and Child
         // both `has $.x`) needs per-class private storage (`"Class\0attr"` keys),
         // which only the full constructor path builds. Such classes are rare, so
@@ -103,7 +113,7 @@ impl Interpreter {
             if cls == "Exception" {
                 is_exception = true;
             }
-            if cls == "Any" || cls == "Mu" || cls == "Cool" {
+            if builtin_base(cls.as_str()) {
                 continue;
             }
             // Single guard for the whole eligibility check (used by both the
@@ -156,9 +166,7 @@ impl Interpreter {
                 // parametric role's type arguments, the Baggy/Setty storage --
                 // is refused below and before the loop.
                 && class_def.parents.iter().all(|p| {
-                    p == "Any"
-                        || p == "Mu"
-                        || p == "Cool"
+                    builtin_base(p)
                         || registry.classes.contains_key(p)
                         || Self::native_ctor_composable_role(&registry, p)
                         // The parametric role a pun is composed from: its type
