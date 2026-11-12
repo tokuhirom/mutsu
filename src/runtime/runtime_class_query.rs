@@ -434,6 +434,12 @@ impl Interpreter {
     /// calling frame — visible here only because the env is flattened — must never
     /// shadow them.
     pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
+        // A program with no class-body statics anywhere has nothing to
+        // inject; every compiled method call comes here, so skip the
+        // ancestor walk and its allocation (#17331).
+        if self.lexicals.package_lexicals.is_empty() {
+            return;
+        }
         // A class nested in another sees the enclosing class bodies' `my`
         // statics too (outermost first, so an inner declaration shadows).
         let enclosing: Vec<Symbol> = crate::qualified::package_ancestors(Symbol::intern(class_name))
