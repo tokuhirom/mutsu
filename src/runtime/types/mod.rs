@@ -827,6 +827,13 @@ impl Interpreter {
                     // read finds the new one and reports the pre-call contents.
                     // Unwrap it and write the value through the caller's cell too.
                     if let ValueView::ContainerRef(incoming) = updated.view() {
+                        // The param may hold the caller's binding cell itself (or
+                        // another cell over the same container): its value cell is
+                        // then `arc`, and storing the binding's content -- a
+                        // reference to `arc` -- into `arc` made the cell contain
+                        // itself, a cycle every later read and every thread spawn
+                        // walked forever (ParaSeq's batches).
+                        let incoming = Self::value_cell_of(&incoming);
                         if crate::gc::Gc::ptr_eq(&arc, &incoming) {
                             continue;
                         }
