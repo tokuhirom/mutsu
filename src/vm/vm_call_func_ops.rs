@@ -346,6 +346,45 @@ impl Interpreter {
         )
     }
 
+    /// The lexical `&name` that shadows a registered routine at this call site.
+    /// The sink decision must inspect this same callable after dispatch.
+    // Cost: O(1) for a name absent from the routine index; otherwise bounded
+    // registry and lexical-binding probes.
+    pub(crate) fn lexical_amp_override_for_call(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<Value> {
+        let name = Self::const_str(code, name_idx);
+        let name_sym = code.const_sym(name_idx);
+        // Only look for an override when there is a package routine to shadow.
+        // A nearer `sub name` wins over the outer `&name` (#13855).
+        if !self.fn_base_name_registered_sym(name, name_sym)
+            || code.routine_shadowed_calls.contains(&name_sym)
+            || !self.has_declared_function_cached_sym(name, name_sym)
+            || self.has_proto_cached_sym(name, name_sym)
+            || self.has_multi_candidates_cached_sym(name_sym)
+        {
+            return None;
+        }
+        // An exported `&name` is visible throughout the importing unit;
+        // a caller's `&name` is visible here only when this code captured it.
+        let is_export_override = self.module.export_amp_override_names.contains(&name_sym);
+        let amp_sym = dispatch_key::amp_sym(name_sym);
+        let candidate = code
+            .local_slots_of(amp_sym)
+            .first()
+            .map(|&slot| self.locals[slot as usize].clone())
+            .or_else(|| {
+                let captured = code.free_var_syms.contains(&amp_sym);
+                (is_export_override || captured)
+                    .then(|| self.env().get_sym(amp_sym).cloned())
+                    .flatten()
+                    .filter(|v| captured || !Self::callable_declared_in_unit_of(v, code))
+            });
+        candidate.filter(|v| Self::env_callable_is_lexical_override(v, name))
+    }
+
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
         if Self::is_control_flow_function_name(name)
             || Self::is_interpreter_carrier_function(name)
@@ -1369,62 +1408,7 @@ impl Interpreter {
         // slot (e.g. from a `&foo` parameter binding) or in the env — it
         // shadows package-level subs. Skip the fast path and dispatch via
         // the lexical callable below.
-        let lexical_override: Option<Value> = {
-            let name_str = Self::const_str(code, name_idx);
-            let name_sym = code.const_sym(name_idx);
-            // Only look for a lexical override when there is actually a
-            // same-named package sub to shadow. When no package sub exists,
-            // the normal dispatch path already handles lexical `&name`
-            // bindings correctly (via its own env lookup), and avoiding
-            // this branch prevents regressions where dispatching through
-            // `call_sub_value` behaves differently (e.g. dynamic `$*ERR`
-            // handling for `note` inside a caller-provided block).
-            // Pure disjunction — every arm yields `None` — so order it
-            // cheapest-first: the base-name negative gate (#5574) short-
-            // circuits the whole check for a builtin like `make` (no registry
-            // key carries the name, so `has_function` is false), and the
-            // multi-candidates full-map scan runs last, memoized.
-            if !self.fn_base_name_registered_sym(name_str, name_sym)
-                // A nearer `sub name` shadows the outer `&name` at this call
-                // site (#13855).
-                || code.routine_shadowed_calls.contains(&name_sym)
-                || !self.has_declared_function_cached_sym(name_str, name_sym)
-                || self.has_proto_cached_sym(name_str, name_sym)
-                || self.has_multi_candidates_cached_sym(name_sym)
-            {
-                None
-            } else {
-                // A `sub EXPORT`-installed `&name` override (#8746) is a
-                // lexical import of the WHOLE importing compunit, not a value
-                // inherited from an unrelated caller frame — unlike the
-                // free-var case just below, it must be visible to a bareword
-                // call anywhere within that unit's reach, so it is not gated
-                // by `free_var_syms`.
-                let is_export_override = self.module.export_amp_override_names.contains(&name_sym);
-                // `&name` is fixed by the call site: memoized per name rather
-                // than rebuilt and re-interned on every call (#10961).
-                let amp_sym = dispatch_key::amp_sym(name_sym);
-                // First check local slots (parameter bindings live here).
-                let candidate = code
-                    .local_slots_of(amp_sym)
-                    .first()
-                    .map(|&slot| self.locals[slot as usize].clone())
-                    .or_else(|| {
-                        // An inherited `&name` in the live caller environment is
-                        // not automatically a lexical binding of this closure.
-                        // Only use it when this code explicitly captured that
-                        // code variable; otherwise a callback invoked by a
-                        // method with a same-named `&` parameter can recursively
-                        // replace the callback's own bare `name(...)` call.
-                        let captured = code.free_var_syms.contains(&amp_sym);
-                        (is_export_override || captured)
-                            .then(|| self.env().get_sym(amp_sym).cloned())
-                            .flatten()
-                            .filter(|v| captured || !Self::callable_declared_in_unit_of(v, code))
-                    });
-                candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
-            }
-        };
+        let lexical_override = self.lexical_amp_override_for_call(code, name_idx);
         let has_lexical_override = lexical_override.is_some();
         // Early fast path: for cached zero-arg compiled functions, skip ALL the
         // expensive arg processing, CALL-ME check, wrap chain check, autothread, etc.
