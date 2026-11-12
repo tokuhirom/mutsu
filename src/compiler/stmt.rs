@@ -3658,16 +3658,24 @@ impl Compiler {
                 // must not raise (`given 5 { when 6 { $^c }; say "no match" }`
                 // prints "no match" in raku).
                 self.emit_inlined_body_placeholder_binds(body, ArgSupply::None);
-                for (i, s) in body.iter().enumerate() {
-                    let is_last = i == body.len() - 1;
-                    if is_last {
-                        self.rw_tail_branch = rw_branch;
-                        if !self.compile_when_tail_stmt(s) {
+                // A body with ENTER/LEAVE/KEEP/UNDO phasers is a real block
+                // scope: its LEAVE fires however the clause exits (a matched
+                // body succeeds, or dies), with the body's value still left
+                // for the `When` op to succeed with -- as an `if` branch does.
+                if Self::has_block_enter_leave_phasers(body) {
+                    self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
+                } else {
+                    for (i, s) in body.iter().enumerate() {
+                        let is_last = i == body.len() - 1;
+                        if is_last {
+                            self.rw_tail_branch = rw_branch;
+                            if !self.compile_when_tail_stmt(s) {
+                                self.compile_stmt(s);
+                            }
+                            self.rw_tail_branch = false;
+                        } else {
                             self.compile_stmt(s);
                         }
-                        self.rw_tail_branch = false;
-                    } else {
-                        self.compile_stmt(s);
                     }
                 }
                 self.patch_nested_block_state_reset(state_reset);
@@ -3698,6 +3706,9 @@ impl Compiler {
                 if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
+                } else if Self::has_block_enter_leave_phasers(body) {
+                    // As for a `when` body: a phaser block scope.
+                    self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
                 } else {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;

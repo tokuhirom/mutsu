@@ -17,3 +17,10 @@ Two wrong answers that Red's migration planner and query compiler ran into:
   through that wrapper as it already did through a mixin.
 
 Together they let Red's t/137, t/139 and t/141 migration tests pass (#17513).
+
+A third fix from the same run: a `when`/`default` body with `ENTER`/`LEAVE`
+phasers was compiled inline, so its `LEAVE` never ran, neither on a normal exit
+nor when the body died. Red finishes its SQLite `BEGIN IMMEDIATE` statement in
+such a `LEAVE`; the unfinished statement then made the later `COMMIT` fail with
+"SQL statements in progress" (t/132). The body is now a phaser block scope, as
+an `if` branch with phasers already was.
