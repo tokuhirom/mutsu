@@ -14,14 +14,18 @@ impl Interpreter {
     /// `::?CLASS` is the frame record's, not an env key.
     // Cost: O(b), b = the method's bindings.
     pub(super) fn apply_method_role_bindings(&mut self, method_def: &crate::runtime::MethodDef) {
-        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
-            for (name, value) in bindings {
-                if name != "?CLASS" {
-                    // Interned in place: `insert` would clone the name into a
-                    // `String` only to intern it.
-                    let sym = Symbol::intern(name);
-                    self.env_mut().insert_sym_noting(sym, value.clone());
-                }
+        let Some(bindings) = method_def.role_param_bindings.as_deref() else {
+            return;
+        };
+        // The names were interned once per def (`MethodDef::role_binding_syms`).
+        let syms = method_def.role_binding_syms();
+        for (i, (name, value)) in bindings.iter().enumerate() {
+            if name != "?CLASS" {
+                let sym = match syms {
+                    Some(syms) => syms[i],
+                    None => Symbol::intern(name),
+                };
+                self.env_mut().insert_sym_noting(sym, value.clone());
             }
         }
     }
