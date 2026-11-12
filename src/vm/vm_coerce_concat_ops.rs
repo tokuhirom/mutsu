@@ -465,6 +465,22 @@ impl Interpreter {
         if matches!(v.view(), ValueView::Str(_)) {
             return Ok(v);
         }
+        // An exact `ObjAt` / `ValueObjAt` instance (`.WHICH`) is its identity
+        // text unless the program gave the class a stringifier. None of the
+        // probes below (Proxy, Seq, Failure, Nil, mixin, list, subclass) can
+        // claim one, so it is answered before them: Monad keys its type cache
+        // by `M.WHICH ~ '|' ~ T.WHICH`, two of these per key (#17331).
+        if let ValueView::Instance { class_name, .. } = v.view()
+            && (class_name == "ObjAt" || class_name == "ValueObjAt")
+        {
+            let cn = class_name.as_str();
+            if !self.has_user_method(cn, "Stringy")
+                && !self.has_user_method(cn, "Str")
+                && let Some(text) = crate::builtins::method_table::objat_str(&v)
+            {
+                return Ok(text);
+            }
+        }
         // ADR-0058: a string context renders a Seq's elements, so a
         // still-deferred `.map` must run its callback first.
         self.reify_nested_map_grep_for_read(&v)?;

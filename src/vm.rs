@@ -417,6 +417,7 @@ mod vm_sink_lazy_pipe;
 pub(crate) mod vm_smart_match;
 mod vm_smartmatch_ops;
 pub(crate) mod vm_smartmatch_sync;
+mod vm_smartmatch_type_lane;
 mod vm_smartmatch_value_ops;
 pub(crate) mod vm_stack_guard;
 mod vm_stash_bound_store;

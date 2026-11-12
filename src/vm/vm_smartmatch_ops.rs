@@ -6,7 +6,7 @@ impl Interpreter {
     /// direct scalar-variable read. Native values are not carried through the
     /// NaN box as a distinct `Value` tag: their declared container type is the
     /// provenance that distinguishes `my int $x; $x ~~ int` from `5 ~~ int`.
-    fn direct_native_lhs_match(
+    pub(super) fn direct_native_lhs_match(
         &self,
         lhs_var: Option<&String>,
         boxed_native: bool,
@@ -84,6 +84,19 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         use crate::opcode::SmartMatchLhs;
+        // A bare type name on the right is a type test with nothing to
+        // topicalize (`vm_smartmatch_type_lane.rs`).
+        if !rhs_is_bare_topic
+            && self.try_smart_match_type_lane(
+                code,
+                ip,
+                rhs_end,
+                lhs,
+                (negate, rhs_is_match_regex),
+            )?
+        {
+            return Ok(());
+        }
         let lhs_var: Option<&String> = match lhs {
             Some(SmartMatchLhs::Var { name, .. }) => Some(name),
             _ => None,
