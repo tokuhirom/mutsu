@@ -2678,7 +2678,9 @@ impl Interpreter {
     }
 }
 
-/// Whether `value`, a plain `Int` / `Num` / `Str` / `Bool`, trivially satisfies
+/// Whether `value`, a plain `Int` / `Num` / `Str` / `Bool` (or a built-in
+/// aggregate, pair or code value, for the few names those always are),
+/// trivially satisfies
 /// `constraint` because the constraint names one of the value's own core types
 /// (optionally `:D`): `Int:D` / `Any:D` / `Cool` for an `Int` argument, the
 /// check a CArray element store makes three times per call. Only ever answers
@@ -2699,6 +2701,14 @@ fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
             "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "num"
         ),
         ValueView::Str(_) => matches!(name, "Str" | "Cool" | "Any" | "Mu"),
+        // A built-in aggregate, pair or code value is a concrete `Any` (never a
+        // `Junction`, which has its own view); a code value is `Callable`.
+        // These are what a binder asks of an untyped or `&`-sigil parameter.
+        ValueView::Array(..) | ValueView::Hash(_) => matches!(name, "Any" | "Mu"),
+        ValueView::Pair(..) | ValueView::ValuePair(..) => matches!(name, "Pair" | "Any" | "Mu"),
+        ValueView::Sub(_) | ValueView::Routine { .. } => {
+            matches!(name, "Callable" | "Any" | "Mu")
+        }
         _ => false,
     }
 }
