@@ -396,6 +396,44 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::any_visible_candidate_of`] over the running code's package
+    /// context, remembered per bare-name context and deciding units while the
+    /// functions map and the protos stay exactly as they were: a call of an
+    /// imported multi probed every candidate's visibility on each call
+    /// (#15786). `multi_fn` keeps the two probes that ask it apart.
+    // Cost: O(1) on a hit; `any_visible_candidate_of` on a miss.
+    pub(crate) fn scoped_family_visible(
+        &mut self,
+        name: &str,
+        base_keys: Option<Arc<[Symbol]>>,
+        multi_fn: bool,
+    ) -> bool {
+        let sym = Symbol::intern(name);
+        let generation = (
+            self.caches.fn_resolve_gen,
+            self.registry().proto_generation(),
+        );
+        if self.caches.scoped_visible_memo_gen != generation {
+            self.caches.scoped_visible_memo.clear();
+            self.caches.scoped_visible_memo_gen = generation;
+        }
+        let key = (
+            self.bare_name_ctx_key(sym),
+            self.current_unit,
+            self.executing_unit_sym(),
+            self.module.operator_import_gen,
+            multi_fn,
+        );
+        if let Some(&visible) = self.caches.scoped_visible_memo.get(&key) {
+            return visible;
+        }
+        let keys = base_keys.unwrap_or_else(|| self.fn_keys_for_base(name));
+        let packages = self.bare_name_packages_syms();
+        let visible = self.any_visible_candidate_of(Some(&keys), &packages, name);
+        self.caches.scoped_visible_memo.insert(key, visible);
+        visible
+    }
+
     /// Whether the `proto` of a scoped `name` that the bare-name search finds
     /// in `packages` is visible to the running code. The proto carries its
     /// declaring compunit like any candidate.

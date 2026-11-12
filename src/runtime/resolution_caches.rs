@@ -266,6 +266,13 @@ pub(crate) struct ResolutionCaches {
     pub(crate) proto_winner_memo: crate::runtime::ProtoWinnerMemo,
     /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
     pub(crate) proto_winner_memo_gen: (u64, u64),
+    /// Memo of [`crate::runtime::Interpreter::scoped_family_visible`]: whether a
+    /// compunit-scoped family has a candidate the running code can see, keyed
+    /// by the bare-name context and the units that decide visibility, and
+    /// dropped wholesale when `(fn_resolve_gen, proto_gen)` moves.
+    pub(crate) scoped_visible_memo: crate::runtime::ScopedVisibleMemo,
+    /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
+    pub(crate) scoped_visible_memo_gen: (u64, u64),
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
     ///

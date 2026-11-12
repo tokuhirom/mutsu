@@ -869,11 +869,8 @@ impl Interpreter {
             }
         };
         in_registry
-            && (!self.operator_has_import_scope(name) || {
-                let keys = base_keys.unwrap_or_else(|| self.fn_keys_for_base(name));
-                let packages = self.bare_name_packages_syms();
-                self.any_visible_candidate_of(Some(&keys), &packages, name)
-            })
+            && (!self.operator_has_import_scope(name)
+                || self.scoped_family_visible(name, base_keys, true))
     }
 
     /// [`Self::has_multi_function`] for a `&self` caller, which cannot fill the
