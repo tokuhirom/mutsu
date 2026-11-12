@@ -679,6 +679,24 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // An instance of a user class against a nominal user type: answered
+        // per (class, type) while the registry is unchanged (#17331).
+        if let Some(key) = self.type_matches_memo_key(value, constraint) {
+            return self.memoized_instance_type_check(key, |vm| {
+                vm.type_matches_value_why_uncached(constraint, value, why)
+            });
+        }
+        self.type_matches_value_why_uncached(constraint, value, why)
+    }
+
+    /// [`Self::type_matches_value_why`] without the instance memo.
+    // Cost: as `type_matches_value`.
+    pub(crate) fn type_matches_value_why_uncached(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
         if self.type_matches_value_why_core(constraint, value, why) {
             return true;
         }
