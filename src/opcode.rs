@@ -373,6 +373,13 @@ pub(crate) struct ForLoopSpec {
     /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
     /// implicit-topic loop (a named parameter does not rebind `$_`).
     pub(crate) topic_local: Option<u32>,
+    /// Local slot of the hidden per-iteration batch (`__mutsu_for_chunk`) a
+    /// multi-parameter loop (`-> $k, $v`) hands to its parameter binds. The
+    /// binds are compiled into the body prefix and read the slot; without it
+    /// the batch went through `env` by name, a hash insert per iteration and a
+    /// chain walk per read (#17530: ~35k instructions per iteration of a
+    /// `for %h.kv -> $k, $v { }` body). `None` keeps the by-name env key.
+    pub(crate) chunk_local: Option<u32>,
     /// Local slot that owns the iterable container (`$b` in `for $b.pairs`,
     /// `%h` in `for %h.values`). Pair/value alias writeback reaches this source
     /// through env today, so ADR-0018 keeps exactly this slot synchronized.
