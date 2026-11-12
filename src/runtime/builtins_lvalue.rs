@@ -907,7 +907,7 @@ impl Interpreter {
         let Some(name) = args.first().map(Value::to_string_value) else {
             return Ok(Value::TRUE);
         };
-        Ok(Value::bool(self.var_is_writable(&name)))
+        Ok(Value::truth(self.var_is_writable(&name)))
     }
 
     /// The one implementation behind `__mutsu_var_is_writable` and the
