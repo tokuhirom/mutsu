@@ -51,21 +51,35 @@ impl Interpreter {
     /// `$!log-h.print` died "Invalid IO::Handle". Only objects are descended:
     /// a list or hash in `env` can be arbitrarily large, and this runs per
     /// spawn.
-    // Cost: O(a^depth), a = attributes per object reached (depth is small).
+    // Cost: O(a^depth * w), a = attributes per object reached (depth is small),
+    // w = container layers around a value (bounded by MAX_UNWRAP).
     pub(crate) fn collect_handle_ids(
         value: &Value,
         depth: u32,
         out: &mut std::collections::HashSet<usize>,
     ) {
-        if let Some(id) = Self::handle_id_from_value(value) {
-            out.insert(id);
-            return;
+        // Scalar wrappers and container references are unwrapped in a loop,
+        // not by recursion: each layer used to cost a stack frame, so a long or
+        // cyclic chain (#17483's self-containing cell, which ParaSeq's batches
+        // built) overflowed the stack on every spawn.
+        // A cell reachable from itself is a bug elsewhere, but must not hang
+        // every spawn: past `MAX_UNWRAP` layers the walk gives up, as
+        // `Value::with_deref`'s chain walk does.
+        const MAX_UNWRAP: usize = 4096;
+        let mut value = value.clone();
+        for _ in 0..MAX_UNWRAP {
+            if let Some(id) = Self::handle_id_from_value(&value) {
+                out.insert(id);
+                return;
+            }
+            let next = match value.view() {
+                ValueView::Scalar(inner) => inner.clone(),
+                ValueView::ContainerRef(_) => value.deref_container(),
+                _ => break,
+            };
+            value = next;
         }
         match value.view() {
-            ValueView::Scalar(inner) => Self::collect_handle_ids(inner, depth, out),
-            ValueView::ContainerRef(_) => {
-                Self::collect_handle_ids(&value.deref_container(), depth, out)
-            }
             ValueView::Instance { attributes, .. } if depth > 0 => {
                 // The read guard is released before recursing: an object
                 // graph that reaches this instance again (a parent holding
