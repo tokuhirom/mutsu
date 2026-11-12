@@ -49,6 +49,10 @@ OPCODE_RS = "src/opcode.rs"
 DISPATCH_RS = "src/vm/vm_exec_dispatch.rs"
 NANBOX_RS = "src/value/nanbox/mod.rs"
 CATALOG_RS = "src/builtin_types/catalog.rs"
+CATALOG_ROW_FILES = (
+    "src/builtin_types/catalog_rows_a.rs",
+    "src/builtin_types/catalog_rows_b.rs",
+)
 CONTENT_DIR = os.path.join(REPO_ROOT, "site", "content")
 ISSUES_URL = "https://github.com/tokuhirom/mutsu/issues"
 
@@ -284,26 +288,29 @@ def parse_kinds() -> list[dict]:
 
 
 def parse_type_catalog() -> list[dict]:
-    lines = read_lines(CATALOG_RS)
-    text = "\n".join(lines)
-    start = text.index("static CATALOG:")
-    end = text.index("\n];", start)
     rows = []
     row_re = re.compile(
         r'row!\(\s*"([^"]+)",\s*mro:\s*\[((?:\s*"[^"]*"\s*,?)*)\s*\],'
         r'\s*roles:\s*\[((?:\s*"[^"]*"\s*,?)*)\s*\],\s*owner:\s*"([^"]*)"',
         re.S)
-    for m in row_re.finditer(text, start, end):
-        rows.append({
-            "name": m.group(1),
-            "mro": re.findall(r'"([^"]*)"', m.group(2)),
-            "roles": re.findall(r'"([^"]*)"', m.group(3)),
-            "def_line": text.count("\n", 0, m.start()) + 1,
-        })
-    declared = len(re.findall(r"\brow!\(", text[start:end]))
-    if declared != len(rows):
-        raise SystemExit(f"gen-internals-manifest: parsed {len(rows)} of the {declared} "
-                         f"row!(...) entries in {CATALOG_RS}; has the row syntax changed?")
+    for path in CATALOG_ROW_FILES:
+        text = "\n".join(read_lines(path))
+        start = text.index("static CATALOG_")
+        end = text.index("\n];", start)
+        parsed = 0
+        for m in row_re.finditer(text, start, end):
+            rows.append({
+                "name": m.group(1),
+                "mro": re.findall(r'"([^"]*)"', m.group(2)),
+                "roles": re.findall(r'"([^"]*)"', m.group(3)),
+                "def_file": path,
+                "def_line": text.count("\n", 0, m.start()) + 1,
+            })
+            parsed += 1
+        declared = len(re.findall(r"\brow!\(", text[start:end]))
+        if declared != parsed:
+            raise SystemExit(f"gen-internals-manifest: parsed {parsed} of the {declared} "
+                             f"row!(...) entries in {path}; has the row syntax changed?")
     return rows
 
 
