@@ -7131,25 +7131,38 @@ impl Interpreter {
             // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
             // and one probe of the chunk's name index. One-shot per declaration.
             OpCode::RegisterPackageMy { name_idx } => {
-                let name = Self::const_str(code, *name_idx).to_string();
+                // The declaration's storage name (`Name\0<decl_id>`, #17477) and
+                // the name the program spells.
+                let storage = Self::const_str(code, *name_idx).to_string();
+                let name = crate::value::user_facing_type_name(&storage).into_owned();
                 // Before the binding below overwrites an enclosing same-named one:
                 // a branch/loop body gives it back on exit (#10594).
                 self.save_lexical_type_binding_for_scope_exit(&name);
                 self.shadow_suppressed_type_with_package(&name);
-                let pkg_val = Value::package(Symbol::intern(&name));
-                if !self.qualified_identity_binding_is_redundant(&name, &name) {
+                let pkg_val = Value::package(Symbol::intern(&storage));
+                if !self.qualified_identity_binding_is_redundant(&name, &storage) {
                     self.env_mut().insert(name.clone(), pkg_val.clone());
                 }
-                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
-                    .insert(name.clone());
+                {
+                    let declared =
+                        crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages);
+                    declared.insert(name.clone());
+                    if storage != name {
+                        declared.insert(storage.clone());
+                    }
+                }
                 self.update_local_if_exists(code, &name, &pkg_val);
+                if storage != name {
+                    self.bind_lexical_type_keys(&storage, &[name.as_str()]);
+                    self.adopt_lexical_type_metadata(&storage);
+                }
                 // Mark as my-scoped so the package is hidden from global
                 // lookups and package stash resolution outside its scope.
-                self.mark_my_scoped_package_item(name.clone());
-                self.record_lexical_package_unit(code.const_sym(*name_idx));
+                self.mark_my_scoped_package_item(storage.clone());
+                let name_sym = Symbol::intern(&name);
+                self.record_lexical_package_unit(name_sym);
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
-                let name_sym = code.const_sym(*name_idx);
                 if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
                     set.insert(name_sym);
                 }

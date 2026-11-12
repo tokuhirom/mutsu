@@ -6466,12 +6466,9 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
     };
     let Stmt::Package {
         name,
-        kind,
         is_unit: true,
-        is_my,
         body,
-        custom_traits,
-        spans,
+        ..
     } = declaration
     else {
         return None;
@@ -6479,15 +6476,11 @@ pub(super) fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
     if body.iter().any(|stmt| !stmt.is_marker()) {
         return None;
     }
-    let package = Stmt::Package {
-        name: *name,
-        body: body.iter().cloned().chain(rest.iter().cloned()).collect(),
-        custom_traits: custom_traits.clone(),
-        kind: *kind,
-        is_unit: true,
-        is_my: *is_my,
-        spans: super::unit_span::package_spans(spans.as_deref(), rest),
-    };
+    let mut package = declaration.clone();
+    if let Stmt::Package { body, spans, .. } = &mut package {
+        body.extend(rest.iter().cloned());
+        *spans = super::unit_span::package_spans(spans.as_deref(), rest);
+    }
     if header.adverbs.is_empty() && header.export_tags.is_none() {
         return Some(package);
     }

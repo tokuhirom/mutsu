@@ -168,7 +168,14 @@ impl Interpreter {
         name_idx: u32,
         tags_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let module = Self::const_str(code, name_idx);
+        // `import Foo` of a lexical `my module Foo` names that declaration,
+        // stored under its own name (`Foo\0<decl_id>`, #17477).
+        let spelled = Self::const_str(code, name_idx);
+        let lexical = self.env().get(spelled).and_then(|v| match v.view() {
+            ValueView::Package(pkg) if pkg.with_str(|p| p.contains('\u{0}')) => Some(pkg.resolve()),
+            _ => None,
+        });
+        let module = lexical.as_deref().unwrap_or(spelled);
         let tags = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))
             .and_then(|v| match v.view() {

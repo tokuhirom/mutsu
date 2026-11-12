@@ -414,6 +414,15 @@ impl Interpreter {
             self.stack.push(val);
             return;
         }
+        // `@::("R::bar")` where `R` is a lexical package bound to its storage
+        // name (`R\0<id>`, #17477): the variable lives under that name.
+        let name = if crate::qualified::is_qualified_str(&name)
+            && let Some(real) = self.resolve_package_alias_prefix(&name)
+        {
+            real
+        } else {
+            name
+        };
         // For $::("x"), look up the bare name "x" (scalars are stored without sigil).
         // For @::("x"), look up "@x" (arrays are stored with sigil).
         // For %::("x"), look up "%x" (hashes are stored with sigil).

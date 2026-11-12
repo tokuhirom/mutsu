@@ -153,6 +153,25 @@ impl Interpreter {
     /// ([`Self::code_is_loaded_module_code`]): the program's type-only keys
     /// are no declaration of its frame.
     // Cost: as `push_bare_word_value`.
+    /// `real`, a qualified name under a lexical package's storage name
+    /// (`Pk\0<id>::E`, #17477): the type, package or enum value it names.
+    // Cost: O(1) expected, a few registry and env probes.
+    fn lexical_package_member(&self, real: &str) -> Option<Value> {
+        let base = crate::runtime::types::strip_type_smiley(real).0;
+        if self.has_type(base) || self.is_known_package(base) {
+            return Some(Value::package(Symbol::intern(real)));
+        }
+        let (enum_name, variant) = crate::qualified::split_qualified(Symbol::intern(real))?;
+        if self.has_enum_variant(enum_name.as_str(), variant.as_str()) {
+            return self
+                .env()
+                .get(real)
+                .cloned()
+                .or_else(|| self.get_our_var(real).cloned());
+        }
+        None
+    }
+
     pub(crate) fn push_bare_word_value_in(
         &mut self,
         name_sym: Symbol,
@@ -1051,6 +1070,10 @@ impl Interpreter {
                 // in a module file, read from a sub of that file, whose frame
                 // carries none of the package's `our` members).
                 && !self.is_declared_package(name)
+                // A member of a lexical package, under its storage name (#17477).
+                && self
+                    .resolve_package_alias_prefix(name)
+                    .is_none_or(|real| self.lexical_package_member(&real).is_none())
                 // `UNIT::errno` / `MY::errno` naming a lexical class of that
                 // compunit: the pseudo-package selects the scope, the bare
                 // name is the type.
@@ -1102,6 +1125,13 @@ impl Interpreter {
                     )
                 {
                     Value::package(Symbol::intern(name))
+                // `Pk::E` where `Pk` is a lexical package or class bound to its
+                // declaration's storage name (`Pk\0<id>`, #17477): the nested
+                // type lives under that name.
+                } else if let Some(real) = self.resolve_package_alias_prefix(name)
+                    && let Some(found) = self.lexical_package_member(&real)
+                {
+                    found
                 // `Packet::Sub::Inner` where `Packet::Sub` is the short name a
                 // `use` of a module's `our class Packet::Sub` installed: the
                 // class's stash carries its nested type under the real name

@@ -412,6 +412,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         custom_traits: package_traits.custom,
         is_unit: false,
         is_my: false,
+        decl_id: crate::ast::next_class_decl_id(),
         spans,
     };
     Ok((

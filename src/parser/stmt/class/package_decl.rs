@@ -599,6 +599,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         custom_traits: traits.custom,
         is_unit: true,
         is_my: false,
+        decl_id: crate::ast::next_class_decl_id(),
         // Only the name is known here; the body is the rest of the unit,
         // whose range the RakuAST conversion fills in.
         spans: name_only_spans(name_start, name_end),

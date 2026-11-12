@@ -6421,10 +6421,25 @@ fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
         },
         Stmt::MethodDecl { .. } => RoleBodyOp::Method,
         Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
-        _ => RoleBodyOp::Deferred {
-            is_stub_marker: is_stub_marker_stmt(stmt),
-            raw: Box::new(stmt.clone()),
-        },
+        _ => {
+            let mut raw = stmt.clone();
+            // A role body runs once per composition, which instantiates its
+            // declarations under the role's own names: a `my package` there
+            // is the role's, not one declaration with a storage name of its
+            // own (#17477).
+            if let Stmt::Package {
+                is_my: true,
+                decl_id,
+                ..
+            } = &mut raw
+            {
+                *decl_id = 0;
+            }
+            RoleBodyOp::Deferred {
+                is_stub_marker: is_stub_marker_stmt(stmt),
+                raw: Box::new(raw),
+            }
+        }
     }
 }
 

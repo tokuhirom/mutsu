@@ -66,6 +66,22 @@ impl Interpreter {
         )
     }
 
+    /// Give the lexical type stored under `storage` (`Name\0<decl_id>`) the
+    /// metadata its declaration's adverbs recorded under the name the program
+    /// spelled (`:ver<…>`, `:auth<…>`, `__MUTSU_SET_META__`), which runs just
+    /// before the declaration registers (#17477).
+    // Cost: O(1) (an `Arc` clone and one table write).
+    pub(crate) fn adopt_lexical_type_metadata(&mut self, storage: &str) {
+        let facing = crate::value::user_facing_type_name(storage);
+        if facing.as_ref() == storage {
+            return;
+        }
+        if let Some(meta) = self.types.type_metadata.get(facing.as_ref()).cloned() {
+            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
+                .insert(storage.to_string(), meta);
+        }
+    }
+
     /// Store a specific language version as type metadata for ^language-revision.
     pub(crate) fn store_language_revision_from_version(&mut self, name: &str, version: &str) {
         let revision = language_revision_letter(version);

@@ -64,6 +64,12 @@ impl Interpreter {
             } else {
                 self.resolve_type_alias_chain(base)
                     .or_else(|| self.package_relative_type(base))
+                    // `my Pk::E $x` where `Pk` is a lexical package or class
+                    // bound to its storage name (`Pk\0<id>`, #17477).
+                    .or_else(|| {
+                        self.resolve_package_alias_prefix(base)
+                            .filter(|real| self.has_type(real))
+                    })
                     .map(|target| format!("{}{}", target, smiley.unwrap_or("")))
             };
             match resolved {
@@ -568,6 +574,9 @@ impl Interpreter {
                 // `enum`/`subset` are): throw X::Syntax::Variable::BadType, not the
                 // generic "not declared" error.
                 if self.is_declared_package(declared_constraint) {
+                    // A lexical package is bound to its storage name
+                    // (`Name\0<decl_id>`); the program spelled the name.
+                    let constraint = crate::value::user_facing_type_name(constraint);
                     let msg = format!(
                         "Package '{}' is insufficiently type-like to qualify a variable.  Did you mean 'class'?",
                         constraint

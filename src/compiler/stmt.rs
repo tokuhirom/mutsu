@@ -3963,6 +3963,7 @@ impl Compiler {
                 custom_traits,
                 is_unit,
                 is_my,
+                decl_id,
                 ..
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
@@ -4007,6 +4008,22 @@ impl Compiler {
                     self.emit_package_traits(name_idx, custom_traits);
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
+                    // A `my package` is stored under its declaration's own name
+                    // (`Name\0<decl_id>`), as a `my class` is: two declarations of
+                    // one name keep separate stashes (#17477).
+                    // `EXPORT` / `EXPORTHOW` (and their tags) are found by name
+                    // by the export machinery, so they keep it.
+                    // A qualified name (`my package My::Package`) is looked up
+                    // segment by segment, which a storage name would break.
+                    let export_stash = matches!(
+                        name.resolve().split("::").next(),
+                        Some("EXPORT" | "EXPORTHOW")
+                    ) || crate::qualified::is_qualified_str(&name.resolve());
+                    let qualified_name = if *is_my && *decl_id != 0 && !export_stash {
+                        format!("{qualified_name}\u{0}{decl_id}")
+                    } else {
+                        qualified_name
+                    };
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     // Non-unit package declarations also produce a type object value.
                     if *is_my {

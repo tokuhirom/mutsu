@@ -193,6 +193,9 @@ impl Interpreter {
                     ),
                     _ => None,
                 })
+                // `tmp::Foo::` where `tmp` is a lexical package bound to its
+                // storage name (`tmp\0<id>`, #17477).
+                .or_else(|| self.resolve_package_alias_prefix(package))
                 .unwrap_or_else(|| package.to_string());
             return Some(target);
         }
