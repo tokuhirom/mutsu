@@ -1414,6 +1414,7 @@ impl Interpreter {
                     .is_some_and(|n| n.starts_with(['@', '%'])));
         // The kind a binding cell carries for this bind, if it gets one (see
         // the store below).
+        let code_var_bind = code.locals[idx].starts_with('&') && bind_marks_immutable;
         let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%', '&'])
             && Self::binding_cell_keeps_value_semantics(&raw_popped)
         {
@@ -1657,7 +1658,9 @@ impl Interpreter {
         // exact key too, so an unrelated `$f` cannot decide whether `&f` has
         // a writable source container during an indexed bind.
         if code.locals[idx].starts_with('&') {
-            let kind = if bind_marks_immutable || bind_marks_non_scalar_container {
+            let kind = if code_var_bind {
+                Some(crate::ast::ReadonlyKind::ImmutableValue)
+            } else if bind_marks_immutable || bind_marks_non_scalar_container {
                 Some(crate::ast::ReadonlyKind::Immutable)
             } else if bind_marks_type_object {
                 Some(crate::ast::ReadonlyKind::TypeObject)
@@ -1668,6 +1671,7 @@ impl Interpreter {
             };
             if let Some(kind) = kind {
                 self.mark_readonly_with(&code.locals[idx], kind);
+                self.record_readonly_on_own_binding(code, &code.locals[idx], kind);
             }
         }
 
