@@ -331,6 +331,9 @@ impl Interpreter {
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
+        // Parallel to `all_matches`: matched only nominally, its `where`
+        // clauses still unchecked (`resolution_lazy_where`).
+        let mut unverified: Vec<bool> = Vec::new();
         // The visible multi candidates that did not bind: they still shape
         // rakudo's tiers (see `pick_method_winner`).
         let mut rivals: Vec<(Symbol, Rival)> = Vec::new();
@@ -370,6 +373,17 @@ impl Interpreter {
             };
             if let Some(overloads) = overloads {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
+                if !any_multi && unverified.contains(&true) {
+                    self.verify_lazy_where_matches(
+                        class_name,
+                        arg_values,
+                        invocant,
+                        role_bindings.as_ref(),
+                        &mut all_matches,
+                        &mut unverified,
+                        &mut rivals,
+                    );
+                }
                 let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class
                 let all_submethods = overloads.iter().all(|d| d.is_my);
@@ -416,13 +430,24 @@ impl Interpreter {
                     if !any_multi && first_visible_non_multi.is_none() {
                         first_visible_non_multi = Some(def.clone());
                     }
-                    let args_match = self.method_args_match_for_invocant(
-                        class_name,
-                        def,
-                        arg_values,
-                        role_bindings.as_ref(),
-                        invocant,
-                    );
+                    let lazy_where = def.is_multi && Self::method_def_has_where(def);
+                    let args_match = if lazy_where {
+                        self.method_args_match_nominal(
+                            class_name,
+                            def,
+                            arg_values,
+                            role_bindings.as_ref(),
+                            invocant,
+                        )
+                    } else {
+                        self.method_args_match_for_invocant(
+                            class_name,
+                            def,
+                            arg_values,
+                            role_bindings.as_ref(),
+                            invocant,
+                        )
+                    };
                     if args_match {
                         if !any_multi && all_matches.is_empty() {
                             // Non-multi: return the first match immediately,
@@ -431,6 +456,7 @@ impl Interpreter {
                             return Some((*cn, def.clone()));
                         }
                         all_matches.push((*cn, def.clone()));
+                        unverified.push(lazy_where);
                     } else if def.is_multi {
                         rivals.push((*cn, Rival::of_row(&overloads, def_idx)));
                     }
@@ -451,7 +477,19 @@ impl Interpreter {
             }
         }
         let _ = submethod_blocks; // used for control flow above
-        self.pick_method_winner(mro, arg_values, invocant, all_matches, rivals)
+        if all_matches.is_empty() {
+            return None;
+        }
+        self.pick_method_winner_lazy_where(
+            mro,
+            class_name,
+            arg_values,
+            invocant,
+            role_bindings.as_ref(),
+            all_matches,
+            unverified,
+            rivals,
+        )
     }
 
     /// The type distance of a method candidate's parameters from the actual

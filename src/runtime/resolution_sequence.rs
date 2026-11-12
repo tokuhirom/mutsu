@@ -422,6 +422,9 @@ impl Interpreter {
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
     ) -> Option<(Symbol, MethodDef)> {
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
+        // Parallel to `all_matches`: matched only nominally, its `where`
+        // clauses still unchecked (`resolution_lazy_where`).
+        let mut unverified: Vec<bool> = Vec::new();
         // The visible multi candidates that did not bind, for the tiers of
         // `pick_method_winner`.
         let mut rivals: Vec<(Symbol, Rival)> = Vec::new();
@@ -442,6 +445,17 @@ impl Interpreter {
             let any_multi = group
                 .iter()
                 .any(|c| matches!(c, ResolvedCandidate::User { def, .. } if def.is_multi));
+            if !any_multi && unverified.contains(&true) {
+                self.verify_lazy_where_matches(
+                    class_name,
+                    arg_values,
+                    invocant,
+                    role_bindings,
+                    &mut all_matches,
+                    &mut unverified,
+                    &mut rivals,
+                );
+            }
             if !any_multi && all_matches.is_empty() {
                 // A lone non-multi candidate wins whether or not the arguments
                 // bind it, so the speculative match is skipped: it would only
@@ -478,14 +492,27 @@ impl Interpreter {
                 let ResolvedCandidate::User { owner, def, .. } = c else {
                     unreachable!("group only contains User candidates")
                 };
-                if self.method_args_match_for_invocant(
-                    class_name,
-                    def,
-                    arg_values,
-                    role_bindings,
-                    invocant,
-                ) {
+                let lazy_where = def.is_multi && Self::method_def_has_where(def);
+                let matched = if lazy_where {
+                    self.method_args_match_nominal(
+                        class_name,
+                        def,
+                        arg_values,
+                        role_bindings,
+                        invocant,
+                    )
+                } else {
+                    self.method_args_match_for_invocant(
+                        class_name,
+                        def,
+                        arg_values,
+                        role_bindings,
+                        invocant,
+                    )
+                };
+                if matched {
                     all_matches.push((owner.symbol(), (**def).clone()));
+                    unverified.push(lazy_where);
                 } else if def.is_multi {
                     rivals.push((owner.symbol(), Rival::owned((**def).clone())));
                 }
@@ -494,7 +521,16 @@ impl Interpreter {
         if all_matches.is_empty() {
             None
         } else {
-            self.pick_method_winner(mro, arg_values, invocant, all_matches, rivals)
+            self.pick_method_winner_lazy_where(
+                mro,
+                class_name,
+                arg_values,
+                invocant,
+                role_bindings,
+                all_matches,
+                unverified,
+                rivals,
+            )
         }
     }
 
