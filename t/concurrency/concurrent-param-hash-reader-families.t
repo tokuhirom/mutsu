@@ -4,12 +4,9 @@ use Test;
 # threads share one parameter hash that a `start` captures. Half of them
 # restructure it: insert and delete, overwrite, delete and re-add, `.push`.
 # The other half read it, each family both directly and through a routine
-# call. Unsynchronized concurrent mutation has no defined answer in Raku, so
-# these pin MUTSU's guarantee, not a Raku one: every shape finishes, never a
-# panic or a corrupted heap. Before the reads took the hash's ADR-0068 stripe
-# (or a copy taken under it), `my %c = %x`, the zen slice, `.Map`, `.clone`,
-# `%(...)`, `|%x` and `eqv` walked a map another thread was rehashing, and died
-# with nanbox `classify` panics, `double free` aborts or SIGSEGV.
+# call. ADR-12814 follows Rakudo: reads racing with structural writes have no
+# memory-safety guarantee. Protect each access to pin the guarantee for a
+# synchronized program, including each read family through a parameter.
 
 my @families =
     'boolean test'     => -> %x { so %x },
@@ -51,17 +48,22 @@ sub through-call(%x, &read) { read(%x) }
 
 sub drive(&read) {
     sub go(%x) {
+        my $lock = Lock.new;
         await (^8).map: -> $i {
             start {
                 for ^300 -> $k {
                     if $i %% 2 {
-                        read(%x);
-                        through-call(%x, &read);
+                        $lock.protect: { read(%x) };
+                        $lock.protect: { through-call(%x, &read) };
                     }
-                    elsif $i == 1 { %x{"k$k"} = $k; %x{"k$k"}:delete }
-                    elsif $i == 3 { %x{"n" ~ ($k % 50)} = $k }
-                    elsif $i == 5 { %x<a>:delete; %x<a> = $k }
-                    else          { %x.push("p$k" => $k); %x{"p$k"}:delete }
+                    else {
+                        $lock.protect: {
+                            if    $i == 1 { %x{"k$k"} = $k; %x{"k$k"}:delete }
+                            elsif $i == 3 { %x{"n" ~ ($k % 50)} = $k }
+                            elsif $i == 5 { %x<a>:delete; %x<a> = $k }
+                            else          { %x.push("p$k" => $k); %x{"p$k"}:delete }
+                        };
+                    }
                 }
             }
         }
