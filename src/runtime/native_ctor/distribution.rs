@@ -89,11 +89,23 @@ impl Interpreter {
             let read_named = crate::value::call_args::read_named_args(args);
             let args = read_named.as_ref();
             let mut short_name: Option<String> = None;
-            let mut auth_matcher: Option<String> = None;
-            let mut version_matcher: Option<String> = None;
-            let mut api_matcher: Option<String> = None;
+            // Rakudo's matchers: an undefined one is the default `True`; a
+            // version or api matcher is a `Version` (`Version.new` of anything
+            // else given), an auth matcher is kept as given.
+            let mut auth_matcher: Option<Value> = None;
+            let mut version_matcher: Option<Value> = None;
+            let mut api_matcher: Option<Value> = None;
+            let as_version = |value: &Value| match value.view() {
+                ValueView::Version { .. } => value.clone(),
+                _ => Value::version_from_str(&value.to_string_value()),
+            };
             for arg in args {
                 if let ValueView::Pair(key, value) = arg.view() {
+                    if !matches!(key.as_str(), "short-name")
+                        && !crate::runtime::types::value_is_defined(value)
+                    {
+                        continue;
+                    }
                     match key.as_str() {
                         "short-name" => {
                             if let ValueView::Str(s) = value.view() {
@@ -106,17 +118,11 @@ impl Interpreter {
                         }
                         "auth-matcher" => {
                             if !matches!(value.view(), ValueView::Bool(true)) {
-                                auth_matcher = Some(value.to_string_value());
+                                auth_matcher = Some(value.clone());
                             }
                         }
-                        "version-matcher" => {
-                            if !matches!(value.view(), ValueView::Bool(true)) {
-                                version_matcher = Some(value.to_string_value());
-                            }
-                        }
-                        "api-matcher" if !matches!(value.view(), ValueView::Bool(true)) => {
-                            api_matcher = Some(value.to_string_value());
-                        }
+                        "version-matcher" => version_matcher = Some(as_version(value)),
+                        "api-matcher" => api_matcher = Some(as_version(value)),
                         _ => {}
                     }
                 }
@@ -129,13 +135,13 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert("short-name".to_string(), Value::str(short_name));
             if let Some(a) = auth_matcher {
-                attrs.insert("auth-matcher".to_string(), Value::str(a));
+                attrs.insert("auth-matcher".to_string(), a);
             }
             if let Some(v) = version_matcher {
-                attrs.insert("version-matcher".to_string(), Value::str(v));
+                attrs.insert("version-matcher".to_string(), v);
             }
             if let Some(a) = api_matcher {
-                attrs.insert("api-matcher".to_string(), Value::str(a));
+                attrs.insert("api-matcher".to_string(), a);
             }
             Ok(Value::make_instance(
                 Symbol::intern("CompUnit::DependencySpecification"),

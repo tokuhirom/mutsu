@@ -25,6 +25,44 @@
 use super::*;
 
 impl Interpreter {
+    /// The operator gate (`user_declared_infix_ops`) to put back when a scope
+    /// exits: `snapshot`, plus every unit other than `scope_unit` that `now`
+    /// gained meanwhile. Those are the declarations and imports of modules
+    /// the scope loaded, which outlive it; only the scope's own unit is
+    /// lexically rolled back.
+    // Cost: O(1) when the table is unchanged; else O(n), n = entries of `now`.
+    pub(crate) fn keep_foreign_unit_infix_ops(
+        snapshot: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+        now: &std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+        scope_unit: Symbol,
+    ) -> std::sync::Arc<HashMap<String, HashSet<Symbol>>> {
+        if std::sync::Arc::ptr_eq(&snapshot, now) {
+            return snapshot;
+        }
+        let mut result = snapshot;
+        for (name, files) in now.iter() {
+            let before = result.get(name);
+            // An empty set is "visible everywhere"; keep the snapshot's own
+            // answer for it.
+            if before.is_some_and(|b| b.is_empty()) {
+                continue;
+            }
+            let gained: Vec<Symbol> = files
+                .iter()
+                .copied()
+                .filter(|unit| *unit != scope_unit && !before.is_some_and(|b| b.contains(unit)))
+                .collect();
+            if gained.is_empty() {
+                continue;
+            }
+            crate::runtime::cow_table_mut(&mut result)
+                .entry(name.clone())
+                .or_default()
+                .extend(gained);
+        }
+        result
+    }
+
     /// Record that the unit executing right now imported the candidates
     /// `defs` of `name`.
     ///
