@@ -553,6 +553,21 @@ impl Interpreter {
                         Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                     });
                     let _ = self.call_sub_value(handler, vec![exception]);
+                } else if e.control.is_none() && !e.is_leave && self.is_thread_clone() {
+                    // No `:catch` and no `uncaught_handler`: the program dies of
+                    // it, as rakudo's default handler makes it ("Unhandled
+                    // exception in code scheduled on thread N"). Swallowing it
+                    // left whoever waited for the task's result waiting forever.
+                    let exception = e
+                        .exception
+                        .map(|boxed| *boxed)
+                        .unwrap_or_else(|| Value::str(e.message.into_owned()));
+                    let report = crate::value::unhandled_promise_text(
+                        &exception,
+                        crate::runtime::current_mutsu_thread_id() as i64,
+                    );
+                    self.emit_stderr(&report);
+                    self.builtin_exit(&[Value::int(1)])?;
                 }
                 Ok(false)
             }
