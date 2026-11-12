@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.47,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 15.14,
+        "secs": 15.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.11,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.69,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 28.78,
+        "secs": 27.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,11 +85,11 @@
       "cmp": "no_baseline",
       "path": "t/04-simple-files.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/EVInJuNMde: Read-only file system",
+        "first_failure": "Failed to open file /tmp/24mtzocuId: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.15,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,11 +99,11 @@
       "cmp": "no_baseline",
       "path": "t/05-config-file.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/zXIgxV1jf9: Read-only file system",
+        "first_failure": "Failed to open file /tmp/VcYtNEyuYr: Read-only file system",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.51,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,11 +113,11 @@
       "cmp": "no_baseline",
       "path": "t/06-loop-in-file.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/5cnQXpdqN6: Read-only file system",
+        "first_failure": "Failed to open file /tmp/YOZXF6C9i0: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.34,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -133,7 +133,7 @@
     "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6be977e3",
+    "mutsu_commit": "56d7e510",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

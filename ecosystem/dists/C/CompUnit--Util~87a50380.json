@@ -9,69 +9,66 @@
   "dist": "CompUnit::Util",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "set-in-WHO multiple",
-        "nok": 1,
-        "ok": 16,
+        "nok": 0,
+        "ok": 17,
         "plan": 17,
-        "secs": 0.73,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-utils.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.83,
+        "secs": 3.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Malformed my (did you mean to declare a sigilless \\var or $var?). [at CompUnit-Util-0.7.0/t/02-re-export.rakutest:26]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.04,
-        "skip": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.75,
+        "skip": 1,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-re-export.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 5.5,
+        "secs": 8.8,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-rexport-globalish.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.95,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +80,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.15,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,99 +90,95 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.48,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at CompUnit-Util-0.7.0/t/05-rexport-everything.rakutest:9]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.03,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-rexport-everything.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.39,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Dynamic variable $*CU not found",
         "nok": 0,
-        "ok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.13,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-set.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.85,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "merge-generated-lexical-declaration of 'UNIT-EXPORT-sub-Foo' is not supported yet",
         "nok": 0,
-        "ok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.12,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/08-get.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.41,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "can't push a non-multi sub onto a non-existent routine",
         "nok": 0,
-        "ok": 2,
+        "ok": 15,
         "plan": 15,
-        "secs": 0.23,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/09-push-multi.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.06,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,7 +193,7 @@
     "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6be977e3",
+    "mutsu_commit": "56d7e510",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -211,13 +204,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OM/COMPUNIT_UTIL/7ee0a00f0b95b95ff2142c50e584b6e15da97659.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 76,
     "baseline_files": 8,
-    "mutsu_assertions": 35,
-    "parity_files": 1,
-    "regressed_files": 7
+    "mutsu_assertions": 76,
+    "parity_files": 8,
+    "regressed_files": 0
   },
   "version": "0.7.0"
 }

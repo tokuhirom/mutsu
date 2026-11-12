@@ -9,22 +9,23 @@
   "dist": "KeyNub::LicDongle",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Could not find symbol '&Status' in 'GLOBAL::Enums'",
         "nok": 0,
-        "ok": 7,
+        "ok": 3,
         "plan": 7,
-        "secs": 1.04,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.34,
+        "secs": 3.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +42,7 @@
     "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6be977e3",
+    "mutsu_commit": "56d7e510",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -52,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/K/EY/KEYNUB_LICDONGLE/bf1e467d949203b69747e3154e610aa7f8498c46.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 1,
-    "mutsu_assertions": 7,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 3,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "1.1.1"
 }

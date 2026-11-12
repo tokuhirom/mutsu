@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.1,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -28,8 +28,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.47,
+        "secs": 0.48,
         "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.96,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/mysql.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 18.02,
+        "skip": 3,
         "todo": 0,
         "verdict": "pass"
       }
@@ -45,34 +67,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/mysql.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 16.23,
-        "skip": 3,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.98,
-        "skip": 3,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/postgresql.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 9.66,
+        "secs": 9.8,
         "skip": 3,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
     "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6be977e3",
+    "mutsu_commit": "56d7e510",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
