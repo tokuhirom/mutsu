@@ -1163,7 +1163,14 @@ impl Compiler {
     ) {
         // A body that also has ENTER/LEAVE-family phasers is a phaser scope
         // with this region inside it (`helpers_phaser_try`).
-        if Self::try_region_needs_inner_phaser_scope(body) {
+        // Only a region with an explicit handler: rakudo's CATCH/CONTROL
+        // covers the block's body, not its phasers, while a handler-less
+        // `try` also traps a `die` in its ENTER/LEAVE (S04-phasers).
+        let has_handler = catch.is_some()
+            || body
+                .iter()
+                .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
+        if has_handler && Self::try_region_needs_inner_phaser_scope(body) {
             let region = super::helpers_phaser_try::PhaserTryRegion {
                 catch: catch.clone(),
                 traps,
