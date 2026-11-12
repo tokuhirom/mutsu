@@ -8,4 +8,4 @@ is now memoized per thread and name; every call still answers a fresh
 ~14.9K instructions, and Monad's `M.WHICH ~ '|' ~ T.WHICH` cache key from
 ~44.6K to ~39.5K (#17331).
 
-Found on the way: #17596 (`A.WHICH =:= A.WHICH` is True; rakudo says False).
+Found on the way: #17599 (`A.WHICH =:= A.WHICH` is True; rakudo says False).
