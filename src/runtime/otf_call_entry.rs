@@ -24,12 +24,16 @@
 
 use super::*;
 
-/// `(callsite package, unit, defining package, body)`. `unit` is `None` for
-/// an ordinary name and `Some(unit)` for a compunit-private routine of
-/// `unit`.
+/// `(name, callsite package, unit)`. `unit` is `None` for an ordinary name
+/// and `Some(unit)` for a compunit-private routine of `unit`. The package is
+/// in the key, not only checked against the entry: a module's helper called
+/// alternately from two packages' methods (Monad's `parameterized` from
+/// `Monad::Maybe` and from a subtype role) would otherwise evict its own
+/// entry on every call.
+pub(crate) type OtfCallKey = (Symbol, Symbol, Option<Symbol>);
+
+/// The defining package a hit runs the body under, and the body.
 pub(crate) struct OtfCallEntry {
-    pub(crate) callsite_pkg: Symbol,
-    pub(crate) unit: Option<Symbol>,
     pub(crate) def_pkg: Symbol,
     pub(crate) cf: Arc<CompiledFunction>,
 }

@@ -507,7 +507,7 @@ pub(crate) struct ResolutionCaches {
     /// block-local sub (`memmove` alone was 15% of the run). Cloning the `Arc`
     /// is one refcount bump and leaves the table untouched.
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
-    pub(crate) otf_call_cache: GenCache<Symbol, OtfCallEntry>,
+    pub(crate) otf_call_cache: GenCache<crate::runtime::OtfCallKey, OtfCallEntry>,
     /// The winning candidate of a role method called on a mixin, by what the
     /// verdict reads (see `Interpreter::mixin_winner_key`).
     pub(crate) mixin_method_winner: rustc_hash::FxHashMap<
