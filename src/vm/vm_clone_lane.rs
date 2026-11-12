@@ -9,9 +9,10 @@
 //! instructions and goals with `.clone(...)` (#17530). The lane calls that arm
 //! directly, at the point the compiled dispatch has bound the arguments, for an
 //! instance of a class [`Interpreter::plain_method_lane_class_eligible`]
-//! admits (user-declared, not a CStruct, no `IO::Handle`/`IO::Path` base) with
-//! no `clone` of its own and no built-in payload, called with named twiddles
-//! only. Every other call falls through unchanged.
+//! admits (user-declared, not a CStruct, no `IO::Handle`/`IO::Path` base) whose
+//! inherited `clone` is `Mu`'s (not a built-in parent's, as a `DateTime`
+//! subclass's is), with no `clone` of its own and no built-in payload, called
+//! with named twiddles only. Every other call falls through unchanged.
 
 use super::*;
 
@@ -38,6 +39,7 @@ impl Interpreter {
         };
         if crate::builtins::native_base::redirect(target, "clone").is_some()
             || !self.plain_method_lane_class_eligible(class_name)
+            || !self.builtin_method_is_mus(class_name, method_sym)
             || self.has_user_method_sym(class_name.as_str(), method_sym)
         {
             return None;
