@@ -11,23 +11,22 @@
   "dist": "EEL",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.74,
+        "ok": 66,
+        "plan": 66,
+        "secs": 16.72,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-slang.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 49.9,
+        "secs": 44.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +38,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.41,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,99 +48,29 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.79,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/06-runner.t:12]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.2,
+        "ok": 83,
+        "plan": 83,
+        "secs": 20.75,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-runner.t",
       "raku": {
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 8.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/07-goal.t:19]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 22.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/07-goal.t",
-      "raku": {
-        "nok": 0,
-        "ok": 83,
-        "plan": 83,
-        "secs": 13.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/08-supply-match.t",
-      "raku": {
-        "nok": 0,
-        "ok": 85,
-        "plan": 85,
-        "secs": 8.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-window.t",
-      "raku": {
-        "nok": 0,
-        "ok": 25,
-        "plan": 25,
-        "secs": 5.7,
+        "secs": 7.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,44 +79,109 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "objects runs",
-        "nok": 69,
-        "ok": 0,
-        "plan": 69,
-        "secs": 7.74,
+        "first_failure": "fork restores aliases of lexical hash containers",
+        "nok": 1,
+        "ok": 82,
+        "plan": 83,
+        "secs": 31.25,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       },
-      "path": "t/10-examples.t",
+      "path": "t/07-goal.t",
       "raku": {
         "nok": 0,
-        "ok": 69,
-        "plan": 69,
-        "secs": 27.26,
+        "ok": 83,
+        "plan": 83,
+        "secs": 13.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Two terms in a row [at EEL-0.3/t/11-predicates.t:34]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.36,
+        "ok": 85,
+        "plan": 85,
+        "secs": 11.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
+      },
+      "path": "t/08-supply-match.t",
+      "raku": {
+        "nok": 0,
+        "ok": 85,
+        "plan": 85,
+        "secs": 5.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 3.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-window.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 4.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 69,
+        "plan": 69,
+        "secs": 17.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-examples.t",
+      "raku": {
+        "nok": 0,
+        "ok": 69,
+        "plan": 69,
+        "secs": 19.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 2.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
       "path": "t/11-predicates.t",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.39,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -201,30 +195,29 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 3.93,
+        "secs": 3.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.16,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/13-metadata.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.25,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,168 +231,161 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.49,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.74,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/15-colon-calls.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.93,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.2,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/16-capture-delegation.t",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.97,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.82,
+        "ok": 15,
+        "plan": 15,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/17-subpattern-captures.t",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.41,
+        "secs": 2.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/18-leading-alternative.t:8]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.93,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/18-leading-alternative.t",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.27,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.34,
+        "ok": 20,
+        "plan": 20,
+        "secs": 6.73,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/19-proto.t",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 4.89,
+        "secs": 4.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: X::Undeclared::Symbols: Undeclared routine:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.34,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/20-proto-scenarios.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.49,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/21-runtime-features.t:13]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.23,
+        "ok": 14,
+        "plan": 14,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/21-runtime-features.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.36,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -413,76 +399,74 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 1.09,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at EEL-0.3/t/23-runtime-edge-cases.t:12]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.97,
+        "ok": 21,
+        "plan": 21,
+        "secs": 3.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/23-runtime-edge-cases.t",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.61,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Missing required term after infix [at EEL-0.3/t/24-interleave.t:10]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.79,
+        "first_failure": "outer lexical containers and aliases survive branch switching",
+        "nok": 1,
+        "ok": 36,
+        "plan": 37,
+        "secs": 12.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/24-interleave.t",
       "raku": {
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 3.52,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ... [at EEL-0.3/t/25-selection.t:6]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.08,
+        "ok": 26,
+        "plan": 26,
+        "secs": 3.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/25-selection.t",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.83,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -496,145 +480,140 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.04,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/27-indexes.t:88]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 35.44,
+        "ok": 34,
+        "plan": 34,
+        "secs": 17.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/27-indexes.t",
       "raku": {
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 5.87,
+        "secs": 5.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.78,
+        "ok": 25,
+        "plan": 25,
+        "secs": 39.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/28-index-runtime.t",
       "raku": {
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 9.34,
+        "secs": 8.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.31,
+        "first_failure": "aliases preserved within each mutable fork",
+        "nok": 1,
+        "ok": 31,
+        "plan": 32,
+        "secs": 37.85,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/29-optimizations.t",
       "raku": {
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 8.18,
+        "secs": 7.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/30-assertions.t:14]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.2,
+        "ok": 49,
+        "plan": 49,
+        "secs": 4.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/30-assertions.t",
       "raku": {
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 1.95,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/31-assertion-integration.t:12]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.09,
+        "ok": 50,
+        "plan": 50,
+        "secs": 10.75,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/31-assertion-integration.t",
       "raku": {
         "nok": 0,
         "ok": 50,
         "plan": 50,
-        "secs": 2.88,
+        "secs": 2.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Missing required term after infix [at EEL-0.3/t/32-assertion-shuffle.t:6]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 6.76,
+        "ok": 17,
+        "plan": 17,
+        "secs": 7.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/32-assertion-shuffle.t",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 2.4,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -648,30 +627,29 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Confused: Two terms in a row",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 19.06,
+        "ok": 161,
+        "plan": 161,
+        "secs": 7.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/34-per-event-selection.t",
       "raku": {
         "nok": 0,
         "ok": 161,
         "plan": 161,
-        "secs": 2.23,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -685,53 +663,51 @@
         "nok": 0,
         "ok": 32,
         "plan": null,
-        "secs": 1.71,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/36-lookaround.t:6]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.95,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/36-lookaround.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.2,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.65,
+        "ok": 35,
+        "plan": 35,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/36-presence-index.t",
       "raku": {
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.17,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -743,7 +719,7 @@
         "nok": 0,
         "ok": 85,
         "plan": 85,
-        "secs": 12.78,
+        "secs": 12.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -753,115 +729,110 @@
         "nok": 0,
         "ok": 85,
         "plan": 85,
-        "secs": 5.28,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.65,
+        "ok": 26,
+        "plan": 26,
+        "secs": 3.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/38-prefix-index.t",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.47,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "slang production 'routine-declarator:sym<pattern>': No such method 'DECLARATOR' for invocant of type 'Raku::Actions'. Did",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.66,
+        "ok": 29,
+        "plan": 29,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/39-suffix-index.t",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 1.73,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at EEL-0.3/t/40-range-intersection.t:47]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.62,
+        "ok": 35,
+        "plan": 35,
+        "secs": 2.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/40-range-intersection.t",
       "raku": {
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.19,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 14.44,
+        "ok": 66,
+        "plan": 66,
+        "secs": 9.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/41-grammar-extensions.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 2.59,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 45,
+        "plan": 45,
+        "secs": 10.67,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/42-cuts.t",
       "raku": {
@@ -875,46 +846,44 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Missing required term after infix [at EEL-0.3/t/43-window-anchors.t:12]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.31,
+        "ok": 51,
+        "plan": 51,
+        "secs": 12.72,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/43-window-anchors.t",
       "raku": {
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 3.08,
+        "secs": 2.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected expression statement or expression after comparison operator or listop argument expression or '.' or di [at EEL-0.3/t/44-actions-dynamic-repeat.t:7]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.64,
+        "ok": 39,
+        "plan": 39,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/44-actions-dynamic-repeat.t",
       "raku": {
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 1.69,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -949,10 +918,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-11",
+    "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4e76f7ed",
+    "mutsu_commit": "6be977e3",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -967,9 +936,9 @@
   "totals": {
     "baseline_assertions": 1454,
     "baseline_files": 36,
-    "mutsu_assertions": 115,
-    "parity_files": 2,
-    "regressed_files": 34
+    "mutsu_assertions": 1451,
+    "parity_files": 33,
+    "regressed_files": 3
   },
   "version": "0.3"
 }

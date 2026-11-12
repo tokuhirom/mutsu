@@ -34,20 +34,93 @@
     "unresolved": []
   },
   "dist": "CSS::Font::Resources",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/load.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 101.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/match.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/sources.t",
+      "raku": {
+        "first_failure": "No such method 'rel2abs' for invocant of type 'Scalar'. You actually",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/uri.t",
+      "raku": {
+        "first_failure": "No such method 'rel2abs' for invocant of type 'Scalar'. You actually",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "CSS::Font::Resources": "raku_also_fails",
-    "CSS::Font::Resources::Source": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
-    "CSS::Font::Resources::Source::Local": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
-    "CSS::Font::Resources::Source::Url": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "CSS::Font::Resources": "ok",
+    "CSS::Font::Resources::Source": "ok",
+    "CSS::Font::Resources::Source::Local": "ok",
+    "CSS::Font::Resources::Source::Url": "ok",
     "CSS::URI": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-11",
+    "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4e76f7ed",
+    "mutsu_commit": "6be977e3",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -58,12 +131,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_FONT_RESOURCES/be6fd4d3d2e949e6a9e9482e04ac9f95a13c0211.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 13,
+    "baseline_files": 2,
+    "mutsu_assertions": 13,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.11"

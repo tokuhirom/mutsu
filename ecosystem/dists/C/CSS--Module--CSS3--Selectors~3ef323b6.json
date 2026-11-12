@@ -12,17 +12,40 @@
     "unresolved": []
   },
   "dist": "CSS::Module::CSS3::Selectors",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 129,
+        "plan": 129,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 129,
+        "plan": 129,
+        "secs": 15.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "CSS::Module::CSS3::Selectors": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "CSS::Module::CSS3::Selectors": "ok",
     "CSS::Module::CSS3::Selectors::Actions": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-11",
+    "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4e76f7ed",
+    "mutsu_commit": "6be977e3",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -33,12 +56,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_MODULE_CSS3_SELECTORS/9bb566e5c3759ac9b80301f37568ebdc20826478.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 129,
+    "baseline_files": 1,
+    "mutsu_assertions": 129,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.7"

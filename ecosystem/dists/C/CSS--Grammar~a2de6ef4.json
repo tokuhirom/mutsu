@@ -9,24 +9,157 @@
     "unresolved": []
   },
   "dist": "CSS::Grammar",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 87,
+        "plan": 87,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/compat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 87,
+        "plan": 87,
+        "secs": 11.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 125,
+        "plan": 125,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3-syntax.t",
+      "raku": {
+        "nok": 0,
+        "ok": 125,
+        "plan": 125,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 118,
+        "plan": 118,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/error-handling.t",
+      "raku": {
+        "nok": 0,
+        "ok": 118,
+        "plan": 118,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parse-stylesheets.t",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parse-warnings.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 123,
+        "plan": 123,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/regex-tokens.t",
+      "raku": {
+        "nok": 0,
+        "ok": 123,
+        "plan": 123,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "CSS::Grammar": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "CSS::Grammar": "ok",
     "CSS::Grammar::AST": "ok",
     "CSS::Grammar::Actions": "ok",
-    "CSS::Grammar::CSS1": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
-    "CSS::Grammar::CSS21": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
-    "CSS::Grammar::CSS3": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
-    "CSS::Grammar::CSS4": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "CSS::Grammar::CSS1": "ok",
+    "CSS::Grammar::CSS21": "ok",
+    "CSS::Grammar::CSS3": "ok",
+    "CSS::Grammar::CSS4": "ok",
     "CSS::Grammar::Defs": "ok",
     "CSS::Grammar::Test": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-11",
+    "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4e76f7ed",
+    "mutsu_commit": "6be977e3",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -37,12 +170,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_GRAMMAR/c7b9350871c84d2cb4433a8f03725e8a2480d015.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 493,
+    "baseline_files": 6,
+    "mutsu_assertions": 493,
+    "parity_files": 6,
     "regressed_files": 0
   },
   "version": "0.5.0"

@@ -56,25 +56,166 @@
     "unresolved": []
   },
   "dist": "HTML::Canvas",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-readme.t",
+      "raku": {
+        "first_failure": "code sample",
+        "nok": 1,
+        "ok": 0,
+        "plan": 6,
+        "secs": 85.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cairo-transforms.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/direction.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/images.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 11.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/path-2d.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/placement.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 10.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/render-pdf-test-sheets.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/render-png-basic.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/transforms.t",
+      "raku": {
+        "first_failure": "Type 'Cairo::Glyphs' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "HTML::Canvas": "raku_also_fails",
-    "HTML::Canvas::Gradient": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "HTML::Canvas": "ok",
+    "HTML::Canvas::Gradient": "ok",
     "HTML::Canvas::Graphic": "ok",
     "HTML::Canvas::Image": "ok",
     "HTML::Canvas::ImageData": "ok",
     "HTML::Canvas::Path2D": "ok",
     "HTML::Canvas::Pattern": "ok",
-    "HTML::Canvas::To::Cairo": "raku_also_fails",
-    "HTML::Canvas::To::HTML": "'CSS::Grammar::Core' cannot inherit from 'CSS::Grammar' because it is unknown.",
+    "HTML::Canvas::To::Cairo": "ok",
+    "HTML::Canvas::To::HTML": "ok",
     "HTML::Canvas::Tracer": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-11",
+    "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4e76f7ed",
+    "mutsu_commit": "6be977e3",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -85,7 +226,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TM/HTML_CANVAS/3924eb74b38dbad70d080a21a3270826cfcf6fc7.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
