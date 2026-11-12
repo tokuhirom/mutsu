@@ -110,7 +110,12 @@ impl Interpreter {
                 // named gate resolves at run time too), fall back to the
                 // by-name registry question `MarkRwArgRefContext` asks.
                 match callee {
-                    Some(callee) if matches!(callee.view(), ValueView::Sub(_)) => {
+                    Some(callee)
+                        if matches!(
+                            callee.view(),
+                            ValueView::Sub(_) | ValueView::Routine { .. }
+                        ) =>
+                    {
                         Self::code_value_binds_container_at(&callee, positional)
                     }
                     _ => self.named_routine_binds_container_at(&name, positional),
@@ -232,6 +237,14 @@ impl Interpreter {
     /// `param_defs` directly, so this is exact and needs no registry lookup.
     fn code_value_binds_container_at(callee: &Value, positional: usize) -> bool {
         let callee = callee.deref_container();
+        if let ValueView::Routine { package, name, .. } = callee.view()
+            && crate::qualified::is_global_package(package)
+        {
+            // CORE's identity operators take raw operands. Their Routine
+            // handles have no ParamDef, but still need the same element-cell
+            // producer as a user routine with raw parameters.
+            return positional < 2 && matches!(name.as_str(), "infix:<=:=>" | "infix:<!=:=>");
+        }
         // `.^lookup` / `.^methods` hand back a `Method`/`Submethod` INSTANCE
         // whose `__mutsu_method_callable` attribute is the routine `CALL-ME`
         // actually runs (ADR-0019 Phase F box F1). Invoked as a CODE value,

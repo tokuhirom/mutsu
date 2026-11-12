@@ -75,6 +75,8 @@ pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
 mod builtins_operators_infix;
+mod builtins_operators_infix_control;
+mod builtins_operators_infix_identity;
 pub(crate) use builtins_operators_infix::is_set_operator;
 mod builtins_operators_infix_pair;
 mod builtins_operators_prefix;
