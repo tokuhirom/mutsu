@@ -271,6 +271,12 @@ impl Interpreter {
                 if bind_leaf {
                     arr[i] = val;
                 } else {
+                    if shape.is_some()
+                        && let ValueView::ContainerRef(cell) = arr[i].view()
+                        && cell.is_readonly()
+                    {
+                        return Err(RuntimeError::assignment_ro_value(cell.load()));
+                    }
                     Value::assign_element_slot(&mut arr[i], val);
                 }
                 // Record the write in the embedded `initialized` set so

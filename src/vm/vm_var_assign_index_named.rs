@@ -183,13 +183,22 @@ impl Interpreter {
         container: &mut Value,
         key: &SliceKeyTree,
         boundary_len: usize,
+        bind_mode: bool,
         vals: &mut std::vec::IntoIter<Value>,
         marks: &mut Vec<String>,
     ) -> Result<(), RuntimeError> {
         match key {
             SliceKeyTree::Leaf(k) => {
                 let v = vals.next().unwrap_or(Value::NIL);
-                Self::assign_array_multidim(container, std::slice::from_ref(k), v)?;
+                if bind_mode {
+                    Self::bind_array_multidim(
+                        container,
+                        std::slice::from_ref(k),
+                        Value::bound_element(v),
+                    )?;
+                } else {
+                    Self::assign_array_multidim(container, std::slice::from_ref(k), v)?;
+                }
                 marks.push(Self::encode_element_index(k));
                 Ok(())
             }
@@ -202,7 +211,14 @@ impl Interpreter {
                     {
                         break;
                     }
-                    Self::assign_slice_key_tree(container, child, boundary_len, vals, marks)?;
+                    Self::assign_slice_key_tree(
+                        container,
+                        child,
+                        boundary_len,
+                        bind_mode,
+                        vals,
+                        marks,
+                    )?;
                 }
                 Ok(())
             }
@@ -270,7 +286,11 @@ impl Interpreter {
         match key {
             SliceKeyTree::Leaf(k) => {
                 let v = vals.next().unwrap_or(Value::NIL);
-                Self::assign_array_multidim(container, std::slice::from_ref(k), v.clone())?;
+                Self::bind_array_multidim(
+                    container,
+                    std::slice::from_ref(k),
+                    Value::bound_element(v.clone()),
+                )?;
                 marks.push(Self::encode_element_index(k));
                 Ok(v)
             }
@@ -1220,6 +1240,14 @@ impl Interpreter {
                 self.element_cell_with_metadata(container, &idx, is_positional)
             })
         };
+        if let Some(cell) = &bound_cell
+            && cell.is_readonly()
+            && index_target_deref
+                .as_ref()
+                .is_some_and(crate::runtime::utils::is_shaped_array)
+        {
+            return Err(RuntimeError::assignment_ro_value(cell.load()));
+        }
         let val = if let Some(cell) = &bound_cell {
             self.element_store_through_cell(cell, val)?
         } else if val.is_nil() && !bind_mode {
@@ -1953,6 +1981,7 @@ impl Interpreter {
                             container,
                             &top_tree,
                             boundary_len,
+                            false,
                             &mut vals_iter,
                             &mut marks,
                         )?;
@@ -2046,7 +2075,11 @@ impl Interpreter {
                 // The value the slots past the end of the RHS get -- see
                 // `slice_pad_value`. Computed once here, before the `&mut
                 // self.env` borrows below.
-                let pad = self.slice_pad_value(decl, &var_name);
+                let pad = if bind_mode {
+                    Value::NIL
+                } else {
+                    self.slice_pad_value(decl, &var_name)
+                };
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
@@ -2092,11 +2125,19 @@ impl Interpreter {
                             for (i, key) in keys.iter().enumerate() {
                                 let v = Self::slice_rhs_value(&vals, i, &pad);
                                 assigned_values.push(v.clone());
-                                Self::assign_array_multidim(
-                                    container,
-                                    std::slice::from_ref(key),
-                                    v,
-                                )?;
+                                if bind_mode {
+                                    Self::bind_array_multidim(
+                                        container,
+                                        std::slice::from_ref(key),
+                                        Value::bound_element(v),
+                                    )?;
+                                } else {
+                                    Self::assign_array_multidim(
+                                        container,
+                                        std::slice::from_ref(key),
+                                        v,
+                                    )?;
+                                }
                                 initialized_marks.push(Self::encode_element_index(key));
                             }
                         } else {
@@ -2142,6 +2183,7 @@ impl Interpreter {
                             container,
                             top_tree,
                             boundary_len,
+                            bind_mode,
                             &mut vals_iter,
                             &mut initialized_marks,
                         )?;
@@ -2182,7 +2224,19 @@ impl Interpreter {
                         for (i, key) in keys.iter().enumerate() {
                             let v = Self::slice_rhs_value(&vals, i, &pad);
                             assigned_values.push(v.clone());
-                            Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
+                            if bind_mode {
+                                Self::bind_array_multidim(
+                                    container,
+                                    std::slice::from_ref(key),
+                                    Value::bound_element(v),
+                                )?;
+                            } else {
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(key),
+                                    v,
+                                )?;
+                            }
                             initialized_marks.push(Self::encode_element_index(key));
                         }
                     }
