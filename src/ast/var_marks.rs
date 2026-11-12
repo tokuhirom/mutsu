@@ -37,6 +37,8 @@ pub(crate) struct VarMarks {
     /// The same declaration for a native-typed parameter, which cannot use `:=`; the
     /// compiler recognizes it as the pointy parameter so `is rw` writes back.
     pub(crate) pointy_native_param: bool,
+    /// A control block's parameter declaration checks its value as a binding.
+    pub(crate) pointy_param: bool,
     /// One element of a destructured declaration (`my int ($p, $q) = ...`). Rakudo reads
     /// such a native element as the native type, unlike a single `my int $x`. Not part of
     /// [`VarMarks::is_plain`].
@@ -115,6 +117,7 @@ impl VarMarks {
             && self.dynamic_argument.is_none()
             && !self.pointy_copy
             && !self.pointy_native_param
+            && !self.pointy_param
             && !self.restore_pointy_given_topic
             && !self.sigilless_decl
             && !self.method_assign_decl

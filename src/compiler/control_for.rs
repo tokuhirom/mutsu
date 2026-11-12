@@ -534,9 +534,15 @@ impl Compiler {
                         .collect()
                 },
                 multi_param_locals,
-                param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
+                param_type_constraint: param_def
+                    .as_ref()
+                    .and_then(|d| d.pointy_type_constraint().map(str::to_string)),
                 multi_param_type_constraints: (0..params.len())
-                    .map(|i| params_def.get(i).and_then(|d| d.type_constraint.clone()))
+                    .map(|i| {
+                        params_def
+                            .get(i)
+                            .and_then(|d| d.pointy_type_constraint().map(str::to_string))
+                    })
                     .collect(),
                 loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                 values_mode: Self::for_iterable_is_values_alias(iterable),

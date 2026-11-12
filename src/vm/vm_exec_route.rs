@@ -361,7 +361,8 @@ impl Interpreter {
             | OpCode::SymbolicDerefStore(..)
             | OpCode::Trace(..)
             | OpCode::TypeCheck(..)
-            | OpCode::TypeCheckBind(..) => self.exec_ops_group_13(code, ip, compiled_fns),
+            | OpCode::TypeCheckBind(..)
+            | OpCode::TypeCheckParam(..) => self.exec_ops_group_13(code, ip, compiled_fns),
             OpCode::AugmentClass { .. }
             | OpCode::BeginOnceExpr { .. }
             | OpCode::BlockLocalScope { .. }

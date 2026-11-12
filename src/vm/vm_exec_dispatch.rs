@@ -7415,6 +7415,12 @@ impl Interpreter {
                 self.exec_type_check_bind_op(code, *tc_idx, *var_name_idx)?;
                 *ip += 1;
             }
+            // Cost: O(1) for a scalar; O(e) for a typed aggregate, e = elements checked.
+            OpCode::TypeCheckParam(tc_idx, var_name_idx) => {
+                self.sync_source_line(code, *ip);
+                self.exec_type_check_param_op(code, *tc_idx, *var_name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1).
             OpCode::SetPragma(name_idx) => {
                 let value = self.stack.pop().unwrap_or(Value::NIL);

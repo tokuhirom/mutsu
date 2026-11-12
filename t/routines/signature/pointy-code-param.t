@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 14;
 
 # A `&`-sigil pointy-block parameter declares a fresh lexical code alias.
 # `given $code -> &f { … }` used to desugar to a bare `&f := $_`, which Raku
@@ -38,3 +38,14 @@ is named(), 'outer', 'the code alias stops shadowing after the given body';
 given -> $x, $y { $x ~ $y } -> &joiner {
     is joiner('a', 'b'), 'ab', 'arguments reach the aliased code';
 }
+
+throws-like { given 'f0' -> &bad { flunk 'given body must not run' } },
+    X::TypeCheck::Binding::Parameter, 'given rejects a non-Callable code parameter';
+throws-like { with 'f0' -> &bad { flunk 'with body must not run' } },
+    X::TypeCheck::Binding::Parameter, 'with rejects a non-Callable code parameter';
+throws-like { for ('f0',) -> &bad { flunk 'for body must not run' } },
+    X::TypeCheck::Binding::Parameter, 'for rejects a non-Callable code parameter';
+throws-like { given 'f0' -> &bad is copy { flunk 'copy body must not run' } },
+    X::TypeCheck::Binding::Parameter, 'copy code parameters also require Callable';
+throws-like { for (1, 'f0') -> $n, &bad { flunk 'multi-param body must not run' } },
+    X::TypeCheck::Binding::Parameter, 'multi-parameter for also checks code parameters';

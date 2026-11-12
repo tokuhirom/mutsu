@@ -4786,6 +4786,8 @@ pub(crate) enum OpCode {
     /// instead of X::TypeCheck::Assignment. First u32 is the type name
     /// constant index; optional second u32 is the variable name index.
     TypeCheckBind(u32, Option<u32>),
+    /// Check a pointy-block parameter at binding time, reporting its name.
+    TypeCheckParam(u32, Option<u32>),
 
     /// Set a pragma value. Pops the value from the stack.
     /// The u32 is a constant index for the pragma name.
@@ -12928,7 +12930,7 @@ impl CompiledCode {
         let typechecked = keep > 0
             && matches!(
                 self.ops[keep - 1],
-                OpCode::TypeCheck(..) | OpCode::TypeCheckBind(..)
+                OpCode::TypeCheck(..) | OpCode::TypeCheckBind(..) | OpCode::TypeCheckParam(..)
             );
         self.ops.truncate(keep);
         self.op_lines.truncate(keep);
