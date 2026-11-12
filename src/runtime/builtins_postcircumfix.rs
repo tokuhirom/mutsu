@@ -353,6 +353,12 @@ impl Interpreter {
         if let Some(capture) = self.dispatch.subscript_lvalue_capture.as_mut() {
             *capture = Some(index.clone());
         }
+        // The ordinary `@a[$i]` read (`haystack.AT-POS($i)` in a binary
+        // search loop) skips the general path's preamble, as the subscript
+        // opcode's own fast path does.
+        if is_positional && let Some(elem) = Self::plain_positional_element(&target, &index) {
+            return Ok(elem);
+        }
         self.stack.push(target);
         self.stack.push(index);
         self.dispatch.skip_postcircumfix_overload = true;

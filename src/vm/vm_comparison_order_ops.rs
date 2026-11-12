@@ -531,7 +531,15 @@ impl Interpreter {
     /// implementation, just as the numeric comparison family does, so custom
     /// operator families do not accidentally fall through to the reduction
     /// bridge.
+    // Cost: O(1) for two `Int`s; otherwise O(n) in the compared payloads (string
+    // or element count).
     pub(crate) fn cmp_value(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // Two machine `Int`s: none of the probes below (blob, NaN, range,
+        // list, infinity, user stringifier, numeric bridge) applies, and the
+        // final `spaceship_ordering` is their integer order.
+        if let (ValueView::Int(a), ValueView::Int(b)) = (left.view(), right.view()) {
+            return Ok(runtime::make_order(a.cmp(&b)));
+        }
         if let Some(ord) = Self::blob_ordering(&left, &right)? {
             return Ok(runtime::make_order(ord));
         }
