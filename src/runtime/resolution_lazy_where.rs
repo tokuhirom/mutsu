@@ -30,6 +30,15 @@
 use super::*;
 use std::sync::Arc;
 
+/// The call a candidate is matched against: what every full or nominal
+/// match of this module reads.
+pub(super) struct CallShape<'a> {
+    pub(super) class_name: &'a str,
+    pub(super) arg_values: &'a [Value],
+    pub(super) invocant: Option<&'a Value>,
+    pub(super) role_bindings: Option<&'a rustc_hash::FxHashMap<String, Value>>,
+}
+
 impl Interpreter {
     /// Whether matching `def` evaluates a `where` clause of its own
     /// parameters (the invocant's included).
@@ -73,15 +82,12 @@ impl Interpreter {
     // Cost: as `method_args_match_for_invocant`, minus the `where` clauses.
     pub(super) fn method_args_match_nominal(
         &mut self,
-        class_name: &str,
+        call: &CallShape<'_>,
         def: &MethodDef,
-        arg_values: &[Value],
-        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
-        invocant: Option<&Value>,
     ) -> bool {
         let mut nominal = def.clone();
         nominal.param_defs = self.nominal_param_defs(def);
-        self.method_args_match_for_invocant(class_name, &nominal, arg_values, role_bindings, invocant)
+        self.method_args_match_full(call, &nominal)
     }
 
     /// [`Self::pick_method_winner`] over `all_matches`, where the entries
@@ -91,21 +97,17 @@ impl Interpreter {
     // Cost: O(u) rankings (each `pick_method_winner`'s cost), u = the
     // unverified candidates that rank first and fail their `where`; one full
     // match per unverified candidate the ranking reaches.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn pick_method_winner_lazy_where(
         &mut self,
         mro: &[Symbol],
-        class_name: &str,
-        arg_values: &[Value],
-        invocant: Option<&Value>,
-        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+        call: &CallShape<'_>,
         mut all_matches: Vec<(Symbol, MethodDef)>,
         mut unverified: Vec<bool>,
         mut rivals: Vec<(Symbol, Rival)>,
     ) -> Option<(Symbol, MethodDef)> {
         debug_assert_eq!(all_matches.len(), unverified.len());
         if !unverified.contains(&true) {
-            return self.pick_method_winner(mro, arg_values, invocant, all_matches, rivals);
+            return self.pick_method_winner(mro, call.arg_values, call.invocant, all_matches, rivals);
         }
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
         loop {
@@ -115,8 +117,8 @@ impl Interpreter {
             self.dispatch.dispatch_ambiguous = saved_ambiguous;
             let (owner, def) = self.pick_method_winner(
                 mro,
-                arg_values,
-                invocant,
+                call.arg_values,
+                call.invocant,
                 all_matches.clone(),
                 rivals.clone(),
             )?;
@@ -127,15 +129,7 @@ impl Interpreter {
             }) else {
                 return Some((owner, def));
             };
-            if !unverified[idx]
-                || self.method_args_match_for_invocant(
-                    class_name,
-                    &def,
-                    arg_values,
-                    role_bindings,
-                    invocant,
-                )
-            {
+            if !unverified[idx] || self.method_args_match_full(call, &def) {
                 return Some((owner, def));
             }
             let (owner, def) = all_matches.remove(idx);
@@ -150,13 +144,9 @@ impl Interpreter {
     /// ancestor wins only when no more-derived multi bound), so the deferred
     /// `where` clauses are settled before such a level is looked at.
     // Cost: one full match per unverified entry.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn verify_lazy_where_matches(
         &mut self,
-        class_name: &str,
-        arg_values: &[Value],
-        invocant: Option<&Value>,
-        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+        call: &CallShape<'_>,
         all_matches: &mut Vec<(Symbol, MethodDef)>,
         unverified: &mut Vec<bool>,
         rivals: &mut Vec<(Symbol, Rival)>,
@@ -164,14 +154,8 @@ impl Interpreter {
         let mut i = 0;
         while i < all_matches.len() {
             if unverified[i] {
-                let bound = self.method_args_match_for_invocant(
-                    class_name,
-                    &all_matches[i].1,
-                    arg_values,
-                    role_bindings,
-                    invocant,
-                );
-                if !bound {
+                let def = all_matches[i].1.clone();
+                if !self.method_args_match_full(call, &def) {
                     let (owner, def) = all_matches.remove(i);
                     unverified.remove(i);
                     rivals.push((owner, Rival::owned(def)));
@@ -181,5 +165,17 @@ impl Interpreter {
             }
             i += 1;
         }
+    }
+
+    /// `method_args_match_for_invocant` for `call`.
+    // Cost: as `method_args_match_for_invocant`.
+    fn method_args_match_full(&mut self, call: &CallShape<'_>, def: &MethodDef) -> bool {
+        self.method_args_match_for_invocant(
+            call.class_name,
+            def,
+            call.arg_values,
+            call.role_bindings,
+            call.invocant,
+        )
     }
 }

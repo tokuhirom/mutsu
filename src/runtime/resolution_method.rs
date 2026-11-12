@@ -375,10 +375,12 @@ impl Interpreter {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
                 if !any_multi && unverified.contains(&true) {
                     self.verify_lazy_where_matches(
+                    &super::resolution_lazy_where::CallShape {
                         class_name,
                         arg_values,
                         invocant,
-                        role_bindings.as_ref(),
+                        role_bindings: role_bindings.as_ref(),
+                    },
                         &mut all_matches,
                         &mut unverified,
                         &mut rivals,
@@ -433,12 +435,14 @@ impl Interpreter {
                     let lazy_where = def.is_multi && Self::method_def_has_where(def);
                     let args_match = if lazy_where {
                         self.method_args_match_nominal(
+                        &super::resolution_lazy_where::CallShape {
                             class_name,
-                            def,
                             arg_values,
-                            role_bindings.as_ref(),
                             invocant,
-                        )
+                            role_bindings: role_bindings.as_ref(),
+                        },
+                        def,
+                    )
                     } else {
                         self.method_args_match_for_invocant(
                             class_name,
@@ -482,10 +486,12 @@ impl Interpreter {
         }
         self.pick_method_winner_lazy_where(
             mro,
-            class_name,
-            arg_values,
-            invocant,
-            role_bindings.as_ref(),
+            &super::resolution_lazy_where::CallShape {
+                class_name,
+                arg_values,
+                invocant,
+                role_bindings: role_bindings.as_ref(),
+            },
             all_matches,
             unverified,
             rivals,
