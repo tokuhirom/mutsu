@@ -17,6 +17,44 @@ pub(crate) struct GrammarDynvarFrame {
 pub(crate) const DEFERRED_DYNVAR_INIT: &str = "\u{1}";
 
 impl Interpreter {
+    /// The grammar class a parse receiver uses, including a runtime role
+    /// composition on a type object or an instance.
+    // Cost: O(r + c), r = composed roles, c = registered classes, plus role composition.
+    pub(crate) fn grammar_receiver_class(
+        &mut self,
+        receiver: &Value,
+    ) -> Result<Option<String>, RuntimeError> {
+        let class_name = match receiver.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Mixin(inner, mixins) => match inner.as_ref().view() {
+                ValueView::Package(_) => match self.mixin_class_of_type_object(receiver) {
+                    Some(name) => name,
+                    None => return Ok(None),
+                },
+                ValueView::Instance { class_name, .. } => {
+                    let base = class_name.resolve();
+                    if !self.class_is_grammar(&base) {
+                        return Ok(None);
+                    }
+                    let roles = Self::mixin_role_applications(mixins);
+                    if roles.is_empty()
+                        || roles.iter().any(|(name, args)| {
+                            args.is_some() || !self.registry().roles.contains_key(name)
+                        })
+                    {
+                        return Ok(None);
+                    }
+                    let role_names: Vec<String> = roles.into_iter().map(|(name, _)| name).collect();
+                    self.ensure_mixin_class(&base, &role_names)?
+                }
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        Ok(self.class_is_grammar(&class_name).then_some(class_name))
+    }
+
     /// A rule/token body may declare a *dynamic* variable inline
     /// (`rule deal { :my %*PLAYED = (); … }`). Collect those declarations by
     /// rule so a real rule invocation can install them for its own dynamic

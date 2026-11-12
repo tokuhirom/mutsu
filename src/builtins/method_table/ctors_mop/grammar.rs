@@ -11,7 +11,7 @@
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 macro_rules! row {
     ($name:literal) => {
@@ -38,20 +38,18 @@ pub(super) static ROWS: &[MethodRow] = &[row!("parse"), row!("parsefile"), row!(
 /// Run `method` on the grammar `target` (a type object or an instance). `args`
 /// is the receiver followed by the call's own arguments, named ones included
 /// as pairs; a receiver that is not a grammar declines.
-// Cost: O(n) in the parsed text, n = its length, plus the grammar's own rules.
+// Cost: O(n + r + c), n = parsed text length, r = mixed roles,
+// c = registered classes, plus role composition and the grammar's own rules.
 fn grammar_parse(
     interp: &mut Interpreter,
     target: &Value,
     method: &str,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    let class_name = match target.view() {
-        ValueView::Package(name) => name.resolve(),
-        ValueView::Instance { class_name, .. } => class_name.resolve(),
-        _ => return None,
+    let class_name = match interp.grammar_receiver_class(target) {
+        Ok(Some(name)) => name,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
     };
-    if !interp.class_is_grammar(&class_name) {
-        return None;
-    }
     Some(interp.dispatch_package_parse_on(Some(target), &class_name, method, &args[1..]))
 }
