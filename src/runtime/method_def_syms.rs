@@ -23,7 +23,17 @@ pub(crate) struct MethodDefSyms {
     param_def_names: OnceLock<Box<[Symbol]>>,
     source_file: OnceLock<Option<Symbol>>,
     named_fast: OnceLock<Box<[Option<NamedFast>]>>,
+    /// `role_param_bindings`' names interned, with the very bindings list
+    /// they were interned from: the composer replaces that list on cloned
+    /// defs (whose `syms` came along), so a reader checks it still holds the
+    /// same `Arc` before trusting the symbols.
+    role_binding_syms: OnceLock<RoleBindingSyms>,
 }
+
+type RoleBindingSyms = (
+    std::sync::Arc<Vec<(String, crate::value::Value)>>,
+    Box<[Symbol]>,
+);
 
 /// What the compiled-method fast path needs to bind a plain named scalar
 /// parameter (`Num :$value = 1e0`) without the general binder: its type check,
@@ -37,6 +47,21 @@ pub(crate) struct NamedFast {
 }
 
 impl super::MethodDef {
+    /// The interned names of `role_param_bindings`, index for index, or
+    /// `None` when the def has no bindings or its list is not the one first
+    /// interned (see [`MethodDefSyms`]'s `role_binding_syms`).
+    // Cost: O(1) after the first call; O(b) once, b = the bindings.
+    pub(crate) fn role_binding_syms(&self) -> Option<&[Symbol]> {
+        let bindings = self.role_param_bindings.as_ref()?;
+        let (held, syms) = self.syms.role_binding_syms.get_or_init(|| {
+            (
+                std::sync::Arc::clone(bindings),
+                bindings.iter().map(|(n, _)| Symbol::intern(n)).collect(),
+            )
+        });
+        std::sync::Arc::ptr_eq(held, bindings).then_some(&**syms)
+    }
+
     /// The storage key of `params[i]`: its name, or the term key of a
     /// sigilless parameter (ADR-12441), whose `param_defs[i]` says so.
     // Cost: O(1) after the first call; O(p) once, p = number of parameters.
