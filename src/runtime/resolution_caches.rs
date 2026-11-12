@@ -508,6 +508,11 @@ pub(crate) struct ResolutionCaches {
     /// is one refcount bump and leaves the table untouched.
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<crate::runtime::OtfCallKey, OtfCallEntry>,
+    /// The pun class a method call on a parameterized role type object was
+    /// re-dispatched to, per `(role, method)` and type arguments
+    /// (`parametric_role_pun_memo.rs`).
+    pub(crate) param_role_pun_memo:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::runtime::ParamRolePunEntries>,
     /// The winning candidate of a role method called on a mixin, by what the
     /// verdict reads (see `Interpreter::mixin_winner_key`).
     pub(crate) mixin_method_winner: rustc_hash::FxHashMap<

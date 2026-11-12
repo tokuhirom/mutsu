@@ -263,6 +263,9 @@ impl Interpreter {
             cx.class_def
                 .class_level_attrs
                 .insert(attr_name_str.clone(), initial_value);
+            self.registry_mut()
+                .class_level_attr_names
+                .insert(attr_name_str.clone());
             self.apply_class_body_attribute_traits(cx, &decl, &attr_name_str)?;
             // Skip per-instance attribute registration
             return Ok(ClassBodyFlow::SkipTail);
