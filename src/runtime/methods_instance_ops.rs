@@ -2281,16 +2281,10 @@ impl Interpreter {
                         .map(|d| !d.is_empty())
                         .unwrap_or(false)
                     {
-                        let mut call_args = match Interpreter::cursor_call_position(&target)
-                            .or_else(|| Interpreter::subrule_invocant_position(&target))
-                        {
-                            Some((orig, pos, anchored)) => vec![
-                                Value::str(orig),
-                                Value::pair(
-                                    if anchored { "pos" } else { "c" }.to_string(),
-                                    Value::int(pos as i64),
-                                ),
-                            ],
+                        let cursor_position = Interpreter::cursor_call_position(&target)
+                            .or_else(|| Interpreter::subrule_invocant_position(&target));
+                        let mut call_args = match &cursor_position {
+                            Some((orig, _, _)) => vec![Value::str(orig.clone())],
                             None => vec![Value::str_from("")],
                         };
                         call_args.push(Value::pair(
@@ -2303,7 +2297,16 @@ impl Interpreter {
                                 Value::array(args.to_vec()),
                             ));
                         }
-                        let result = self.dispatch_package_parse(&cn, "subparse", &call_args)?;
+                        let result = match cursor_position {
+                            Some((_, pos, anchored)) => self.dispatch_package_parse_at_cp(
+                                &cn,
+                                "subparse",
+                                &call_args,
+                                pos,
+                                anchored,
+                            )?,
+                            None => self.dispatch_package_parse(&cn, "subparse", &call_args)?,
+                        };
                         // Remember which rule produced this Match, so a
                         // method-shaped start rule that returns it fires that
                         // rule's action (`method TOP { self.rule }`).

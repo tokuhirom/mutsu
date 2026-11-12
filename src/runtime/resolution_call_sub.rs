@@ -885,16 +885,32 @@ impl Interpreter {
                     .and_then(|m| m.as_str())
                     .map(str::to_string)
                 {
-                    let parse_args: Vec<Value> = match data
+                    let (parse_args, cp_position): (Vec<Value>, Option<(usize, bool)>) = match data
                         .env
                         .get("__mutsu_token_method_wrapper_parse_args")
                         .map(Value::view)
                     {
-                        Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
-                        _ => Vec::new(),
+                        Some(ValueView::Array(items, _)) => {
+                            (items.iter().cloned().collect(), None)
+                        }
+                        Some(ValueView::Capture { positional, named }) => {
+                            let position = named
+                                .get("cp-position")
+                                .and_then(Value::as_int)
+                                .and_then(|pos| usize::try_from(pos).ok());
+                            let anchored = named
+                                .get("anchored")
+                                .is_some_and(|value| matches!(value.view(), ValueView::Bool(true)));
+                            (positional.to_vec(), position.map(|pos| (pos, anchored)))
+                        }
+                        _ => (Vec::new(), None),
                     };
-                    let parsed =
-                        self.run_wrapped_start_rule_terminal(&pkg, &method, &parse_args)?;
+                    let parsed = self.run_wrapped_start_rule_terminal(
+                        &pkg,
+                        &method,
+                        &parse_args,
+                        cp_position,
+                    )?;
                     return Ok(Self::token_wrap_result_or_failure(
                         &pkg,
                         args.first(),

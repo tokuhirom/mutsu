@@ -120,7 +120,7 @@ impl Interpreter {
         &mut self,
         package_name: &str,
         start_rule: &str,
-        parse_call: (&str, &[Value]),
+        parse_call: (&str, &[Value], Option<(usize, bool)>),
         cursor: Value,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
@@ -141,9 +141,16 @@ impl Interpreter {
         package_name: &str,
         method: &str,
         args: &[Value],
+        cp_position: Option<(usize, bool)>,
     ) -> Result<Value, RuntimeError> {
         START_RULE_WRAP_BYPASS.with(|flag| flag.set(true));
-        let result = self.dispatch_package_parse(package_name, method, args);
+        let result = self.dispatch_package_parse_with_cp_position(
+            None,
+            package_name,
+            method,
+            args,
+            cp_position,
+        );
         // A parse that returned before reaching its wrap check (an error)
         // must not leave the flag for an unrelated later parse.
         START_RULE_WRAP_BYPASS.with(|flag| flag.set(false));

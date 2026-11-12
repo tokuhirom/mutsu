@@ -173,16 +173,28 @@ pub(crate) fn match_value_to(val: &Value) -> i64 {
 // Cost: O(n), n = chars of `.orig` for the ASCII/CRLF scan; a non-trivial
 // subject also pays an O(p) grapheme count, p = chars of the prefix.
 pub(crate) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
-    use crate::grapheme_break::UnicodeSegmentation;
     let Some(orig) = val.match_orig() else {
         return cp;
     };
     let text = orig.to_string_value();
-    if cp <= 0 || text.is_ascii() && !text.contains("\r\n") {
+    if cp <= 0 {
         return cp;
     }
-    let prefix: String = text.chars().take(cp as usize).collect();
-    prefix.graphemes(true).count() as i64
+    cp_to_grapheme_index(&text, cp as usize) as i64
+}
+
+/// The visible grapheme index of an internal code-point position.
+// Cost: O(1) for ASCII without CRLF; otherwise O(p), p = code points before cp.
+pub(crate) fn cp_to_grapheme_index(text: &str, cp: usize) -> usize {
+    use crate::grapheme_break::UnicodeSegmentation;
+    if text.is_ascii() && !text.contains("\r\n") {
+        return cp;
+    }
+    text.chars()
+        .take(cp)
+        .collect::<String>()
+        .graphemes(true)
+        .count()
 }
 
 /// The code-point offset of grapheme index `g` in `text` (the inverse of
