@@ -13,3 +13,10 @@ Two fixes from Red's migration tests (t/134, t/136, t/154, t/161):
   The process-stash lookup collapsed its "this is a lexical binding" answer to
   "no answer". Red provisions its temporary test database with
   `my %*ENV = %environment` and hands it to child commands that way.
+
+A third, from t/161: with user `infix:<ne>` or `infix:<!=>` candidates in scope
+(Red exports both), `$x ne any(@r)` threaded the Junction through `ne`, which
+is true as soon as `@r` holds a second value. Rakudo's core `ne` is
+`not a eq b` over the whole operands, so the comparison means "equal to none
+of them". Red's table-removal loop, `@pending.grep({ $_ ne any(@ready) })`,
+never shrank and the test hung.
