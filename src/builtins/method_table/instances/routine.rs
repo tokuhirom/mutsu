@@ -36,6 +36,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("package", package),
     row!("onlystar", onlystar),
     row!("soft", soft),
+    row!("derive_dispatcher", derive_dispatcher),
 ];
 
 /// `Routine.is_dispatcher`.
@@ -91,4 +92,14 @@ fn soft(_i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> 
         return super::code_regex::answer(t, "soft");
     }
     matches!(t.view(), ValueView::Sub(_) | ValueView::Routine { .. }).then(|| Ok(Value::NIL))
+}
+
+/// `Routine.derive_dispatcher`: a new dispatcher starting from this one's
+/// candidates, which then grows on its own (`add_dispatchee`).
+// Cost: O(e), e = the dispatcher's captured env (one code object built).
+fn derive_dispatcher(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return None;
+    }
+    i.routine_derive_dispatcher(t)
 }

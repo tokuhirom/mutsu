@@ -649,6 +649,11 @@ impl Interpreter {
             "postcircumfix:<[; ]>" => return self.builtin_postcircumfix_multidim(args),
             _ => {}
         }
+        // A derived dispatcher of a built-in routine that is no operator
+        // (`&say.clone.derive_dispatcher`) falls back to the routine itself.
+        if Self::is_builtin_function(name) {
+            return self.call_function(name, args.to_vec());
+        }
         Err(self.multi_no_match_error(name, args))
     }
 

@@ -45,6 +45,12 @@ impl Interpreter {
     /// Publish symbols carried by a globalish-package into GLOBAL, making them
     /// resolvable through `::('Name')`. Used by `GLOBALish.WHO.merge-symbols`.
     pub(crate) fn merge_global_symbols(&mut self, pkg: &Value) -> Value {
+        if let ValueView::Instance { attributes, .. } = pkg.view()
+            && let Some(module) = attributes.as_map().get("globalish-module").cloned()
+        {
+            self.merge_module_globalish(&module.to_string_value());
+            return Value::NIL;
+        }
         let symbols = match pkg.view() {
             ValueView::Instance { attributes, .. } => {
                 attributes.as_map().get("globalish-symbols").cloned()

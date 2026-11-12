@@ -159,10 +159,9 @@ impl Interpreter {
         )))
     }
 
-    /// `$*R.resolve-lexical-constant($name)`: a package type object the
-    /// running unit's lexical scope binds under `name` (and that is not the
-    /// setting's), as the `RakuAST::Declaration::Import` that names it; `Nil`
-    /// otherwise.
+    /// `$*R.resolve-lexical-constant($name)`: a routine, a package or a
+    /// sigilless term the running unit's lexical view binds under `name`, as
+    /// the `RakuAST::Declaration::Import` that names it; `Nil` otherwise.
     // Cost: O(d) for the scope lookup, d = scope depth.
     fn resolve_unit_lexical_package(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let Some(name) = args
@@ -172,24 +171,60 @@ impl Interpreter {
         else {
             return Ok(Value::NIL);
         };
-        if crate::core_type_names::contains(&name) || name.starts_with(['$', '@', '%', '&']) {
-            return Ok(Value::NIL);
+        // A routine (`get-lexical('&postcircumfix:<{ }>')`) resolves from the
+        // whole lexical view, the setting's included, unless the query is
+        // for the current scope alone.
+        let current_scope_only = args.iter().any(|a| {
+            matches!(a.view(), ValueView::Pair(key, value)
+                if key == "current-scope-only" && value.truthy())
+        });
+        if let Some(routine) = name.strip_prefix('&') {
+            if current_scope_only || self.resolve_code_var(routine).is_nil() {
+                return Ok(Value::NIL);
+            }
+            return Ok(Self::lexical_import_declaration(name));
         }
-        let Some(value) = self.env().get(&name).cloned() else {
-            return Ok(Value::NIL);
-        };
-        let value = value.deref_container();
-        if !matches!(value.view(), ValueView::Package(_)) {
+        if crate::core_type_names::contains(&name) || name.starts_with(['$', '@', '%']) {
             return Ok(Value::NIL);
         }
         // The resolver's own form of the declaration: its `compile-time-value`
-        // reads the name in the scope that asks (`external_value`).
-        let _ = value;
+        // reads the name in the scope that asks (`external_value`). A package
+        // the scope binds (a plain env key is also a `$`-scalar's, so only a
+        // package counts there), or one a loaded module vivified under
+        // `GLOBAL` (CompUnit::Util's `set-unit('GLOBALish::Foo::Bar', ...)`).
+        let bound_package = self
+            .env()
+            .get(&name)
+            .is_some_and(|v| matches!(v.deref_container().view(), ValueView::Package(_)));
+        if bound_package || self.is_known_package(&name) {
+            return Ok(Self::lexical_import_declaration(name));
+        }
+        // A sigilless term: a constant of the scope, or one a `sub EXPORT`
+        // merged into the importing unit or block (`set-unit` / `set-lexpad`).
+        // TODO: answer `:current-scope-only` for the block a BEGIN phaser
+        // stands in, not the unit's whole view: a nested block's BEGIN is
+        // lifted to the unit's prologue, which records no scope (#17515).
+        if self.compile_time_term(&name).is_some() {
+            return Ok(Self::lexical_import_declaration(name));
+        }
+        Ok(Value::NIL)
+    }
+
+    /// The sigilless term `name` a BEGIN phaser sees: a binding of its scope,
+    /// or one a `sub EXPORT` bound in an import set open around it.
+    // Cost: O(s), s = the import sets open around the phaser.
+    pub(crate) fn compile_time_term(&self, name: &str) -> Option<Value> {
+        self.term_binding(name).or_else(|| {
+            self.lexical_import_hook_term(&self.compile_time_import_chain(), Symbol::intern(name))
+        })
+    }
+
+    /// The resolver's `RakuAST::Declaration::Import` for `name`: its
+    /// `compile-time-value` reads the name in the scope that asks.
+    // Cost: O(1).
+    fn lexical_import_declaration(name: String) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("lexical-name".to_string(), Value::str(name));
-        Ok(Value::make_instance(
-            Symbol::intern("RakuAST::Declaration::Import"),
-            attrs,
-        ))
+        Value::make_instance(Symbol::intern("RakuAST::Declaration::Import"), attrs)
     }
 }

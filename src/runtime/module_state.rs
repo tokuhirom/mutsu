@@ -12,6 +12,11 @@ use super::*;
 pub(crate) type ExportTagTable =
     rustc_hash::FxHashMap<String, rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>>>;
 
+/// A declaration a `sub EXPORT` merged into its importer while it ran: whether
+/// it targets the block holding the `use` (`set-lexpad`) rather than the unit
+/// (`set-unit`), its name, and its value.
+pub(crate) type GeneratedLexical = (bool, String, Value);
+
 pub(crate) struct ModuleState {
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
@@ -138,7 +143,7 @@ pub(crate) struct ModuleState {
     /// map once the hook is done and the importer's env is back. The flag is
     /// whether the declaration targets the block the `use` is in (`set-lexpad`)
     /// rather than the importing unit (`set-unit`).
-    pub(crate) pending_generated_lexicals: Vec<(bool, String, Value)>,
+    pub(crate) pending_generated_lexicals: Vec<GeneratedLexical>,
     /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
@@ -584,8 +589,9 @@ pub(crate) struct ModuleState {
     /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
     /// ran it, by module and `use` arguments (`hook_replay_key`). The same
     /// `use` left in its block replays the map instead of running the hook a
-    /// second time (`run_eval_hook_uses`).
-    pub(crate) eval_hook_results: HashMap<String, Value>,
+    /// second time (`run_eval_hook_uses`), with the declarations the hook
+    /// merged into its importer (`pending_generated_lexicals`).
+    pub(crate) eval_hook_results: HashMap<String, (Value, Vec<GeneratedLexical>)>,
     /// Whether a hook run now records its map in `eval_hook_results`.
     pub(crate) eval_hook_recording: bool,
     /// The routine-table version an import scope's exit last found free of

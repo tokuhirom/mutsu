@@ -25,8 +25,10 @@ impl Interpreter {
     // Cost: O(c), c = multi candidates, for a handle; O(1) for a `Sub`.
     pub(crate) fn routine_is_dispatcher(&mut self, target: &Value) -> Option<Value> {
         match target.view() {
+            // A built-in routine is a proto of its candidates in Rakudo.
             ValueView::Routine { name, package, .. } => Some(Value::truth(
-                self.routine_name_is_multi(&package.resolve(), &name.resolve()),
+                self.routine_name_is_multi(&package.resolve(), &name.resolve())
+                    || Self::is_core_routine_handle(&name.resolve()),
             )),
             ValueView::Sub(data) => Some(Value::truth(
                 Self::sub_multi_method_dispatcher_name(&data).is_some()
@@ -34,6 +36,48 @@ impl Interpreter {
             )),
             _ => None,
         }
+    }
+
+    /// Whether `name` (a `Routine` handle's) names a built-in routine.
+    // Cost: O(1).
+    fn is_core_routine_handle(name: &str) -> bool {
+        Self::is_builtin_function(name) || Self::is_core_code_ref_function(name)
+    }
+
+    /// `Routine.derive_dispatcher` (`$proto.clone.derive_dispatcher`,
+    /// CompUnit::Util's `push-lexical-multi`): a dispatcher of its own that
+    /// starts from this one's candidates. A built-in routine's derived
+    /// dispatcher has no user candidates and falls back to the routine for a
+    /// call none of the added ones accepts. `None` for a routine that is no
+    /// dispatcher.
+    // Cost: O(e), e = the dispatcher's captured env (one code object built).
+    pub(crate) fn routine_derive_dispatcher(
+        &mut self,
+        target: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let source = match target.view() {
+            ValueView::Routine { name, package, .. } => {
+                let (name, package) = (name.resolve(), package.resolve());
+                if self.routine_name_is_multi(&package, &name) {
+                    let qualified = crate::qualified::qualified_text(&package, &name);
+                    self.resolve_code_var(qualified.as_str())
+                } else if Self::is_core_routine_handle(&name) {
+                    let dispatcher = self.sub_value_from_multi_candidates(&name, Vec::new());
+                    return Some(Ok(Self::with_builtin_operator_fallback(dispatcher)));
+                } else {
+                    return None;
+                }
+            }
+            _ => target.clone(),
+        };
+        let ValueView::Sub(data) = source.view() else {
+            return None;
+        };
+        data.env.get_sym(crate::symbol::wk::multi_dispatch_candidates())?;
+        let mut fresh: crate::value::SubData = (**data).clone();
+        fresh.id = crate::value::next_instance_id();
+        fresh.routine_cell = fresh.routine_cell.forked();
+        Some(Ok(Value::sub_value(crate::gc::Gc::new(fresh))))
     }
 
     /// `Routine.onlystar`: whether the routine is a `proto` whose body is the

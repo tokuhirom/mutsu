@@ -40,7 +40,17 @@ impl Interpreter {
         rest: Vec<Value>,
     ) -> Result<(), RuntimeError> {
         for next in rest {
-            match self.try_user_concat(acc, &next)? {
+            // The CORE (Str:D, Str:D) candidate wins for two ordinary string
+            // parts. A user `sub infix:<~>` still handles an explicit `~`,
+            // but its interpolated result must not call it for every piece.
+            let user_result = if matches!(acc.view(), ValueView::Str(_))
+                && matches!(next.view(), ValueView::Str(_))
+            {
+                None
+            } else {
+                self.try_user_concat(acc, &next)?
+            };
+            match user_result {
                 Some(v) => *acc = v,
                 None => {
                     let left = std::mem::replace(acc, Value::NIL);

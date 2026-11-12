@@ -475,10 +475,7 @@ impl Interpreter {
         let ValueView::Sub(data) = value.view() else {
             return None;
         };
-        let candidates = data
-            .env
-            .get("__mutsu_multi_dispatch_candidates")
-            .and_then(|candidates| candidates.as_list_items().map(ToOwned::to_owned))?;
+        let candidates = Self::captured_dispatch_candidates(&data)?;
         Some((value.clone(), candidates))
     }
 
