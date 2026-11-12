@@ -277,10 +277,7 @@ impl Interpreter {
                 return Some(Ok(result));
             }
         }
-        if let Some(ValueView::Array(cands, _)) = data
-            .env
-            .get("__mutsu_multi_dispatch_candidates")
-            .map(Value::view)
+        if let Some(cands) = Self::captured_dispatch_candidates(data)
             && let Some(result) = self.multi_candidate_arity_count(&cands, method)
         {
             return Some(Ok(result));
@@ -414,11 +411,7 @@ impl Interpreter {
             }
         }
         // Fall back to captured candidates
-        if let Some(ValueView::Array(cands, _)) = data
-            .env
-            .get("__mutsu_multi_dispatch_candidates")
-            .map(Value::view)
-        {
+        if let Some(cands) = Self::captured_dispatch_candidates(data) {
             let sigs: Vec<Value> = cands
                 .iter()
                 .filter_map(|c| {

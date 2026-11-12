@@ -39,14 +39,22 @@ impl Interpreter {
     /// Whether the running import binds the routine `name` a `sub EXPORT`
     /// hook returned (`'&name' => ...`) in its lexical import set, and if so
     /// keep `value` for it: the import then writes no env alias for it
-    /// (ADR-8751). Only a plain routine of the importing compunit's block
-    /// qualifies; an operator or a term keeps the env alias, which its
-    /// built-in op or bareword reads.
+    /// (ADR-8751). A plain routine of the importing compunit's block
+    /// qualifies, and so does a dispatcher over user candidates of a subscript
+    /// operator (`postcircumfix:<{ }>`), whose op reads the set alone
+    /// (`crate::lexical_builtin_op`); any other operator or a term keeps the
+    /// env alias, which its built-in op or bareword reads.
     // Cost: O(|name|).
     pub(crate) fn bind_hook_routine_lexically(&mut self, name: &str, value: &Value) -> bool {
+        let subscript_dispatcher = name.starts_with("postcircumfix:<")
+            && crate::lexical_builtin_op::binds_lexically(name)
+            && Self::is_builtin_operator_dispatcher(value);
         // `&MAIN` is read by name when the program ends, not through a call
         // site, so it stays an env binding.
-        if name.contains(':') || name == "MAIN" || !matches!(value.view(), ValueView::Sub(_)) {
+        if (name.contains(':') && !subscript_dispatcher)
+            || name == "MAIN"
+            || !matches!(value.view(), ValueView::Sub(_))
+        {
             return false;
         }
         let importer = self.executing_unit_sym_for_module_load();

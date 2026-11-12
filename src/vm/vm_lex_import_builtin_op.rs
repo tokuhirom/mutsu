@@ -183,10 +183,7 @@ impl Interpreter {
         let ValueView::Sub(data) = dispatcher.view() else {
             return None;
         };
-        let candidates: Vec<Value> = data
-            .env
-            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
-            .and_then(|value| value.as_list_items().map(ToOwned::to_owned))?;
+        let candidates: Vec<Value> = Self::captured_dispatch_candidates(&data)?;
         let shadowed_by_proto = data
             .env
             .contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core());
