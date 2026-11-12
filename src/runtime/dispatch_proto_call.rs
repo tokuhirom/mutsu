@@ -302,29 +302,27 @@ impl Interpreter {
             .iter()
             .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
             .collect();
-        // Collect all candidates (typed + generic) like resolve_function_with_types
-        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(key, _)| {
-                let ks = key.resolve();
-                typed_prefixes.iter().any(|p| ks.starts_with(p))
-            })
-            .map(|(key, def)| (key.resolve(), def.clone()))
-            .collect();
-        for key in &generic_keys {
-            let key_sym = Symbol::intern(key);
-            let m_prefix = format!("{}__m", key);
-            let more: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), def.clone()))
-                .collect();
-            candidates.extend(more);
+        let m_prefixes: Vec<String> = generic_keys.iter().map(|k| format!("{}__m", k)).collect();
+        // Collect all candidates (typed + generic) like resolve_function_with_types.
+        // Every key either pattern can match shares `name`'s base name, so the
+        // walk runs over the base-name index (`fn_keys_for_base`) rather than
+        // the whole functions map (#17553).
+        let base_keys = self.fn_keys_for_base(name);
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = Vec::new();
+        let registry = self.registry();
+        for key in base_keys.iter() {
+            let Some(def) = registry.functions.get(key) else {
+                continue;
+            };
+            let ks = key.as_str();
+            let hit = typed_prefixes.iter().any(|p| ks.starts_with(p.as_str()))
+                || generic_keys.iter().any(|g| ks == g.as_str())
+                || m_prefixes.iter().any(|m| ks.starts_with(m.as_str()));
+            if hit {
+                candidates.push((key.resolve(), def.clone()));
+            }
         }
+        drop(registry);
         // Sort by specificity (same as resolve_function_with_types)
         self.sort_candidates_by_specificity(&mut candidates);
         // Walk sorted candidates: find all matching ones, skip duplicates,
