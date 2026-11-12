@@ -95,7 +95,7 @@ pub(crate) fn unit_vars_before(node: &RakuAstNode) -> Vec<UnitVar> {
         let Some(cells_row) = row.as_list_items() else {
             continue;
         };
-        let [scope, name, from] = &cells_row[..] else {
+        let [scope, name, from] = cells_row else {
             continue;
         };
         let ValueView::Int(from) = from.view() else {
