@@ -52,6 +52,8 @@ pub(super) const fn opaque(
             &["Encoding::Decoder::Builtin"],
         ),
         S::WalkList => ("WalkList", &["WalkList"]),
+        S::ObjAt => ("ObjAt", &["ObjAt"]),
+        S::ValueObjAt => ("ValueObjAt", &["ObjAt"]),
         S::WrapHandle => ("Routine::WrapHandle", &["Routine::WrapHandle"]),
         S::HyperConfiguration => ("HyperConfiguration", &["HyperConfiguration"]),
         S::PodDeclarator => ("Pod::Block::Declarator", &["Pod::Block::Declarator"]),
