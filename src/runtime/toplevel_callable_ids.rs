@@ -176,6 +176,14 @@ impl Interpreter {
         self.env.insert_sym_noting(key, Value::int(id));
     }
 
+    /// The `routine_stack` height the innermost running module mainline
+    /// started at, or `None` outside a module load. Frames below it belong to
+    /// the code that triggered the load.
+    // Cost: O(1).
+    pub(crate) fn module_mainline_routine_floor(&self) -> Option<usize> {
+        self.module.module_toplevel.depth.map(|depth| depth.routines)
+    }
+
     /// Whether the executing code is a loaded module's mainline, directly at
     /// the depths it started at (see [`Self::run_module_mainline`]).
     // Cost: O(1).
