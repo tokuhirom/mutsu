@@ -35,23 +35,52 @@ impl Interpreter {
         let ValueView::Package(base) = inner.view() else {
             return None;
         };
-        // A base another thread punned (published, not yet adopted here) is
-        // composed by the cascade's adoption step first.
-        if !self.registry().classes.contains_key(base.as_str()) {
-            return None;
-        }
-        if self.mro_declares_user_new(base) || self.mro_declares_user_bless(base) {
-            return None;
-        }
-        let roles = Self::mixin_role_applications(mixins);
-        if roles.iter().any(|(role, _)| {
-            self.role_or_parent_has_method(role, "new")
-                || self.role_or_parent_has_method(role, "bless")
-        }) {
+        if !self.mixin_type_default_new_applies(target, base, mixins) {
             return None;
         }
         let result = self.dispatch_new(target.clone(), args.to_vec());
         Some(self.materialize_exception_message_in_result(result))
+    }
+
+    /// Whether nothing in `base`'s MRO or the mixed-in roles of `mixins` can
+    /// claim `new` (see [`Self::try_mixin_type_object_default_new`]).
+    ///
+    /// A function of the registry alone, so a verdict is remembered per mixin
+    /// type object and the registry write generation it was reached under
+    /// (#17331: Monad constructs every value from one of a handful of cached
+    /// `pun but Marker` types, and the MRO and role probes cost ~11K
+    /// instructions per construction). The entry holds the type object, so
+    /// the overrides address it is keyed by cannot be reused while it lives.
+    // Cost: O(1) expected on a memo hit; O(m + r) on a miss (see above).
+    fn mixin_type_default_new_applies(
+        &mut self,
+        target: &Value,
+        base: Symbol,
+        mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
+    ) -> bool {
+        let key = (base, crate::gc::Gc::as_ptr(mixins) as *const () as usize);
+        let generation = self.registry_write_generation();
+        if let Some((_, seen, applies)) = self.caches.mixin_default_new_memo.get(&key)
+            && *seen == generation
+        {
+            return *applies;
+        }
+        // A base another thread punned (published, not yet adopted here) is
+        // composed by the cascade's adoption step first; no verdict is kept.
+        if !self.registry().classes.contains_key(base.as_str()) {
+            return false;
+        }
+        let applies = !(self.mro_declares_user_new(base) || self.mro_declares_user_bless(base))
+            && !Self::mixin_role_applications(mixins)
+                .iter()
+                .any(|(role, _)| {
+                    self.role_or_parent_has_method(role, "new")
+                        || self.role_or_parent_has_method(role, "bless")
+                });
+        self.caches
+            .mixin_default_new_memo
+            .insert(key, (target.clone(), generation, applies));
+        applies
     }
 
     /// Whether any class of `class`'s MRO declares a user `bless`.
