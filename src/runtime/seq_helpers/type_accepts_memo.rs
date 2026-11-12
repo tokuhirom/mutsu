@@ -14,7 +14,9 @@
 //! - the receiver is a plain instance of a class the program declared (not a
 //!   lazy Match, a built-in class or a wrapper value);
 //! - the type is a registered class or role named without a smiley or a
-//!   parameterization, and is not a subset (whose `where` reads the value);
+//!   parameterization (a parameterized role's pun class, a registered class
+//!   of its own, is admitted), and is not a subset (whose `where` reads the
+//!   value);
 //! - at this point of the program the name is not re-bound: no type capture
 //!   or package alias resolves it (`try_resolved_type_capture_name`), and
 //!   the name is bound in scope to nothing but that very type object
@@ -107,13 +109,8 @@ impl Interpreter {
             Some(base) if allow_definite => base,
             _ => ty,
         };
-        // A smiley (`R:D`) or a parameterization (`R[Int]`) keeps the full check.
-        if ty.is_empty()
-            || ty.ends_with(":D")
-            || ty.ends_with(":U")
-            || ty.ends_with(":_")
-            || ty.contains('[')
-        {
+        // A smiley (`R:D`) keeps the full check.
+        if ty.is_empty() || ty.ends_with(":D") || ty.ends_with(":U") || ty.ends_with(":_") {
             return None;
         }
         if !self.types.user_declared_classes.contains(class_name.as_str()) {
@@ -121,6 +118,13 @@ impl Interpreter {
         }
         {
             let registry = self.registry();
+            // A parameterization (`R[Int]`) keeps the full check, unless the
+            // name is itself a registered class: the class a parameterized
+            // role puns into (`R\0default[Any]`, what `::?CLASS` names in
+            // its methods), which is as nominal as any other class.
+            if ty.contains('[') && !registry.classes.contains_key(ty) {
+                return None;
+            }
             if !(registry.classes.contains_key(ty) || registry.roles.contains_key(ty))
                 || registry.subsets.contains_key(ty)
                 || registry.enum_types.contains_key(ty)
