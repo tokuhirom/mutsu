@@ -46,12 +46,11 @@ impl<'ast> Visit<'ast> for SpineScan {
                 self.begin_calls_routine |= calls.found;
             }
             // The package spine: the module's own statements, its package-like
-            // bodies, and the blocks the parser wraps a declarator in.
+            // bodies, and the blocks the parser wraps a traited declarator in.
             Stmt::Package { .. }
             | Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
-            | Stmt::Block(_)
-            | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
+            | Stmt::Block(_) => walk_stmt(self, stmt),
             _ => {}
         }
     }
