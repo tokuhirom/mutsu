@@ -1164,17 +1164,10 @@ impl Interpreter {
         // live. The sub paths already do this before popping the frame; the
         // method paths resolved it after the env had been restored, which left
         // the literal `T` as the expected type (#7984).
-        let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
-            // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
-            // value, never a type: resolving it first would turn the CORE term
-            // `Empty` into any loaded `Foo::Empty` class (#9530).
-            if self.is_definite_return_spec(spec) {
-                return spec.to_string();
-            }
-            let spec = pun_pseudo_type(spec, owner_class);
-            let spec = loan_env!(self, resolved_type_capture_name(&spec));
-            self.resolve_method_type_name(owner_class, &spec)
-        });
+        let effective_return_spec = method_def
+            .return_type
+            .as_deref()
+            .map(|spec| self.method_effective_return_spec(owner_class, spec));
 
         // Sync state variables back
         for (slot, key) in &cc.state_locals {
@@ -2184,7 +2177,7 @@ impl Interpreter {
         // frame's own and are kept out of the exit merge below.
         let has_role_bindings =
             self.method_has_role_bindings(method_def, owner_class, receiver_class_name);
-        let role_binding_names: Vec<String> = if has_role_bindings {
+        let role_binding_names: std::sync::Arc<[String]> = if has_role_bindings {
             self.install_method_role_bindings(
                 receiver_class_name,
                 owner_class,
@@ -2192,7 +2185,7 @@ impl Interpreter {
                 method_def,
             )
         } else {
-            Vec::new()
+            std::sync::Arc::from([])
         };
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
@@ -3082,17 +3075,7 @@ impl Interpreter {
             .return_type
             .as_deref()
             .filter(|_| return_fast.is_none())
-            .map(|spec| {
-                // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
-                // value, never a type: resolving it first would turn the CORE term
-                // `Empty` into any loaded `Foo::Empty` class (#9530).
-                if self.is_definite_return_spec(spec) {
-                    return spec.to_string();
-                }
-                let spec = pun_pseudo_type(spec, owner_class);
-                let spec = loan_env!(self, resolved_type_capture_name(&spec));
-                self.resolve_method_type_name(owner_class, &spec)
-            });
+            .map(|spec| self.method_effective_return_spec(owner_class, spec));
 
         // Sync state variables
         for (slot, key) in &cc.state_locals {
@@ -3705,18 +3688,6 @@ fn merge_method_env(
 /// stores them (ADR-14843).
 fn is_fixed_frame_name(name: &str) -> bool {
     matches!(name, "self" | "?CLASS" | "?ROLE")
-}
-
-/// A role method run on its own role (a pun) keeps `::?CLASS` / `::?ROLE` in
-/// its return type, since only a consuming class resolves them at composition;
-/// the pun is the role itself.
-// Cost: O(len), len = the return spec's length.
-fn pun_pseudo_type<'a>(spec: &'a str, owner: &str) -> std::borrow::Cow<'a, str> {
-    if spec.contains("::?") {
-        std::borrow::Cow::Owned(spec.replace("::?CLASS", owner).replace("::?ROLE", owner))
-    } else {
-        std::borrow::Cow::Borrowed(spec)
-    }
 }
 
 #[cfg(test)]

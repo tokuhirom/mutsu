@@ -159,6 +159,8 @@ pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget}
 pub(crate) use vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_operand};
 pub(crate) use vm_hoist_capture_cells::HoistPendingCell;
 pub(crate) use vm_lexsub_aliases::{LexSubAliasTable, LexSubLatestCells};
+pub(crate) use vm_method_return_spec::MethodReturnSpecMemo;
+pub(crate) use vm_method_role_bindings::MethodRoleBindingsMemo;
 mod vm_call_light_typed;
 mod vm_call_light_uint;
 mod vm_call_method_compiled;
@@ -313,6 +315,7 @@ pub(crate) mod vm_method_body_package;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_dispatch;
 mod vm_method_finalize;
+mod vm_method_return_spec;
 mod vm_method_role_bindings;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;
