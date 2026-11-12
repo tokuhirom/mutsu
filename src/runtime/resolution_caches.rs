@@ -393,6 +393,11 @@ pub(crate) struct ResolutionCaches {
     /// a function of the MRO and the fixed method table, so cleared with
     /// `dispatch_multi_candidate` on a registry change.
     pub(crate) builtin_method_reached: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// `(class, method) -> the most-derived built-in method of this name in
+    /// the class's MRO is `Mu`'s` (`Interpreter::builtin_method_is_mus`): a
+    /// function of the MRO and the fixed method table, cleared with
+    /// `builtin_method_reached`.
+    pub(crate) builtin_method_from_mu: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// `Interpreter::class_attributes_shared`: the merged attribute list of a
     /// class, shared instead of cloned per call. A function of the registry
     /// alone, so it is exact while `class_attributes_stamp` equals the
