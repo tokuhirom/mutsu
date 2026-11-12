@@ -6,6 +6,55 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// The candidates a dispatcher code value dispatches over: the family it
+    /// captured (`__mutsu_multi_dispatch_candidates`) plus those
+    /// `add_dispatchee` added to it since. `None` when `data` is not such a
+    /// dispatcher.
+    // Cost: O(c), c = candidates.
+    pub(crate) fn captured_dispatch_candidates(
+        data: &crate::value::SubData,
+    ) -> Option<Vec<Value>> {
+        let (captured, _) = data
+            .env
+            .get_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            .cloned()
+            .and_then(Value::into_array)?;
+        let mut candidates: Vec<Value> = captured.iter().cloned().collect();
+        candidates.extend(data.routine_cell.added_dispatchees());
+        Some(candidates)
+    }
+
+    /// `add_dispatchee` on a dispatcher code value that captured its family:
+    /// the dispatcher itself grows (`routine_cell`), so every alias of it --
+    /// one bound into another unit's scope included -- dispatches to `other`.
+    // Cost: O(c), c = candidates of `other`.
+    pub(super) fn grow_captured_dispatcher(data: &crate::value::SubData, other: &Value) {
+        if data
+            .env
+            .get_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            .is_none()
+        {
+            return;
+        }
+        let other = match other.view() {
+            ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Sub(_)) => {
+                inner.as_ref().clone()
+            }
+            _ => other.clone(),
+        };
+        match other.view() {
+            ValueView::Sub(odata) => match Self::captured_dispatch_candidates(&odata) {
+                Some(candidates) => {
+                    for candidate in candidates {
+                        data.routine_cell.add_dispatchee(candidate);
+                    }
+                }
+                None => data.routine_cell.add_dispatchee(other.clone()),
+            },
+            _ => {}
+        }
+    }
+
     /// `&proto.add_dispatchee(&code)`: make `other` a candidate of the proto
     /// `package::name`.
     ///

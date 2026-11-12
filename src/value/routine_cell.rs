@@ -85,6 +85,12 @@ struct Inner {
     /// that shares the original's `state` variables (#15897). Unset for every
     /// other code object, whose state scope is its own identity.
     shared_state_scope: std::sync::OnceLock<u64>,
+    /// Candidates `add_dispatchee` added to a dispatcher that captured its
+    /// family (`(my multi f ...).dispatcher`): in rakudo the call mutates the
+    /// dispatcher object, so every alias of it dispatches to them too.
+    dispatchees: RwLock<Vec<super::Value>>,
+    /// Set once a dispatchee is added; never cleared.
+    has_dispatchees: AtomicBool,
 }
 
 /// Set once any routine has had a composition stored; never cleared. A
@@ -210,6 +216,28 @@ impl RoutineCell {
         let _ = self.0.shared_state_scope.set(scope);
     }
 
+    /// The candidates `add_dispatchee` added to this dispatcher, in order.
+    // Cost: O(1) when none was added; O(k) otherwise, k = added candidates.
+    pub(crate) fn added_dispatchees(&self) -> Vec<super::Value> {
+        if !self.0.has_dispatchees.load(Ordering::Acquire) {
+            return Vec::new();
+        }
+        self.0
+            .dispatchees
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
+    /// Add `candidate` to this dispatcher's own candidates.
+    // Cost: O(1) amortized.
+    pub(crate) fn add_dispatchee(&self, candidate: super::Value) {
+        if let Ok(mut slot) = self.0.dispatchees.write() {
+            slot.push(candidate);
+        }
+        self.0.has_dispatchees.store(true, Ordering::Release);
+    }
+
     /// A new, unshared cell starting from this one's composition: what a
     /// Raku-level `.clone` of the routine gets (ADR-11827 §2.3).
     // Cost: O(1).
@@ -232,6 +260,11 @@ impl RoutineCell {
         }
         if let Some(prec) = self.op_prec() {
             fresh.note_op_prec(prec.clone());
+        }
+        // A cloned dispatcher (`.clone.derive_dispatcher`) starts with the
+        // original's candidates and grows on its own from there.
+        for candidate in self.added_dispatchees() {
+            fresh.add_dispatchee(candidate);
         }
         fresh
     }
