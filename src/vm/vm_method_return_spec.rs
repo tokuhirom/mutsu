@@ -16,7 +16,7 @@ use super::*;
 /// address, so a later write to it copies the table and moves the address.
 ///
 /// [`ResolutionCaches::method_return_spec_memo`]:
-///     crate::runtime::ResolutionCaches::method_return_spec_memo
+///     crate::runtime::resolution_caches::ResolutionCaches::method_return_spec_memo
 pub(crate) struct MethodReturnSpecMemo {
     type_stamp: u64,
     aliases: std::sync::Arc<crate::runtime::PackageKeyed<String>>,

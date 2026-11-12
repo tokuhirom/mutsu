@@ -151,7 +151,7 @@ impl Interpreter {
 /// merge, and the table state they were read under.
 ///
 /// [`ResolutionCaches::method_role_bindings_memo`]:
-///     crate::runtime::ResolutionCaches::method_role_bindings_memo
+///     crate::runtime::resolution_caches::ResolutionCaches::method_role_bindings_memo
 #[derive(Clone)]
 pub(crate) struct MethodRoleBindingsMemo {
     state: (usize, u64),
