@@ -71,15 +71,13 @@ impl Interpreter {
     /// qualify.
     // Cost: the bare-word probe above plus the type test itself (see
     // `eval_smartmatch_with_junctions_ex`).
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_smart_match_type_lane(
         &mut self,
         code: &CompiledCode,
         ip: &mut usize,
         rhs_end: u32,
-        negate: bool,
         lhs: Option<&crate::opcode::SmartMatchLhs>,
-        rhs_is_match_regex: bool,
+        (negate, rhs_is_match_regex): (bool, bool),
     ) -> Result<bool, RuntimeError> {
         let rhs_start = *ip + 1;
         let rhs_end = rhs_end as usize;

@@ -87,7 +87,13 @@ impl Interpreter {
         // A bare type name on the right is a type test with nothing to
         // topicalize (`vm_smartmatch_type_lane.rs`).
         if !rhs_is_bare_topic
-            && self.try_smart_match_type_lane(code, ip, rhs_end, negate, lhs, rhs_is_match_regex)?
+            && self.try_smart_match_type_lane(
+                code,
+                ip,
+                rhs_end,
+                lhs,
+                (negate, rhs_is_match_regex),
+            )?
         {
             return Ok(());
         }
