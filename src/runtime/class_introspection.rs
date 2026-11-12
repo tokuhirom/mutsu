@@ -630,7 +630,14 @@ impl Interpreter {
 
     /// Look up a class-level attribute (declared with `our $.x` or `my $.x`).
     /// Searches the class and its MRO.
+    // Cost: O(1) when no class has declared a class-level attribute named
+    // `attr_name`; otherwise O(m), m = the class's MRO length.
     pub(crate) fn get_class_level_attr(&self, class_name: &str, attr_name: &str) -> Option<Value> {
+        // No class declares a class-level attribute of this name: nothing to
+        // find, and no MRO to walk (`Registry::class_level_attr_names`).
+        if !self.registry().class_level_attr_names.contains(attr_name) {
+            return None;
+        }
         // Check own class first
         if let Some(class_def) = self.registry().classes.get(class_name)
             && let Some(val) = class_def.class_level_attrs.get(attr_name)

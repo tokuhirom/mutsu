@@ -1285,6 +1285,16 @@ impl Interpreter {
                 base_name,
                 type_args,
             } = target.view()
+                && let Some(punned) =
+                    self.param_role_pun_memo_get(base_name, type_args, Symbol::intern(method))
+            {
+                // The same call re-dispatched to this pun before, and no type,
+                // role or pun has been registered or withdrawn since.
+                return self.call_method_with_values(Value::package(punned), method, args);
+            } else if let ValueView::ParametricRole {
+                base_name,
+                type_args,
+            } = target.view()
                 && let Some((role, _)) =
                     self.resolve_parametric_role_runtime(&base_name.resolve(), type_args)
             {
@@ -1297,11 +1307,14 @@ impl Interpreter {
                 if (role.methods.contains_key(method) || has_public_accessor)
                     && let Some(punned) = self.ensure_parametric_role_pun_class(&base, type_args)?
                 {
-                    return self.call_method_with_values(
-                        Value::package(Symbol::intern(&punned)),
-                        method,
-                        args,
+                    let punned = Symbol::intern(&punned);
+                    self.param_role_pun_memo_insert(
+                        base_name,
+                        type_args,
+                        Symbol::intern(method),
+                        punned,
                     );
+                    return self.call_method_with_values(Value::package(punned), method, args);
                 }
                 if role.methods.contains_key(method) || has_public_accessor {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;

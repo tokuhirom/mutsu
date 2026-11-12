@@ -4,6 +4,8 @@ mod core_io_candidates;
 mod operator_scope;
 mod otf_call_entry;
 pub(crate) use otf_call_entry::OtfCallEntry;
+mod parametric_role_pun_memo;
+pub(crate) use parametric_role_pun_memo::ParamRolePunEntries;
 mod plain_fn_resolve_memo;
 mod registry_gen;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).

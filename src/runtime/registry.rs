@@ -626,6 +626,12 @@ pub(crate) struct Registry {
     /// class's `class_level_attrs` rather than its per-instance attributes.
     pub(crate) role_class_level_attrs:
         HashMap<(String, String), Option<crate::opcode::DeclTraitArg>>,
+    /// Every name a class has ever declared a class-level attribute under
+    /// (`ClassDef::class_level_attrs`). Only grows. Lets the per-call
+    /// "does a class-scoped accessor shadow this method?" query answer the
+    /// overwhelming common case -- no class has such an attribute of that
+    /// name -- without walking the receiver's MRO.
+    pub(crate) class_level_attr_names: HashSet<String>,
     /// Per-attribute deferred `is default(...)` expression carried from a composed
     /// parametric role onto a consuming class: (class, attr) -> expr. Evaluated at
     /// construction with the class's role type-param bindings in scope.

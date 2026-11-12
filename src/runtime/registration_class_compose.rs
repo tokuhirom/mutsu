@@ -417,6 +417,9 @@ impl Interpreter {
             } else {
                 Value::NIL
             };
+            self.registry_mut()
+                .class_level_attr_names
+                .insert(attr.clone());
             cx.class_def.class_level_attrs.insert(attr, value);
         }
         // Carry each composed-role attribute's deferred `is default(...)`
