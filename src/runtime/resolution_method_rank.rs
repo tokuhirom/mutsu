@@ -166,6 +166,25 @@ impl Interpreter {
         reached
     }
 
+    /// Whether the most-derived built-in method named `method_sym` in the MRO
+    /// of `class_sym` is `Mu`'s: no built-in class between the user's classes
+    /// and `Mu` declares a method of that name (a `DateTime` subclass's `clone`
+    /// is `DateTime`'s). Memoized per `(class, method)` for one method
+    /// generation.
+    // Cost: O(1) amortized; O(m) on a miss, m = MRO depth.
+    pub(crate) fn builtin_method_is_mus(&mut self, class_sym: Symbol, method_sym: Symbol) -> bool {
+        self.refresh_method_caches_for_generation();
+        let key = (class_sym, method_sym);
+        if let Some(&from_mu) = self.caches.builtin_method_from_mu.get(&key) {
+            return from_mu;
+        }
+        let mro = self.class_mro(class_sym.as_str());
+        let from_mu = Self::builtin_method_level(&mro, method_sym.as_str())
+            .is_some_and(|level| mro[level].as_str() == "Mu");
+        self.caches.builtin_method_from_mu.insert(key, from_mu);
+        from_mu
+    }
+
     /// The MRO index of the most-derived level with a built-in method
     /// `method_name`, or `None`.
     // Cost: O(m), m = MRO depth.

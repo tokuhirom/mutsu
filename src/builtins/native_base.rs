@@ -17,7 +17,7 @@
 //! User methods (including attribute accessors) never reach here: the native
 //! fast path is bypassed when the class or its MRO declares the method.
 
-use crate::symbol::Symbol;
+use crate::symbol::{Symbol, wk};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) use crate::value::numeric_payload::{
@@ -106,11 +106,11 @@ fn subclass_payload(target: &Value) -> Option<Value> {
         return None;
     };
     let map = attributes.as_map();
-    map.get("__mutsu_pair_value")
-        .or_else(|| map.get(RANGE_PAYLOAD))
-        .or_else(|| map.get(SEQ_PAYLOAD))
-        .or_else(|| map.get(VERSION_PAYLOAD))
-        .or_else(|| map.get(DEPSPEC_PAYLOAD))
+    map.get(wk::pair_payload())
+        .or_else(|| map.get(wk::range_payload()))
+        .or_else(|| map.get(wk::seq_payload()))
+        .or_else(|| map.get(wk::version_payload()))
+        .or_else(|| map.get(wk::depspec_payload()))
         .or_else(|| map.get(crate::symbol::wk::baggy_data()))
         .cloned()
         .or_else(|| capture_payload(&map))
@@ -120,8 +120,8 @@ fn subclass_payload(target: &Value) -> Option<Value> {
 /// positionals, and the nameds its live hash node holds now.
 // Cost: O(1) without a hash node; O(n) with one, n = its pairs.
 fn capture_payload(map: &crate::value::AttrMap) -> Option<Value> {
-    let payload = map.get(CAPTURE_PAYLOAD)?;
-    let Some(node) = map.get(CAPTURE_HASH) else {
+    let payload = map.get(wk::capture_payload())?;
+    let Some(node) = map.get(wk::capture_hash()) else {
         return Some(payload.clone());
     };
     let (ValueView::Capture { positional, .. }, ValueView::Hash(hash)) =
@@ -163,7 +163,7 @@ pub(crate) fn seq_payload(target: &Value) -> Option<Value> {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
-    attributes.as_map().get(SEQ_PAYLOAD).cloned()
+    attributes.as_map().get(wk::seq_payload()).cloned()
 }
 
 /// Whether `target` is an instance of a `Seq` or `Range` subclass: a value
@@ -174,7 +174,7 @@ pub(crate) fn has_iterable_payload(target: &Value) -> bool {
         return false;
     };
     let map = attributes.as_map();
-    map.contains_key(SEQ_PAYLOAD) || map.contains_key(RANGE_PAYLOAD)
+    map.contains_key(wk::seq_payload()) || map.contains_key(wk::range_payload())
 }
 
 /// Whether `target` is an instance of an `is Pair`, `is Seq`, `is Range` or quant-hash subclass:
@@ -187,9 +187,9 @@ pub(crate) fn has_collection_payload(target: &Value) -> bool {
         return false;
     };
     let map = attributes.as_map();
-    map.contains_key("__mutsu_pair_value")
-        || map.contains_key(SEQ_PAYLOAD)
-        || map.contains_key(RANGE_PAYLOAD)
+    map.contains_key(wk::pair_payload())
+        || map.contains_key(wk::seq_payload())
+        || map.contains_key(wk::range_payload())
         || map.contains_key(crate::symbol::wk::baggy_data())
 }
 
@@ -258,5 +258,46 @@ pub(crate) fn dispatch(
         [] => super::methods_0arg::native_method_0arg(&payload, method_sym),
         [arg] => super::native_method_1arg(&payload, method_sym, arg),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::symbol::wk;
+
+    /// The well-known symbols the payload readers look up are the very keys
+    /// the payloads are stored under.
+    #[test]
+    fn wk_payload_keys_match_their_constants() {
+        use crate::value::numeric_payload::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD, STR_PAYLOAD};
+        let pairs = [
+            (wk::int_payload(), INT_PAYLOAD),
+            (wk::num_payload(), NUM_PAYLOAD),
+            (wk::rat_payload(), RAT_PAYLOAD),
+            (wk::str_payload(), STR_PAYLOAD),
+            (
+                wk::native_backing(),
+                crate::value::types::NATIVE_BACKING_ATTR,
+            ),
+            (wk::range_payload(), super::RANGE_PAYLOAD),
+            (wk::seq_payload(), super::SEQ_PAYLOAD),
+            (wk::version_payload(), super::VERSION_PAYLOAD),
+            (wk::depspec_payload(), super::DEPSPEC_PAYLOAD),
+            (wk::capture_payload(), super::CAPTURE_PAYLOAD),
+            (wk::capture_hash(), super::CAPTURE_HASH),
+            (
+                wk::repo_subclass(),
+                crate::builtins::method_table::carried_state::REPO_SUBCLASS,
+            ),
+        ];
+        for (sym, key) in pairs {
+            assert_eq!(sym.as_str(), key);
+        }
+        assert_eq!(wk::pair_payload().as_str(), "__mutsu_pair_value");
+        assert_eq!(
+            wk::supplier_subclass().as_str(),
+            crate::builtins::method_table::supplier_scheduler::SUPPLIER_SUBCLASS
+        );
+        assert_eq!(wk::proc_async_state().as_str(), "__mutsu_proc_async_state");
     }
 }

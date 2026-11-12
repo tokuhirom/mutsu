@@ -61,10 +61,18 @@ fn objat(target: &Value) -> Option<(&'static str, Option<String>)> {
 
 // Cost: O(n), n = chars of the identity text.
 fn str_(target: &Value, _args: &[Value]) -> Answer {
+    objat_str(target).map(Ok)
+}
+
+/// `.Str` of an exact `ObjAt` / `ValueObjAt` instance: its identity text.
+/// `None` for any other receiver. The one implementation behind the `Str`
+/// row above and the string-context coercion of `~` / `eq`
+/// (`coerce_stringy_operand`), which used to reach it only through a full
+/// method dispatch (#17331).
+// Cost: O(n), n = chars of the identity text.
+pub(crate) fn objat_str(target: &Value) -> Option<Value> {
     let (class, which) = objat(target)?;
-    Some(Ok(Value::str(
-        which.unwrap_or_else(|| format!("{class}()")),
-    )))
+    Some(Value::str(which.unwrap_or_else(|| format!("{class}()"))))
 }
 
 // Cost: O(n), n = chars of the identity text.

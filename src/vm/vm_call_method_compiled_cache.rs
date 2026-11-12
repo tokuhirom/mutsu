@@ -119,6 +119,7 @@ impl Interpreter {
         self.caches.classhow_lookup_cache.clear();
         self.caches.deferral_build_context_free.clear();
         self.caches.builtin_method_reached.clear();
+        self.caches.builtin_method_from_mu.clear();
         self.clear_private_zeroarg_method_cache();
     }
 

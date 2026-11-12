@@ -244,7 +244,14 @@ impl Interpreter {
     /// gather that takes e values builds its list in O(e); taking an unforced
     /// gather coroutine forces it whole first.
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
-        let mut val = self.stack.pop().unwrap_or(Value::NIL);
+        let val = self.stack.pop().unwrap_or(Value::NIL);
+        self.take_statement(val)
+    }
+
+    /// `take val`: the statement form, and `Mu.take` (`method take { take
+    /// self }` in Rakudo), which shares it.
+    // Cost: O(1) amortized, as `exec_take_op`.
+    pub(crate) fn take_statement(&mut self, mut val: Value) -> Result<(), RuntimeError> {
         // `take <gather>` (a coroutine-backed lazy `Seq`, e.g. the recursive
         // `take internals($child)` in the P62 binary-tree walk) is reified to a
         // concrete `Seq` here, at the point it is taken. The gather was just

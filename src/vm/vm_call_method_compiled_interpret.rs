@@ -97,6 +97,15 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = true;
             return result;
         }
+        // `Mu.clone` on a user-class instance (`vm_clone_lane`).
+        if package_sym.is_none()
+            && let Some(result) = self.try_clone_instance_lane(&target, method_sym, &args)
+        {
+            // A typed twiddle's `where` constraint is user code: impure, as
+            // the cascade leaves it.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
         if let Some(name) = package_sym {
             let role_name = name.as_str();
             // A parametric role whose type parameters all have defaults puns
@@ -547,10 +556,10 @@ impl Interpreter {
             self.refresh_method_caches_for_generation();
             let cn = class_sym.as_str();
             let cache_key = (class_sym, method_sym);
+            if let Some(value) = self.winning_class_scoped_accessor(cn, method_sym, &args) {
+                return value;
+            }
 
-            // Fast method dispatch cache: skip wrap chain check, compiled_code
-            // extraction, and param_def eligibility scans for known-fast methods.
-            //
             // ADR-0019 E10: no `!self.has_any_wrap_chains()` guard here anymore.
             // That used to disable this cache PROGRAM-WIDE the instant any method
             // anywhere was wrapped, even for completely unrelated methods. It is

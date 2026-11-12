@@ -576,6 +576,19 @@ impl Interpreter {
             ValueView::Package(name) => (name.resolve(), true),
             _ => return Ok(v),
         };
+        // An `ObjAt` (`.WHICH`) is its identity text, read by the same
+        // function its `Str` row answers with, unless the program gave the
+        // class a stringifier of its own. Monad keys its type cache by
+        // `M.WHICH ~ '|' ~ T.WHICH`, which took a full method dispatch per
+        // operand (#17331).
+        if !is_type_object
+            && matches!(cn.as_str(), "ObjAt" | "ValueObjAt")
+            && !self.has_user_method(&cn, "Stringy")
+            && !self.has_user_method(&cn, "Str")
+            && let Some(text) = crate::builtins::method_table::objat_str(&v)
+        {
+            return Ok(text);
+        }
         // A `does Sequence` class stringifies through its own iterator.
         if !is_type_object
             && !self.has_user_method(&cn, "Stringy")
