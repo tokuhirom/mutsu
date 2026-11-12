@@ -99,6 +99,15 @@ impl Interpreter {
         }
         if let Some(name) = package_sym {
             let role_name = name.as_str();
+            // A parametric role whose type parameters all have defaults puns
+            // to that default parameterization, as the `CallMethodMut` entry
+            // does (`vm_role_default_pun.rs`); `new` and `CALL-ME` keep their
+            // own construction / coercion paths.
+            if !matches!(method, "new" | "CALL-ME")
+                && let Some(punned) = self.role_default_pun_redirect(&target, name, method_sym)?
+            {
+                return self.try_compiled_method_or_interpret_inner(punned, method_sym, args);
+            }
             if !self.registry().classes.contains_key(role_name)
                 && self.is_role(role_name)
                 // CALL-ME already has the role callable/coercion dispatch path.

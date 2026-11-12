@@ -580,6 +580,10 @@ pub(crate) struct ResolutionCaches {
     /// method name (`dispatcher_redispatch_callee`). Bounded by the number of
     /// wrapped proto method names in the program.
     pub(crate) dispatcher_redispatch_callees: HashMap<String, Value>,
+    /// The default-parameterization pun a method call on a role type object
+    /// re-dispatches to, per `(role, method)`, with the registry write
+    /// generation it was recorded under (`vm_role_default_pun.rs`).
+    pub(crate) role_default_pun_memo: HashMap<(Symbol, Symbol), (Symbol, u64)>,
 }
 
 impl ResolutionCaches {

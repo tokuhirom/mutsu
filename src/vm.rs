@@ -204,6 +204,7 @@ mod vm_eqv_instances;
 mod vm_multi_light_call;
 mod vm_operator_values;
 mod vm_pseudo_method_lane;
+mod vm_role_default_pun;
 mod vm_string_concat_user;
 mod vm_trailing_sub_decl;
 pub(crate) use vm_operator_values::StrCmp;
