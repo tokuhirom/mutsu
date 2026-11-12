@@ -180,6 +180,7 @@ mod vm_accessor_lane;
 mod vm_block_alias_sync;
 pub(crate) mod vm_block_env;
 mod vm_call_method_compiled_mut;
+mod vm_role_default_pun;
 mod vm_call_method_compiled_mut_tail;
 mod vm_call_method_mut_ops;
 mod vm_call_method_mut_prenative;
