@@ -157,7 +157,17 @@ impl Interpreter {
             // here asked it for a candidate with no arguments (EEL's
             // `EEL::Slang::Grammar`, #16888).
             let core_grammar_parent = base_role_name == "Grammar" && !does_parents.contains(parent);
-            let resolved_role = if core_grammar_parent {
+            // The base of a mixin class (`P[Any]+{R}`, `ensure_mixin_class`)
+            // is its inheritance parent even when it is a role's pun
+            // (`P[Any]`): the class inherits the pun's attributes and methods,
+            // so composing the role once more would declare its attributes a
+            // second time on the mixin class.
+            let mixin_base_pun = i == 0
+                && !does_parents.contains(parent)
+                && cx.name.ends_with('}')
+                && cx.name.starts_with(&format!("{resolved_parent_name}+{{"))
+                && self.registry().classes.contains_key(&resolved_parent_name);
+            let resolved_role = if core_grammar_parent || mixin_base_pun {
                 None
             } else {
                 self.resolve_role_candidate_with_args(&resolved_parent_name, pre_args.as_deref())?
