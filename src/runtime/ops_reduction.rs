@@ -174,8 +174,12 @@ impl Interpreter {
         // (#17513).
         let to_complex = |v: &Value| -> Option<(f64, f64)> {
             let mut cur = v;
-            while let ValueView::Mixin(inner, _) | ValueView::Scalar(inner) = cur.view() {
-                cur = inner;
+            loop {
+                cur = match cur.view() {
+                    ValueView::Mixin(inner, _) => inner,
+                    ValueView::Scalar(inner) => inner,
+                    _ => break,
+                };
             }
             match cur.view() {
                 ValueView::Complex(r, i) => Some((r, i)),
@@ -184,8 +188,12 @@ impl Interpreter {
         };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
-            while let ValueView::Mixin(inner, _) | ValueView::Scalar(inner) = cur.view() {
-                cur = inner;
+            loop {
+                cur = match cur.view() {
+                    ValueView::Mixin(inner, _) => inner,
+                    ValueView::Scalar(inner) => inner,
+                    _ => break,
+                };
             }
             match cur.view() {
                 ValueView::Int(i) => i as f64,

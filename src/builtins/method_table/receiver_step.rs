@@ -182,6 +182,20 @@ pub(crate) fn step_in(
     if let Some(path) = interp.io_path_subclass_cool_receiver(target, method) {
         return Some(Step::Redirect(path, Why::Delegate));
     }
+    // `Junction.Bool` (and `Mu.so`/`Mu.not` through it) collapses the
+    // junction through each eigenstate's own `Bool`, a user method included,
+    // which only the interpreter can call (#17513).
+    if argc == 0
+        && matches!(method, "Bool" | "so" | "not")
+        && matches!(target.view(), ValueView::Junction { .. })
+    {
+        let negate = method == "not";
+        return Some(Step::Answer(
+            interp
+                .eval_truthy_result(target)
+                .map(|truth| Value::truth(truth != negate)),
+        ));
+    }
     match step(target, method, argc)? {
         Step::Redirect(_, Why::SelfList) | Step::Answer(_)
             if self_list_overridden(interp, target, method) =>
