@@ -309,6 +309,10 @@ impl Interpreter {
                 return Ok(target.clone());
             }
             if let Some(result) = self.native_object_of_type(target, addr) {
+                // The object views the source's memory, so it holds the source.
+                if let Ok(cast) = &result {
+                    crate::runtime::keep_cast_source(cast, source);
+                }
                 return result;
             }
         }

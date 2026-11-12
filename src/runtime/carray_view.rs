@@ -96,6 +96,38 @@ impl CArrayView {
     }
 }
 
+/// Where a cast object keeps the value it was cast from.
+const CAST_SOURCE_ATTR: &str = "__mutsu_cast_source";
+
+/// Keep `source` alive as long as the object `cast` that views its memory:
+/// `nativecast(CArray[uint8], "abc".encode)` reads the temporary Blob's
+/// bytes after the call returns, and the Blob must not be freed under it.
+// Cost: O(1).
+pub(crate) fn keep_cast_source(cast: &Value, source: &Value) {
+    let attributes = match cast.view() {
+        ValueView::Instance { attributes, .. } => attributes,
+        ValueView::Mixin(inner, _) => match inner.view() {
+            ValueView::Instance { attributes, .. } => attributes,
+            _ => return,
+        },
+        _ => return,
+    };
+    attributes.insert(CAST_SOURCE_ATTR.to_string(), source.clone());
+}
+
+/// The C address an unmanaged CArray views -- a `nativecast(CArray[T], ...)`
+/// result, numeric or reference-element -- or `None` for any other value
+/// (an owned CArray, whose storage is the address, answers `None` too).
+/// A native call hands a `CArray` parameter this address as it is, as
+/// MoarVM's CArray REPR passes its `storage` pointer.
+// Cost: O(1).
+pub(crate) fn unmanaged_carray_address(v: &Value) -> Option<usize> {
+    if let Some(view) = CArrayView::of(v) {
+        return Some(view.addr);
+    }
+    super::carray_ref::view_base(&*super::carray_ref::ref_attrs(v)?)
+}
+
 impl Interpreter {
     /// The object of type `ty` that lives at C address `addr`, as MoarVM's
     /// CPointer and CArray REPRs box one: an instance of a CPointer-REPR class
