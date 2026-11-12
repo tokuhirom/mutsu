@@ -238,6 +238,10 @@ pub(crate) enum DispatchShape {
     EncodingDecoder,
     /// `WalkList` (opaque).
     WalkList,
+    /// `ObjAt` (opaque): what `.WHICH` returns for a reference type.
+    ObjAt,
+    /// `ValueObjAt` (opaque): what `.WHICH` returns for a value type.
+    ValueObjAt,
     /// `Routine::WrapHandle` (opaque).
     WrapHandle,
     /// `HyperConfiguration` (opaque).
@@ -327,7 +331,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 105] = [
+    pub(crate) const ALL: [DispatchShape; 107] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -394,6 +398,8 @@ impl DispatchShape {
         DispatchShape::EncodingEncoder,
         DispatchShape::EncodingDecoder,
         DispatchShape::WalkList,
+        DispatchShape::ObjAt,
+        DispatchShape::ValueObjAt,
         DispatchShape::WrapHandle,
         DispatchShape::HyperConfiguration,
         DispatchShape::PodDeclarator,

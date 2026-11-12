@@ -47,6 +47,7 @@ pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
 pub(crate) mod label;
+mod objat;
 pub(crate) mod parameter;
 pub(crate) mod rakuast_accessors;
 mod rakuast_apply_queries;
@@ -113,6 +114,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     iterator::ROWS,
     collation::ROWS,
     label::ROWS,
+    objat::ROWS,
     rakudo_internals::ROWS,
     code::ROWS,
     code::BLOCK_ROWS,
