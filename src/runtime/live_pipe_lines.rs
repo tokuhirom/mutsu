@@ -12,10 +12,13 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::sync::{Mutex, OnceLock};
 
+/// Read-ahead bytes per live pipe, keyed by `(pid, is_stderr)`.
+type PendingMap = Mutex<HashMap<(i64, bool), Vec<u8>>>;
+
 /// Bytes read from a live pipe beyond the lines `get` handed out, keyed by
 /// `(pid, is_stderr)`.
-fn pending_map() -> &'static Mutex<HashMap<(i64, bool), Vec<u8>>> {
-    static MAP: OnceLock<Mutex<HashMap<(i64, bool), Vec<u8>>>> = OnceLock::new();
+fn pending_map() -> &'static PendingMap {
+    static MAP: OnceLock<PendingMap> = OnceLock::new();
     MAP.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
