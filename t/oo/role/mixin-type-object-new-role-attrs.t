@@ -5,7 +5,7 @@ use Test;
 # named arguments like any other attribute (#17539; Monad builds every value as
 # `(pun but Some).new(:$value)`, #17331).
 
-plan 14;
+plan 17;
 
 role R { has $.type = 'R-default' }
 class B { has $.value }
@@ -48,3 +48,13 @@ my @objs = $shared.new(:value(1)), $shared.new(:value(2));
 @objs[0].^name eq @objs[1].^name
     ?? pass('every construction of one mixin type is the same class')
     !! flunk('every construction of one mixin type is the same class');
+
+# A mixin over a parametric role's pun (Monad's `Maybe[T].^pun but Some`).
+role PV[::X = Any] { has X $.value }
+my \PM = PV.^parameterize(Int).^pun but R;
+my $pm = PM.new(:value(5), :type<t>);
+is ($pm.value, $pm.type).join(','), '5,t', 'a mixin over a role pun takes both attributes';
+throws-like { PM.new(:value('x')) }, X::TypeCheck::Assignment,
+    "the pun's attribute keeps its type";
+is PM.^attributes.map(*.name).sort.join(','), '$!type,$!value',
+    'each attribute is declared once';
