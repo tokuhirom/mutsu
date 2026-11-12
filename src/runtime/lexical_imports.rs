@@ -670,6 +670,27 @@ impl Interpreter {
             .flat_map(|sets| sets.iter().rev().copied())
     }
 
+    /// The lexical import sets a BEGIN phaser sees, innermost first: the
+    /// active chain, then every import scope open around the phaser (the
+    /// blocks being compiled, an `EVAL`'d unit's top level whose chain is not
+    /// recorded until its compilation ends), then the running unit's own.
+    // Cost: O(s), s = sets of the open import scopes and the unit.
+    pub(crate) fn compile_time_import_chain(&self) -> Vec<Symbol> {
+        let mut chain = self.active_lexical_import_chain();
+        let open = self
+            .module
+            .import_scope_stack
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.lexical_sets.iter().rev().copied());
+        for set in open.chain(self.running_unit_lexical_sets()) {
+            if !chain.contains(&set) {
+                chain.push(set);
+            }
+        }
+        chain
+    }
+
     /// The lexical import sets of the blocks whose import scope is open,
     /// innermost first: what a lookup by a run-time name sees.
     // Cost: O(s), s = open import scopes' sets.

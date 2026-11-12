@@ -304,9 +304,10 @@ impl Interpreter {
         // A pre-run itself always runs the hook: every `use` runs it at BEGIN
         // time, a repeated `use M; use M` twice.
         if !self.module.eval_hook_recording
-            && let Some(result) = self.replay_eval_hook_result(module, &export_args)
+            && let Some((result, generated)) = self.replay_eval_hook_result(module, &export_args)
         {
             let importer = self.module.module_load_stack.last().cloned();
+            self.module.pending_generated_lexicals = generated;
             self.install_hook_result(&result, importer.as_deref());
             return Ok(());
         }
@@ -388,13 +389,20 @@ impl Interpreter {
     fn record_eval_hook_result(&mut self, module: &str, args: &[Value], result: &Value) {
         if self.module.eval_hook_recording {
             let key = Self::hook_replay_key(module, args);
-            self.module.eval_hook_results.insert(key, result.clone());
+            let generated = self.module.pending_generated_lexicals.clone();
+            self.module
+                .eval_hook_results
+                .insert(key, (result.clone(), generated));
         }
     }
 
     /// The map a pre-run already got from the hook of `module` for `args`.
     // Cost: O(1) when nothing was recorded; else one key build and lookup.
-    fn replay_eval_hook_result(&self, module: &str, args: &[Value]) -> Option<Value> {
+    fn replay_eval_hook_result(
+        &self,
+        module: &str,
+        args: &[Value],
+    ) -> Option<(Value, Vec<(bool, String, Value)>)> {
         if self.module.eval_hook_results.is_empty() {
             return None;
         }

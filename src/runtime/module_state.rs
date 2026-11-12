@@ -584,8 +584,9 @@ pub(crate) struct ModuleState {
     /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
     /// ran it, by module and `use` arguments (`hook_replay_key`). The same
     /// `use` left in its block replays the map instead of running the hook a
-    /// second time (`run_eval_hook_uses`).
-    pub(crate) eval_hook_results: HashMap<String, Value>,
+    /// second time (`run_eval_hook_uses`), with the declarations the hook
+    /// merged into its importer (`pending_generated_lexicals`).
+    pub(crate) eval_hook_results: HashMap<String, (Value, Vec<(bool, String, Value)>)>,
     /// Whether a hook run now records its map in `eval_hook_results`.
     pub(crate) eval_hook_recording: bool,
     /// The routine-table version an import scope's exit last found free of
