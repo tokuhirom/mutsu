@@ -5131,8 +5131,18 @@ impl Interpreter {
                     // Not for `SinkPopCall`: `f() = 1` on an `is rw` routine
                     // sinks the assignment, which runs STORE alone. Not for the
                     // Proxy object `.VAR` hands back (#15893).
+                    // Nor for the result of calling a Callable value
+                    // (`.(Type) for @blocks`, a block ending in `.attr = v`):
+                    // the call hands back the container the block's last
+                    // assignment stored into, and rakudo sinks it without a
+                    // FETCH (Red's migration blocks assign through write-only
+                    // Proxies whose FETCH dies).
+                    let after_value_call = ip
+                        .checked_sub(1)
+                        .is_some_and(|prev| matches!(code.ops[prev], OpCode::CallOnValue { .. }));
                     let val = if val.is_proxy_value()
                         && !val.is_proxy_var_object()
+                        && !after_value_call
                         && matches!(code.ops[*ip], OpCode::SinkPop(..))
                     {
                         self.auto_fetch_proxy(&val)?
