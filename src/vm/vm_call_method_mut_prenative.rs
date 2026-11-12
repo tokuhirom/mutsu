@@ -298,4 +298,60 @@ impl Interpreter {
             self.dispatch_what(&target, Vec::new())
         })
     }
+
+    /// `$obj.^name` / `Type.^name` (unquoted, no arguments) on an instance or
+    /// type object of an ordinary user class: the metaobject is the default
+    /// `ClassHOW` (no EXPORTHOW / `new_type` metaclass in `class_how_values`)
+    /// and no class on the MRO declares a `method ^name`, so the answer is
+    /// `dispatch_caret_name`'s, which the general path reached only after the
+    /// full probe chain (`shapeless_row` scans, `introspectable_name_listed`,
+    /// ~60k instructions per call). Red's `Red::AST.WHICH` runs `self.^name`
+    /// on every hash key and optimizer comparison (#17552).
+    // Cost: O(1) amortized to decide (two hash probes, one memoized MRO
+    // probe); `dispatch_caret_name`'s own O(1) for a hit.
+    pub(super) fn try_caret_name_lane(
+        &mut self,
+        code: &CompiledCode,
+        method: &str,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "name"
+            || arity != 0
+            || quoted
+            || arg_sources_idx.is_some()
+            || self.accessor_ref_pending
+            || modifier_idx.map(|idx| Self::const_str(code, idx)) != Some("^")
+            || self.has_any_wrap_chains()
+        {
+            return None;
+        }
+        let target = self.stack.last()?.clone();
+        let class = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return None,
+        };
+        {
+            let registry = self.registry();
+            if !registry.classes.contains_key(class.as_str())
+                || registry.class_how_values.contains_key(class.as_str())
+            {
+                return None;
+            }
+        }
+        if Self::is_metamodel_how(&class)
+            || self.is_metamodel_how_class(class.as_str())
+            || self.has_user_method_sym(class.as_str(), crate::symbol::Symbol::intern("^name"))
+        {
+            return None;
+        }
+        self.pending_call_arg_source_slots.clear();
+        self.set_pending_call_arg_sources(None);
+        self.stack.pop();
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "caret-name");
+        Some(self.dispatch_caret_name(&target))
+    }
 }
