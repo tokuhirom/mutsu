@@ -2,6 +2,8 @@ mod lazy_pipe_ctors;
 mod mixin_wrapped_methods;
 mod core_io_candidates;
 mod operator_scope;
+mod otf_call_entry;
+pub(crate) use otf_call_entry::OtfCallEntry;
 mod plain_fn_resolve_memo;
 mod registry_gen;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).

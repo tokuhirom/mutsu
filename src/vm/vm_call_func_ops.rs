@@ -1197,7 +1197,16 @@ impl Interpreter {
         // refcount bump; the entry stays in the table (it used to be `remove`d
         // and re-`insert`ed around every call, memcpying a ~1 kB
         // `CompiledFunction` twice per call — see `otf_call_cache`'s doc).
-        if !skip_name_caches {
+        // A compunit-private routine is answered by the cache too, under the
+        // unit it was resolved in (`otf_unit_key`); every other reason a name
+        // skips the name caches keeps it off this one as well.
+        let otf_unit = if !skip_name_caches {
+            Some(None)
+        } else {
+            self.otf_unit_private_key(code, code.const_sym(name_idx))
+                .map(Some)
+        };
+        if let Some(otf_unit) = otf_unit {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
             {
@@ -1218,9 +1227,8 @@ impl Interpreter {
                         .caches
                         .otf_call_cache
                         .get(self.caches.fn_resolve_gen, &name_sym)
-                        .filter(|(pkg, _, _)| *pkg == cur_pkg_sym)
-                        .map(|(_, def_pkg, cf)| (*def_pkg, Arc::clone(cf)))
-                    && !cf.has_inner_subs
+                        .filter(|entry| entry.callsite_pkg == cur_pkg_sym && entry.unit == otf_unit)
+                        .map(|entry| (entry.def_pkg, Arc::clone(&entry.cf)))
                 {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize && !call_has_slip {
@@ -1303,13 +1311,17 @@ impl Interpreter {
                             // `stack_args_have_slip` / the share checks above are
                             // per-CALL properties, and that path re-checks all of
                             // them in its own fused scan before dispatching.
-                            self.pos_light_cache_insert(
-                                name_sym,
-                                cur_pkg_sym,
-                                crate::runtime::PosLightTarget::Otf {
-                                    cf: Arc::clone(&cf),
-                                },
-                            );
+                            // Not for a compunit-private name: that cache is
+                            // not keyed by unit, and the name never reads it.
+                            if otf_unit.is_none() {
+                                self.pos_light_cache_insert(
+                                    name_sym,
+                                    cur_pkg_sym,
+                                    crate::runtime::PosLightTarget::Otf {
+                                        cf: Arc::clone(&cf),
+                                    },
+                                );
+                            }
                             self.call_compiled_function_positional_light(
                                 &cf,
                                 &args,
