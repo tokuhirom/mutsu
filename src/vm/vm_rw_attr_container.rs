@@ -130,7 +130,6 @@ impl Interpreter {
         code: &CompiledCode,
         attr: &str,
     ) -> Option<Value> {
-        let attr = attr.to_string();
         let base = self.frame_self_value(code)?;
         // A `Proxy` subclass instance keeps its `$!attr` storage in the same
         // shared cell an ordinary instance carries.
@@ -147,36 +146,45 @@ impl Interpreter {
             _ => return None,
         };
         // Public `has $.v` stores under `v`; private-only `has $!v` under `v!`.
-        let priv_key = format!("{}!", attr);
         // A scalar whose name another sigil's attribute also carries is stored
         // under the sigil-qualified key (`attribute_storage_key`), and the bare
-        // key then belongs to the other attribute (#17272).
-        let sigil_key = format!("${attr}");
-        let key = {
+        // key then belongs to the other attribute (#17272). One buffer serves
+        // both spelled keys: this runs for every `$!attr` an expression boxes
+        // (`method args { $!left, $!right }`), so it allocates once, not three
+        // times.
+        let mut key = String::with_capacity(attr.len() + 1);
+        key.push('$');
+        key.push_str(attr);
+        let current = {
             let map = attributes.as_map();
-            if map.get(sigil_key.as_str()).is_some() {
-                sigil_key
-            } else if map.get(attr.as_str()).is_some() {
-                attr.clone()
-            } else if map.get(priv_key.as_str()).is_some() {
-                priv_key
+            if let Some(v) = map.get(key.as_str()) {
+                v.clone()
+            } else if let Some(v) = map.get(attr) {
+                key.clear();
+                key.push_str(attr);
+                v.clone()
             } else {
-                return None;
+                key.clear();
+                key.push_str(attr);
+                key.push('!');
+                map.get(key.as_str())?.clone()
             }
         };
-        let current = attributes.as_map().get(key.as_str()).cloned();
         if matches!(
-            current.as_ref().map(|v| v.view()),
-            Some(ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..))
+            current.view(),
+            ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..)
         ) {
             return None;
         }
-        let cn = class_name.resolve();
+        // An attribute already promoted holds its cell, with the constraint
+        // registered when it was promoted (or the one a `:=` bind brought).
+        let already_cell = current.is_container_ref() && !current.container_ref_is_itemized();
         let cell_val = attributes.promote_attr_to_rw_result(key.as_str());
         // A typed attribute's constraint travels with the cell, so a write
         // through the returned container type-checks exactly like `$obj.v = x`.
-        if let ValueView::ContainerRef(cell) = cell_val.view()
-            && let Some(tc) = self.attr_container_type_constraint(&cn, &attr)
+        if !already_cell
+            && let ValueView::ContainerRef(cell) = cell_val.view()
+            && let Some(tc) = self.attr_container_type_constraint(&class_name.resolve(), attr)
             && !matches!(tc.as_str(), "Mu" | "Any")
         {
             crate::value::register_container_constraint(&cell, &tc);
