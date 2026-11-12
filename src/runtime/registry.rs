@@ -1334,14 +1334,14 @@ impl Registry {
     /// The wrap chain of `method` on the built-in class `class_name` or, when it
     /// has none, on the first class of the catalog MRO that does (`NFD.list` is
     /// wrapped by a `.wrap` of `Uni.list`).
-    // Cost: O(1) while nothing is wrapped; otherwise O(c + d), c = catalog rows
-    // (the MRO scan), d = MRO depth.
+    // Cost: O(1) while no method of this name is wrapped; otherwise O(c + d),
+    // c = catalog rows (the MRO scan), d = MRO depth.
     pub(crate) fn builtin_method_wrap_chain_along_mro(
         &self,
         class_name: &str,
         method: &str,
     ) -> Option<&Vec<(u64, Value)>> {
-        if self.method_wrap_chains.is_empty() {
+        if !self.method_name_ever_wrapped(method) {
             return None;
         }
         self.method_wrap_chain(class_name, method, 0).or_else(|| {
@@ -1358,9 +1358,11 @@ impl Registry {
         method_name: &str,
         candidate_idx: usize,
     ) -> Option<&Vec<(u64, Value)>> {
-        // Keyed by owned strings: skip building a key to miss in an empty map
-        // (the common case -- this runs on every method call).
-        if self.method_wrap_chains.is_empty() {
+        // Keyed by owned strings: skip building a key to miss when no method
+        // of this name was ever wrapped (the common case -- this runs on every
+        // method call, and a program that wraps one method must not pay for
+        // every other name).
+        if !self.method_name_ever_wrapped(method_name) {
             return None;
         }
         self.method_wrap_chains
