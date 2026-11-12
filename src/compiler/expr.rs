@@ -824,11 +824,9 @@ impl Compiler {
             // (`rakuast::compound::op`): one opcode, not a routine lookup.
             Expr::Call { name, args, .. }
                 if name.with_str(|n| n == "__mutsu_var_is_writable")
-                    && matches!(args.as_slice(), [Expr::Literal(v)] if v.as_str().is_some()) =>
+                    && let [Expr::Literal(v)] = args.as_slice()
+                    && v.as_str().is_some() =>
             {
-                let Expr::Literal(v) = &args[0] else {
-                    unreachable!("guarded above")
-                };
                 let name_idx = self.code.add_constant(v.clone());
                 self.code.emit(OpCode::VarIsWritable(name_idx));
             }
