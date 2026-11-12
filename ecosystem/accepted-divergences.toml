@@ -60,6 +60,17 @@ seen at compile time (33, a not-taken else branch) for the mainline's implicit r
 will not emulate them (maintainer decision 2026-10-29, #15323)."""
 
 [[divergence]]
+dist = "Concurrent::BoundedChannel"
+file = "t/01-sanity.rakutest"
+shape = { verdict = "fail", ok = 35, nok = 4, plan = 39, first_failure = "not ok 27 -" }
+issue = 17566
+reason = """test 27 (`is($bc.offer(3), Nil)` right after `offer(2)` woke a parked receiver) holds only \
+if the woken receiver re-takes the channel's `Lock` before the main thread re-locks it. Nothing \
+orders the two: `Lock` is not a hand-off lock on rakudo either, and rakudo loses the same race \
+under parallel load (1/12 runs; mutsu 8/12). Tests 29/30 then fail on the stale item. mutsu will \
+not adopt a hand-off lock to win a test-side race (maintainer decision 2026-11-12, #17566)."""
+
+[[divergence]]
 dist = "Datastar::SDK"
 file = "t/02-signals.rakutest"
 shape = { verdict = "fail", ok = 18, nok = 1, plan = 19, first_failure = "rejects an invalid Unicode scalar during serialization" }
@@ -120,6 +131,17 @@ reason = """the test's own helper t/CompileTestLib.rakumod dispatches on `$*VM.n
 and dies on anything else; mutsu reports 'mutsu' and will not claim 'moar' (same decision as \
 LibraryMake, user decision 2026-09-25). With the helper's check bypassed all 34 assertions pass \
 under mutsu."""
+
+[[divergence]]
+dist = "Object::Delayed"
+file = "t/02-basic.rakutest"
+shape = { verdict = "fail", ok = 14, nok = 1, plan = 15, first_failure = "did we get something else than Foo yet again" }
+issue = 16898
+reason = """test 7 checks that `$foo3` is still a trampoline while a sibling thread \
+(`catchup { sleep 1; $foo3.Bar }`) is due to resolve it at the same one-second mark. Which thread \
+gets there first is unordered; rakudo also fails the assertion once a 0.3 s delay is inserted \
+before the block. The write-through itself matches rakudo since #16914 (maintainer decision \
+2026-11-12, #16898)."""
 
 [[divergence]]
 dist = "SOAP::Client"
