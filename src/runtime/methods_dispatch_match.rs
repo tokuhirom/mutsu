@@ -157,10 +157,10 @@ impl Interpreter {
             // (ADR-11276 §9.46): a type object and an instance both reach
             // them, unless the grammar declares its own.
             "subparse" | "parse" | "parsefile" => {
-                let grammar = match target.view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => return None,
+                let grammar = match self.grammar_receiver_class(&target) {
+                    Ok(Some(name)) => name,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
                 };
                 if self.grammar_has_user_method(&grammar, method) {
                     return None;

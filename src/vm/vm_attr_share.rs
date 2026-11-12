@@ -155,6 +155,16 @@ impl Interpreter {
                 return shared.clone();
             }
         }
+        // An `@`/`%` source a closure rebinds holds a binding cell (ADR-12529
+        // §3): its content is the aggregate's own cell, which is what the
+        // scalar shares. The source keeps its binding: sharing the binding
+        // cell itself, or replacing the source's slot with the aggregate cell,
+        // made the scalar follow the source's later `:=` (#17482).
+        if (resolved_source.starts_with('@') || resolved_source.starts_with('%'))
+            && let Some(binding) = prior_binding.as_ref().and_then(Self::binding_cell_of)
+        {
+            return Self::value_cell_of(&binding);
+        }
         let source_is_scalar = !resolved_source.starts_with('@')
             && !resolved_source.starts_with('%')
             && !resolved_source.starts_with('&')

@@ -131,6 +131,20 @@ impl Interpreter {
         let mut outcome = Ok(Value::NIL);
         let owner = Some(self.current_package());
         let previous_owner = REPLAY_OWNER.with(|o| std::mem::replace(&mut *o.borrow_mut(), owner));
+        // The slang host already emitted the action's stdout and stderr when
+        // it built this production. Replay is for its interpreter-local state;
+        // buffering and dropping its writes keeps each user-visible message
+        // at the parse-time position where the action originally wrote it.
+        let (immediate, out_len, err_len, emitted) = {
+            let sink = self.output_sink();
+            (
+                sink.immediate_stdout,
+                sink.output.len(),
+                sink.stderr_output.len(),
+                sink.output_emitted,
+            )
+        };
+        self.set_immediate_stdout(false);
         for event in events.iter() {
             let Some(event) = event.as_list_items() else {
                 continue;
@@ -151,6 +165,13 @@ impl Interpreter {
                 outcome = Err(error);
                 break;
             }
+        }
+        {
+            let mut sink = self.output_sink_mut();
+            sink.immediate_stdout = immediate;
+            sink.output.truncate(out_len);
+            sink.stderr_output.truncate(err_len);
+            sink.output_emitted = emitted;
         }
         REPLAY_OWNER.with(|o| *o.borrow_mut() = previous_owner);
         for (key, previous) in saved {

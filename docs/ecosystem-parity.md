@@ -528,8 +528,10 @@ comparable across that boundary.
 
 ### 8.1 From GitHub Actions
 
-**The corpus is measured for you every night**: `ecosystem-sweep.yml` carries
-`schedule: - cron: '20 18 * * *'` — 03:20 JST — and a scheduled run is a full
+**The corpus is measured for you twice a day** (while the ecosystem is the
+focus; it was nightly before 2026-11-11): `ecosystem-sweep.yml` carries
+`schedule: - cron: '20 18 * * *'` and `- cron: '20 6 * * *'` — 03:20 and 15:20
+JST — and a scheduled run is a full
 `scope: all` sweep that rolls up and appends a `history.tsv` row (ADR-0085 D9's
 second amendment; the cost that justifies it is 78 minutes of wall time and ~5.5
 hours of job time). So nobody has to remember to refresh the numbers, and the

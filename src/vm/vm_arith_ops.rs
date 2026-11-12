@@ -215,6 +215,25 @@ impl Interpreter {
         let Some(top) = self.stack.last() else {
             return Ok(());
         };
+        // The current value of a `Proxy` target (an `is rw` method or sub
+        // returning one: `$obj.attr ~= "x"`) is what its FETCH answers. Left on
+        // the stack, the operator saw the Proxy itself, so a user candidate
+        // for the fetched type never matched and `~` stringified "Proxy" (Red's
+        // `*.name ~= "!"` over a column).
+        let target = if top.is_container_ref() {
+            top.deref_container()
+        } else {
+            top.clone()
+        };
+        if target.is_proxy_value() {
+            let fetched = loan_env!(self, auto_fetch_proxy(&target))?;
+            if let Some(slot) = self.stack.last_mut() {
+                *slot = fetched;
+            }
+        }
+        let Some(top) = self.stack.last() else {
+            return Ok(());
+        };
         if !is_meta_assign_undefined(top) {
             return Ok(());
         }

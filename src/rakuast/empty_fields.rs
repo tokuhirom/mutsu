@@ -72,6 +72,7 @@ pub(super) fn empty_node(node: &RakuAstNode, field: &str, class: RakuAstClass) -
             EmptyOrigins::default(),
             None,
             None,
+            None,
         ),
     }))
 }
