@@ -651,6 +651,12 @@ pub(crate) struct ResolutionCaches {
     /// and package-alias state it was resolved under (`vm_method_return_spec.rs`).
     pub(crate) method_return_spec_memo:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodReturnSpecMemo>,
+    /// Whether `.new` on a role-mixed type object is the default
+    /// constructor's, per `(base, mixin overrides address)`, with the type
+    /// object (held, so the address stays its own) and the registry write
+    /// generation the verdict was reached under (`vm_mixin_type_new.rs`).
+    pub(crate) mixin_default_new_memo:
+        rustc_hash::FxHashMap<(Symbol, usize), (crate::value::Value, u64, bool)>,
 }
 
 impl ResolutionCaches {
