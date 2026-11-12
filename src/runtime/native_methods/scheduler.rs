@@ -564,7 +564,7 @@ impl Interpreter {
                         .unwrap_or_else(|| Value::str(e.message.into_owned()));
                     let report = crate::value::unhandled_promise_text(
                         &exception,
-                        crate::runtime::current_mutsu_thread_id() as i64,
+                        crate::runtime::current_mutsu_thread_id(),
                     );
                     self.emit_stderr(&report);
                     self.builtin_exit(&[Value::int(1)])?;
