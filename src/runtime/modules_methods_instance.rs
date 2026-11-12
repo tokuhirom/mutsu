@@ -22,6 +22,7 @@ mod builtin_shadow;
 mod method_perl_alias;
 mod methods_object;
 mod methods_object_attr_constraints;
+mod methods_object_role_pun_ctor;
 mod methods_object_role_submethods;
 pub(crate) mod multi_dispatch_plan;
 pub(crate) mod multi_dispatch_program;
