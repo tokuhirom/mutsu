@@ -1633,26 +1633,28 @@ impl Interpreter {
                 this.record_readonly_on_own_binding(code, bare, kind);
             }
         };
-        if bind_marks_immutable || bind_marks_non_scalar_container {
-            let bare = code.locals[idx]
-                .trim_start_matches(['$', '@', '%', '&'])
-                .to_string();
-            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
-            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Immutable);
+        let readonly_mark = if bind_marks_immutable || bind_marks_non_scalar_container {
+            Some(crate::ast::ReadonlyKind::Immutable)
         } else if bind_marks_type_object {
-            let bare = code.locals[idx]
-                .trim_start_matches(['$', '@', '%', '&'])
-                .to_string();
-            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
-            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::TypeObject);
+            Some(crate::ast::ReadonlyKind::TypeObject)
         } else if bind_marks_itemized_scalar {
             // A readonly Scalar holds the itemized aggregate: the name owns a
             // container (so `.VAR` is `Scalar`), but cannot be assigned through.
-            let bare = code.locals[idx]
-                .trim_start_matches(['$', '@', '%', '&'])
-                .to_string();
-            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
-            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Alias);
+            Some(crate::ast::ReadonlyKind::Alias)
+        } else {
+            None
+        };
+        if let Some(kind) = readonly_mark {
+            // A `$` local is stored under its bare name, whose symbol the
+            // chunk already holds: no `String` and no intern per bind.
+            let local = code.locals[idx].as_str();
+            let bare = local.trim_start_matches(['$', '@', '%', '&']);
+            let bare_sym = match code.locals_sym.get(idx) {
+                Some(&sym) if bare.len() == local.len() => sym,
+                _ => Symbol::intern(bare),
+            };
+            self.mark_readonly_sym_with(bare_sym, kind);
+            record_on_own_binding(self, bare, kind);
         }
         // Code variables retain their sigil in the lexical store. Keep an
         // exact key too, so an unrelated `$f` cannot decide whether `&f` has
