@@ -34,6 +34,52 @@ impl FirstMatcher for VmFirstMatcher<'_> {
     }
 }
 
+/// The adverb a lazy `.first` answers with: `:k`, `:kv` or `:p` reshape the
+/// match like the eager scan does (`format_first_result`).
+#[derive(Clone, Copy, Default)]
+struct FirstAdverb {
+    k: bool,
+    kv: bool,
+    p: bool,
+}
+
+impl FirstAdverb {
+    // Cost: O(1).
+    fn answer(self, idx: usize, value: Value) -> Value {
+        crate::runtime::builtins_collection::format_first_result(
+            idx, value, self.k, self.kv, self.p,
+        )
+    }
+}
+
+/// The matcher and adverb of a `.first` call a lazy scan can answer: at most
+/// one positional (not a `Bool`, which must raise `X::Match::Bool`), and at
+/// most one of `:k`/`:kv`/`:p` (`:v` is the default). `None` for `:end`, an
+/// unknown or conflicting adverb or `:!v`: the eager scan reports those.
+// Cost: O(a), a = arguments.
+fn lazy_first_args(args: &[Value]) -> Option<(Option<Value>, FirstAdverb)> {
+    let mut func = None;
+    let mut adverb = FirstAdverb::default();
+    for arg in args {
+        match arg.view() {
+            ValueView::Pair(key, value) => {
+                let on = value.truthy();
+                match key.as_str() {
+                    "k" => adverb.k = on,
+                    "kv" => adverb.kv = on,
+                    "p" => adverb.p = on,
+                    "v" | "end" if on == (key == "v") => {}
+                    _ => return None,
+                }
+            }
+            ValueView::Bool(_) => return None,
+            _ if func.is_none() => func = Some(arg.clone()),
+            _ => return None,
+        }
+    }
+    ((adverb.k as u8 + adverb.kv as u8 + adverb.p as u8) <= 1).then_some((func, adverb))
+}
+
 impl Interpreter {
     /// Test a `grep`/`first`-style matcher against a single `item` using
     /// Interpreter-native dispatch (a `Sub` block via `vm_call_on_value`, any other
@@ -158,7 +204,7 @@ impl Interpreter {
         answer(scan(self, &items, false))
     }
 
-    /// `.first(matcher)` on a Seq nobody has read whose source is a not-yet-run
+    /// `.first(matcher)` (with `:k`/`:kv`/`:p` too) on a Seq nobody has read whose source is a not-yet-run
     /// `.map`/`.grep`: pull it one element at a time and stop at the match, so
     /// the callback runs only as far as the match and a callback that slips an
     /// infinite list does not make the scan read the whole Seq (#14312). The Seq
@@ -171,16 +217,17 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
-        let [matcher] = args else {
-            return Ok(None);
-        };
-        if method != "first" || matches!(matcher.view(), ValueView::Pair(..) | ValueView::Bool(_)) {
+        if method != "first" {
             return Ok(None);
         }
+        let Some((Some(matcher), adverb)) = lazy_first_args(args) else {
+            return Ok(None);
+        };
         let ValueView::Seq(body) = target.view() else {
             return Ok(None);
         };
-        let matcher = Self::unwrap_callable_mixin(matcher.clone());
+        let matcher = Self::unwrap_callable_mixin(matcher);
+        let mut idx = 0usize;
         // A `Seq.new($iterator)` (a `does Sequence` class's own iterator
         // included): one `pull-one` at a time up to the match, so an endless
         // iterator answers (#16133).
@@ -194,8 +241,9 @@ impl Interpreter {
                     return Ok(Some(Value::NIL));
                 };
                 if VmFirstMatcher(self).item_matches(&matcher, &item)? {
-                    return Ok(Some(item.deref_container()));
+                    return Ok(Some(adverb.answer(idx, item.deref_container())));
                 }
+                idx += 1;
             }
         }
         if !body.is_map_grep_source() {
@@ -210,13 +258,17 @@ impl Interpreter {
             for item in items {
                 if VmFirstMatcher(self).item_matches(&matcher, &item)? {
                     // The callback's own cell (`.map({ %h<a> })`) is the answer
-                    // (#17094); a plain value is returned bare.
-                    return Ok(Some(if item.is_container_ref() {
+                    // (#17094); a plain value is returned bare. The `:k`/`:kv`/
+                    // `:p` forms answer values.
+                    return Ok(Some(if adverb.k || adverb.kv || adverb.p {
+                        adverb.answer(idx, item.deref_container())
+                    } else if item.is_container_ref() {
                         item
                     } else {
                         item.deref_container()
                     }));
                 }
+                idx += 1;
             }
             if exhausted {
                 return Ok(Some(Value::NIL));
@@ -235,36 +287,19 @@ impl Interpreter {
         list: &crate::value::LazyList,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // Mirror `try_native_first` gating: at most one positional matcher and
-        // no adverbs / `Bool` matcher (those keep interpreter semantics).
-        // The one exception is `:k`, which List::Divvy uses to find the
-        // stopping index of an infinite prime pipeline. It can be answered
-        // while pulling, without materializing the lazy list.
-        let mut func: Option<Value> = None;
-        let mut has_k = false;
-        for arg in args {
-            match arg.view() {
-                ValueView::Pair(key, value) if key == "k" => {
-                    has_k = value.truthy();
-                }
-                ValueView::Pair(..) | ValueView::Bool(_) => return None,
-                _ if func.is_none() => func = Some(arg.clone()),
-                _ => return None,
-            }
-        }
+        // At most one positional matcher, no `Bool` matcher and no `:end`
+        // (those keep interpreter semantics). `:k`/`:kv`/`:p` are answered
+        // while pulling, without materializing the lazy list (List::Divvy
+        // finds the stopping index of an infinite prime pipeline with `:k`).
+        let (func, adverb) = lazy_first_args(args)?;
         let func = func.map(Self::unwrap_callable_mixin);
 
         // No matcher: `.first` is just the first element.
         let Some(func) = func else {
             return match self.force_lazy_list_vm_n(list, 1) {
-                Ok(items) => Some(Ok(if has_k {
-                    if items.is_empty() {
-                        Value::NIL
-                    } else {
-                        Value::int(0)
-                    }
-                } else {
-                    items.into_iter().next().unwrap_or(Value::NIL)
+                Ok(items) => Some(Ok(match items.into_iter().next() {
+                    Some(item) => adverb.answer(0, item),
+                    None => Value::NIL,
                 })),
                 Err(e) => Some(Err(e)),
             };
@@ -306,7 +341,7 @@ impl Interpreter {
                 }
             };
             if matched {
-                return Some(Ok(if has_k { Value::int(idx as i64) } else { item }));
+                return Some(Ok(adverb.answer(idx, item)));
             }
             idx += 1;
         }
