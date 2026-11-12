@@ -95,6 +95,11 @@ struct ModuleScanResult {
     /// cache-compatibility reason as `declares_export_hook`.
     #[serde(default)]
     dynamic_export_stash: bool,
+    /// Whether a BEGIN phaser calls a routine of a module the module loads,
+    /// which can change what it provides at BEGIN time (#17557): a `use` of it
+    /// runs the module at parse time, as for `dynamic_export_stash`.
+    #[serde(default)]
+    begin_calls_loaded_routine: bool,
     /// The `our` variables the module exports (`exported_vars.rs`).
     /// Defaulted for the same cache-compatibility reason as
     /// `declares_export_hook`.
@@ -304,6 +309,18 @@ pub(crate) fn module_declared_types(module: &str) -> Vec<String> {
     })
 }
 
+/// Register `keyword`, a declarator `module`'s `EXPORTHOW::DECLARE` provides,
+/// for the scope of the `use`: one the `use` introduces ends with its block,
+/// as a lexical import does (a unit-level `use` keeps it for the unit).
+// Cost: O(1).
+fn register_scoped_declare_keyword(module: &str, keyword: &str) {
+    let introduced = !super::registry::is_declare_keyword(keyword);
+    register_declare_keyword(module, keyword, false);
+    if introduced && super::registry::is_declare_keyword(keyword) {
+        super::compile_consts::note_slang_declarator(keyword);
+    }
+}
+
 pub(crate) fn register_module_exports(module: &str) {
     register_module_exports_with_tags(module, None);
 }
@@ -360,11 +377,20 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         });
         nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
-        if scan.dynamic_export_stash {
-            apply_module_exports(&probe_dynamic_exports(module));
+        if scan.dynamic_export_stash || scan.begin_calls_loaded_routine {
+            let probed = probe_dynamic_exports(module);
+            apply_module_exports(&probed.exports);
+            // Declarators a BEGIN-time merge gave the module (#17557).
+            for (directive, keyword) in &probed.declarators {
+                match directive.as_str() {
+                    "DECLARE" => register_scoped_declare_keyword(module, keyword),
+                    "SUPERSEDE" => register_supersede_keyword(module, keyword),
+                    _ => {}
+                }
+            }
         }
         for (keyword, _how_type) in &scan.declare_keywords {
-            register_declare_keyword(module, keyword, false);
+            register_scoped_declare_keyword(module, keyword);
         }
         for keyword in &scan.supersede_keywords {
             register_supersede_keyword(module, keyword);
@@ -1119,6 +1145,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         uses_slangify,
         declares_export_hook,
         dynamic_export_stash: decls.dynamic_export_stash,
+        begin_calls_loaded_routine: decls.begin_calls_loaded_routine,
         exported_vars: decls.exported_vars,
         exported_types: decls.exported_types,
         unlisted_exported_vars: decls.unlisted_exported_vars,
@@ -1306,6 +1333,17 @@ mod test_exports_tests {
             "<test>",
         );
         assert!(registered.uses_slangify);
+    }
+
+    #[test]
+    fn a_begin_call_of_a_loaded_routine_runs_the_module_at_parse_time() {
+        let merging = super::scan_module_source(
+            "use CompUnit::Util :re-export;\nneed exports-stuff;\nBEGIN re-exporthow('exports-stuff');\n",
+            "<test>",
+        );
+        assert!(merging.begin_calls_loaded_routine);
+        let plain = super::scan_module_source("use Some::Util; BEGIN say 1;", "<test>");
+        assert!(!plain.begin_calls_loaded_routine);
     }
 
     #[test]
