@@ -86,7 +86,7 @@ pub(crate) fn install_ref_view(attrs: &InstanceAttrs, elem: Value, addr: usize) 
 
 /// The base address of a reference-element view, `None` for owned storage.
 // Cost: O(1).
-fn view_base(attrs: &InstanceAttrs) -> Option<usize> {
+pub(super) fn view_base(attrs: &InstanceAttrs) -> Option<usize> {
     let map = attrs.as_map();
     map.get(view_key())?;
     usize::try_from(map.get("address")?.as_int()?).ok()

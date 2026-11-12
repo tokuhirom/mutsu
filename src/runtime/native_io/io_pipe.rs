@@ -241,7 +241,8 @@ impl Interpreter {
                             .map(|s| Value::str(s.trim_end_matches('\r').to_string()))
                             .collect()
                     };
-                    return Ok(Value::array(lines));
+                    // `IO::Handle.lines` is a Seq, on a pipe as on a file.
+                    return Ok(Value::seq(lines));
                 }
                 // A line at a time while the child runs: it may answer a
                 // line and then wait on its stdin for the parent.
@@ -326,9 +327,9 @@ impl Interpreter {
                                 .map(|s| Value::str(s.trim_end_matches('\r').to_string()))
                                 .collect()
                         };
-                        return Ok(Value::array(lines));
+                        return Ok(Value::seq(lines));
                     }
-                    return Ok(Value::array(vec![]));
+                    return Ok(Value::seq(vec![]));
                 }
                 "eof" => {
                     if let Ok(map) = super::builtins_system::io_pipe_state_map().lock()
