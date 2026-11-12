@@ -101,9 +101,20 @@ fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_
         Some(files) => Some(files),
         None => attr(target, "meta")?.and_then(|meta| meta.hash_get_str("files")),
     };
+    // An installed distribution's `files` maps a resource or script to the
+    // bare id it was stored under, inside the repository's `resources/` or
+    // `bin/` directory (rakudo's `CompUnit::Repository::Installation` layout,
+    // which `install` writes); any other `files` entry is already a path.
     let mapped = files
         .and_then(|files| files.hash_get_str(&address))
-        .map(|v| v.to_string_value());
+        .map(|v| v.to_string_value())
+        .map(|entry| {
+            let stored_id = !entry.contains('/') && !entry.contains('\\');
+            match address.split_once('/') {
+                Some((dir @ ("resources" | "bin"), _)) if stored_id => format!("{dir}/{entry}"),
+                _ => entry,
+            }
+        });
     let provided_source = attr(target, "meta")?
         .and_then(|meta| meta.hash_get_str("provides"))
         .and_then(|provides| match provides.view() {

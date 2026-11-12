@@ -135,6 +135,15 @@ impl Interpreter {
         // block-local `sub infix:<+>` to keep intercepting imported-module
         // arithmetic (e.g. Test.rakumod's `$num_of_tests_run + 1`) after the
         // block exited, resetting the test counter to Nil.
+        //
+        // Only the scope's own unit is rolled back, though: a module the scope
+        // loaded (`.schema-reader` loading Red's SQLiteMaster from inside a
+        // block) declared or imported its operators for *its* unit, and the
+        // module stays loaded after the block exits. Dropping those entries
+        // made the module's own `self.type eq "table"` fall back to the core
+        // `eq` on every later call (#17513).
+        let user_infix_ops =
+            Self::keep_foreign_unit_infix_ops(user_infix_ops, &self.dispatch.user_declared_infix_ops, self.current_unit);
         self.dispatch.user_declared_infix_ops = user_infix_ops;
         self.module.imported_routine_aliases = imported_routine_aliases;
         self.module.imported_exported_proto_tags = imported_exported_proto_tags;
