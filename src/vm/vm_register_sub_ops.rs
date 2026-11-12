@@ -1015,13 +1015,24 @@ impl Interpreter {
                     && let Some(def) = &installed
                 {
                     let depth = self.routine_stack().len();
-                    self.registry_mut().routine_local_subs.insert(
-                        crate::qualified::qualified(
-                            self.current_package_sym(),
-                            Symbol::intern(&resolved_name),
-                        ),
-                        (def.decl_order, depth),
+                    let key = crate::qualified::qualified(
+                        self.current_package_sym(),
+                        Symbol::intern(&resolved_name),
                     );
+                    // Re-run on every call of the routine. A routine table,
+                    // not one of the four type maps, so the write keeps the
+                    // type-name indexes: through `DerefMut` it dropped them on
+                    // every call and the next type lookup rebuilt them from
+                    // every class key (ParaSeq's `BlockMapper.run`, #17337).
+                    // An unchanged entry is not rewritten at all.
+                    if self.registry().routine_local_subs.get(&key)
+                        != Some(&(def.decl_order, depth))
+                    {
+                        self.registry_mut()
+                            .routine_tables_mut()
+                            .routine_local_subs
+                            .insert(key, (def.decl_order, depth));
+                    }
                 }
                 let sub_val = if let Some(def) = installed {
                     // Captured as any closure created here would be: the

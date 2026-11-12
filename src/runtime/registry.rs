@@ -860,13 +860,18 @@ pub(crate) struct Registry {
     /// [`Registry::has_lexical_type_key_for`].
     /// Each name maps to the full keys that carry it before one of their NULs,
     /// in the four maps' order (classes, roles, enums, subsets).
-    lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>>,
+    ///
+    /// Behind an `Arc` (as is [`Self::class_short_names`]) so the copy-on-write
+    /// clone of a registry a worker thread's first write makes shares the
+    /// built index instead of deep-copying it (#17337).
+    lexical_type_names:
+        std::sync::OnceLock<std::sync::Arc<rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>>>,
     /// `short name -> class key` for every class whose key is qualified: the
     /// part after the LAST `::` of the key, pointing at the smallest key with
     /// that tail. Built on first query and dropped by
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
-    class_short_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Box<str>>>,
+    class_short_names: std::sync::OnceLock<std::sync::Arc<rustc_hash::FxHashMap<Box<str>, Box<str>>>>,
     /// `source-facing name -> mangled registry key` answers of the four-map
     /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
     /// registry write with the other indexes above.
@@ -972,7 +977,7 @@ impl Registry {
                             .push(Box::<str>::from(key.as_str()));
                     }
                 }
-                index
+                std::sync::Arc::new(index)
             })
             .get(unmangled)
             .map_or(&[], Vec::as_slice)
@@ -1011,7 +1016,7 @@ impl Registry {
                         }
                     }
                 }
-                index
+                std::sync::Arc::new(index)
             })
             .get(short)
             .map(|key| &**key)
@@ -2608,6 +2613,36 @@ mod tests {
             reg.class_key_by_short_name("Thing"),
             Some("Alpha::Beta::Thing")
         );
+    }
+
+    /// The copy-on-write clone a worker thread's first write makes shares the
+    /// built type-name indexes instead of deep-copying them, and a routine
+    /// table write through the guard keeps them (#17337).
+    #[test]
+    fn registry_copy_shares_the_type_name_indexes() {
+        let mut reg = Registry::default();
+        reg.classes
+            .insert("Zed::Thing".to_string(), ClassDef::default().into());
+        assert_eq!(reg.class_key_by_short_name("Thing"), Some("Zed::Thing"));
+        let _ = reg.lexical_type_keys_for("Thing");
+        let copy = reg.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            reg.class_short_names.get().unwrap(),
+            copy.class_short_names.get().unwrap()
+        ));
+        assert!(std::sync::Arc::ptr_eq(
+            reg.lexical_type_names.get().unwrap(),
+            copy.lexical_type_names.get().unwrap()
+        ));
+        let shared = Arc::new(copy);
+        let _other = shared.clone();
+        let lock = std::sync::RwLock::new(shared);
+        let mut guard = RegistryWriteGuard::new(&lock, "test");
+        guard
+            .routine_tables_mut()
+            .routine_local_subs
+            .insert(crate::symbol::Symbol::intern("f"), (1, 1));
+        assert!(guard.class_short_names.get().is_some());
     }
 
     /// A thread clone shares its parent's `Arc<Registry>`, and its first write
