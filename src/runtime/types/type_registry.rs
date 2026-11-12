@@ -812,19 +812,34 @@ impl Interpreter {
         // compunit, not on the routine that happens to be calling it: a block of
         // the main script handed to a module routine (`cb({ array[..] })`) must
         // not see the module's file-scope names.
-        let own_block = self
-            .routine_stack
+        //
+        // A module mainline being loaded (a `require` from inside a routine of
+        // another module) is a compunit of its own too: the frames below the
+        // depth its mainline started at belong to whoever triggered the load,
+        // so their packages -- and the aliases those packages imported -- are
+        // not the loaded code's. Rakudo compiles the required unit with only
+        // the setting as its outer scope.
+        let floor = self.module_mainline_routine_floor().unwrap_or(0);
+        let frames = self.routine_stack.get(floor..).unwrap_or_default();
+        let own_block = frames
             .last()
             .filter(|frame| frame.is_block && !frame.is_inlined_block && frame.def_file.is_some());
         let frame = own_block.or_else(|| {
-            self.routine_stack
+            frames
                 .iter()
                 .rev()
                 .find(|frame| !frame.is_block)
-                .or_else(|| self.routine_stack.last())
+                .or_else(|| frames.last())
         });
+        // The running method's class is the loader's too when no frame of the
+        // loaded code has been pushed yet.
+        let method_class = if floor > 0 && frames.is_empty() {
+            None
+        } else {
+            self.method_class_stack_top_str()
+        };
         [
-            self.method_class_stack_top_str(),
+            method_class,
             self.candidate_scope_lexical_package()
                 .or_else(|| frame.and_then(|frame| frame.lexical_package))
                 .map(|pkg| pkg.as_str()),

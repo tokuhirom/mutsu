@@ -1154,13 +1154,35 @@ impl Compiler {
         self.compile_try_region(body, &None, false, false);
     }
 
-    fn compile_try_region(
+    pub(super) fn compile_try_region(
         &mut self,
         body: &[Stmt],
         catch: &Option<Vec<Stmt>>,
         traps: bool,
         catch_value: bool,
     ) {
+        // A body that also has ENTER/LEAVE-family phasers is a phaser scope
+        // with this region inside it (`helpers_phaser_try`).
+        // Only a region with an explicit handler: rakudo's CATCH/CONTROL
+        // covers the block's body, not its phasers, while a handler-less
+        // `try` also traps a `die` in its ENTER/LEAVE (S04-phasers).
+        let has_handler = catch.is_some()
+            || body
+                .iter()
+                .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
+        if has_handler && Self::try_region_needs_inner_phaser_scope(body) {
+            let region = super::helpers_phaser_try::PhaserTryRegion {
+                catch: catch.clone(),
+                traps,
+                catch_value,
+                decay_failure: std::mem::take(&mut self.next_try_decays_failure),
+                is_bare_block: std::mem::take(&mut self.next_try_is_bare_block),
+            };
+            let saved_scope = self.push_dynamic_scope_lexical();
+            self.compile_phaser_block_scope_inner(body, PhaserBlockResult::Push, Some(region));
+            self.pop_dynamic_scope_lexical(saved_scope);
+            return;
+        }
         let decay_failure = std::mem::take(&mut self.next_try_decays_failure) && traps;
         let saved = self.push_dynamic_scope_lexical();
         // Detect duplicate CATCH/CONTROL phasers in the same block: Raku

@@ -49,3 +49,40 @@ pub(crate) fn record_block_return_target(env: &mut Env, captured: &Env, block_id
         env.set_block_return(block_id, target);
     }
 }
+
+impl crate::runtime::Interpreter {
+    /// The routine a `return` inside a `CATCH` installed here targets.
+    ///
+    /// Directly in a routine body (no called block between it and the
+    /// handler), that is the routine on top of the routine stack. Its env does
+    /// not always say so: the light call paths skip binding the callable id
+    /// (a documented perf trade-off, `vm_call_light.rs`), so the env still
+    /// carried the *caller's* id and a `return` from a handler run at a deep
+    /// throw site (ADR-0072) targeted the caller -- the routine declined it
+    /// and ran on past its `CATCH` (`sub f(--> Int) { CATCH { default {
+    /// return 2 } }; thrower(); 0 }` answered 0). Inside a called block the
+    /// env's record ([`return_target_in_env`]) is the right one: the block's
+    /// `return` leaves the routine that lexically encloses it.
+    // Cost: O(d) over the trailing inlined-block frames, plus one
+    // registration-id lookup.
+    pub(crate) fn catch_handler_return_target(&self) -> Option<u64> {
+        let frame = self
+            .routine_stack
+            .iter()
+            .rev()
+            .find(|frame| !frame.is_inlined_block);
+        if let Some(frame) = frame
+            && !frame.is_block
+        {
+            let id = if frame.callable_id != 0 {
+                Some(frame.callable_id)
+            } else {
+                self.registration_clone_id(&frame.package.resolve(), &frame.name.resolve())
+            };
+            if id.is_some() {
+                return id;
+            }
+        }
+        return_target_in_env(self.env())
+    }
+}
