@@ -147,6 +147,18 @@ pub(crate) fn apply_slang_overrides(
         {
             continue;
         }
+        // A candidate of a proto category the slang declares itself
+        // (Polyglot::Brainfuck's `BF-command:sym<+>` under its own
+        // `proto token BF-command`): like a helper token, only the slang's own
+        // tokens reach it, so the parser has nothing to register.
+        if let Some((category, _)) = over.name.split_once(":sym")
+            && !category.is_empty()
+            && !is_core_grammar_rule(category)
+            && (overrides.iter().any(|o| o.name == category)
+                || is_helper_of_other_rule(category, overrides))
+        {
+            continue;
+        }
         return Err(format!(
             "Slang activation NYI: grammar rule override '{}' is not supported by this \
              implementation (recognized: {}, and the L10N vocabulary token categories)",

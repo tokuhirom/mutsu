@@ -37,6 +37,7 @@ pub(in crate::parser) use postfix::is_subscript_expr;
 pub(in crate::parser) use postfix::parse_superscript_exp;
 pub(in crate::parser) use postfix::parse_trailing_call_adverbs;
 pub(in crate::parser) use postfix::postfix_expr_continue;
+pub(in crate::parser) use postfix::reject_modified_non_identifier;
 pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};

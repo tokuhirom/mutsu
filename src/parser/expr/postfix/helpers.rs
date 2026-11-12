@@ -147,3 +147,42 @@ pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
         _ => false,
     }
 }
+
+/// Reject what follows a method-call modifier (`.+`, `.*`, `.?`, `.^`) when it
+/// cannot start a method name, the way rakudo does: whitespace, a digit or the
+/// end of input is `Malformed postfix call`, any other non-name character (a
+/// paren, an operator symbol) is `Cannot use .+ on a non-identifier method
+/// call`. A name may start with an identifier character, a quote (a quoted
+/// method name), a sigil (a dynamic name) or `::` (a qualified name).
+// Cost: O(1).
+pub(in crate::parser) fn reject_modified_non_identifier(
+    modifier: char,
+    rest: &str,
+) -> Result<(), PError> {
+    let Some(c) = rest.chars().next() else {
+        return Err(PError::malformed("postfix call"));
+    };
+    if c.is_whitespace() || c.is_ascii_digit() {
+        return Err(PError::malformed("postfix call"));
+    }
+    if c.is_alphabetic()
+        || c == '_'
+        || matches!(c, '$' | '@' | '%' | '&' | '\'' | '"' | ':')
+        || !c.is_ascii()
+    {
+        return Ok(());
+    }
+    let message = format!("Cannot use .{modifier} on a non-identifier method call");
+    let exception = crate::value::Value::make_exception(
+        "X::Comp::AdHoc",
+        &[
+            ("message", crate::value::Value::str(message.clone())),
+            ("payload", crate::value::Value::str(message.clone())),
+        ],
+    );
+    Err(PError::fatal_with_exception_at(
+        message,
+        Box::new(exception),
+        rest,
+    ))
+}

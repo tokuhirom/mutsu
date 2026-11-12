@@ -25,6 +25,7 @@ pub(crate) use dot_assign::{
 pub(in crate::parser) use helpers::is_angle_subscript_key_char;
 pub(in crate::parser) use helpers::is_conservative_angle_key_char;
 pub(in crate::parser) use helpers::is_subscript_expr;
+pub(in crate::parser) use helpers::reject_modified_non_identifier;
 pub(in crate::parser) use loop_::parse_superscript_exp;
 pub(crate) use loop_::without_pending_prefix;
 pub(in crate::parser) use loop_::{brace_newline_state, consumed_span};
