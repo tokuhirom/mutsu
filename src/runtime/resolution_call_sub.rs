@@ -734,12 +734,6 @@ impl Interpreter {
             _ => None,
         };
         let func = method_callable.unwrap_or(func);
-        // A built-in routine value (`&[===]`, `&say`) has no `Sub` body of
-        // its own: call it as the VM calls any callable value (a `:with`
-        // comparator, a `.wrap` wrapper, ...).
-        if matches!(func.view(), ValueView::Routine { .. }) {
-            return self.vm_call_on_value(func, args, None);
-        }
         // Upgrade WeakSub to Sub transparently
         let func = match func.view() {
             ValueView::WeakSub(weak) => match weak.upgrade() {
