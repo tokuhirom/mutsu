@@ -1069,7 +1069,7 @@ impl Interpreter {
                         let chunk: Vec<Value> = src.buf[i..end].to_vec();
                         i = end;
                         out.consumed = consumed_base + i;
-                        let value = self.call_sub_value(func.clone(), chunk)?;
+                        let value = self.vm_call_on_value(func.clone(), chunk, None)?;
                         let value = self.reify_finite_pipe_value(value)?;
                         push_map_value(&mut out.produced, value);
                     }
@@ -1081,8 +1081,11 @@ impl Interpreter {
                 let item = src.buf[i].clone();
                 i += 1;
                 out.consumed = consumed_base + i;
-                let value = if let ValueView::Sub(data) = func.view()
-                    && (!data.assumed_positional.is_empty() || !data.assumed_named.is_empty())
+                // A mixin reaching this loop composes its own `CALL-ME`
+                // (`loop_callback` unwraps any other): call it as a callable.
+                let value = if matches!(func.view(), ValueView::Mixin(..))
+                    || matches!(func.view(), ValueView::Sub(data)
+                        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty())
                 {
                     self.vm_call_on_value(func.clone(), vec![item], None)?
                 } else {

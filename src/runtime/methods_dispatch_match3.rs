@@ -70,6 +70,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        let args = self.loop_callback(args);
         // `Supply.grep` on a *live* (Supplier-backed) supply must stay
         // live: register a filter transform tap that forwards matching
         // values to a derived supply. A materialized supply
