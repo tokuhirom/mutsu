@@ -56,7 +56,7 @@ impl Interpreter {
         if !lane_method(method)
             || !plain_call
             || self.accessor_ref_pending
-            || self.has_any_wrap_chains()
+            || self.registry().method_name_ever_wrapped(method)
             || crate::runtime::find_method_intercept::any_user_find_method()
         {
             return None;

@@ -1302,17 +1302,46 @@ impl Registry {
         !self.method_wrap_chains.is_empty()
     }
 
+    /// Whether a method named `name` ever had a chain on any class, on a
+    /// candidate slot or its multi dispatcher (`push_method_wrap` and
+    /// `bind_method_do_body` record every name). Never cleared, so a stale
+    /// `true` only costs the caller its general path.
+    // Cost: O(1) while nothing is wrapped; otherwise O(len(name)), two hash
+    // probes.
+    /// Whether `class_name`'s metaobject is something other than the default
+    /// one: a user metaclass instance (an EXPORTHOW declarator, `new_type`) or
+    /// a metaobject with role layers mixed in. `class_how_values` also caches
+    /// the default `Perl6::Metamodel::*HOW` instance `.HOW` built for a plain
+    /// class (`dispatch_how`), which is not a custom metaobject.
+    // Cost: O(1) expected, one hash probe.
+    pub(crate) fn class_has_custom_how(&self, class_name: &str) -> bool {
+        use crate::value::ValueView;
+        match self.class_how_values.get(class_name).map(Value::view) {
+            None => false,
+            Some(ValueView::Instance { class_name, .. }) => {
+                !class_name.as_str().starts_with("Perl6::Metamodel::")
+            }
+            Some(_) => true,
+        }
+    }
+
+    pub(crate) fn method_name_ever_wrapped(&self, name: &str) -> bool {
+        !self.method_wrap_chains.is_empty()
+            && (self.candidate_wrapped_methods.contains(name)
+                || self.dispatcher_wrapped_methods.contains(name))
+    }
+
     /// The wrap chain of `method` on the built-in class `class_name` or, when it
     /// has none, on the first class of the catalog MRO that does (`NFD.list` is
     /// wrapped by a `.wrap` of `Uni.list`).
-    // Cost: O(1) while nothing is wrapped; otherwise O(c + d), c = catalog rows
-    // (the MRO scan), d = MRO depth.
+    // Cost: O(1) while no method of this name is wrapped; otherwise O(c + d),
+    // c = catalog rows (the MRO scan), d = MRO depth.
     pub(crate) fn builtin_method_wrap_chain_along_mro(
         &self,
         class_name: &str,
         method: &str,
     ) -> Option<&Vec<(u64, Value)>> {
-        if self.method_wrap_chains.is_empty() {
+        if !self.method_name_ever_wrapped(method) {
             return None;
         }
         self.method_wrap_chain(class_name, method, 0).or_else(|| {
@@ -1329,9 +1358,11 @@ impl Registry {
         method_name: &str,
         candidate_idx: usize,
     ) -> Option<&Vec<(u64, Value)>> {
-        // Keyed by owned strings: skip building a key to miss in an empty map
-        // (the common case -- this runs on every method call).
-        if self.method_wrap_chains.is_empty() {
+        // Keyed by owned strings: skip building a key to miss when no method
+        // of this name was ever wrapped (the common case -- this runs on every
+        // method call, and a program that wraps one method must not pay for
+        // every other name).
+        if !self.method_name_ever_wrapped(method_name) {
             return None;
         }
         self.method_wrap_chains

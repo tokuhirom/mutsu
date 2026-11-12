@@ -1279,6 +1279,12 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            // Cost: O(d), d = env tiers walked by the two read-only probes.
+            OpCode::VarIsWritable(name_idx) => {
+                let writable = self.var_is_writable(Self::const_str(code, *name_idx));
+                self.stack.push(Value::truth(writable));
+                *ip += 1;
+            }
             // Cost: O(d) on a live capture, d = env tiers walked (two probes);
             // otherwise the `GetBareWord` resolution.
             OpCode::GetTypeCapture(name_idx) => {

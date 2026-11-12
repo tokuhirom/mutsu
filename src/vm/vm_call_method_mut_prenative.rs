@@ -279,7 +279,7 @@ impl Interpreter {
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
         if !matches!(method, "HOW" | "WHAT")
-            || self.has_any_wrap_chains()
+            || self.registry().method_name_ever_wrapped(method)
             || crate::runtime::find_method_intercept::any_user_find_method()
         {
             return None;
@@ -324,7 +324,9 @@ impl Interpreter {
             || arg_sources_idx.is_some()
             || self.accessor_ref_pending
             || modifier_idx.map(|idx| Self::const_str(code, idx)) != Some("^")
-            || self.has_any_wrap_chains()
+            // Only a wrap of a `name` method can change the answer (a module
+            // that `.wrap`s some other method keeps the lane).
+            || self.registry().method_name_ever_wrapped("name")
         {
             return None;
         }
@@ -337,7 +339,7 @@ impl Interpreter {
         {
             let registry = self.registry();
             if !registry.classes.contains_key(class.as_str())
-                || registry.class_how_values.contains_key(class.as_str())
+                || registry.class_has_custom_how(class.as_str())
             {
                 return None;
             }
@@ -378,7 +380,7 @@ impl Interpreter {
             || arg_sources_idx.is_some()
             || self.accessor_ref_pending
             || modifier_idx.map(|idx| Self::const_str(code, idx)) != Some("^")
-            || self.has_any_wrap_chains()
+            || self.registry().method_name_ever_wrapped(method)
             || crate::runtime::find_method_intercept::any_user_find_method()
         {
             return None;

@@ -820,6 +820,16 @@ impl Compiler {
                     listop: *listop,
                 }));
             }
+            // The short-circuit compound assignment's container test
+            // (`rakuast::compound::op`): one opcode, not a routine lookup.
+            Expr::Call { name, args, .. }
+                if name.with_str(|n| n == "__mutsu_var_is_writable")
+                    && let [Expr::Literal(v)] = args.as_slice()
+                    && v.as_str().is_some() =>
+            {
+                let name_idx = self.code.add_constant(v.clone());
+                self.code.emit(OpCode::VarIsWritable(name_idx));
+            }
             Expr::Call { name, args, .. } => {
                 if name.with_str(|n| n == "EVAL") {
                     self.note_eval_scope_names();

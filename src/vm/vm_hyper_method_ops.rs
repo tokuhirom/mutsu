@@ -816,11 +816,17 @@ impl Interpreter {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+            // `WHICH` and `WHY` are ordinary methods in rakudo (the rest are
+            // macros): a user class's own takes the user-method dispatch even
+            // unquoted, as on the scalar `CallMethod` path (#17580).
+            let ordinary_pseudo = matches!(method.as_str(), "WHICH" | "WHY");
             let mut skip_native = method == "VAR";
             // Set when the element is an object whose class declares the
             // method: see the leaf dispatch below.
             let mut user_method_on_instance = false;
-            if !skip_native && (quoted || !pseudo) {
+            // Set when the element ran on that dispatch (it cannot rebind it).
+            let mut element_untouched = false;
+            if !skip_native && (quoted || !pseudo || ordinary_pseudo) {
                 let class_name = if item.is_lazy_match_value() {
                     // Lazy Match: read the cursor class off the node (a grammar
                     // cursor reports the grammar's own type) — no materialization.
@@ -836,8 +842,10 @@ impl Interpreter {
                     && self.has_user_method(&cn, &method)
                 {
                     skip_native = true;
-                    user_method_on_instance = !pseudo
-                        && hyper_cell.is_none()
+                    // An element held in a shared cell (an attribute read
+                    // `$!l, $!r`, a `.grep` rw alias) is the invocant by value
+                    // all the same; the cell is only re-wrapped below.
+                    user_method_on_instance = (!pseudo || ordinary_pseudo)
                         && !item.is_lazy_match_value()
                         && matches!(item.view(), ValueView::Instance { .. });
                 }
@@ -1105,6 +1113,7 @@ impl Interpreter {
                                 "hypermethodcall",
                                 "user",
                             );
+                            element_untouched = true;
                             self.try_compiled_method_or_interpret_sym(
                                 item.clone(),
                                 method_sym,
@@ -1142,8 +1151,12 @@ impl Interpreter {
             // Re-wrap the element in its shared cell after writing any in-place
             // mutation back through it, so `existing.items` keeps the source
             // aliasing for the writeback below.
+            // A user method on an object cannot rebind the element, so its
+            // cell keeps whatever the method itself stored there.
             if let Some(cell) = hyper_cell {
-                cell.lock().unwrap().clone_from(item);
+                if !element_untouched {
+                    cell.lock().unwrap().clone_from(item);
+                }
                 *item = Value::container_ref(cell);
             }
         }

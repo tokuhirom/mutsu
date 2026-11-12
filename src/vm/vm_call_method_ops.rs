@@ -904,6 +904,11 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.^can(NAME)` on an ordinary user class (#17552).
+        if let Some(result) = self.try_caret_can_lane(code, name.raw, arity, modifier_idx, quoted) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // `.^m` on a class with a user metaclass that declares `m`.
         if let Some(result) = self.try_custom_how_caret_lane(
             code,
